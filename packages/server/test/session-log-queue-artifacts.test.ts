@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, test } from 'node:test'
+import { Worker } from 'node:worker_threads'
 import { Hono } from 'hono'
 import {
   INPUT_INLINE_BYTES,
@@ -93,6 +94,43 @@ function tableNames(db: Db): string[] {
 function ledgerVersions(db: Db): number[] {
   return (db.prepare(`SELECT version FROM ${SESSION_QUEUE_MIGRATIONS_TABLE} ORDER BY version`)
     .all() as unknown as { version: number }[]).map((row) => Number(row.version))
+}
+
+function independentLedgerVersions(db: Db): number[] {
+  return (db.prepare('SELECT version FROM fixture_independent_ledger ORDER BY version')
+    .all() as unknown as { version: number }[]).map((row) => Number(row.version))
+}
+
+interface WorkerMessage {
+  state?: string
+  busy?: boolean
+  code?: string | null
+  errcode?: number | null
+  message?: string
+}
+
+/** Ordered worker messages with explicit error propagation; no sleeps or polling. */
+function workerMessages(worker: Worker): () => Promise<WorkerMessage> {
+  const queued: WorkerMessage[] = []
+  const waiters: Array<{ resolve: (message: WorkerMessage) => void; reject: (error: Error) => void }> = []
+  let failure: Error | null = null
+  const fail = (error: Error) => {
+    failure ??= error
+    for (const waiter of waiters.splice(0)) waiter.reject(error)
+  }
+  worker.on('message', (message: WorkerMessage) => {
+    const waiter = waiters.shift()
+    if (waiter) waiter.resolve(message)
+    else queued.push(message)
+  })
+  worker.on('error', fail)
+  worker.on('exit', (code) => { if (code !== 0) fail(new Error(`installer worker exited with code ${code}`)) })
+  return () => {
+    if (failure) return Promise.reject(failure)
+    const message = queued.shift()
+    if (message) return Promise.resolve(message)
+    return new Promise((resolve, reject) => waiters.push({ resolve, reject }))
+  }
 }
 
 function triggerSql(db: Db, name = POLICY): string | undefined {
@@ -344,6 +382,70 @@ describe('session queue ledger 40', () => {
     } finally {
       db.close()
     }
+  })
+
+  test('serializes a held writer and a competing initializer to one committed ledger 40', { timeout: 30_000 }, async (t) => {
+    const root = await mkdtemp(join(tmpdir(), 'guanxi-queue-ledger-race-'))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    const path = join(root, 'guanxi.db')
+    const seed = openDb(path)
+    seed.exec(`CREATE TABLE fixture_independent_ledger (version INTEGER PRIMARY KEY);
+      INSERT INTO fixture_independent_ledger (version) VALUES (34),(35),(36),(37),(38),(39);`)
+    assert.equal((seed.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
+    seed.close()
+
+    const gate = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 3)
+    const workers: Worker[] = []
+    const exits: Promise<void>[] = []
+    t.after(async () => { await Promise.all(workers.map((worker) => worker.terminate())) })
+    const start = (role: 'holder' | 'competitor') => {
+      const worker = new Worker(new URL('./fixtures/queue-schema-installer-worker.ts', import.meta.url), {
+        workerData: { role, dbPath: path, gate },
+      })
+      workers.push(worker)
+      exits.push(new Promise((resolve, reject) => {
+        worker.once('exit', (code) => { if (code === 0) resolve(); else reject(new Error(`installer worker exited with code ${code}`)) })
+      }))
+      return workerMessages(worker)
+    }
+
+    const holder = start('holder')
+    const holding = await holder()
+    assert.equal(holding.state, 'holding', 'the first initializer must hold an uncommitted trigger replacement')
+
+    // A second connection sees only committed state while the holder is inside
+    // BEGIN IMMEDIATE: no ledger table, the global-33 trigger and untouched
+    // independent ledgers. This is not a read of the holder's uncommitted DDL.
+    const observer = new DatabaseSync(path)
+    try {
+      assert.equal((observer.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
+      assert.equal(normalize(triggerSql(observer)), normalize(V33_POLICY_TRIGGER_SQL))
+      assert.equal(tableNames(observer).includes(SESSION_QUEUE_MIGRATIONS_TABLE), false)
+      assert.deepEqual(independentLedgerVersions(observer), [34, 35, 36, 37, 38, 39])
+    } finally {
+      observer.close()
+    }
+
+    const competitor = start('competitor')
+    const blocked = await competitor()
+    assert.equal(blocked.state, 'blocked', 'the competing constructor must not accept a pre-lock ledger')
+    assert.equal(blocked.busy, true, 'the held write lock must refuse the competing BEGIN IMMEDIATE')
+    assert.equal((await holder()).state, 'committed')
+    assert.equal((await competitor()).state, 'constructed', 'the competitor re-reads the committed ledger after serialization')
+
+    const final = new DatabaseSync(path)
+    try {
+      assert.equal((final.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
+      assert.equal(normalize(triggerSql(final)), normalize(SESSION_QUEUE_POLICY_TRIGGER_SQL))
+      assert.deepEqual(ledgerVersions(final), [40])
+      assert.deepEqual(independentLedgerVersions(final), [34, 35, 36, 37, 38, 39])
+      installSessionQueueSchema(final)
+      assert.deepEqual(ledgerVersions(final), [40], 'repeat initialization leaves exactly one row')
+      assert.equal(normalize(triggerSql(final)), normalize(SESSION_QUEUE_POLICY_TRIGGER_SQL))
+    } finally {
+      final.close()
+    }
+    await Promise.all(exits)
   })
 })
 
