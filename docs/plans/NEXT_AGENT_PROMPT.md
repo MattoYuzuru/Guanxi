@@ -24,10 +24,10 @@ continuation record. Whole K4, DS2, B1 and MS1 gates remain open.
    prep is separate (`codex/u1-shell`); Input invalid-story fix `7479d96` is independently read.
    AppShellChrome border-box fix `218e150` passes controlled 390px behavior and scoped axe,
    clipping and motion; pinned-image baselines/readiness work is active in its isolated clone.
-2. R3 ETA/signals candidate `4657f47` includes current main and is under candidate gates.
+2. **Current boundary:** R3 ETA/signals is merged locally as `fad69e5` after candidate
+   `4657f47` passes full affected gates. Run full main post-merge checks before another executable merge.
    Original repaired source `cd00a82` has independent pending-collector cancellation review
-   closure and 31 new / 124 inherited relay/R1 passes. Merge only after required candidate checks,
-   then run full main gates. The broader judge cascade is a separate GPT lane; real calibration,
+   closure and 31 new / 124 inherited relay/R1 passes. Candidate evidence is in [ETA](evidence/R3-eta.md) and [signals](evidence/R3-signals.md). The broader judge cascade is a separate GPT lane; real calibration,
    night wake and B3 remain unfinished.
 3. Integrate reviewed F2-a `5c66e27` after U1, then F2-b `ffa9d1a` with separate grant/cancel
    fixes and independent 30-case review closure. F2-b author envelope is 181 (30 new / 151

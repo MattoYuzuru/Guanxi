@@ -194,3 +194,20 @@ The DS2 production helper is installed at its documented Application Support pat
 build/ad-hoc code-sign verification and `build.sh --check` pass (`check-jgk64o2l`). No key was
 created, no owner-presence prompt was triggered and no approval signature was produced.
 The production owner-present Secure Enclave gate remains unverified.
+
+## R3 observational foundation integrated locally
+
+Merge `fad69e5` incorporates candidate `4657f47` after synchronization with main `6da2058`.
+The [ETA evidence](R3-eta.md) and [signal/cancellation evidence](R3-signals.md) retain separate
+author and independent findings/fixes. Its 31 new / 124 inherited relay/R1 cases passed
+before integration. Full candidate gates at clean `4657f47` also pass: all-workspace types
+`check-d2cmzhkg`, `npm test` `check-womzyc79` (core 1292/1292, kernel 106, web 318, catalog 74,
+UI 17, bench 82; zero skips), build `check-_4omlr3c`, Markdown `check-eq__69xg`, licenses
+`check-bd2wfp97`, source lint `check-m25y002g`. Candidate web source is unchanged relative to
+current main. Full post-merge main checks are next; no further executable merge precedes them.
+
+The added collector is read-only and optional. Stop/wall cancellation does not wait for an
+uncooperative observer; late results are discarded after an R1 fence recheck. This does not
+release model/tool work without cleanup acknowledgement. ETA remains uncalibrated, with stated
+provenance and scope. The full judge cascade, model grading, calibration/night wake and MS1
+remain open in separate work.
