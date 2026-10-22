@@ -73,6 +73,13 @@ draft ──(stories + docs complete)──► review ──(owner approves)─�
 | New use of a `deprecated` component | blocked | blocked |
 | Draft used only in the catalog | allowed | allowed |
 
+Product use includes use through a wrapper or local helper. G11 starts from each directly imported
+component, follows its runtime value imports and re-exports through the implementation and local
+helpers, barrels and aliases, and applies every reachable component's own status at the original
+product file. A reviewed parent is never approval for a draft child. Type-only edges, stories and
+tests, external packages and catalog-only use do not count; an unresolvable local runtime import
+fails closed.
+
 ### 4.1 Review record format (stable; DS2 signs it)
 
 **Status:** implemented (lane DS1-b, 2026-10-21). The DS2 signing helper (D-184) signs exactly
@@ -140,7 +147,7 @@ emit JSON for agents.
 | G8 | Import boundaries | features or plugins import UI internals or underlying libraries directly |
 | G9 | Reuse primitives | features render raw `button`, `input`, `select`, `textarea`, `dialog` or style colours inline |
 | G10 | Catalog complete | an exported component lacks a story per declared state, a complete docs file or a review record, or a catalog entry is orphaned |
-| G11 | Status policy | the table in §4 is violated |
+| G11 | Status policy | the table in §4 is violated, including through a wrapper's runtime component dependency closure |
 | G12 | Approval integrity | an `approved` record lacks a valid owner signature over its hashes |
 | G13 | Visual regression | a story differs from its baseline in light, dark (and high-contrast for primitives); baselines are produced only in a pinned Playwright Docker image |
 | G14 | Accessibility | any serious or critical axe violation in a story or in the new-session and settings flows |
