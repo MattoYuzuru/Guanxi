@@ -8,7 +8,7 @@ composition review and root full candidate gates pending. This does not close F2
 - Author checkout: `/Users/yuzuru/Projects/Guanxi-lanes/ms1-f2`.
 - Bundle branch: `codex/in-progress-integration`.
 - Preserved F2 branch: `codex/ms1-f2` at `b3b1077e`.
-- Last executable/test change: `e9611d3596c93fdc0a7412f73c9694936040217e`.
+- Last executable/test change: `ab83dc17dcf9d16429999df303873fe6605a4dd0`.
 - Root authorized the local merges and owns main, central status, final aggregate gates and
   any later push. Central documents enter only through reviewed parent ancestry; this
   integration authors no central status change.
@@ -236,6 +236,57 @@ Only immutable string-to-UTF-8 encoding and excerpt projection are bounded here.
 reads/replay, scrubbed/base64 transport, provider history, byte-input snapshots and queue text
 still have whole-buffer paths; this is not an end-to-end bounded-memory claim. Final source
 composition review and the eight aggregate candidate gates remain pending on this new pin.
+
+## Aggregate fixture-exit race and separate correction
+
+Root's next eight-gate attempt at clean `f2ffcd0c` passed full typecheck
+(`check-r7xgqt0v`) and then failed actual `npm test` (`check-1am7wszy`, exit 1).
+Bench passed 135/136: its only failure was the actual two-completion OS fixture's unchanged
+`childExitCode === 0` assertion, with actual null. The setup-failure cleanup regression passed.
+The sequence stopped there; neither that npm command nor the whole aggregate gate passed.
+
+The natural-exit fixture explicitly closed its request fd 4 before its final report write
+and `process.exit(0)`. EOF is a terminal event: production immediately ends the lifetime
+channel, and the supervisor signals its owned group with SIGTERM. Scheduling that shutdown
+between the explicit close and natural exit legitimately yields a signaled client with null
+exit code. The fixture contradicted its own clean-exit assertion; transport shutdown/cleanup
+was not evidence of a production defect.
+
+Separate red-test commit `7ed36bae` adds one actual-process regression using the same client
+and two sequential completions. Its `two-finalization` mode inserts 250 ms of explicit
+fixture finalization work at the existing close/report boundary, exposing the scheduling
+window without enlarging any startup, channel, shutdown, kill or test deadline. The selected
+case fails semantically at clean `7ed36bae`, **0 pass / 1 fail**, receipt `check-5u5sswsy`,
+with exactly the original null-versus-zero assertion. This is a controlled widened-window
+reproduction, not an empirical flake-rate estimate or a retry policy.
+
+Separate fixture-only correction `ab83dc17` removes that explicit close. Final fixture work
+and report publication now finish while fd 4 remains owned; natural `process.exit(0)` closes
+the request capability. The new case asserts exact zero exit, two delivered/retained calls,
+finalization report completion, no protocol error, process absence and record removal.
+The original natural-exit assertion remains unchanged. `packages/bench/src` is byte-identical
+to `f2ffcd0c`; half-close/abort behavior, transport ownership, cleanup and deadlines were not
+modified. Null remains a legitimate signaled/unknown result for cancellation or deliberate
+half-close while a client is alive; only this fixture now models natural exit correctly.
+
+**New in this repair: 1 regression / 136 prior bench cases.** The root-cwd private-process
+file contains 1 new / 19 prior. Identical selected red/green runs and overlapping file/full
+workspace runs are not additional new credit. At clean `ab83dc17`, all commands ran with
+Node26.9.0 under the shared `heavy` resource, source unchanged, and are terminal:
+
+| Command | Result | Receipt |
+| --- | --- | --- |
+| Selected new finalization case, same command as red | 1/1 pass, zero skips | `check-82co0m1c` |
+| `npm test --workspace @guanxi/bench` | 137/137 pass, zero skips | `check-q_3_3wz4` |
+| `node --test packages/bench/test/private-process.test.ts` from root | 20/20 pass, zero skips | `check-iulqn4nt` |
+| `npx tsc --noEmit -p packages/bench/tsconfig.json` | passed | `check-6q1o_9gm` |
+
+The 137-case workspace envelope includes unchanged private-stream EOF, abort and retention
+settlement assertions. No production retry, assertion weakening, arbitrary deadline increase,
+manual process cleanup, provider/model/key/owner data, remote action or other full gate was
+introduced. This handoff is a subsequent docs-only commit. The inherited unsupported external
+skill symlink still prevents reusable source certificates; direct outcomes retain their actual
+clean pin. Independent review and root's final aggregate checks remain separate obligations.
 
 ## Compatibility, rollback and remaining work
 
