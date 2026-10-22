@@ -9,6 +9,10 @@ has no manual resolutions and is byte-identical to independently reviewed candid
 `73ebbb18`. All eight post-merge main gates pass at clean, unchanged `1b6f495`; the complete
 coordinator exits 0. Later central changes are documentation only.
 Whole K4/K5/R2/R3/F2/B1/U1/DS2 and MS1 exits remain open where named residuals apply.
+The owner has restored Fedora scope under [D-195](../decisions/2026-10-22-owner-decisions.md).
+The obsolete Agent Workstation application is stopped/disabled; SSH/VPN and private state
+remain. Current-source Linux checks are in preparation, not yet credited; see
+[Fedora evidence](evidence/Fedora-2026-10-22.md). Earlier local-only notes are historical.
 See the latest section of the [continuation record](evidence/coordination-2026-10-22.md).
 The [previous audit](evidence/coordination-2026-10-21.md) retains initial progress estimates;
 a merge or a fixture pass does not close a stage.

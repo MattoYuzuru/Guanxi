@@ -1,6 +1,6 @@
 # Documentation map
 
-**Status:** implemented · **Updated:** 2026-10-21
+**Status:** implemented · **Updated:** 2026-10-22
 **Purpose:** canonical index; content lives in the linked documents.
 
 ## Quick routes
@@ -8,7 +8,7 @@
 | Task | Read |
 | --- | --- |
 | Understand the product | [VISION](vision/VISION.md) → [REQUIREMENTS](vision/REQUIREMENTS.md) |
-| See what the owner decided | [Owner decisions 2026-10-19](decisions/2026-10-19-owner-decisions.md) → [addendum](decisions/2026-10-19-owner-decisions-addendum.md) → [2026-10-20](decisions/2026-10-20-owner-decisions.md) → [2026-10-20 addendum](decisions/2026-10-20-owner-decisions-addendum.md) → [2026-10-21](decisions/2026-10-21-owner-decisions.md) → [ADR index](decisions/README.md) |
+| See what the owner decided | [Owner decisions 2026-10-19](decisions/2026-10-19-owner-decisions.md) → [addendum](decisions/2026-10-19-owner-decisions-addendum.md) → [2026-10-20](decisions/2026-10-20-owner-decisions.md) → [2026-10-20 addendum](decisions/2026-10-20-owner-decisions-addendum.md) → [2026-10-21](decisions/2026-10-21-owner-decisions.md) → [2026-10-22](decisions/2026-10-22-owner-decisions.md) → [ADR index](decisions/README.md) |
 | Understand the target design | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) → relevant ADR |
 | Build or review UI | [design system](design/README.md) → [`guanxi-ui` skill](../.agents/skills/guanxi-ui/SKILL.md) |
 | Know why a library was chosen | [research synthesis](research/README.md) → raw lane report |

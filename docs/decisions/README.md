@@ -1,6 +1,6 @@
 # Decisions
 
-**Updated:** 2026-10-21
+**Updated:** 2026-10-22
 
 Statuses: `proposed` (not yet approved), `accepted` (approved, maybe not implemented),
 `implemented`, `superseded`. A newer owner decision record overrides older ones. Every ADR
@@ -10,6 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
+| [2026-10-22](2026-10-22-owner-decisions.md) (D-195: restored Fedora checks and deliberate retirement of Agent Workstation) | accepted |
 | [2026-10-21](2026-10-21-owner-decisions.md) (D-185–D-194: real fleet, Fedora home, own phone relay, compute-provider protocol, interactive headroom, owner-bound subscriptions, local AI, training, scale, benchmark host) | accepted |
 | [2026-10-20 addendum](2026-10-20-owner-decisions-addendum.md) (D-141–D-182: answers to every open question Q-201–Q-244; D-183: own kernel instead of Cordis; D-184: approval signing helper) | accepted |
 | [2026-10-20](2026-10-20-owner-decisions.md) (D-123–D-140: quota alerts, notifications, logo, design system, layout, modes, agent browser) | accepted |

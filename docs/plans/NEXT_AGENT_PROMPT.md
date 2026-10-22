@@ -8,10 +8,14 @@ The owner authorizes finishing original in-progress work, then MS1 where feasibl
 concrete owner action is required. Inspect actual workers, branch/HEAD/dirty state and latest
 handoffs before reopening work; do not repeat closed author/reviewer rounds.
 
-Work is **local only**: no SSH/Fedora or other remote execution host, no push. D-194 excludes
-real benchmarks on this Mac. Local synthetic fixtures and existing Colima fixture envelopes
-are allowed. No live model, paid call, owner workspace or owner key in ordinary checks.
-Original Claude publication remains unchanged; the separate local HTML names its actual pin.
+The owner restored **Fedora scope** on2026-10-22 under [D-195](../decisions/2026-10-22-owner-decisions.md),
+after the earlier local-only reply. The obsolete Agent Workstation application is stopped/
+disabled and Mac MCP hooks inactive; preserve the active SSH relay, VPN and private state.
+[Fedora evidence](evidence/Fedora-2026-10-22.md) owns exact source/setup/check results. Root
+owns that host and dedicated-user units. No other host or GitHub push is part of this scope.
+D-194 still excludes real benchmarks on this Mac; its rootless/no-GPU benchmark rule and budget
+remain. No live model, paid call, owner workspace or key in ordinary regression checks.
+The original Claude publication remains unchanged; the separate local HTML names its actual pin.
 
 ## Current integration checkpoint
 
@@ -33,48 +37,58 @@ where Markdown/license/lint pass. Do not call the earlier failed wrappers succes
 
 ## First unfinished slice: U1 actual product shell
 
-The isolated standalone clone `/Users/yuzuru/Projects/Guanxi-lanes/u1-shell-mount`, branch
-`codex/u1-shell-mount`, has completed DSH source `9a1aaa26`, tests `761f01e3`, handoff
-`20f0331f`, from root-authorized plan `b1046a30`. Root incorporated main `1b6f495` without
-conflicts (`4734c2f8`) and regenerated catalog usage (`6c8aa1f2`). It uses its own Node 26
-dependencies, ports 5202/4402 and `.lane-data`. Independent Sol review requested changes at
-clean `6c8aa1f2`. Eight new component cases
-and nine new actual-App browser cases pass, but the adapted legacy subset passes only 11/18
-(`check-r2kqf9i4`). Do not integrate this feature before its three P2s close:
+Three standalone author/reviewer lanes must close together before integration. Own dependencies,
+Node26, local sharedheavy lock and no concurrent source writes are mandatory. Inspect actual
+HEAD/dirty state and worker sessions before touching a lane.
 
-1. AppShellChrome/Dialog reach draft IconButton/Menu/Tooltip. G11 misses transitive use;
-   the unchanged outside probe `check-xa_6x0h9` fails semantically. Isolated DSH enforcement
-   repair is active in `/Users/yuzuru/Projects/Guanxi-lanes/u1-status-closure`, branch
-   `codex/u1-status-closure`, root plan `308ede3e`; own CI `check-kvc2fdn8`. It may change
-   G11/tooling/tests only, not real component statuses. Independent review follows.
-2. New session fixtures mock `/api/sessions/page`, while the actual contract is
-   `/api/sessions/list/page`. Correct the added mocks and assert intended empty/no-error
-   sidebar state; keep forbidden-effect, alert and count assertions. The prior nine-browser
-   pass exercised a sidebar error path, not the intended empty success state.
-3. New host geometry changes axe selector serialization for the existing CacheBar opacity
-   debt. Root authorizes a minimal semantic text-token repair in
-   `features/context/ContextPanel.tsx` and removal of the known contrast exception in
-   `flows-axe.spec.ts`, strengthening the entire flow to zero serious/critical diagnostics.
-   Do not broaden the exception, hide it with a viewport or remove seeded detector controls.
+1. `/Users/yuzuru/Projects/Guanxi-lanes/u1-shell-mount`, `codex/u1-shell-mount`, ports5202/4402:
+   original source9a1aaa26/test761f01e3 incorporates main1b6 without conflicts4734c2f8 and
+   regenerated usage6c8aa1f2. Review found wrong session-page mocks, transitive draft use and
+   contrast debt. Repairs through8e019f0c correct canonical SESSION_ROUTES.page and explicit
+   empty/no-alert success assertions; independent components39/39 and browsers26/27 pass.
+   The remaining test matches both responsive ContextPanels, so final whole-page zero-axe is
+   not yet observed. Root plan3b2f624f authorizes visibility-filtered exact row counts and
+   removing only six obsolete App.tsx G5 allowances. DSH second repair is active. Preserve
+   both seeded unnamed-button controls and all request/effect/lifecycle assertions.
+2. `/Users/yuzuru/Projects/Guanxi-lanes/u1-status-closure`, `codex/u1-status-closure`:
+   a3160507 adds recursive G11 status enforcement without changing usage counts or statuses.
+   Independent repository scope30/30 passes, but outside controls reproduce two P2 bypasses:
+   named-barrel side-effect edges disappear and resolved relative imports beyond UI/src are
+   silently ignored. Root plan873c717c authorizes exact fixes; DSH repair is active. Independent
+   original controls must close afterward. Correct actual G11 intentionally reports draft
+   IconButton/Menu/Tooltip and Workspace's textarea/empty-state; never silence real drafts.
+3. `/Users/yuzuru/Projects/Guanxi-lanes/u1-primitive-readiness`,
+   `codex/u1-primitive-readiness`, ports5203/4403, clean final34a9ea2b/source437f5042:
+   independent Sol review is active. Author added23 new cases and fixed actual Tooltip role/ID/
+   open-description association plus Menu forced-colors text backplates. Complete browser25/25
+   at e7de5075 is23new+2 inherited; separate UI23 inherited at990ac275 and final affected
+   forced-colors1/1 at437 are recorded, not added as new cases again. SourceHash-only refresh
+   touches seven manifest fields. Statuses/approvals/snapshots remain unchanged. Fast UI is
+   red on the six inherited App.tsx allowances assigned to the host lane, not primitive debt.
 
-All U1 review commands are terminal and the checkout is quiet for the assigned repair. Read
-`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-u1-product-shell-20261022.md` first.
-A separate read-only readiness audit of IconButton/Menu/Tooltip names missing keyboard,
-Tooltip and regime assertions; do not bulk-promote them. Add proportional real browser
-readiness evidence and repair any source/docs mismatch, obtain independent closure, then
-unsigned draft-to-review transitions are allowed. No owner signature is implied.
+Reports live outside under `/Users/yuzuru/Projects/Guanxi-lanes/reviews/`; each lane has its own
+plan/handoff. Only after real readiness evidence and independent closure may root make unsigned
+draft-to-review transitions. The additional Textarea/EmptyState audit is read-only/proposed;
+do not bulk-promote. No owner key/signature/approved status or snapshot shortcut is authorized.
+Review/stale use warns for ordinary slices and remains blocked at stage/release exit.
 
-The plan mounts public AppShellChrome, ShellSidebar/Status/Palette/controller in App,
-removes duplicate SidebarSlot ownership, preserves routes/health/runtime/focus/state and adds
-actual-App-route acceptance. Do not reimplement prepared shell/layout/search. Independent
-review includes transitive component readiness: wrapping a draft primitive in a review pattern
-must not silently bypass the product draft-use policy. Review/stale components are allowed
-for an ordinary slice with explicit handoff warnings; valid owner signatures still gate
-stage/release exit. Never create an owner key, sign, mark approved or weaken a gate.
+The mounted plan uses prepared public AppShellChrome/Sidebar/Status/Palette/controller, one
+RuntimeProvider and one SidebarSlot owner. Preserve routes, focus, storage, state and truthful
+runtime facts; do not reimplement completed layout/search. Assemble reviewed lanes, reconcile
+manifest sourceHashes/usage, run frozen candidate/integration gates and update central docs.
+U1 new-session, finished-unseen, true ephemeral Save/Send side chat, remaining CSS debt and owner
+approval remain separate. D-135 backend remains proposed; durable chat is not ephemeral.
 
-Root then performs focused/main integration gates and updates this prompt. U1 new-session,
-finished-unseen, true ephemeral Save/Send side chat, 112 CSS suppressions and owner approval
-remain separate. D-135 backend design remains proposed; durable chat is not ephemeral.
+## Fedora continuation
+
+Current source transfer is main3e4840bb/executable1b6, separate clean dedicated-user checkout at
+`/home/guanxi-bench/checks/guanxi-linux-3e4840bb-20261022/source`; do not use the older owner clone.
+Root accepted the outside Fedora envelope. First setup failed before npmci/tests because npm
+refused two config paths both/dev/null; distinct private task configs and a new deps unit repair
+that setup, preserving the failed unit. Require actual successful ownnpmci/contract resolution,
+then X1/kernel62 expected/no-skips and the proportional selected-core scope. Read evidence for
+actual receipts; expected counts are not observations. Detached units have real time/memory/CPU
+caps, sanitized environment and shared remoteheavy; no model or corpus benchmark is implied.
 
 ## Subsequent local work and preserved boundaries
 

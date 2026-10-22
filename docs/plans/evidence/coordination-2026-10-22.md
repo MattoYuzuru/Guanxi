@@ -5,6 +5,13 @@
 The owner authorized finishing current in-progress work, then pursuing MS1 autonomously
 until a concrete owner action is necessary. Stage scope and exit gates are unchanged.
 
+**Latest runtime scope:** [D-195](../../decisions/2026-10-22-owner-decisions.md) restores named
+Fedora work and explicitly retires the obsolete Agent Workstation application. Read
+[current Fedora evidence](Fedora-2026-10-22.md), not the historical local-only checkpoint
+below, before operating a host. Current-source dependency setup is pending; no new Linux
+test result is credited yet. Main's executable integration remains `1b6f495`, all eight gates
+passed. Separate U1 mounted-host/G11/readiness repairs are not integrated or stage-complete.
+
 ## Integrated K4 retention and R1 bridge
 
 `8006cd8` merges independently reviewed K4 follow-up 2 (`4afe2c3`).
@@ -68,10 +75,14 @@ R3's pure deterministic signal evaluator `5919d0b` is separately reviewed, with 
 passing independently (`check-nbaqmlfj`). It has no relay-loop integration or real collector
 and makes no empirical quality claim.
 
-The Fedora SSH route returned connection refused. The owner explicitly selected **local-only
+The Fedora SSH route returned connection refused. The owner initially selected **local-only
 continuation** on 2026-10-22. No more SSH/remote-host operations are authorized by this
 continuation. Mac/Colima fixture work continues; real Fedora/Linux-host checks, live remote
 MS1 and benchmark runs remain deferred. No service, VPN, relay or resident model was changed.
+**Later superseded by [D-195](../../decisions/2026-10-22-owner-decisions.md):** the owner
+restored Fedora and explicitly authorized retiring the old application and running needed
+checks there. [The new evidence](Fedora-2026-10-22.md) owns actual changes/results; the earlier
+local-only statements below describe their historical checkpoints, not current authorization.
 
 ## K4 main verification and DS2 integration
 

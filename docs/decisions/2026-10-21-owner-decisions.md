@@ -42,3 +42,6 @@ He answered the questions below in chat.
 - The Fedora PC already runs the owner's own agent workstation: an outbound relay through
   `keykomi`, Claude Code Remote Control, and `agent submit`. Guanxi's node will coexist with it
   at F1 enrollment rather than replace it silently.
+  **Superseded for the application by [D-195](2026-10-22-owner-decisions.md):** the owner
+  explicitly requested its retirement on2026-10-22. Application units are disabled; the SSH
+  relay and VPN remain active. The fleet/home direction and general residency rules remain.
