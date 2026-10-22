@@ -99,6 +99,13 @@ async function shell() {
   return screen.findByRole('navigation', { name: 'Main navigation' })
 }
 
+/** The intended session state: the canonical empty page, not the fixture's error fallback. */
+async function emptySessions() {
+  const region = await screen.findByRole('region', { name: 'Sessions' })
+  expect(await within(region).findByText('No sessions yet. Start a new session.')).toBeTruthy()
+  expect(within(region).queryByRole('alert')).toBeNull()
+}
+
 async function choose(label: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Navigation sidebar' }))
   const menu = await screen.findByRole('menu')
@@ -143,6 +150,7 @@ describe('mounted product shell', () => {
     const fetchMock = installApi()
     const { container } = renderApp('/chat')
     const navigation = await shell()
+    await emptySessions()
 
     expect(within(navigation).getAllByRole('link')).toHaveLength(4)
     expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href')))

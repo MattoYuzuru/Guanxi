@@ -125,11 +125,29 @@ async function chooseShell(page: Page, label: string): Promise<void> {
 const shellSidebar = '[data-slot="app-shell-sidebar"]'
 const sidebarSlot = '[data-slot="sidebar-slot"]'
 
+const sessionRegionName = { en: 'Sessions', ru: 'Сессии' } as const
+const sessionEmptyText = {
+  en: 'No sessions yet. Start a new session.',
+  ru: 'Сессий пока нет. Начните новую сессию.',
+} as const
+
+/**
+ * The mounted shell always reads the session page. A fixture that answers the wrong route
+ * renders the sidebar error instead, so every mounted case names the intended empty state and
+ * rejects a session error explicitly rather than passing on unrelated route assertions.
+ */
+async function expectEmptySessionList(page: Page, locale: 'en' | 'ru' = 'en'): Promise<void> {
+  const region = page.getByRole('region', { name: sessionRegionName[locale] })
+  await expect(region.getByText(sessionEmptyText[locale], { exact: true })).toBeVisible()
+  expect(await region.getByRole('alert').count()).toBe(0)
+}
+
 test('mounts one shell and one slot around actual chat, workspace and non-chat routes', async ({ page }) => {
   const fixture = createFixture()
   await installShellApi(page, fixture)
   await page.goto('/chat')
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
 
   expect(await page.locator('main').count()).toBe(1)
   expect(await page.locator(shellSidebar).count()).toBe(1)
@@ -165,6 +183,7 @@ test('each fixed navigation link changes location exactly once', async ({ page }
   await page.goto('/chat')
   const navigation = page.getByRole('navigation', { name: 'Main navigation' })
   await expect(navigation).toBeVisible()
+  await expectEmptySessionList(page)
 
   const destinations = [
     ['Projects', '/projects'],
@@ -187,6 +206,7 @@ test('move, rail, hide and show preserve route content, focus and stored geometr
   await installShellApi(page, fixture)
   await page.goto('/chat')
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
   const heading = page.getByRole('heading', { name: 'New conversation', exact: true })
   await expect(heading).toBeVisible()
   await heading.evaluate((element) => { element.dataset['shellRouteIdentity'] = 'original' })
@@ -236,6 +256,7 @@ test('Ctrl/Meta+K has one handler, one action and reveals secondary routes while
   await addPushStateCounter(page)
   await page.goto('/projects')
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
   await chooseShell(page, 'Hide sidebar')
   await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeFocused()
 
@@ -278,6 +299,7 @@ test('health loading, failure and Retry stay usable before the shell mounts', as
   fixture.health = 'ok'
   await page.getByRole('button', { name: 'Check again' }).click()
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
   expect(await page.locator('main').count()).toBe(1)
 })
 
@@ -287,6 +309,7 @@ test('corrupt shell preferences cannot prevent startup', async ({ page }) => {
   await page.addInitScript((key) => localStorage.setItem(key, '{not-json'), SHELL_PREFERENCES_KEY)
   await page.goto('/chat')
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
   await expect(page.locator(shellSidebar)).toHaveAttribute('data-side', 'left')
   await expect(page.locator(shellSidebar)).toHaveAttribute('data-visibility', 'expanded')
   expect(await page.locator(sidebarSlot).count()).toBe(1)
@@ -309,11 +332,13 @@ test('denied shell storage cannot prevent startup and a failed write keeps the s
   })
   await page.goto('/chat')
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
   await chooseShell(page, 'Hide sidebar')
   await expect(page.locator(shellSidebar)).toHaveAttribute('data-visibility', 'hidden')
   await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible()
   await page.reload()
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expectEmptySessionList(page)
   await expect(page.locator(shellSidebar)).toHaveAttribute('data-visibility', 'expanded')
 })
 
@@ -328,6 +353,7 @@ for (const locale of ['en', 'ru'] as const) {
       name: locale === 'en' ? 'Main navigation' : 'Главная навигация',
     })
     await expect(navigation).toBeVisible()
+    await expectEmptySessionList(page, locale)
     expect(await navigation.getByRole('link').count()).toBe(4)
     const names = locale === 'en'
       ? ['New', 'Projects', 'Models', 'Settings']
