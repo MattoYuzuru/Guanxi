@@ -100,6 +100,9 @@ export function validateVoiceOrigin(value: unknown, finalText: string): VoiceOri
   for (const [index, raw] of value.confidenceSpans.entries()) {
     const field = `confidenceSpans[${index}]`
     const { start, end } = requireSpan(raw, field, finalText.length)
+    if (start === end) {
+      throw new TypeError(`Voice origin field "${field}" must not be zero-length`)
+    }
     if (start < previousEnd) {
       throw new TypeError(`Voice origin field "${field}" is unsorted or overlaps the previous span`)
     }
@@ -115,9 +118,13 @@ export function validateVoiceOrigin(value: unknown, finalText: string): VoiceOri
     throw new TypeError('Voice origin field "replacements" must be an array')
   }
   const replacements: VoiceReplacement[] = []
+  let previousReplacementEnd = 0
   for (const [index, raw] of value.replacements.entries()) {
     const field = `replacements[${index}]`
     const { start, end } = requireSpan(raw, field, finalText.length)
+    if (start < previousReplacementEnd) {
+      throw new TypeError(`Voice origin field "${field}" is unsorted or overlaps the previous span`)
+    }
     const original = requireString(raw.original, `${field}.original`)
     const replacement = requireString(raw.replacement, `${field}.replacement`)
     const entryId = requireString(raw.entryId, `${field}.entryId`)
@@ -127,6 +134,7 @@ export function validateVoiceOrigin(value: unknown, finalText: string): VoiceOri
       )
     }
     replacements.push({ start, end, original, replacement, entryId })
+    previousReplacementEnd = end
   }
 
   return {

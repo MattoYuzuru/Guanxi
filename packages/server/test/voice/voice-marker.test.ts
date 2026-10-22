@@ -119,6 +119,56 @@ describe('validateVoiceOrigin', () => {
     ))
   })
 
+  it('rejects zero-length confidence spans', () => {
+    for (const start of [0, HONO_START, FINAL_TEXT.length]) {
+      expectTypeError(() => validateVoiceOrigin(
+        {
+          ...validOrigin(),
+          confidenceSpans: [{ start, end: start, confidence: 0.5 }],
+        },
+        FINAL_TEXT,
+      ))
+    }
+  })
+
+  it('rejects unsorted or overlapping replacement spans', () => {
+    const hono = validOrigin().replacements[0]!
+    const worktree = {
+      start: WORKTREE_START,
+      end: WORKTREE_START + 7,
+      original: 'ворктри',
+      replacement: 'ворктри',
+      entryId: 'worktree',
+    }
+    expectTypeError(() => validateVoiceOrigin(
+      { ...validOrigin(), replacements: [worktree, hono] },
+      FINAL_TEXT,
+    ))
+    expectTypeError(() => validateVoiceOrigin(
+      {
+        ...validOrigin(),
+        replacements: [
+          hono,
+          {
+            start: HONO_START + 2,
+            end: HONO_START + 4,
+            original: 'no',
+            replacement: 'no',
+            entryId: 'hono',
+          },
+        ],
+      },
+      FINAL_TEXT,
+    ))
+    assert.equal(
+      validateVoiceOrigin(
+        { ...validOrigin(), replacements: [hono, worktree] },
+        FINAL_TEXT,
+      ).replacements.length,
+      2,
+    )
+  })
+
   it('rejects replacements whose slice does not match the final text', () => {
     expectTypeError(() => validateVoiceOrigin(
       {
