@@ -147,7 +147,7 @@ test('Linux passes the exact notify-send argv with no body and no tag', async ()
   assert.deepEqual(resolveCalls, ['notify-send'])
   assert.equal(calls.length, 1)
   assert.equal(calls[0]!.file, '/usr/bin/notify-send')
-  assert.deepEqual(calls[0]!.args, ['--app-name', APP_NAME, '--', 'Quota 10% left'])
+  assert.deepEqual(calls[0]!.args, [`--app-name=${APP_NAME}`, '--', 'Quota 10% left'])
   assert.equal(calls[0]!.args.includes(TAG), false)
   assert.deepEqual(calls[0]!.opts, { timeoutMs: 5_000 })
 })
@@ -246,6 +246,10 @@ test('payload validation refuses extra keys, long titles and control characters'
     { title: 'Quota\u008510% left', tag: 'quota' },
     { title: 'Quota\u202810% left', tag: 'quota' },
     { title: 'Quota\u202910% left', tag: 'quota' },
+    { title: 'Quota\u202e10% left', tag: 'quota' },
+    { title: 'Quota\u206610% left', tag: 'quota' },
+    { title: 'Quota\u200b10% left', tag: 'quota' },
+    { title: '\ufeffQuota 10% left', tag: 'quota' },
     { title: 'Quota 10% left', tag: 'quota\nfive_hour' },
     { title: '', tag: 'quota' },
     { title: '   ', tag: 'quota' },
@@ -277,7 +281,7 @@ test('titles are trimmed, 120 characters after trimming is accepted, and tags st
     await notifier.notify({ title: `  ${title}  `, tag: longTag }),
     { delivered: true, code: 'delivered' },
   )
-  assert.deepEqual(calls[0]!.args, ['--app-name', APP_NAME, '--', title])
+  assert.deepEqual(calls[0]!.args, [`--app-name=${APP_NAME}`, '--', title])
   assert.equal(calls[0]!.args.includes(longTag), false)
 })
 
@@ -332,7 +336,7 @@ test('inherited extra properties are ignored and never reach the runner', async 
   payload.tag = TAG
 
   assert.deepEqual(await notifier.notify(payload), { delivered: true, code: 'delivered' })
-  assert.deepEqual(calls[0]!.args, ['--app-name', APP_NAME, '--', 'Quota 10% left'])
+  assert.deepEqual(calls[0]!.args, [`--app-name=${APP_NAME}`, '--', 'Quota 10% left'])
   assert.equal(inheritedRead, false)
   assert.equal(JSON.stringify(calls).includes(secret), false)
 })

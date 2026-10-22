@@ -46,3 +46,10 @@ are covered. Fix commits: `6b6a852e`, `c7f66674`, `9a1f9286`.
 
 **Shared edits:** none; only the three owned files and the notifications README were touched. No
 status files were edited.
+
+## Independent review (Opus, 2026-10-23)
+
+No P1/P2. Integrator fixed P3s: bidi overrides/isolates and zero-width characters are refused in
+titles; notify-send gets `--app-name=<name>`; the child receives a minimal environment instead of
+the server's full `process.env`. Residuals: no real-runner timeout test; a grandchild holding stdout
+could outlive the SIGKILL (neither notifier forks).

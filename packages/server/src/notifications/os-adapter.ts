@@ -45,9 +45,17 @@ const MACOS_SCRIPT_LINES = [
 const MACOS_SCRIPT_ARGS = MACOS_SCRIPT_LINES.flatMap(line => ['-e', line])
 const MACOS_OSASCRIPT = '/usr/bin/osascript'
 
-// C0/C1 controls plus the Unicode line and paragraph separators. The raw value is checked
-// before trimming, so a trailing newline is refused rather than silently removed.
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/
+// C0/C1 controls, the Unicode line and paragraph separators, bidi overrides/isolates and
+// zero-width characters (which could reverse or hide text in the shown title). The raw value is
+// checked before trimming, so a trailing newline is refused rather than silently removed.
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/
+
+const NOTIFIER_ENV = ['PATH', 'HOME', 'USER', 'LANG', 'DBUS_SESSION_BUS_ADDRESS', 'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR'] as const
+function notifierEnv(): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const name of NOTIFIER_ENV) if (process.env[name] !== undefined) env[name] = process.env[name]!
+  return env
+}
 
 function osResult(delivered: boolean, code: string): { delivered: boolean; code: string } {
   return { delivered, code }
@@ -72,6 +80,9 @@ export function createDefaultCommandRunner(): CommandRunner {
             maxBuffer: 64 * 1024,
             shell: false as const,
             windowsHide: true,
+            // Only what a desktop notifier needs; the server's environment (and any secret in
+            // it) is not passed to the child.
+            env: notifierEnv(),
           },
           error => {
             if (error === null) {
@@ -155,7 +166,7 @@ export function createOsNotifier(opts: OsNotifierOptions): OsNotifier | Unavaila
     }
     command = {
       file: binary,
-      args: title => ['--app-name', appName, '--', title],
+      args: title => [`--app-name=${appName}`, '--', title],
     }
   }
 
