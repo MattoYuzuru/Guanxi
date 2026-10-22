@@ -35,7 +35,9 @@ closed and open. The open story includes a disabled item and a danger item.
 
 - `menu` and `menuitem` roles, arrow-key navigation, typeahead, Escape closes and focus returns
   to the trigger.
-- Disabled items stay readable and are skipped by the keyboard.
+- Disabled items stay readable and may receive keyboard focus, matching Base UI's menu
+  navigation. They expose `aria-disabled` and cannot activate with Enter, Space or a pointer.
+  Focus lets a user discover the unavailable command; it does not enable that command.
 - Danger items use text and an icon, not colour alone.
 
 ## Content and i18n

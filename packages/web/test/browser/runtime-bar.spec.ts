@@ -1,3 +1,4 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test } from '@playwright/test'
 import {
   activeRuntimeBrowserSnapshot,
@@ -5,6 +6,7 @@ import {
   degradedRuntimeBrowserSnapshot,
   linuxNvidiaRuntimeBrowserSnapshot,
 } from './fixtures/runtime-snapshot.ts'
+import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
 
 test('Runtime Bar projects resources, survives navigation, and recovers independent source failure', async ({
   page,
@@ -63,6 +65,9 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
       resourceActions.push(`${request.method()} ${url.pathname}`)
     }
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === SESSION_ROUTES.page()) {
+      return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
+    }
     if (url.pathname === '/api/runtime') {
       runtimeCalls += 1
       const snapshot =
@@ -105,7 +110,7 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
   await expect(page).toHaveURL(/\/settings$/u)
   await expect(runtime).toHaveAttribute('data-navigation-sentinel', 'preserved')
   await expect(runtime.getByRole('heading', { name: 'Активный lease' })).toBeVisible()
-  await page.getByRole('link', { name: 'Чат' }).click()
+  await choosePaletteCommand(page, 'Чат')
   await expect(page).toHaveURL(/\/chat$/u)
   await expect(runtime).toHaveAttribute('data-navigation-sentinel', 'preserved')
   expect(resourceActions).toEqual([])
@@ -178,6 +183,9 @@ test('Runtime Bar truthfully groups Linux NVIDIA devices and preserves a stale s
     const url = new URL(request.url())
     if (request.method() !== 'GET') resourceActions.push(`${request.method()} ${url.pathname}`)
     if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === SESSION_ROUTES.page()) {
+      return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
+    }
     if (url.pathname === '/api/runtime') {
       if (state === 'transport-failure') {
         return route.fulfill(json({ code: 'internal_error', message: 'safe', details: null }, 503))

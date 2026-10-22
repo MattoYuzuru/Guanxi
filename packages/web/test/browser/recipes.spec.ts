@@ -200,7 +200,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect(page.getByText('Ревизия 1')).toHaveCount(1)
   await expect(page.getByText(/sha256:aaaa/u)).toHaveCount(1)
   await expect(page.getByText('Расширенная маршрутизация и выполнение адаптера не реализованы. Созданная Job остаётся в очереди.')).toHaveCount(1)
-  await expect(page.getByRole('main').getByRole('button', { name: /запустить|run|execute/iu })).toHaveCount(0)
+  await expect(page.getByRole('main').getByRole('button', { name: /запустить|run(?!time)|execute/iu })).toHaveCount(0)
   await expect(create).toBeFocused()
 
   await page.getByRole('button', { name: 'Подготовить снимок Job в очереди' }).press('Enter')

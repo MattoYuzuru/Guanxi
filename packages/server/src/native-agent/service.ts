@@ -6,6 +6,7 @@ import { resolve, join, sep, dirname } from 'node:path'
 import {
   nativeAgentInputSchema,
   agentExecResultSchema,
+  SESSION_EVENT_VERSION,
   type NativeAgentInput,
   type AgentProgress,
   type AgentExecResult,
@@ -218,7 +219,13 @@ export class NativeAgents {
     for (const event of events) {
       if (event.type === 'agent.state') { status = event.data.status; error = event.data.error }
       if (event.type === 'agent.plan') plan = event.data.items
-      if (event.type === 'agent.queue') queue = event.data.items
+      // Q0 keeps native progress on the legacy v1 projection. A newer v3
+      // snapshot is unsupported input, not permission to reuse an older v1
+      // queue: refuse it with the existing content-free error until Q1.
+      if (event.type === 'agent.queue') {
+        if (event.version !== SESSION_EVENT_VERSION) throw new NativeAgentError('agent_unavailable')
+        queue = event.data.items
+      }
       if (event.type === 'assistant.message') summary = event.data.text
       if (event.type === 'tool.result' && event.data.status === 'error' && events.some(call => call.type === 'tool.call' && call.data.toolCallId === event.data.toolCallId && call.data.name === 'shell')) {
         for (const reason of ['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected'] as const) {

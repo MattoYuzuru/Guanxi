@@ -337,8 +337,9 @@ export class ExternalAgents {
               update: notification => {
                 acp.text(notification)
                 const update = notification.update
-                if (update.sessionUpdate === 'plan') handle!.append({ type: 'agent.plan', data: { items: update.entries.map(e => ({ text: e.content,
-                  status: e.status === 'completed' ? 'verification_requested' : e.status === 'in_progress' ? 'active' : 'pending' })) } })
+                if (update.sessionUpdate === 'plan') handle!.append({ type: 'agent.plan', data: { items: update.entries.map(
+                  (e): { text: string; status: 'pending' | 'active' | 'verification_requested' } => ({ text: e.content,
+                    status: e.status === 'completed' ? 'verification_requested' : e.status === 'in_progress' ? 'active' : 'pending' })) } })
                 if (update.sessionUpdate === 'tool_call') handle!.append({ type: 'tool.call', data: { toolCallId: update.toolCallId, name: update.kind ?? 'other',
                   arguments: {}, source: 'builtin', parsedFrom: 'native', diffPath: null } })
                 // Thought chunks, raw tool output and unknown extensions are never copied to logs.
@@ -348,8 +349,9 @@ export class ExternalAgents {
             this.observe(install, 'adapter_version', initialized.observedVersion, 'initialize', initialized.observedVersion === null ? 'unknown' : 'high')
           }
           const output = client instanceof CodexClient
-            ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning, plan => handle!.append({ type: 'agent.plan', data: { items: plan.map(item => ({ text: item.step,
-              status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
+            ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning, plan => handle!.append({ type: 'agent.plan', data: { items: plan.map(
+              (item): { text: string; status: 'pending' | 'active' | 'verification_requested' } => ({ text: item.step,
+                status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
             : await client.prompt(binding.model, prompt, config.cwd, input.lead && { ...input.lead,
               ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) })
           dispatchSignal.throwIfAborted()

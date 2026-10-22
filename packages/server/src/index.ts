@@ -1,6 +1,7 @@
 import { relayPlugin, RELAY_SERVICE, type RelayService } from './relay/plugin.ts'
 import { relayStartRoutes } from './relay/routes.ts'
 import { RelayRuntimeSource, type RelayRuntimePolicy } from './relay/runtime.ts'
+import { createOperationalRelay, type OperationalRelay, type OperationalRelayOptions } from './relay/operational.ts'
 import type { RelayStartHost } from './relay/start.ts'
 import { RelayError, type Reserves } from './relay/types.ts'
 import { realpath } from 'node:fs/promises'
@@ -145,10 +146,14 @@ export interface StartOptions {
    * executor. `alwaysOn: true` is the host's explicit assertion that this node stays awake while leads
    * sleep (ADR-0019 decision 5); nothing here proves or arranges power. Not reachable over HTTP. */
   leads?: Omit<LeadPluginConfig, 'db'> & { alwaysOn: true }
+  /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
+   * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
+  operationalRelay?: OperationalRelayOptions
 }
 
 export async function start(options: StartOptions = {}) {
   if (options.leads && !options.externalAgents) throw new Error('leads require externalAgents')
+  if (options.relay && options.operationalRelay) throw new RelayError('relay_policy_invalid')
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
@@ -189,6 +194,7 @@ export async function start(options: StartOptions = {}) {
     signer: helperSigner({ helperPath: approvalSignerPath() }),
   })
 
+  let operationalRelay: OperationalRelay | null = null
   try {
     await kernel.node.plugin(connectionsPlugin, {
       databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
@@ -197,10 +203,12 @@ export async function start(options: StartOptions = {}) {
     })
     await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
+    operationalRelay = options.operationalRelay ? createOperationalRelay(options.operationalRelay, dirname(dbPath)) : null
+    const relayOptions = options.relay ?? operationalRelay?.relay
     await kernel.node.plugin(relayPlugin, { db, startHost: {
-      ...(options.relay ? { reserves: options.relay.reserves, allocate: options.relay.allocate,
-        ...(options.relay.runtime.counter ? { runtime: new RelayRuntimeSource(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!,
-          () => context.models(), options.relay.runtime) } : {}) } : {}),
+      ...(relayOptions ? { reserves: relayOptions.reserves, allocate: relayOptions.allocate,
+        ...(relayOptions.runtime.counter ? { runtime: new RelayRuntimeSource(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!,
+          () => context.models(), relayOptions.runtime) } : {}) } : {}),
       nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)],
       project: async (id, signal) => {
         signal.throwIfAborted()
@@ -225,6 +233,7 @@ export async function start(options: StartOptions = {}) {
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
     await kernel.node.dispose().catch(() => undefined)
+    await operationalRelay?.close().catch(() => undefined)
     context.db.close()
     throw error
   }
@@ -284,6 +293,7 @@ export async function start(options: StartOptions = {}) {
     context.jobService.closeSubscriptions()
     context.sessionLog?.closeSubscriptions()
     await kernel.node.dispose().catch(() => undefined)
+    await operationalRelay?.close().catch(() => undefined)
     context.db.close()
     throw error
   }
@@ -323,6 +333,8 @@ export async function start(options: StartOptions = {}) {
         } catch (error) {
           shutdownError ??= error
         }
+        // After the relay plugin aborted and settled its runs: the child must outlive their cleanup.
+        await operationalRelay?.close().catch((error: unknown) => { shutdownError ??= error })
         context.db.close()
         process.removeListener('SIGINT', shutdown)
         process.removeListener('SIGTERM', shutdown)

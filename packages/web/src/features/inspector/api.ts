@@ -4,6 +4,8 @@
  */
 import type { output, ZodTypeAny } from 'zod'
 import {
+  SESSION_EVENT_MAX_VERSION,
+  SESSION_EXPORT_MAX_VERSION,
   SESSION_ROUTES,
   apiErrorSchema,
   listSessionsResponse,
@@ -61,7 +63,7 @@ export const inspectorApi = {
       signal,
     ),
   exportUrl: (sessionId: string) =>
-    `${SESSION_ROUTES.export(sessionId)}?${new URLSearchParams({ exportVersion: '2' })}`,
+    `${SESSION_ROUTES.export(sessionId)}?${new URLSearchParams({ exportVersion: String(SESSION_EXPORT_MAX_VERSION) })}`,
 
   /** Every persisted event in order, page by page. */
   async allEvents(sessionId: string, signal?: AbortSignal): Promise<SessionEvent[]> {
@@ -69,7 +71,7 @@ export const inspectorApi = {
     let after = 0
     while (true) {
       const page = await getJson(
-        `${SESSION_ROUTES.events(sessionId)}?after=${after}&limit=500&eventVersion=2`,
+        `${SESSION_ROUTES.events(sessionId)}?after=${after}&limit=500&eventVersion=${SESSION_EVENT_MAX_VERSION}`,
         sessionEventsResponse,
         signal,
       )
@@ -87,7 +89,7 @@ export const inspectorApi = {
     handlers: { onOpen?: () => void; onReconnect?: () => void } = {},
   ): AsyncIterable<SessionEvent> {
     return sseStream({
-      url: `${SESSION_ROUTES.stream(sessionId)}?after=${afterSeq}&eventVersion=2`,
+      url: `${SESSION_ROUTES.stream(sessionId)}?after=${afterSeq}&eventVersion=${SESSION_EVENT_MAX_VERSION}`,
       method: 'GET',
       schema: sessionEventSchema,
       signal,

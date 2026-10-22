@@ -60,6 +60,27 @@ async function open(page: Page, initial?: LayoutDocument) {
   await expect(page.locator('.workspace')).toBeVisible()
   await expect(page.locator('.dv-tab')).toHaveCount(Object.keys(initial?.blocks ?? builtInLayout({ account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' }).blocks).length - (initial?.hidden.length ?? 0))
 }
+
+type StateFault = { path: string; method?: string; mode?: string; kind?: 'http' | 'hold' | 'network'; remaining?: number }
+async function stateFault(page: Page, fault: StateFault) {
+  await page.addInitScript(fault => {
+    const base = window.fetch.bind(window)
+    const control = { ...fault, remaining: fault.remaining ?? 1, calls: [] as { path: string; method: string; id?: string }[], release: () => {} }
+    Object.assign(window, { __STATE_FAULT__: control })
+    window.fetch = async (input, init) => {
+      const url = new URL(String(input), location.origin), method = init?.method ?? 'GET'
+      if (url.pathname.startsWith('/api/layouts')) control.calls.push({ path: url.pathname, method,
+        ...(method === 'PUT' ? { id: JSON.parse(String(init?.body)).document?.id } : {}) })
+      if (url.pathname === control.path && method === (control.method ?? 'GET')
+        && (!control.mode || url.searchParams.get('mode') === control.mode) && control.remaining-- > 0) {
+        if (control.kind === 'hold') await new Promise<void>(resolve => { control.release = resolve })
+        else if (control.kind === 'network') throw new TypeError('private-workspace-sentinel')
+        else return Response.json({ code: 'internal_error', message: 'private-workspace-sentinel', details: { private: 'private-workspace-sentinel' } }, { status: 503 })
+      }
+      return base(input, init)
+    }
+  }, fault)
+}
 async function pick(page: Page, label: string, value: string, keyboard = false) {
   if (keyboard) {
     await page.getByRole('button', { name: label, exact: true }).focus()
@@ -212,6 +233,7 @@ test('390px phone has a priority-ordered stacked tab list, keyboard navigation a
   await expect(page.getByRole('menuitem', { name: 'Move block to…', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
 })
 
 test('30 blocks restore within 2000ms; unknown/unloaded and safe-mode blocks are placeholders', async ({ page }) => {
@@ -241,6 +263,165 @@ test('node unavailable state is truthful and retry remains reachable', async ({ 
   await expect(page.getByRole('alert').filter({ hasText: 'Layouts could not be loaded' })).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
   await expect(page.locator('.dv-dockview')).toHaveCount(0)
+})
+
+for (const [path, mode, source] of [
+  ['/api/layouts/context', '', 'layout-context: GET /api/layouts/context'],
+  ['/api/layouts', 'developer', 'load-developer-layouts: GET /api/layouts'],
+  ['/api/layouts', 'visual', 'load-visual-layouts: GET /api/layouts'],
+  ['/api/layouts/geometry', '', 'load-layout-geometry: GET /api/layouts/geometry'],
+]) test(`workspace state failure ${source} preserves observed facts, safe details and actual Retry`, async ({ page, context }, testInfo) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.clock.setFixedTime(new Date('2026-10-22T12:00:00.000Z'))
+  await setup(page)
+  await stateFault(page, { path: path!, mode: mode! })
+  await page.goto('/workspace')
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText(source!)
+  await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
+  await expect(error).toContainText('Observed')
+  await expect(page.getByRole('alert').filter({ has: page.locator('.gx-error-state-title') })).toHaveCount(1)
+  await page.clock.setFixedTime(new Date('2026-10-22T13:00:00.000Z'))
+  await error.locator('summary').click()
+  const details = await error.locator('pre').textContent()
+  expect(details).toContain('status=503')
+  expect(details).not.toContain('private-workspace-sentinel')
+  await error.getByRole('button', { name: 'Copy details', exact: true }).click()
+  await expect(error.getByRole('status')).toHaveText('Details copied')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(details)
+  await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
+  if (path === '/api/layouts/context') {
+    await page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.setLocale('ru'))
+    await expect(error).toContainText('Наблюдение')
+    await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
+    await page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.setLocale('en'))
+    await expect(error).toContainText('Observed')
+    await page.screenshot({ path: testInfo.outputPath('actual-layout-context-error.png') })
+  }
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await expect(error).toHaveCount(0)
+})
+
+for (const width of [390, 1600]) test(`workspace state loading reserves known geometry without actionable or empty content (${width})`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 })
+  await setup(page)
+  await stateFault(page, { path: '/api/layouts/context', kind: 'hold' })
+  await page.goto('/workspace')
+  const geometry = page.locator('[data-slot="workspace-loading-geometry"]')
+  await expect(geometry).toHaveCount(1)
+  await expect(geometry).toHaveAttribute('aria-hidden', 'true')
+  await expect(geometry.locator('button,input,textarea,a,[tabindex]')).toHaveCount(0)
+  await expect(page.getByRole('status', { name: 'Loading workspace layouts…' })).toHaveCount(1)
+  await expect(geometry.locator('[data-slot="empty-state"]')).toHaveCount(0)
+  const before = await geometry.boundingBox()
+  const placeholders = await geometry.locator('.gx-workspace-loading-control').count()
+  const toolbarBefore = (await geometry.locator('.gx-workspace-toolbar').boundingBox())!
+  const knownMinimum = await geometry.evaluate(node => { const style = getComputedStyle(node); return parseFloat(style.getPropertyValue('--control-height')) + parseFloat(style.getPropertyValue('--panel-padding')) * 2 })
+  expect(toolbarBefore.height).toBeGreaterThanOrEqual(knownMinimum)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.evaluate(() => { const host = document.querySelector('[data-slot="shell-route-host"]'); return host === null || host.scrollWidth <= host.clientWidth + 1 })).toBe(true)
+  expect(before!.height).toBeGreaterThan(100)
+  await page.screenshot({ path: testInfo.outputPath(`loading-${width}.png`) })
+  await page.evaluate(() => (window as any).__STATE_FAULT__.release())
+  const toolbar = page.getByRole('group', { name: 'Session workspace', exact: true })
+  await expect(toolbar).toHaveCount(1)
+  const after = await page.locator('.workspace').boundingBox()
+  expect(placeholders).toBe(await toolbar.locator('button,input').count())
+  expect(after!.width).toBeCloseTo(before!.width, 0)
+  // Saved density, control labels/wrapping and phone content height arrive with the layout.
+  if (width === 1600) expect(after!.height).toBeCloseTo(before!.height, 0)
+  await expect(geometry).toHaveCount(0)
+})
+
+test('workspace state recovered-winner geometry failure retains the acknowledged layout result', async ({ page }) => {
+  const winner = builtInLayout({ account: 'local', device: 'device-a', deviceClass: 'desktop', mode: 'developer' })
+  winner.rev = 900
+  winner.updatedBy = { device: 'device-z' }
+  await setup(page, undefined, false, { winner })
+  await stateFault(page, { path: '/api/layouts/geometry', remaining: 0 })
+  await page.goto('/workspace')
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.evaluate(() => { (window as any).__STATE_FAULT__.remaining = 1 })
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText('recover-layout-geometry: GET /api/layouts/geometry')
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').length)).toBe(1)
+  expect((await state(page)).rev).toBe(900)
+})
+
+test('workspace state activation retry applies an acknowledged recovery exactly once', async ({ page }) => {
+  const initial = builtInLayout({ account: 'local', device: 'device-a', deviceClass: 'desktop', mode: 'developer' })
+  const candidate = { ...initial, id: 'candidate-layout', name: 'Candidate layout' }
+  await setup(page, initial, false, { documents: [candidate], winner: candidate })
+  await stateFault(page, { path: '/api/layouts/geometry', remaining: 0 })
+  await page.goto('/workspace')
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.evaluate(() => { (window as any).__STATE_FAULT__.remaining = 1 })
+  await pick(page, 'Named layout', 'Candidate layout')
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText('activate-layout-geometry: GET /api/layouts/geometry')
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').length)).toBe(1)
+  await page.getByRole('button', { name: 'Named layout', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Recovered layout', exact: true })).toHaveCount(1)
+  await page.keyboard.press('Escape')
+})
+
+test('workspace state known-successful Save-as geometry failure retries only geometry', async ({ page }) => {
+  await setup(page)
+  await stateFault(page, { path: '/api/layouts/geometry', method: 'PUT' })
+  await page.goto('/workspace')
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.getByRole('button', { name: 'Save as new layout', exact: true }).click()
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText('save-layout-geometry: PUT /api/layouts/geometry')
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  const calls = await page.evaluate(() => (window as any).__STATE_FAULT__.calls)
+  expect(calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT')).toHaveLength(1)
+  expect(calls.filter((call: any) => call.path === '/api/layouts/geometry' && call.method === 'PUT')).toHaveLength(2)
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+})
+
+test('workspace state unconfirmed Save-as retry preserves the original document ID', async ({ page }) => {
+  await setup(page)
+  await stateFault(page, { path: '/api/layouts', method: 'PUT', kind: 'network' })
+  await page.goto('/workspace')
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.getByRole('button', { name: 'Save as new layout', exact: true }).click()
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText('save-layout: PUT /api/layouts')
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  const ids: string[] = await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').map((call: any) => call.id))
+  expect(ids).toHaveLength(2)
+  expect(ids[0]).toBeTruthy()
+  expect(ids[1]).toBe(ids[0])
+})
+
+for (const empty of [false, true]) test(`workspace state meaningful empty action ${empty ? 'adds Chat' : 'shows a named hidden block'}`, async ({ page }) => {
+  const initial = builtInLayout({ account: 'local', device: 'device-a', deviceClass: 'desktop', mode: 'developer' })
+  initial.engineState.groups = []
+  initial.hidden = empty ? [] : Object.keys(initial.blocks)
+  if (empty) initial.blocks = {}
+  await setup(page, initial)
+  await page.goto('/workspace')
+  const state = page.locator('[data-slot="empty-state"]')
+  await expect(state).toHaveCount(1)
+  await expect(state.getByRole('button')).toHaveCount(1)
+  await state.getByRole('button', { name: empty ? 'Add Chat' : 'Show Chat', exact: true }).click()
+  await expect(page.locator('.dv-tab')).toHaveCount(1)
+  await expect(page.locator('[data-block="guanxi.core/chat"]')).toBeVisible()
+  await expect(state).toHaveCount(0)
 })
 
 test('workspace discovers the node account before resolving and saving a layout', async ({ page }) => {

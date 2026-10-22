@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { createPortal } from 'react-dom'
 import { PortalContainerProvider, UiLocaleProvider, WorkspaceChrome } from '@guanxi/ui'
 import { WORKSPACE_BLOCK_SLOT, type BlockContribution } from '@guanxi/kernel'
-import { WORKSPACE_ENGINE_MAJOR, compareLayouts, layoutClock, layoutScopeKey, resolveLayout, layoutDocumentSchema, type ExperienceMode, type LayoutDocument, type LayoutGeometry, type LayoutList, type LayoutQuery, type WorkspaceZone } from '@guanxi/contract'
+import { WORKSPACE_ENGINE_MAJOR, compareLayouts, layoutClock, layoutScopeKey, resolveLayout, layoutDocumentSchema, type ExperienceMode, type LayoutClock, type LayoutDocument, type LayoutGeometry, type LayoutList, type LayoutQuery, type WorkspaceZone } from '@guanxi/contract'
 import { webKernel, webKernelReady } from '../../kernel/runtime.ts'
 import { api } from '../../lib/api.ts'
 import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
@@ -16,7 +16,11 @@ import { layoutSaveScope, layoutSaveScopes, layoutScopeForSave, type LayoutSaveS
 import { paneRegistry } from './renderers.ts'
 import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
+import { workspaceFailure, workspaceStep, type WorkspaceFailure } from './failure.ts'
 import './workspace.css'
+
+type SaveAttempt = { document: LayoutDocument; geometry: LayoutGeometry; basedOn?: LayoutClock; result?: Awaited<ReturnType<typeof api.saveLayout>>; applied?: boolean }
+type ActivationAttempt = { remembered?: boolean; response?: Awaited<ReturnType<typeof api.saveLayout>>; next?: LayoutDocument; applied?: boolean }
 
 const zoneOrder: WorkspaceZone[] = ['left', 'right', 'top', 'bottom', 'center', 'floating', 'popout']
 function deviceId(): string {
@@ -60,8 +64,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const [geometry, setGeometry] = useState<LayoutGeometry>({})
   const [generation, setGeneration] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
-  const [saveError, setSaveError] = useState(false)
+  const [loadError, setLoadError] = useState<WorkspaceFailure | null>(null)
+  const [saveError, setSaveError] = useState<WorkspaceFailure | null>(null)
   const [saving, setSaving] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [announcementRevision, setAnnouncementRevision] = useState(0)
@@ -76,6 +80,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const restoreTime = useRef(0)
   const selectionEpoch = useRef(0)
   const operationBusy = useRef(false)
+  const loadController = useRef<AbortController | null>(null)
   const geometryCache = useRef(new Map<string, LayoutGeometry>())
   const retryOperation = useRef<() => void>(() => undefined)
   const returnFocus = useRef<HTMLElement | null>(null)
@@ -101,22 +106,23 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const announceMove = (id: string, zone: WorkspaceZone) => say(translate('workspaceLayout.moved', { block: title(id), zone: translate(`workspaceLayout.zone.${zone}`) }))
 
   const load = useCallback(() => {
+    loadController.current?.abort()
     const controller = new AbortController()
+    loadController.current = controller
     setLoading(true)
-    setLoadError(false)
-    void webKernelReady.then(async () => {
+    void workspaceStep('kernel-ready', () => webKernelReady).then(async () => {
       if (controller.signal.aborted) return
-      const ownedAccount = account ?? (await api.layoutContext(controller.signal)).account
+      const ownedAccount = account ?? (await workspaceStep('layout-context', () => api.layoutContext(controller.signal))).account
       if (controller.signal.aborted) return
       const queryFor = (nextMode: ExperienceMode): LayoutQuery => ({ account: ownedAccount, ...(project ? { project } : {}), device, deviceClass, mode: nextMode })
-      const lists = await Promise.all((['developer', 'visual'] as const).map(next => api.layouts(queryFor(next), controller.signal)))
+      const lists = await Promise.all((['developer', 'visual'] as const).map(next => workspaceStep(next === 'developer' ? 'load-developer-layouts' : 'load-visual-layouts', () => api.layouts(queryFor(next), controller.signal))))
       const nextDocuments: Partial<Record<ExperienceMode, LayoutDocument>> = {}
       for (let i = 0; i < 2; i++) {
         const nextMode = i === 0 ? 'developer' : 'visual'
-        nextDocuments[nextMode] = resolveLayout(lists[i]!, queryFor(nextMode), builtInLayout(queryFor(nextMode)))
+        nextDocuments[nextMode] = await workspaceStep('resolve-layout', () => resolveLayout(lists[i]!, queryFor(nextMode), builtInLayout(queryFor(nextMode))))
       }
       const current = nextDocuments[mode]!
-      const local = await api.layoutGeometry(current.scope, device, current.id, controller.signal)
+      const local = await workspaceStep('load-layout-geometry', () => api.layoutGeometry(current.scope, device, current.id, controller.signal))
       if (controller.signal.aborted) return
       setNodeAccount(ownedAccount)
       setList({ documents: lists.flatMap(row => row.documents), active: lists.flatMap(row => row.active) })
@@ -126,9 +132,10 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setGeometry(local.geometry)
       setName(current.name)
       setGeneration(value => value + 1)
+      setLoadError(null)
       setLoading(false)
-    }).catch(() => { if (!controller.signal.aborted) { setLoadError(true); setLoading(false) } })
-    return () => controller.abort()
+    }).catch(error => { if (!controller.signal.aborted) { setLoadError(workspaceFailure(error, 'load-workspace')); setLoading(false) } })
+    return () => loadController.current?.abort()
     // Initial hydration and explicit retry only; mode changes use the loaded documents.
   }, [account, project, device, deviceClass])
   useEffect(load, [load])
@@ -163,25 +170,31 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   function compatible(candidate: LayoutDocument): LayoutDocument {
     return candidate.engineState.major === WORKSPACE_ENGINE_MAJOR ? candidate : builtInLayout(query(candidate.scope.mode))
   }
-  async function activateDocument(candidate: LayoutDocument, persist = false) {
+  async function activateDocument(candidate: LayoutDocument, persist = false, attempt: ActivationAttempt = {}) {
     if (operationBusy.current) return
     pendingPaneFocus.current = null
     focusEpoch.current++
     operationBusy.current = true
     const epoch = ++selectionEpoch.current
     setSwitching(true)
-    setSaveError(false)
-    retryOperation.current = () => { void activateDocument(candidate, persist) }
+    if (!attempt.remembered) setSaveError(null)
+    retryOperation.current = () => { void activateDocument(candidate, persist, attempt) }
     try {
-      remember()
-      const response = persist ? await api.saveLayout(candidate, true, layoutClock(candidate)) : null
-      const next = compatible(response?.document ?? candidate)
-      if (response) {
+      if (!attempt.remembered) {
+        await workspaceStep('snapshot-layout', remember)
+        attempt.remembered = true
+      }
+      if (persist && !attempt.response) attempt.response = await workspaceStep('activate-layout', () => api.saveLayout(candidate, true, layoutClock(candidate)))
+      const response = attempt.response
+      const next = attempt.next ?? await workspaceStep('resolve-layout', () => compatible(response?.document ?? candidate))
+      attempt.next = next
+      if (response && !attempt.applied) {
         const scopeKey = layoutScopeKey(response.document.scope)
         setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === response.document.id && layoutScopeKey(row.scope) === scopeKey)), response.document, ...response.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: response.document.scope, layoutId: response.document.id }] }))
+        attempt.applied = true
       }
       const key = `${layoutScopeKey(next.scope)}#${next.id}`
-      const local = geometryCache.current.get(key) ?? (await api.layoutGeometry(next.scope, device, next.id)).geometry
+      const local = geometryCache.current.get(key) ?? (await workspaceStep('activate-layout-geometry', () => api.layoutGeometry(next.scope, device, next.id))).geometry
       if (epoch !== selectionEpoch.current) return
       geometryCache.current.set(key, local)
       phoneSnapshot.current = undefined
@@ -192,33 +205,46 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setName(next.name)
       setSelected('guanxi.core/chat')
       setGeneration(value => value + 1)
-    } catch { if (epoch === selectionEpoch.current) setSaveError(true) }
+      setSaveError(null)
+    } catch (error) { if (epoch === selectionEpoch.current) setSaveError(workspaceFailure(error, 'save-workspace')) }
     finally { if (epoch === selectionEpoch.current) { operationBusy.current = false; setSwitching(false) } }
   }
-  async function save(asNew = false) {
+  async function save(asNew = false, previousAttempt?: SaveAttempt) {
     if (!doc || operationBusy.current) return
     operationBusy.current = true
     setSaving(true)
-    setSaveError(false)
-    retryOperation.current = () => { void save(asNew) }
+    if (!previousAttempt) setSaveError(null)
+    retryOperation.current = () => { void save(asNew, previousAttempt) }
     try {
-      const current = snapshot()
-      const local = engine.current?.snapshot().geometry ?? geometry
-      const scope = layoutScopeForSave(query(mode), saveScopes[mode] ?? layoutSaveScope(current.scope))
-      const updated: LayoutDocument = { ...current, scope, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
-      const sameScope = layoutScopeKey(current.scope) === layoutScopeKey(scope)
-      const result = await api.saveLayout(updated, true, asNew || !sameScope ? undefined : layoutClock(current))
+      const captured = previousAttempt ? undefined : await workspaceStep('snapshot-layout', () => ({ current: snapshot(), local: engine.current?.snapshot().geometry ?? geometry }))
+      const attempt: SaveAttempt = previousAttempt ?? await workspaceStep('prepare-layout-save', () => {
+        const { current, local } = captured!
+        const scope = layoutScopeForSave(query(mode), saveScopes[mode] ?? layoutSaveScope(current.scope))
+        const updated: LayoutDocument = { ...current, scope, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
+        const sameScope = layoutScopeKey(current.scope) === layoutScopeKey(scope)
+        return { document: updated, geometry: local, basedOn: asNew || !sameScope ? undefined : layoutClock(current) } satisfies SaveAttempt
+      })
+      // The same attempt survives unknown PUT outcomes and known-successful geometry failures.
+      retryOperation.current = () => { void save(asNew, attempt) }
+      const updated = attempt.document, local = attempt.geometry
+      const result = attempt.result ?? await workspaceStep('save-layout', () => api.saveLayout(updated, true, attempt.basedOn))
+      attempt.result = result
       const won = compareLayouts(result.document, updated) === 0
       const scopeKey = layoutScopeKey(result.document.scope)
-      setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === updated.id && layoutScopeKey(row.scope) === scopeKey)), result.document, ...result.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: result.document.scope, layoutId: result.document.id }] }))
+      if (!attempt.applied) {
+        setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === updated.id && layoutScopeKey(row.scope) === scopeKey)), result.document, ...result.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: result.document.scope, layoutId: result.document.id }] }))
+        if (won) {
+          // Preserve edits made while the request was in flight, while advancing their base clock.
+          setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, scope: result.document.scope, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
+          geometryCache.current.set(`${scopeKey}#${result.document.id}`, local)
+        }
+        attempt.applied = true
+      }
       if (won) {
-        // Keep edits made while the request was in flight, but advance their base clock.
-        setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, scope: result.document.scope, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
-        geometryCache.current.set(`${scopeKey}#${result.document.id}`, local)
-        await api.saveLayoutGeometry(result.document.scope, device, result.document.id, local)
+        await workspaceStep('save-layout-geometry', () => api.saveLayoutGeometry(result.document.scope, device, result.document.id, local))
       } else {
-        const winner = compatible(result.document)
-        const savedGeometry = (await api.layoutGeometry(winner.scope, device, winner.id)).geometry
+        const winner = await workspaceStep('resolve-layout', () => compatible(result.document))
+        const savedGeometry = (await workspaceStep('recover-layout-geometry', () => api.layoutGeometry(winner.scope, device, winner.id))).geometry
         phoneSnapshot.current = undefined
         geometryCache.current.set(`${layoutScopeKey(winner.scope)}#${winner.id}`, savedGeometry)
         setDocuments(previous => ({ ...previous, [updated.scope.mode]: winner }))
@@ -226,8 +252,9 @@ export function Workspace({ children, account, project, safeMode = false }: Work
         setName(winner.name)
         setGeneration(value => value + 1)
       }
+      setSaveError(null)
       say(translate(result.recovered.length || !won ? 'workspaceLayout.recovered' : 'workspaceLayout.saved'))
-    } catch { setSaveError(true) }
+    } catch (error) { setSaveError(workspaceFailure(error, 'save-workspace')) }
     finally { operationBusy.current = false; setSaving(false) }
   }
   function reset() {
@@ -362,11 +389,20 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     return () => { Reflect.deleteProperty(window, '__GUANXI_WORKSPACE__') }
   })
 
-  if (loading) return <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} />
-  if (loadError || !doc) return <WorkspaceChrome kind="state" title={translate('workspaceLayout.error')} error action={{ label: translate('workspaceLayout.retry'), onClick: load }} />
+  const failureTitle = (failure: WorkspaceFailure) => translate(failure.operation === 'save-layout-geometry' ? 'workspaceLayout.geometrySaveError'
+    : failure.operation === 'load-layout-geometry' || failure.operation === 'activate-layout-geometry' || failure.operation === 'recover-layout-geometry' ? 'workspaceLayout.geometryLoadError'
+      : failure.operation === 'snapshot-layout' || failure.operation === 'resolve-layout' || failure.operation === 'prepare-layout-save' ? 'workspaceLayout.localError'
+        : failure.operation === 'kernel-ready' ? 'workspaceLayout.kernelError'
+          : failure.operation === 'save-layout' || failure.operation === 'activate-layout' || failure.operation === 'save-workspace' ? 'workspaceLayout.saveError' : 'workspaceLayout.error')
+  const errorState = (failure: WorkspaceFailure, retry: () => void, busy = false) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure}
+    action={{ label: translate('workspaceLayout.retry'), onClick: retry, busy, loadingLabel: translate('workspaceLayout.retrying') }} />
+  if (!doc) return <UiLocaleProvider locale={locale}>{loadError ? errorState(loadError, load, loading)
+    : <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} loading />}</UiLocaleProvider>
   for (const id of Object.keys(doc.blocks)) if (!paneHosts.current.has(id)) { const host = document.createElement('div'); host.className = 'workspace-retained-pane'; paneHosts.current.set(id, host) }
   for (const host of paneHosts.current.values()) { host.dataset.theme = theme; host.dataset.density = doc.density; host.lang = locale }
   const visible = Object.keys(doc.blocks).filter(id => !doc.hidden.includes(id)).sort((a, b) => doc.blocks[a]!.priority - doc.blocks[b]!.priority || a.localeCompare(b))
+  const hiddenToShow = doc.hidden.find(id => { const contribution = contributionFor(id); return contribution?.id.startsWith('guanxi.core/') && contribution.modes.includes(mode) })
+  const coreChatReady = contributions.some(entry => entry.key === 'guanxi.core/chat' && entry.value.modes.includes(mode))
   const selectedId = visible.includes(selected) ? selected : visible[0] ?? ''
   const choices = Object.keys(doc.blocks).map(id => ({ id, label: title(id) }))
   const renderPane = (id: string) => {
@@ -379,12 +415,12 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
     return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? children : null}</BuiltInPane>
   }
-  return <UiLocaleProvider locale={locale}><div className="workspace" data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
+  return <UiLocaleProvider locale={locale}><div className="workspace" aria-busy={loading || undefined} data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
     if (event.defaultPrevented) return
     if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
-    <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={saving || switching} fields={[
+    <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={loading || saving || switching} fields={[
       { label: translate('workspaceLayout.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
       { label: translate('workspaceLayout.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
       { label: translate('workspaceLayout.saveScope'), value: saveScopes[mode] ?? layoutSaveScope(doc.scope), choices: layoutSaveScopes(query(mode)).map(id => ({ id, label: translate(`workspaceLayout.scope.${id}`) })), onChange: next => setSaveScopes(previous => ({ ...previous, [mode]: next as LayoutSaveScope })) },
@@ -400,12 +436,14 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       { label: translate('workspaceLayout.move'), onClick: () => openMove(), disabled: phone },
       { label: translate('workspaceLayout.reset'), onClick: reset },
     ]} />
-    {saveError && <WorkspaceChrome kind="state" title={translate('workspaceLayout.saveError')} error action={{ label: translate('workspaceLayout.retry'), onClick: () => retryOperation.current() }} />}
+    {loadError && errorState(loadError, load, loading)}
+    {saveError && errorState(saveError, () => retryOperation.current(), saving || switching)}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
     {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspaceLayout.popoutRestore')}</p>}
-    <div className="workspace-content" inert={saving || switching || undefined}>
+    <div className="workspace-content" inert={loading || saving || switching || undefined}>
       {visible.length === 0 ? (
-        <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={{ label: translate('workspaceLayout.add'), onClick: () => { const id = Object.keys(doc.blocks)[0]; if (id) show(id) } }} />
+        !hiddenToShow && !coreChatReady ? <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} loading />
+          : <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={hiddenToShow ? { label: translate('workspaceLayout.showBlock', { block: title(hiddenToShow) }), onClick: () => show(hiddenToShow) } : { label: translate('workspaceLayout.addChat'), onClick: () => addBlock('guanxi.core/chat') }} />
       ) : phone ? <>
         <WorkspaceChrome kind="phone" label={translate('workspaceLayout.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />
         {visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { const host = paneHosts.current.get(id); if (element && host) { if (host.parentElement !== element) element.append(host); focusPendingPane(id) } }} />)}

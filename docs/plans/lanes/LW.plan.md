@@ -79,7 +79,7 @@ cross-node leads (F2); a power assertion (`alwaysOn` stays a host assertion). `p
 
 ## Storage
 
-Migration **40** (checked free on main and R2-op): `lead_migrations`, `lead_sessions`,
+Migration **41** (40 was free at planning time; Q0 took it before merge, so the next free number on main is used): `lead_migrations`, `lead_sessions`,
 `lead_delegations`, `lead_wakes` (packet immutable by trigger) in the node database, additive,
 created in one transaction, no `user_version` change, FKs to `durable_runs`. No existing migration is edited.
 

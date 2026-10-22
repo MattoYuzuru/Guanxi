@@ -17,30 +17,27 @@ import {
   turnTerminalOutcomeSchema,
   usageSchema,
 } from '../schemas.ts'
+import {
+  queueDataV3Schema,
+  sessionInputArtifactRefSchema,
+  type QueueArtifactV3,
+  type QueueInlineV3,
+  type SessionInputArtifactRef,
+} from './queue-v3.ts'
+
+/**
+ * The shared leaf holds every bounded-input and queue schema and is re-exported
+ * here, so existing `@guanxi/contract` imports keep their names. It imports only
+ * `zod`; this file may import the native-agent contract without a runtime cycle.
+ */
+export * from './queue-v3.ts'
 
 export const SESSION_EVENT_VERSION = 1
 /** The first event envelope that can carry a bounded input artifact reference. */
 export const SESSION_EVENT_VERSION_2 = 2
-export const SESSION_EVENT_MAX_VERSION = 2
-
-/**
- * Representation policy, not an acceptance cap: an event stores its input
- * inline at or below this scrubbed UTF-8 size and as a local artifact above it.
- */
-export const INPUT_INLINE_BYTES = 16 * 1024
-/** The exact maximum scrubbed UTF-8 excerpt an artifact reference carries. */
-export const INPUT_EXCERPT_BYTES = 8 * 1024
-export const SESSION_INPUT_TEXT_MEDIA_TYPE = 'text/plain; charset=utf-8' as const
-export const SESSION_INPUT_JSON_MEDIA_TYPE = 'application/json' as const
-
-/**
- * Redaction markers in scrubbed payloads (D-141): `⟦REDACTED secret://ref⟧`.
- * The egress scrubber writes them; clients render them. Registered secret
- * values may not contain the delimiters, so a marker is unambiguous.
- */
-export const REDACTION_MARKER_OPEN = '\u27E6'
-export const REDACTION_MARKER_CLOSE = '\u27E7'
-export const REDACTION_MARKER_PREFIX = `${REDACTION_MARKER_OPEN}REDACTED `
+/** The first event envelope that can carry queue artifact descriptors. */
+export const SESSION_EVENT_VERSION_3 = 3
+export const SESSION_EVENT_MAX_VERSION = 3
 
 export const sessionKindSchema = z.enum(['chat', 'agent'])
 export type SessionKind = z.infer<typeof sessionKindSchema>
@@ -54,45 +51,6 @@ export type SessionAudience = z.infer<typeof sessionAudienceSchema>
 
 export const promptOriginSchema = z.enum(['typed', 'voice', 'queued', 'remote', 'delegated'])
 export type PromptOrigin = z.infer<typeof promptOriginSchema>
-
-export const sessionInputMediaTypeSchema = z.enum([
-  SESSION_INPUT_TEXT_MEDIA_TYPE,
-  SESSION_INPUT_JSON_MEDIA_TYPE,
-])
-export type SessionInputMediaType = z.infer<typeof sessionInputMediaTypeSchema>
-
-const inputChecksumSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/u)
-
-/**
- * The published reference a v2 event carries. There is deliberately no full
- * `text`/`arguments` field beside it, so a reference cannot be misused as
- * content. `excerptBytes` must equal the UTF-8 length of `excerpt`.
- */
-export const sessionInputArtifactRefSchema = z
-  .object({
-    artifactId: z.string().uuid(),
-    checksum: inputChecksumSchema,
-    byteSize: z.number().int().positive().safe(),
-    mediaType: sessionInputMediaTypeSchema,
-    excerpt: z.string(),
-    excerptBytes: z.number().int().nonnegative().max(INPUT_EXCERPT_BYTES).safe(),
-  })
-  .strict()
-  .refine((value) => new TextEncoder().encode(value.excerpt).byteLength === value.excerptBytes, {
-    message: 'An input excerpt must declare its exact UTF-8 byte length',
-  })
-export type SessionInputArtifactRef = z.infer<typeof sessionInputArtifactRefSchema>
-
-/** The append-time descriptor; the log resolves the owned `artifactId`. */
-export const sessionInputArtifactInputSchema = z
-  .object({
-    checksum: inputChecksumSchema,
-    byteSize: z.number().int().positive().safe(),
-    mediaType: sessionInputMediaTypeSchema,
-    excerpt: z.string(),
-  })
-  .strict()
-export type SessionInputArtifactInput = z.infer<typeof sessionInputArtifactInputSchema>
 
 /**
  * Why a writer epoch began. The epoch is a process-level fencing token for one
@@ -311,6 +269,22 @@ export const toolCallV2SessionEventSchema = v2InputEvent('tool.call')
 export type PromptV2SessionEvent = z.infer<typeof promptV2SessionEventSchema>
 export type ToolCallV2SessionEvent = z.infer<typeof toolCallV2SessionEventSchema>
 
+/**
+ * A standard `agent.queue` snapshot whose entries are either bounded inline
+ * text or owned artifact references. v1/v2 queue events stay readable exactly
+ * as before; only new queue snapshots may use this envelope.
+ */
+export const queueV3SessionEventSchema = z
+  .object({
+    ...envelope,
+    version: z.literal(SESSION_EVENT_VERSION_3),
+    type: z.literal('agent.queue'),
+    class: z.literal('standard'),
+    data: queueDataV3Schema,
+  })
+  .strict()
+export type QueueV3SessionEvent = z.infer<typeof queueV3SessionEventSchema>
+
 export const reasoningSessionEventSchema = z
   .object({
     ...envelope,
@@ -350,14 +324,42 @@ export const sessionEventSchema = z.union([
   standardEvent('turn.done'),
   promptV2SessionEventSchema,
   toolCallV2SessionEventSchema,
+  queueV3SessionEventSchema,
   reasoningSessionEventSchema,
 ])
 export type SessionEvent = z.infer<typeof sessionEventSchema>
+
+/** Whether a type may use the v3 queue envelope. */
+export function sessionEventTypeSupportsV3(type: SessionEventType): type is 'agent.queue' {
+  return type === 'agent.queue'
+}
 
 /** The excerpt/reference a reader may show; the full input never leaves the local store. */
 export function inputArtifactOf(event: SessionEvent): SessionInputArtifactRef | null {
   if (event.version === SESSION_EVENT_VERSION_2) return event.data.artifact
   return null
+}
+
+/**
+ * Every artifact reference a display path may show for one event, in item
+ * order. A v3 queue event has zero or more references, so `inputArtifactOf`
+ * deliberately stays the singleton prompt/tool-call helper; inspector code
+ * must not treat the first queue artifact as describing the whole event.
+ */
+export function inputArtifactsOf(event: SessionEvent): SessionInputArtifactRef[] {
+  if (event.version === SESSION_EVENT_VERSION_2) return [event.data.artifact]
+  if (event.type === 'agent.queue' && event.version === SESSION_EVENT_VERSION_3) {
+    return event.data.items.flatMap((item) => item.kind === 'artifact' ? [item.artifact] : [])
+  }
+  return []
+}
+
+/** Display-only text a queue row may show: v1 inline, v3 inline or v3 excerpt. */
+export function queueItemDisplayTextOf(
+  item: QueueInlineV3 | QueueArtifactV3 | { id: string; text: string },
+): string {
+  if ('kind' in item) return item.kind === 'inline' ? item.text : item.artifact.excerpt
+  return item.text
 }
 
 /** Scrubbed prompt text a reader may show: v1 inline text or the v2 bounded excerpt. */

@@ -26,7 +26,7 @@ describe('catalog gates self-test', () => {
     for (const gate of fast) assert.ok(gate.seeded.length > 0, `${gate.id} has no seeded violation`)
   })
 
-  it('passes every gate on a clean scratch copy of the repository', () => {
+  it('passes every gate on a clean scratch copy of the recorded lifecycle statuses', () => {
     for (const gate of fast) {
       const clean = find(gate.id, null)
       assert.equal(clean.actual, 'pass', `${gate.id}: ${messages(clean)}`)

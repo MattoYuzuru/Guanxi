@@ -19,7 +19,7 @@ function world(path = ':memory:') {
 }
 const session = (runId: string) => ({ run_id: runId, owner_account_id: 'o', actor_account_id: 'o', project_id: 'p', session_roles: '{}', fallback: null, binding_digest: 'd', task: 't' })
 
-test('migration 40 is additive, idempotent and leaves every earlier ledger and user_version alone', () => {
+test('migration 41 is additive, idempotent and leaves every earlier ledger and user_version alone', () => {
   const w = world()
   try {
     const before = w.db.prepare('PRAGMA user_version').get()!.user_version
@@ -33,7 +33,7 @@ test('migration 40 is additive, idempotent and leaves every earlier ledger and u
     store.insertSession(w.db, session('r1'))
     w.db.exec('COMMIT')
     assert.equal(new LeadStore(w.db).session('r1')!.task, 't', 'reopening keeps rows and does not migrate again')
-    assert.deepEqual(w.db.prepare('SELECT version FROM lead_migrations').all().map(r => r.version), [40])
+    assert.deepEqual(w.db.prepare('SELECT version FROM lead_migrations').all().map(r => r.version), [41])
   } finally { w.close() }
 })
 
@@ -45,7 +45,7 @@ test('a failed migration rolls back completely and can be retried', () => {
     assert.equal(w.db.prepare("SELECT name FROM sqlite_master WHERE name IN ('lead_migrations','lead_sessions','lead_delegations')").all().length, 0)
     w.db.exec('DROP TABLE lead_wakes')
     assert.doesNotThrow(() => new LeadStore(w.db))
-    assert.match(LEAD_MIGRATION, /VALUES \(40\)/)
+    assert.match(LEAD_MIGRATION, /VALUES \(41\)/)
   } finally { w.close() }
 })
 

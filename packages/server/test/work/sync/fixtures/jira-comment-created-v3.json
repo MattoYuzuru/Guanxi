@@ -1,0 +1,10 @@
+{
+  "id": "20001",
+  "body": {
+    "type": "doc",
+    "version": 1,
+    "content": [
+      { "type": "paragraph", "content": [{ "type": "text", "text": "Guanxi status comment" }] }
+    ]
+  }
+}

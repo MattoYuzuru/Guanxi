@@ -31,7 +31,7 @@ test('leads are opt-in, need the external-agent policy and carry the explicit al
   assert.deepEqual(lead.health(), { failure: null })
   assert.deepEqual(lead.sessions(), [])
   assert.equal(server.kernel.node.service<DurableRunsService>(DURABLE_RUNS_SERVICE)!.store.alwaysOnHome, true)
-  assert.equal(server.context.db.prepare('SELECT version FROM lead_migrations').get()!.version, 40)
+  assert.equal(server.context.db.prepare('SELECT version FROM lead_migrations').get()!.version, 41)
   // Loading starts no inference and no listener: a lead exists only after startLead.
   assert.throws(() => lead.startLead({ ownerAccountId: 'o', actorAccountId: 'o', projectId: 'p', prompt: 'x' }), /role_unassigned/)
 })

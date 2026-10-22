@@ -112,7 +112,7 @@ at-least-once and idempotent; R1's chain cancel is exactly once.
 
 ## Storage
 
-Migration **40** (`lead_migrations`, `lead_sessions`, `lead_delegations`, `lead_wakes`) in the node database,
+Migration **41** (`lead_migrations`, `lead_sessions`, `lead_delegations`, `lead_wakes`) in the node database,
 additive, one transaction, no `user_version` change. The packet and the delegation intent are immutable by
 trigger; a packet is never rebuilt. Rows hold scrubbed, bounded text and no secret, path or credential.
 Removing the plugin keeps the tables. Rollback: stop the node, unload the plugin; pending wakes stay in R1.

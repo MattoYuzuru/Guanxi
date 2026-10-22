@@ -122,7 +122,7 @@ describe('session event version negotiation', () => {
     const implicit = await f.app.request(`/api/sessions/${f.sessionId}/events?after=0`, {}, LOOPBACK)
     assert.equal(implicit.status, 406, 'omitting the parameter means max 1')
 
-    const over = await f.app.request(`/api/sessions/${f.sessionId}/events?after=0&eventVersion=3`, {}, LOOPBACK)
+    const over = await f.app.request(`/api/sessions/${f.sessionId}/events?after=0&eventVersion=4`, {}, LOOPBACK)
     assert.equal(over.status, 400)
   })
 

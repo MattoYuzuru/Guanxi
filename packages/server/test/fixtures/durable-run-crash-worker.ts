@@ -2,7 +2,7 @@ import { openDb } from '../../src/store/db.ts'
 import { SessionLog } from '../../src/session-log/log.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { RunStore } from '../../src/runs/store.ts'
-import { runStateSnapshot } from './durable-run-state.ts'
+import { runStateSnapshot, CRASH_COMPLETE_COST } from './durable-run-state.ts'
 import { RUN_TIME, RUN_DEADLINE } from './durable-runs.ts'
 
 const [path, stage, crashIndex] = process.argv.slice(2) as [string, string, string]
@@ -81,7 +81,7 @@ if (stage === 'hibernate') {
       store.modelStarted(second)
     } else {
       if (stage === 'resolve') armed = true
-      store.complete(child, 'completed')
+      store.complete(child, 'completed', undefined, stage === 'resolve' ? CRASH_COMPLETE_COST : undefined)
       if (stage === 'wake') armed = true
       const delivery = store.deliver('lead', 1)!
       if (stage === 'ack') armed = true

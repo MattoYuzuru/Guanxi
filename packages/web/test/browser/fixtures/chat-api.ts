@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { runtimeBrowserSnapshot } from './runtime-snapshot.ts'
 
 export type ChatFixtureScenario =
@@ -35,7 +36,7 @@ export async function installChatApiFixture(
   scenario: ChatFixtureScenario,
 ): Promise<void> {
   await page.addInitScript(
-    ({ scenario: fixtureScenario, runtimeSnapshot }) => {
+    ({ scenario: fixtureScenario, runtimeSnapshot, sessionPageRoute }) => {
       type StoredState = 'new' | 'created' | 'running' | 'terminal'
       type FixtureControl = {
         releaseHeaders: () => void
@@ -572,6 +573,9 @@ export async function installChatApiFixture(
 
         if (url.pathname === '/api/health') return json(health)
         if (url.pathname === '/api/runtime') return json(runtimeState)
+        if (url.pathname === sessionPageRoute) {
+          return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+        }
         if (url.pathname === '/api/models') return json({ models: [model] })
         if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
         if (url.pathname === '/api/settings') {
@@ -689,7 +693,7 @@ export async function installChatApiFixture(
         )
       }
     },
-    { scenario, runtimeSnapshot: runtimeBrowserSnapshot() },
+    { scenario, runtimeSnapshot: runtimeBrowserSnapshot(), sessionPageRoute: SESSION_ROUTES.page() },
   )
 }
 

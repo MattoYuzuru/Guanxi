@@ -1,12 +1,12 @@
 import type { Db } from '../store/db.ts'
 import { leadInvariant } from './types.ts'
 
-// Independent additive ledger 40 in the SAME node database as R1 and K2, so lead rows commit
+// Independent additive ledger 41 in the SAME node database as R1 and K2, so lead rows commit
 // inside R1's fenced transactions. F1 owns 34, relay 35, remote attempts 36-37, relay judge 38,
-// relay public start 39. No `user_version` change and no existing migration is edited.
+// relay public start 39, the session queue (Q0) 40. No `user_version` change and no existing migration is edited.
 export const LEAD_MIGRATION = `
 CREATE TABLE lead_migrations (version INTEGER PRIMARY KEY);
-INSERT INTO lead_migrations VALUES (40);
+INSERT INTO lead_migrations VALUES (41);
 CREATE TABLE lead_sessions (
   run_id TEXT PRIMARY KEY REFERENCES durable_runs(id),
   owner_account_id TEXT NOT NULL, actor_account_id TEXT NOT NULL, project_id TEXT NOT NULL,
@@ -52,7 +52,7 @@ export class LeadStore {
       try { db.exec(LEAD_MIGRATION); db.exec('COMMIT') } catch (error) { db.exec('ROLLBACK'); throw error }
     }
     const rows = db.prepare('SELECT version FROM lead_migrations').all()
-    leadInvariant(rows.length === 1 && rows[0]!.version === 40, 'lead_schema_version')
+    leadInvariant(rows.length === 1 && rows[0]!.version === 41, 'lead_schema_version')
   }
   session(runId: string): LeadSession | undefined {
     return this.db.prepare('SELECT * FROM lead_sessions WHERE run_id=?').get(runId) as unknown as LeadSession | undefined

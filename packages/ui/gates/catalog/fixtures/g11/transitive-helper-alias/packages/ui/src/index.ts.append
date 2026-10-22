@@ -1,0 +1,1 @@
+export { G11Shell } from './components/g11-shell/index.ts'

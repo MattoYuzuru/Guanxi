@@ -1,6 +1,6 @@
 # Durable runs (R1)
 
-**Status:** implemented, single node · **Updated:** 2026-10-21
+**Status:** implemented, single node · **Updated:** 2026-10-22
 
 `guanxi.durable-runs` provides `runs.durable` on the own kernel. It depends on K2's
 `session.log` and `egress.scrubber`. The service exposes `store` and `health()`; unload closes
@@ -129,7 +129,10 @@ workspace content, reasoning or credentials.
 `recordCost` appends an idempotent observation per run/call key under an active fence. Tokens
 and integer monetary microunits are separate; null monetary cost stays unknown. Totals group
 by currency and do not turn an unknown sample into a zero-price claim. Retries with changed
-observations fail. These are caller observations, not provider balance or billing estimates.
+observations fail. `complete(..., cost)` validates the same observation before its transaction
+and inserts it in that transaction after the receipt callback, so the receipt, cost row and
+terminal state commit together or not at all. These are caller observations, not provider
+balance or billing estimates.
 
 ## Migration and recovery
 

@@ -30,6 +30,21 @@ export interface ModelCall {
   /** Adapter parameters, not arbitrary transport/auth headers. */
   options?: Pick<SimpleStreamOptions, 'temperature' | 'maxTokens' | 'reasoning'>
 }
+/** A trusted T0 chat transport for a loopback runtime that is not the configured Ollama host (R2-op:
+ * llama-server). It is supplied by an execution host through `localChat`, never by HTTP or model
+ * input. K3 keeps scrubbing, unattended consent, the governor permit, the loopback check and the
+ * usage receipt; the transport only replaces the wire call. It must not return or throw before its
+ * own request has settled, because the governor permit is released when it does. */
+export interface LocalChatTransport {
+  /** Short runtime label; prefixes the governor model name and never appears in HTTP. */
+  readonly id: string
+  /** Loopback origin the transport talks to. */
+  readonly host: string
+  /** Receipt source label recorded with the usage observation. */
+  readonly usageSource: string
+  chat(request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void,
+    dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }): Promise<OllamaChatChunk>
+}
 export class Connections {
   private closed = false
   private active = new Set<Promise<unknown>>()
@@ -186,26 +201,29 @@ export class Connections {
       }
     })
   }
-  localChat(accountId: string, id: string, request: OllamaChatRequest, call: Omit<ModelCall, 'model'>): Promise<OllamaChatChunk> {
+  localChat(accountId: string, id: string, request: OllamaChatRequest, call: Omit<ModelCall, 'model'> & { transport?: LocalChatTransport }): Promise<OllamaChatChunk> {
     return this.track(async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'local_runtime') throw new Error('Not a local runtime connection')
       if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
       this.#vault.assertScrubbingReady(accountId)
-      const host = new URL(normalizeHost(this.localHost()))
+      const transport = call.transport
+      const host = new URL(transport ? transport.host : normalizeHost(this.localHost()))
       if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
       const context = request.options?.num_ctx
       if (!context || !Number.isSafeInteger(context) || context <= 0) throw new Error('Explicit runtime context is required')
       const dispatchAbort = new AbortController()
       const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
       const ticket = this.governor.enqueue({ owner: { kind: 'operation', operationId: call.requestId },
-        operation: 'chat', model: { provider: 'ollama', name: request.model }, requestedContext: context,
+        // The governor vocabulary is Ollama-only (R2-op residual): a foreign runtime takes the same
+        // single permit under a prefixed name, so it is never mistaken for the Ollama model of that name.
+        operation: 'chat', model: { provider: 'ollama', name: transport ? `${transport.id}:${request.model}` : request.model }, requestedContext: context,
         priority: 'normal', enqueuedAt: new Date().toISOString() })
       const lease = await this.governor.acquire(ticket, { signal })
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
-        const dispatched = this.ollama.client(host.href).chat(request, signal, () => {
+        const dispatched = (transport ?? this.ollama.client(host.href)).chat(request, signal, () => {
           try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); throw error }
         }, {
           authorizeDispatch: async () => {
@@ -215,7 +233,7 @@ export class Connections {
             this.assertOpen()
             const current = this.store.get(accountId, id)
             if (current.kind !== 'local_runtime' || call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Local runtime admission changed')
-            if (call.authorizeDispatch && new URL(normalizeHost(this.localHost())).href !== host.href) throw new ConnectionError('policy_denied', 'Local runtime admission changed')
+            if (call.authorizeDispatch && !transport && new URL(normalizeHost(this.localHost())).href !== host.href) throw new ConnectionError('policy_denied', 'Local runtime admission changed')
           },
           prepare: () => {
             signal.throwIfAborted()
@@ -229,7 +247,7 @@ export class Connections {
         signal.throwIfAborted()
         this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
           inputTokens: result.prompt_eval_count ?? null, outputTokens: result.eval_count ?? null,
-          costUsd: null, source: 'ollama:/api/chat', confidence: 'medium', observedAt: new Date().toISOString() })
+          costUsd: null, source: transport?.usageSource ?? 'ollama:/api/chat', confidence: 'medium', observedAt: new Date().toISOString() })
         return this.scrubber.scrub(result)
       } catch (error) {
         if (error instanceof ConnectionError) throw error

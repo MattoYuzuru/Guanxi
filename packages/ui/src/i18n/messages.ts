@@ -5,6 +5,9 @@
  */
 export const en = {
   'story.workspace.title': 'Context',
+  'story.workspace.noBlocks': 'No blocks are visible in this workspace.',
+  'story.workspace.addChat': 'Add Chat',
+  'story.workspace.loading': 'Loading workspace layouts…',
   'story.workspace.move': 'Move block to…',
   'story.workspace.hide': 'Hide block',
   'story.workspace.empty': 'Context usage is unknown until the session has a model observation.',
@@ -48,6 +51,7 @@ export const en = {
   'ui.provenance.confidence.medium': 'medium confidence',
   'ui.provenance.confidence.low': 'low confidence',
   'ui.error.source': 'Source: {source}',
+  'ui.error.observed': 'Observed',
   'ui.error.details': 'Details',
   'ui.error.copy': 'Copy details',
   'ui.error.copied': 'Details copied',
@@ -63,6 +67,7 @@ export const en = {
   'story.input.value': 'Guanxi kernel',
   'story.input.error': 'A project with this name already exists.',
   'story.textarea.label': 'Prompt',
+  'story.textarea.error': 'Enter a description before continuing.',
   'story.textarea.placeholder': 'Describe what the agent should do',
   'story.textarea.value': 'Summarise the failing tests and propose the smallest fix.',
   'story.field.error': 'Enter at least three characters.',
@@ -229,6 +234,9 @@ export type UiMessages = Readonly<Record<UiMessageKey, string>>
 
 export const ru: UiMessages = {
   'story.workspace.title': 'Контекст',
+  'story.workspace.noBlocks': 'В этой рабочей области нет видимых блоков.',
+  'story.workspace.addChat': 'Добавить чат',
+  'story.workspace.loading': 'Загружаем раскладки…',
   'story.workspace.move': 'Переместить блок…',
   'story.workspace.hide': 'Скрыть блок',
   'story.workspace.empty': 'Использование контекста неизвестно до наблюдения модели в сессии.',
@@ -272,6 +280,7 @@ export const ru: UiMessages = {
   'ui.provenance.confidence.medium': 'средняя уверенность',
   'ui.provenance.confidence.low': 'низкая уверенность',
   'ui.error.source': 'Источник: {source}',
+  'ui.error.observed': 'Наблюдение',
   'ui.error.details': 'Подробности',
   'ui.error.copy': 'Скопировать подробности',
   'ui.error.copied': 'Подробности скопированы',
@@ -287,6 +296,7 @@ export const ru: UiMessages = {
   'story.input.value': 'Ядро Guanxi',
   'story.input.error': 'Проект с таким названием уже существует.',
   'story.textarea.label': 'Запрос',
+  'story.textarea.error': 'Введите описание, прежде чем продолжить.',
   'story.textarea.placeholder': 'Опишите, что должен сделать агент',
   'story.textarea.value': 'Кратко опиши падающие тесты и предложи минимальное исправление.',
   'story.field.error': 'Введите не меньше трёх символов.',
