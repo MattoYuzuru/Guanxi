@@ -366,20 +366,17 @@ export class GlossaryStore {
     const stored = this.transaction(() => {
       const current = this.requireRow(accountId, id)
       const revision = current.revision + 1
+      const rows = this.db.prepare(
+        'SELECT * FROM glossary_revisions WHERE entry_id=? AND revision<? ORDER BY revision ASC',
+      ).all(id, current.revision) as unknown as RevisionRow[]
+      const previous = rows.map(toRevision)
       let target: GlossaryRevision | null = null
-      if (current.revision > 1) {
-        const rows = this.db.prepare(
-          'SELECT * FROM glossary_revisions WHERE entry_id=? AND revision<? ORDER BY revision DESC',
-        ).all(id, current.revision) as unknown as RevisionRow[]
-        for (const row of rows) {
-          if (row.entry === null) continue
-          target = toRevision(row)
-          break
-        }
+      for (const row of previous) {
+        if (row.entry !== null) target = row
       }
 
       const entry = target?.entry ?? current.entry
-      const active = target !== null && target.op !== 'deactivate'
+      const active = target === null ? false : this.replayActive(previous, target.revision)
       this.db.prepare(
         'UPDATE glossary_entries SET entry=?, active=?, revision=?, updated_at=? WHERE id=?',
       ).run(JSON.stringify(entry), active ? 1 : 0, revision, timestamp, id)
@@ -465,6 +462,39 @@ export class GlossaryStore {
       source,
       timestamp,
     )
+  }
+
+  /**
+   * Replay the revision chain up to `targetRevision` to recover its active state.
+   *
+   * A revert revision `r` undid revision `r-1`, so it restores the state before `r-1` (the
+   * latest earlier revision with a stored entry, or inactive when there is none). Reading the
+   * previous revision's `op` is not enough: a revert row's active state depends on what it
+   * reverted to.
+   */
+  private replayActive(
+    revisions: readonly GlossaryRevision[],
+    targetRevision: number,
+  ): boolean {
+    const activeByRevision = new Map<number, boolean>()
+    for (const row of revisions) {
+      if (row.revision > targetRevision) break
+      let active: boolean
+      if (row.op === 'deactivate') {
+        active = false
+      } else if (row.op === 'revert') {
+        let reverted: GlossaryRevision | null = null
+        for (const candidate of revisions) {
+          if (candidate.revision >= row.revision - 1) break
+          if (candidate.entry !== null) reverted = candidate
+        }
+        active = reverted === null ? false : activeByRevision.get(reverted.revision) ?? false
+      } else {
+        active = true
+      }
+      activeByRevision.set(row.revision, active)
+    }
+    return activeByRevision.get(targetRevision) ?? false
   }
 
   private requireRow(accountId: string, id: string): StoredGlossaryEntry {

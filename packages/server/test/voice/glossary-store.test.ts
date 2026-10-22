@@ -160,6 +160,44 @@ describe('GlossaryStore revisions', () => {
     assert.equal(restored.revision, 3)
   })
 
+  it('replays an earlier revert when reverting a reactivation', (t) => {
+    const h = harness(t, () => 1_000)
+    h.store.create('acct', 'account', null, HONO, 'user')
+    const afterFirstRevert = h.store.revert('acct', 'hono')
+    assert.equal(afterFirstRevert.active, false)
+    assert.equal(afterFirstRevert.revision, 2)
+    const afterReactivate = h.store.reactivate('acct', 'hono')
+    assert.equal(afterReactivate.active, true)
+    assert.equal(afterReactivate.revision, 3)
+
+    const afterSecondRevert = h.store.revert('acct', 'hono')
+    assert.equal(afterSecondRevert.active, false)
+    assert.equal(afterSecondRevert.entry.canonical, 'Hono')
+    assert.equal(afterSecondRevert.revision, 4)
+    assert.deepEqual(
+      h.store.history('acct', 'hono').map((row) => [row.revision, row.op]),
+      [[1, 'create'], [2, 'revert'], [3, 'reactivate'], [4, 'revert']],
+    )
+  })
+
+  it('replays deactivate and revert states across repeated reverts', (t) => {
+    const h = harness(t, () => 1_000)
+    h.store.create('acct', 'account', null, HONO, 'user')
+    h.store.deactivate('acct', 'hono')
+    const afterFirstRevert = h.store.revert('acct', 'hono')
+    assert.equal(afterFirstRevert.active, true)
+    assert.equal(afterFirstRevert.revision, 3)
+
+    const afterSecondRevert = h.store.revert('acct', 'hono')
+    assert.equal(afterSecondRevert.active, false)
+    assert.equal(afterSecondRevert.entry.canonical, 'Hono')
+    assert.equal(afterSecondRevert.revision, 4)
+    assert.deepEqual(
+      h.store.history('acct', 'hono').map((row) => [row.revision, row.op]),
+      [[1, 'create'], [2, 'deactivate'], [3, 'revert'], [4, 'revert']],
+    )
+  })
+
   it('rejects updating or reactivating in impossible states', (t) => {
     const h = harness(t, () => 1_000)
     h.store.create('acct', 'account', null, HONO, 'user')
