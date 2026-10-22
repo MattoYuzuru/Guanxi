@@ -526,6 +526,9 @@ export class NotificationStore {
   markRead(accountId: string, id: string): StoredNotification {
     return this.transaction(() => {
       const row = this.ownedNotification(accountId, id)
+      if (row.state === 'acted') {
+        throw new NotificationStoreError('notification_acted', 'Notification was already acted on')
+      }
       if (row.state === 'unread' || row.state === 'snoozed') {
         this.db.prepare('UPDATE notifications SET state=\'read\', snoozed_until=NULL, updated_at=? WHERE id=?')
           .run(this.now(), id)
@@ -537,7 +540,10 @@ export class NotificationStore {
   snooze(accountId: string, id: string, untilMs: number): StoredNotification {
     requireTimestamp(untilMs, 'untilMs')
     return this.transaction(() => {
-      this.ownedNotification(accountId, id)
+      const row = this.ownedNotification(accountId, id)
+      if (row.state === 'acted') {
+        throw new NotificationStoreError('notification_acted', 'Notification was already acted on')
+      }
       this.db.prepare('UPDATE notifications SET state=\'snoozed\', snoozed_until=?, updated_at=? WHERE id=?')
         .run(untilMs, this.now(), id)
       return rowToNotification(this.ownedNotification(accountId, id))

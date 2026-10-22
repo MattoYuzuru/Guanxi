@@ -12,6 +12,7 @@ import {
 } from '../../src/notifications/actions.ts'
 import {
   NotificationStore,
+  NotificationStoreError,
   type NotificationAction,
   type NotificationFacts,
   type StoredNotification,
@@ -227,6 +228,33 @@ test('a second key cannot repeat an action on an acted notification', async (t) 
   assert.deepEqual(fake.calls, ['wake_leads:conn-a'])
   assert.equal(store.actionRecord('acct-a', 'second-key'), null)
   assert.equal(store.get('acct-a', notification.id).state, 'acted')
+})
+
+test('snooze and markRead cannot revive an acted notification for a second action', async (t) => {
+  const store = await tempStore(t)
+  const fake = fakePorts()
+  const notification = seedNotification(store, ['wake_leads', 'snooze'], 'acted-snooze-notification')
+
+  await executeAction(store, fake.ports, input(notification, 'wake_leads', {}, 'first-wake'))
+  assert.equal(store.get('acct-a', notification.id).state, 'acted')
+
+  for (const attempt of [
+    () => store.snooze('acct-a', notification.id, T0 + 60_000),
+    () => store.markRead('acct-a', notification.id),
+  ]) {
+    assert.throws(
+      attempt,
+      (error: unknown) => error instanceof NotificationStoreError && error.code === 'notification_acted',
+    )
+  }
+  assert.equal(store.expireSnoozed(T0 + 120_000), 0, 'an acted row must not become unread')
+  assert.equal(store.get('acct-a', notification.id).state, 'acted')
+
+  await assert.rejects(
+    () => executeAction(store, fake.ports, input(notification, 'wake_leads', {}, 'second-wake')),
+    (error: unknown) => error instanceof NotificationActionError && error.code === 'notification_acted',
+  )
+  assert.deepEqual(fake.calls, ['wake_leads:conn-a'], 'the second wake must not call the port')
 })
 
 test('an action already in progress refuses a different key', async (t) => {
