@@ -1,4 +1,10 @@
 import { z } from 'zod'
+import {
+  INPUT_EXCERPT_BYTES,
+  INPUT_INLINE_BYTES,
+  queueArtifactV3Schema,
+  queueInlineV3Schema,
+} from './events/queue-v3.ts'
 export const accessModeSchema = z.enum(['read-only', 'full-access'])
 export type AccessMode = z.infer<typeof accessModeSchema>
 /** IP and localhost grants name one TCP service, never every local/LAN port. */
@@ -53,3 +59,64 @@ export const agentProgressSchema = z.object({
   shellUnavailable: z.enum(['container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected']).optional(),
 }).strict()
 export type AgentProgress = z.infer<typeof agentProgressSchema>
+
+/** Explicit negotiated progress query; omitting it keeps the legacy v1 body. */
+export const agentProgressQuerySchema = z
+  .object({
+    progressVersion: z.coerce.number().int().refine(
+      (value) => value === 1 || value === 2,
+      { message: 'progressVersion must be 1 or 2' },
+    ).default(1),
+  })
+  .strict()
+export type AgentProgressQuery = z.infer<typeof agentProgressQuerySchema>
+
+/**
+ * A pending oversized legacy-v1 queue entry. A read-only progress request
+ * cannot fabricate a persisted artifact reference, so it reports the bounded
+ * current-registry preview and the exact current byte size instead.
+ */
+export const agentProgressLegacyPreviewSchema = z
+  .object({
+    id: z.string(),
+    kind: z.literal('legacy-preview'),
+    excerpt: z.string(),
+    excerptBytes: z.number().int().nonnegative().max(INPUT_EXCERPT_BYTES).safe(),
+    byteSize: z.number().int().positive().safe(),
+  })
+  .strict()
+  .refine((value) => new TextEncoder().encode(value.excerpt).byteLength === value.excerptBytes, {
+    message: 'A legacy preview must declare its exact UTF-8 byte length',
+    path: ['excerptBytes'],
+  })
+  .refine((value) => value.byteSize > INPUT_INLINE_BYTES, {
+    message: 'A legacy preview represents input above the inline byte bound',
+    path: ['byteSize'],
+  })
+export type AgentProgressLegacyPreview = z.infer<typeof agentProgressLegacyPreviewSchema>
+
+export const agentProgressQueueItemV2Schema = z.union([
+  queueInlineV3Schema,
+  queueArtifactV3Schema,
+  agentProgressLegacyPreviewSchema,
+])
+export type AgentProgressQueueItemV2 = z.infer<typeof agentProgressQueueItemV2Schema>
+
+export const agentProgressV2Schema = agentProgressSchema
+  .omit({ queue: true })
+  .extend({
+    version: z.literal(2),
+    queue: z.array(agentProgressQueueItemV2Schema),
+  })
+  .strict()
+export type AgentProgressV2 = z.infer<typeof agentProgressV2Schema>
+
+/** The exact content-free refusal when a legacy client asks for artifact-backed progress. */
+export const nativeProgressVersionUnsupportedSchema = z
+  .object({
+    code: z.literal('native_progress_version_unsupported'),
+    supported: z.literal(1),
+    required: z.literal(2),
+  })
+  .strict()
+export type NativeProgressVersionUnsupported = z.infer<typeof nativeProgressVersionUnsupportedSchema>

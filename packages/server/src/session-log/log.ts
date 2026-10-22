@@ -24,10 +24,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import {
   INPUT_EXCERPT_BYTES,
+  INPUT_INLINE_BYTES,
   SESSION_EVENT_MAX_VERSION,
   SESSION_EVENT_VERSION,
   SESSION_EVENT_VERSION_2,
+  SESSION_EVENT_VERSION_3,
   promptV2DataSchema,
+  queueAppendDataV3Schema,
+  queueDataV3Schema,
   sessionEventClassOf,
   sessionEventDataSchemas,
   sessionEventDataV2Schemas,
@@ -36,6 +40,8 @@ import {
   sessionInputArtifactInputSchema,
   toolCallV2DataSchema,
   sessionExecutionSchema,
+  type QueueAppendDataV3,
+  type QueueDataV3,
   type SessionAudience,
   type SessionEvent,
   type SessionEventData,
@@ -55,7 +61,8 @@ import {
 } from '@guanxi/contract'
 import { REDACTION_MARKER_CLOSE, REDACTION_MARKER_PREFIX, type EgressScrubber } from '../egress/types.ts'
 import { buildSnippet, searchTerms } from './snippet.ts'
-import { projectInputExcerpt } from './excerpt.ts'
+import { projectInputExcerpt, projectQueueV3Data, QueueProjectionError } from './excerpt.ts'
+import { installSessionQueueSchema } from './queue-schema.ts'
 import type { Db } from '../store/db.ts'
 
 export const DEFAULT_WRITER_TTL_MS = 30_000
@@ -146,11 +153,14 @@ export interface SessionLogOptions {
  * object; {@link AppendOptions.inputArtifact} describes them.
  */
 export type SessionAppendData<T extends SessionEventType> =
-  T extends SessionEventV2Type ? SessionEventData<T> | SessionEventDataV2<T> : SessionEventData<T>
+  | SessionEventData<T>
+  | (T extends SessionEventV2Type ? SessionEventDataV2<T> : never)
+  | (T extends 'agent.queue' ? QueueAppendDataV3 : never)
 
 export interface SessionEventInput<T extends SessionEventType = SessionEventType> {
   type: T
-  data: SessionAppendData<T>
+  /** Infer the type only from `type`, so v3's extra queue branch cannot widen unrelated data. */
+  data: SessionAppendData<NoInfer<T>>
   spanId?: string | null
   parentSpanId?: string | null
   jobId?: string | null
@@ -170,8 +180,11 @@ export interface AppendOptions {
   idempotencyKey?: string
   /** The `seq` this event must get; a stored identical event at it is returned. */
   expectedSeq?: number
-  /** Defaults to 1. Version 2 is accepted only for prompt/tool.call with an artifact. */
-  eventVersion?: 1 | 2
+  /**
+   * Defaults to 1. Version 2 is accepted only for prompt/tool.call with an
+   * artifact; version 3 is accepted only for `agent.queue` descriptors.
+   */
+  eventVersion?: 1 | 2 | 3
   /** The scrubbed full-input descriptor; the log resolves its owned artifact id. */
   inputArtifact?: SessionInputArtifactInput
 }
@@ -399,6 +412,9 @@ export class SessionLog {
     this.reasoningRetentionMs = options.reasoningRetentionMs ?? DEFAULT_REASONING_RETENTION_MS
     this.isProcessAlive = options.isProcessAlive ?? defaultProcessAlive
     this.fault = options.fault
+    // Independent ledger 40 is mandatory: after openDb applied global 33 and
+    // before this log provides its service. There is no fixture opt-out.
+    installSessionQueueSchema(this.db)
     LIVE_WRITER_IDS.add(this.writer.id)
   }
 
@@ -769,8 +785,9 @@ export class SessionLog {
 
   /**
    * A page after `afterSeq`, filtered for the audience and scrubbed again.
-   * With `maxVersion`, a v2 event inside the page is reported as
-   * `unsupportedSeq` and excluded; the caller must not advance past it.
+   * With `maxVersion`, an event inside the page from a newer envelope is
+   * reported as `unsupportedSeq` with its actual `requiredVersion` and
+   * excluded; the caller must not advance past it.
    */
   read(
     sessionId: string,
@@ -782,7 +799,13 @@ export class SessionLog {
       seqs?: readonly number[]
       maxVersion?: number
     },
-  ): { events: SessionEvent[]; lastSeq: number; hasMore: boolean; unsupportedSeq: number | null } {
+  ): {
+    events: SessionEvent[]
+    lastSeq: number
+    hasMore: boolean
+    unsupportedSeq: number | null
+    requiredVersion: number | null
+  } {
     this.assertEgressReady()
     this.assertReadable(sessionId)
     const head = this.requireSession(sessionId)
@@ -802,19 +825,22 @@ export class SessionLog {
       .all(sessionId, afterSeq, ...types, ...seqs, limit + 1) as unknown as EventRow[]
     let page = rows.slice(0, limit)
     let unsupportedSeq: number | null = null
+    let requiredVersion: number | null = null
     const maxVersion = options.maxVersion ?? SESSION_EVENT_MAX_VERSION
-    if (maxVersion < SESSION_EVENT_MAX_VERSION) {
-      const boundary = page.findIndex((row) => row.event_version > maxVersion)
-      if (boundary >= 0) {
-        unsupportedSeq = page[boundary]!.seq
-        page = page.slice(0, boundary)
-      }
+    // Check even at the current maximum: a future event (for example version 4)
+    // must surface its actual required version, not become stored_data_invalid.
+    const boundary = page.findIndex((row) => row.event_version > maxVersion)
+    if (boundary >= 0) {
+      unsupportedSeq = page[boundary]!.seq
+      requiredVersion = page[boundary]!.event_version
+      page = page.slice(0, boundary)
     }
     return {
       events: page.map((row) => this.toEvent(row)),
       lastSeq: head.last_seq,
       hasMore: rows.length > limit || page.length < rows.length,
       unsupportedSeq,
+      requiredVersion,
     }
   }
 
@@ -824,6 +850,13 @@ export class SessionLog {
     let after = 0
     while (true) {
       const page = this.read(sessionId, { afterSeq: after, limit: MAX_PAGE, audience })
+      if (page.unsupportedSeq !== null) {
+        throw new SessionEventVersionError(
+          page.unsupportedSeq,
+          SESSION_EVENT_MAX_VERSION,
+          page.requiredVersion ?? SESSION_EVENT_MAX_VERSION,
+        )
+      }
       events.push(...page.events)
       if (!page.hasMore || page.events.length === 0) return events
       after = page.events.at(-1)!.seq
@@ -985,7 +1018,11 @@ export class SessionLog {
           yield current
         }
         if (page.unsupportedSeq !== null) {
-          throw new SessionEventVersionError(page.unsupportedSeq, maxVersion, SESSION_EVENT_VERSION_2)
+          throw new SessionEventVersionError(
+            page.unsupportedSeq,
+            maxVersion,
+            page.requiredVersion ?? SESSION_EVENT_MAX_VERSION,
+          )
         }
         if (page.events.length === 0) {
           await wake.waitForChange(observed, signal)
@@ -1210,19 +1247,29 @@ export class SessionLog {
     options: AppendOptions,
   ): AppendResult {
     const requestedVersion = options.eventVersion ?? SESSION_EVENT_VERSION
-    if (requestedVersion !== SESSION_EVENT_VERSION && requestedVersion !== SESSION_EVENT_VERSION_2) {
+    if (
+      requestedVersion !== SESSION_EVENT_VERSION
+      && requestedVersion !== SESSION_EVENT_VERSION_2
+      && requestedVersion !== SESSION_EVENT_VERSION_3
+    ) {
       throw new SessionLogError('invalid_event', 'Unknown session event envelope version')
     }
     if (requestedVersion === SESSION_EVENT_VERSION_2) {
       if (!sessionEventTypeSupportsV2(input.type) || options.inputArtifact === undefined) {
         throw new SessionLogError('invalid_event', 'Only an input-bearing event may use version 2')
       }
+    } else if (requestedVersion === SESSION_EVENT_VERSION_3) {
+      if (input.type !== 'agent.queue' || options.inputArtifact !== undefined) {
+        throw new SessionLogError('invalid_event', 'Only agent.queue descriptors may use version 3')
+      }
     } else if (options.inputArtifact !== undefined) {
       throw new SessionLogError('invalid_event', 'A version 1 event cannot carry an input artifact')
     }
 
-    let data: Record<string, unknown>
+    let data: Record<string, unknown> = {}
     let artifactInput: SessionInputArtifactInput | null = null
+    let queueInput: QueueAppendDataV3 | null = null
+    let original: string
     if (requestedVersion === SESSION_EVENT_VERSION_2) {
       const type = input.type as SessionEventV2Type
       const parsed = sessionEventDataV2Schemas[type].safeParse(input.data)
@@ -1233,12 +1280,19 @@ export class SessionLog {
       )
       if (!descriptor.success) throw new SessionLogError('invalid_event', 'Invalid input artifact descriptor')
       artifactInput = descriptor.data
+      original = JSON.stringify({ data: input.data, artifact: options.inputArtifact })
+    } else if (requestedVersion === SESSION_EVENT_VERSION_3) {
+      const parsed = queueAppendDataV3Schema.safeParse(input.data)
+      if (!parsed.success) throw new SessionLogError('invalid_event', 'Invalid agent.queue event data')
+      queueInput = parsed.data
+      original = JSON.stringify(input.data)
     } else {
       const schema = sessionEventDataSchemas[input.type]
       if (!schema) throw new SessionLogError('invalid_event', `Unknown session event type ${String(input.type)}`)
       const parsed = schema.safeParse(input.data)
       if (!parsed.success) throw new SessionLogError('invalid_event', `Invalid ${input.type} event data`)
       data = this.scrubber.scrub(parsed.data) as Record<string, unknown>
+      original = JSON.stringify(input.data)
     }
 
     // Identifiers are stored and returned verbatim, so they must not hold a registered value.
@@ -1258,6 +1312,12 @@ export class SessionLog {
     }
     this.renewWithin(sessionId, epoch)
     this.fault?.('writer_checked', { sessionId, type: input.type })
+
+    // Resolve every queue descriptor in this same transaction. A failure after
+    // the first metadata insert rolls all of them back with the event.
+    if (queueInput !== null) {
+      data = this.resolveQueueAppendWithin(sessionId, queueInput) as unknown as Record<string, unknown>
+    }
 
     if (artifactInput !== null) {
       const excerpt = this.scrubber.scrub(artifactInput.excerpt)
@@ -1289,9 +1349,6 @@ export class SessionLog {
       throw new SessionLogError('invalid_event', `The ${input.type} payload would re-form a registered secret`)
     }
     const payloadSha256 = sha256(payload)
-    const original = requestedVersion === SESSION_EVENT_VERSION_2
-      ? JSON.stringify({ data: input.data, artifact: options.inputArtifact })
-      : JSON.stringify(input.data)
     const redactions = Math.max(0, countMarkers(payload) - countMarkers(original))
     const joined = searchTextOf(input.type, data)
     const searchText = joined === null ? null : this.scrubber.scrub(joined)
@@ -1378,6 +1435,56 @@ export class SessionLog {
   }
 
   /**
+   * Inside the append transaction: scrub each v3 queue branch independently,
+   * resolve every descriptor to its owned artifact id, and validate the
+   * published snapshot before it can be serialised. No caller-selected
+   * artifact id is accepted; ids on the wire are only queue item ids.
+   */
+  private resolveQueueAppendWithin(sessionId: string, input: QueueAppendDataV3): QueueDataV3 {
+    const items = input.items.map((item) => {
+      if (this.scrubber.scrub(item.id) !== item.id) {
+        throw new SessionLogError('invalid_event', 'A queue item id would store a registered secret')
+      }
+      if (item.kind === 'inline') {
+        const text = this.scrubber.scrub(item.text)
+        if (new TextEncoder().encode(text).byteLength > INPUT_INLINE_BYTES) {
+          throw new SessionLogError('invalid_event', 'Inline queue text exceeds its published bound')
+        }
+        return { id: item.id, kind: 'inline' as const, text }
+      }
+      if (this.scrubber.scrub(item.input.checksum) !== item.input.checksum) {
+        throw new SessionLogError('invalid_event', 'A queue artifact checksum would store a registered secret')
+      }
+      const excerpt = this.scrubber.scrub(item.input.excerpt)
+      const excerptBytes = new TextEncoder().encode(excerpt).byteLength
+      if (excerptBytes > INPUT_EXCERPT_BYTES) {
+        throw new SessionLogError('invalid_event', 'The queue artifact excerpt exceeds its published bound')
+      }
+      const artifactId = this.resolveInputArtifactWithin(sessionId, {
+        checksum: item.input.checksum,
+        byteSize: item.input.byteSize,
+        mediaType: item.input.mediaType,
+        excerpt,
+      })
+      return {
+        id: item.id,
+        kind: 'artifact' as const,
+        artifact: {
+          artifactId,
+          checksum: item.input.checksum,
+          byteSize: item.input.byteSize,
+          mediaType: item.input.mediaType,
+          excerpt,
+          excerptBytes,
+        },
+      }
+    })
+    const parsed = queueDataV3Schema.safeParse({ items })
+    if (!parsed.success) throw new SessionLogError('invalid_event', 'Invalid agent.queue event data')
+    return parsed.data
+  }
+
+  /**
    * Inside the append transaction: reuse a `(session_id, checksum)` row or
    * insert it. The event and this row commit or roll back together.
    */
@@ -1421,6 +1528,15 @@ export class SessionLog {
       }
       if (row.event_version === SESSION_EVENT_VERSION_2) {
         data = projectInputExcerpt(data, this.scrubber)
+      } else if (row.event_version === SESSION_EVENT_VERSION_3) {
+        try {
+          data = projectQueueV3Data(data, this.scrubber)
+        } catch (error) {
+          if (error instanceof QueueProjectionError) {
+            throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} contains invalid stored data`)
+          }
+          throw error
+        }
       } else if (options.rescrub !== false) {
         data = this.scrubber.scrub(data)
       }

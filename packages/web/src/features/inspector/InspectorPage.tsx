@@ -44,6 +44,7 @@ import {
   countByType,
   eventDetail,
   mergeEvents,
+  queueRenderItems,
   segmentRedactions,
   spanDepth,
   type TimelineState,
@@ -750,6 +751,8 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
       </div>
       {event.type === 'reasoning' ? (
         <ReasoningBody event={event} />
+      ) : event.type === 'agent.queue' ? (
+        <QueueBody event={event} />
       ) : (
         detail !== null && detail.length > 0 && (
           <p className={cx('max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-13 wrap-anywhere', MACHINE_DETAIL.has(event.type) && 'font-mono')}>
@@ -767,6 +770,56 @@ function TimelineRow({ event, highlighted }: { event: SessionEvent; highlighted:
         </p>
       )}
     </li>
+  )
+}
+
+/**
+ * Queue rows are rendered once per item, in snapshot order, with a bounded
+ * preview. Artifact metadata is per item: a plural snapshot is never described
+ * by its first reference. No blob is fetched here.
+ */
+function QueueBody({ event }: { event: Extract<SessionEvent, { type: 'agent.queue' }> }) {
+  const items = queueRenderItems(event)
+  if (items.length === 0) {
+    return <p className="text-12 text-muted">{translate('inspector.queue.empty')}</p>
+  }
+  return (
+    <ul className="flex flex-col gap-1" aria-label={translate('inspector.queue.label')}>
+      {items.map((item) => (
+        <li
+          key={item.id}
+          data-testid="inspector-queue-item"
+          data-queue-item-id={item.id}
+          data-queue-item-kind={item.kind}
+          className="flex min-w-0 flex-col gap-0.5 rounded-control border border-divider px-2 py-1"
+        >
+          <div className="flex flex-wrap items-center gap-2 text-12 text-secondary">
+            <span className="min-w-0 break-all font-mono tabular-nums">{item.id}</span>
+            <Badge>{translate(item.kind === 'artifact' ? 'inspector.input.bounded' : 'inspector.queue.kind.inline')}</Badge>
+          </div>
+          {item.text.length > 0 && (
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-13 wrap-anywhere">
+              <RedactedText text={item.text} />
+            </p>
+          )}
+          {item.kind === 'artifact' ? (
+            <p className="text-12 text-secondary">
+              {translate('inspector.input.boundedDetail', {
+                excerpt: formatBytes(item.shownBytes),
+                total: formatBytes(item.totalBytes),
+              })}
+            </p>
+          ) : item.shownBytes < item.totalBytes ? (
+            <p className="text-12 text-secondary">
+              {translate('inspector.queue.previewDetail', {
+                shown: formatBytes(item.shownBytes),
+                total: formatBytes(item.totalBytes),
+              })}
+            </p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   )
 }
 

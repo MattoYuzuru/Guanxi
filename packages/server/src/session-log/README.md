@@ -1,6 +1,7 @@
 # Session log
 
-**Status:** implemented (K2), locally validated · **Updated:** 2026-10-20 · **Owner:** lane K2
+**Status:** implemented (K2), locally validated; queue v3 reader/migration foundation unreleased
+(Q0, not yet a native rollback floor) · **Updated:** 2026-10-22 · **Owner:** lanes K2/K4
 
 One append-only event log per session is the trace
 ([ADR-0023](../../../../docs/decisions/0023-session-event-log-and-tracing.md)). It lives in the
@@ -12,8 +13,10 @@ the web inspector and the agent query tool.
 
 | File | What it holds |
 | --- | --- |
-| [`schema.ts`](schema.ts) | Migration 29: `sessions`, `session_writers`, `session_events`, the FTS5 index and the triggers that enforce the log's shape |
-| [`log.ts`](log.ts) | `SessionLog` and `SessionHandle`: single writer, append, read, search, purge, subscribe |
+| [`schema.ts`](schema.ts) | Migrations 29 and 33: `sessions`, `session_writers`, `session_events`, session input artifacts, the FTS5 index and the triggers that enforce the log's shape |
+| [`queue-schema.ts`](queue-schema.ts) | Independent ledger 40 and its atomic installer; replaces only the event-policy trigger to admit strict v3 queue snapshots |
+| [`log.ts`](log.ts) | `SessionLog` and `SessionHandle`: single writer, append, read, search, purge, subscribe; v3 queue descriptor resolution and current-registry projection |
+| [`excerpt.ts`](excerpt.ts) | Current-registry projection of v2 excerpts and per-item v3 queue previews; never reads a blob |
 | [`input-encoding.ts`](input-encoding.ts) | Restartable ≤64 KiB UTF-8 chunk iterator, exact string hashing and bounded excerpt prefix encoding |
 | [`chat-mirror.ts`](chat-mirror.ts) | The legacy Chat Job store behind the log: `JobStore` appends the trace inside its own transactions |
 | [`projection.ts`](projection.ts) | Spans, token meter and transcript projections over events |
@@ -39,6 +42,57 @@ not authorize a chat destination. `session-list-page.test.ts` covers pagination,
 scrubbing, readiness and these navigation boundaries. The web shell consumes this metadata in
 a separate slice.
 
+## Queue v3 and independent ledger 40 (Q0)
+
+Queue snapshots have a third, strictly discriminated envelope. v1 `agent.queue`
+`{items:[{id,text}]}` and every v1/v2 shape stay readable and unchanged; the producer in
+`native-agent` still writes v1 until Q1/Q2. A v3 snapshot is a standard `agent.queue` event
+whose items are either `{id,kind:'inline',text}` (at most 16 KiB scrubbed UTF-8) or
+`{id,kind:'artifact',artifact}` (the existing exact excerpt/reference shape, media
+`text/plain; charset=utf-8`, byte size above 16 KiB). Empty snapshots are valid, item ids are
+unique per snapshot, and no opposite-branch field is accepted. Each artifact entry is plural:
+`inputArtifactsOf(event)` returns every reference in item order, while the singleton
+`inputArtifactOf(event)` keeps its prompt/tool-call meaning and returns `null` for a queue.
+
+Append input carries descriptors, never caller-selected artifact ids:
+
+```ts
+handle.append({
+  type: 'agent.queue',
+  data: { items: [
+    { id: inlineId, kind: 'inline', text: scrubbedText },
+    { id: artifactId, kind: 'artifact', input: { checksum, byteSize, mediaType, excerpt } },
+  ] },
+}, { eventVersion: 3 })
+```
+
+`log.ts` parses the strict descriptor schema, resolves every descriptor through
+`resolveInputArtifactWithin` and validates the published snapshot inside the same synchronous
+transaction as the event/head/FTS insert. Equal text with distinct queue ids stays distinct;
+same-session equal checksums share one metadata/blob row. A failure after an earlier metadata
+insert rolls the whole snapshot back.
+
+`queue-schema.ts` owns `session_queue_migrations` (one row, version 40) in the same database.
+It runs in every `SessionLog` construction after `openDb` applied global 33, takes
+`BEGIN IMMEDIATE`, re-reads the ledger and trigger, rejects future/unknown/incompatible shapes,
+and commits the trigger replacement with the ledger row. The constructor has no install opt-out:
+a future or incompatible ledger refuses before the log serves any write. Main `user_version`
+stays 33 and migrations 1–33, independent ledgers 34–39 and the `session_input_artifacts` table
+are not edited. Migration 40 replaces only `session_events_policy_insert`; its v1/v2/reasoning
+clauses are verbatim, and its v3 branch checks every `json_each` item, the exact UTF-8 inline
+bound, unique ids, the text media type, exact excerpt bytes and same-session metadata matching.
+
+On read, each v3 item is projected independently with the current registry. An artifact excerpt
+is bounded again after marker expansion and gets exact `excerptBytes`; a queue id or artifact
+reference that would be rewritten by a late-registered value fails closed with
+`stored_data_invalid`. Inline text that expands above 16 KiB after a late registration is a
+content-free failure, not executable truncation: the stored payload and pending input remain
+unchanged and no cursor, prompt or dispatch advances. Queue snapshots never enter FTS:
+`search_text` stays `NULL` and queue text is not searchable. The REST/SSE boundary reports the
+actual required envelope version (2 for v1-only readers meeting v2, 3 for max-2 readers meeting
+v3); export bodies are 1/2/3 by the highest exported event and a smaller requested maximum is a
+406 before any partial body.
+
 ## Guarantees and where they are enforced
 
 | Property | Enforcement | Test |
@@ -48,6 +102,8 @@ a separate slice.
 | A writer changes only by grant, release, expiry or handover from a gone process | `acquireWithin`; the epoch may only move to the next value, a released epoch cannot resume and a writer row goes only with its session (triggers); each change appends `writer.acquired` with its reason | same, `session-log-review.test.ts` |
 | Crash at any append point leaves the event fully present or fully absent | one `BEGIN IMMEDIATE` transaction advances the head, inserts the event and indexes it (FTS5 triggers); the mirror shares the Job transaction | `session-log-crash.test.ts` (in-process throw and child `SIGKILL` at every point) |
 | A retried append is not a duplicate | `idempotencyKey` (`UNIQUE (session_id, idempotency_key)`) or `expectedSeq` returns the stored event | same |
+| A v3 queue snapshot commits all descriptors or none | the strict append schema is parsed before use; every descriptor is resolved and the published snapshot validated inside the one append transaction; the database trigger re-checks every item and metadata row | `session-log-queue-artifacts.test.ts` |
+| A reader never advances past an envelope it cannot parse | `read()` returns the unsupported `seq` with the actual `requiredVersion`; REST refuses the page, SSE emits preceding supported frames and then a `guanxi-error` with no event id; export refuses before a partial body | `session-log-version-negotiation.test.ts`, `session-log-queue-artifacts.test.ts` |
 | Persisted before streamed, checked when emitted | subscribers are woken after commit and read SQLite after their cursor; each event of a page read earlier is checked (readiness, withheld, catching up) and its row read again when it is yielded and again in the route right before it is serialised, so a value registered, a catch-up started, a retention purge or a deleted Thread while a stream is open applies to its next frame; `closeSubscriptions()` ends streams at shutdown | `session-log-routes.test.ts`, `session-log-chat.test.ts`, `session-log-review.test.ts` (shutdown), `session-log-recheck.test.ts` (N5) |
 | No secret value in an event (D-141) | every payload passes the egress scrubber before it is stored and again when it is read; the serialised payload and the joined search text are scrubbed again and a payload that would still change is refused; titles come from the scrubbed first prompt; search snippets are built from the scrubbed indexed text and drop hits that matched only a now-redacted value, and search reads ranked candidates lazily until the limit is filled or the matches run out; echoed queries are scrubbed; identifiers holding a registered value are refused at write, and a session whose id holds a value registered later is withheld from every read (`session_withheld`, HTTP 403, a content-free tool error), left out of search hits and counted, not listed, by the session list; the generated event id must stay a UUID, so an event whose id holds a value registered later withholds every read that would return it, at read and at emit time | `session-log.test.ts` (scrubbing), `session-log-chat.test.ts` (planted secret), `session-log-review.test.ts`, `session-log-recheck.test.ts` (N1, N4, N6) |
 | Reasoning never reaches a remote agent or an export (D-113) | `remote_agent` reads filter `class = 'standard'` in SQL; exports drop reasoning | `session-log-chat.test.ts`, `session-log-routes.test.ts` |
@@ -124,6 +180,14 @@ loopback, the runtime adapter executes on this machine (today: `ollama`) and the
 cloud-backed (Ollama's `…-cloud` and `:cloud` models run on ollama.com through the local
 daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`.
 
+`GET /api/sessions/:id/events` accepts `eventVersion` 1–3 (default 1) and
+`GET /api/sessions/:id/export` accepts `exportVersion` 1–3 (default 1). A max-1 reader meeting a
+v2 event and a max-2 reader meeting a v3 event get a content-free 406 whose
+`details.required` is the actual envelope (2 or 3), never a hardcoded 2. The inspector web
+client requests max 3 for both paged reads and the live stream and uses export 3. An older
+node that rejects `eventVersion=3`/`exportVersion=3` is an unsupported mixed-version pairing for
+this client; no mutation or partial-success retry is performed.
+
 ## Residuals
 
 - Legacy `job_events.output` and `messages` keep their unscrubbed private Chat payloads; they
@@ -140,9 +204,17 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
   reads, replay, base64 transport, scrubbing and byte-input snapshot copies remain whole-buffer.
   Chat, K5, assistant output, reasoning, tool results, images and model requests remain on their
   current paths.
-- Queued prompt text is **not** artifactized in this slice: `agent.queue` keeps the full text
-  inline even after consumption. A consumed queued prompt may produce a v2 `prompt` event, but
-  the earlier queue event remains inline. No input cap was added.
+- Q0 adds the v3 queue contract, migration 40, atomic log append/read/privacy support, export 3
+  and an inspector renderer. The native producer still writes v1 `agent.queue`; native
+  progress remains the legacy v1 body and refuses a present v3 snapshot with the existing
+  content-free `agent_unavailable` instead of reusing an older v1 queue. The native
+  service/routes/UI/CLI v3 consumer and progress2 are Q1/Q2 work. Q0 is an unreleased
+  compatibility foundation, not a whole-node v3 rollback floor and not an
+  artifactization-complete claim. Legacy v1 queue events remain readable and are not rewritten
+  in place; an old immutable inline snapshot can still be larger than the published excerpt
+  bound, and the inspector shows a bounded preview rather than the full tail.
+- Queue FTS remains `NULL`: queue text is not searchable, and no queue-tail hydration or
+  artifact download endpoint exists. Prompt titles/search retain their existing v2 behavior.
 - Other large payloads are still stored inline; ADR-0023 §4 remains proposed, not accepted.
   Output paging still reads and scrubs a whole artifact in memory, command tails beyond the
   explicit 64 KiB bound stay discarded, and a published orphan of a live session is not

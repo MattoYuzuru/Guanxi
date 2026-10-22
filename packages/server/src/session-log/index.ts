@@ -34,6 +34,21 @@ export {
 } from './plugin.ts'
 export { SESSION_LOG_MIGRATION, SESSION_INPUT_ARTIFACTS_MIGRATION } from './schema.ts'
 export {
+  SESSION_QUEUE_MIGRATION,
+  SESSION_QUEUE_MIGRATIONS_TABLE,
+  SESSION_QUEUE_MIGRATION_VERSION,
+  SESSION_QUEUE_POLICY_TRIGGER_SQL,
+  SessionQueueSchemaError,
+  V33_POLICY_TRIGGER_SQL,
+  installSessionQueueSchema,
+} from './queue-schema.ts'
+export type {
+  SessionQueueSchemaErrorCode,
+  SessionQueueSchemaOptions,
+  SessionQueueSchemaPoint,
+} from './queue-schema.ts'
+export { QueueProjectionError, projectQueueV3Data } from './excerpt.ts'
+export {
   SessionInputError,
   SessionInputStore,
   inputMediaTypeFor,
