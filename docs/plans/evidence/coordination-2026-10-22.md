@@ -368,3 +368,137 @@ All checks use synthetic fixtures/local Mac Node26 with the shared heavy lock wh
 No remote host, live/paid model, owner workspace, owner key or push was used. The inherited
 external skill symlink still prevents reusable attestation. Full K4/K5/R2/B1/U1/DS2 and MS1
 exit gates remain unearned where their named residuals apply.
+
+## Current checkpoint: reviewed migration bundle integrated locally
+
+This section supersedes the candidate-state snapshots above. Main `1b6f495` merges reviewed
+`73ebbb18` with no conflicts/manual resolutions; `git diff` confirms the complete source tree
+is identical. The main checkout received its own offline `npm ci` (`check-ej75c1xl`), and
+`@guanxi/contract` resolves inside it. No remote host, owner data/key, live/paid model or push
+was used. All eight post-merge main gates pass at clean, unchanged `1b6f495`; the complete
+coordinator exits 0. Later central changes are documentation only.
+
+The complete feature proof remains in individual handoffs; this integration does not credit
+the same test twice or close whole stages:
+
+| Integrated part | New / regression scope and independent closure |
+| --- | --- |
+| U1 layout/replication/CSS/shell/search preparation | Prior reviewed union aa878593 and docs `84c9f651`; five executable gates at aa and remaining docs/license/lint after a docs-only repair. Browser96. Shell components remain unsigned review; product App mount is a subsequent slice. |
+| K4 late-current-registry privacy | Separate4818b92/c2ae12f fixes; independent40 =19 privacy +20 compatibility + original expansion probe. Final original page probe2/2 in U1 union. No blob reads/stored-row rewrite. |
+| K4 bounded string encoding | Final `63f8b016`; 19 new repository /51 prior envelope. Initial actual helper/native selected 67, two ownership probes, then final14 pure + three unchanged bracket probes + two independent controls =19. Decorative-bracket P2 fixed separately, not waived. Read/replay/provider/queue buffers remain. |
+| K5 same-node admission and atomic learning | Final e4c7cf32; 37 new repository /66 inherited =103. Independent105 adds unchanged write-boundary race and SQL/provenance controls. Login exclusive; uncertain cleanup retains occupancy. No distributed admission claim. |
+| R2/K3/R3 cascade | Final `6a3e644`; independent 151 =148 repository + original held-window probe + two actual judge request/cancel integration cases. Public R3 default remains off; absent exact meter/workspace authority refuses. |
+| F2 grants/dispatch | Foundation 17 new/9 governor envelope; F2-b 30 new/151 inherited. One additional actual F2/K3 cancellation-ACK composition assertion plus 304 prior selected cases passed. Offers and dispatch grants remain distinct. |
+| X1 | Exact c777 source62 local Colima Linux cases, zero skips; d861 all eight candidate commands. Reviewed join preserves native/index code and both scrubber capabilities. Nested-container permissions do not prove Fedora/rootless production behavior. |
+| B1 process/K2 | Source `0d7302f` independently 149 selected; main union `fb573` adds exact source preservation and two v2 compatibility seams. Final author 153 selected includes142 repository + seven original behavioral probes + two classifier + two v2 cases; independent new seams 2/2. No measured benchmark score. |
+
+The [integration handoff](../lanes/F2-integration.handoff.md) records the actual merge joins,
+source comparisons, schema ledgers, compatibility/rollback and separate author/reviewer fixes.
+Outside independent report:
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-active-integration-20261022.md`.
+
+### Actual aggregate failures and separate corrections
+
+First d640 npm gate failed17/135 bench cases because fixture paths assumed root CWD and
+setup could throw before caller cleanup; seven exact owned fixture groups required cleanup.
+Separate cb520038 fixes module-relative paths and immediate test-hook ownership. A direct
+setup-failure regression was added separately9e90e20a; its first run failed because a nested
+Node runner inherited NODE_TEST_CONTEXT. Separate e9611d35 removes only that child marker.
+Independent actual failing-setup cleanup passes1/1 (`check-ktw6ahix`).
+
+Full f2ff npm then failed1/136 bench cases: a natural-exit fixture closed request fd4 before
+its final report/process.exit0, allowing correct EOF-triggered SIGTERM to race the expected
+zero exit. Separate red `7ed36bae` reproduces null versus 0 deterministically with finalization work
+(`check-5u5sswsy`); fixture-only ab83dc17 keeps fd4 until natural exit. Original zero/cleanup
+assertions and production source remain unchanged. New case independently passes1/1
+(`check-e4op9bkt`), with bench 137 and root-invoked private-process 20 passing. These repairs
+add **two new repository regressions** across the continuation; overlapping runs are envelope.
+
+At061681f6 the five executable gates pass; Markdown then fails only two plan-format errors.
+Separate `73ebbb18` changes three Markdown files only. No executable retest is inferred from
+that docs commit; the final three candidate commands pass at73. Independent composition and
+both follow-up source/doc reviews are CLOSED, no remaining bounded finding.
+
+| Candidate command | Actual pin | Receipt |
+| --- | --- | --- |
+| typecheck |061681f6 | `check-jflqp14r` |
+| npm test |061681f6 | `check-__cz0d_6` |
+| mocked web browser 96/96 |061681f6 | `check-nup93izu` |
+| catalog browser |061681f6 | `check-lqukf4b2` |
+| build |061681f6 | `check-v9n3r2kr` |
+| Markdown/links |73ebbb18 | `check-fgh2lixa` |
+| dependency licenses 675/0 |73ebbb18 | `check-9gmytls5` |
+| source lint |73ebbb18 | `check-0m8ktjak` |
+
+Earlier failed wrappers remain failed. Five/three commands at their actual pins are distinct
+from the all-eight post-merge main sequence below. No new test credit comes from these gates.
+
+### Post-merge main verification at `1b6f495`
+
+| Command | Receipt |
+| --- | --- |
+| typecheck | `check-tk4x3ixr` |
+| npm test | `check-9tke65kg` |
+| mocked web browser 96/96 | `check-a48m6uv_` |
+| catalog browser | `check-0inqts8y` |
+| build | `check-gsag0nc8` |
+| Markdown/links | `check-2nfrg6em` |
+| licenses 675/0 | `check-cya6mzu5` |
+| source lint | `check-adilfv2d` |
+
+
+Regression scope: core 1632 total/1631 pass/one Linux-only worker-priority skip; kernel 107,
+web 353, UI 43, UI gates 102, catalog 74, codemod 6, bench 137; mocked browser 96/96. The earlier
+exact Linux fixture result has its separate envelope. Receipts record unchanged clean source;
+the inherited external `.claude/skills/guanxi-ui` symlink prevents reusable source
+certification. These are direct observations with actual pins, not portable certificates.
+
+### Next local work and remaining exits
+
+The root accepted a bounded U1 actual-product-mount plan at b1046a30 and completed DSH authorship in an
+isolated standalone clone, `codex/u1-shell-mount`, ports 5202/4402. Source `9a1aaa26`, tests `761f01e3`,
+handoff `20f0331f` add 17 cases (eight component, nine browser). The author reports 64 scoped component
+passes (eight new / 56 inherited), three existing preference cases and scoped types/lint; actual
+browser remains unrun by the author. Root joined main at `4734c2f8` and refreshed usage at `6c8aa1f2`;
+independent Sol review is active there. It reuses prepared public
+shell/controller/search and must prove real-route state/focus/navigation/slot uniqueness.
+Author/check status must be inspected live before any takeover. Independent Sol 6.1/high
+review, mounted browser evidence and integration follow. Review/stale component use is an
+ordinary-slice warning under COMPONENTS_AND_CATALOG section4; signed owner approval still
+blocks stage/release exit. No signature/key/approval was created.
+
+A fresh read-only residual matrix and concrete K4 queue-v3 engineering proposal live outside
+Git under `/Users/yuzuru/Projects/Guanxi-lanes/reviews/`. Queue-v3 and the B3 offline evidence
+format require root engineering acceptance before authoring. No ledger 40 reservation, public
+schema change, B3 implementation or benchmark gate was silently accepted by these plans.
+
+K4 queue/whole-buffer/platform scope; K5 real vendor/effective-bare/Claude producer scope;
+U1 new-session/finished-unseen/ephemeral chat/112 CSS suppressions/owner signatures; R2 exact
+runtime meter/checkout authority; R3 quality/ETA/night calibration; F2 toolful transport/cost/
+physical-host lifecycle; B1 real corpus/execution/billing/five seeds and actual B3 remain open.
+MS1 still needs real >=6h other-node 30B delegation, zero lead-token change, exactly one wake
+and verified final item/B3 exits. Local fixtures cannot discharge these observations.
+
+### U1 mount review: concrete follow-up findings
+
+At clean `6c8aa1f2` independent focused components pass 35/35 (`check-jf4e603s`: eight new / 27
+inherited) and nine new actual-App browser cases pass (`check-pr_0jn4g`). The adapted legacy
+browser subset passes 11/18, seven failures (`check-r2kqf9i4`); all checks are terminal. Three
+P2s require separate repair before feature integration:
+
+- AppShellChrome and Dialog reach draft IconButton/Menu/Tooltip. G11 only counts direct
+  public imports, so the original outside transitive probe semantically fails (`check-xa_6x0h9`).
+  A review wrapper is no exemption from the product draft rule. Isolated DSH gate repair is
+  active under root plan `308ede3e` in codex/u1-status-closure, own CI check-kvc2fdn8; no status
+  promotion or policy weakening is authorized there.
+- Added mocks use the wrong session-page endpoint. Six failures and the new-browser success
+  state need the actual `/api/sessions/list/page` contract plus explicit empty/no-error assertions.
+- Unchanged CacheBar opacity debt still produces exactly two documented contrast nodes. Axe's
+  selector serialization changed with the host, exposing the old exact selector exception.
+  Root chooses a minimal semantic-text contrast repair and removal of the exception, with
+  zero-serious scans and seeded detector assertions preserved, rather than a broader ignore.
+
+A separate readiness audit names missing Menu/Tooltip interaction and regime assertions; no
+bulk draft-to-review transition is justified yet. Real Menu/IconButton/Tooltip readiness
+will be tested and reviewed before any unsigned transition. Owner approval stays separate.
+No new U1 source is integrated or stage exit claimed by this checkpoint.

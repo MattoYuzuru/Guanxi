@@ -1,6 +1,6 @@
 # Parallel lanes
 
-**Status:** accepted (owner, 2026-10-20) · **Updated:** 2026-10-21
+**Status:** accepted (owner, 2026-10-20) · **Updated:** 2026-10-22
 
 Several agents, possibly from different model families and harnesses, work on independent
 roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 GB). This file
@@ -21,13 +21,15 @@ processes before assuming a worker is still running.
 | [R1](R1.md) | R1 durable runs, hibernation and wake | GPT (Codex), xhigh | `lane/r1-durable-runs` | 5188 / 4388 | merged ([evidence](../evidence/R1.md)); follow-up `lane/r1-followup` |
 | [F1](F1.md) | F1 federation base | GPT (Codex), xhigh | `lane/f1-federation` | 5194 / 4394 | merged ([evidence](../evidence/F1.md)) |
 | [K4](K4.md) | K4 native agent, tools, access modes, projects | GPT (Codex), xhigh | `lane/k4-native-agent` | 5189 / 4389 | merged ([evidence](../evidence/K4.md)); follow-up merged ([evidence](../evidence/K4-followup.md)) |
-| [R2](R2.md) | R2 relay executor v1 | GPT (Codex), xhigh | `lane/r2-relay-executor` | 5195 / 4395 | partial internal service merged ([evidence](../evidence/R2.md)) |
-| [K5](K5.md) | K5 external agents and role routing | GPT (Codex), xhigh | `lane/k5-external-agents` | 5196 / 4396 | partial implementation merged ([evidence](../evidence/K5.md)) |
-| [X1](X1.md) | X1 repository map and full-text index | GPT 6.1 Sol / high; independent GPT review | `codex/x1-parent-read-boundary` | 5197 / 4397 | repair reviewed; targeted integration gate passed; full gates/Linux pending |
-| [B1](B1.md) | B1 bench base (Harbor, control arm, statistics, budget caps) | GPT (Codex), xhigh | `lane/b1-bench-base` | 5198 / 4398 | partial fixture foundation handed off; real executor/billing/corpus unfinished |
+| [R2](R2.md) | relay executor and trusted public admission | GPT 6.1 Sol/high; independent GPT review | `lane/r2-relay-executor` and follow-ups | 5195 / 4395 | reviewed public start/CLI/K3 settlement integrated locally `1b6f495`; stock meter/workspace authority and operational gates remain |
+| [K5](K5.md) | external agents and durable same-node admission | DeepSeek Flash/max; independent GPT 6.1 Sol/high | `codex/k5-durable-admission` | 5196 / 4396 | reviewed admission/learning integrated locally `1b6f495`; vendor/implicit-bare/Claude producer scope remains |
+| [X1](X1.md) | repository map and full-text index | GPT 6.1 Sol/high; independent GPT review | `codex/x1-parent-read-boundary` | 5197 / 4397 | repaired local Colima Linux 62/62; reviewed combined source integrated locally `1b6f495`; Fedora/rootless proof remains |
+| [B1](B1.md) | bench foundation, private process and K2 retention | DeepSeek/GPT authors; independent GPT 6.1 Sol/high | `codex/b1-trial-binding` and integration | 5198 / 4398 | reviewed process/retention and fixture repairs integrated locally `1b6f495`; paid execution/corpus/billing/five seeds remain |
 | [DS2](DS2.md) | DS2 approval signing helper (Secure Enclave P-256) | DeepSeek Flash/max; independent GPT 6.1 Sol / high review | `codex/ds2-review-fixes` | none (no server) | merged locally `03c655b`; full candidate gates pass ([evidence](../evidence/DS2.md)); main full gates pass at `5e9bbfe`; owner-present hardware signing pending |
-| [U1](U1.md) | U1-a workspace layout engine and modes (U1-b shell and U1-c migration follow) | GPT (Codex), xhigh | `lane/u1a-workspace` | 5199 / 4399 | reviewed layout/replication candidate `e5f8e0a`; integration gates pending; shell/CSS migration active |
+| [U1](U1.md) | layout/replication, canonical CSS, shell/search preparation | DeepSeek/GPT authors; independent GPT 6.1 Sol/high | `codex/u1-completion` | 5199 / 4399 | reviewed preparation integrated locally `1b6f495`; product mounting follows in the isolated lane below |
 | K4 follow-up 2 | K4 residuals: R1 integration and native session retention | DeepSeek Flash/max; independent GPT 6.1 Sol / high review | `codex/k4f2-review-fixes` | 5189 / 4389 | merged as `8006cd8`; full integrator gates pass ([evidence](../evidence/K4-followup-2.md)); broader K4 residuals remain |
+| F2 integration | offers/grants/dispatch and composed migration bundle | GPT 6.1 Sol/high; independent GPT review | `codex/in-progress-integration` | 5201 / 4401 | reviewed bundle `73ebbb18` merged locally as `1b6f495`; whole F2/MS1 exits remain open |
+| U1 product mount | actual App shell composition | DeepSeek Flash/max; independent GPT 6.1 Sol/high reserved | `codex/u1-shell-mount` | 5202 / 4402 | source `6c8aa1f2` changes requested: draft closure, fixture endpoint and legacy contrast debt; no main mount claim |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
 Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:
