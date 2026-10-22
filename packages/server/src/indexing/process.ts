@@ -1,0 +1,83 @@
+import { spawn, execFile, type ChildProcess } from 'node:child_process'
+import { realpath, mkdir, stat, open, type FileHandle } from 'node:fs/promises'
+import { constants, existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const quote = (value: string) => JSON.stringify(value)
+const packageNames = ['web-tree-sitter', 'ignore', 'tree-sitter-typescript', 'tree-sitter-javascript', 'tree-sitter-python', 'tree-sitter-go', 'tree-sitter-rust', 'tree-sitter-java', 'tree-sitter-c', 'tree-sitter-cpp']
+const dependencies = packageNames.map(name => { try { return dirname(require.resolve(`${name}/package.json`)) } catch { return dirname(require.resolve(name)) } })
+export const grammarDirectories = Object.fromEntries(packageNames.filter(n => n.startsWith('tree-sitter-')).map(name => [name.slice('tree-sitter-'.length), dirname(require.resolve(`${name}/package.json`))]))
+grammarDirectories.tsx = grammarDirectories.typescript!
+const gitMetadata = (root: string) => new Promise<string[]>(resolve => execFile('/usr/bin/git', ['--no-optional-locks', '-C', root, 'rev-parse', '--path-format=absolute', '--absolute-git-dir', '--git-common-dir'], {
+  env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' }, timeout: 3000,
+}, (error, stdout) => resolve(error ? [] : stdout.trim().split('\n'))))
+
+export interface SandboxSpawn { command: string; args: string[]; stdio: ('ignore' | 'ipc' | number)[] }
+
+/** bwrap cannot open another process's /proc/<pid>/fd in its unprivileged
+ * namespace, so the pinned root is inherited as descriptor 4. IPC stays at 3. */
+export function linuxSandboxSpawn(paths: readonly string[], root: string, rootFd: number, databaseDir: string, cwd: string, executable: string, entry: string): SandboxSpawn {
+  const args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
+  for (const path of [...new Set([...paths, root])].sort((a, b) => a.length - b.length)) {
+    if (path === root) args.push('--ro-bind-fd', '4', root)
+    else args.push('--ro-bind', path, path)
+  }
+  args.push('--bind', databaseDir, databaseDir, '--chdir', cwd, executable, entry)
+  return { command: '/usr/bin/bwrap', args, stdio: ['ignore', 'ignore', 'ignore', 'ipc', rootFd] }
+}
+
+/** The priority wrapper stays outside the sandbox: it runs the sandbox, which
+ * runs the worker. `ionice` is optional because minimal hosts may lack util-linux. */
+export function backgroundPriority(command: string, args: readonly string[], platform = process.platform, hasIonice = existsSync('/usr/bin/ionice')): { command: string; args: string[] } {
+  if (platform === 'darwin') return { command: '/usr/sbin/taskpolicy', args: ['-b', command, ...args] }
+  if (platform === 'linux') return { command: '/usr/bin/nice', args: ['-n', '19', ...(hasIonice ? ['/usr/bin/ionice', '-c3'] : []), command, ...args] }
+  return { command, args: [...args] }
+}
+
+/** The scanner runs only trusted captured code; this OS boundary also protects
+ * against hostile ancestor swaps that pathname checks alone cannot close. */
+export async function indexProcess(entry: string, root: string, dataDir: string): Promise<ChildProcess> {
+  const databaseDir = join(dataDir, 'knowledge-index')
+  await mkdir(databaseDir, { recursive: true, mode: 0o700 })
+  const executable = await realpath(process.execPath)
+  const cwd = (await stat(root)).isDirectory() ? root : dirname(root)
+  const metadata = await gitMetadata(cwd)
+  const paths = [...new Set([root, dirname(entry), databaseDir, dirname(executable), ...dependencies, ...metadata])]
+  let command: string, args: string[]
+  let stdio: ('ignore' | 'ipc' | number)[] = ['ignore', 'ignore', 'ignore', 'ipc']
+  let rootHandle: FileHandle | undefined
+  if (process.platform === 'darwin') {
+    const system = ['/System', '/usr', '/bin', '/sbin', '/Library/Apple', '/Library/Developer', '/private/etc', '/opt/homebrew/Cellar', '/opt/homebrew/opt']
+    const profile = `(version 1)(allow default)(deny network*)(deny file-read*)(deny file-write*)(allow file-read-metadata)(allow file-read* (literal "/"))(allow file-read* ${[...system, ...paths].map(p => `(subpath ${quote(p)})`).join(' ')})(allow file-read* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))(allow file-write* (subpath ${quote(databaseDir)}) (literal "/dev/null"))`
+    command = '/usr/bin/sandbox-exec'; args = ['-p', profile, executable, entry]
+  } else if (process.platform === 'linux') {
+    rootHandle = await open(root, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try { if (await realpath(`/proc/self/fd/${rootHandle.fd}`) !== root) throw new Error('index_root_changed') }
+    catch (error) { await rootHandle.close(); throw error }
+    const existing: string[] = []
+    // Optional system-library locations vary by architecture (for example, arm64
+    // may have no /lib64). Pass only validated mount sources to the builder.
+    for (const path of ['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths]) {
+      try { await realpath(path); existing.push(path) } catch { /* absent system path */ }
+    }
+    const spec = linuxSandboxSpawn(existing, root, rootHandle.fd, databaseDir, cwd, executable, entry)
+    command = spec.command; args = spec.args; stdio = spec.stdio
+  } else throw new Error('index_sandbox_unavailable')
+  ;({ command, args } = backgroundPriority(command, args))
+  let child: ChildProcess
+  try {
+    child = spawn(command, args, { detached: true, cwd,
+      env: { PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin', HOME: databaseDir, TMPDIR: databaseDir, LANG: 'en_US.UTF-8', OPENSSL_CONF: '/dev/null' },
+      stdio })
+  } catch (error) { await rootHandle?.close().catch(() => undefined); throw error }
+  child.once('close', () => { void rootHandle?.close().catch(() => undefined) })
+  return child
+}
+export async function stopIndexProcess(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const closed = new Promise<void>(resolve => child.once('close', () => resolve()))
+  try { process.kill(-child.pid!, 'SIGKILL') } catch { child.kill('SIGKILL') }
+  await closed
+}

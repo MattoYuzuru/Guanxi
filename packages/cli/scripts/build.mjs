@@ -22,6 +22,7 @@ await build({
   platform: 'node',
   target: 'node22',
   format: 'esm',
+  external: ['web-tree-sitter', 'ignore'],
   sourcemap: true,
   banner: { js: '#!/usr/bin/env node' },
   // Release builds never write component approvals (D-138); see packages/server/src/index.ts.
@@ -34,4 +35,10 @@ await build({
   entryPoints: [resolve(workspaceRoot, 'packages/server/src/native-agent/sandbox-worker.ts')],
   outfile: resolve(outDir, 'sandbox-worker.js'), bundle: true, platform: 'node', target: 'node22',
   format: 'esm', external: ['@anthropic-ai/sandbox-runtime'],
+})
+
+await build({
+  entryPoints: [resolve(workspaceRoot, 'packages/server/src/indexing/worker.ts')],
+  outfile: resolve(outDir, 'index-worker.js'), bundle: true, platform: 'node', target: 'node22',
+  format: 'esm', external: ['web-tree-sitter', 'ignore'],
 })

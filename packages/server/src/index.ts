@@ -35,6 +35,8 @@ import type { VaultPolicy } from './vault/vault.ts'
 import type { Connections } from './connections/service.ts'
 import { ConnectionError } from './connections/errors.ts'
 import { connectionRoutes } from './connections/routes.ts'
+import type { IndexSettings } from './indexing/types.ts'
+import { projectIndexPlugin } from './indexing/plugin.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 import { externalAgentPlugin } from './external-agents/plugin.ts'
@@ -132,6 +134,7 @@ export interface StartOptions {
   webDir?: string
   devOrigins?: string[]
   connectionsPolicy?: VaultPolicy
+  indexSettings?: Partial<IndexSettings>
   federation?: Omit<FederationHostOptions, 'db'>
   /** Trusted node-local installed CLIs; no executable paths or account identity arrive over HTTP. */
   externalAgents?: ExternalPolicy
@@ -186,6 +189,7 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
+    await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
     await kernel.node.plugin(relayPlugin, { db, startHost: {
       ...(options.relay ? { reserves: options.relay.reserves, allocate: options.relay.allocate,

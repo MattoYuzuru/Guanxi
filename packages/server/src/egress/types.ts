@@ -62,6 +62,13 @@ export interface EgressScrubber {
   ready(sourceId: string): void
   /** True when every declared source is ready (also when none is declared). */
   isReady(): boolean
+  /**
+   * A copy of the registered ref/value pairs for a trusted local consumer that
+   * must scrub inside a sandboxed child (the project index worker). The
+   * consumer passes it only over its private IPC channel, never in process
+   * arguments or environment. Optional for compatibility with read-only stubs.
+   */
+  snapshot?(): readonly { ref: SecretRef; value: string }[]
   /** Declared sources that are not ready yet, sorted; ids only, never values. */
   pendingSources(): readonly string[]
   /**

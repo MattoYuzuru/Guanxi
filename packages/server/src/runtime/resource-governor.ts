@@ -221,6 +221,7 @@ export class ResourceGovernor {
   private readonly tickets = new Map<string, TicketRecord>()
   private readonly queue: TicketRecord[] = []
   private activeLease: LeaseRecord | null = null
+  private idleOwner: { abort: () => void; released: Promise<void> } | null = null
   private accepting = true
   private lastDecision: AdmissionExplanation | null = null
   private closePromise: Promise<void> | null = null
@@ -237,6 +238,21 @@ export class ResourceGovernor {
 
   get waiting(): number {
     return this.queue.length
+  }
+
+  /** X1 CPU/IO background lease. It never occupies the accelerator permit or
+   * queues ahead of interactive admission. The exact owner must stop on abort;
+   * a second idle owner is refused until the first actually releases. */
+  tryIdleLease(abort: () => void): { release(): void } | null {
+    if (!this.accepting || this.activeLease || this.queue.length || this.idleOwner) return null
+    let done!: () => void
+    const owner = { abort, released: new Promise<void>(resolve => { done = resolve }) }
+    this.idleOwner = owner
+    return Object.freeze({ release: () => {
+      if (this.idleOwner !== owner) return
+      this.idleOwner = null
+      done()
+    } })
   }
 
   enqueue(input: AdmissionRequest): AdmissionTicket {
@@ -280,6 +296,7 @@ export class ResourceGovernor {
     this.queue.push(record)
     this.recordDecision('queued_fifo', record)
     if (request.priority === 'normal') this.preemptPrewarmForNormal()
+    this.idleOwner?.abort()
     return ticket
   }
 
@@ -410,9 +427,11 @@ export class ResourceGovernor {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.accepting = false
-    this.closePromise = new Promise<void>((resolve) => {
+    this.idleOwner?.abort()
+    const acceleratorClosed = new Promise<void>((resolve) => {
       this.resolveClose = resolve
     })
+    this.closePromise = Promise.all([acceleratorClosed, this.idleOwner?.released]).then(() => undefined)
 
     for (const record of [...this.queue]) {
       const abortOwner = record.abortOwner
