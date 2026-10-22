@@ -154,13 +154,15 @@ currently scrubs it in memory before paging; bounded memory streaming is not cla
 conversion remains a named residual. Images are referenced by policy, not stored as base64 in
 events. Reasoning stays in K2's retention class, outside model/CLI output and console logs.
 
-Queued prompts keep their current representation: `agent.queue` stores the full queued text
-inline, even after consumption, and this slice adds no cap. Consuming a queued prompt may
-artifactize its own later `prompt` event, but the earlier queue event stays inline. That is a
-declared residual, not a claim that the whole K4-INPUT-ARTIFACTS issue is closed. A published
-input blob left by a failed append is an orphan until the whole session is deleted; no
-per-blob GC runs in this slice. The full input is buffered for replay and re-scrubbing; a
-bounded-memory streaming reader is not claimed.
+Queued prompts still use the v1 `agent.queue` representation in this lane state: full queued
+text inline, even after consumption, with no new cap. Q0 has added the v3 contract, independent
+ledger 40 and session-log reader/privacy/export support, but the native producer, native
+progress/service/routes/UI and CLI remain v1 until Q1/Q2; this README does not claim queue
+artifactization or a native v3 rollback floor. Consuming a queued prompt may artifactize its
+own later `prompt` event, while the earlier queue event stays inline. A published input blob
+left by a failed append is an orphan until the whole session is deleted; no per-blob GC runs in
+this slice. The full input is buffered for replay and re-scrubbing; a bounded-memory streaming
+reader is not claimed.
 
 The orientation is checked against a conservative 300 UTF-8-byte upper bound, independent of
 path length/root count. Full paths, policies and instruction locations are obtained from
@@ -197,8 +199,10 @@ when a time cap or fence is lost; cleanup confirmation still governs root reuse.
 Migration **32** adds `run_execution` and `native_sessions`, adopts existing native sessions
 under a Thread owner, and leaves migrations 1–31 byte-identical. Migration **33** adds the
 session-owned `session_input_artifacts` table and replaces only the event-policy trigger; it
-leaves migrations 1–32 byte-identical and leaves independent F1/R2/F2 ledgers 34–37
-untouched. Rollback is a stopped, consistent pre-upgrade SQLite/WAL backup restore; an older
+leaves migrations 1–32 byte-identical and leaves the independently owned ledgers 34–39
+untouched. Q0 adds no global migration: its independent `session_queue_migrations` ledger 40
+replaces only `session_events_policy_insert` and leaves main `user_version` at 33 and ledgers
+34–39 untouched. Rollback is a stopped, consistent pre-upgrade SQLite/WAL backup restore; an older
 binary does not understand v2 events and must not reuse a v2-bearing database. The supported
 read compatibility for older clients is the new server's explicit v1 negotiation: a max-1
 page, export or already-open stream refuses at the first unread v2 event with a content-free
