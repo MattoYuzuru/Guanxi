@@ -25,6 +25,10 @@ export interface RunBrowserPolicy {
  * `navigate` names a URL, not an origin, because clean-link and model data rules inspect the
  * path and query. Every other action names the origin it acts on. `fromOrigin` is the page the
  * run is on; a clean link can add a new readable origin only from a readable page.
+ *
+ * `via` and `fromOrigin` are host assertions, not authenticated facts. A route or tool boundary
+ * must derive them from its own navigation state and never from model/tool JSON; otherwise a
+ * caller can claim `policy` or `clean_link` to bypass the model-data rule.
  */
 export type BrowserAction =
   | {
@@ -38,6 +42,8 @@ export type BrowserAction =
 /** Stable low-cardinality outcomes. Callers log these; tests assert on them. */
 export type BrowserDecisionCode =
   | 'allowed'
+  /** Malformed action: a missing/unknown `via` at the untyped boundary. */
+  | 'invalid_action'
   | 'origin_not_allowed'
   | 'data_url_refused'
   | 'read_only'

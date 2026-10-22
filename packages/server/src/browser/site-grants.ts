@@ -132,7 +132,7 @@ const MULTI_LABEL_SUFFIXES: ReadonlySet<string> = new Set([
 
 /** Input field names that would imply secret material; checked recursively, by name only. */
 const SECRET_FIELD = /(cookie|password|passwd|token|secret)/i
-/** Scopes are names, not opaque blobs; this also stops a caller smuggling a value in a list. */
+/** Scopes are names, not opaque blobs; the pattern keeps them short but cannot prove intent. */
 const SCOPE_NAME = /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/
 
 /** Frozen v1 schema. Later slices append v2+ and never rewrite this statement. */
@@ -327,18 +327,24 @@ export class SiteGrantStore {
   }
 
   /**
-   * Open a context id against a grant. Unknown ("foreign") grants, revoked grants and expired
-   * grants are refused; a context id already bound to another grant is refused as well.
+   * Open a context id against a grant. Unknown grants, revoked grants and expired grants are
+   * refused; a context id already bound to another grant is refused as well. When `accountId`
+   * is supplied, a grant owned by another account is refused. The method is host-authorized:
+   * the host must pass only grant ids selected by `grantsFor` (and should pass `accountId`).
    * Re-opening an already-open context for the same grant returns the existing record.
    */
-  openContext(contextId: string, grantId: string): SiteContext {
+  openContext(contextId: string, grantId: string, accountId?: string): SiteContext {
     const id = requireName(contextId, 'contextId')
     const grantKey = requireName(grantId, 'grantId')
+    const account = accountId === undefined ? null : requireName(accountId, 'accountId')
     const now = this.now()
     return this.transaction(() => {
-      const grant = this.db.prepare('SELECT expires_at, revoked_at FROM site_grants WHERE id=?')
-        .get(grantKey) as { expires_at: number | null; revoked_at: number | null } | undefined
+      const grant = this.db.prepare('SELECT account_id, expires_at, revoked_at FROM site_grants WHERE id=?')
+        .get(grantKey) as { account_id: string; expires_at: number | null; revoked_at: number | null } | undefined
       if (!grant) throw new SiteGrantStoreError('grant_not_found', 'Site grant not found')
+      if (account !== null && grant.account_id !== account) {
+        throw new SiteGrantStoreError('grant_not_found', 'Site grant not found for this account')
+      }
       if (grant.revoked_at !== null) throw new SiteGrantStoreError('grant_revoked', 'Site grant is revoked')
       if (grant.expires_at !== null && grant.expires_at <= now) {
         throw new SiteGrantStoreError('grant_expired', 'Site grant is expired')
@@ -370,14 +376,21 @@ export class SiteGrantStore {
     })
   }
 
-  /** Record use of an active grant. Revoked or expired grants are not touched. */
-  touch(grantId: string, now: number): boolean {
+  /**
+   * Record use of an active grant. Revoked or expired grants are not touched. When `accountId`
+   * is supplied, a grant owned by another account is refused.
+   */
+  touch(grantId: string, now: number, accountId?: string): boolean {
     const id = requireName(grantId, 'grantId')
     const at = requireTimestamp(now, 'now')
+    const account = accountId === undefined ? null : requireName(accountId, 'accountId')
     return this.transaction(() => {
-      const grant = this.db.prepare('SELECT expires_at, revoked_at FROM site_grants WHERE id=?')
-        .get(id) as { expires_at: number | null; revoked_at: number | null } | undefined
+      const grant = this.db.prepare('SELECT account_id, expires_at, revoked_at FROM site_grants WHERE id=?')
+        .get(id) as { account_id: string; expires_at: number | null; revoked_at: number | null } | undefined
       if (!grant) throw new SiteGrantStoreError('grant_not_found', 'Site grant not found')
+      if (account !== null && grant.account_id !== account) {
+        throw new SiteGrantStoreError('grant_not_found', 'Site grant not found for this account')
+      }
       if (grant.revoked_at !== null) return false
       if (grant.expires_at !== null && grant.expires_at <= at) return false
       this.db.prepare('UPDATE site_grants SET last_used_at=? WHERE id=?').run(at, id)

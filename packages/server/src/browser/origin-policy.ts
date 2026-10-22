@@ -91,21 +91,28 @@ function decideNavigate(
   const origin = canonicalOrigin(parsed.url)
   const readable = policy.readable.includes(origin)
 
-  if (action.via === 'model') {
-    // Rule 3 is stricter than rule 1: a model URL on a readable origin still may not carry data.
-    if (!readable) return deny('origin_not_allowed')
-    return hasModelData(parsed.url) ? deny('data_url_refused') : allow()
+  // The untyped HTTP/tool boundary can omit `via`; fail closed instead of falling through to
+  // clean-link handling. Typed callers cannot express an unknown value.
+  switch (action.via) {
+    case 'model':
+      // Rule 3 is stricter than rule 1: a model URL on a readable origin still may not carry data.
+      if (!readable) return deny('origin_not_allowed')
+      return hasModelData(parsed.url) ? deny('data_url_refused') : allow()
+    case 'policy':
+      return readable ? allow() : deny('origin_not_allowed')
+    case 'clean_link': {
+      if (readable) return allow()
+      // Only a readable page may introduce one new readable origin.
+      const fromOrigin = action.fromOrigin === undefined ? null : tryNormalizeOrigin(action.fromOrigin)
+      if (fromOrigin === null || !policy.readable.includes(fromOrigin)) {
+        return deny('origin_not_allowed')
+      }
+      if (!isCleanLink(parsed.url, action.url)) return deny('data_url_refused')
+      return { allowed: true, code: 'allowed', addReadable: origin }
+    }
+    default:
+      return deny('invalid_action')
   }
-  if (readable) return allow()
-  if (action.via === 'policy') return deny('origin_not_allowed')
-
-  // clean_link: only a readable page may introduce one new readable origin.
-  const fromOrigin = action.fromOrigin === undefined ? null : tryNormalizeOrigin(action.fromOrigin)
-  if (fromOrigin === null || !policy.readable.includes(fromOrigin)) {
-    return deny('origin_not_allowed')
-  }
-  if (!isCleanLink(parsed.url, action.url)) return deny('data_url_refused')
-  return { allowed: true, code: 'allowed', addReadable: origin }
 }
 
 function decideInteraction(
@@ -120,7 +127,8 @@ function decideInteraction(
   if (action.kind === 'click') {
     return readable ? allow() : deny('origin_not_allowed')
   }
-  if (policy.mode === 'read_only') return deny('read_only')
+  // Only the exact `full` mode may write; an absent/unknown mode fails closed as read-only.
+  if (policy.mode !== 'full') return deny('read_only')
   return policy.writable.includes(origin) ? allow() : deny('write_not_allowed')
 }
 
@@ -183,9 +191,10 @@ function isDataValue(value: string): boolean {
 function isCleanLink(url: URL, raw: string): boolean {
   if (url.username !== '' || url.password !== '') return false
   if (url.search !== '' || url.hash !== '' || raw.includes('?') || raw.includes('#')) return false
-  if (decodeComponent(url.pathname).length > CLEAN_PATH_LIMIT) return false
-  for (const rawSegment of url.pathname.split('/')) {
-    if (isHighEntropy(decodeComponent(rawSegment))) return false
+  const decodedPath = decodeComponent(url.pathname)
+  if (decodedPath.length > CLEAN_PATH_LIMIT) return false
+  for (const segment of decodedPath.split('/')) {
+    if (isHighEntropy(segment)) return false
   }
   return true
 }
@@ -195,8 +204,9 @@ function hasModelData(url: URL): boolean {
   for (const [name, value] of rawQueryPairs(url.search)) {
     if (isDataValue(decodeComponent(name)) || isDataValue(decodeComponent(value))) return true
   }
-  for (const rawSegment of url.pathname.split('/')) {
-    if (isDataValue(decodeComponent(rawSegment))) return true
+  // Decode before splitting so an encoded separator cannot hide one long data segment.
+  for (const segment of decodeComponent(url.pathname).split('/')) {
+    if (isDataValue(segment)) return true
   }
   return false
 }

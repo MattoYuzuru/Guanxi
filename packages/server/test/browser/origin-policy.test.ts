@@ -126,6 +126,7 @@ test('clean links refuse queries, fragments, userinfo, long segments and long pa
     ['long base64url segment', `https://new.example/${'A1b2_-'.repeat(7)}`],
     ['long plain word', `https://new.example/${'a'.repeat(33)}`],
     ['201-character path', `https://new.example/${'a/'.repeat(100)}`],
+    ['encoded separator hiding data', `https://new.example/${'A'.repeat(40)}%2F${'B'.repeat(40)}`],
   ]
   for (const [name, url] of cases) {
     assert.deepEqual(
@@ -168,6 +169,12 @@ test('model navigation refuses data on a readable origin', () => {
     ['high-entropy query value', `${READ}/search?q=${'a1b2'.repeat(10)}`],
     ['long plain query value', `${READ}/search?q=${encodeURIComponent('long value '.repeat(7))}`],
     ['high-entropy path segment', `${READ}/${'A1b2_-'.repeat(7)}`],
+    ['65-character query name', `${READ}/?${'a'.repeat(65)}=1`],
+    ['high-entropy query name', `${READ}/?${'a1b2'.repeat(10)}=1`],
+    ['plain path segment over 64', `${READ}/${'x'.repeat(65)}`],
+    ['plus is literal base64', `${READ}/?q=${'A'.repeat(20)}+${'B'.repeat(20)}`],
+    ['malformed percent is literal', `${READ}/?q=${'%'.repeat(70)}`],
+    ['encoded separator hiding data', `${READ}/${'A'.repeat(40)}%2F${'B'.repeat(40)}`],
     ['userinfo', `https://user@read.example/page`],
   ]
   for (const [name, url] of cases) {
@@ -218,6 +225,11 @@ test('full mode requires writable for type, submit, upload and download', () => 
     allowed: false,
     code: 'origin_not_allowed',
   })
+  const writeOnly: RunBrowserPolicy = { mode: 'full', readable: [], writable: [WRITE] }
+  assert.deepEqual(decide(writeOnly, { kind: 'click', origin: WRITE }), {
+    allowed: false,
+    code: 'origin_not_allowed',
+  })
 })
 
 test('action origins are normalized before comparison', () => {
@@ -251,6 +263,29 @@ test('javascript, data, file and blob schemes are always refused', () => {
       code: 'scheme_refused',
     }, value)
   }
+})
+
+test('a missing or unknown via fails closed before any readable shortcut', () => {
+  const missing = { kind: 'navigate', url: 'https://new.example/about', fromOrigin: READ } as unknown as BrowserAction
+  assert.deepEqual(decide(fullPolicy(), missing), { allowed: false, code: 'invalid_action' })
+  const missingWithData = {
+    kind: 'navigate',
+    url: `${READ}/?q=${'a'.repeat(65)}`,
+  } as unknown as BrowserAction
+  assert.deepEqual(decide(fullPolicy(), missingWithData), { allowed: false, code: 'invalid_action' })
+  const unknown = {
+    kind: 'navigate',
+    url: 'https://new.example/about',
+    via: 'bogus',
+    fromOrigin: READ,
+  } as unknown as BrowserAction
+  assert.deepEqual(decide(fullPolicy(), unknown), { allowed: false, code: 'invalid_action' })
+})
+
+test('an unknown runtime policy mode fails closed as read_only', () => {
+  const policy = { mode: 'readonly', readable: [WRITE], writable: [WRITE] } as unknown as RunBrowserPolicy
+  assert.deepEqual(decide(policy, { kind: 'type', origin: WRITE }), { allowed: false, code: 'read_only' })
+  assert.deepEqual(decide(policy, { kind: 'download', origin: WRITE }), { allowed: false, code: 'read_only' })
 })
 
 test('decisions are deterministic and never mutate the policy or action', () => {

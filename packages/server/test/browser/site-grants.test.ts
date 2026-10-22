@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import {
   SiteGrantStore,
   SiteGrantStoreError,
   normalizeSiteDomain,
   type SiteGrant,
+  type SiteGrantChannel,
   type SiteGrantInput,
   type SiteGrantStoreErrorCode,
 } from '../../src/browser/site-grants.ts'
@@ -72,6 +73,9 @@ test('migration v1 is idempotent on reopen, enables WAL/FKs and preserves grants
   const f = fixture(t)
   assert.equal((f.store.db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode, 'wal')
   assert.equal((f.store.db.prepare('PRAGMA foreign_keys').get() as { foreign_keys: number }).foreign_keys, 1)
+  assert.equal((f.store.db.prepare('PRAGMA busy_timeout').get() as { timeout: number }).timeout, 5000)
+  assert.equal(statSync(f.path).mode & 0o777, 0o600)
+  assert.equal(statSync(dirname(f.path)).mode & 0o777, 0o700)
 
   const grantColumns = f.store.db.prepare('PRAGMA table_info(site_grants)').all() as unknown as { name: string }[]
   assert.deepEqual(grantColumns.map(column => column.name), [
@@ -107,6 +111,8 @@ test('only a user acting through the UI channel may grant a site', (t) => {
   // The default channel is the safe one: a caller must opt into the UI explicitly.
   assert.throws(() => f.store.grant(alice, input()), fails('agent_cannot_grant'))
   assert.throws(() => f.store.grant(anonymous, input(), 'ui'), fails('invalid_actor'))
+  assert.throws(() => f.store.grant({ kind: 'link', linkId: 'link-1' }, input(), 'ui'), fails('invalid_actor'))
+  assert.throws(() => f.store.grant(alice, input(), 'bogus' as unknown as SiteGrantChannel), fails('invalid_grant'))
   assert.throws(() => f.store.revoke(anonymous, 'grant-1', NOW), fails('invalid_actor'))
   assert.equal(f.store.grantsFor('user-alice', 'project-1', 'editor', NOW).length, 0)
 })
@@ -268,10 +274,21 @@ test('openContext refuses unknown grants, contexts bound to another grant and cl
   assert.throws(() => f.store.openContext('context-1', second.id), fails('context_foreign'))
   assert.throws(() => f.store.openContext('context-2', 'missing-grant'), fails('grant_not_found'))
 
+  assert.equal(f.store.closeContext('missing-context', NOW), false)
   assert.equal(f.store.closeContext('context-1', NOW + 1), true)
   assert.equal(f.store.closeContext('context-1', NOW + 2), false)
   assert.throws(() => f.store.openContext('context-1', first.id), fails('context_closed'))
   assert.throws(() => f.store.openContext('context-3', 'missing-grant'), fails('grant_not_found'))
+})
+
+test('openContext and touch enforce an optional account guard', (t) => {
+  const f = fixture(t)
+  const grant = create(f.store, {}, alice)
+  assert.throws(() => f.store.openContext('context-1', grant.id, 'user-bob'), fails('grant_not_found'))
+  const context = f.store.openContext('context-1', grant.id, 'user-alice')
+  assert.equal(context.grantId, grant.id)
+  assert.throws(() => f.store.touch(grant.id, NOW + 1, 'user-bob'), fails('grant_not_found'))
+  assert.equal(f.store.touch(grant.id, NOW + 1, 'user-alice'), true)
 })
 
 test('an expired grant cannot open a context and disappears from grantsFor', (t) => {
@@ -279,6 +296,7 @@ test('an expired grant cannot open a context and disappears from grantsFor', (t)
   const grant = create(f.store, { expiresAt: NOW + 10 })
   f.setNow(NOW + 10)
   assert.throws(() => f.store.openContext('context-1', grant.id), fails('grant_expired'))
+  assert.equal(f.store.touch(grant.id, NOW + 10), false)
   assert.deepEqual(f.store.grantsFor('user-alice', 'project-1', 'editor', NOW + 10), [])
 })
 
@@ -302,7 +320,7 @@ test('touch records last use for active grants only', (t) => {
 
 test('secret-shaped field names are rejected before any row is written', (t) => {
   const f = fixture(t)
-  const fields = ['cookie', 'cookies', 'cookieHeader', 'password', 'passwordHash', 'token', 'accessToken', 'clientSecret', 'secret']
+  const fields = ['cookie', 'cookies', 'cookieHeader', 'password', 'passwd', 'passwordHash', 'token', 'accessToken', 'clientSecret', 'secret']
   for (const field of fields) {
     const bad = { ...input(), [field]: 'planted-secret-value' } as unknown as SiteGrantInput
     assert.throws(() => f.store.grant(alice, bad, 'ui'), fails('secret_material_rejected'), field)
