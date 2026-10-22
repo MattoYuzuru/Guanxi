@@ -33,6 +33,7 @@ export type NoteKind = 'decision' | 'dead_end' | 'hypothesis' | 'open_issue' | '
 export interface Note { id: number; kind: NoteKind; text: string; items: string[]; expiresAt: number | null }
 export interface Evidence { id: string; item: string; head: string; ok: boolean; output: string }
 export interface Ledger {
+  judge?: { briefHash: string; requestedWake?: string; requests: Array<{key:string;state:string}> };
   plan: Plan; caps: Caps; cycle: number; state: CycleState; startedAt: number;
   items: Record<string, 'open' | 'verification_requested' | 'done'>;
   head: string; files: string[]; diffstat: string; evidence: Evidence[];

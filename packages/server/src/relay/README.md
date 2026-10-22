@@ -75,8 +75,9 @@ A collector rejection or an invalid observation fails the cycle closed with the 
 is published and no follow-up model call is made. Cancellation and a revoked/stale fence keep
 the existing loss/cancel semantics instead of being converted into an observer error. Signals
 themselves do not stop, reroute or wake anything; J2/J3, verdicts, routing and the action
-cascade remain future work. A collector that ignores the abort signal and never settles can
-still hold the cycle open; this slice deliberately adds no timeout. Fixture tests prove wiring,
+cascade remain separate opt-in work below. Pure observation waits race the run abort signal,
+consume late outcomes and cannot hold disposal open; this adds no timer or new cancellation
+authority. Resourceful checker/model ownership uses the distinct settlement contract below. Fixture tests prove wiring,
 detached inputs, cancellation/fence behavior and seal consistency only; they are not real host
 observations, a calibrated classifier, or the R3 precision/recall/night-wake gates.
 
@@ -198,3 +199,63 @@ seals have append-only triggers. Failed DDL rolls back. Keep SQLite and WAL in t
 node backup. Prefer a forward fix; rollback uses the pre-upgrade backup, without deleting
 run evidence. No owner data, installed models, provider network or third-party source copies
 are used by R2 tests.
+
+## Opt-in judge cascade and delegation brief (R3 foundation)
+
+A trusted internal host may supply `RelayInput.cascade` (executor optional argument nine, after
+`judgeSignals`). Absence creates no R3 tables and preserves prior execution. This is an opt-in
+fixture foundation, not an activated product judge/routing policy: real ADR-0025 paired benchmark
+evidence is still required. No public route accepts callbacks, inventory facts or model authority.
+
+The immutable version-one brief binds the exact plan and caps to a run and its current attempt
+fence before cycle work. It records objective/DoD, estimates, constraints, resources, model roles
+and fallback/quota policy, checker pin, judge limits, requested wake policy and report shape.
+The brief is copied and deeply frozen; it does not authorize filesystem/network/model effects
+by itself. Exact replay is idempotent; changed plan/caps/brief conflicts. Session choice precedes
+project choice and policy selection. Hard local-placement/consent filters cannot fall through
+a denied explicit selection. Automatic selection requires fresh host-supplied validated calibration,
+never a fabricated success probability or fixture prior. Live inventory collection is not included.
+
+Independent ledger 38 shares SQLite with R1/K2 without changing main user_version or existing
+ledgers. Each request binds run/attempt/epoch/token/cycle/phase/layer/reason/brief hash and a
+harness-evidence digest. Prepare, dispatch reservation and outcome are separate fenced atomic
+commits. Exact duplicates never dispatch again; conflicting evidence refuses. Failed/unknown
+dispatches retain their worst-case token/money debit. R3 reservations also count in relay caps.
+J3 has per-run and account/local-night call/token/money limits, normally at most three strong
+reviews; an explicit recorded policy override is required to exceed three. An account's persisted
+timezone/night-start anchor prevents another run selecting a different night namespace. This is
+accounting, not a real price/usage or calibrated quality claim. Lost-attempt pending requests are
+abandoned on reconstruction; no checker/inference automatically resumes after restart.
+
+At cycle start and before sealing, optional J1.5 verifies a lead-owned base/path/content digest
+and passes copied verified bytes to a T0 read-only supervisor with explicit timeout/output policy.
+No concrete production checker supervisor is included; the host must enforce its declared sandbox
+and confirm actual process settlement. A mismatched pin invokes zero checker bodies. J2 uses
+exactly two or three fresh tool-free samples with strict taxonomy/verdict/existing-evidence refs
+and a non-authoritative diagnosis. Executor claims are quoted untrusted data. Disagreement,
+invalid output and missing facts remain explicit; no calibrated confidence is inferred. J3 is
+requested only for flagged/probe/final cases and cannot pass an item or override a failing gate.
+Three unavailable cycles request one existing R1 parent escalation; multiple phases/samples in
+one cycle count once, and a valid J2 resets the streak. Existing hard/probe/no-progress guards stay.
+
+Read-only observation/admission waits may abort-race with late outcomes consumed. Active checker
+and model adapters must abort and await actual owned-resource settlement, rather than treating
+timeout as cleanup. Every callback boundary has pre/post R1 checks; stale results cannot update
+a later cycle or wake a newer attempt. Judge refs enter the next safe ledger snapshot, preserving
+sealed ledger/handoff hashes. Completion wake intent may say defer-until-08:00, but current R1
+completion still wakes immediately: durable night scheduling is explicitly unfinished.
+
+`ConnectionJudgeModel` uses public K3 with the actual T0 owner account, an exact rendered token
+meter and a fresh trusted installed-local digest/consent observation. Local_runtime alone and
+model suffixes are insufficient; no API/cloud fallback exists. It does not discover an installed
+model or enable inference at plugin load. **Activation dependency:** the current K3 client may
+settle an aborted model POST before its injected fetch settles and release its governor permit
+early; a separately owned client fix must prove POST/body local settlement and preserve the
+after-version final-preparation fence. This adapter has positive fake K3 construction/account/
+scrub checks, but active-transport cancellation is not earned until that fix merges. Awaited
+local fetch settlement also cannot prove a backend stopped inference.
+
+No real model, paid provider, remote host, toolful F2 workspace bridge or live policy activation
+is included. Monthly owner-labelled judge calibration, precision >=0.8/recall >=0.9, >=20-run
+ETA P80 coverage 0.7–0.9, B3 quality gates, operational night wake and the >=6-hour MS1 envelope
+remain unearned.
