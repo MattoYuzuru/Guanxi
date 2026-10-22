@@ -3,8 +3,9 @@ import { spawn } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { test } from 'node:test'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { test, type TestContext } from 'node:test'
 import type { Connections } from '../../server/src/connections/service.ts'
 import { privateProcessRecordPath, reapPrivateProcessRecord, runPrivateTrial,
   type PrivateProcessPolicy, type PrivateTrialHost, type PrivateTrialResult } from '../src/private-process.ts'
@@ -12,8 +13,10 @@ import type { PublicAssistantMessage } from '../src/public-projection.ts'
 import { createTrialBinding, nonceHash, trialBindingTag, type TrialBinding } from '../src/trial-binding.ts'
 
 type CompletionResult = Awaited<ReturnType<Connections['complete']>>
-const clientScript = resolve('packages/bench/test/fixtures/private-client.mjs')
-const cwd = resolve('.')
+const clientScript = fileURLToPath(new URL('./fixtures/private-client.mjs', import.meta.url))
+const supervisorScript = fileURLToPath(new URL('../src/private-supervisor.mjs', import.meta.url))
+const launcherScript = fileURLToPath(new URL('../src/private-client-launcher.mjs', import.meta.url))
+const cwd = fileURLToPath(new URL('../', import.meta.url))
 const sentinels = ['fixture-account-sentinel', 'fixture-connection-sentinel',
   'fixture-provider-sentinel', 'fixture-model-sentinel', 'fixture-experiment-sentinel',
   'fixture-task-sentinel', 'fixture-arm-sentinel']
@@ -113,7 +116,7 @@ function cleanup(root: string, pids: (number | null | undefined)[] = []): void {
   }
   rmSync(root, { recursive: true, force: true })
 }
-async function groupedHolder(root: string, suffix = ''): Promise<{ supervisor: ReturnType<typeof spawn>; clientPid: number }> {
+async function groupedHolder(t: TestContext, root: string, suffix = '') {
   const groupFile = join(root, `group${suffix}.json`)
   const holderScript = `const {spawn}=require('node:child_process');` +
     `const fs=require('node:fs');` +
@@ -121,8 +124,24 @@ async function groupedHolder(root: string, suffix = ''): Promise<{ supervisor: R
     `fs.writeFileSync(process.argv[1],JSON.stringify({client:child.pid}));` +
     `setInterval(()=>{},1000)`
   const supervisor = spawn(process.execPath, ['-e', holderScript, groupFile], { detached: true, stdio: 'ignore' })
+  let clientPid: number | undefined
+  let cleaned = false
+  const cleanupGroup = async () => {
+    if (cleaned) return
+    cleaned = true
+    if (supervisor.pid) {
+      try { process.kill(-supervisor.pid, 'SIGKILL') } catch { /* already gone */ }
+      try { process.kill(supervisor.pid, 'SIGKILL') } catch { /* already gone */ }
+    }
+    if (clientPid) { try { process.kill(clientPid, 'SIGKILL') } catch { /* already gone */ } }
+    if (supervisor.pid) await waitGone(supervisor.pid).catch(() => undefined)
+    if (clientPid) await waitGone(clientPid).catch(() => undefined)
+  }
+  // Register ownership before setup/record validation can throw.
+  t.after(cleanupGroup)
   await waitFor(() => typeof supervisor.pid === 'number' && existsSync(groupFile))
-  return { supervisor, clientPid: readJson(groupFile).client as number }
+  clientPid = readJson(groupFile).client as number
+  return { supervisor, clientPid, cleanup: cleanupGroup }
 }
 function v2Record(x: ReturnType<typeof setup>, supervisorPid: number, clientPid: number, token: string): string {
   const recordPath = privateProcessRecordPath(x.binding, x.policy)
@@ -144,7 +163,7 @@ function v1Record(x: ReturnType<typeof setup>, supervisorPid: number, clientPid:
   return recordPath
 }
 function supervisorCommand(x: ReturnType<typeof setup>, recordPath: string): string {
-  return [process.execPath, resolve('packages/bench/src/private-supervisor.mjs'),
+  return [process.execPath, supervisorScript,
     x.policy.clientScript, recordPath, String(x.policy.killGraceMs),
     trialBindingTag(x.binding), nonceHash(x.binding)].join(' ')
 }
@@ -372,7 +391,7 @@ test('reaper refuses to kill or unlink a record whose live process identity does
       supervisorPid: holder.pid, pgid, clientPid: null, clientExitCode: null,
       clientScript: x.policy.clientScript, startedAt: Date.now(),
     }), { mode: 0o600 })
-    const nearMiss = `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak ` +
+    const nearMiss = `${process.execPath} ${supervisorScript}.bak ` +
       `${x.policy.clientScript} ${recordPath} 150 ${trialBindingTag(x.binding)} ${nonceHash(x.binding)}`
     const result = await reapPrivateProcessRecord(x.binding, x.policy, {
       observe: async pid => pid === holder.pid ? { pid, pgid, state: 'S', command: nearMiss } : null,
@@ -411,13 +430,13 @@ test('a live mismatched supervisor quarantines instead of falling through to a s
       observe: async pid => {
         if (pid === supervisor.pid) {
           return { pid, pgid, state: 'S', command:
-            `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak ` +
+            `${process.execPath} ${supervisorScript}.bak ` +
             `${x.policy.clientScript} ${recordPath} 150 ${trialBindingTag(x.binding)} ${nonceHash(x.binding)}` }
         }
         if (pid === clientPid) {
           clientObserved = true
           return { pid, pgid, state: 'S',
-            command: [process.execPath, resolve('packages/bench/src/private-client-launcher.mjs'), x.policy.clientScript].join(' ') }
+            command: [process.execPath, launcherScript, x.policy.clientScript].join(' ') }
         }
         return null
       },
@@ -437,9 +456,9 @@ test('a live mismatched supervisor quarantines instead of falling through to a s
 
 
 
-test('a v2 live mismatched supervisor quarantines before any client-token fallback', { timeout: 10_000 }, async () => {
+test('a v2 live mismatched supervisor quarantines before any client-token fallback', { timeout: 10_000 }, async t => {
   const x = setup()
-  const holder = await groupedHolder(x.root)
+  const holder = await groupedHolder(t, x.root)
   const token = randomBytes(32).toString('base64url')
   const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
   try {
@@ -448,7 +467,7 @@ test('a v2 live mismatched supervisor quarantines before any client-token fallba
       observe: async pid => {
         if (pid === holder.supervisor.pid) {
           return { pid, pgid: holder.supervisor.pid!, state: 'S',
-            command: `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak` }
+            command: `${process.execPath} ${supervisorScript}.bak` }
         }
         if (pid === holder.clientPid) clientObserved = true
         return null
@@ -460,18 +479,14 @@ test('a v2 live mismatched supervisor quarantines before any client-token fallba
     assert.equal(alive(holder.supervisor.pid!), true)
     assert.equal(alive(holder.clientPid), true)
   } finally {
-    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
-    await waitGone(holder.supervisor.pid!).catch(() => undefined)
-    await waitGone(holder.clientPid).catch(() => undefined)
+    await holder.cleanup()
     cleanup(x.root)
   }
 })
 
-test('v2 unknown supervisor observation preserves the record and never inspects the client', { timeout: 10_000 }, async () => {
+test('v2 unknown supervisor observation preserves the record and never inspects the client', { timeout: 10_000 }, async t => {
   const x = setup()
-  const holder = await groupedHolder(x.root)
+  const holder = await groupedHolder(t, x.root)
   const token = randomBytes(32).toString('base64url')
   const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
   try {
@@ -489,18 +504,14 @@ test('v2 unknown supervisor observation preserves the record and never inspects 
     assert.equal(alive(holder.supervisor.pid!), true)
     assert.equal(alive(holder.clientPid), true)
   } finally {
-    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
-    await waitGone(holder.supervisor.pid!).catch(() => undefined)
-    await waitGone(holder.clientPid).catch(() => undefined)
+    await holder.cleanup()
     cleanup(x.root)
   }
 })
 
-test('v2 observed-zombie supervisor falls through only to the exact recorded client generation', { timeout: 10_000 }, async () => {
+test('v2 observed-zombie supervisor falls through only to the exact recorded client generation', { timeout: 10_000 }, async t => {
   const x = setup()
-  const holder = await groupedHolder(x.root)
+  const holder = await groupedHolder(t, x.root)
   const token = randomBytes(32).toString('base64url')
   const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
   try {
@@ -508,11 +519,11 @@ test('v2 observed-zombie supervisor falls through only to the exact recorded cli
       observe: async pid => {
         if (pid === holder.supervisor.pid) {
           return { pid, pgid: holder.supervisor.pid!, state: 'Z',
-            command: `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak` }
+            command: `${process.execPath} ${supervisorScript}.bak` }
         }
         if (pid === holder.clientPid) {
           return { pid, pgid: holder.supervisor.pid!, state: 'S',
-            command: [process.execPath, resolve('packages/bench/src/private-client-launcher.mjs'),
+            command: [process.execPath, launcherScript,
               x.policy.clientScript, token].join(' ') }
         }
         return null
@@ -523,16 +534,14 @@ test('v2 observed-zombie supervisor falls through only to the exact recorded cli
     await waitGone(holder.supervisor.pid!)
     await waitGone(holder.clientPid)
   } finally {
-    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+    await holder.cleanup()
     cleanup(x.root)
   }
 })
 
-test('v2 observed-zombie supervisor with a wrong client token quarantines and does not signal', { timeout: 10_000 }, async () => {
+test('v2 observed-zombie supervisor with a wrong client token quarantines and does not signal', { timeout: 10_000 }, async t => {
   const x = setup()
-  const holder = await groupedHolder(x.root)
+  const holder = await groupedHolder(t, x.root)
   const token = randomBytes(32).toString('base64url')
   const wrong = randomBytes(32).toString('base64url')
   const recordPath = v2Record(x, holder.supervisor.pid!, holder.clientPid, token)
@@ -544,7 +553,7 @@ test('v2 observed-zombie supervisor with a wrong client token quarantines and do
         }
         if (pid === holder.clientPid) {
           return { pid, pgid: holder.supervisor.pid!, state: 'S',
-            command: [process.execPath, resolve('packages/bench/src/private-client-launcher.mjs'),
+            command: [process.execPath, launcherScript,
               x.policy.clientScript, wrong].join(' ') }
         }
         return null
@@ -555,16 +564,12 @@ test('v2 observed-zombie supervisor with a wrong client token quarantines and do
     assert.equal(alive(holder.supervisor.pid!), true)
     assert.equal(alive(holder.clientPid), true)
   } finally {
-    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
-    await waitGone(holder.supervisor.pid!).catch(() => undefined)
-    await waitGone(holder.clientPid).catch(() => undefined)
+    await holder.cleanup()
     cleanup(x.root)
   }
 })
 
-test('documented macOS and Linux live supervisor states permit exact-identity reaper cleanup', { timeout: 30_000 }, async () => {
+test('documented macOS and Linux live supervisor states permit exact-identity reaper cleanup', { timeout: 30_000 }, async t => {
   const x = setup()
   const liveStates: Array<{ state: string | undefined; label: string }> = [
     { state: undefined, label: 'legacy omitted state' },
@@ -582,7 +587,7 @@ test('documented macOS and Linux live supervisor states permit exact-identity re
   ]
   try {
     for (const [index, { state, label }] of liveStates.entries()) {
-      const holder = await groupedHolder(x.root, `-live-${index}`)
+      const holder = await groupedHolder(t, x.root, `-live-${index}`)
       const recordPath = v1Record(x, holder.supervisor.pid!, holder.clientPid)
       try {
         assert.equal(alive(holder.supervisor.pid!), true, label)
@@ -597,17 +602,15 @@ test('documented macOS and Linux live supervisor states permit exact-identity re
         await waitGone(holder.supervisor.pid!)
         await waitGone(holder.clientPid)
       } finally {
-        try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-        try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-        try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+        await holder.cleanup()
       }
     }
   } finally { cleanup(x.root) }
 })
 
-test('zombie, dead/obsolete and malformed supervisor states quarantine without signal or unlink', { timeout: 15_000 }, async () => {
+test('zombie, dead/obsolete and malformed supervisor states quarantine without signal or unlink', { timeout: 15_000 }, async t => {
   const x = setup()
-  const holder = await groupedHolder(x.root)
+  const holder = await groupedHolder(t, x.root)
   const recordPath = privateProcessRecordPath(x.binding, x.policy)
   const negativeStates = [
     ['Z', 'zombie'], ['Zs', 'zombie with modifier'], ['Z9', 'zombie with malformed modifier'],
@@ -632,16 +635,14 @@ test('zombie, dead/obsolete and malformed supervisor states quarantine without s
       assert.equal(alive(holder.clientPid), true, label)
     }
   } finally {
-    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+    await holder.cleanup()
     cleanup(x.root)
   }
 })
 
-test('a v1 record is unlinked without a signal only when its recorded group is actually ESRCH', { timeout: 10_000 }, async () => {
+test('a v1 record is unlinked without a signal only when its recorded group is actually ESRCH', { timeout: 10_000 }, async t => {
   const x = setup()
-  const holder = await groupedHolder(x.root)
+  const holder = await groupedHolder(t, x.root)
   const recordPath = privateProcessRecordPath(x.binding, x.policy)
   try {
     const supervisorPid = holder.supervisor.pid!
@@ -658,8 +659,7 @@ test('a v1 record is unlinked without a signal only when its recorded group is a
     assert.equal(result, 'removed')
     assert.equal(existsSync(recordPath), false)
   } finally {
-    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
-    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    await holder.cleanup()
     cleanup(x.root)
   }
 })
