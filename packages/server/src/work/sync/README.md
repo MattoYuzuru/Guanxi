@@ -85,8 +85,11 @@ A write happens only on a derived-status transition into the coarse set (ADR-003
 
 The comment body ends with
 `<!-- guanxi:transition:<itemId>:<status>:<seq> -->`. Before posting, the engine lists existing
-comments and looks for that exact marker. If it is present, the comment counts as already
-posted and only the remaining status write is attempted. This makes a process crash between
+comments and looks for that exact marker, but only on comments authored by the authenticated
+tracker identity (`adapter.self()`, cached from GitHub `GET /user` or Jira `/rest/api/*/myself`).
+A user can copy marker text into a comment; it does not suppress the status comment. If the
+marker is present on an own comment, the comment counts as already posted and only the
+remaining status write is attempted. This makes a process crash between
 the POST and the local save safe: the retry reuses the sequence, finds the marker and does not
 post twice. The sequence is not advanced on a deferred or failed transition, so a retry after
 a failed label or transition also reuses the same marker.
@@ -137,8 +140,9 @@ returns the exact next-allowed epoch millisecond.
 ### GitHub Issues
 
 `owner/repo#123` keys. Reads `title`, `body`, labels, assignee and `updated_at`, with ETag
-conditionals. Comments paginate through the `Link` header and refuse a cross-origin next page.
-Label writes read the issue first, remove stale `guanxi:` labels, and add the target.
+conditionals. Comments carry `user.login` as their author and paginate through the `Link`
+header; a cross-origin next page is refused. `self()` reads and caches `GET /user`. Label
+writes read the issue first, remove stale coarse status labels, and add the target.
 
 ### Jira
 
@@ -146,7 +150,8 @@ One adapter, selected by `apiVersion`: Cloud uses `/rest/api/3`, Data Center use
 `/rest/api/2` (D-121). Reads summary, description, priority, assignee, labels and `updated`.
 Cloud descriptions are flattened from ADF; Data Center descriptions remain plain/wiki text.
 Cloud comments are sent as an ADF document; Data Center comments are sent as plain text.
-Comment reads flatten ADF to text so marker checks work on both variants. `transitions` maps a
+Comment reads flatten ADF to text so marker checks work on both variants; the author is
+`accountId` (Cloud) or `name` (Data Center), and `self()` caches `GET /rest/api/*/myself`. `transitions` maps a
 coarse status to a transition id or name; the adapter resolves it from the issue's available
 transitions and sends only `{ transition: { id } }`.
 
@@ -158,7 +163,7 @@ a network. The suite covers:
 
 - business-field changes while syncing, with every outgoing request inspected;
 - one marker per coarse transition, idempotent retry after a crash, and retry after a deferred
-  label write;
+  label write, plus a user-authored marker that does not suppress the status comment;
 - no request at all for non-coarse transitions;
 - GitHub label swap, Jira transition mapping and unmapped comment-only statuses;
 - exact 80/min, 500/h, 20-per-issue burst, `retry-after`, reset-header and bounded `5xx`

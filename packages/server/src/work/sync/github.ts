@@ -94,6 +94,13 @@ function labelNames(value: unknown): string[] {
   }).filter(name => name !== '')
 }
 
+function commentAuthor(comment: Record<string, unknown>): string | null {
+  const user = comment.user
+  if (user === null || typeof user !== 'object') return null
+  const login = (user as Record<string, unknown>).login
+  return typeof login === 'string' && login !== '' ? login : null
+}
+
 function assigneeName(issue: Record<string, unknown>): string | null {
   const single = issue.assignee
   if (single !== null && typeof single === 'object') {
@@ -157,6 +164,7 @@ export class GitHubAdapter implements TrackerAdapter {
   private readonly origin: string
   private readonly userAgent: string
   private readObserver: TrackerReadObserver | null = null
+  private selfIdentity: string | null = null
 
   constructor(options: GitHubAdapterOptions) {
     const base = options.apiBase ?? DEFAULT_API_BASE
@@ -263,11 +271,38 @@ export class GitHubAdapter implements TrackerAdapter {
         comments.push({
           id: String(comment.id),
           body: typeof comment.body === 'string' ? comment.body : '',
+          author: commentAuthor(comment),
         })
       }
       url = nextLink(headerValue(response.headers, 'link'), url, this.origin)
     }
     return comments
+  }
+
+  async self(): Promise<string> {
+    if (this.selfIdentity !== null) return this.selfIdentity
+    const response = await this.send(
+      'GET',
+      `${this.apiBase}/user`,
+      undefined,
+      { accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28' },
+      'github:self',
+    )
+    if (response.status !== 200) {
+      if (isRetryable(response)) {
+        throw new TrackerRetryableError(response.status, response.headers)
+      }
+      throw new TrackerSyncError(
+        'remote_rejected',
+        `GitHub identity read rejected with status ${response.status}`,
+      )
+    }
+    const user = object(parseJson(response.body, 'GitHub user'), 'GitHub user')
+    if (typeof user.login !== 'string' || user.login === '') {
+      throw new TrackerSyncError('invalid_response', 'GitHub user login must be a string')
+    }
+    this.selfIdentity = user.login
+    return user.login
   }
 
   async mutate(externalKey: string, mutation: TrackerMutation): Promise<TrackerWriteResult> {

@@ -160,6 +160,7 @@ test('GitHub comment reads and writes carry only the comment body', async () => 
   const comments = await adapter.listComments('example-org/example-repo#7')
   assert.equal(comments.length, 1)
   assert.equal(comments[0]!.id, '9001')
+  assert.equal(comments[0]!.author, 'tracker-bot')
   assert.match(comments[0]!.body, /guanxi:transition:wg2-a:in_progress:1/)
 
   const created = await adapter.mutate('example-org/example-repo#7', {
@@ -279,6 +280,33 @@ test('GitHub keeps user labels in the guanxi namespace out of the status swap', 
   )
 })
 
+test('adapters expose the authenticated identity and cache it', async () => {
+  const github = new ScriptedTransport(request => {
+    if (pathOf(request) === '/user') return json(200, { login: 'tracker-bot' })
+    throw new Error(`unexpected GitHub request ${request.method} ${pathOf(request)}`)
+  })
+  const gitHubAdapter = githubAdapter(github)
+  assert.equal(await gitHubAdapter.self(), 'tracker-bot')
+  assert.equal(await gitHubAdapter.self(), 'tracker-bot')
+  assert.equal(github.requests.length, 1)
+  assert.equal(pathOf(github.requests[0]!), '/user')
+
+  const jira = new ScriptedTransport(request => {
+    if (pathOf(request) === '/rest/api/3/myself') return json(200, { accountId: 'jira-bot' })
+    throw new Error(`unexpected Jira request ${request.method} ${pathOf(request)}`)
+  })
+  const jiraV3 = jiraAdapter(jira, 3)
+  assert.equal(await jiraV3.self(), 'jira-bot')
+  assert.equal(await jiraV3.self(), 'jira-bot')
+  assert.equal(jira.requests.length, 1)
+
+  const jiraV2Transport = new ScriptedTransport(request => {
+    if (pathOf(request) === '/rest/api/2/myself') return json(200, { name: 'data-center-bot' })
+    throw new Error(`unexpected Jira request ${request.method} ${pathOf(request)}`)
+  })
+  assert.equal(await jiraAdapter(jiraV2Transport, 2).self(), 'data-center-bot')
+})
+
 test('retryable read responses surface as a typed retryable error', async () => {
   const github = new ScriptedTransport(() => json(429, { message: 'rate limited' }, {
     'retry-after': '30',
@@ -388,6 +416,7 @@ test('Jira comment reads flatten ADF so idempotency markers survive', async () =
   const v3 = await jiraAdapter(v3Transport, 3).listComments('PROJ-12')
   assert.equal(v3.length, 1)
   assert.equal(v3[0]!.id, '20003')
+  assert.equal(v3[0]!.author, 'jira-cloud-bot')
   assert.match(v3[0]!.body, /<!-- guanxi:transition:wg2-a:in_progress:1 -->/)
   assert.equal(
     pathOf(v3Transport.requests[0]!),
@@ -398,9 +427,14 @@ test('Jira comment reads flatten ADF so idempotency markers survive', async () =
     startAt: 0,
     maxResults: 100,
     total: 1,
-    comments: [{ id: '20004', body: 'plain marker <!-- guanxi:transition:wg2-a:done:2 -->' }],
+    comments: [{
+      id: '20004',
+      author: { name: 'jira-dc-bot' },
+      body: 'plain marker <!-- guanxi:transition:wg2-a:done:2 -->',
+    }],
   }))
   const v2 = await jiraAdapter(v2Transport, 2).listComments('PROJ-12')
+  assert.equal(v2[0]!.author, 'jira-dc-bot')
   assert.match(v2[0]!.body, /guanxi:transition:wg2-a:done:2/)
 
   const emptyV3 = new ScriptedTransport(() => json(200, fixture('jira-comments-empty-v3')))

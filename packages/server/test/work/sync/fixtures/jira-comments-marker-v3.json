@@ -5,6 +5,7 @@
   "comments": [
     {
       "id": "20003",
+      "author": { "accountId": "jira-cloud-bot", "displayName": "Jira Cloud Bot" },
       "body": {
         "type": "doc",
         "version": 1,

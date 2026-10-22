@@ -101,6 +101,13 @@ export function adfDocument(text: string): Record<string, unknown> {
   return { type: 'doc', version: 1, content }
 }
 
+function jiraCommentAuthor(comment: Record<string, unknown>): string | null {
+  const author = comment.author
+  if (author === null || typeof author !== 'object') return null
+  const record = author as Record<string, unknown>
+  return stringField(record.accountId) ?? stringField(record.name)
+}
+
 function jiraBodyText(value: unknown): string {
   if (typeof value === 'string') return value
   if (value === null || value === undefined) return ''
@@ -134,6 +141,7 @@ export class JiraAdapter implements TrackerAdapter {
   private readonly transitions: Partial<Record<CoarseStatus, string>>
   private readonly userAgent: string
   private readObserver: TrackerReadObserver | null = null
+  private selfIdentity: string | null = null
 
   constructor(options: JiraAdapterOptions) {
     if (options.apiVersion !== 2 && options.apiVersion !== 3) {
@@ -264,7 +272,11 @@ export class JiraAdapter implements TrackerAdapter {
         if (comment.id === undefined || comment.id === null) {
           throw new TrackerSyncError('invalid_response', 'Jira comment id is missing')
         }
-        comments.push({ id: String(comment.id), body: jiraBodyText(comment.body) })
+        comments.push({
+          id: String(comment.id),
+          body: jiraBodyText(comment.body),
+          author: jiraCommentAuthor(comment),
+        })
       }
       const total = typeof page.total === 'number' ? page.total : null
       const pageSize = typeof page.maxResults === 'number' && page.maxResults > 0
@@ -276,6 +288,36 @@ export class JiraAdapter implements TrackerAdapter {
       if (entries.length < pageSize && (total === null || startAt >= total)) break
     }
     return comments
+  }
+
+  async self(): Promise<string> {
+    if (this.selfIdentity !== null) return this.selfIdentity
+    const response = await this.send(
+      'GET',
+      `${this.apiBase()}/myself`,
+      undefined,
+      { accept: 'application/json' },
+      'jira:self',
+    )
+    if (response.status !== 200) {
+      if (isRetryable(response)) {
+        throw new TrackerRetryableError(response.status, response.headers)
+      }
+      throw new TrackerSyncError(
+        'remote_rejected',
+        `Jira identity read rejected with status ${response.status}`,
+      )
+    }
+    const user = object(parseJson(response.body, 'Jira user'), 'Jira user')
+    const identity = stringField(user.accountId) ?? stringField(user.name)
+    if (identity === null) {
+      throw new TrackerSyncError(
+        'invalid_response',
+        'Jira user must expose accountId or name',
+      )
+    }
+    this.selfIdentity = identity
+    return identity
   }
 
   async mutate(externalKey: string, mutation: TrackerMutation): Promise<TrackerWriteResult> {

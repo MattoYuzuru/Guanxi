@@ -267,7 +267,30 @@ export class TrackerSyncEngine {
       throw error
     }
 
-    const existing = comments.find(comment => comment.body.includes(marker))
+    // A marker only counts when the authenticated tracker identity wrote it; a user can
+    // copy the marker text into a comment and must not suppress the real status comment.
+    const marked = comments.filter(comment => comment.body.includes(marker))
+    let existing
+    if (marked.length > 0) {
+      let self: string
+      try {
+        self = await this.adapter.self()
+      } catch (error) {
+        if (error instanceof TrackerTransportError) {
+          const observation = this.governor.observeTransportFailure({
+            tracker: link.tracker,
+            key: link.externalKey,
+            now,
+          })
+          return deferred(link, observation)
+        }
+        if (error instanceof TrackerRetryableError) {
+          return deferred(link, this.readDeferral(link, error, now))
+        }
+        throw error
+      }
+      existing = marked.find(comment => comment.author !== null && comment.author === self)
+    }
     let commentPosted = false
     if (existing !== undefined) {
       pending = { ...pending, lastCommentId: existing.id, lastTransitionSeq: seq }

@@ -104,6 +104,8 @@ export interface RemoteComment {
   id: string
   /** Plain text. Jira ADF comment bodies are flattened before they reach the engine. */
   body: string
+  /** Authenticated tracker identity that wrote the comment, when the API exposes one. */
+  author: string | null
 }
 
 /**
@@ -137,6 +139,8 @@ export interface TrackerAdapter {
   statusMapping(status: CoarseStatus): 'label' | 'transition' | 'none'
   read(externalKey: string, conditional?: ConditionalRead): Promise<RemoteReadResult>
   listComments(externalKey: string): Promise<RemoteComment[]>
+  /** The authenticated identity, cached after the first request. */
+  self(): Promise<string>
   mutate(externalKey: string, mutation: TrackerMutation): Promise<TrackerWriteResult>
 }
 

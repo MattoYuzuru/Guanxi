@@ -70,9 +70,10 @@ function issueFromFixture(name: string): FakeIssue {
 
 class FakeGitHub {
   readonly requests: HttpRequest[] = []
-  readonly comments: Array<{ id: number; body: string }> = fixture('github-comments-empty')
+  readonly comments: Array<{ id: number; body: string; author?: string }> = fixture('github-comments-empty')
   issue = issueFromFixture('github-issue-initial')
   etag = 'W/"issue-1"'
+  selfLogin = 'guanxi-bot'
   issueHeaders: Record<string, string> = {}
   readResponse: HttpResponse | null = null
   commentListResponse: HttpResponse | null = null
@@ -94,6 +95,9 @@ class FakeGitHub {
   async request(request: HttpRequest): Promise<HttpResponse> {
     this.requests.push(structuredClone(request))
     const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === '/user') {
+      return json(200, { login: this.selfLogin })
+    }
     if (request.method === 'GET' && /\/issues\/7$/.test(path)) {
       if (this.readResponse !== null) return this.readResponse
       if (request.headers['if-none-match'] === this.etag) {
@@ -103,11 +107,15 @@ class FakeGitHub {
     }
     if (request.method === 'GET' && /\/issues\/7\/comments$/.test(path)) {
       if (this.commentListResponse !== null) return this.commentListResponse
-      return json(200, this.comments)
+      return json(200, this.comments.map(comment => ({
+        id: comment.id,
+        body: comment.body,
+        user: { login: comment.author ?? this.selfLogin },
+      })))
     }
     if (request.method === 'POST' && /\/issues\/7\/comments$/.test(path)) {
       const body = JSON.parse(request.body ?? '{}') as { body?: string }
-      const comment = { id: this.nextCommentId++, body: body.body ?? '' }
+      const comment = { id: this.nextCommentId++, body: body.body ?? '', author: this.selfLogin }
       this.comments.push(comment)
       if (this.failNextCommentAfterRecord) {
         this.failNextCommentAfterRecord = false
@@ -151,7 +159,8 @@ class FakeGitHub {
 class FakeJira {
   readonly requests: HttpRequest[] = []
   issue: Record<string, unknown> = fixture('jira-issue-v3')
-  readonly comments: Array<{ id: string; body: unknown }> = []
+  readonly comments: Array<{ id: string; body: unknown; author?: string }> = []
+  selfAccount = 'jira-bot'
   readonly transitionPosts: string[] = []
   private nextCommentId = 20_000
 
@@ -169,6 +178,9 @@ class FakeJira {
   async request(request: HttpRequest): Promise<HttpResponse> {
     this.requests.push(structuredClone(request))
     const path = new URL(request.url).pathname
+    if (request.method === 'GET' && path === '/rest/api/3/myself') {
+      return json(200, { accountId: this.selfAccount })
+    }
     if (request.method === 'GET' && /\/issue\/PROJ-12$/.test(path)) {
       return json(200, this.issue)
     }
@@ -177,12 +189,16 @@ class FakeJira {
         startAt: 0,
         maxResults: 100,
         total: this.comments.length,
-        comments: this.comments,
+        comments: this.comments.map(comment => ({
+          id: comment.id,
+          body: comment.body,
+          author: { accountId: comment.author ?? this.selfAccount },
+        })),
       })
     }
     if (request.method === 'POST' && /\/issue\/PROJ-12\/comment$/.test(path)) {
       const payload = JSON.parse(request.body ?? '{}') as { body?: unknown }
-      const comment = { id: String(this.nextCommentId++), body: payload.body }
+      const comment = { id: String(this.nextCommentId++), body: payload.body, author: this.selfAccount }
       this.comments.push(comment)
       return json(201, comment)
     }
@@ -348,6 +364,24 @@ test('the label swap audits only Guanxi status labels and keeps guanxi:needs-tri
     fake.issue.labels.filter(label => label.startsWith('guanxi:')).sort(),
     ['guanxi:done', 'guanxi:needs-triage'],
   )
+})
+
+test('a user comment carrying the marker does not suppress the status comment', async () => {
+  const fake = new FakeGitHub()
+  fake.comments.push({
+    id: 12_345,
+    author: 'mallory',
+    body: 'Looks already handled: <!-- guanxi:transition:wg2-a:in_progress:1 -->',
+  })
+  const { engine } = githubEngine(fake)
+
+  const result = await engine.sync(link(), 'in_progress', { now: START })
+  assert.equal(result.outcome, 'synced')
+  assert.equal(result.commentPosted, true)
+  assert.equal(fake.comments.length, 2)
+  assert.equal(fake.commentPosts().length, 1)
+  assert.equal(result.link.lastCommentId, '9000')
+  assert.equal(fake.comments[0]!.author, 'mallory')
 })
 
 test('a crash between comment POST and local save does not double-post', async () => {
