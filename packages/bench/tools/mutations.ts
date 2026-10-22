@@ -31,13 +31,16 @@ const cases = [
   { id: 'gateway-single-attempt', file: 'src/k3-gateway.ts', before: 'singleAttempt: true', after: 'singleAttempt: undefined', test: 'test/k3-gateway.test.ts' },
   { id: 'b3a-plan-digest', file: 'src/relay-protocol.ts', before: 'if (relayPlanDigest(plan) !== input.planSha256)', after: 'if (false)', test: 'test/relay-protocol.test.ts' },
   { id: 'b3a-row-coverage', file: 'src/relay-protocol.ts', before: 'for (const m of manifest) if (!rows.has(m))', after: 'for (const m of manifest) if (false)', test: 'test/relay-protocol.test.ts' },
-  { id: 'b3a-strict-envelope', file: 'src/relay-protocol.ts', before: 'trials: z.array(trialSlot).max(10_000),\n}).strict()', after: 'trials: z.array(trialSlot).max(10_000),\n})', test: 'test/relay-protocol.test.ts' },
+  { id: 'b3a-strict-envelope', file: 'src/relay-protocol.ts', before: 'trials: z.array(trialSlot).max(MAX_TRIALS),\n}).strict()', after: 'trials: z.array(trialSlot).max(MAX_TRIALS),\n})', test: 'test/relay-protocol.test.ts' },
   { id: 'b3a-first-attempt-split', file: 'src/relay-measurement.ts', before: "if (first.state === 'unknown') b.firstUnknown++; else if (first.result === 'correct') b.firstCorrect++", after: "if (last.state === 'unknown') b.firstUnknown++; else if (last.result === 'correct') b.firstCorrect++", test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-unknown-denominator', file: 'src/relay-measurement.ts', before: 'firstAttemptCorrectOverExpected: denominatorKnown ? frac(b.firstCorrect, b.expected) : null,', after: 'firstAttemptCorrectOverExpected: frac(b.firstCorrect, b.expected),', test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-paired-infra-exclusion', file: 'src/relay-measurement.ts', before: "rows.some(x => x.o === 'infra_error' || x.o === 'infra_tainted') ? 'infra'", after: "false ? 'infra'", test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-guarded-repeat', file: 'src/relay-measurement.ts', before: 'if (k.guardActive) c.guards.guardedRepeats++; else c.guards.unguardedRepeats++', after: 'c.guards.unguardedRepeats++', test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-eta-equality', file: 'src/relay-measurement.ts', before: '<= selected.p80RemainingMs', after: '< selected.p80RemainingMs', test: 'test/relay-measurement.test.ts' },
   { id: 'b3a-no-real-credit', file: 'src/relay-measurement.ts', before: 'realEvidenceCredit: 0,', after: "realEvidenceCredit: input.declaredOrigin === 'recorded_observation' ? 1 : 0,", test: 'test/relay-measurement.test.ts' },
+  { id: 'b3a-single-use-evidence', file: 'src/relay-protocol.ts', before: 'if (referenced.has(ref) && SINGLE_USE.has(e.kind))', after: 'if (false)', test: 'test/relay-protocol.test.ts' },
+  { id: 'b3a-bounds-before-parse', file: 'src/relay-protocol.ts', before: '!bounded(record.evidence, MAX_EVIDENCE)', after: 'false', test: 'test/relay-protocol.test.ts' },
+  { id: 'b3a-cycle-infra-taint', file: 'src/relay-measurement.ts', before: 'return t.cycles.some(c => c.state', after: 'return false && t.cycles.some(c => c.state', test: 'test/relay-measurement.test.ts' },
 ]
 for (const mutation of cases) {
   const dir = mkdtempSync(join(tmpdir(), 'b1-mutation-'))

@@ -17,6 +17,8 @@ export type RelayEvidenceKind = typeof RELAY_EVIDENCE_KINDS[number]
 
 const MAX_HORIZON = 64
 const MAX_ISSUES = 50
+const MAX_EVIDENCE = 50_000
+const MAX_TRIALS = 10_000
 // Opaque identifiers: never paths, URLs or free text, never opened or fetched.
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/)
 const sha = z.string().regex(/^[a-f0-9]{64}$/)
@@ -114,7 +116,7 @@ export const relayMeasurementSchema = z.object({
   declaredOrigin: z.enum(['synthetic_fixture', 'recorded_observation']),
   recordedAtMs: uint, analysisAsOfMs: uint,
   plan: planSchema, planSha256: sha,
-  evidence: z.array(evidence).max(50_000), trials: z.array(trialSlot).max(10_000),
+  evidence: z.array(evidence).max(MAX_EVIDENCE), trials: z.array(trialSlot).max(MAX_TRIALS),
 }).strict()
 export type RelayMeasurementInput = z.infer<typeof relayMeasurementSchema>
 export type RelayPlan = z.infer<typeof planSchema>
@@ -173,6 +175,8 @@ class Issues {
   readonly list: RelayIssue[] = []
   add(code: RelayErrorCode, rule: string, location: string): void { if (this.list.length < MAX_ISSUES) this.list.push({ code, rule, location }) }
 }
+// Kinds whose metadata record stands for exactly one observation. A verifier run may back several items.
+const SINGLE_USE: ReadonlySet<RelayEvidenceKind> = new Set(['attempt_receipt', 'cycle_receipt', 'probe_grading', 'runtime_sample', 'guard_observation', 'seal_reference', 'forecast_record'])
 const seen = <T>(values: readonly T[], onDup: (v: T, i: number) => void): Set<T> => {
   const out = new Set<T>()
   values.forEach((v, i) => { if (out.has(v)) onDup(v, i); out.add(v) })
@@ -203,6 +207,7 @@ function validateStructure(input: RelayMeasurementInput, out: Issues): Set<strin
   const resolve = (ref: string, kind: RelayEvidenceKind, ctx: Ctx, at: string) => {
     const e = registry.get(ref)
     if (!e) { out.add('reference_mismatch', 'ref_unresolved', at); return }
+    if (referenced.has(ref) && SINGLE_USE.has(e.kind)) out.add('reference_mismatch', 'ref_reuse', at)
     referenced.add(ref)
     if (e.kind !== kind) out.add('reference_mismatch', 'ref_kind', at)
     else if (e.task !== ctx.task || e.arm !== ctx.arm || e.seed !== ctx.seed || e.attempt !== ctx.attempt || e.cycle !== ctx.cycle) out.add('reference_mismatch', 'ref_binding', at)
@@ -279,6 +284,7 @@ function validateTrial(input: RelayMeasurementInput, t: RelayObservedTrial, at: 
     if (started !== null && f.issuedAtMs < started) out.add('chronology_invalid', 'forecast_before_start', fat)
     const keyed = t.cycles.find(c => c.state === 'observed' && c.ordinal === f.cycle)
     if (keyed?.state === 'observed' && f.issuedAtMs > keyed.endedAtMs) out.add('chronology_invalid', 'forecast_after_cycle', fat)
+    if (t.cycles.some(c => c.state === 'not_reached' && c.ordinal === f.cycle)) out.add('chronology_invalid', 'forecast_cycle_not_reached', fat)
   })
 }
 
@@ -378,19 +384,27 @@ function validateCycle(input: RelayMeasurementInput, t: RelayObservedTrial, c: R
   if (c.integrity.state === 'observed') resolve(c.integrity.ref, 'seal_reference', ctx, `${at}.integrity.ref`)
 }
 
+const bounded = (v: unknown, max: number) => !Array.isArray(v) || v.length <= max
 /** Non-throwing structured validation. Never coerces: any malformed input is refused whole. */
 export function checkRelayMeasurement(raw: unknown): RelayCheck {
-  const format = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>).format : undefined
-  if (format !== undefined && format !== RELAY_MEASUREMENT_FORMAT) return { ok: false, issues: [{ code: 'schema_invalid', rule: 'format_unsupported', location: 'format' }] }
-  const parsed = relayMeasurementSchema.safeParse(raw)
-  if (!parsed.success) {
-    const issues = parsed.error.issues.slice(0, MAX_ISSUES).map(i => ({ code: 'schema_invalid' as const, rule: 'schema', location: safeLocation(i.path) }))
-    return { ok: false, issues }
+  try {
+    const record = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? raw as Record<string, unknown> : null
+    if (record && record.format !== undefined && record.format !== RELAY_MEASUREMENT_FORMAT) return { ok: false, issues: [{ code: 'schema_invalid', rule: 'format_unsupported', location: 'format' }] }
+    // Refuse oversized arrays before the schema walks every element.
+    if (record && (!bounded(record.evidence, MAX_EVIDENCE) || !bounded(record.trials, MAX_TRIALS))) return { ok: false, issues: [{ code: 'schema_invalid', rule: 'bounds', location: 'input' }] }
+    const parsed = relayMeasurementSchema.safeParse(raw)
+    if (!parsed.success) {
+      const issues = parsed.error.issues.slice(0, MAX_ISSUES).map(i => ({ code: 'schema_invalid' as const, rule: 'schema', location: safeLocation(i.path) }))
+      return { ok: false, issues }
+    }
+    const out = new Issues()
+    const referencedEvidence = validateStructure(parsed.data, out)
+    if (out.list.length) return { ok: false, issues: out.list }
+    return { ok: true, value: parsed.data, referencedEvidence }
+  } catch {
+    // Hostile input (throwing getters, proxies) must not leak its own message.
+    return { ok: false, issues: [{ code: 'schema_invalid', rule: 'unreadable', location: 'input' }] }
   }
-  const out = new Issues()
-  const referencedEvidence = validateStructure(parsed.data, out)
-  if (out.list.length) return { ok: false, issues: out.list }
-  return { ok: true, value: parsed.data, referencedEvidence }
 }
 export function validateRelayMeasurement(raw: unknown): RelayMeasurementInput {
   const result = checkRelayMeasurement(raw)

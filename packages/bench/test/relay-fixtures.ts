@@ -104,3 +104,14 @@ export function resign(raw: Raw, skip: { plan?: boolean; evidence?: boolean; man
   return raw
 }
 export const trialOf = (raw: Raw, task: string, arm: string, seed: number): Raw => raw.trials.find((t: Raw) => t.task === task && t.arm === arm && t.seed === seed)
+/** Register a fresh evidence record bound like an existing row, so a test can add a row without reusing a reference. */
+export function addEvidence(raw: Raw, kind: string, task: string, arm: string, seed: number, attempt: string | null, cycle: number | null): string {
+  const id = `ev-added-${raw.evidence.length}`
+  raw.evidence.push({ id, kind, task, arm, seed, attempt, cycle, metaSha256: '' })
+  return id
+}
+/** Append a graded retry of an existing probe grade for the first relay trial's cycle `k` (0-based). */
+export function addRetry(raw: Raw, k: number, grade: Raw, result: 'correct' | 'incorrect', attempt = 2): void {
+  const cycle = trialOf(raw, 'task-a', 'arm-relay', 1).cycles[k]
+  cycle.probes.grades.push({ ...grade, attempt, result, ref: addEvidence(raw, 'probe_grading', 'task-a', 'arm-relay', 1, 'att-1', k + 1) })
+}

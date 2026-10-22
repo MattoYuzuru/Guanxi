@@ -1,6 +1,6 @@
 # B3-a — offline relay-benchmark evidence validator: plan
 
-**Status:** accepted plan, not implemented at this commit · **Updated:** 2026-10-23 ·
+**Status:** implemented locally as a pure parser and reducer; fixture-validated only, B3 stays proposed · **Updated:** 2026-10-23 ·
 **Branch:** `codex/b3a-offline-evidence` · **Base:** `069eeb24` · **Ports:** 5211 / 4411
 
 ## Goal
@@ -58,12 +58,14 @@ match their digest and rows cover them exactly (unknown row = present, omitted =
 acceptance/plan digests equal the plan's; every ref resolves to evidence of the right kind
 bound to the same trial, attempt and cycle; evidence digests verify; attempt epochs strictly
 increase; times ordered (`start <= assigned <= assessed <= end`, forecast before completion,
-all `<= recordedAt <= analysisAsOf`).
+all `<= recordedAt <= analysisAsOf`); receipt, grading, sample, guard, seal and forecast records
+back exactly one observation each; a forecast for an unreached cycle rejects; hostile input
+(throwing getters, oversized arrays) yields a fixed `schema_invalid`.
 
 ## Reported counts (descriptive, per arm and per cycle ordinal)
 
 Trial and cycle coverage (expected, observed, missing, unknown, not reached, outcomes,
-tainted); item tallies from rows (expected, passed, failed, unknown); probe tallies split by
+tainted, including infra taint recorded in a cycle or group slot); item tallies from rows (expected, passed, failed, unknown); probe tallies split by
 scope, field key and first attempt versus after-retry, retry rescues; truncation samples and
 events, window mismatches; guarded and unguarded repeats; reported integrity agreement
 (`reported_match` / `reported_mismatch` / unknown, authenticated count always 0); selected-

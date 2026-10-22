@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { RELAY_CRITERIA, reduceRelayMeasurement, type RelayMeasurementReport } from '../src/relay-measurement.ts'
 import { RelayMeasurementError } from '../src/relay-protocol.ts'
-import { build, resign, trialOf, type Raw } from './relay-fixtures.ts'
+import { addRetry, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
 
 const arm = (report: RelayMeasurementReport, id: string) => report.arms.find(a => a.id === id)!
 const relayCycle = (raw: Raw, k = 0, task = 'task-a', seed = 1) => trialOf(raw, task, 'arm-relay', seed).cycles[k]
@@ -16,7 +16,7 @@ function finiteNumbers(v: unknown, path = ''): void {
 test('valid fixture: exact hand counts, constants fixed, every criterion unevaluated', () => {
   const r = reduce(build())
   assert.deepEqual([r.gate, r.b3Decision, r.authenticity, r.realEvidenceCredit, r.declaredOrigin], ['measurement_only', 'unevaluated', 'not_verified_offline', 0, 'synthetic_fixture'])
-  assert.deepEqual(r.coverage, { trials: { expected: 8, observed: 8, missing: 0 }, cycles: { expected: 24, observed: 24, unknown: 0, notReached: 0 }, evidence: { total: 361, unreferenced: 0 } })
+  assert.deepEqual(r.coverage, { trials: { expected: 8, observed: 8, missing: 0 }, cycles: { expected: 24, observed: 24, unknown: 0, notReached: 0, missing: 0 }, evidence: { total: 361, unreferenced: 0 } })
   assert.equal(r.stratum.quantization, 'q4-fixture'); assert.equal(r.stratum.eCalibration, 'unknown')
   assert.deepEqual(r.arms.map(a => [a.id, a.availability, a.trials.expected]), [['arm-large', 'unsupported', 0], ['arm-naive', 'planned', 4], ['arm-relay', 'planned', 4]])
   const relay = arm(r, 'arm-relay'); const naive = arm(r, 'arm-naive')
@@ -64,7 +64,7 @@ test('whole-answer probes never become field grades; retry rescue does not impro
   assert.ok(reduce(resign(whole)).unresolved.includes('critical_field_grades_absent'))
 
   const retry = build()
-  { const c = relayCycle(retry); c.probes.grades[1].result = 'incorrect'; c.probes.grades.push({ ...c.probes.grades[1], attempt: 2, result: 'correct' }) }
+  { const c = relayCycle(retry); c.probes.grades[1].result = 'incorrect'; addRetry(retry, 0, c.probes.grades[1], 'correct') }
   const p = arm(reduce(resign(retry)), 'arm-relay').totals.probes.criticalField
   assert.deepEqual([p.expected, p.firstCorrect, p.firstIncorrect, p.finalCorrect, p.retryRescued, p.retryAttempts], [24, 23, 1, 24, 1, 1])
   assert.equal(p.firstAttemptCorrectOverExpected, 23 / 24)
@@ -84,7 +84,7 @@ test('unknown stays unknown: one unknown grade gives a conservative incomplete f
   const unknownGroup = build(); relayCycle(unknownGroup).probes = { state: 'unknown', reason: 'not_collected' }
   const q = arm(reduce(resign(unknownGroup)), 'arm-relay').totals.probes
   assert.equal(q.denominatorKnown, false); assert.equal(q.criticalField.firstAttemptCorrectOverExpected, null); assert.equal(q.wholeAnswer.afterRetryCorrectOverExpected, null)
-  assert.equal(q.criticalField.firstAttemptKnownOnlyAccuracy, 1)
+  assert.equal(q.criticalField.firstAttemptKnownOnlyAccuracy, null) // no fraction survives an unknown denominator
 
   const noOpportunity = build()
   for (const t of noOpportunity.trials) for (const c of t.cycles) { c.items.manifest.opportunities = []; c.items.assessments = [] }
@@ -196,7 +196,7 @@ test('early terminal, unknown and missing cycles are retained and never imputed'
   const u = trialOf(raw, 'task-a', 'arm-relay', 2); u.cycles[0] = { ordinal: 1, state: 'unknown', reason: 'purged' }
   const r = reduce(resign(raw))
   const relay = arm(r, 'arm-relay')
-  assert.deepEqual(r.coverage.cycles, { expected: 24, observed: 21, unknown: 1, notReached: 2 })
+  assert.deepEqual(r.coverage.cycles, { expected: 24, observed: 21, unknown: 1, notReached: 2, missing: 0 })
   assert.equal(relay.trials.observed, 4)
   assert.deepEqual(relay.cycles.map(c => [c.cycles.observed, c.cycles.unknown, c.cycles.notReached]), [[3, 1, 0], [3, 0, 1], [3, 0, 1]])
   assert.deepEqual(relay.cycles.map(c => c.items.expected), [6, 6, 6]) // not-reached cycles add no opportunities, no score is imputed
@@ -234,4 +234,38 @@ test('reduce refuses malformed input with the fixed error and never reports a pa
   assert.throws(() => reduce(bad), (e: unknown) => e instanceof RelayMeasurementError && e.code === 'missing_slot' && e.message === 'relay_measurement_missing_slot')
   assert.throws(() => reduce({ ...build(), gate: 'passed' }), (e: unknown) => e instanceof RelayMeasurementError && e.code === 'schema_invalid')
   assert.throws(() => reduce(null), RelayMeasurementError)
+})
+
+test('infrastructure taint inside a cycle slot excludes the whole task from the paired comparison and the ETA', () => {
+  const raw = build()
+  const t = trialOf(raw, 'task-a', 'arm-relay', 1)
+  t.outcome = 'failed'; t.cycles[2] = { ordinal: 3, state: 'not_reached', reason: 'infra_tainted' }
+  const r = reduce(resign(raw))
+  assert.ok(r.pairedRelayVsNaive.state === 'descriptive' && r.pairedRelayVsNaive.includedTasks === 1)
+  if (r.pairedRelayVsNaive.state === 'descriptive') assert.deepEqual(r.pairedRelayVsNaive.excluded, [{ task: 'task-a', reason: 'infra' }])
+  assert.deepEqual([arm(r, 'arm-relay').trials.tainted, arm(r, 'arm-relay').trials.outcomes.failed, arm(r, 'arm-relay').trials.outcomes.infra_tainted], [1, 1, 0])
+  assert.deepEqual([arm(r, 'arm-relay').eta.excludedTainted, arm(r, 'arm-relay').eta.eligible], [1, 3])
+  const group = build(); { const c = relayCycle(group); c.guards = { state: 'unknown', reason: 'infra_tainted' } }
+  assert.equal(arm(reduce(resign(group)), 'arm-relay').trials.tainted, 1)
+  const row = build(); { const s = relayCycle(row).context.samples[0]; for (const k of ['ref', 'actualWindowTokens', 'renderedTokens', 'truncationEvents']) delete s[k]; s.state = 'unknown'; s.reason = 'infra_tainted' }
+  assert.equal(arm(reduce(resign(row)), 'arm-relay').trials.tainted, 1)
+})
+
+test('empty or unsupported arms never read as complete; missing trials get their own cycle bucket; unreferenced evidence is flagged', () => {
+  const r = reduce(build())
+  const large = arm(r, 'arm-large').totals
+  assert.deepEqual([large.items.complete, large.items.denominatorKnown, large.probes.criticalField.complete, large.context.complete, large.guards.complete, large.integrity.complete], [false, false, false, false, false, false])
+  const early = build()
+  for (const t of early.trials.filter((x: Raw) => x.arm === 'arm-relay')) t.cycles = t.cycles.map((_: Raw, i: number) => ({ ordinal: i + 1, state: 'not_reached', reason: 'not_reached' })), t.forecasts = []
+  const e = reduce(resign(early))
+  assert.equal(arm(e, 'arm-relay').totals.items.complete, false); assert.equal(arm(e, 'arm-relay').totals.items.expected, 0)
+  const missing = build()
+  Object.assign(trialOf(missing, 'task-a', 'arm-relay', 1), { state: 'missing', reason: 'not_collected' })
+  const m = trialOf(missing, 'task-a', 'arm-relay', 1); for (const k of ['runId', 'outcome', 'attempts', 'startedAtMs', 'finishedAtMs', 'cycles', 'forecasts']) delete m[k]
+  const c = reduce(resign(missing)).coverage.cycles
+  assert.deepEqual(c, { expected: 24, observed: 21, unknown: 0, notReached: 0, missing: 3 })
+  assert.equal(c.observed + c.unknown + c.notReached + c.missing, c.expected)
+  const extra = build(); extra.evidence.push({ id: 'ev-unused', kind: 'calibration', task: null, arm: null, seed: null, attempt: null, cycle: null, metaSha256: '' })
+  const u = reduce(resign(extra))
+  assert.equal(u.coverage.evidence.unreferenced, 1); assert.ok(u.unresolved.includes('evidence_unreferenced'))
 })

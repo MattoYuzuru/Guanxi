@@ -6,7 +6,7 @@ import {
   RELAY_ERROR_CODES, RelayMeasurementError, checkRelayMeasurement, relayPlanDigest, validateRelayMeasurement, type RelayErrorCode,
 } from '../src/relay-protocol.ts'
 import { validatePlan, validateRecordedPlan, validateResults } from '../src/protocol.ts'
-import { BASE, SEEDS, TASKS, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
+import { BASE, SEEDS, TASKS, addRetry, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
 import { plan as b1Plan } from './helpers.ts'
 
 function expectIssue(raw: unknown, code: RelayErrorCode, rule?: string): void {
@@ -179,10 +179,10 @@ test('probe rules: scope and field agree, retries only follow failures, attempts
   expectIssue(resign(scope), 'schema_invalid', 'probe_field_scope')
   const critical = build(); relayCycle(critical).probes.manifest.occasions[1].field = null
   expectIssue(resign(critical), 'schema_invalid', 'probe_field_scope')
-  const afterCorrect = build(); { const c = relayCycle(afterCorrect); c.probes.grades.push({ ...c.probes.grades[1], attempt: 2 }) }
-  expectIssue(afterCorrect, 'chronology_invalid', 'probe_retry_after_correct')
-  const gap = build(); { const c = relayCycle(gap); c.probes.grades[1] = { ...c.probes.grades[1], result: 'incorrect' }; c.probes.grades.push({ ...c.probes.grades[1], attempt: 3, result: 'correct' }) }
-  expectIssue(gap, 'missing_slot', 'probe_attempt_gap')
+  const afterCorrect = build(); addRetry(afterCorrect, 0, relayCycle(afterCorrect).probes.grades[1], 'correct')
+  expectIssue(resign(afterCorrect), 'chronology_invalid', 'probe_retry_after_correct')
+  const gap = build(); { const c = relayCycle(gap); c.probes.grades[1] = { ...c.probes.grades[1], result: 'incorrect' }; addRetry(gap, 0, c.probes.grades[1], 'correct', 3) }
+  expectIssue(resign(gap), 'missing_slot', 'probe_attempt_gap')
   const repeat = build(); { const c = relayCycle(repeat); c.probes.grades.push(structuredClone(c.probes.grades[0])) }
   expectIssue(repeat, 'duplicate_key', 'probe_row_repeat')
   const guard = build(); relayCycle(guard).guards.manifest.checks.push({ id: 'g-1', deadEnd: 'd-2' })
@@ -251,4 +251,50 @@ test('the fixture shape is what the hand counts assume', () => {
   const raw = build()
   assert.deepEqual(raw.plan.tasks, TASKS); assert.deepEqual(raw.plan.seeds, SEEDS)
   assert.equal(raw.trials.length, 8)
+})
+
+test('every remaining structural rule fails when violated', () => {
+  const t = (r: Raw) => trialOf(r, 'task-a', 'arm-relay', 1)
+  const cases: Array<[string, (r: Raw) => void, RelayErrorCode, string]> = [
+    ['trial after recorded', r => { t(r).finishedAtMs.value = r.recordedAtMs + 1 }, 'chronology_invalid', 'after_recorded'],
+    ['trial start after cycle', r => { t(r).startedAtMs.value = relayCycle(r, 0).startedAtMs + 1 }, 'chronology_invalid', 'cycle_before_trial'],
+    ['trial end before cycle', r => { t(r).finishedAtMs.value = relayCycle(r, 2).endedAtMs - 1 }, 'chronology_invalid', 'cycle_after_trial'],
+    ['forecast after recorded', r => { t(r).forecasts[1].issuedAtMs = r.recordedAtMs + 1 }, 'chronology_invalid', 'after_recorded'],
+    ['forecast cycle range', r => { t(r).forecasts[1].cycle = 4 }, 'schema_invalid', 'forecast_cycle_range'],
+    ['eta cycle range', r => { r.plan.eta.selectionCycle = 4 }, 'schema_invalid', 'eta_cycle_range'],
+    ['forecast id repeat', r => { t(r).forecasts[1].id = 'f-1' }, 'duplicate_key', 'forecast_repeat'],
+    ['arm id repeat', r => { r.plan.arms[1].id = 'arm-relay' }, 'duplicate_key', 'arm_repeat'],
+    ['task repeat', r => { r.plan.tasks = ['task-a', 'task-a'] }, 'duplicate_key', 'task_repeat'],
+    ['probe occasion repeat', r => { relayCycle(r).probes.manifest.occasions[1].id = 'p-whole' }, 'duplicate_key', 'probe_occasion_repeat'],
+    ['probes manifest digest', r => { relayCycle(r).probes.manifest.sha256 = 'e'.repeat(64) }, 'reference_mismatch', 'manifest_digest'],
+    ['context manifest digest', r => { relayCycle(r).context.manifest.sha256 = 'e'.repeat(64) }, 'reference_mismatch', 'manifest_digest'],
+    ['guards manifest digest', r => { relayCycle(r).guards.manifest.sha256 = 'e'.repeat(64) }, 'reference_mismatch', 'manifest_digest'],
+    ['calibration ref', r => { r.plan.stratum.eCalibration = { state: 'observed', ref: 'ev-nope', effectiveTokens: 20000 } }, 'reference_mismatch', 'ref_unresolved'],
+    ['unsupported arm ref', r => { r.plan.arms[2].availability.ref = 'ev-nope' }, 'reference_mismatch', 'ref_unresolved'],
+    ['evidence foreign seed', r => { r.evidence[1].seed = 77 }, 'identity_mismatch', 'evidence_foreign'],
+    ['evidence foreign arm', r => { r.evidence[1].arm = 'arm-zzz' }, 'identity_mismatch', 'evidence_foreign'],
+    ['reused grading record', r => { relayCycle(r).probes.grades[1].ref = relayCycle(r).probes.grades[0].ref }, 'reference_mismatch', 'ref_reuse'],
+    ['reused runtime sample record', r => { relayCycle(r).context.samples[1].ref = relayCycle(r).context.samples[0].ref }, 'reference_mismatch', 'ref_reuse'],
+    ['reused cycle receipt', r => { relayCycle(r, 1).receiptRef = relayCycle(r, 0).receiptRef }, 'reference_mismatch', 'ref_reuse'],
+    ['forecast for an unreached cycle', r => { t(r).cycles[2] = { ordinal: 3, state: 'not_reached', reason: 'not_reached' }; t(r).forecasts[1].cycle = 3 }, 'chronology_invalid', 'forecast_cycle_not_reached'],
+  ]
+  for (const [name, patch, code, rule] of cases) {
+    const r = build(); patch(r)
+    const result = checkRelayMeasurement(name.includes('digest') ? r : resign(r))
+    assert.equal(result.ok, false, name)
+    if (!result.ok) assert.ok(result.issues.some(i => i.code === code && i.rule === rule), `${name}: ${JSON.stringify(result.issues.slice(0, 3))}`)
+  }
+  const shared = build(); relayCycle(shared).items.assessments[1].ref = relayCycle(shared).items.assessments[0].ref
+  assert.equal(checkRelayMeasurement(resign(shared)).ok, true) // one verifier run may back several items of one cycle
+})
+
+test('hostile input yields a fixed schema_invalid and is bounded before parsing', () => {
+  const getter = { get format(): string { throw new Error('SECRET-GETTER-TEXT') } }
+  const result = checkRelayMeasurement(getter)
+  assert.deepEqual(result, { ok: false, issues: [{ code: 'schema_invalid', rule: 'unreadable', location: 'input' }] })
+  assert.throws(() => validateRelayMeasurement(new Proxy({}, { get() { throw new Error('SECRET-PROXY-TEXT') } })), (e: unknown) => e instanceof RelayMeasurementError && !e.message.includes('SECRET'))
+  const huge = { ...build(), evidence: new Array(50_001).fill(null) }
+  const started = process.hrtime.bigint()
+  expectIssue(huge, 'schema_invalid', 'bounds')
+  assert.ok(Number(process.hrtime.bigint() - started) / 1e6 < 250, 'bounds are checked before every element is parsed')
 })

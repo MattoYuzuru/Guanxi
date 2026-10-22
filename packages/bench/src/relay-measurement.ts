@@ -101,30 +101,41 @@ const bucketOut = (b: ReturnType<typeof bucket>, denominatorKnown: boolean) => (
   ...b,
   firstAttemptCorrectOverExpected: denominatorKnown ? frac(b.firstCorrect, b.expected) : null,
   afterRetryCorrectOverExpected: denominatorKnown ? frac(b.finalCorrect, b.expected) : null,
-  firstAttemptKnownOnlyAccuracy: frac(b.firstCorrect, b.firstCorrect + b.firstIncorrect),
+  firstAttemptKnownOnlyAccuracy: denominatorKnown ? frac(b.firstCorrect, b.firstCorrect + b.firstIncorrect) : null,
   complete: denominatorKnown && b.firstUnknown === 0 && b.finalUnknown === 0,
 })
 function cycleOut(c: CycleAcc) {
   const i = c.items; const p = c.probes; const x = c.context; const g = c.guards
-  const itemsKnown = i.groupsUnknown === 0; const probesKnown = p.groupsUnknown === 0
+  // A denominator is known only when at least one group was observed and none is unknown or missing.
+  const itemsKnown = i.groupsUnknown === 0 && i.groupsObserved > 0; const probesKnown = p.groupsUnknown === 0 && p.groupsObserved > 0
+  const contextKnown = x.groupsUnknown === 0 && x.groupsObserved > 0; const guardsKnown = g.groupsUnknown === 0 && g.groupsObserved > 0
   return {
     cycles: { observed: c.observed, unknown: c.unknown, notReached: c.notReached, trialsMissing: c.trialsMissing },
     items: { ...i, denominatorKnown: itemsKnown, complete: itemsKnown && i.unknown === 0,
-      passedOverExpected: itemsKnown ? frac(i.passed, i.expected) : null, knownOnlyPassed: frac(i.passed, i.passed + i.failed) },
+      passedOverExpected: itemsKnown ? frac(i.passed, i.expected) : null, knownOnlyPassed: itemsKnown ? frac(i.passed, i.passed + i.failed) : null },
     probes: {
       groupsObserved: p.groupsObserved, groupsUnknown: p.groupsUnknown, denominatorKnown: probesKnown,
       wholeAnswer: bucketOut(p.wholeAnswer, probesKnown), criticalField: bucketOut(p.criticalField, probesKnown),
       byField: Object.fromEntries(RELAY_FIELD_KEYS.map(f => [f, bucketOut(p.byField[f], probesKnown)])) as Record<Field, ReturnType<typeof bucketOut>>,
     },
-    context: { ...x, denominatorKnown: x.groupsUnknown === 0, complete: x.groupsUnknown === 0 && x.unknown === 0 },
-    guards: { ...g, denominatorKnown: g.groupsUnknown === 0, complete: g.groupsUnknown === 0 && g.unknown === 0 },
-    integrity: { ...c.integrity, authenticated: 0 as const, complete: c.integrity.unknown === 0 },
+    context: { ...x, denominatorKnown: contextKnown, complete: contextKnown && x.unknown === 0 },
+    guards: { ...g, denominatorKnown: guardsKnown, complete: guardsKnown && g.unknown === 0 },
+    integrity: { ...c.integrity, authenticated: 0 as const, complete: c.integrity.observed > 0 && c.integrity.unknown === 0 },
   }
 }
 export type RelayCycleReport = ReturnType<typeof cycleOut> & { ordinal: number }
 
 const etaAcc = () => ({ observedTrials: 0, selectedForecasts: 0, selectedMissing: 0, otherForecasts: 0, eligible: 0, covered: 0, uncovered: 0, excludedTainted: 0, excludedWrongCohort: 0, excludedNoncompleted: 0 })
 const COMPLETED = new Set<Outcome>(['passed', 'failed', 'escalated'])
+const infra = (x: { state: string; reason?: string }) => x.state !== 'observed' && x.reason === 'infra_tainted'
+/** Infrastructure taint anywhere in a trial, not only in its supplied terminal outcome. */
+function trialTainted(t: RelayObservedTrial): boolean {
+  if (t.outcome === 'infra_error' || t.outcome === 'infra_tainted') return true
+  return t.cycles.some(c => c.state !== 'observed' ? infra(c)
+    : [c.items, c.probes, c.context, c.guards, c.integrity].some(infra) || (c.items.state === 'observed' && c.items.assessments.some(infra))
+      || (c.probes.state === 'observed' && c.probes.grades.some(infra)) || (c.context.state === 'observed' && c.context.samples.some(infra))
+      || (c.guards.state === 'observed' && c.guards.checks.some(infra)))
+}
 
 export interface RelayMeasurementReport {
   format: typeof RELAY_REPORT_FORMAT
@@ -137,7 +148,7 @@ export interface RelayMeasurementReport {
   authenticity: 'not_verified_offline'
   realEvidenceCredit: 0
   stratum: { provider: string; model: string; revision: string; quantization: string; windowTokens: number; eCalibration: 'observed' | 'unknown' }
-  coverage: { trials: { expected: number; observed: number; missing: number }; cycles: { expected: number; observed: number; unknown: number; notReached: number }; evidence: { total: number; unreferenced: number } }
+  coverage: { trials: { expected: number; observed: number; missing: number }; cycles: { expected: number; observed: number; unknown: number; notReached: number; missing: number }; evidence: { total: number; unreferenced: number } }
   arms: Array<{
     id: string; kind: RelayArmKind; availability: 'planned' | 'unsupported'
     trials: { expected: number; observed: number; missing: number; tainted: number; outcomes: Record<Outcome, number> }
@@ -173,13 +184,13 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
   const outcomeOf = new Map<string, Outcome | 'missing'>()
   const unresolved = new Set<string>()
   let trialsObserved = 0; let trialsMissing = 0; let trialsExpected = 0
-  const cyc = { expected: 0, observed: 0, unknown: 0, notReached: 0 }
+  const cyc = { expected: 0, observed: 0, unknown: 0, notReached: 0, missing: 0 }
 
   for (const arm of armsSorted) {
     const acc = Array.from({ length: plan.horizon }, cycleAcc)
     const outcomes = zeroCounts(RELAY_OUTCOMES)
     const eta = etaAcc()
-    let observed = 0; let missing = 0; let expected = 0
+    let observed = 0; let missing = 0; let expected = 0; let tainted = 0
     if (arm.availability.state === 'planned') {
       for (const task of taskIds) for (const seed of seeds) {
         expected++
@@ -187,10 +198,12 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
         if (slot.state === 'missing') {
           missing++; outcomeOf.set(JSON.stringify([task, arm.id, seed]), 'missing')
           acc.forEach(c => { c.trialsMissing++; unknownGroups(c) })
-          cyc.expected += plan.horizon
+          cyc.expected += plan.horizon; cyc.missing += plan.horizon
           continue
         }
-        observed++; outcomes[slot.outcome]++; outcomeOf.set(JSON.stringify([task, arm.id, seed]), slot.outcome)
+        const taint = trialTainted(slot)
+        if (taint) tainted++
+        observed++; outcomes[slot.outcome]++; outcomeOf.set(JSON.stringify([task, arm.id, seed]), taint ? 'infra_tainted' : slot.outcome)
         slot.cycles.forEach((c, i) => {
           cyc.expected++
           const a = acc[i]!
@@ -198,7 +211,7 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
           else if (c.state === 'unknown') { cyc.unknown++; a.unknown++; unknownGroups(a) }
           else { cyc.notReached++; a.notReached++ }
         })
-        addEta(eta, slot, plan.eta.selectionCycle, plan.eta.cohortId)
+        addEta(eta, slot, plan.eta.selectionCycle, plan.eta.cohortId, taint)
       }
     }
     trialsObserved += observed; trialsMissing += missing; trialsExpected += expected
@@ -206,7 +219,7 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
     acc.forEach(c => add(totals, c))
     armReports.push({
       id: arm.id, kind: arm.kind, availability: arm.availability.state,
-      trials: { expected, observed, missing, tainted: outcomes.infra_error + outcomes.infra_tainted, outcomes },
+      trials: { expected, observed, missing, tainted, outcomes },
       cycles: acc.map((c, i) => ({ ordinal: i + 1, ...cycleOut(c) })), totals: cycleOut(totals),
       eta: { ...eta, coverageOverEligible: frac(eta.covered, eta.eligible), calibrated: false },
     })
@@ -221,6 +234,7 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
   if (cyc.notReached) unresolved.add('cycles_not_reached')
   let criticalExpected = 0
   for (const a of armReports) {
+    if (a.availability !== 'planned') continue // listed as arm_unsupported; it has no observations to complete
     const t = a.totals
     if (t.items.groupsUnknown || t.items.unknown) unresolved.add('items_unknown')
     if (t.probes.groupsUnknown || !t.probes.wholeAnswer.complete || !t.probes.criticalField.complete) unresolved.add('probes_unknown')
@@ -248,13 +262,13 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
   }
 }
 
-function addEta(eta: ReturnType<typeof etaAcc>, t: RelayObservedTrial, selectionCycle: number, cohortId: string): void {
+function addEta(eta: ReturnType<typeof etaAcc>, t: RelayObservedTrial, selectionCycle: number, cohortId: string, tainted: boolean): void {
   eta.observedTrials++
   const selected = t.forecasts.find(f => f.cycle === selectionCycle)
   eta.otherForecasts += t.forecasts.length - (selected ? 1 : 0)
   if (!selected) { eta.selectedMissing++; return }
   eta.selectedForecasts++
-  if (selected.taint === 'tainted') { eta.excludedTainted++; return }
+  if (selected.taint === 'tainted' || tainted) { eta.excludedTainted++; return }
   if (selected.cohortId !== cohortId) { eta.excludedWrongCohort++; return }
   if (!COMPLETED.has(t.outcome) || t.finishedAtMs.state !== 'observed') { eta.excludedNoncompleted++; return }
   eta.eligible++
