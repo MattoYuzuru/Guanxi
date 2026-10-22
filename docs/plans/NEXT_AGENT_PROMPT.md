@@ -37,45 +37,48 @@ where Markdown/license/lint pass. Do not call the earlier failed wrappers succes
 
 ## First unfinished slice: U1 actual product shell
 
-Three standalone author/reviewer lanes must close together before integration. Own dependencies,
-Node26, local sharedheavy lock and no concurrent source writes are mandatory. Inspect actual
-HEAD/dirty state and worker sessions before touching a lane.
+Three preceding standalone repair lanes are independently closed. Do not reopen them:
 
-1. `/Users/yuzuru/Projects/Guanxi-lanes/u1-shell-mount`, `codex/u1-shell-mount`, ports5202/4402:
-   original source9a1aaa26/test761f01e3 incorporates main1b6 without conflicts4734c2f8 and
-   regenerated usage6c8aa1f2. Review found wrong session-page mocks, transitive draft use and
-   contrast debt. Repairs through8e019f0c correct canonical SESSION_ROUTES.page and explicit
-   empty/no-alert success assertions; independent components39/39 and browsers26/27 pass.
-   The remaining test matches both responsive ContextPanels, so final whole-page zero-axe is
-   not yet observed. Root plan3b2f624f authorizes visibility-filtered exact row counts and
-   removing only six obsolete App.tsx G5 allowances. DSH second repair is active. Preserve
-   both seeded unnamed-button controls and all request/effect/lifecycle assertions.
-2. `/Users/yuzuru/Projects/Guanxi-lanes/u1-status-closure`, `codex/u1-status-closure`:
-   a3160507 adds recursive G11 status enforcement without changing usage counts or statuses.
-   Independent repository scope30/30 passes, but outside controls reproduce two P2 bypasses:
-   named-barrel side-effect edges disappear and resolved relative imports beyond UI/src are
-   silently ignored. Root plan873c717c authorizes exact fixes; DSH repair is active. Independent
-   original controls must close afterward. Correct actual G11 intentionally reports draft
-   IconButton/Menu/Tooltip and Workspace's textarea/empty-state; never silence real drafts.
-3. `/Users/yuzuru/Projects/Guanxi-lanes/u1-primitive-readiness`,
-   `codex/u1-primitive-readiness`, ports5203/4403, clean final34a9ea2b/source437f5042:
-   independent Sol review is active. Author added23 new cases and fixed actual Tooltip role/ID/
-   open-description association plus Menu forced-colors text backplates. Complete browser25/25
-   at e7de5075 is23new+2 inherited; separate UI23 inherited at990ac275 and final affected
-   forced-colors1/1 at437 are recorded, not added as new cases again. SourceHash-only refresh
-   touches seven manifest fields. Statuses/approvals/snapshots remain unchanged. Fast UI is
-   red on the six inherited App.tsx allowances assigned to the host lane, not primitive debt.
+1. `u1-shell-mount`, branch `codex/u1-shell-mount`, final `ae691c23`: canonical session-page
+   fixtures and explicit empty/no-alert assertions are fixed. Earlier components39/39 and
+   browsers26/27 remain recorded at8e019f0c; the final visible-row test now reaches strict
+   whole-page zero-axe. Independent flows4/4 `check-ef40ey59`, scanner2/2 `check-r1oolmlu`
+   and fast UI `check-lht3_fxe` pass. The exact ratchet shrink removes five keys, corrects
+   text-xs3→1, adds zero and preserves425 others; the initial six-deletion premise was wrong.
+2. `u1-status-closure`, final `77bf2e0f`: recursive G11 enforces every reachable component's
+   status at its original product file. Named-barrel side effects and resolved out-of-root
+   runtime edges are fixed separately. Independent `check-a33f4i5k` passes38/38: repository34
+   plus original outside4. Whole closure contributes16 new /18 inherited repository cases.
+   Real draft-use errors remain intentional until actual component readiness is completed.
+3. `u1-primitive-readiness`, final `a502aed8`: Tooltip role/ID/open description, render-element/
+   function prop merging and Menu forced-colors backplates are fixed. Original23 readiness
+   cases plus2 render cases are25 new repository cases. Independent original3 controls
+   `check-mbuy4_j0` and render2 `check-m1mr4ceh` pass after the last repair; earlier ten-case,
+   UI and regime evidence remains at its actual pins. No approval/status/snapshot was changed.
 
-Reports live outside under `/Users/yuzuru/Projects/Guanxi-lanes/reviews/`; each lane has its own
-plan/handoff. Only after real readiness evidence and independent closure may root make unsigned
-draft-to-review transitions. The additional Textarea/EmptyState audit is read-only/proposed;
-do not bulk-promote. No owner key/signature/approved status or snapshot shortcut is authorized.
-Review/stale use warns for ordinary slices and remains blocked at stage/release exit.
+Root assembled these into a separate union `c0145958` without conflicts/manual resolutions,
+then committed the accepted next plan `8a001b66` in
+`/Users/yuzuru/Projects/Guanxi-lanes/u1-workspace-states`, branch `codex/u1-workspace-states`.
+This is an author base, not validated main. Own npmci `check-z2yiultz` passes and contract
+resolves inside; Node26, ports5205/4405, data.lane-data and the shared Mac heavy lock apply.
+The Sol author owns truthful Workspace loading/error/empty states, per-await safe failure
+facts/client observation time, meaningful Show-hidden/Add-Chat actions, geometry-only retry
+following a known-successful layout PUT, stable Save-as ID for unconfirmed PUTs, and actual
+Textarea/EmptyState/ErrorState readiness. Read its committed plan before changing anything.
 
-The mounted plan uses prepared public AppShellChrome/Sidebar/Status/Palette/controller, one
-RuntimeProvider and one SidebarSlot owner. Preserve routes, focus, storage, state and truthful
-runtime facts; do not reimplement completed layout/search. Assemble reviewed lanes, reconcile
-manifest sourceHashes/usage, run frozen candidate/integration gates and update central docs.
+Root locked an exact12-image pinned-Docker baseline allowance (Textarea Invalid4; Workspace
+empty/placeholder/error/loading light/dark8). Author diagnostic captures are not baselines;
+root owns production/inspection after a clean handoff. Other images, owner keys/signatures/
+approved statuses, wire/storage/docking, existing primitive fixes and G11 stay untouched.
+ErrorState adds a sixth reachable draft; only independent actual closure may precede root's
+separate unsigned draft→review transitions. No status promotion merely to silence G11.
+
+Reports remain outside under `/Users/yuzuru/Projects/Guanxi-lanes/reviews/`; each lane has
+its own plan/handoff. The final union still needs sourceHash/usage reconciliation, browser/
+UI/full candidate and main integration gates. Review/stale use warns for ordinary slices
+and remains blocked at stage/release exit. Main still has its earlier shell preparation.
+Preserve one RuntimeProvider/SidebarSlot owner, routes/focus/storage/state and truthful facts;
+do not reimplement completed layout/search or rerun closed review envelopes without cause.
 U1 new-session, finished-unseen, true ephemeral Save/Send side chat, remaining CSS debt and owner
 approval remain separate. D-135 backend remains proposed; durable chat is not ephemeral.
 
@@ -85,11 +88,11 @@ Current source transfer is main3e4840bb/executable1b6, separate clean dedicated-
 `/home/guanxi-bench/checks/guanxi-linux-3e4840bb-20261022/source`; do not use the older owner clone.
 Root accepted the outside Fedora envelope. First setup failed before npmci/tests because npm
 refused two config paths both/dev/null; distinct private task configs and a new deps unit repair
-that setup, preserving the failed unit. Require actual successful ownnpmci/contract resolution,
-then actual X1/kernel62/62 passes/no-skips check-kuwdfp_z. The selected14-file core scope fails
+that setup, preserving the failed unit. Own npmci/contract resolution passes check-yhd08czp;
+actual X1/kernel62/62 passes with no skips, check-kuwdfp_z. The selected14-file core scope fails
 25/213 (182pass/6Darwin-onlyskip), check-4bonvt3c:22 native sandbox startup failures plus3
 dependent relay cases. Do not rerun blindly; independent content-free diagnosis is active.
-Ownnpmci/contract resolution already passes check-yhd08czp. Its unloaded unit metadata is
+The successful deps unit was already unloaded; final unit metadata is
 unavailable, not fake terminal success. Read evidence for actual receipt/count-parser limits.
 Detached units have real time/memory/CPU
 caps, sanitized environment and shared remoteheavy; no model or corpus benchmark is implied.
