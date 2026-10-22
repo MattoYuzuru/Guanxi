@@ -232,6 +232,8 @@ test('payload validation refuses extra keys, long titles and control characters'
     { title: 'Quota\n10% left', tag: 'quota' },
     { title: 'Quota\u000010% left', tag: 'quota' },
     { title: 'Quota\u007f10% left', tag: 'quota' },
+    { title: 'Quota\u202810% left', tag: 'quota' },
+    { title: 'Quota\u202910% left', tag: 'quota' },
     { title: 'Quota 10% left', tag: 'quota\nfive_hour' },
     { title: '', tag: 'quota' },
     { title: '   ', tag: 'quota' },
