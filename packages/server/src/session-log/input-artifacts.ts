@@ -32,6 +32,12 @@ import {
   relativeDirectoryOperation,
   type RelativeDirectoryIdentity,
 } from '../store/pinned-directory.ts'
+import {
+  InputEncodingError,
+  boundedUtf8Excerpt,
+  hashUtf8Text,
+  utf8Chunks,
+} from './input-encoding.ts'
 
 export type SessionInputErrorCode =
   | 'invalid_input'
@@ -56,6 +62,11 @@ export interface SessionInputStoreHooks {
   beforeHelperStart?(): void | Promise<void>
   /** After the helper handshake is validated, before its first command byte. */
   beforeWrite?(): void | Promise<void>
+  /**
+   * Test seam: observes each transport chunk after the verified handshake and
+   * before it is yielded to the helper. The chunk is not mutated afterward.
+   */
+  onTransportChunk?(chunk: Uint8Array): void
   beforeRead?(): void | Promise<void>
 }
 
@@ -115,11 +126,21 @@ export function sessionInputDirectoryName(sessionId: string): string {
 
 /** A UTF-8-safe prefix of at most `maxBytes` bytes. */
 export function utf8Excerpt(text: string, maxBytes = INPUT_EXCERPT_BYTES): string {
-  const bytes = Buffer.from(text, 'utf8')
-  if (bytes.byteLength <= maxBytes) return text
-  let end = maxBytes
-  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1
-  return bytes.subarray(0, end).toString('utf8')
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new SessionInputError('invalid_input', 'Session input excerpt bound is invalid')
+  }
+  return boundedUtf8Excerpt(text, maxBytes)
+}
+
+/** Test seam around the deferred transport iterator; hashing is a separate pass. */
+async function* observeTransportChunks(
+  chunks: AsyncIterable<Uint8Array>,
+  observe: (chunk: Uint8Array) => void,
+): AsyncGenerator<Uint8Array> {
+  for await (const chunk of chunks) {
+    observe(chunk)
+    yield chunk
+  }
 }
 
 export function inputMediaTypeFor(type: 'prompt' | 'tool.call'): SessionInputMediaType {
@@ -259,19 +280,44 @@ export class SessionInputStore {
   ): Promise<SessionInputWrite> {
     const parsed = sessionInputMediaTypeSchema.safeParse(mediaType)
     if (!parsed.success) throw new SessionInputError('invalid_input', 'Session input media type is invalid')
-    const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : Buffer.from(content)
-    if (!Number.isSafeInteger(bytes.byteLength) || bytes.byteLength < 0) {
-      throw new SessionInputError('invalid_input', 'Session input content is invalid')
+    let digest: string
+    let byteSize: number
+    let helperContent: Uint8Array | AsyncIterable<Uint8Array>
+    if (typeof content === 'string') {
+      let hashed: { digest: string; byteSize: number }
+      try {
+        hashed = await hashUtf8Text(content)
+      } catch (error) {
+        if (error instanceof InputEncodingError) {
+          throw new SessionInputError('invalid_input', 'Session input content is invalid')
+        }
+        throw error
+      }
+      digest = hashed.digest
+      byteSize = hashed.byteSize
+      const transport = utf8Chunks(content)
+      helperContent = this.hooks.onTransportChunk === undefined
+        ? transport
+        : observeTransportChunks(transport, this.hooks.onTransportChunk)
+    } else {
+      // Byte inputs keep the existing snapshot copy; this slice bounds only
+      // immutable string encoding. A caller-owned view would change the checksum.
+      const bytes = Buffer.from(content)
+      if (!Number.isSafeInteger(bytes.byteLength) || bytes.byteLength < 0) {
+        throw new SessionInputError('invalid_input', 'Session input content is invalid')
+      }
+      digest = createHash('sha256').update(bytes).digest('hex')
+      byteSize = bytes.byteLength
+      helperContent = bytes
     }
-    const digest = createHash('sha256').update(bytes).digest('hex')
     const directory = await this.sessionDirectory(sessionId, true)
     try {
       await relativeDirectoryOperation({
         parent: directory.path,
         name: digest,
         action: 'write',
-        content: bytes,
-        byteSize: bytes.byteLength,
+        content: helperContent,
+        byteSize,
         digest,
         root: { dev: this.rootDev!, ino: this.rootIno! },
         beforeSpawn: this.hooks.beforeHelperStart,
@@ -282,7 +328,7 @@ export class SessionInputStore {
     } catch (error) {
       throw storageError(error)
     }
-    return { checksum: `sha256:${digest}`, byteSize: bytes.byteLength }
+    return { checksum: `sha256:${digest}`, byteSize }
   }
 
   async read(

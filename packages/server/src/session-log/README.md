@@ -14,6 +14,7 @@ the web inspector and the agent query tool.
 | --- | --- |
 | [`schema.ts`](schema.ts) | Migration 29: `sessions`, `session_writers`, `session_events`, the FTS5 index and the triggers that enforce the log's shape |
 | [`log.ts`](log.ts) | `SessionLog` and `SessionHandle`: single writer, append, read, search, purge, subscribe |
+| [`input-encoding.ts`](input-encoding.ts) | Restartable ≤64 KiB UTF-8 chunk iterator, exact string hashing and bounded excerpt prefix encoding |
 | [`chat-mirror.ts`](chat-mirror.ts) | The legacy Chat Job store behind the log: `JobStore` appends the trace inside its own transactions |
 | [`projection.ts`](projection.ts) | Spans, token meter and transcript projections over events |
 | [`query-tool.ts`](query-tool.ts) | `session_log_query` tool and the audience rule |
@@ -135,8 +136,10 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
   `session-artifacts/<sha256(sessionId)>` CAS, while the event, FTS, title, search, REST,
   export and the query tool carry only a scrubbed excerpt of at most 8 KiB and a reference.
   The metadata row and event commit in one fenced transaction; a published blob without a row
-  is an orphan. Below the threshold v1 is byte-identical. Chat, K5, assistant output,
-  reasoning, tool results, images and model requests remain on their current paths.
+  is an orphan. Below the threshold v1 is byte-identical. String writes use bounded UTF-8 chunks;
+  reads, replay, base64 transport, scrubbing and byte-input snapshot copies remain whole-buffer.
+  Chat, K5, assistant output, reasoning, tool results, images and model requests remain on their
+  current paths.
 - Queued prompt text is **not** artifactized in this slice: `agent.queue` keeps the full text
   inline even after consumption. A consumed queued prompt may produce a v2 `prompt` event, but
   the earlier queue event remains inline. No input cap was added.
@@ -174,6 +177,26 @@ still fails with `writer_busy`. The legacy mirror API and its exclusivity are un
 R1 migration 30 also adds `idx_session_mirror_backlog_thread` on
 `session_mirror_backlog(thread_id, job_id)` for K2 thread readiness/catch-up lookups. Migration
 29 and its schema bytes stay unchanged; this shared additive index changes no event contract.
+
+## Bounded string input encoding
+
+`input-encoding.ts` creates a fresh async iterator for each pass. Every yielded chunk is at most
+64 KiB and owns an unpooled backing buffer; the iterator does not mutate a chunk after yielding
+it. `SessionInputStore.write()` hashes a string through one bounded pass and pulls a fresh
+transport iterator only after the pinned helper's identity handshake is validated. The first
+hash pass necessarily encodes chunks before that handshake, so this is not a claim of zero
+encoding before validation; the deferred part is the transport iterator. Byte inputs keep the
+existing snapshot copy.
+
+`utf8Excerpt()` scans only the requested UTF-8 prefix. It returns the original string when the
+whole value fits, preserving complete lone surrogates, and drops a partially included redaction
+marker whole instead of splitting it. A zero bound is valid; a malformed or negative bound fails
+with a content-free `invalid_input` error. The requested bound is a representation request, not
+a total input limit.
+
+Reads, replay, base64 helper transport, scrubbing, provider history, byte-input copies and queue
+events remain whole-buffer. The 64 KiB value is a transport chunk, not a total input or process
+memory cap.
 
 ## Current-registry v2 excerpt projection
 
