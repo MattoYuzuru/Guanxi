@@ -8,8 +8,9 @@ until a concrete owner action is necessary. Stage scope and exit gates are uncha
 **Latest runtime scope:** [D-195](../../decisions/2026-10-22-owner-decisions.md) restores named
 Fedora work and explicitly retires the obsolete Agent Workstation application. Read
 [current Fedora evidence](Fedora-2026-10-22.md), not the historical local-only checkpoint
-below, before operating a host. Current-source dependency setup is pending; no new Linux
-test result is credited yet. Main's executable integration remains `1b6f495`, all eight gates
+below, before operating a host. Current-source Fedora X1/kernel passes62/62 without skips;
+selectedcore fails25/213 (182pass/6Darwin-onlyskip) under diagnosis. Main's executable
+integration remains `1b6f495`, all eight Mac gates
 passed. Separate U1 mounted-host/G11/readiness repairs are not integrated or stage-complete.
 
 ## Integrated K4 retention and R1 bridge

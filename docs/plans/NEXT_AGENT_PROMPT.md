@@ -86,8 +86,12 @@ Current source transfer is main3e4840bb/executable1b6, separate clean dedicated-
 Root accepted the outside Fedora envelope. First setup failed before npmci/tests because npm
 refused two config paths both/dev/null; distinct private task configs and a new deps unit repair
 that setup, preserving the failed unit. Require actual successful ownnpmci/contract resolution,
-then X1/kernel62 expected/no-skips and the proportional selected-core scope. Read evidence for
-actual receipts; expected counts are not observations. Detached units have real time/memory/CPU
+then actual X1/kernel62/62 passes/no-skips check-kuwdfp_z. The selected14-file core scope fails
+25/213 (182pass/6Darwin-onlyskip), check-4bonvt3c:22 native sandbox startup failures plus3
+dependent relay cases. Do not rerun blindly; independent content-free diagnosis is active.
+Ownnpmci/contract resolution already passes check-yhd08czp. Its unloaded unit metadata is
+unavailable, not fake terminal success. Read evidence for actual receipt/count-parser limits.
+Detached units have real time/memory/CPU
 caps, sanitized environment and shared remoteheavy; no model or corpus benchmark is implied.
 
 ## Subsequent local work and preserved boundaries
@@ -95,7 +99,12 @@ caps, sanitized environment and shared remoteheavy; no model or corpus benchmark
 - K4 queue artifactization needs a genuine v3 event/progress/export/consumer transition;
   current write encoding is 19 new / 51 earlier cases, not end-to-end streaming. Outside concrete
   plan `/Users/yuzuru/Projects/Guanxi-lanes/reviews/k4-queue-v3-concrete-plan-20261022.md`
-  is proposed for root engineering acceptance: do not implement or reserve ledger 40 silently.
+  was independently reviewed, corrected and root-accepted for Q0 only. New standalone
+  `/Users/yuzuru/Projects/Guanxi-lanes/k4-queue-v3-foundation`, branch
+  `codex/k4-queue-v3-foundation`, plan4cebea71 fromf8c65df4 reserves independentledger40;
+  ownCI check-eqbxl77e passes and contract resolves inside. DSH author session74442 is active.
+  Read its committed K4-queue-v3.plan.md: native producer staysv1; Q0 is unreleased foundation,
+  Q1 restricted reader rollback floor and Q2 producer need separate sequential review rounds.
 - B3-a outside plan `/Users/yuzuru/Projects/Guanxi-lanes/reviews/b3-next-local-plan-20261022.md`
   proposes strict offline evidence/measurement-only reduction. Lock its bounded format before
   authoring; no fixture label or generic B1 margin can pass B3. Real cohort/calibration follows.
