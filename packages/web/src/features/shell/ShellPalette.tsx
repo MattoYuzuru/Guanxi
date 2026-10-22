@@ -16,6 +16,7 @@ export interface ShellSessionSearch {
   hasMore: boolean
   searching: boolean
   error: boolean
+  refreshFailed?: boolean
   omitted: boolean
   search(): void
   cancel(): void
@@ -63,13 +64,13 @@ export function ShellPalette({ open, onOpenChange, commands, sessionSearch }: {
         }} />
       {sessionSearch && <div className="flex flex-col gap-1">
         <p role="status" aria-live="polite" className="text-12 text-secondary">{t(sessionSearch.loading ? 'shell.search.loading'
-          : sessionSearch.searching ? 'shell.search.searching' : sessionSearch.error ? 'shell.search.error'
+          : sessionSearch.searching ? 'shell.search.searching' : sessionSearch.refreshFailed ? 'shell.search.refreshFailed' : sessionSearch.error ? 'shell.search.error'
             : sessionSearch.hasMore ? 'shell.search.partial' : 'shell.search.available', { count: sessionSearch.loaded })}</p>
         {sessionSearch.omitted && <p className="text-12 text-secondary">{t('shell.sessions.omitted')}</p>}
         {sessionSearch.searching
           ? <Button variant="ghost" onClick={() => { sessionSearch.cancel(); input.current?.focus() }}>{t('shell.search.cancel')}</Button>
           : (sessionSearch.hasMore || sessionSearch.error) && <Button variant="ghost" disabled={sessionSearch.loading}
-            onClick={() => { sessionSearch.search(); input.current?.focus() }}>{t(sessionSearch.error ? 'shell.search.retry' : 'shell.search.all')}</Button>}
+            onClick={() => { sessionSearch.search(); input.current?.focus() }}>{t(sessionSearch.refreshFailed ? 'shell.search.retryRefresh' : sessionSearch.error ? 'shell.search.retry' : 'shell.search.all')}</Button>}
       </div>}
       <p className="sr-only" role="status" aria-live="polite">{t('shell.palette.results', { count: filtered.length })}</p>
       <div id={`${id}-results`} role="listbox" aria-label={t('shell.palette')} className="flex max-h-64 flex-col gap-1 overflow-y-auto">

@@ -82,8 +82,9 @@ export function useShellController() {
       execute: () => setPreference(theme) })),
   ]
   const sessionSearch: ShellSessionSearch = { loaded: sessions.sessions.length, loading: sessions.loading || (sessions.loadingMore && !sessions.searchingAll),
-    hasMore: sessions.hasMore, searching: sessions.searchingAll, error: sessions.error, omitted: sessions.omitted,
-    search: () => { if (sessions.error && !sessions.hasMore) sessions.reload(); else void sessions.searchAll() }, cancel: sessions.cancelSearch }
+    hasMore: sessions.hasMore, searching: sessions.searchingAll, error: sessions.error,
+    refreshFailed: sessions.error && !sessions.paginationReady, omitted: sessions.omitted,
+    search: () => { if (!sessions.paginationReady) sessions.reload(); else void sessions.searchAll() }, cancel: sessions.cancelSearch }
   return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, workspace, preference,
     togglePin: (id: string) => setPreferences(previous => ({ ...previous, pinned: previous.pinned.includes(id)
       ? previous.pinned.filter(value => value !== id) : [...previous.pinned, id] })) }

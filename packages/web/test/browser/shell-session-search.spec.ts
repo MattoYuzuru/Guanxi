@@ -97,3 +97,44 @@ test('Russian phone search exposes failure/retry and cancellation without claimi
   await expect(modal).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Open commands' })).toBeFocused()
 })
+
+test('retry after a failed first-page refresh replaces stale rows before scanning only the new tail', async ({ page }) => {
+  const cursors: (string | null)[] = []
+  let firstPages = 0
+  const item = (id: number, title: string) => ({ ...session(id), title })
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== '/api/sessions/list/page') return route.fulfill({ json: { models: [] } })
+    const cursor = url.searchParams.get('cursor'); cursors.push(cursor)
+    if (!cursor && ++firstPages === 2) return route.fulfill({ status: 503, json: { error: 'unavailable' } })
+    return route.fulfill({ json: { sessions: !cursor ? [firstPages === 1 ? item(1, 'Old head') : item(2, 'Fresh head')]
+      : [cursor === 'old-tail' ? item(3, 'Old tail') : item(4, 'Fresh tail')],
+      nextCursor: !cursor ? firstPages === 1 ? 'old-tail' : 'new-tail' : null,
+      omitted: { withheld: false, catchingUp: false } } })
+  })
+  await page.goto('/test/browser/fixtures/shell-palette.html?search=1')
+  const trigger = page.getByRole('button', { name: 'Open commands' })
+  await trigger.click()
+  const input = page.getByRole('combobox', { name: 'Search commands' })
+  await expect(page.getByRole('option', { name: 'Session: Old head', exact: true })).toHaveCount(1)
+  await input.fill('Refresh sessions')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await trigger.click()
+  await expect(page.getByText('Could not refresh sessions. Searching 1 previously loaded sessions.')).toBeVisible()
+  await expect(page.getByText(/Searching all \d+ sessions available/)).toHaveCount(0)
+  await input.fill('Session: Fresh')
+  await expect(page.getByRole('option')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Retry refreshing sessions' }).click()
+  await expect(page.getByText('Searching 1 loaded sessions. Older sessions are not loaded yet.')).toBeVisible()
+  expect(cursors).toEqual([null, null, null])
+  await expect(page.getByRole('option', { name: 'Session: Fresh head', exact: true })).toHaveCount(1)
+  await page.getByRole('button', { name: 'Search all available sessions' }).click()
+  await expect(page.getByText('Searching all 2 sessions available from the loaded pages.')).toBeVisible()
+  expect(cursors).toEqual([null, null, null, 'new-tail'])
+  await input.fill('Session:')
+  await expect(page.getByRole('option')).toHaveCount(2)
+  await expect(page.getByRole('option', { name: 'Session: Fresh head', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('option', { name: 'Session: Fresh tail', exact: true })).toHaveCount(1)
+  await expect(page.getByRole('option', { name: /Old (head|tail)/ })).toHaveCount(0)
+})

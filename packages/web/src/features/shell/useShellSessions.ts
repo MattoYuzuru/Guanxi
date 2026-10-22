@@ -9,6 +9,7 @@ export function useShellSessions(location: string) {
   const [omitted, setOmitted] = useState(false)
   const [loading, setLoading] = useState(true), [loadingMore, setLoadingMore] = useState(false)
   const [searchingAll, setSearchingAll] = useState(false)
+  const [paginationReady, setPaginationReady] = useState(false)
   const [error, setError] = useState(false), [observedAt, setObservedAt] = useState<string | null>(null)
   const [revision, setRevision] = useState(0)
   const epoch = useRef(0), pending = useRef<AbortController | null>(null), busy = useRef(false)
@@ -22,10 +23,14 @@ export function useShellSessions(location: string) {
   useEffect(() => {
     const current = ++epoch.current, abort = new AbortController()
     pending.current?.abort(); pending.current = abort; busy.current = true
+    // Cached rows may remain visible, but a refresh invalidates their pagination basis.
+    // Only a successful first page may admit a tail cursor for this revision/location.
+    nextCursor.current = null; setCursor(null); setPaginationReady(false)
     scanning.current = false; setLoading(true); setLoadingMore(false); setSearchingAll(false); setError(false)
     void inspectorApi.page(undefined, abort.signal).then(page => {
       if (current !== epoch.current || abort.signal.aborted) return
       setSessions(page.sessions); setCursor(page.nextCursor); nextCursor.current = page.nextCursor
+      setPaginationReady(true)
       consumedCursors.current.clear()
       setOmitted(page.omitted.withheld || page.omitted.catchingUp)
       setObservedAt(new Date().toISOString())
@@ -54,7 +59,15 @@ export function useShellSessions(location: string) {
     } catch { if (current === epoch.current && !abort.signal.aborted) setError(true) }
     finally { if (current === epoch.current && !abort.signal.aborted) { busy.current = false; scanning.current = false; setLoadingMore(false); setSearchingAll(false) } }
   }
-  return { sessions, loading, loadingMore, searchingAll, error, omitted, observedAt, hasMore: Boolean(cursor),
-    loadMore: () => loadPages(false), searchAll: () => loadPages(true), cancelSearch,
-    reload: () => setRevision(value => value + 1) }
+  function reload() {
+    pending.current?.abort(); epoch.current++; nextCursor.current = null; busy.current = true; scanning.current = false
+    setCursor(null); setPaginationReady(false); setLoading(true); setLoadingMore(false); setSearchingAll(false); setError(false)
+    setRevision(value => value + 1)
+  }
+  return { sessions, loading, loadingMore, searchingAll, paginationReady, error, omitted, observedAt, hasMore: Boolean(cursor),
+    loadMore: () => loadPages(false), searchAll: () => {
+      if (!paginationReady && !busy.current) { reload(); return Promise.resolve() }
+      return loadPages(true)
+    }, cancelSearch,
+    reload }
 }

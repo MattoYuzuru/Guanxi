@@ -46,3 +46,27 @@ and manifests/review records/snapshots/suppressions are untouched. Root must fir
 shell pattern readiness and compose the actual host, then verify the mounted palette/dialog
 handoffs and real route layout. New-session, finished-unseen, ephemeral side chat, remaining
 token migration, owner approval and full U1 stage exits remain open.
+
+## Separate independent review fix
+
+Independent review of `437e5d5` reproduced a P2: when refreshing a cached partial list failed
+at its first page, Retry followed the old tail and could falsely announce exhaustion. The
+outside report is `reviews/codex-u1-search-20261022.md` and its failing regression receipt is
+`check-fktavosi`. This finding is retained rather than treating the original checks as complete.
+
+The separate fix gives pagination an explicit ready basis. Refresh immediately aborts prior
+work and invalidates its cursor; cached rows remain visibly labelled previously loaded after
+failure. Retry requests FIRST, and only a successful FIRST replaces rows and admits its new
+tail. Direct scan/load-more calls cannot use the old tail while the basis is unavailable.
+
+Final component check `check-_yzxgu_w` passes **31/31**, zero skips: **1 new review regression /
+30 prior**, cumulatively **9 new / 22 inherited**. The exact assertion requires requests
+`FIRST,FIRST,FIRST,new-tail` and only new-head/new-tail IDs, including immediate scan attempts
+when refresh is requested. Existing EN/RU tests also assert the cached-data failure copy and
+the named refresh retry. Actual Chromium `check-zeuufvlg` passes **5/5**, zero skips: **1 new /
+4 prior**, cumulatively **3 new / 2 inherited**. Its actual controller/palette reproduces
+refresh failure, requires FIRST retry, checks the same exact request sequence and proves no
+old-head/old-tail options remain. The original external reviewer fixture also passes in the
+author recheck `check-3fmb_x2i`; this is not independent acceptance. Final web types
+`check-vngsagfk`, scoped ESLint `check-ce05b8nn` and Markdown/links `check-hk1lt7vk` pass.
+Separate independent recheck and integrated gates remain open.
