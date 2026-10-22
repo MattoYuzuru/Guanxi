@@ -151,3 +151,59 @@ Plugin/boot wiring, HTTP routes and the `packages/contract` schema, the web/desk
 notification center, real ports for R1 wakes and run pause/resume and K3 role rebinding,
 run-policy automatic reactions with undo, quiet hours, OS/push delivery and the other
 attention kinds remain later NC1 work. NC1 is not complete.
+
+## NC1-c: delivery planning, quiet hours and channel settings
+
+**Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-c
+
+This section supersedes the delivery bullet in "Still later" above for planning only; the
+real adapters, settings persistence and settings UI remain later work.
+
+`delivery.ts` is a pure planner for ADR-0033 decision 8. The caller supplies the notification,
+the user's settings and `now`; there is no clock, timer, I/O or process state.
+
+- `Channel` is `'in_app' | 'os' | 'push'`.
+- `planDelivery({ kind, severity, createdAt }, settings, now)` returns decisions in the
+  canonical order `in_app`, `os`, `push`. `in_app` is always present and immediate at `now`;
+  muting and quiet hours never remove the inbox row. A muted kind suppresses only `os` and
+  `push`. Channels come from `channelsByKind[kind] ?? defaults`, de-duplicated.
+- Quiet hours are local `HH:MM`; exactly `start` is quiet and exactly `end` is not. A wrapping
+  range such as `22:00–07:00` spans midnight. `start === end` disables quiet hours. `os` and
+  `push` inside quiet hours are deferred to the next local end, computed from
+  `Intl.DateTimeFormat` parts without a dependency. Across a DST overlap the next occurrence
+  is chosen; a nonexistent wall time in a spring gap resolves to the first local time after it.
+  The resolved end is checked against quiet hours and advanced to the next local end while it
+  is still quiet, so a DST gap or skipped day cannot return a quiet `deliverAt`, including for
+  a window of 23 hours or more; the scan is bounded and throws if no non-quiet end is found.
+- Fall-back repeats a local hour. With a window such as `00:30–01:30`, a notification deferred
+  during the first `01:00–01:30` occurrence releases at `01:30` EDT, but the repeated
+  `01:00–01:30` EST hour is quiet again, so one deferred during the second occurrence releases
+  at `01:30` EST. Equal local wall times therefore do not imply equal quiet state.
+- `critical` bypasses quiet hours only when `criticalBypassesQuietHours` is true, and only for
+  `os`/`push`; `in_app` stays `immediate`. Outside quiet hours a critical notification is also
+  `immediate`, not `critical_bypass`.
+- `createdAt` is validated as part of the notification record; decisions are anchored to
+  `now`, so equal input returns an equal array. This module does not compose or alter
+  `payload.ts`; OS payload content remains NC1-b's content-free `osPayload`.
+- `validateDeliverySettings(unknown)` throws `TypeError` with a path for a malformed object,
+  an invalid IANA zone (including `+03:00`, `-03:00` and the U+2212 `−03:00` spelling), a
+  non-`HH:MM` clock, an unknown channel or a non-boolean bypass. `timeZone` and `defaults` are
+  required; missing `channelsByKind`, `quietHours`, `mutedKinds` and
+  `criticalBypassesQuietHours` take `{}`, `null`, `[]` and `false`. An explicit `undefined`
+  value inside `channelsByKind` is dropped, so that kind uses `defaults`.
+
+### NC1-c test evidence
+
+```bash
+nice -n 10 node --test packages/server/test/notifications/*.test.ts
+```
+
+The command runs 73 tests: 25 new NC1-c delivery tests and the 48 existing NC1-a/b tests as
+the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
+server source and test trees; markdownlint passes on this README and the NC1-c hand-off.
+
+### Still later
+
+Settings persistence and the notification-settings UI; per-platform OS adapters; Web Push;
+plugin/boot wiring, HTTP routes and `packages/contract` schemas. Actual delivery adapters, not
+planning, remain later work.
