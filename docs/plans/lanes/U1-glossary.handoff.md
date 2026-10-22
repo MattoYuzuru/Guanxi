@@ -86,3 +86,62 @@ sandbox, per the lane boundary.
 
 Independent review pending. Append findings and their fix commits here; do not rewrite the
 claims above.
+
+### 2026-10-22 review-fix round
+
+Independent read-only review of clean `d39bd8dabfb836862177f3023350f977f4497439` reported four
+P2 copy findings and the known browser-count follow-up in
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-u1-glossary-20261022.md`. All five are fixed
+on this branch in five separate commits; the historical claims above are unchanged.
+
+**Count clarification.** The pre-fix evidence above is **14 total component cases = 1 newly
+added case + 13 existing cases**, with the existing search case expanded. It was not 14 new
+tests.
+
+**New this round:** 1 component case, `interpolates the central product name into both Node
+definitions`. The existing `keeps target term boundaries and owner decisions explicit` case
+gained assertions for retention qualification, the Run execution slot/current grant, the
+one-active-Attempt invariant and the Lease/Attempt example semantics. No new test files.
+**Regression envelope this round:** `packages/web/test/component/localization.test.tsx` in full,
+**15/15** (2 lane-new + 13 pre-existing cases). The browser change is one existing assertion,
+not a new test.
+
+| Finding | Fix commit | Change |
+| --- | --- | --- |
+| P2 Session retention | `84249939a8303911c5c5cb119582c1b431e1d282` | EN/RU definition and example qualify retained prompt/event/result data by the retention policy; no indefinite-retention promise (D-113, ADR-0023). |
+| P2 Run fencing | `1d5291a1b920102d2bce83c54664447b06e4ba49` | Run EN/RU name one stable execution slot and the current fencing grant instead of one lifetime token; Attempt retains the single-active invariant (ADR-0018 §3). |
+| P2 brand source | `56b90956cd9cdaf7d276c199c461652d8c246143` | Both Node definitions interpolate `PRODUCT_NAME` from `packages/web/src/lib/brand.ts`; no new literal product name, no key rename. A mocked brand name proves the interpolation. |
+| P2 lease/attempt examples | `7266cffbb06396c47cb4815d90e20bd5a24dcdfd` | EN/RU examples end old ownership by grantor-confirmed expiry, release, fenced handover or an audited admin break, not expiry only; a timeout alone never creates a second holder. |
+| Browser follow-up | `1db7d7a54c825b7f7fd8b390a19c23742d89acb5` | `packages/web/test/browser/localization.spec.ts:212` expects the exact 29 articles; the existing legacy search assertions are untouched. |
+
+Only `packages/web/src/lib/glossary.ts`, `packages/web/test/component/localization.test.tsx`,
+one assertion line in `packages/web/test/browser/localization.spec.ts` and this handoff changed.
+No component, locale-catalog, legacy-key, CSS, motion-test or status file was changed.
+
+### Commands (scoped; all run in this clone)
+
+| Command | Result |
+| --- | --- |
+| `nice -n 10 npm exec --workspace @guanxi/web -- vitest run test/component/localization.test.tsx` | PASS: 1 file, **15/15** tests |
+| `nice -n 10 npx tsc --noEmit -p packages/web/tsconfig.json` | PASS: exit 0, no diagnostics |
+| `nice -n 10 npx eslint packages/web/src/lib/glossary.ts packages/web/test/component/localization.test.tsx packages/web/test/browser/localization.spec.ts` | PASS: exit 0 |
+| `git diff --check` | PASS: exit 0 |
+| `node --input-type=module -e "const { glossaryEntries, searchGlossary } = await import('./packages/web/src/lib/glossary.ts'); const keys = glossaryEntries.map((e) => e.key); console.log('count/unique', keys.length, new Set(keys).size); console.log('legacy-first', keys.slice(0, 17).join(',')); console.log('EN search', searchGlossary(glossaryEntries, 'SPEED UP CONTINUATION', 'en').map((e) => e.key)); console.log('RU search', searchGlossary(glossaryEntries, 'Диктовка ПРОМПТА', 'ru').map((e) => e.key));"` | `count/unique 29 29`; legacy-first is the unchanged 17-key order; EN search `['kv-cache']`; RU search `['recipe']` |
+
+`node -e "console.log(require.resolve('@guanxi/contract'))"` still resolves to
+`/Users/yuzuru/Projects/Guanxi-lanes/u1-glossary/packages/contract/src/index.ts`.
+
+Test-first was followed per finding: each new assertion was run red before its production copy
+changed, then green. No test was weakened; the browser count is corrected from 17 to 29.
+
+### Residuals after this round
+
+1. **Browser gate not run here.** DSH does not run Chromium, the browser suite, full `npm test`,
+   build, Storybook or `agent-dev`. Root must run the affected
+   `packages/web/test/browser/localization.spec.ts` and the full browser gate. The probe above
+   confirms the two retained searches still select exactly one legacy entry.
+2. Russian copy remains curated but not owner-reviewed; the `Lease` term is unchanged from the
+   existing runtime label.
+3. No live model, hardware, cost, network, owner data, SSH or external service was observed or
+   claimed. This glossary is copy evidence only, not acceptance evidence for unimplemented
+   side-chat, remote execution, new-session or owner-approved component work.
