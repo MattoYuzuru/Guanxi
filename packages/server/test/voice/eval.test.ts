@@ -67,6 +67,17 @@ describe('normalizeForWer', () => {
     assert.deepEqual(normalizeForWer('PR-а GPT-4'), ['pr-а', 'gpt-4'])
   })
 
+  it('maps Unicode hyphens and apostrophes to their ASCII forms', () => {
+    assert.deepEqual(normalizeForWer('PR\u2011а'), ['pr-а'])
+    assert.deepEqual(normalizeForWer('PR\u2010ом'), ['pr-ом'])
+    assert.deepEqual(normalizeForWer('don\u2019t'), ["don't"])
+    assert.deepEqual(normalizeForWer('don\u02bct'), ["don't"])
+  })
+
+  it('keeps en and em dashes as token separators', () => {
+    assert.deepEqual(normalizeForWer('PR\u2013а PR\u2014а'), ['pr', 'а', 'pr', 'а'])
+  })
+
   it('returns no tokens for empty or punctuation-only text', () => {
     assert.deepEqual(normalizeForWer(''), [])
     assert.deepEqual(normalizeForWer('... --- !!!'), [])

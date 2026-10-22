@@ -71,6 +71,9 @@ export interface EvalScore {
 
 const WORD_TOKEN = /[\p{L}\p{N}\p{M}]+(?:[-'][\p{L}\p{N}\p{M}]+)*/gu
 
+const HYPHEN_ALIASES = /[\u2010\u2011]/gu
+const APOSTROPHE_ALIASES = /[\u2019\u02bc]/gu
+
 const CYRILLIC_SUFFIX = /^[\p{Script=Cyrillic}\p{M}]+$/u
 const CYRILLIC_LETTER = /\p{Script=Cyrillic}/u
 const LATIN_LETTER = /\p{Script=Latin}/u
@@ -78,15 +81,22 @@ const LATIN_LETTER = /\p{Script=Latin}/u
 /**
  * Normalise text for word-error scoring.
  *
- * Order: NFC, lower-case, `ё` to `е`, tokenise. Tokens are runs of Unicode letters, numbers and
- * combining marks; a hyphen or apostrophe is kept only between two such runs. All other
- * punctuation is stripped and whitespace is collapsed by the token scan.
+ * Order: NFC, lower-case, `ё` to `е`, Unicode hyphen aliases (U+2010, U+2011) to `-` and
+ * apostrophe aliases (U+2019, U+02BC) to `'`, tokenise. Tokens are runs of Unicode letters,
+ * numbers and combining marks; a hyphen or apostrophe is kept only between two such runs. En and
+ * em dashes are not aliases and remain separators. All other punctuation is stripped and
+ * whitespace is collapsed by the token scan.
  */
 export function normalizeForWer(text: string): string[] {
   if (typeof text !== 'string') {
     throw new TypeError('normalizeForWer requires a string')
   }
-  const normalized = text.normalize('NFC').toLowerCase().replace(/ё/gu, 'е')
+  const normalized = text
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/ё/gu, 'е')
+    .replace(HYPHEN_ALIASES, '-')
+    .replace(APOSTROPHE_ALIASES, "'")
   return normalized.match(WORD_TOKEN) ?? []
 }
 

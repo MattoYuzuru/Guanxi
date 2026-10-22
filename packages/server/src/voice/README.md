@@ -147,10 +147,11 @@ matched/hypothesis occurrences, recall is matched/reference occurrences, and F1 
 
 ### Normalisation and alignment
 
-`normalizeForWer` applies NFC, lower-cases, maps `ё` to `е`, keeps `-` and `'` only inside a word,
-strips all other punctuation and returns Unicode letter/number/mark tokens. Whitespace is collapsed
-by tokenisation. For example `Ёлка, well-known don't!` becomes
-`['елка', 'well-known', "don't"]`.
+`normalizeForWer` applies NFC, lower-cases, maps `ё` to `е`, maps U+2010 and U+2011 to `-` and
+U+2019 and U+02BC to `'`, keeps `-` and `'` only inside a word, strips all other punctuation and
+returns Unicode letter/number/mark tokens. En and em dashes are not aliases and stay separators.
+Whitespace is collapsed by tokenisation. For example `Ёлка, well-known don't!` becomes
+`['елка', 'well-known', "don't"]`, and `PR‑а don’t` becomes `['pr-а', "don't"]`.
 
 `wordErrors` runs Levenshtein over normalised tokens and returns substitution, deletion and
 insertion counts plus a forward alignment. The traceback tie-break is deterministic: an equal-token
