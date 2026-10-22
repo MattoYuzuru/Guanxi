@@ -854,3 +854,33 @@ test('refuses a FIFO source entry without blocking', async t => {
   })
   assert.equal(await exists(pluginsDir), false)
 })
+
+test('requires a lock entry directory to equal id@version', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'))
+
+  for (const [name, directory] of [['mismatch', 'elsewhere'], ['missing', undefined]] as const) {
+    const pluginsDir = join(base, `lock-${name}`)
+    await mkdir(pluginsDir, { recursive: true })
+    const entry: Record<string, unknown> = {
+      version: '1.0.0',
+      integrity: `sha256-${'0'.repeat(64)}`,
+      requires: [],
+      provides: [],
+      buildScripts: [],
+      buildScriptsApproved: false,
+      installedAt: null,
+    }
+    if (directory !== undefined) entry['directory'] = directory
+    await writeFile(
+      join(pluginsDir, 'plugins.lock.json'),
+      `${JSON.stringify({ version: 1, plugins: { [DEFAULT_ID]: entry } }, null, 2)}\n`,
+    )
+    assert.throws(() => manager(pluginsDir).list(), (error: unknown) => {
+      assert.ok(error instanceof PluginManagerError)
+      assert.equal(error.code, 'invalid_state')
+      return true
+    })
+    await rejectsWithCode(manager(pluginsDir).install(source), 'invalid_state')
+  }
+})

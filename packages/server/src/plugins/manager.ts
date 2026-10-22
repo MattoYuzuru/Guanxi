@@ -367,8 +367,15 @@ function lockedPlugin(id: string, value: unknown, path: string): LockedPlugin {
   if (typeof integrity !== 'string' || !integrity.startsWith('sha256-')) {
     throw new PluginManagerError('invalid_state', `${path}: lock entry "${id}" has no sha256- integrity`)
   }
-  const directory = typeof value['directory'] === 'string' ? value['directory'] : `${id}@${version}`
-  if (directory.length === 0 || directory.includes('/') || directory.includes('\\') || directory === '.' || directory === '..') {
+  const expectedDirectory = `${id}@${version}`
+  const directory = value['directory']
+  if (directory !== expectedDirectory) {
+    throw new PluginManagerError(
+      'invalid_state',
+      `${path}: lock entry "${id}" directory must be "${expectedDirectory}"`,
+    )
+  }
+  if (directory.includes('/') || directory.includes('\\')) {
     throw new PluginManagerError('invalid_state', `${path}: lock entry "${id}" has an unsafe directory`)
   }
   const installedAt = typeof value['installedAt'] === 'string' ? value['installedAt'] : null
