@@ -61,7 +61,7 @@ const usageFile = sessionId => join(root, `usage-${sessionId}.json`)
 const leadUsage = sessionId => {
   const base = existsSync(usageFile(sessionId)) ? JSON.parse(readFileSync(usageFile(sessionId), 'utf8')) : { inputTokens: 0, outputTokens: 0, amount: 0 }
   const per = lead.usagePerTurn ?? { inputTokens: 0, outputTokens: 0, amount: 0 }
-  const next = { inputTokens: base.inputTokens + per.inputTokens, outputTokens: base.outputTokens + per.outputTokens, amount: base.amount + per.amount }
+  const next = { inputTokens: base.inputTokens + per.inputTokens, outputTokens: base.outputTokens + per.outputTokens, amount: base.amount + (per.amount ?? 0) }
   writeFileSync(usageFile(sessionId), JSON.stringify(next))
   return next
 }
@@ -90,10 +90,18 @@ async function leadPrompt(frame) {
   if (lead.hang) return
   const calls = leadEvents().filter(e => e.event === 'tool_call').length
   const resumed = text.includes('guanxi.wake/v1')
-  sessionUpdate(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'PRIVATE_REASONING_FIXTURE' } })
-  sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: resumed ? 'resumed lead turn' : 'planning delegation' } })
-  if (resumed && lead.crashOnResume) { leadLog('crash', { sessionId }); process.exit(31) }
   const brief = (lead.briefs ?? [])[calls]
+  if (resumed && lead.noiseFirst) {
+    // Bookkeeping updates are not model work and must not acknowledge the wake.
+    sessionUpdate(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [] })
+    leadLog('noise_sent')
+    await new Promise(resolve => setTimeout(resolve, 400))
+  }
+  if (!(lead.silentTool && brief)) {
+    sessionUpdate(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'PRIVATE_REASONING_FIXTURE' } })
+    sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: resumed ? 'resumed lead turn' : 'planning delegation' } })
+  }
+  if (resumed && lead.crashOnResume) { leadLog('crash', { sessionId }); process.exit(31) }
   if (resumed && lead.resumeDelayMs) await new Promise(resolve => setTimeout(resolve, lead.resumeDelayMs))
   if (!brief || (resumed && !lead.redelegate)) { finish('end_turn', { resumed }); return }
   toolAbort = new AbortController()

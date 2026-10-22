@@ -40,7 +40,9 @@ class ScriptedAgents {
     this.log('prompt', { kind, wakeSeq })
     this.onTurn()
     lead.onActivity()
-    const usage = { inputTokens: wake ? 2000 : 1000, outputTokens: wake ? 400 : 200, cost: { amount: wake ? 1 : 0.5, currency: 'USD' } }
+    // Cumulative for the one ACP session, counting every turn that ever started, even a killed one.
+    const n = readLog(this.dir, 'turns.jsonl').filter(e => e.event === 'prompt').length
+    const usage = { inputTokens: n * 1000, outputTokens: n * 200, cost: { amount: n * 0.5, currency: 'USD' } }
     lead.onUsage(usage)
     if (!delegate) {
       this.log('turn_end', { kind, wakeSeq })

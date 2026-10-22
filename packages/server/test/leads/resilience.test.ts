@@ -254,3 +254,56 @@ test('a wake that arrives while the lead is mid-turn waits: turns never overlap 
   const sequence = (await f.events()).filter(e => (e.event === 'prompt' && String(e.text).includes('guanxi.wake/v1')) || (e.event === 'turn_end' && e.resumed === true)).map(e => e.event)
   assert.deepEqual(sequence, ['prompt', 'turn_end', 'prompt', 'turn_end'])
 })
+
+test('shutting the lead service down mid-turn mutates nothing: no fallback, no failure, no notice', async t => {
+  const f = await leadFixture(t, { fallback: true, lead: { hang: true } })
+  const { runId, first } = f.start()
+  for (let i = 0; i < 400 && (await f.events()).filter(e => e.event === 'prompt').length === 0; i++) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal((await f.events()).filter(e => e.event === 'prompt').length, 1)
+  await f.restartLead()
+  assert.equal((await first).code, 'lead_closed')
+  assert.equal(f.notices.length, 0)
+  assert.equal((await f.events('copilot')).length, 0, 'the fallback lead was never started by a shutdown')
+  assert.equal(f.db.prepare('SELECT fallback_used FROM lead_sessions WHERE run_id=?').get(runId)!.fallback_used, 0)
+})
+
+test('an absurd cost from the agent is recorded as unknown and never strands the run', async t => {
+  const f = await leadFixture(t, { lead: { usagePerTurn: { inputTokens: 10, outputTokens: 5, amount: 1e300 } } })
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'hibernated')
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  const run = f.runs()
+  assert.equal(run.get(runId).state, 'completed')
+  assert.deepEqual(run.costs(runId), [{ currency: 'unknown', inputTokens: 20, outputTokens: 10, costMicrounits: null }])
+})
+
+test('a registered value that straddles the stored task cut never survives as a prefix', async t => {
+  const f = await leadFixture(t)
+  const secret = `task_secret_${'z'.repeat(30)}`
+  f.kernel.scrubber.register('secret://lead/task', secret)
+  const { runId, first } = f.lead().startLead({ ownerAccountId: f.owner, actorAccountId: f.owner, projectId: 'p', prompt: `${'x'.repeat(3_990)}${secret}` })
+  await first
+  const task = String(f.db.prepare('SELECT task FROM lead_sessions WHERE run_id=?').get(runId)!.task)
+  assert.ok(!task.includes('task_'), 'neither the value nor any prefix of it')
+  assert.ok(Array.from(task).length <= 4_000)
+})
+
+test('a changed lead binding is never asked to load the old agent session, on a wake or on an explicit resume', async t => {
+  const f = await leadFixture(t, { fallback: true })
+  const { runId, first } = f.start()
+  await first
+  assert.equal((await f.events('copilot')).length, 0)
+  // The project now names the other agent as lead: its session cannot be loaded from the first agent's id.
+  f.service().setProjectRoles(f.owner, f.owner, 'p', { lead: f.fallback! })
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(f.runs().get(runId).state, 'completed')
+  const copilot = await f.events('copilot')
+  assert.equal(copilot.filter(e => e.event === 'session_load_requested').length, 0)
+  assert.equal(copilot.filter(e => e.event === 'session_new').length, 1)
+  assert.equal(f.db.prepare('SELECT resume_mode FROM lead_wakes WHERE run_id=?').get(runId)!.resume_mode, 'seeded')
+  assert.match(String((await resumedPrompts(f, 'copilot'))[0]!.text), /Lead handoff:/)
+})

@@ -85,3 +85,36 @@ test('a database file keeps the lead ledger across reopen', () => {
     second.close()
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('the pump reads only delegations that still need it', () => {
+  const w = world()
+  try {
+    const store = new LeadStore(w.db)
+    const state = (id: string, value: string) => w.db.prepare('UPDATE durable_runs SET state=? WHERE id=?').run(value, id)
+    const intent = (lead: string, key: string) => ({ lead_run_id: lead, key, brief: '{}', deadline: 1, on_deadline: 'wrap_up' as const, on_cancel: 'cancel' as const })
+    const cases: [string, string, string, string | null, string | null, boolean][] = [
+      // [lead id, lead state, delegation state, child state, key, wanted]
+      ['l1', 'working', 'intent', null, 'live-intent', true],
+      ['l2', 'canceled', 'intent', null, 'dead-intent', false],
+      ['l3', 'waiting_children', 'delegated', 'submitted', 'unstarted', true],
+      ['l4', 'completed', 'delegated', 'submitted', 'unstarted-dead-lead', false],
+      ['l5', 'waiting_children', 'child_started', 'working', 'running', false],
+      ['l6', 'waiting_children', 'child_started', 'completed', 'done', false],
+      ['l7', 'canceled', 'child_started', 'canceled', 'to-stop', true],
+      ['l8', 'waiting_children', 'child_started', 'interrupted', 'lost', true],
+      ['l9', 'canceled', 'child_stop_requested', 'canceled', 'stopped', false],
+    ]
+    for (const [lead, leadState, delegation, childState, key] of cases) {
+      w.runs.create({ id: lead })
+      state(lead, leadState)
+      store.insertSession(w.db, session(lead))
+      store.insertIntent(w.db, intent(lead, key!))
+      if (childState) {
+        w.runs.create({ id: `${lead}-child` })
+        state(`${lead}-child`, childState)
+        store.setDelegationState(w.db, lead, key!, delegation as never, `${lead}-child`)
+      }
+    }
+    assert.deepEqual(store.openDelegations().map(d => d.key).sort(), cases.filter(c => c[5]).map(c => c[4]!).sort())
+  } finally { w.close() }
+})

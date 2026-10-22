@@ -73,6 +73,14 @@ test('delegate, hibernate and wake: one wake, one resumed turn by session/load, 
     for (const event of f.kernel.sessionLog!.readAll(session.sessionId, 'person')) assert.ok(!JSON.stringify(event.data).includes('HISTORY-REPLAY'), event.type)
   }
   assert.deepEqual(f.notices, [])
+  // The hibernated turn's delegate call was held, never answered, and no result ever reached the lead.
+  assert.equal(events.filter(e => e.event === 'tool_answer' || e.event === 'tool_failed').length, 0)
+  assert.equal(events.filter(e => e.event === 'tool_call').length, 1)
+  // The per-turn bearer token appears in no table of the node database and in no K2 event.
+  assert.equal(f.tokens.length, 2, 'one capability per turn')
+  const dump = (f.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+    .map(table => { try { return JSON.stringify(f.db.prepare(`SELECT * FROM "${table.name}"`).all(), (_k, v) => (v instanceof Uint8Array ? Buffer.from(v).toString('latin1') : v)) } catch { return '' } }).join('\n')
+  for (const token of f.tokens) assert.ok(!dump.includes(token), 'the capability is never persisted')
 })
 
 test('an agent without loadSession gets a new session seeded with the lead handoff and the wake packet', async t => {
@@ -244,4 +252,80 @@ test('canceling a running lead turn stops its process and cancels the run', asyn
   for (const pid of pids) assert.equal(alive(pid), false)
   assert.deepEqual(f.service().limits(f.owner, f.binding.connectionId).durableLocalOccupancy, { held: 0, cleanupUnconfirmed: 0, total: 0 })
   assert.equal(f.tools.activeGrants(), 0)
+})
+
+test('the endpoint is bound to the loopback interface and not reachable through another address', async t => {
+  const f = await leadFixture(t)
+  const { first } = f.start()
+  await first
+  const bound = f.tools.address()!
+  assert.equal(bound.address, '127.0.0.1')
+  const { networkInterfaces } = await import('node:os')
+  const external = Object.values(networkInterfaces()).flat().find(i => i && i.family === 'IPv4' && !i.internal)
+  if (external) {
+    await assert.rejects(fetch(`http://${external.address}:${bound.port}/mcp`, { method: 'POST', body: '{}', signal: AbortSignal.timeout(2_000) }), 'not reachable through a non-loopback address')
+  }
+})
+
+test('a child that lost its executor after a model call is not replayed and the person is told; one that never started is', async t => {
+  for (const modelStarted of [true, false]) {
+    const f = await leadFixture(t, { lead: { briefs: [brief({ deadlineMs: 72 * HOUR })] } })
+    const { runId, first } = f.start()
+    await first
+    const launch = f.children.launches[0]!
+    if (modelStarted) f.runs().modelStarted(launch.attempt)
+    f.advance(25 * HOUR)
+    f.runs().tick()
+    assert.equal(f.runs().get(launch.childRunId).state, 'interrupted')
+    f.lead().pump()
+    await f.lead().idle()
+    f.lead().pump()
+    await f.lead().idle()
+    if (modelStarted) {
+      assert.equal(f.children.launches.length, 1, 'real work is never replayed')
+      assert.deepEqual(f.notices.map(n => n.kind), ['child_interrupted'], 'told once, however often the pump runs')
+      assert.equal(f.runs().promises(runId)[0]!.outcome, null, 'the lead keeps waiting for its deadline')
+    } else {
+      assert.equal(f.children.launches.length, 2)
+      assert.equal(f.children.launches[1]!.previousAttempts, 1)
+      assert.equal(f.runs().get(launch.childRunId).state, 'working')
+      assert.deepEqual(f.notices, [])
+    }
+  }
+})
+
+test('bookkeeping updates do not acknowledge a wake; the first model output does', async t => {
+  const f = await leadFixture(t, { lead: { noiseFirst: true } })
+  const { runId, first } = f.start()
+  await first
+  f.children.complete()
+  f.lead().pump()
+  for (let i = 0; i < 200 && !(await f.events()).some(e => e.event === 'noise_sent'); i++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.ok((await f.events()).some(e => e.event === 'noise_sent'))
+  assert.equal(f.runs().wakes(runId)[0]!.acknowledged_at, null, 'a commands update is not model work')
+  await f.lead().idle()
+  assert.ok(f.runs().wakes(runId)[0]!.acknowledged_at !== null)
+  assert.equal(f.runs().get(runId).state, 'completed')
+})
+
+test('a lead that delegates again before emitting any update still acknowledges its wake exactly once', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [brief(), brief({ objective: 'Second pass' })], redelegate: true, silentTool: true, usagePerTurn: { inputTokens: 1000, outputTokens: 200 } } })
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'hibernated')
+  assert.equal(f.runs().attempts(runId)[0]!.first_model_at !== null, true, 'the tool call itself proves the first turn ran')
+  f.children.complete(0)
+  f.lead().pump()
+  await f.lead().idle()
+  const run = f.runs()
+  assert.equal(run.get(runId).state, 'waiting_children')
+  assert.deepEqual(run.wakes(runId).map(w => [w.acknowledged_at !== null, w.deliveries]), [[true, 1]], 'acknowledged by the delegate call, not redelivered')
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(f.children.launches.length, 2, 'one more child, and the wake was not resumed a second time')
+  f.children.complete(1)
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.get(runId).state, 'completed')
+  assert.deepEqual(run.wakes(runId).map(w => [w.acknowledged_at !== null, w.deliveries]), [[true, 1], [true, 1]])
+  assert.equal((await resumedPrompts(f)).length, 2)
 })

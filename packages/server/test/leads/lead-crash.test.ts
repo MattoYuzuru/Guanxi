@@ -44,7 +44,7 @@ function integrity(db: Db): void {
 }
 const ledger = (w: World, runId: string) => JSON.stringify([w.runs.costs(runId), count(w.db, 'SELECT COUNT(*) AS n FROM run_costs WHERE run_id=?', runId)])
 
-for (const stage of ['delegate', 'wake', 'cancel'] as const) {
+for (const stage of ['delegate', 'wake', 'signal', 'cancel'] as const) {
   test(`crash property: SIGKILL at every ${stage} boundary of the lead flow yields one delegation, one resolution, one acknowledged wake and one resumed turn`, async t => {
     const root = mkdtempSync(join(tmpdir(), `guanxi-lw-${stage}-`))
     t.after(() => rmSync(root, { recursive: true, force: true }))
@@ -71,6 +71,9 @@ for (const stage of ['delegate', 'wake', 'cancel'] as const) {
         now += 100_000
         w.runs.heartbeat()
         legalState(w.db)
+        // Did the escalation commit before the kill? Then the lead is owed one more wake.
+        const escalated = count(w.db, "SELECT COUNT(*) AS n FROM outbox WHERE kind='escalation'") > 0
+        const expectedWakes = stage === 'signal' && escalated ? 2 : 1
         w.runs.reconcile()
         const settle = async () => { for (let i = 0; i < 4; i++) { w.lead.pump(); await w.lead.idle(); now += 1_000; w.runs.tick() } }
         await settle()
@@ -124,6 +127,15 @@ for (const stage of ['delegate', 'wake', 'cancel'] as const) {
           assert.equal(ledger(w, runId), before, 'no lead cost accrues while hibernating')
           w.runs.complete(attempt, 'completed')
           assert.equal(ledger(w, runId), before, 'the child\'s resolution does not bill the lead')
+        } else if (stage === 'signal') {
+          // The escalation woke the lead (or never committed); the child is still the lead's business.
+          if (w.runs.get(runId).state === 'interrupted') await w.lead.resume(runId, 'continue the lead')
+          await settle()
+          assert.equal(w.runs.get(runId).state, 'waiting_children', `the lead yielded again: ${label}`)
+          assert.equal(w.runs.promises(runId)[0]!.outcome, null, 'an escalation never resolves the promise')
+          assert.equal(w.runs.wakes(runId).length, escalated ? 1 : 0, label)
+          const attempt = w.children.attempts.get(childId)!
+          w.runs.complete(attempt, 'completed')
         } else if (promise.outcome === null) {
           // The killed executor is gone. Its child never began a model call, so the lead service started
           // a fresh one; otherwise a person's explicit retry would be needed.
@@ -140,26 +152,33 @@ for (const stage of ['delegate', 'wake', 'cancel'] as const) {
         }
         assert.equal(state, 'completed', label)
         assert.equal(w.runs.promises(runId).filter(p => p.outcome === 'completed').length, 1, label)
-        assert.equal(w.runs.wakes(runId).length, 1, `exactly one wake: ${label}`)
-        assert.equal(w.runs.wakes(runId).filter(x => x.acknowledged_at !== null).length, 1, `exactly one acknowledged wake: ${label}`)
+        assert.equal(w.runs.wakes(runId).length, expectedWakes, `exact wake count: ${label}`)
+        assert.equal(w.runs.wakes(runId).filter(x => x.acknowledged_at !== null).length, expectedWakes, `every wake acknowledged exactly once: ${label}`)
         const events = w.log.read(runId, { audience: 'person', limit: 1_000 }).events
         assert.equal(events.filter(e => e.type === 'run.lifecycle' && e.data.action === 'resolved').length, 1, label)
-        assert.equal(events.filter(e => e.type === 'run.lifecycle' && e.data.action === 'acknowledged').length, 1, label)
-        assert.equal(w.runs.deliver(runId, 1), null, 'an acknowledged wake is never delivered again')
+        assert.equal(events.filter(e => e.type === 'run.lifecycle' && e.data.action === 'acknowledged').length, expectedWakes, label)
+        for (let seq = 1; seq <= expectedWakes; seq++) assert.equal(w.runs.deliver(runId, seq), null, 'an acknowledged wake is never delivered again')
         const turns = readLog(dir, 'turns.jsonl')
-        const started = (kind: string) => turns.filter(e => e.event === 'prompt' && e.kind === kind).length
-        const completed = (kind: string) => turns.filter(e => e.event === 'turn_end' && e.kind === kind).length
+        const started = (kind: string, seq?: number) => turns.filter(e => e.event === 'prompt' && e.kind === kind && (seq === undefined || e.wakeSeq === seq)).length
+        const completed = (kind: string, seq?: number) => turns.filter(e => e.event === 'turn_end' && e.kind === kind && (seq === undefined || e.wakeSeq === seq)).length
         // A turn killed before its acknowledgement is lost with its process and re-delivered: it may
         // START twice but COMPLETES once. After the acknowledgement it is never replayed automatically.
-        assert.ok(started('wake') <= 2, label)
-        if (stage === 'delegate' || index < ackIdx) {
+        for (let seq = 1; seq <= expectedWakes; seq++) assert.ok(started('wake', seq) >= 1 && started('wake', seq) <= 2 && completed('wake', seq) <= 1, `wake ${seq}: ${label}`)
+        if (stage === 'delegate' || (stage === 'wake' && index < ackIdx)) {
           assert.equal(completed('wake'), 1, `exactly one resumed lead turn completed: ${label}`)
           assert.equal(completed('continue'), 0, label)
-        } else {
+        } else if (stage === 'wake') {
           assert.equal(started('wake'), 1, `an acknowledged wake is never delivered twice: ${label}`)
-          assert.ok(completed('wake') <= 1 && started('continue') <= 1, label)
+          assert.ok(started('continue') <= 1, label)
           // The node cannot know that a killed agent finished; a person decides, once, with `resume`.
+        } else {
+          assert.equal(completed('wake', expectedWakes), 1, `the final resolution wake completed once: ${label}`)
         }
+        // The ledger holds exactly what the agent reported cumulatively for its one session: a kill between
+        // the cost entry and anything else can neither lose a delta forever nor bill a turn twice.
+        const turnsStarted = turns.filter(e => e.event === 'prompt').length
+        assert.deepEqual(w.runs.costs(runId), [{ currency: 'USD', inputTokens: turnsStarted * 1000, outputTokens: turnsStarted * 200, costMicrounits: turnsStarted * 500_000 }], `exact lead ledger: ${label}`)
+        assert.equal(count(w.db, 'SELECT COUNT(*) AS n FROM run_resources WHERE run_id=?', runId), 1, `the sleeping lead's scratch resource is retained: ${label}`)
         assert.equal(count(w.db, "SELECT COUNT(*) AS n FROM lead_delegations WHERE state='intent'"), 0)
         assert.equal(w.tools.activeGrants(), 0)
         integrity(w.db)

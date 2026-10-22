@@ -18,7 +18,7 @@ if (stage === 'delegate') armed = true
 const { runId, first } = world.lead.startLead({ ownerAccountId: OWNER, actorAccountId: OWNER, projectId: 'p', prompt: 'Fix the failing tests' })
 await first
 await world.lead.idle()
-if (stage === 'wake' || stage === 'cancel') {
+if (stage === 'wake' || stage === 'cancel' || stage === 'signal') {
   const childId = world.runs.promises(runId)[0]!.child_id
   if (stage === 'wake') {
     // The executor keeps its attempt alive through the simulated hour, as the relay executor renews its.
@@ -26,6 +26,12 @@ if (stage === 'wake' || stage === 'cancel') {
     for (let elapsed = 0; elapsed < 3_600_000; elapsed += 50_000) { now += 50_000; world.runs.renew(attempt, 60_000) }
     armed = true
     world.runs.complete(attempt, 'completed')
+    world.lead.pump()
+    await world.lead.idle()
+  } else if (stage === 'signal') {
+    // An escalation wakes the lead without resolving the promise; the lead yields again.
+    armed = true
+    world.runs.signal(world.children.attempts.get(childId)!, 'judge-flag')
     world.lead.pump()
     await world.lead.idle()
   } else {

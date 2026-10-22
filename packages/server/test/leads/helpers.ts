@@ -49,7 +49,12 @@ export async function leadFixture(t: TestContext, options: { lead?: Record<strin
   f.service().setProjectRoles(owner, owner, 'p', { lead: binding })
   const children = new FakeChildren(runs)
   const notices: LeadNotice[] = []
-  const tools = new LeadToolServer()
+  const tokens: string[] = []
+  // Captures each per-turn bearer token so tests can prove it is never persisted or logged.
+  class SpyTools extends LeadToolServer {
+    override grant(...args: Parameters<LeadToolServer['grant']>) { const grant = super.grant(...args); tokens.push(grant.header.value.slice('Bearer '.length)); return grant }
+  }
+  const tools = new SpyTools()
   t.after(() => tools.close())
   const leadScenario = { loadSession: true, briefs: [brief()], usagePerTurn: { inputTokens: 1000, outputTokens: 200, amount: 0.5 }, ...options.lead }
   const scenario = async (extra: Record<string, unknown> = {}, adapter: AdapterId = 'claude-code') => f.scenario(adapter, { lead: { ...leadScenario, ...extra } })
@@ -63,7 +68,7 @@ export async function leadFixture(t: TestContext, options: { lead?: Record<strin
       return (await readFile(join(f.dir, adapter, 'lead-events.jsonl'), 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as Record<string, any>)
     } catch { return [] }
   }
-  return { ...f, runs, lead, children, notices, tools, events, owner, binding, fallback, scenario,
+  return { ...f, runs, lead, children, notices, tools, tokens, events, owner, binding, fallback, scenario,
     get now() { return now }, advance(ms: number) { now += ms }, setNow(value: number) { now = value },
     async restartLead() { await plugin.dispose(); plugin = await install() },
     start: (prompt = 'Fix the failing tests') => lead().startLead({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', prompt,

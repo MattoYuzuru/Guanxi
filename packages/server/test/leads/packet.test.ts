@@ -71,6 +71,22 @@ test('a large report is reduced in a fixed order, records every reduction and fi
   scrubber.close()
 })
 
+test('every field is bounded, not only the clipped prose: huge ids and references cannot make a wake undeliverable', () => {
+  const scrubber = new SecretScrubber()
+  const huge = 'h'.repeat(20_000)
+  const built = buildWakePacket(input({ child: { ...child, runId: 'c'.repeat(150), costs: Array.from({ length: 50 }, (_, i) => ({ currency: `C${i}${huge}`, inputTokens: 1, outputTokens: 1, costMicrounits: null })) },
+    pendingChildren: Array.from({ length: 200 }, () => huge),
+    report: report({ head: huge, handoff: { ref: huge, cycle: 1 }, items: [{ id: huge, title: huge, status: 'open' }], gates: [{ item: huge, ok: false, head: huge, output: huge }] }) }), scrubber)
+  assert.ok(built.tokens <= 4_000, `${built.tokens}`)
+  assert.ok(leadWakePacketSchema.safeParse(built.packet).success)
+  const forced = buildWakePacket(input({ report: report({ items: [{ id: 'a'.repeat(80), title: 'T'.repeat(200), status: 'open' }] }) }), scrubber, 170)
+  assert.ok(forced.packet.truncated.includes('minimal'), 'the last resort keeps only outcome, state and metrics')
+  assert.ok(forced.tokens <= 170)
+  assert.deepEqual([forced.packet.items, forced.packet.gates, forced.packet.handoff], [[], [], null])
+  assert.match(forced.text, /outcome: completed/)
+  scrubber.close()
+})
+
 test('escalations carry no outcome claim and list other pending children for drill-down only', () => {
   const scrubber = new SecretScrubber()
   const built = buildWakePacket(input({ kind: 'escalation', outcome: 'pending', pendingChildren: ['child-1', 'child-2'] }), scrubber)
