@@ -86,6 +86,13 @@ test('whole-answer probes never become field grades; retry rescue does not impro
   assert.equal(p.firstAttemptCorrectOverExpected, 23 / 24)
   assert.equal(p.afterRetryCorrectOverExpected, 1)
   assert.ok(p.firstAttemptCorrectOverExpected! < 0.96)
+
+  // A known first failure followed by an unknown retry is not complete: the final field grade is unknown.
+  const finalUnknown = build()
+  { const c = relayCycle(finalUnknown); c.probes.grades[1].result = 'incorrect'; c.probes.grades.push({ occasion: 'p-head', attempt: 2, state: 'unknown', reason: 'purged' }) }
+  const fu = arm(reduce(resign(finalUnknown)), 'arm-relay').totals.probes.criticalField
+  assert.deepEqual([fu.firstIncorrect, fu.finalUnknown, fu.complete], [1, 1, false])
+  assert.ok(reduce(resign(finalUnknown)).unresolved.includes('probes_unknown'))
 })
 
 test('unknown stays unknown: one unknown grade gives a conservative incomplete fraction, an unknown manifest gives null', () => {
