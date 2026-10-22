@@ -9,6 +9,7 @@ import type { Attempt } from '../runs/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { Connections } from '../connections/service.ts'
+import type { OllamaChatRequest } from '../ollama/types.ts'
 import { type SandboxPolicy } from '../native-agent/sandbox.ts'
 import { assertRootsClean } from '../native-agent/cleanup.ts'
 import { GitRelayWorkspace } from './workspace.ts'
@@ -159,13 +160,19 @@ export class RelayStarts {
           return this.runs.append(attempt, event, { ...options, expectedSeq: options.expectedSeq ?? this.log.session(sessionId)!.lastSeq + 1 }) } }
       const sandbox: SandboxPolicy = { mode: 'full-access', roots: [root], scratch, runtimeBase,
         protectedPaths: [], domains: [...input.domains], nodePorts: [...policy.nodePorts], attachments: [], hiddenPaths: [sourceRoot, runtimeBase] }
+      const guard = () => { check(); assertRootsClean(runtimeBase, [runtimeBase, root, scratch]); invariant(attempt, 'relay_stopped'); this.runs.mutate(attempt, () => undefined) }
       const workspace = await GitRelayWorkspace.create(root, input.plan, { policy: sandbox, log: this.log, handle, scrubber: this.scrubber,
-        guard: () => { check(); assertRootsClean(runtimeBase, [runtimeBase, root, scratch]); invariant(attempt, 'relay_stopped'); this.runs.mutate(attempt, () => undefined) },
+        guard,
         queue: () => { throw new RelayError('relay_queue_unavailable') } })
       await runtime.meter.observe(signal)
       check(); runtime.validate()
       this.runs.createStarted({ id, sessionId }, (a, db, emit) => {
         check(); runtime.validate()
+        const evidence = { runtime: runtime.fact, meter: runtime.meterFact }
+        // Preparation awaited trusted observations/allocation. New secret registrations must
+        // refuse immutable values at commit, before extension DDL or raw ledger writes.
+        const persisted = { policy, evidence }
+        invariant(canonical(this.scrubber.scrub(persisted)) === canonical(persisted), 'content_withheld')
         db.exec(`CREATE TABLE IF NOT EXISTS relay_start_migrations(version INTEGER PRIMARY KEY);
           INSERT OR IGNORE INTO relay_start_migrations VALUES (39);
           CREATE TABLE IF NOT EXISTS relay_public_starts(key TEXT PRIMARY KEY,input_hash TEXT NOT NULL,run_id TEXT NOT NULL UNIQUE REFERENCES durable_runs(id),
@@ -173,11 +180,15 @@ export class RelayStarts {
         const versions = db.prepare('SELECT version FROM relay_start_migrations').all()
         invariant(versions.length === 1 && versions[0]!.version === 39, 'relay_schema_version')
         this.store.initWithin(a, input.plan, input.caps, db, emit)
-        db.prepare("INSERT INTO relay_public_starts VALUES (?,?,?,?,?,?,'running',NULL)").run(input.key, entry.digest, id, sessionId, canonical(policy), canonical({ runtime: runtime.fact, meter: runtime.meterFact }))
+        db.prepare("INSERT INTO relay_public_starts VALUES (?,?,?,?,?,?,'running',NULL)").run(input.key, entry.digest, id, sessionId, canonical(policy), canonical(evidence))
         attempt = a
       })
       entry.attempt = attempt!
-      const executor = new RelayExecutor(this.store, new ConnectionRelayModel(this.connections, input.connectionId, input.model, runtime.meter), workspace,
+      const meter = { ...runtime.meter,
+        async authorizeDispatch(signal?: AbortSignal) { guard(); await runtime.meter.authorizeDispatch?.(signal); guard() },
+        validatePrepared(request: OllamaChatRequest) { runtime.meter.validatePrepared?.(request); guard() },
+      }
+      const executor = new RelayExecutor(this.store, new ConnectionRelayModel(this.connections, input.connectionId, input.model, meter), workspace,
         policy.reserves, this.scrubber, this.host.limits as RelayLimits)
       // Integration seam: the optional T0 R3 cascade follows judgeSignals when that module merges.
       entry.executor = executor
@@ -209,10 +220,12 @@ export class RelayStarts {
     invariant(entry || row, 'relay_not_found')
     if (row) this.runs.cancel(row.run_id)
     entry?.controller.abort(); entry?.executor?.stop()
-    await entry?.start.catch(() => undefined)
+    let cleanupUnconfirmed = false
+    await entry?.start.catch(error => { cleanupUnconfirmed = relayStartCode(error) === 'cleanup_unconfirmed' })
     await entry?.lifetime
     if (this.row(key)) return this.status(key)
-    return { key, runId: null, sessionId: null, status: 'canceled', error: null, source: 'start-owner',
+    return { key, runId: null, sessionId: null, status: cleanupUnconfirmed ? 'failed' : 'canceled',
+      error: cleanupUnconfirmed ? 'cleanup_unconfirmed' : null, source: 'start-owner',
       observedAt: new Date(this.clock()).toISOString(), confidence: 'observed', runtime: null, meter: null, runtimeAgeMs: null, reserves: null }
   }
   async close(): Promise<void> {

@@ -38,10 +38,10 @@ export class ConnectionRelayModel implements RelayModel {
       ...(this.meter.authorizeDispatch ? { authorizeDispatch: () => this.meter.authorizeDispatch!(o.signal) } : {}),
       onPrepared: (request: import('@earendil-works/pi-ai').Context | import('../ollama/types.ts').OllamaChatRequest) => {
         invariant(request.messages.length === 1 && request.messages[0]!.role === 'user' && typeof request.messages[0]!.content === 'string', 'request_shape')
-        this.meter.validatePrepared?.(request as import('../ollama/types.ts').OllamaChatRequest)
         dispatchedPrompt = request.messages[0]!.content as string
         const tokens = this.count(dispatchedPrompt)
         invariant(Number.isSafeInteger(tokens) && tokens >= 0 && tokens <= o.maxInput, 'context_ceiling')
+        this.meter.validatePrepared?.(request as import('../ollama/types.ts').OllamaChatRequest)
       } }
     if (connection.kind === 'local_runtime') {
       const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false, ...(this.meter.localOnly ? { think: false } : {}),

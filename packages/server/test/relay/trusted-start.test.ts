@@ -251,3 +251,61 @@ test('stop during post-preflight counter observation releases K3 before the read
     readGate.resolve(); await turn(); assert.equal(f.posts(), 0)
   } finally { versionGate.resolve(); readGate.resolve() }
 })
+
+for (const revoke of ['home', 'run'] as const) test(`review regression: ${revoke} revocation during version preflight dispatches zero POSTs`, async t => {
+  const entered = deferred(), gate = deferred(), f = await fixture(t, { beforeVersion: async () => { entered.resolve(); await gate.promise } })
+  try {
+    const receipt = await f.starts.start(f.input); await entered.promise
+    if (revoke === 'home') f.db.prepare("UPDATE leases SET token=token+1 WHERE key='durable-runs/home'").run()
+    else f.store.cancel(receipt.runId!)
+    gate.resolve(); await until(() => f.cleaned())
+    assert.equal(f.posts(), 0)
+    assert.equal(f.governor.snapshot().activeLease, null)
+  } finally { gate.resolve() }
+})
+
+for (const revoke of ['home', 'run'] as const) test(`review regression: ${revoke} revocation during runtime authorization dispatches zero POSTs`, async t => {
+  const entered = deferred(), version = deferred(), read = deferred()
+  const f = await fixture(t, { beforeVersion: async () => { entered.resolve(); await version.promise } })
+  try {
+    const receipt = await f.starts.start(f.input); await entered.promise
+    const reading = f.holdRead(read.promise); version.resolve(); await reading
+    assert.ok(f.governor.snapshot().activeLease)
+    if (revoke === 'home') f.db.prepare("UPDATE leases SET token=token+1 WHERE key='durable-runs/home'").run()
+    else f.store.cancel(receipt.runId!)
+    read.resolve(); await until(() => f.cleaned())
+    assert.equal(f.posts(), 0); assert.equal(f.governor.snapshot().activeLease, null)
+  } finally { version.resolve(); read.resolve() }
+})
+
+test('review regression: stop reports failed preparation cleanup without acknowledging cancellation', async t => {
+  const f = await fixture(t), entered = deferred(), release = deferred()
+  const starts = new RelayStarts(f.db, f.store, f.log, f.connections, f.scrubber, f.relay, { ...f.host, allocate: async () => {
+    const owned = await f.host.allocate(); entered.resolve(); await release.promise
+    return { ...owned, close: async () => { throw new Error('synthetic cleanup failure') } }
+  } })
+  t.after(() => starts.close())
+  const first = starts.start({ ...f.input, key: 'cleanup-failure' }), rejected = assert.rejects(first, /cleanup_unconfirmed/)
+  try {
+    await entered.promise
+    const stopped = starts.stop('cleanup-failure'); release.resolve()
+    const result = await stopped; await rejected
+    assert.equal(result.error, 'cleanup_unconfirmed'); assert.equal(result.status, 'failed')
+    assert.equal(result.runId, null); assert.equal(f.posts(), 0)
+  } finally { release.resolve() }
+})
+
+for (const target of ['policy', 'runtime'] as const) test(`review regression: late registered ${target} content refuses atomically before persistence`, async t => {
+  const version = deferred(), f = await fixture(t, { beforeVersion: () => version.promise })
+  const gate = deferred(), entered = f.holdAllocation(gate.promise)
+  const secret = target === 'policy' ? 'synthetic-r2-late-secret-20261022' : 'fixture exact renderer'
+  const input = target === 'policy' ? { ...f.input, key: 'late-secret', plan: { ...f.input.plan, goal: `Synthetic objective ${secret}` } } : f.input
+  const pending = f.starts.start(input)
+  try {
+    await entered; f.scrubber.register('secret://r2-review', secret); gate.resolve()
+    await assert.rejects(pending, /content_withheld/)
+    assert.equal(f.cleaned(), true); assert.equal(f.posts(), 0)
+    for (const table of ['durable_runs', 'sessions', 'run_attempts', 'relay_runs']) assert.equal(f.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0)
+    assert.equal(f.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='relay_public_starts'").get()!.n, 0)
+  } finally { gate.resolve(); await f.starts.stop(input.key).catch(() => undefined); version.resolve() }
+})
