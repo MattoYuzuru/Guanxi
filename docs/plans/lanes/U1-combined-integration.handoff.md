@@ -46,7 +46,6 @@ Source stays frozen while checks run. The external guanxi-ui skill symlink preve
 source certification: results are local observations with explicit clean HEAD and real scope.
 Root owns main integration and central status.
 
-
 ## Combined eight-gate result and final privacy follow-up
 
 Combined clean pin `0753630bbb72ff609b09177942837a57b0421316` integrates the independent
@@ -82,3 +81,16 @@ resolved by retaining both current-main integration history and the full author 
 No generated manifest, component record or approval changed. Root must freeze this final
 union, repeat its original page probe/independent integration review and all eight commands,
 then check main after integration. The earlier eight green receipts are historical evidence.
+
+### Final source gates and documentation-only correction
+
+At clean `aa87859`, all five executable candidate gates pass: typecheck `check-67l5zt55`,
+npm test `check-cev9png3`, browser `check-kpkwvot1`, catalog browser `check-ov_ha1ua`, and
+build `check-bid9f75g`. The Markdown command `check-lry6czzi` then fails only on three
+coordinator formatting errors: two double blank lines and the missing blank above the K4
+privacy follow-up heading. No source behavior or assertion failed in that command.
+
+The separate correction changes only these three Markdown files. Executable trees remain
+byte-identical to independently reviewed `aa87859`; root reruns Markdown/links and completes
+licenses/source lint at the corrected clean pin. Earlier executable gate receipts retain
+their exact source pin; they are not relabelled as checks of a later commit.

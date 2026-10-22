@@ -448,6 +448,7 @@ sync APIs, exact version negotiation, immutable stored rows and no full artifact
 That separate GPT implementation and independent re-review are now complete in the original
 isolated K4 clone; the following section records the fixes and exact evidence. The earlier
 full gates do not establish these later changes or authorize a stage exit. Inline queued text, full buffering and broader K4/platform evidence remain open.
+
 ## Truncated-excerpt privacy repair (2026-10-22)
 
 **Base:** `622addc`. **Initial fix:** `4818b92`. **Independent-review follow-up:** `c2ae12f`.
