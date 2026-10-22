@@ -125,18 +125,32 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
    * worker bridge. A server whose template adds no framing, or echoes the message twice, is refused. */
   counter = async (fact: Readonly<{ model: string; digest: string; runtimeVersion: string; contextTokens: number }>, signal: AbortSignal): Promise<RelayExactCounter> => {
     const seen = await this.observe(fact.model, signal)
-    const key = canonical([seen.digest, seen.runtimeVersion, seen.contextTokens])
-    if (this.proven !== key) {
-      try {
-        const rendered = await this.client.render(PROBE, signal)
-        invariant(occurrences(rendered, PROBE) === 1 && rendered.length > PROBE.length, 'runtime_counter_mismatch')
-        const tokens = await this.client.countTokens(rendered, signal)
-        invariant(tokens > 0 && this.bridge.count(PROBE, true) === tokens, 'runtime_counter_mismatch')
-      } catch (error) { this.unavailable(error, signal) }
-      this.proven = key
-    }
+    await this.prove(seen, signal)
     return { identity: { model: seen.model, digest: seen.digest, runtimeVersion: seen.runtimeVersion }, placement: 'installed_local',
       source: LLAMA_SERVER_COUNTER_SOURCE, observedAt: seen.observedAt, confidence: 'high', count: request => this.countRequest(request) }
+  }
+  /** The template proof, once per served identity. */
+  private async prove(seen: RelayRuntimeObservation, signal: AbortSignal): Promise<void> {
+    const key = canonical([seen.digest, seen.runtimeVersion, seen.contextTokens])
+    if (this.proven === key) return
+    try {
+      const rendered = await this.client.render(PROBE, signal)
+      invariant(occurrences(rendered, PROBE) === 1 && rendered.length > PROBE.length, 'runtime_counter_mismatch')
+      const tokens = await this.client.countTokens(rendered, signal)
+      invariant(tokens > 0 && this.bridge.count(PROBE, true) === tokens, 'runtime_counter_mismatch')
+    } catch (error) { this.unavailable(error, signal) }
+    this.proven = key
+  }
+  /** F2-d executor side: identity, template proof, rendering and exact token count of one user message in
+   * one asynchronous step. The caller keeps the rendered text only to hash it; a dispatch re-renders. */
+  async measure(content: string, signal: AbortSignal): Promise<{ observation: RelayRuntimeObservation; rendered: string; tokens: number }> {
+    const observation = await this.observe(this.model, signal)
+    await this.prove(observation, signal)
+    try {
+      const rendered = await this.client.render(content, signal)
+      const tokens = await this.client.countTokens(rendered, signal)
+      return { observation, rendered, tokens }
+    } catch (error) { return this.unavailable(error, signal) }
   }
   private proven = ''
   private message(request: Readonly<OllamaChatRequest>): string {
@@ -147,12 +161,34 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
   private countRequest(request: Readonly<OllamaChatRequest>): number {
     return this.bridge.count(this.message(request))
   }
+  /** F2-d: a one-call transport that additionally pins the rendered prompt and its token count to the evidence
+   * the home counted. `evidence()` reports the hash of the prompt that was actually evaluated. */
+  expectedTransport(expected: { renderedSha256: string; tokens: number; digest: string; contextTokens: number }): LocalChatTransport & { evidence(): { renderedSha256?: string; failure?: string } | undefined } {
+    const seen: { renderedSha256?: string; failure?: string } = {}
+    const transport = { id: 'llama-server', host: this.host, usageSource: 'llama-server:/completion',
+      chat: (request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void, dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }) =>
+        this.chat(request, signal, onDispatched, dispatch, expected, seen).catch((error: unknown) => {
+          // K3 hides the cause behind a generic provider failure; keep the fixed code for the signed terminal event.
+          if (error instanceof RelayError) seen.failure = error.code
+          throw error
+        }),
+      evidence: () => seen.renderedSha256 || seen.failure ? { ...(seen.renderedSha256 ? { renderedSha256: seen.renderedSha256 } : {}), ...(seen.failure ? { failure: seen.failure } : {}) } : undefined }
+    return Object.freeze(transport)
+  }
   private async chat(request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void,
-    dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }): Promise<OllamaChatChunk> {
+    dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest },
+    expected?: { renderedSha256: string; tokens: number; digest: string; contextTokens: number }, seen?: { renderedSha256?: string }): Promise<OllamaChatChunk> {
     this.ready?.()
     await dispatch.authorizeDispatch()
     signal.throwIfAborted()
     const first = dispatch.prepare(), content = this.message(first)
+    if (expected) {
+      // The count was made under one served model and window; this dispatch must run on exactly that one.
+      try {
+        const now = await this.observe(this.model, signal)
+        invariant(now.digest === expected.digest && now.contextTokens === expected.contextTokens, 'runtime_identity_changed')
+      } catch (error) { this.unavailable(error, signal) }
+    }
     const window = first.options?.num_ctx, limit = first.options?.num_predict
     invariant(Number.isSafeInteger(window) && Number.isSafeInteger(limit) && limit! > 0, 'runtime_request_changed')
     // Asynchronous renderer and tokenizer evidence. Any disagreement with the synchronous count the
@@ -163,6 +199,8 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
       const tokens = await this.client.countTokens(rendered, signal)
       invariant(tokens === this.countRequest(first), 'runtime_counter_mismatch')
       invariant(tokens + limit! <= window!, 'context_ceiling')
+      // The home counted this exact rendering; anything else is not the request it admitted.
+      if (expected) invariant(createHash('sha256').update(rendered).digest('hex') === expected.renderedSha256 && tokens === expected.tokens, 'runtime_counter_mismatch')
     } catch (error) { this.unavailable(error, signal) }
     // The final scrub, fence and shape checks run again and the POST is issued in the same
     // synchronous stretch: nothing can be revoked between them and the request.
@@ -171,6 +209,7 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
     const done = await this.client.complete(rendered, limit!, signal, onDispatched).catch((error: unknown) => this.unavailable(error, signal))
     // A truncated prompt is never accepted as the prompt that was counted.
     invariant(!done.truncated, 'truncation_protocol')
+    if (expected) { invariant(done.promptTokens === expected.tokens, 'truncation_protocol'); seen!.renderedSha256 = expected.renderedSha256 }
     // Only a finished generation is a reply: `none` (still running) or an unknown stop type is refused.
     invariant(done.stopType === 'limit' || done.stopType === 'eos' || done.stopType === 'word', 'truncation_protocol')
     return { model: request.model, created_at: new Date(this.clock()).toISOString(), done: true, done_reason: done.stopType === 'limit' ? 'length' : 'stop',

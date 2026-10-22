@@ -14,12 +14,16 @@ export interface RuntimeMeter {
   validatePrepared?(request: import('../ollama/types.ts').OllamaChatRequest): void
   observe(signal?: AbortSignal): Promise<WindowObservation>
   count(prompt: string): number
+  /** A meter whose exact answer needs a network round trip (F2-d). `count` is then only a lookup of answers
+   * already obtained for the identical string, and refuses on a miss. */
+  countAsync?(prompt: string, signal?: AbortSignal): Promise<number>
   maxCostMicros?(input: number, output: number): number | null
 }
 export interface RelayModel extends RuntimeMeter {
   /** True only for an adapter with a real tokenizer. Byte-bounded adapters leave this false
    * so packing and the boundary share the same conservative measure. */
   readonly countIsExact?: boolean
+  countAsync?(prompt: string, signal?: AbortSignal): Promise<number>
   call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; maxInput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
 }
 export class ConnectionRelayModel implements RelayModel {
@@ -30,6 +34,7 @@ export class ConnectionRelayModel implements RelayModel {
   }
   observe(signal?: AbortSignal) { return this.meter.observe(signal) }
   count(prompt: string) { return this.meter.count(prompt) }
+  get countAsync() { return this.meter.countAsync ? (prompt: string, signal?: AbortSignal) => this.meter.countAsync!(prompt, signal) : undefined }
   maxCostMicros(input: number, output: number) { return this.meter.maxCostMicros?.(input, output) ?? null }
   async call(prompt: string, o: Parameters<RelayModel['call']>[1]): Promise<Reply> {
     const connection = this.connections.snapshot('local').connections.find(c => c.id === this.connectionId)

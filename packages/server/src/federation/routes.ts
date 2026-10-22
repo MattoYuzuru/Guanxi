@@ -90,6 +90,8 @@ export function federationRoutes(resolve: () => Federation) {
   app.post('/attempts/events', c => { c.get('federation').receiveDispatchEvent(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
   app.post('/attempts/state', c => c.json(c.get('federation').dispatchState(c.get('peer'), c.get('body') as never)))
   app.post('/attempts/dispatch-cancel', c => c.json(c.get('federation').cancelDispatch(c.get('peer'), c.get('body') as never)))
+  app.post('/attempts/runtime/observe', async c => c.json(await c.get('federation').receiveRelayObserve(c.get('peer'), c.get('body'))))
+  app.post('/attempts/runtime/count', async c => c.json(await c.get('federation').receiveRelayCount(c.get('peer'), c.get('body'))))
   app.post('/telemetry', (c) => { c.get('federation').receiveTelemetry(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
   app.get('/telemetry', (c) => {
     const f = c.get('federation'); const peer = f.authorize(c.get('peer'), 'telemetry')

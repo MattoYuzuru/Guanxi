@@ -16,7 +16,7 @@ import { GitRelayWorkspace } from './workspace.ts'
 import { ConnectionRelayModel } from './model.ts'
 import { RelayExecutor } from './executor.ts'
 import { RelayStore } from './store.ts'
-import { RelayRuntimeSource, abortableRead } from './runtime.ts'
+import { RelayRuntimeSource, abortableRead, type PreparedRelayRuntime } from './runtime.ts'
 import { canonical, hash } from './handoff.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Reserves, type RelayLimits } from './types.ts'
 
@@ -127,8 +127,10 @@ export class RelayStarts {
     const check = () => { this.ready(); home.assert(); signal.throwIfAborted() }
     let owned: OwnedRelayCheckout | undefined
     let ownedRuntimeBase: string | undefined
+    let session: PreparedRelayRuntime | undefined
     try {
       const runtime = await this.host.runtime!.prepare(input.connectionId, input.model, this.host.reserves!.turn, signal)
+      session = runtime
       check()
       const project = await abortableRead(this.host.project(input.projectId, signal), signal)
       check()
@@ -168,6 +170,8 @@ export class RelayStarts {
       check(); runtime.validate()
       this.runs.createStarted({ id, sessionId }, (a, db, emit) => {
         check(); runtime.validate()
+        // A remote runtime binds its evidence to this run and fence; a refusal here rolls the whole start back.
+        runtime.bind?.(a)
         const evidence = { runtime: runtime.fact, meter: runtime.meterFact }
         // Preparation awaited trusted observations/allocation. New secret registrations must
         // refuse immutable values at commit, before extension DDL or raw ledger writes.
@@ -198,6 +202,7 @@ export class RelayStarts {
         try { await executor.run(attempt!, signal) } catch (failure) { error = relayStartCode(failure) }
         try { assertRootsClean(runtimeBase, [runtimeBase, root, scratch]); await owner.close() } catch { error = 'cleanup_unconfirmed' }
         handle.close()
+        await runtime.release?.().catch(() => undefined)
         try {
           home.transaction('relay.start.settled', db => {
             const run = this.runs.get(id)
@@ -210,6 +215,7 @@ export class RelayStarts {
       void entry.lifetime.catch(() => undefined)
       return this.status(input.key)
     } catch (error) {
+      if (session && !entry.lifetime) await session.release?.().catch(() => undefined)
       if (owned) { try { if (ownedRuntimeBase) assertRootsClean(ownedRuntimeBase, [ownedRuntimeBase]); await owned.close() } catch { throw new RelayError('cleanup_unconfirmed') } }
       // A cancellation never hides that an allocator could not prove its own cleanup.
       const code = relayStartCode(error)

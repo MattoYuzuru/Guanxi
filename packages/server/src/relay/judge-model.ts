@@ -68,6 +68,9 @@ export class ConnectionJudgeModel implements JudgeModel {
     this.now = now
     invariant(
       meter.countIsExact === true &&
+        // The judge dispatches through K3's Ollama path and cannot carry a runtime transport; a meter that
+        // needs one (llama-server, remote node) would otherwise be counted by one runtime and run on another.
+        !meter.transport && !meter.countAsync &&
         ownerAccountId.trim() &&
         Number.isSafeInteger(maxAgeMs) &&
         maxAgeMs >= 0,

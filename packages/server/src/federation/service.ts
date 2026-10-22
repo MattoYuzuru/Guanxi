@@ -2,6 +2,7 @@ import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCom
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema, dispatchCancelSchema,
   type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_RUNTIME_PROBE, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -17,6 +18,9 @@ import { AttemptOffers, type OfferPolicy } from '../remote-attempts/offers.ts'
 import { AttemptDispatch, type DispatchPolicy } from '../remote-attempts/dispatch.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
 import type { Attempt } from '../runs/types.ts'
+import type { FederationChannel } from './channel.ts'
+import { sha256Hex, signRuntimeEvidence } from '../remote-attempts/relay-runtime.ts'
+import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 
 export interface FederationOptions {
   db: Db
@@ -46,6 +50,7 @@ export class Federation {
   #options: FederationOptions
   private readonly now: () => number
   private closed = false
+  private readonly lifetime = new AbortController()
   constructor(options: FederationOptions) {
     this.configOpsPerRequest = options.configOpsPerRequest ?? 256
     if (!Number.isSafeInteger(this.configOpsPerRequest) || this.configOpsPerRequest < 1) throw new FederationError('invalid_config_budget')
@@ -187,7 +192,11 @@ export class Federation {
     this.assertOpen()
     this.#options.db.prepare('UPDATE federation_prompts SET consumed=1 WHERE node_id=? AND command_id=?').run(nodeId, commandId)
   }
-  capabilities(): string[] { this.assertOpen(); return [...(this.attemptOffers ? [ATTEMPT_RESERVATIONS_CAPABILITY] : []), ...(this.attemptDispatch ? [ATTEMPT_DISPATCH_CAPABILITY] : [])] }
+  capabilities(): string[] {
+    this.assertOpen()
+    return [...(this.attemptOffers ? [ATTEMPT_RESERVATIONS_CAPABILITY] : []), ...(this.attemptDispatch ? [ATTEMPT_DISPATCH_CAPABILITY] : []),
+      ...(this.attemptDispatch && this.#options.dispatch?.relayRuntime ? [RELAY_RUNTIME_CAPABILITY] : [])]
+  }
   private offers(): AttemptOffers {
     this.clean(null)
     if (!this.attemptOffers) throw new FederationError('contract_feature_unavailable', 426)
@@ -205,7 +214,8 @@ export class Federation {
     this.clean(offer)
     if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || offer.homeNodeId !== peer.id || offer.executorNodeId !== this.identity.id)
       throw new FederationError('owner_mismatch', 403)
-    const binding = this.replicas.binding(offer.runId)
+    // A relay model call is a child run: its pin derives from the already pinned relay run (same session, owner, home and epoch).
+    const binding = this.replicas.binding(offer.parentRunId ?? offer.runId)
     if (binding.kind !== 'run' || binding.sessionId !== offer.sessionId || binding.ownerAccountId !== peer.accountId ||
       binding.homeNodeId !== peer.id || binding.homeEpoch !== offer.fence.epoch) throw new FederationError('not_home')
   }
@@ -225,11 +235,57 @@ export class Federation {
     if (!this.attemptDispatch) throw new FederationError('contract_feature_unavailable', 426)
     return this.attemptDispatch
   }
-  prepareDispatch(runId: string, executor: string, job: LocalInferenceJob, reservationMs: number): RemoteAttemptOffer {
+  prepareDispatch(runId: string, executor: string, job: LocalInferenceJob, reservationMs: number, parentRunId?: string): RemoteAttemptOffer {
     const target = this.peer(executor)
     this.clean(job)
     if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId || !target.scopes.includes('attempts')) throw new FederationError('owner_mismatch', 403)
-    return this.dispatches().prepare(runId, executor, job, reservationMs)
+    if (job.counted && !parentRunId) throw new FederationError('dispatch_binding')
+    return this.dispatches().prepare(runId, executor, job, reservationMs, parentRunId)
+  }
+  /** F2-d home side: the signed channel to a pinned owner-device executor that may serve relay inference. */
+  relayChannel(executorNodeId: string): FederationChannel {
+    const dispatch = this.#options.dispatch
+    if (!dispatch) throw new FederationError('contract_feature_unavailable', 426)
+    const target = this.peer(executorNodeId)
+    if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId || !target.scopes.includes('attempts')) throw new FederationError('owner_mismatch', 403)
+    return dispatch.channel(executorNodeId)
+  }
+  /** F2-d executor side. Reads only: nothing here starts inference, takes a permit or writes metadata. */
+  private relayRuntime(context: PeerContext, binding: RelayRuntimeBinding) {
+    this.clean(null)
+    const runtime = this.#options.dispatch?.relayRuntime
+    if (!runtime || !this.attemptDispatch) throw new FederationError('contract_feature_unavailable', 426)
+    const peer = this.authorize(context, 'attempts', true)
+    if (context.version.major !== FEDERATION_VERSION.major || context.version.minor < RELAY_RUNTIME_MINOR) throw new FederationError('contract_feature_unavailable', 426)
+    this.clean(binding)
+    if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || binding.homeNodeId !== peer.id || binding.executorNodeId !== this.identity.id) throw new FederationError('owner_mismatch', 403)
+    if (normalizeOllamaModelReference(binding.model) !== runtime.model) throw new FederationError('relay_model_mismatch')
+    if (binding.run) {
+      const pinned = this.replicas.binding(binding.run.runId)
+      if (pinned.kind !== 'run' || pinned.sessionId !== binding.run.sessionId || pinned.ownerAccountId !== peer.accountId ||
+        pinned.homeNodeId !== peer.id || pinned.homeEpoch !== binding.run.fence.epoch) throw new FederationError('not_home')
+    }
+    return runtime
+  }
+  async receiveRelayObserve(context: PeerContext, raw: unknown) {
+    const request = relayRuntimeObserveSchema.parse(raw), runtime = this.relayRuntime(context, request.binding)
+    const observation = await runtime.observe(runtime.model, this.lifetime.signal)
+    this.relayRuntime(context, request.binding) // revocation or closure during the await
+    return signRuntimeEvidence(this.#options.privateKey, { kind: 'observe', binding: request.binding, challenge: request.challenge, executorNodeId: this.identity.id,
+      model: observation.model, digest: observation.digest, contextTokens: observation.contextTokens, runtimeVersion: observation.runtimeVersion,
+      source: observation.source, observedAt: observation.observedAt, count: null })
+  }
+  async receiveRelayCount(context: PeerContext, raw: unknown) {
+    const request = relayRuntimeCountSchema.parse(raw), runtime = this.relayRuntime(context, request.binding)
+    // Before a run exists only the fixed admission probe may be counted; real content needs a pinned run.
+    if (!request.binding.run && request.content !== RELAY_RUNTIME_PROBE) throw new FederationError('relay_run_required', 403)
+    this.clean(request.content)
+    const measured = await runtime.measure(request.content, this.lifetime.signal)
+    this.relayRuntime(context, request.binding)
+    const o = measured.observation
+    return signRuntimeEvidence(this.#options.privateKey, { kind: 'count', binding: request.binding, challenge: request.challenge, executorNodeId: this.identity.id,
+      model: o.model, digest: o.digest, contextTokens: o.contextTokens, runtimeVersion: o.runtimeVersion, source: o.source, observedAt: o.observedAt,
+      count: { contentSha256: sha256Hex(request.content), renderedSha256: sha256Hex(measured.rendered), tokens: measured.tokens } })
   }
   grantDispatch(id: string, receipt: RemoteAttemptReceipt): SignedDispatchGrant {
     this.clean(receipt)
@@ -282,5 +338,5 @@ export class Federation {
     if (canonical(dispatch.binding(input.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
     return dispatch.cancel(input.id)
   }
-  close(): void { if (this.closed) return; this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
+  close(): void { if (this.closed) return; this.lifetime.abort(); this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
 }

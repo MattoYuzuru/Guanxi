@@ -9,6 +9,9 @@ import type { Connections } from '../connections/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import type { AttemptOffers } from './offers.ts'
 import { canonical, hash, signValue, FederationError } from '../federation/crypto.ts'
+import type { ExecutorRelayRuntime } from './relay-runtime.ts'
+import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
+import { RelayError } from '../relay/types.ts'
 
 export interface LocalModelAttestation {
   connectionId: string; model: string; placement: 'installed_local'; source: string; observedAt: number
@@ -22,7 +25,10 @@ export interface DispatchPolicy {
   localModel?: (model: string) => LocalModelAttestation | null
   connections?: Connections
   leaseClock?: () => number
+  /** F2-d executor role: this node's operational llama-server, reachable only through signed F2 messages. */
+  relayRuntime?: ExecutorRelayRuntime
 }
+export type TerminalEvent = Extract<DispatchEvent['event'], { kind: 'terminal' }>
 interface HomeRow { id: string; offer: string; job: string; attempt: string; grant: string | null }
 interface Holder { grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
   timer?: ReturnType<typeof setTimeout>; renewTimer?: ReturnType<typeof setTimeout>; refresh?: Promise<void> }
@@ -35,6 +41,7 @@ export class AttemptDispatch {
   private readonly active = new Map<string, Holder>()
   private readonly tasks = new Map<string, Promise<void>>()
   private readonly flushing = new Map<string, Promise<void>>()
+  private readonly waiters = new Map<string, Set<(event: TerminalEvent) => void>>()
   private readonly mono: () => number
   private highWater = 0
   private readonly db: Db
@@ -88,9 +95,10 @@ export class AttemptDispatch {
     return this.runs.asRemoteExecutor(a, offer.executorNodeId, () => body(a))
   }
   /** The fresh token, binding, immutable job and offer intent commit together. */
-  prepare(runId: string, executorNodeId: string, raw: LocalInferenceJob, reservationMs: number): RemoteAttemptOffer {
+  prepare(runId: string, executorNodeId: string, raw: LocalInferenceJob, reservationMs: number, parentRunId?: string): RemoteAttemptOffer {
     this.ready()
     const job = localInferenceJobSchema.parse(raw)
+    if (job.counted && !parentRunId) throw new FederationError('dispatch_binding')
     if (job.deadline <= this.clock() || !Number.isSafeInteger(reservationMs) || reservationMs <= 0) throw new FederationError('dispatch_deadline')
     return this.runs.startRemote(runId, executorNodeId, (a, db) => {
       if (job.deadline <= this.clock()) throw new FederationError('dispatch_deadline')
@@ -98,7 +106,7 @@ export class AttemptDispatch {
       const offer: RemoteAttemptOffer = { id: randomUUID(), runId, sessionId: run.session_id, homeNodeId: this.node, executorNodeId,
         fence: { attemptId: a.id, epoch: a.epoch, token: a.token }, mode: 'strict',
         expiresAt: Math.min(job.deadline, this.clock() + reservationMs, Number(lease.expires_at)),
-        resource: { kind: 'local_inference', model: job.model, requestedContext: job.context } }
+        resource: { kind: 'local_inference', model: job.model, requestedContext: job.context }, ...(parentRunId ? { parentRunId } : {}) }
       db.prepare('INSERT INTO remote_home_offers VALUES (?,?)').run(offer.id, canonical(offer))
       db.prepare('INSERT INTO remote_dispatch_home VALUES (?,?,?,?,NULL)').run(offer.id, canonical(offer), canonical(job), canonical(a))
       return offer
@@ -161,6 +169,40 @@ export class AttemptDispatch {
           : undefined
         this.runs.complete(a, e.event.outcome, record, cost)
       }
+    })
+    if (e.event.kind === 'terminal') for (const notify of [...(this.waiters.get(e.ref.id) ?? [])]) notify(e.event)
+  }
+  /** The terminal event the executor delivered and the home accepted, if any. */
+  terminal(id: string): TerminalEvent | undefined {
+    this.ready()
+    const row = this.db.prepare('SELECT payload FROM remote_dispatch_receipts WHERE id=? ORDER BY seq DESC LIMIT 1').get(id)
+    const event = row ? signedDispatchEventSchema.parse(JSON.parse(String(row.payload))).entry.event : undefined
+    return event?.kind === 'terminal' ? event : undefined
+  }
+  /** Resolves with the accepted terminal event. `poll` runs every `pollMs` and may throw to abandon the wait
+   * (a lost fence, a lost executor); the abort signal does the same. A late event is then ignored by the caller. */
+  awaitTerminal(id: string, signal: AbortSignal, poll: () => void, pollMs = 25): Promise<TerminalEvent> {
+    return new Promise<TerminalEvent>((resolve, reject) => {
+      let timer: ReturnType<typeof setInterval> | undefined
+      const set = this.waiters.get(id) ?? new Set()
+      this.waiters.set(id, set)
+      const finish = (action: () => void): void => {
+        clearInterval(timer); signal.removeEventListener('abort', aborted); set.delete(notify)
+        if (!set.size && this.waiters.get(id) === set) this.waiters.delete(id)
+        action()
+      }
+      const notify = (event: TerminalEvent): void => finish(() => resolve(event))
+      const aborted = (): void => finish(() => reject(signal.reason ?? new FederationError('dispatch_canceled')))
+      set.add(notify)
+      signal.addEventListener('abort', aborted, { once: true })
+      if (signal.aborted) { aborted(); return }
+      try {
+        const known = this.terminal(id)
+        if (known) { finish(() => resolve(known)); return }
+      } catch (error) { finish(() => reject(error)); return }
+      timer = setInterval(() => {
+        try { poll(); const known = this.terminal(id); if (known) finish(() => resolve(known)) } catch (error) { finish(() => reject(error)) }
+      }, pollMs)
     })
   }
   private ref(grant: SignedDispatchGrant): DispatchRef { return { id: grant.grant.id, homeNodeId: grant.grant.offer.homeNodeId, executorNodeId: this.node } }
@@ -231,6 +273,8 @@ export class AttemptDispatch {
     if (g.offer.executorNodeId !== this.node || g.id !== g.offer.id || g.jobHash !== hash(g.job) ||
       g.offer.resource.model !== g.job.model || g.offer.resource.requestedContext !== g.job.context || g.job.deadline <= this.clock()) throw new FederationError('dispatch_binding')
     this.attestation(g.job)
+    // A counted job is a relay model call: it needs a pinned parent and the llama-server that counted it.
+    if (g.job.counted && (!g.offer.parentRunId || !this.policy.relayRuntime || normalizeOllamaModelReference(g.job.model) !== this.policy.relayRuntime.model)) throw new FederationError('dispatch_binding')
     if (!this.policy.connections) throw new FederationError('local_executor_unavailable')
     const old = this.db.prepare('SELECT grant FROM remote_dispatch_holders WHERE id=?').get(g.id)
     if (old) { if (old.grant !== canonical(signed)) throw new FederationError('dispatch_conflict'); return this.state(g.id) }
@@ -263,25 +307,35 @@ export class AttemptDispatch {
     void this.flush(h.grant.grant.id).catch(() => undefined)
   }
   private async work(h: Holder, validate: () => void): Promise<void> {
-    const g = h.grant.grant
+    const g = h.grant.grant, counted = g.job.counted
+    const source = counted ? 'llama-server:/completion' as const : 'ollama:/api/chat' as const
+    const expected = counted ? this.policy.relayRuntime!.expectedTransport(counted) : undefined
     try {
       const attested = this.attestation(g.job)
       const result = await this.policy.connections!.localChat(this.accountId, attested.connectionId,
         { model: g.job.model, messages: g.job.messages, think: false, options: { num_ctx: g.job.context, num_predict: g.job.outputTokens } }, {
-          runId: g.offer.runId, requestId: g.id, background: true, signal: h.controller.signal,
+          runId: g.offer.runId, requestId: g.id, background: true, signal: h.controller.signal, ...(expected ? { transport: expected } : {}),
           authorizeDispatch: async () => { this.guard(h); validate(); await this.refresh(h, validate); this.guard(h); validate() },
           onPrepared: () => { this.guard(h); validate(); if (this.attestation(g.job).connectionId !== attested.connectionId) throw new FederationError('local_placement_changed') },
           onStarted: () => { this.guard(h); validate(); this.setStatus(g.id, 'running'); this.emit(h, { kind: 'started' }) },
         })
       this.guard(h); validate()
       if (!result.done || result.message?.role !== 'assistant' || typeof result.message.content !== 'string') throw new FederationError('local_result_invalid')
+      // The evaluated rendering and token count must be the counted ones; the transport has already refused otherwise.
+      const evaluated = expected?.evidence()?.renderedSha256
+      if (counted && (evaluated !== counted.renderedSha256 || result.prompt_eval_count !== counted.tokens)) throw new RelayError('truncation_protocol')
       this.emit(h, { kind: 'terminal', outcome: 'completed', content: result.message?.content ?? '', inputTokens: result.prompt_eval_count ?? null,
-        outputTokens: result.eval_count ?? null, source: 'ollama:/api/chat' })
+        outputTokens: result.eval_count ?? null, source, ...(evaluated ? { renderedSha256: evaluated } : {}),
+        ...(counted && result.done_reason ? { doneReason: result.done_reason === 'length' ? 'length' as const : 'stop' as const } : {}) })
       this.setStatus(g.id, 'completed')
-    } catch {
+    } catch (error) {
       if (!this.closed) {
         const state = this.state(g.id).status
-        this.emit(h, { kind: 'terminal', outcome: h.controller.signal.aborted ? 'canceled' : 'failed', content: '', inputTokens: null, outputTokens: null, source: 'ollama:/api/chat' })
+        // A fixed machine reason, never message text: it names which counted-request invariant refused the call.
+        const code = expected?.evidence()?.failure ?? (error instanceof RelayError ? error.code : error instanceof FederationError ? error.code : undefined)
+        const reason = counted && code && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : undefined
+        this.emit(h, { kind: 'terminal', outcome: h.controller.signal.aborted ? 'canceled' : 'failed', content: '', inputTokens: null, outputTokens: null, source,
+          ...(reason && !h.controller.signal.aborted ? { reason } : {}) })
         if (state !== 'lost' && state !== 'canceled') this.setStatus(g.id, h.controller.signal.aborted ? 'canceled' : 'failed')
       }
     } finally {

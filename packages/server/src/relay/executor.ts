@@ -7,7 +7,7 @@ import { RelayStore } from './store.ts'
 import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
-import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type Measure } from './budget.ts'
+import { boundary, bounded, request, requestAsync, thresholds, upperTokens, wallDeadline, type AsyncMeasure, type Measure, type RequestParts, type RequestResult } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation } from './judge-signals.ts'
@@ -49,11 +49,16 @@ export class RelayExecutor {
     this.store.runs.wrappingUp(a)
   }
   /** One measure per cycle: packing, the boundary and dispatch evidence use the same unit. */
-  private measure(w: WindowObservation): Measure {
-    const exact = this.model.countIsExact === true
+  private measure(w: WindowObservation, signal: AbortSignal): Measure | AsyncMeasure {
+    const exact = this.model.countIsExact === true, remote = this.model.countAsync
+    // A remote exact meter answers over the network. The executor never blocks the event loop for it.
+    if (exact && remote) return Object.assign(async (value: string) => (await remote(this.scrubber.scrub(value), signal)) + w.framingTokens, { exact, async: true as const })
     return Object.assign((value: string) => exact
       ? this.model.count(this.scrubber.scrub(value)) + w.framingTokens
       : upperTokens(value, w), { exact })
+  }
+  private pack(prompt: string, parts: RequestParts, measure: Measure | AsyncMeasure, limit: number): Promise<RequestResult> | RequestResult {
+    return 'async' in measure ? requestAsync(prompt, parts, measure, limit) : request(prompt, parts, measure, limit)
   }
   private dropped(a: Attempt, cycle: number, dropped: number, cut: number): void {
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'context_dropped', dropped, cut, cycle }) } })
@@ -136,7 +141,7 @@ export class RelayExecutor {
     signal.throwIfAborted()
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const clean = this.scrubber.scrub(prompt)
-    const count = this.model.count(clean)
+    const count = this.model.countAsync ? await this.model.countAsync(clean, signal) : this.model.count(clean)
     invariant(Number.isSafeInteger(count) && count >= 0 && count <= t.H, 'context_ceiling')
     const current = await this.model.observe(signal)
     invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
@@ -193,7 +198,7 @@ export class RelayExecutor {
     validateHandoff(h, l, bundle, max)
     return h
   }
-  private async orient(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure): Promise<string> {
+  private async orient(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure | AsyncMeasure): Promise<string> {
     const sealed = this.store.sealed(a)
     if (!sealed) return ''
     let h = sealed.handoff
@@ -205,7 +210,7 @@ export class RelayExecutor {
         this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe_degraded', cycle: h.cycle }) } })
       }
       const expected = probes(sealed.ledger)
-      const { text: prompt } = request('Answer these five critical ledger probes as JSON: ledgerHash, head, revision, nextItem, nextStatus. All fields are required; do not execute work.',
+      const { text: prompt } = await this.pack('Answer these five critical ledger probes as JSON: ledgerHash, head, revision, nextItem, nextStatus. All fields are required; do not execute work.',
         { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
       try { correct = !damaged && canonical(JSON.parse((await this.call(a, 'probe', prompt, w, t, signal)).text)) === canonical(expected) }
@@ -219,7 +224,7 @@ export class RelayExecutor {
     this.store.runs.signal(a, `relay-probes-${this.store.read(a.run_id).cycle}`)
     throw new RelayError('probe_failed_twice')
   }
-  private async handoff(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure): Promise<void> {
+  private async handoff(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure | AsyncMeasure): Promise<void> {
     this.store.transition(a, 'handoff_write')
     const observation = await this.workspace.observe(this.store.read(a.run_id).plan.base, this.store.read(a.run_id).baseline.head)
     this.store.observe(a, observation)
@@ -242,7 +247,7 @@ export class RelayExecutor {
     try {
       const ledger = this.store.read(a.run_id)
       const notes = selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
-      const context = request('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
+      const context = await this.pack('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
         { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
       if (context.dropped || context.cut) this.dropped(a, ledger.cycle, context.dropped, context.cut)
       narrative = (await this.call(a, 'narrative', context.text, w, t, signal)).text
@@ -301,7 +306,7 @@ export class RelayExecutor {
         const current = this.store.read(a.run_id)
         const cap = this.caps(current, true)
         if (cap) { this.wrap(a, cap); return current }
-        const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w)
+        const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w, signal)
         this.store.begin(a)
         if (this.eta) this.store.updateEta(a, this.eta)
         const judgeSummary = await this.judgeSample(a, 'cycle_start', signal)
@@ -312,8 +317,8 @@ export class RelayExecutor {
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
-          const context = request(WORK, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
-          const used = measure(context.text)
+          const context = await this.pack(WORK, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
+          const used = await measure(context.text)
           if (context.dropped || context.cut) {
             this.dropped(a, l.cycle, context.dropped, context.cut)
             this.store.transition(a, 'wind_down'); break
