@@ -6,15 +6,20 @@
 import { z } from 'zod'
 import { contextStateSchema } from '../schemas.ts'
 import {
+  SESSION_EVENT_VERSION,
   sessionAudienceSchema,
   sessionEventClassSchema,
   sessionEventSchema,
   sessionEventTypeSchema,
   sessionKindSchema,
+  runStateSchema,
   sessionSpanKindSchema,
 } from './session-events.ts'
 
 export const SESSION_EXPORT_VERSION = 1
+/** The first export body that may contain a v2 input-artifact reference. */
+export const SESSION_EXPORT_VERSION_2 = 2
+export const SESSION_EXPORT_MAX_VERSION = 2
 
 /** URL- and header-safe: session ids appear in paths and in the export's file name. */
 const sessionId = z.string().regex(/^[A-Za-z0-9._:-]{1,200}$/u)
@@ -63,6 +68,34 @@ export const listSessionsResponse = z
   .strict()
 export type ListSessionsResponse = z.infer<typeof listSessionsResponse>
 
+/** Additive paged metadata route; the original strict list response is unchanged. */
+export const sessionPageCursorSchema = z.object({ createdAt: z.string().datetime(), sessionId }).strict()
+export type SessionPageCursor = z.infer<typeof sessionPageCursorSchema>
+export const sessionPageQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().min(1).max(1000).regex(/^[A-Za-z0-9_-]+$/).optional(),
+}).strict()
+export const sessionExecutionSchema = z.object({
+  state: runStateSchema,
+  attemptState: z.enum(['delivered', 'started', 'sleeping', 'completed', 'lost', 'canceled']).nullable(),
+  source: z.literal('run-home'), observedAt: z.string().datetime(), confidence: z.literal('observed'),
+}).strict()
+export const sessionPageNavigationSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('native'), sessionId }).strict(),
+  z.object({ kind: z.literal('chat'), threadId: z.string().min(1), projectId: z.string().min(1).nullable() }).strict(),
+  z.object({ kind: z.literal('inspector'), sessionId }).strict(),
+])
+export type SessionPageNavigation = z.infer<typeof sessionPageNavigationSchema>
+export const sessionPageItemSchema = sessionListItemSchema.extend({
+  execution: sessionExecutionSchema.nullable(), navigation: sessionPageNavigationSchema,
+}).strict()
+export type SessionPageItem = z.infer<typeof sessionPageItemSchema>
+export const sessionPageResponse = z.object({
+  sessions: z.array(sessionPageItemSchema), nextCursor: z.string().nullable(),
+  omitted: z.object({ withheld: z.boolean(), catchingUp: z.boolean() }).strict(),
+}).strict()
+export type SessionPageResponse = z.infer<typeof sessionPageResponse>
+
 export const sessionSummarySchema = sessionListItemSchema
   .extend({
     /** Events per type, reasoning included (people see every event). */
@@ -79,6 +112,8 @@ export const sessionEventsQuery = z
   .object({
     after: z.coerce.number().int().min(0).default(0),
     limit: z.coerce.number().int().min(1).max(500).default(200),
+    /** The highest event envelope the client can parse; omitting it means v1. */
+    eventVersion: z.coerce.number().int().min(1).max(2).default(1),
   })
   .strict()
 export type SessionEventsQuery = z.infer<typeof sessionEventsQuery>
@@ -154,20 +189,42 @@ export const sessionSearchResponse = z
   .strict()
 export type SessionSearchResponse = z.infer<typeof sessionSearchResponse>
 
-/** Exports never contain reasoning (ADR-0023 §3) and are scrubbed again on the way out. */
-export const sessionExportSchema = z
+export const sessionExportQuery = z
   .object({
-    exportVersion: z.literal(SESSION_EXPORT_VERSION),
-    sessionId,
-    exportedAt: z.string().datetime(),
-    lastSeq: z.number().int().nonnegative(),
-    excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
-    events: z.array(sessionEventSchema),
+    /** The highest export body the client can parse; omitting it means v1. */
+    exportVersion: z.coerce.number().int().min(1).max(2).default(1),
   })
   .strict()
-  .refine((value) => value.events.every((event) => event.class !== 'reasoning'), {
-    message: 'Exports never contain reasoning',
-  })
+export type SessionExportQuery = z.infer<typeof sessionExportQuery>
+
+/** Exports never contain reasoning (ADR-0023 §3) and are scrubbed again on the way out. */
+export const sessionExportSchema = z.union([
+  z
+    .object({
+      exportVersion: z.literal(SESSION_EXPORT_VERSION),
+      sessionId,
+      exportedAt: z.string().datetime(),
+      lastSeq: z.number().int().nonnegative(),
+      excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
+      events: z.array(sessionEventSchema).refine(
+        (events) => events.every((event) => event.version === SESSION_EVENT_VERSION),
+        { message: 'A v1 export contains only v1 events' },
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      exportVersion: z.literal(SESSION_EXPORT_VERSION_2),
+      sessionId,
+      exportedAt: z.string().datetime(),
+      lastSeq: z.number().int().nonnegative(),
+      excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
+      events: z.array(sessionEventSchema),
+    })
+    .strict(),
+]).refine((value) => value.events.every((event) => event.class !== 'reasoning'), {
+  message: 'Exports never contain reasoning',
+})
 export type SessionExport = z.infer<typeof sessionExportSchema>
 
 export const SESSION_QUERY_TOOL_NAME = 'session_log_query'
@@ -195,6 +252,7 @@ export type SessionQueryToolResult = z.infer<typeof sessionQueryToolResultSchema
 
 export const SESSION_ROUTES = {
   sessions: () => '/api/sessions',
+  page: () => '/api/sessions/list/page',
   search: () => '/api/sessions/search',
   session: (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}`,
   events: (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/events`,

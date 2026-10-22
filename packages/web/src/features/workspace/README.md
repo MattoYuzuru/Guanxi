@@ -57,6 +57,14 @@ Layout configuration needs federation protocol 1.1. A peer requesting a history 
 layout operations with minor version 0 receives `426 contract_feature_unavailable`; the node
 never omits layout operations and strands dependent settings behind missing causal counters.
 
+The toolbar's Save scope selects an account default, the current project, this device or
+this project on this device. Selecting a target makes no request; Save and Save as new
+persist the current pane state to it. Project targets are unavailable outside a project.
+Cross-scope copies omit `basedOn`, while an edit in the same scope retains its base clock.
+Geometry remains local and follows the scope of the saved document. Saving an account
+default retains existing device/project overrides, whose normal resolution order still wins
+when reopening the workspace.
+
 ## Verification scope
 
 The 30-block engine restore budget is 2000 ms in deterministic local Chromium. Browser tests

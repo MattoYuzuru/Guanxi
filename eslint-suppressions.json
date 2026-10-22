@@ -210,7 +210,7 @@
   },
   "packages/web/src/index.css": {
     "guanxi/no-literal-css": {
-      "count": 127
+      "count": 112
     }
   }
 }

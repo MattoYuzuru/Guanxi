@@ -20,9 +20,10 @@ import { ProjectService } from '../../src/projects/service.ts'
 import { WorkspaceStore } from '../../src/store/workspaces.ts'
 import { RunStore } from '../../src/runs/store.ts'
 import { NativeAgents } from '../../src/native-agent/service.ts'
+import { SessionInputStore } from '../../src/session-log/input-artifacts.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 
-export async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch, nodePorts?: () => number[], commandRunner?: typeof import('../../src/native-agent/sandbox.ts').sandboxCommand, options: { directory?: string; fault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; usage?: import('@earendil-works/pi-ai').Usage; clock?: () => number } = {}) {
+export async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch, nodePorts?: () => number[], commandRunner?: typeof import('../../src/native-agent/sandbox.ts').sandboxCommand, options: { directory?: string; fault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; usage?: import('@earendil-works/pi-ai').Usage; clock?: () => number; inputArtifacts?: (db: import('../../src/store/db.ts').Db, dataDir: string) => SessionInputStore } = {}) {
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const dir = options.directory ?? await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'k4-agent-')))
   const data = join(dir, 'data'); await mkdir(data)
@@ -59,9 +60,10 @@ export async function fixture(t: { after(fn: () => unknown): void }, respond?: (
   const log = kernel.service<SessionLog>('session.log')!, scrubber = kernel.service<EgressScrubber>('egress.scrubber')!
   const host = { projects, workspaces, artifactTransfers: { download: async () => { throw new Error('No attachment') } } } as unknown as ConstructorParameters<typeof NativeAgents>[0]
   let runs = new RunStore({ db, log, scrubber, fault: options.fault, clock: options.clock }); runs.heartbeat(); runs.reconcile()
-  let agents = new NativeAgents(host, log, connections, scrubber, data, nodePorts, commandRunner, { db, runs })
+  const inputArtifacts = options.inputArtifacts?.(db, data) ?? new SessionInputStore({ dataDir: data, db })
+  let agents = new NativeAgents(host, log, connections, scrubber, data, nodePorts, commandRunner, { db, runs, inputArtifacts })
   t.after(async () => { await agents.close(); runs.close(); await kernel.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) })
   return { dir, data, db, get runs() { return runs }, connections, agents: () => agents, log, scrubber, secret, requests, projects, workspaces,
     input: { projectId: project.id, connectionId: connection.id, model: model.id, prompt: 'fixture prompt' },
-    async restart(dataDirectory = data, reconcile = false) { await agents.close(); if (reconcile) { runs.close(); runs = new RunStore({ db, log, scrubber, fault: options.fault, clock: options.clock }); runs.heartbeat(); runs.reconcile() } agents = new NativeAgents(host, log, connections, scrubber, dataDirectory, nodePorts, commandRunner, { db, runs }) } }
+    async restart(dataDirectory = data, reconcile = false) { await agents.close(); if (reconcile) { runs.close(); runs = new RunStore({ db, log, scrubber, fault: options.fault, clock: options.clock }); runs.heartbeat(); runs.reconcile() } agents = new NativeAgents(host, log, connections, scrubber, dataDirectory, nodePorts, commandRunner, { db, runs, inputArtifacts }) } }
 }

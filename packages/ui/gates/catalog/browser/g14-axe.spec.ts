@@ -63,3 +63,88 @@ if (process.env['GUANXI_GATE_FIXTURES'] !== '1' && stories.length > 1) {
     })
   }
 }
+
+/**
+ * The phone story is rendered inside the catalog harness, whose cell reserves a 16 px gutter on
+ * each side. Give only its synthetic host wrapper the width left by a 390 px viewport after those
+ * gutters, then measure the real shell. This is deliberately not a CSS/jsdom assertion: it fails
+ * in Chromium while the sidebar's 1 px glass border sits outside its 18 rem/100% content width.
+ */
+const PHONE_VIEWPORT = { width: 390, height: 844 } as const
+const PHONE_RIGHT_GUTTER = 16
+const phoneStory = stories.find((story) => story.key === 'app-shell-chrome--phone')
+
+if (phoneStory) {
+  const phoneKey = phoneStory.key
+  for (const theme of ['light', 'dark']) {
+    test(`G14 ${phoneKey} geometry ${theme}`, async ({ page }) => {
+      await page.setViewportSize(PHONE_VIEWPORT)
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await openStory(page, phoneKey, { theme, motion: 'reduced' })
+
+      const host = page.locator(`[data-harness-story="${phoneKey}"] .gx-story-root > div`)
+      await expect(host).toHaveCount(1)
+      const availableWidth = await host.evaluate((element, rightGutter) => {
+        const leftGutter = element.getBoundingClientRect().left
+        return Math.floor(window.innerWidth - leftGutter - rightGutter)
+      }, PHONE_RIGHT_GUTTER)
+
+      expect(availableWidth, 'positive synthetic host width').toBeGreaterThan(0)
+      await host.evaluate((element, width) => {
+        ;(element as HTMLElement).style.width = `${width}px`
+      }, availableWidth)
+      await page.waitForFunction(
+        ({ key, width }) => {
+          const wrapper = document.querySelector(`[data-harness-story="${key}"] .gx-story-root > div`)
+          return wrapper !== null && Math.abs(wrapper.getBoundingClientRect().width - width) < 1
+        },
+        { key: phoneKey, width: availableWidth },
+      )
+
+      const geometry = await page.evaluate(() => {
+        const cell = document.querySelector('[data-harness-story="app-shell-chrome--phone"]')
+        if (!cell) throw new Error('app-shell-chrome--phone harness cell is missing')
+        const host = cell.querySelector('.gx-story-root > div')
+        const shell = document.querySelector('[data-slot="app-shell-chrome"]')
+        const body = document.querySelector('[data-slot="app-shell-body"]')
+        const sidebar = document.querySelector('[data-slot="app-shell-sidebar"]')
+        const main = document.querySelector('[data-slot="app-shell-main"]')
+        if (!host || !shell || !body || !sidebar || !main) throw new Error('app-shell-chrome phone geometry is missing')
+        const rect = (element: Element) => {
+          const box = element.getBoundingClientRect()
+          return {
+            left: box.left,
+            right: box.right,
+            top: box.top,
+            bottom: box.bottom,
+            width: box.width,
+            height: box.height,
+          }
+        }
+        return {
+          host: rect(host),
+          shell: rect(shell),
+          bodyFlexDirection: getComputedStyle(body).flexDirection,
+          sidebar: rect(sidebar),
+          main: rect(main),
+        }
+      })
+
+      expect(geometry.host.width, 'positive host width').toBeGreaterThan(0)
+      expect(geometry.host.width).toBeCloseTo(availableWidth, 1)
+      expect(geometry.shell.width).toBeCloseTo(geometry.host.width, 1)
+      // The bordered sidebar owns the whole shell width, so both its edges are the shell's.
+      expect(geometry.sidebar.left).toBeCloseTo(geometry.shell.left, 1)
+      expect(geometry.sidebar.right).toBeCloseTo(geometry.shell.right, 1)
+      expect(geometry.sidebar.width).toBeCloseTo(geometry.shell.width, 1)
+      expect(geometry.sidebar.left).toBeGreaterThanOrEqual(geometry.shell.left - 0.5)
+      expect(geometry.sidebar.right).toBeLessThanOrEqual(geometry.shell.right + 0.5)
+      expect(geometry.main.left).toBeGreaterThanOrEqual(geometry.shell.left - 0.5)
+      expect(geometry.main.right).toBeLessThanOrEqual(geometry.shell.right + 0.5)
+      // At the phone breakpoint the body is a column and the sidebar precedes main.
+      expect(geometry.bodyFlexDirection).toBe('column')
+      expect(geometry.main.left).toBeCloseTo(geometry.sidebar.left, 1)
+      expect(geometry.main.top).toBeGreaterThanOrEqual(geometry.sidebar.bottom - 0.5)
+    })
+  }
+}

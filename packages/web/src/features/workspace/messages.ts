@@ -10,6 +10,11 @@ export const workspaceEnglish = {
   'workspaceLayout.layout': 'Named layout',
   'workspaceLayout.save': 'Save layout',
   'workspaceLayout.saveAs': 'Save as new layout',
+  'workspaceLayout.saveScope': 'Save scope',
+  'workspaceLayout.scope.account': 'Account default',
+  'workspaceLayout.scope.project': 'This project',
+  'workspaceLayout.scope.device': 'This device',
+  'workspaceLayout.scope.project-device': 'This project on this device',
   'workspaceLayout.reset': 'Reset layout',
   'workspaceLayout.loading': 'Loading workspace layouts…',
   'workspaceLayout.retry': 'Retry',
@@ -62,6 +67,11 @@ export const workspaceEnglish = {
   'workspaceLayout.zone.left': 'Left', 'workspaceLayout.zone.right': 'Right', 'workspaceLayout.zone.top': 'Top', 'workspaceLayout.zone.bottom': 'Bottom', 'workspaceLayout.zone.center': 'Centre grid', 'workspaceLayout.zone.floating': 'Floating', 'workspaceLayout.zone.popout': 'Popout',
 } as const
 export const workspaceRussian: Record<keyof typeof workspaceEnglish, string> = {
+  'workspaceLayout.saveScope': 'Область сохранения',
+  'workspaceLayout.scope.account': 'По умолчанию для аккаунта',
+  'workspaceLayout.scope.project': 'Этот проект',
+  'workspaceLayout.scope.device': 'Это устройство',
+  'workspaceLayout.scope.project-device': 'Этот проект на этом устройстве',
   'workspaceLayout.title': 'Рабочая область сессии', 'workspaceLayout.noVisibleBlocks': 'Все блоки скрыты. Добавьте блок, чтобы продолжить.', 'workspaceLayout.mode': 'Режим интерфейса',
   'workspaceLayout.developer': 'Разработчик', 'workspaceLayout.visual': 'Визуальный',
   'workspaceLayout.density': 'Плотность', 'workspaceLayout.compact': 'Компактная', 'workspaceLayout.comfortable': 'Комфортная',

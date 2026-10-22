@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite'
 export function downgradeSessionLogToV28(db: DatabaseSync): void {
   downgradeDurableRunsToV29(db)
   db.exec(`
+    DROP TABLE IF EXISTS session_input_artifacts;
     DROP INDEX idx_session_mirror_backlog_order;
     DROP TABLE session_mirror_backlog;
     DROP TRIGGER session_events_fts_delete;
@@ -64,4 +65,5 @@ export const SESSION_LOG_TABLES = [
   'session_events_fts_docsize',
   'session_events_fts_idx',
   'session_mirror_backlog',
+  'session_input_artifacts',
 ] as const

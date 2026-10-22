@@ -196,6 +196,7 @@ const API_ERROR_KEYS = {
   loopback_only: 'error.api.loopbackOnly',
   session_withheld: 'error.api.sessionWithheld',
   session_catching_up: 'error.api.sessionCatchingUp',
+  session_event_version_unsupported: 'error.api.sessionEventVersionUnsupported',
   path_outside_workspace: 'error.api.notAllowed',
   tool_disabled: 'error.api.notAllowed',
   validation_failed: 'error.api.validation',

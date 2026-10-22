@@ -37,6 +37,14 @@ can compile it. Special exclusions are anchored to the package's own
 token/font/brand/generated/gate and top-level test directories; a feature directory with the
 same name remains scanned. Stories and catalog source are included.
 
+G6 and G7 still reject a literal `animation` shorthand, including a bare keyframe or timing
+name, in scanned CSS. Reusable motion is expressed as the four generated theme utilities
+(`animate-spinner`, `animate-pulse-soft`, `animate-fade-up`, `animate-sheen`) and applied from
+the current web compatibility classes; the utilities are not yet a public component animation
+API. The streaming caret is static, has no keyframe, and holds no animation allowance in the
+legacy ledger. Any future component or host reuse must verify keyframe ownership and
+reduced-motion loop removal before adding the utility.
+
 `legacy-allowlist.json` freezes occurrence counts by gate, file and exact value. It accepts
 only legacy `packages/web/src/` paths, rejects unused counts and compares its entire Git
 history against each commit's actual parents, including every merge parent. Shallow repositories

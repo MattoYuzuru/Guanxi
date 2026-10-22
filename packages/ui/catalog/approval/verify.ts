@@ -1,5 +1,6 @@
 /**
- * Ed25519 signing and verification of approval records (D-138, gate G12).
+ * ECDSA P-256 (SHA-256, IEEE P1363) signing and verification of approval records (D-184,
+ * gate G12). Signatures are 64-byte r‖s values, base64 encoded.
  */
 import { createHash, sign, verify, type KeyObject } from 'node:crypto'
 import { canonicalJson } from './canonical.ts'
@@ -44,12 +45,18 @@ export function approvalSigningBytes(payload: ApprovalPayload | RevocationPayloa
   return Buffer.from(canonicalJson(payload), 'utf8')
 }
 
+const P256_SIGNATURE = { dsaEncoding: 'ieee-p1363' as const }
+
 function verifies(bytes: Buffer, key: TrustedKey, signature: string): boolean {
   try {
-    return verify(null, bytes, publicKeyObject(key), Buffer.from(signature, 'base64'))
+    return verify('sha256', bytes, { key: publicKeyObject(key), ...P256_SIGNATURE }, Buffer.from(signature, 'base64'))
   } catch {
     return false
   }
+}
+
+function p256Sign(bytes: Buffer, privateKey: KeyObject): string {
+  return sign('sha256', bytes, { key: privateKey, ...P256_SIGNATURE }).toString('base64')
 }
 
 export type RevocationVerdict = { state: 'absent' } | { state: 'valid'; keyId: string } | { state: 'invalid' }
@@ -114,7 +121,7 @@ export function decisionChain(record: ReviewRecord, trustedKeys: readonly Truste
 }
 
 export function signApprovalPayload(payload: ApprovalPayload, privateKey: KeyObject): string {
-  return sign(null, approvalSigningBytes(payload), privateKey).toString('base64')
+  return p256Sign(approvalSigningBytes(payload), privateKey)
 }
 
 export function verifyRecordApproval(
@@ -145,7 +152,7 @@ export function verifyRecordApproval(
 }
 
 export function signKeySet(keys: readonly TrustedKey[], version: number, signedBy: string, privateKey: KeyObject) {
-  return { signedBy, signature: sign(null, keySetSigningBytes(keys, version), privateKey).toString('base64') }
+  return { signedBy, signature: p256Sign(keySetSigningBytes(keys, version), privateKey) }
 }
 
 export type KeySetVerdict =

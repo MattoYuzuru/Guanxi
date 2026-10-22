@@ -64,6 +64,10 @@
   --ease-exit: var(--motion-easing-exit);
   --ease-linear: var(--motion-easing-linear);
   --ease-standard: var(--motion-easing-standard);
+  --animate-fade-up: guanxi-fade-up var(--motion-duration-moderate) var(--motion-easing-enter);
+  --animate-pulse-soft: guanxi-pulse-soft var(--motion-duration-loop) var(--motion-easing-standard) infinite;
+  --animate-sheen: guanxi-sheen var(--motion-duration-loop) var(--motion-easing-standard) infinite;
+  --animate-spinner: guanxi-spin var(--motion-duration-loop) var(--motion-easing-linear) infinite;
   --shadow-popover: var(--elevation-2-shadow);
   --blur-glass: var(--material-glass-blur);
   --blur-tinted: var(--material-tinted-blur);

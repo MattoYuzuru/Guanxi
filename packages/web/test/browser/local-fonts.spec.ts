@@ -1,42 +1,29 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, extname, sep } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { installChatApiFixture } from './fixtures/chat-api.ts'
 
 const webRoot = fileURLToPath(new URL('../..', import.meta.url))
 let directory: string
-let baselineDirectory: string
 let origin: string
 let server: Server
 
 test.beforeAll(async () => {
   directory = await mkdtemp(resolve(tmpdir(), 'guanxi-ds1a-built-fonts-'))
   execFileSync(process.execPath, [resolve(webRoot, '../../node_modules/vite/bin/vite.js'), 'build', '--outDir', directory, '--emptyOutDir'], { cwd: webRoot, stdio: 'pipe' })
-  baselineDirectory = await mkdtemp(resolve(tmpdir(), 'guanxi-ds1a-legacy-baseline-'))
-  const baselineScript = resolve(directory, 'baseline-build.mjs')
-  // Build the identical legacy app with the design-system CSS imports removed. No source
-  // files are edited, and the reference uses the same locked Vite/Tailwind dependencies.
-  await writeFile(baselineScript, `import { build } from ${JSON.stringify(pathToFileURL(resolve(webRoot, '../../node_modules/vite/dist/node/index.js')).href)};
-import { readFile } from 'node:fs/promises';
-await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve(webRoot, 'vite.config.ts'))},logLevel:'error',plugins:[{name:'legacy-baseline',enforce:'pre',async load(id){if(id.split('?')[0]===${JSON.stringify(resolve(webRoot, 'src/index.css'))}){const css=await readFile(id,'utf8');const imports=${JSON.stringify(["@import '@guanxi/ui/tokens.css';", "@import '@guanxi/ui/theme.css';"])};for(const selector of imports)if(!css.includes(selector))throw Error('Missing baseline import selector: '+selector);return imports.reduce((text,selector)=>text.replace(selector,''),css)}}}],build:{outDir:${JSON.stringify(baselineDirectory)},emptyOutDir:true}});
-`)
-  execFileSync(process.execPath, [baselineScript], { cwd: webRoot, stdio: 'pipe' })
   const types: Record<string, string> = { '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.html': 'text/html', '.svg': 'image/svg+xml' }
   server = createServer(async (request, response) => {
     const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname)
-    const baseline = pathname.startsWith('/__legacy__/')
-    const base = baseline ? baselineDirectory : directory
-    const path = resolve(base, '.' + (baseline ? pathname.slice('/__legacy__'.length) : pathname))
-    if (path !== base && !path.startsWith(base + sep)) { response.writeHead(403).end(); return }
+    const path = resolve(directory, '.' + pathname)
+    if (path !== directory && !path.startsWith(directory + sep)) { response.writeHead(403).end(); return }
     try {
-      const target = path === base || !extname(path) ? resolve(base, 'index.html') : path
-      let contents = await readFile(target)
-      if (baseline && extname(target) === '.html') contents = Buffer.from(contents.toString().replaceAll('"/assets/', '"/__legacy__/assets/'))
+      const target = path === directory || !extname(path) ? resolve(directory, 'index.html') : path
+      const contents = await readFile(target)
       response.writeHead(200, { 'Content-Type': types[extname(target)] ?? 'application/octet-stream' }).end(contents)
     } catch { response.writeHead(404).end() }
   })
@@ -49,7 +36,6 @@ await build({root:${JSON.stringify(webRoot)},configFile:${JSON.stringify(resolve
 test.afterAll(async () => {
   if (server) await new Promise<void>((done, reject) => server.close(error => error ? reject(error) : done()))
   if (directory) await rm(directory, { recursive: true, force: true })
-  if (baselineDirectory) await rm(baselineDirectory, { recursive: true, force: true })
 })
 
 test('M1: every one of the 32 font faces loads from the built app origin', async ({ page }) => {
@@ -118,31 +104,116 @@ test('generated theme, density and motion modifiers remain independent of OS med
   }
 })
 
-test('H2: importing runtime tokens preserves legacy computed fonts and spacing', async ({ page, context }) => {
-  const baseline = await context.newPage()
+test('H2: built app applies IBM Plex typography, density type size and spacing', async ({ page }) => {
   await installChatApiFixture(page, 'completed')
-  await installChatApiFixture(baseline, 'completed')
   await page.goto(origin)
-  await baseline.goto(origin + '/__legacy__/')
-  const inspect = (target: typeof page) => target.evaluate(() => {
-    const sample = document.createElement('div')
-    sample.className = 'font-mono p-2 gap-3'
-    // Compare resolved lengths: the generated grid token is 4px, Tailwind's is .25rem.
-    sample.style.marginTop = 'var(--spacing)'
-    document.body.append(sample)
-    const css = getComputedStyle(sample)
-    const result = { body: getComputedStyle(document.body).fontFamily, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: css.marginTop }
-    sample.remove()
-    return result
-  })
-  const expected = await inspect(baseline)
-  expect(expected.body).toContain('Inter')
-  expect(expected.mono).toContain('SF Mono')
-  expect(expected.padding).toBe('8px')
-  expect(expected.gap).toBe('12px')
-  expect(expected.spacing).toBe('4px')
-  expect(await inspect(page)).toEqual(expected)
-  await baseline.close()
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    for (const density of ['compact', 'comfortable'] as const) {
+      const actual = await page.evaluate(({ theme, density }) => {
+        const root = document.documentElement
+        root.dataset.theme = theme
+        root.classList.toggle('dark', theme === 'dark')
+        root.dataset.density = density
+        const sample = document.createElement('div')
+        sample.className = 'font-mono p-2 gap-3'
+        // Compare resolved lengths: the generated grid token is 4px, Tailwind's is .25rem.
+        sample.style.marginTop = 'var(--spacing)'
+        document.body.append(sample)
+        const bodyCss = getComputedStyle(document.body)
+        const css = getComputedStyle(sample)
+        const result = { bodyFont: bodyCss.fontFamily, bodySize: bodyCss.fontSize, bodyLineHeight: bodyCss.lineHeight, mono: css.fontFamily, padding: css.padding, gap: css.gap, spacing: css.marginTop }
+        sample.remove()
+        return result
+      }, { theme, density })
+      const label = `${theme}/${density}`
+      expect(actual.bodyFont, label).toContain('IBM Plex Sans')
+      expect(actual.bodyFont, label).not.toContain('Inter')
+      expect(actual.mono, label).toContain('IBM Plex Mono')
+      expect(actual.mono, label).not.toContain('SF Mono')
+      expect(actual.bodySize, label).toBe(density === 'compact' ? '13px' : '14px')
+      // Computed line-height is the 1.5 ratio resolved against the density body size.
+      expect(actual.bodyLineHeight, label).toBe(density === 'compact' ? '19.5px' : '21px')
+      expect(actual.padding, label).toBe('8px')
+      expect(actual.gap, label).toBe('12px')
+      expect(actual.spacing, label).toBe('4px')
+    }
+  }
+})
+
+test('explicit reduced motion disables animations and explicit full overrides OS reduce', async ({ page }) => {
+  await installChatApiFixture(page, 'completed')
+  await page.goto(origin)
+  type Probe = { spinAnimation: string; spinDuration: string; caretAnimation: string; caretBackground: string; sheenAnimation: string; sheenDuration: string; transitionProperty: string; animations: string[] }
+  const observed = new Map<string, Probe>()
+  for (const theme of ['light', 'dark'] as const) for (const os of ['no-preference', 'reduce'] as const) for (const motion of ['system', 'reduced', 'full'] as const) {
+    await page.emulateMedia({ colorScheme: theme, reducedMotion: os })
+    const probe = await page.evaluate(({ theme, motion }) => {
+      const root = document.documentElement
+      root.dataset.theme = theme
+      root.classList.toggle('dark', theme === 'dark')
+      if (motion === 'system') root.removeAttribute('data-motion')
+      else root.dataset.motion = motion
+      const host = document.createElement('div')
+      host.id = 'u1c-motion-probe'
+      host.innerHTML = '<div class="anim-spin"></div><span class="stream-caret">x</span><div class="sheen" style="width:40px;height:12px"></div><div class="u1c-transition-probe"></div>'
+      document.body.append(host)
+      try {
+        const spin = host.querySelector('.anim-spin') as HTMLElement
+        const caret = host.querySelector('.stream-caret') as HTMLElement
+        const sheen = host.querySelector('.sheen') as HTMLElement
+        const transition = host.querySelector('.u1c-transition-probe') as HTMLElement
+        transition.style.transition = 'opacity 1s linear'
+        const animations = host.getAnimations({ subtree: true }).map(animation => {
+          const name = (animation as CSSAnimation).animationName
+          const property = (animation as CSSTransition).transitionProperty
+          return name ?? property ?? 'unknown'
+        })
+        const caretStyle = getComputedStyle(caret, '::after')
+        const spinStyle = getComputedStyle(spin)
+        const sheenStyle = getComputedStyle(sheen, '::after')
+        return {
+          spinAnimation: spinStyle.animationName,
+          spinDuration: spinStyle.animationDuration,
+          caretAnimation: caretStyle.animationName,
+          caretBackground: caretStyle.backgroundColor,
+          sheenAnimation: sheenStyle.animationName,
+          sheenDuration: sheenStyle.animationDuration,
+          transitionProperty: getComputedStyle(transition).transitionProperty,
+          animations,
+        }
+      } finally {
+        host.remove()
+      }
+    }, { theme, motion })
+    const label = `${theme}/os-${os}/motion-${motion}`
+    observed.set(label, probe)
+    // The caret is a static accent block in every setting; only the caret's background
+    // provides the cue, and no cell may animate its pseudo-element.
+    expect(probe.caretAnimation, `${label}: stream caret must be static`).toBe('none')
+    expect(probe.caretBackground, `${label}: caret needs a non-transparent static cue`).not.toBe('transparent')
+    expect(probe.caretBackground, `${label}: caret needs a non-transparent static cue`).not.toBe('rgba(0, 0, 0, 0)')
+    if (motion === 'reduced' || (motion === 'system' && os === 'reduce')) {
+      expect(probe.spinAnimation, label).toBe('none')
+      expect(probe.sheenAnimation, label).toBe('none')
+      expect(probe.transitionProperty, label).toBe('none')
+      expect(probe.animations, `${label}: getAnimations count must be 0, pseudo-elements included`).toEqual([])
+    } else {
+      expect(probe.spinAnimation, label).toBe('guanxi-spin')
+      expect(probe.spinDuration, label).toBe('1s')
+      expect(probe.sheenAnimation, label).toBe('guanxi-sheen')
+      expect(probe.sheenDuration, label).toBe('1s')
+      expect(probe.transitionProperty, label).toBe('opacity')
+      expect(probe.animations, label).toEqual(expect.arrayContaining(['guanxi-spin', 'guanxi-sheen']))
+      expect(probe.animations.length, label).toBeGreaterThanOrEqual(2)
+    }
+  }
+  // Positive control: without this, the reduced assertions could pass vacuously.
+  for (const theme of ['light', 'dark'] as const) {
+    const control = observed.get(`${theme}/os-reduce/motion-full`)
+    expect(control?.spinAnimation, `${theme}: explicit full must override OS reduce`).toBe('guanxi-spin')
+    expect(control?.animations.length, `${theme}: explicit full must keep animations running`).toBeGreaterThan(0)
+  }
 })
 
 test('automatic Solid overrides strong and locally selected glass recipes', async ({ page }) => {

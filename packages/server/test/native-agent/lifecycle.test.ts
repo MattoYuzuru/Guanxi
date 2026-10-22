@@ -34,7 +34,7 @@ test('every native turn owns one R1 attempt; stale trace/completion and home wri
   block.release()
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.throws(() => f.runs.append(attempt, { type: 'agent.note', data: { text: 'late' } }, { expectedSeq: f.log.session(sessionId)!.lastSeq + 1 }), /stale_lease/)
-  f.agents().prompt(sessionId, 'second explicit turn')
+  await f.agents().prompt(sessionId, 'second explicit turn')
   await f.agents().wait(sessionId)
   const runs = f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').all(sessionId) as { id: string }[]
   assert.equal(runs.length, 2)
@@ -171,7 +171,7 @@ test('canonical seven-day retention uses only user activity, keeps Trash recover
   assert.equal(f.agents().sessions.retention(sessionId).state, 'active', 'a live native owner blocks expiry')
   await f.agents().sessions.maintain(new Set(), now)
   assert.equal(f.agents().sessions.retention(sessionId).state, 'trash')
-  assert.throws(() => f.agents().prompt(sessionId, 'unsafe resume'), /session_expired/)
+  await assert.rejects(f.agents().prompt(sessionId, 'unsafe resume'), /session_expired/)
   await readdir(f.agents().sessions.paths(sessionId)[0]!)
   const app = nativeAgentRoutes(() => f.agents() as never)
   const restored = await app.request(`/${sessionId}/retention`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'keep' }) }, peer)

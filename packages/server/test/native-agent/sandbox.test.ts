@@ -3,6 +3,9 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath, link } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { networkInterfaces } from 'node:os'
 import { nativeAgentInputSchema } from '@guanxi/contract'
 import { sandboxCommand as rawSandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
@@ -313,6 +316,47 @@ async function fixtureLauncher(dir: string, transformWorker: (source: string) =>
   await writeFile(join(launcher, 'sandbox-worker.ts'), transformWorker(source))
   return (await import(pathToFileURL(join(launcher, 'sandbox.ts')).href)).sandboxCommand as typeof sandboxCommand
 }
+test('HTTPS verifies both certificate legs and applies the read-only method policy before forwarding', { timeout: 90000 }, async t => {
+  const { dir, policy } = await fixture(t)
+  const certificatePath = join(dir, 'fixture-server-ca.pem'), keyPath = join(dir, 'fixture-server-key.pem')
+  // A temporary local issuer avoids public network access and any change to the host trust store.
+  // The key stays outside every granted root and is never returned by the command under test.
+  await promisify(execFile)('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+    '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost',
+    '-addext', 'basicConstraints=critical,CA:TRUE', '-keyout', keyPath, '-out', certificatePath])
+  const methods: string[] = []
+  const server = createHttpsServer({ key: await readFile(keyPath), cert: await readFile(certificatePath) }, (req, res) => {
+    methods.push(req.method!); res.end('https fixture')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const port = (server.address() as { port: number }).port
+  policy.domains = [`localhost:${port}`, `127.0.0.1:${port}`]
+  const curl = "curl --noproxy '' -sS --max-time 5 -o /dev/null -w '%{http_code}'"
+  // The ordinary worker does not trust this issuer. A TLS failure must forward no HTTP request.
+  const untrusted = await sandboxCommand(policy, `${curl} https://localhost:${port}/`)
+  assert.equal(untrusted.stdout, '502', untrusted.stderr)
+  assert.deepEqual(methods, [])
+  const launch = await fixtureLauncher(dir, source => source, source => {
+    const expected = "HOME: networkDirectory, TMPDIR: networkDirectory, LANG: 'en_US.UTF-8'"
+    assert.equal(source.split(expected).length, 2, 'fixture changes only the worker trust input')
+    // Node reads this public CA at worker startup. Production TLS verification and all proxy
+    // policy code stay intact; the sandboxed client trusts only the runtime's normal MITM bundle.
+    return source.replace(expected, `${expected}, NODE_EXTRA_CA_CERTS: ${JSON.stringify(certificatePath)}`)
+  })
+  for (const method of ['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'DELETE']) {
+    const result = await launch(policy, `${curl} -X ${method} ${method === 'HEAD' ? '--head' : ''} https://localhost:${port}/`, undefined, undefined, undefined, fixtureScrubber)
+    assert.equal(result.code, 0, `${method}: ${result.stderr}`)
+    assert.equal(result.stdout, ['GET', 'HEAD', 'OPTIONS'].includes(method) ? '200' : '403', `${method}: ${result.stderr}`)
+  }
+  assert.deepEqual(methods, ['GET', 'HEAD', 'OPTIONS'], 'blocked HTTPS methods reach upstream zero times')
+  const full = await launch({ ...policy, mode: 'full-access' }, `${curl} -X POST https://localhost:${port}/`, undefined, undefined, undefined, fixtureScrubber)
+  assert.equal(full.code, 0, full.stderr); assert.equal(full.stdout, '200')
+  assert.deepEqual(methods, ['GET', 'HEAD', 'OPTIONS', 'POST'])
+  const wrongName = await launch(policy, `${curl} https://127.0.0.1:${port}/`, undefined, undefined, undefined, fixtureScrubber)
+  assert.equal(wrongName.stdout, '502', wrongName.stderr)
+  assert.deepEqual(methods, ['GET', 'HEAD', 'OPTIONS', 'POST'], 'a trusted issuer does not bypass upstream hostname checks')
+})
 test('trusted executable/dependency deny-write grants reach both execution backends', { timeout: 30000 }, async t => {
   const { dir, root, policy } = await fixture(t)
   const install = join(root, 'fixture-node-install'); await mkdir(install)
