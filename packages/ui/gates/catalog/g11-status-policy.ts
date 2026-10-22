@@ -98,6 +98,33 @@ export const g11: CatalogGate = {
       },
     },
     {
+      name: 'transitive-reviewed-wrapper',
+      description: 'A reviewed wrapper renders a draft child; the product imports only the wrapper',
+      expect: /product code uses draft component "g11-child"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'transitive-reviewed-wrapper'), repoRoot)
+        return { ...context, usageScope: { ...context.usageScope, productRoots: [join(repoRoot, 'packages/web/src/features/seeded')] } }
+      },
+    },
+    {
+      name: 'transitive-helper-alias',
+      description: 'A reviewed wrapper reaches the draft IconButton through a helper barrel and alias',
+      expect: /product code uses draft component "icon-button"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'transitive-helper-alias'), repoRoot)
+        return { ...context, usageScope: { ...context.usageScope, productRoots: [join(repoRoot, 'packages/web/src/features/seeded')] } }
+      },
+    },
+    {
+      name: 'transitive-cycle',
+      description: 'A cycle between component folders terminates and reports the draft member once',
+      expect: /product code uses draft component "g11-cycle-b"/,
+      apply({ repoRoot, context }) {
+        overlay(join(fixtures, 'transitive-cycle'), repoRoot)
+        return { ...context, usageScope: { ...context.usageScope, productRoots: [join(repoRoot, 'packages/web/src/features/seeded')] } }
+      },
+    },
+    {
       name: 'unknown-export',
       description: 'Product code imports a name G11 cannot attribute to a catalogued component',
       expect: /imports "Fancy", which is not a catalogued @guanxi\/ui export/,

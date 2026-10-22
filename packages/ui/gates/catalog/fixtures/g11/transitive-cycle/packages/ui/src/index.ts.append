@@ -1,0 +1,1 @@
+export { G11CycleA } from './components/g11-cycle-a/index.ts'

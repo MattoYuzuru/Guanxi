@@ -26,10 +26,17 @@ describe('catalog gates self-test', () => {
     for (const gate of fast) assert.ok(gate.seeded.length > 0, `${gate.id} has no seeded violation`)
   })
 
-  it('passes every gate on a clean scratch copy of the repository', () => {
+  it('passes every gate on a clean scratch copy except the actual G11 draft closure', () => {
     for (const gate of fast) {
       const clean = find(gate.id, null)
-      assert.equal(clean.actual, 'pass', `${gate.id}: ${messages(clean)}`)
+      if (gate.id === 'G11') {
+        // The mounted shell really reaches draft components. Until the owner's separate
+        // readiness decision, the correct result is a policy failure, not a green gate.
+        assert.equal(clean.actual, 'fail', 'G11 must report the actual draft dependency closure')
+        assert.ok(clean.findings.some((finding) => finding.severity === 'error' && finding.component === 'icon-button'))
+      } else {
+        assert.equal(clean.actual, 'pass', `${gate.id}: ${messages(clean)}`)
+      }
     }
   })
 
