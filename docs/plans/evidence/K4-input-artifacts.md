@@ -1,7 +1,9 @@
 # K4 input artifacts — implementation handoff
 
-**Status:** bounded vertical slice implemented and locally tested; root independent GPT review and
-full/browser/native gates pending. **Does not close `K4-INPUT-ARTIFACTS`.**
+**Status:** bounded source independently reviewed and merged locally as `53b1e76`; all eight
+individual candidate and main checks pass. A later independent truncated-excerpt privacy P2
+remains open; **this does not close `K4-INPUT-ARTIFACTS` or whole K4**. Historical author
+evidence below retains its original scope; current results follow at the end.
 **Branch:** `codex/k4-input-artifacts` · **Implementation base:** `b08805c`
 **Updated:** 2026-10-22
 
@@ -416,3 +418,33 @@ nice -n 10 npx eslint \
 
 **Handoff pin:** fix commits `05861ab` and `43728c8` precede this docs commit on
 `codex/k4-input-artifacts`; no production edit follows it.
+
+## Local integration and newly reproduced privacy boundary
+
+Candidate `622addc` passes all eight root commands: types `check-cz4o39o2`, npm test
+`check-4g1tzbja`, browser `check-q7eyyc4f`, catalog browser `check-bjkys25i`, build
+`check-azf6zobb`, Markdown/links `check-pw3w6d70`, licenses `check-ohb9cpft`, source lint
+`check-k9fbmj5m`. The selected lane adds **40 server + 8 web = 48 new cases**; its earlier
+selected regression envelope is 73. Full npm regression is core 1332, kernel 106, web 326,
+UI gates 89, codemod 6, catalog 74, UI 17 and bench 82; zero skips. Mocked Chromium is 66/66.
+These full counts are regression scope, not additional new tests.
+
+Independent review closed the FIFO, canonical-directory/reaper, stop-intervention and
+open-database release-error findings. The separate contrast correction and two web follow-up
+fixes were independently read; the focus assertion still requires the actual production
+effect. Merge `53b1e76` then passes the same eight individual commands, with receipts recorded
+in the [continuation audit](coordination-2026-10-22.md).
+
+Subsequent independent U1 integration review reproduced one inherited K4 privacy defect:
+registering a synthetic secret longer than the stored 8 KiB excerpt after append can leave its
+prefix visible in an excerpt/title. Exact scrubbing cannot match the complete value after it
+was truncated. The original external probe `u1-v2-metadata-integration-probe-20261022.ts`
+records one ordinary-case pass and one expected privacy failure, `check-821298cf`; the issue
+also affects the old list projection, not only the new U1 metadata page. No owner data was used.
+
+The follow-up must protect known truncation boundaries using the current registered forms
+before titles, visible search text/snippets and output frames are derived, while preserving
+sync APIs, exact version negotiation, immutable stored rows and no full artifact reads.
+It is a separate active GPT implementation in the original isolated K4 clone, followed by
+independent re-review. Full gates above do not establish this untested property or authorize
+a stage exit. Inline queued text, full buffering and broader K4/platform evidence remain open.
