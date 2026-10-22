@@ -61,7 +61,23 @@ test('whole-answer probes never become field grades; retry rescue does not impro
   const w = arm(reduce(resign(whole)), 'arm-relay').totals.probes
   assert.equal(w.wholeAnswer.expected, 12); assert.equal(w.wholeAnswer.firstAttemptCorrectOverExpected, 1)
   assert.equal(w.criticalField.expected, 0); assert.equal(w.criticalField.firstAttemptCorrectOverExpected, null)
+  assert.equal(w.criticalField.complete, false) // no denominator means no complete per-field evidence
+  assert.equal(w.criticalField.groupsWithoutOccasion, 12)
   assert.ok(reduce(resign(whole)).unresolved.includes('critical_field_grades_absent'))
+  assert.ok(reduce(resign(whole)).unresolved.includes('critical_field_grades_partial'))
+
+  // Mixed: cycle 2 has whole-answer probes only, cycles 1 and 3 keep head and ledgerHash.
+  const mixed = build()
+  for (const t of mixed.trials) {
+    const c = t.cycles[1]
+    c.probes.manifest.occasions = c.probes.manifest.occasions.filter((o: Raw) => o.scope === 'whole_answer')
+    c.probes.grades = c.probes.grades.filter((g: Raw) => g.occasion === 'p-whole')
+  }
+  const mx = arm(reduce(resign(mixed)), 'arm-relay').totals.probes
+  assert.deepEqual([mx.criticalField.expected, mx.criticalField.complete, mx.criticalField.groupsWithoutOccasion], [16, false, 4])
+  assert.deepEqual([mx.byField.head.expected, mx.byField.head.complete, mx.byField.head.groupsWithoutOccasion], [8, false, 4])
+  assert.deepEqual([mx.wholeAnswer.expected, mx.wholeAnswer.complete], [12, true])
+  assert.ok(reduce(resign(mixed)).unresolved.includes('critical_field_grades_partial'))
 
   const retry = build()
   { const c = relayCycle(retry); c.probes.grades[1].result = 'incorrect'; addRetry(retry, 0, c.probes.grades[1], 'correct') }

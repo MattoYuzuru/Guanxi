@@ -24,7 +24,7 @@ function add(to: Num, from: Num): void {
   }
 }
 
-const bucket = () => ({ expected: 0, firstCorrect: 0, firstIncorrect: 0, firstUnknown: 0, finalCorrect: 0, finalIncorrect: 0, finalUnknown: 0, retryRescued: 0, retryAttempts: 0 })
+const bucket = () => ({ expected: 0, groupsWithoutOccasion: 0, firstCorrect: 0, firstIncorrect: 0, firstUnknown: 0, finalCorrect: 0, finalIncorrect: 0, finalUnknown: 0, retryRescued: 0, retryAttempts: 0 })
 const itemAcc = () => ({ groupsObserved: 0, groupsUnknown: 0, expected: 0, passed: 0, failed: 0, unknown: 0 })
 const probeAcc = () => ({ groupsObserved: 0, groupsUnknown: 0, wholeAnswer: bucket(), criticalField: bucket(), byField: Object.fromEntries(RELAY_FIELD_KEYS.map(f => [f, bucket()])) as Record<Field, ReturnType<typeof bucket>> })
 const contextAcc = () => ({ groupsObserved: 0, groupsUnknown: 0, expected: 0, observed: 0, unknown: 0, truncatedSamples: 0, truncationEvents: 0, windowMismatches: 0, overWindow: 0 })
@@ -51,7 +51,10 @@ function addCycle(c: CycleAcc, cycle: RelayObservedCycle, windowTokens: number):
   if (probes.state === 'unknown') c.probes.groupsUnknown++
   else {
     c.probes.groupsObserved++
+    const fieldsSeen = new Set<Field>()
+    let wholeSeen = false
     for (const o of probes.manifest.occasions) {
+      if (o.scope === 'whole_answer') wholeSeen = true; else fieldsSeen.add(o.field!)
       const rows = probes.grades.filter(g => g.occasion === o.id).sort((a, b) => a.attempt - b.attempt)
       const first = rows[0]!; const last = rows[rows.length - 1]!
       const targets = o.scope === 'whole_answer' ? [c.probes.wholeAnswer] : [c.probes.criticalField, c.probes.byField[o.field!]]
@@ -63,6 +66,10 @@ function addCycle(c: CycleAcc, cycle: RelayObservedCycle, windowTokens: number):
         if (first.state === 'observed' && first.result === 'incorrect' && rows.some(r => r.state === 'observed' && r.result === 'correct')) b.retryRescued++
       }
     }
+    // A group that observed probes but skipped a scope or field leaves that denominator partial.
+    if (!wholeSeen) c.probes.wholeAnswer.groupsWithoutOccasion++
+    if (!fieldsSeen.size) c.probes.criticalField.groupsWithoutOccasion++
+    for (const f of RELAY_FIELD_KEYS) if (!fieldsSeen.has(f)) c.probes.byField[f].groupsWithoutOccasion++
   }
   const context = cycle.context
   if (context.state === 'unknown') c.context.groupsUnknown++
@@ -102,7 +109,7 @@ const bucketOut = (b: ReturnType<typeof bucket>, denominatorKnown: boolean) => (
   firstAttemptCorrectOverExpected: denominatorKnown ? frac(b.firstCorrect, b.expected) : null,
   afterRetryCorrectOverExpected: denominatorKnown ? frac(b.finalCorrect, b.expected) : null,
   firstAttemptKnownOnlyAccuracy: denominatorKnown ? frac(b.firstCorrect, b.firstCorrect + b.firstIncorrect) : null,
-  complete: denominatorKnown && b.firstUnknown === 0 && b.finalUnknown === 0,
+  complete: denominatorKnown && b.expected > 0 && b.groupsWithoutOccasion === 0 && b.firstUnknown === 0 && b.finalUnknown === 0,
 })
 function cycleOut(c: CycleAcc) {
   const i = c.items; const p = c.probes; const x = c.context; const g = c.guards
@@ -238,6 +245,9 @@ function reduce(input: RelayMeasurementInput, referenced: ReadonlySet<string>): 
     const t = a.totals
     if (t.items.groupsUnknown || t.items.unknown) unresolved.add('items_unknown')
     if (t.probes.groupsUnknown || !t.probes.wholeAnswer.complete || !t.probes.criticalField.complete) unresolved.add('probes_unknown')
+    const fieldPartial = RELAY_FIELD_KEYS.some(f => t.probes.byField[f].expected > 0 && t.probes.byField[f].groupsWithoutOccasion > 0)
+    // No critical-field occasion at all is absent; a field missing from some observed group is partial.
+    if (t.probes.groupsObserved > 0 && (t.probes.criticalField.expected === 0 || fieldPartial)) unresolved.add('critical_field_grades_partial')
     if (t.context.groupsUnknown || t.context.unknown) unresolved.add('context_unknown')
     if (t.guards.groupsUnknown || t.guards.unknown) unresolved.add('guards_unknown')
     if (t.integrity.unknown) unresolved.add('integrity_unknown')
