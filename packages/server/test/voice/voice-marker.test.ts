@@ -41,7 +41,9 @@ function expectTypeError(run: () => unknown): void {
 describe('validateVoiceOrigin', () => {
   it('accepts a valid origin and returns the same typed fields', () => {
     const input = validOrigin()
-    assert.deepEqual(validateVoiceOrigin(input, FINAL_TEXT), input)
+    const validated = validateVoiceOrigin(input, FINAL_TEXT)
+    assert.deepEqual(validated, input)
+    assert.deepEqual(Object.getOwnPropertySymbols(validated), [])
   })
 
   it('accepts null language and an empty confidence/replacement list', () => {
@@ -179,8 +181,8 @@ describe('validateVoiceOrigin', () => {
 
 describe('voiceBlock', () => {
   it('states dictation, lists replacements and quotes low-confidence fragments', () => {
-    const origin = validateVoiceOrigin(validOrigin(), FINAL_TEXT)
-    const block = voiceBlock(origin, 400)
+    const origin = validOrigin()
+    const block = voiceBlock(origin, FINAL_TEXT, 400)
 
     assert.match(block, /dictated/)
     assert.match(block, /whisper\.cpp/)
@@ -194,40 +196,52 @@ describe('voiceBlock', () => {
   })
 
   it('never exceeds maxChars, including tiny bounds', () => {
-    const origin = validateVoiceOrigin(validOrigin(), FINAL_TEXT)
+    const origin = validOrigin()
     for (const limit of [0, 1, 2, 10, 40, 80, 120, 400]) {
-      const block = voiceBlock(origin, limit)
+      const block = voiceBlock(origin, FINAL_TEXT, limit)
       assert.ok(block.length <= limit, `limit ${limit} produced ${block.length} characters`)
     }
-    assert.equal(voiceBlock(origin, 0), '')
-    assert.equal(voiceBlock(origin, 1), '…')
-    expectTypeError(() => voiceBlock(origin, Number.NaN))
-    expectTypeError(() => voiceBlock(origin, Number.POSITIVE_INFINITY))
+    assert.equal(voiceBlock(origin, FINAL_TEXT, 0), '')
+    assert.equal(voiceBlock(origin, FINAL_TEXT, 1), '…')
+    expectTypeError(() => voiceBlock(origin, FINAL_TEXT, Number.NaN))
+    expectTypeError(() => voiceBlock(origin, FINAL_TEXT, Number.POSITIVE_INFINITY))
   })
 
   it('caps the listed replacements and low-confidence fragments', () => {
-    const origin = validOrigin()
-    origin.replacements = Array.from({ length: 7 }, (_, index) => ({
-      start: HONO_START,
-      end: HONO_START + 4,
-      original: `original-${index}`,
-      replacement: 'Hono',
-      entryId: 'hono',
-    }))
-    origin.confidenceSpans = Array.from({ length: 7 }, () => ({
-      start: HONO_START,
-      end: HONO_START + 4,
-      confidence: 0.4,
-    }))
-    const block = voiceBlock(origin, 400)
+    const finalText = Array.from({ length: 7 }, () => 'Hono').join(' ')
+    const origin: VoiceOrigin = {
+      ...validOrigin(),
+      replacements: Array.from({ length: 7 }, (_, index) => ({
+        start: index * 5,
+        end: index * 5 + 4,
+        original: `original-${index}`,
+        replacement: 'Hono',
+        entryId: 'hono',
+      })),
+      confidenceSpans: Array.from({ length: 7 }, (_, index) => ({
+        start: index * 5,
+        end: index * 5 + 4,
+        confidence: 0.4,
+      })),
+    }
+    const block = voiceBlock(origin, finalText, 400)
 
     assert.match(block, /\+2 more/)
     assert.doesNotMatch(block, /"original-5"/)
   })
 
-  it('falls back to quoted offsets when the final text is unavailable', () => {
-    const block = voiceBlock(validOrigin(), 400)
-    assert.match(block, /"chars \d+–\d+"/)
+  it('produces the same block for spread and structuredClone origins', () => {
+    const origin = validOrigin()
+    const block = voiceBlock(origin, FINAL_TEXT)
+    assert.equal(voiceBlock({ ...origin }, FINAL_TEXT), block)
+    assert.equal(voiceBlock(structuredClone(origin), FINAL_TEXT), block)
+  })
+
+  it('validates the origin and final text before rendering', () => {
+    const origin = validOrigin()
+    expectTypeError(() => voiceBlock(origin, 5 as unknown as string))
+    expectTypeError(() => voiceBlock({ ...origin, backend: '' }, FINAL_TEXT))
+    expectTypeError(() => voiceBlock(origin, 'другой текст'))
   })
 })
 

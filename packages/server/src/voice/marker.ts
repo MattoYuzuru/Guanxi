@@ -41,12 +41,6 @@ export interface GlossaryRevisionEntry {
   revision: number
 }
 
-const FINAL_TEXT = Symbol('guanxi.voice.finalText')
-
-interface VoiceOriginInternal extends VoiceOrigin {
-  [FINAL_TEXT]?: string
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -135,7 +129,7 @@ export function validateVoiceOrigin(value: unknown, finalText: string): VoiceOri
     replacements.push({ start, end, original, replacement, entryId })
   }
 
-  const origin: VoiceOrigin = {
+  return {
     origin: 'voice',
     backend,
     model,
@@ -144,15 +138,6 @@ export function validateVoiceOrigin(value: unknown, finalText: string): VoiceOri
     replacements,
     glossaryRevision,
   }
-  // Keep the text in-process so voiceBlock can quote low-confidence fragments without making
-  // the origin serialisable with prompt contents. The symbol is non-enumerable.
-  Object.defineProperty(origin, FINAL_TEXT, {
-    value: finalText,
-    enumerable: false,
-    configurable: false,
-    writable: false,
-  })
-  return origin
 }
 
 function quoted(value: string): string {
@@ -164,40 +149,38 @@ function quoted(value: string): string {
  * Build a short agent-facing note.
  *
  * Mentions that the prompt was dictated, the backend/model/language and glossary revision, at
- * most five replaced terms and at most five low-confidence fragments. It never contains audio,
- * full prompt text or credentials. The result is always at most `maxChars` characters.
+ * most five replaced terms and at most five low-confidence fragments from `finalText`. It never
+ * contains audio, full prompt text or credentials. The result is always at most `maxChars`
+ * characters.
  */
-export function voiceBlock(origin: VoiceOrigin, maxChars = 400): string {
+export function voiceBlock(origin: VoiceOrigin, finalText: string, maxChars = 400): string {
+  const validated = validateVoiceOrigin(origin, finalText)
   if (typeof maxChars !== 'number' || !Number.isFinite(maxChars)) {
     throw new TypeError('voiceBlock maxChars must be a finite number')
   }
   const limit = Math.max(0, Math.floor(maxChars))
   if (limit === 0) return ''
 
-  const finalText = (origin as VoiceOriginInternal)[FINAL_TEXT]
-  const language = origin.language === null ? 'unknown' : quoted(origin.language)
+  const language = validated.language === null ? 'unknown' : quoted(validated.language)
   const parts = [
-    `Voice-origin prompt: dictated audio (backend ${quoted(origin.backend)}, model ${quoted(origin.model)}, language ${language}).`,
-    `Glossary revision ${origin.glossaryRevision}.`,
+    `Voice-origin prompt: dictated audio (backend ${quoted(validated.backend)}, model ${quoted(validated.model)}, language ${language}).`,
+    `Glossary revision ${validated.glossaryRevision}.`,
   ]
 
-  const replacements = origin.replacements.slice(0, 5)
+  const replacements = validated.replacements.slice(0, 5)
   if (replacements.length > 0) {
     const items = replacements.map(
       (item) => `${quoted(item.original)} → ${quoted(item.replacement)}`,
     )
-    const more = origin.replacements.length - replacements.length
+    const more = validated.replacements.length - replacements.length
     parts.push(`Replaced terms: ${items.join('; ')}${more > 0 ? `; (+${more} more)` : ''}.`)
   }
 
-  const lowConfidence = origin.confidenceSpans.filter((span) => span.confidence < 0.6).slice(0, 5)
+  const lowConfidence = validated.confidenceSpans
+    .filter((span) => span.confidence < 0.6)
+    .slice(0, 5)
   if (lowConfidence.length > 0) {
-    const items = lowConfidence.map((span) => {
-      const fragment = finalText === undefined
-        ? `chars ${span.start}–${span.end}`
-        : finalText.slice(span.start, span.end)
-      return quoted(fragment)
-    })
+    const items = lowConfidence.map((span) => quoted(finalText.slice(span.start, span.end)))
     parts.push(`Low-confidence fragments: ${items.join('; ')}.`)
   }
 

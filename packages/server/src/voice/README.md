@@ -102,12 +102,13 @@ project.
 `marker.ts` exports `VoiceOrigin`, `validateVoiceOrigin`, `voiceBlock` and
 `glossaryRevisionHash`. Validation checks identity fields, sorted non-overlapping confidence
 spans inside `finalText.length`, finite confidence in [0, 1] and replacement slices equal to
-`finalText.slice(start, end)`. `voiceBlock` states that the prompt was dictated, names the
-backend, model, language and glossary revision, lists at most five replaced terms and at most
-five low-confidence (<0.6) quoted fragments, and truncates to `maxChars`. The final text is
-retained on the validated origin only as a non-enumerable in-process symbol, so it is never
-serialised. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is
-independent of input order.
+`finalText.slice(start, end)`. `voiceBlock(origin, finalText, maxChars = 400)` revalidates the
+origin against `finalText`, states that the prompt was dictated, names the backend, model,
+language and glossary revision, lists at most five replaced terms and at most five low-confidence
+(<0.6) quoted fragments, and truncates to `maxChars`. The final text is supplied by the caller
+and is not stored on the origin, so a spread or `structuredClone` of the origin produces the same
+block. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is independent of
+input order.
 
 Limits: this slice does not add plugin wiring, an HTTP route, a contract type, a web glossary
 editor, an STT adapter, backend biasing mapping, the `voice.flag_term` tool or V2 candidate
