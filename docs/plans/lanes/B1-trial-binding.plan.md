@@ -771,10 +771,11 @@ a future bundle must include, acknowledgement can leave the owning promise pendi
 and per-event K2 appends can leave an idempotent private partial trace with no task response.
 No real model, corpus, container, SSH, paid or quality evidence is claimed.
 
-## 14. Review-fix plan for the three reproduced P2s (plan only, not authorized)
+## 14. Review-fix plan for the three reproduced P2s (authorized after correction)
 
-**Status:** plan only; no production, test, dependency or status file is edited by this
-commit. Prepared after the reviewer freeze was released, against clean pin
+**Status:** prepared as a plan only at `1bbd034`; code is authorized by the root correction in
+§14.10 after a separate short plan-correction commit. No production, test, dependency or status
+file was edited by the preparation commit. Prepared after the reviewer freeze was released, against clean pin
 `a00d53b22ae0ec13691534e7f65312134b3bddee` on `codex/b1-trial-binding`. The independent
 review is `reviews/codex-b1-trial-binding-20261022.md`; its external probes are
 `b1-process-independent-review.test.ts`, `b1-parent-death-worker.ts`,
@@ -1207,3 +1208,60 @@ call or the full gates. No check is run for this plan-only commit.
   approval/status files, `main`, dependencies and third-party notices.
 - External: `/Users/yuzuru/Projects/Guanxi-lanes/reviews/*` probes are read-only inputs; root
   updates/runs them. No external file is committed from this checkout.
+
+### 14.10 Root authorization and binding corrections (2026-10-22)
+
+The root reviewed `1bbd034` and authorized code after this separate short plan-correction commit,
+then completion without another plan-only stop. The approved choices are the fresh independent
+256-bit cleanup generation (only its hash in a durable v2 record), immediate quarantine of a live
+mismatched supervisor with no fallback, v1 cleanup only by an exact supervisor or an already-gone
+group, v2 exact-token proof for an actual forced-supervisor death, and same-UID accidental cleanup
+only. The token grants no auth/capability and stays separate from every host correlation. The fd
+3/4 layout, launcher close of 5/6, private frames and public keys are unchanged. The plan's receipt
+approval is: a bounded two-phase versioned envelope in the existing reasoning class, never
+`turn.done` for intermediate completions, no new wire/schema/migration/dependency, actual fenced
+durable begin+done ACK for every valid empty completion, `retention_fenced` for canceled/deposed
+attempts, ordered manifest plus public digest and stored stop reason binding same-key retries
+across sink recreation, no in-memory-only identity, exact-prefix reconciliation, and done ACK
+before any frame. Legacy no-receipt traces fail closed and preserve rows; after the reasoning TTL
+a same-key retry also fails closed. Rollback limitations remain as in §14.6.
+
+Three corrections are binding before code:
+
+1. **Correlation span.** The old `readAll` filter `spanId === requestId` conflates distinct
+   bindings/attempts sharing a session and request id. Every new receipt and content event gets a
+   stable opaque span `sha256("guanxi.bench.completion-span/v1\n" + binding.nonce + "\n" +
+   requestId)`. Receipts store only bounded binding/request namespace hashes, never the nonce.
+   Reconciliation filters on that span, so another binding's event is never rejected merely
+   because the raw request id matches. Deterministic per-event idempotency keys and unrelated
+   public message ids stay unchanged. Pre-fix rows with the raw request id as span from *this*
+   binding must still refuse an attempted retry; the sink proves same-binding evidence through
+   the existing fenced `runs.append` idempotency lookup with `expectedSeq` at the current head
+   (a refused probe writes no event), or conservatively refuses an ambiguous legacy trace. A
+   genuinely new binding is not rejected just because another binding left raw-span rows. A
+   dedicated cross-binding same-session identical-request-id regression and a legacy-refusal
+   regression are required. No shared server change is needed; the existing `readAll` and append
+   APIs are used.
+2. **Process truth.** The reaper must not describe a zombie or a missing observer result as proven
+   death. The real `ps` observation parses state and distinguishes an observed zombie from an
+   unknown observation; unknown or a live mismatched supervisor preserves the record and never
+   signals a PID/argv commonality. A fallback kill still requires the exact v2 client generation
+   in the recorded group. A group-gone unlink happens only after record identity validation and an
+   actual `ESRCH`. Existing forced-death, parent-death, held-record and group-cleanup assertions
+   stay intact. Scoped DSH seam observations are not real process-table proof; independent GPT
+   owns the unsandboxed `/bin/ps` probe.
+3. **Pre-write validation and stored truth.** Build and bound the full manifest plus both receipt
+   payloads before the first write where determinable. A re-scrub or stored-data change between
+   begin/content/done may only fail closed with an allowed partial trace; it never returns a
+   projection from stale incoming fields. The returned stop reason is parsed from the
+   acknowledged stored begin receipt. Existing final scrub, export, remote and private-payload
+   guards remain real assertions; receipts are reasoning-TTL metadata with no rationale, private
+   content, signature or tool-argument plaintext in logs/exports.
+
+Implementation is one coherent reaper fix commit, one coherent K2 receipt/fence/idempotency fix
+commit (jointly resolving the two reproduced receipt P2s), then docs/handoff. The writer owns only
+the §14.9 files, adds the required regressions and guard-mutation evidence, preserves old
+assertions except explained receipt-count/span/version updates, and runs only the scoped bench
+files, the three server K2/R1 files, bench/server type checks and scoped lint/markdown/diff
+checks. No shared server, contract, UI, CLI, migration, dependency, status-file, main, merge,
+push, rebase, full gate or live execution is included.
