@@ -770,3 +770,440 @@ uses an injected observation seam in tests), the supervisor/launcher are source-
 a future bundle must include, acknowledgement can leave the owning promise pending by design,
 and per-event K2 appends can leave an idempotent private partial trace with no task response.
 No real model, corpus, container, SSH, paid or quality evidence is claimed.
+
+## 14. Review-fix plan for the three reproduced P2s (plan only, not authorized)
+
+**Status:** plan only; no production, test, dependency or status file is edited by this
+commit. Prepared after the reviewer freeze was released, against clean pin
+`a00d53b22ae0ec13691534e7f65312134b3bddee` on `codex/b1-trial-binding`. The independent
+review is `reviews/codex-b1-trial-binding-20261022.md`; its external probes are
+`b1-process-independent-review.test.ts`, `b1-parent-death-worker.ts`,
+`b1-process-review-header.ts` and `b1-k2-independent-review.test.ts` outside this checkout.
+Root authorization is required before any code is written. This section appends to, and does
+not erase, Sections 1–13.
+
+The three reproduced P2s are:
+
+1. the reaper's orphan-client fallback can kill a different live binding after PID reuse;
+2. an empty completion gets no actual R1-fenced K2 acknowledgement;
+3. `stopReason` is outside durable completion identity, and a partially written completion
+   does not detect removed/reordered payload specifications.
+
+The fix is deliberately two-part: a per-spawn cleanup generation for process ownership and a
+private two-phase completion receipt in the existing K2 reasoning class. Neither adds a REST
+route, SSE event, canonical event type, database migration or dependency. The no-ACK-timeout
+rule (§12.1), record-removal ordering (§12.2), fd layout (§12.3), final scrubbed projection
+(§12.5) and stock-paid OFF/D-194 boundaries remain unchanged.
+
+### 14.1 P2-1: refuse a live mismatched supervisor and prove the client generation
+
+**Current behaviour and root cause.** At the reviewed pin,
+`packages/bench/src/private-process.ts:237-245` proves a supervisor only by its exact
+`node`/supervisor/record/tag/nonce argv; `:243-245` proves a client only by numeric `pgid` plus
+the common `node`/launcher/client-script argv. `:274-286` inspects the recorded supervisor; if
+it is alive but does not match, the reaper falls through to `findClient`. The client argv has no
+binding-specific identity, so a stale record whose PIDs were reused by a newer trial can match
+the newer client, kill its group and unlink the stale record. The independent probe models this
+with real owned fixture PIDs and observes `removed`, `liveSupervisorAlive=false` and
+`staleRecordPresent=false` instead of quarantine.
+
+**Proposed ownership proof (recommended: fresh cleanup generation token).** The supervisor
+generates `clientToken = randomBytes(32).toString('base64url')` before spawning the client. It
+records only `clientTokenHash = sha256(clientToken)` in a version-2 private record, passes the
+token as the launcher/client's fourth argv element, and writes the record before the `ready`
+control line. Before accepting the startup ACK the host validates the v2 record shape, the
+token-hash field and the expected PIDs; the actual client token is verified at reap. The token
+is generated in the supervisor, is **not** derived from the binding,
+nonce, experiment, task, arm, run, attempt, account, connection, model, provider or trial, is
+not written to the record, is not in the environment or private frames, and grants no
+capability. It is a cleanup generation, not authentication.
+
+Record v2 (private file, mode `0600`, under the existing `0700` directory):
+
+```json
+{ "version": 2, "bindingTag": "<sha256>", "nonceHash": "<sha256>",
+  "supervisorPid": 123, "pgid": 123, "clientPid": 124, "clientExitCode": null,
+  "clientTokenHash": "<sha256 of the fresh cleanup token>",
+  "clientScript": "/absolute/path", "startedAt": 0 }
+```
+
+**Reap decision table (no fallback from a live mismatched supervisor):**
+
+| Observation | Required action |
+| --- | --- |
+| record absent | `absent` |
+| record invalid, tags or `clientScript` mismatch | `cleanup_unconfirmed`; preserve |
+| process group is `gone` | unlink the record only; no signal; `removed` |
+| process group status `unknown` | `cleanup_unconfirmed`; preserve |
+| supervisor observed live and exact tokenised argv | SIGTERM `-pgid`, grace, SIGKILL, verify `ESRCH`, then unlink |
+| supervisor observed live but mismatched | `cleanup_unconfirmed`; **never** inspect/kill the client |
+| supervisor not observed (dead or zombie), v2 `clientPid` observed with exact launcher argv **and** `sha256(token) === clientTokenHash` and same `pgid` | SIGKILL `-pgid`, verify `ESRCH`, then unlink |
+| supervisor not observed and client absent, mismatched, or token missing | `cleanup_unconfirmed` if the group is alive |
+| v1 record, exact supervisor observed | allow the existing supervisor cleanup path |
+| v1 record, no exact supervisor | never use the client fallback; unlink only when the group is already gone |
+
+`isClient` becomes an exact four-token argv comparison (`node`, launcher, client script, token)
+plus `pgid`, followed by hash equality. No substring match, no `ps -ax` scan and no
+numeric-group-only proof remain. The `ps` observer gains the process state
+(`pid=,pgid=,state=,command=`) so a zombie/defunct PID is not treated as a live mismatched
+supervisor; it falls through only to an exact client proof. The test seam keeps its existing
+injected-observer shape. If the state is unavailable, treat the process as live and fail closed.
+
+**Why this is precise, and its trade-offs.** The token is a 256-bit fresh generation bound to
+one supervisor spawn and one client; a reused PID or a newer binding cannot present the same
+hash, and the record is durable before the startup ACK. The token is visible in the client
+argv and `ps`; a same-UID child can read or spoof it. That is acceptable only because this is
+accidental/crash cleanup, not hostile isolation, and it grants nothing. If the child overwrites
+its argv, the reaper cannot prove the client and quarantines. Legacy v1 records have no token
+and therefore cannot use the client fallback. The prior doc boundary "no binding/account/model/
+provider/trial identity in child argv" is preserved; the token is non-identifying and the
+existing isolation assertions must continue to assert absence of the binding sentinels and
+nonce.
+
+**Alternatives rejected.** `/bin/ps` `lstart` uses `%c` and only one-second resolution, and is
+locale/format-sensitive; a same-second PID reuse could still collide, so it is not a sole
+ownership proof. macOS `proc_pidinfo` birth microseconds need a native addon/build, which this
+source-run slice does not add. A timestamp written by the supervisor is self-asserted, not an
+OS birth observation. In-memory or PID-uniqueness proofs do not survive restart. Putting
+`bindingTag`, the nonce, trial/account/model/provider identity in child argv is forbidden by
+the earlier isolation tests. Removing all client fallback is safe but loses the actual forced
+supervisor-death cleanup that the review asks to preserve; the exact token keeps that path.
+
+**Exact files (implementation, not this commit):**
+
+- `packages/bench/src/private-supervisor.mjs` — generate the cleanup token, write v2 record
+  with its hash before `ready`, pass the token only to the launcher/client argv, preserve it
+  on `clientExitCode` updates.
+- `packages/bench/src/private-process.ts` — v1/v2 record union and validation; exact client
+  token hash; fail-closed mismatched-supervisor branch; zombie handling; group-gone-first
+  unlink; v2 startup validation; no broad process scan.
+- `packages/bench/test/private-process.test.ts` — v2 fixtures/token, fail-closed live
+  mismatched supervisor, legacy v1 live quarantine and gone-record unlink, preserved
+  forced-supervisor-death/parent-death/ESRCH assertions, real-process probe owned by
+  root/reviewer.
+- `packages/bench/PRIVATE_PROCESS.md` — record v2/token/legacy rules.
+- External probes under `reviews/` are read-only inputs; root/reviewer updates them for v2 and
+  runs the real `/bin/ps` observation. They are not committed from this checkout.
+
+### 14.2 P2-2: every completion gets an actual fenced durable acknowledgement
+
+**Current behaviour and root cause.** `packages/bench/src/k2-retention.ts:170-179` checks
+attempt/run/session structure, but the live attempt lease is only checked by
+`runs.append` at `:203-207`. An empty completion builds zero event specifications, skips every
+append, and returns `storedPublicMessage(..., clean.stopReason)` at `:220`. A run/session still
+matches after cancellation, so a canceled/deposed attempt can receive a false retention
+success. `runs.renew(attempt)` in the gateway is a pre-dispatch liveness check; it is not a
+durable retention acknowledgement.
+
+**Inspect `turn.done` and reject it for this purpose.** The canonical `turn.done` event is
+`{ messageId, outcome, stopReason, steps }`, a standard audience event. `native-agent/service.ts`
+appends it exactly once after the whole agent turn returns (`:358`) or in the terminal failure
+path (`:364`); `external-agents/service.ts` appends it on completion/cancellation/failure
+(`:293`, `:303`). A private completion can be an intermediate `toolUse` step, not a whole turn,
+and `turn.done` is visible to standard/export/remote reads. Emitting it per completion would
+falsely close a turn and add a lifecycle fact this slice was not authorized to create.
+
+**Proposed event: a private two-phase receipt inside the existing `reasoning` class.** Use the
+existing `reasoning` event type/data (`{ messageId, step, text }`), no new event type or
+schema. A versioned private envelope in `text` carries only hashes, counts and the already
+public `stopReason`:
+
+```text
+guanxi.bench.completion-receipt/v1
+{ "version": 1, "phase": "begin" | "done", "requestId": "...",
+  "stopReason": "...", "specs": [{ "role": "...", "type": "...", "key": "...",
+  "sha256": "..." }], "specCount": 4, "manifestSha256": "...",
+  "publicSha256": "...", "contentSeqs": [ ... ] }
+```
+
+The begin receipt is keyed `bench:<nonce>:<requestId>:receipt:begin`; the done receipt is keyed
+`...:receipt:done`. Both use `reasoning` data with `messageId: requestId`, `step: null` and
+`spanId: requestId`, so a receipt is never mistaken for a content step. Both are appended
+through `runs.append(attempt, ..., { idempotencyKey, expectedSeq })`, so the real R1 fence, K2
+authorisation, scrubbing, idempotency key uniqueness and durable commit are the existing ones.
+The begin append is the first durable acknowledgement;
+the done append is the final acknowledgement. An empty completion still writes both, so the
+empty path has a real lease check and durable commit. A canceled/deposed attempt throws
+`stale_lease` on the begin append and maps to `retention_fenced`; no event and no success frame.
+
+The receipt is in the reasoning retention class because reasoning is already local-only,
+excluded from remote/export, scrub-before-write, and purged under the existing 7-day/parent
+TTL (D-113). This is the smallest no-schema option and keeps the private task boundary. Its
+trade-off is stated explicitly: after a reasoning purge the receipt text is unavailable, so a
+same-key retry must refuse rather than reconstruct `stopReason`; the idempotency row/hash still
+exists, but the sink fails closed. No plaintext receipt, reasoning or signature is logged.
+
+**Exact files (implementation, not this commit):**
+
+- `packages/bench/src/k2-retention.ts` — receipt envelope, begin/done append sequence, empty
+  completion path, `retention_fenced` mapping.
+- `packages/bench/test/k2-retention.test.ts` — empty valid/canceled/deposed, append-count and
+  no-response assertions, retained-receipt shape.
+- `packages/bench/src/trial-host.ts` — only if the existing `SessionLog.readAll` method is added
+  to the structural `session` type (see 14.3); no server code change.
+- `packages/bench/PRIVATE_CHANNEL.md` / `PRIVATE_PROCESS.md` / `README.md` — acknowledge the
+  receipt and empty completion.
+
+### 14.3 P2-3: bind full public identity and reconcile partial writes
+
+**Current behaviour and root cause.** The sink builds content specifications, appends each with
+a key, then returns `storedPublicMessage(assistantText, toolCalls, clean.stopReason)` at
+`k2-retention.ts:220`. `stopReason` is not in any retained specification, so the same
+binding/request key with the same text/tools but a different `stopReason` (for example `stop`
+then `length`) deduplicates every event and returns a changed public projection. A partial
+earlier write also leaves content events with no manifest that proves the full ordered set; a
+retry that removes a specification or reorders tool calls can append/deduplicate the remaining
+keys and still return a result. An in-memory cache would not survive sink recreation/restart.
+
+**Receipt identity.** Build the ordered content specifications first, from the fully scrubbed
+completion, exactly as today (reasoning, versioned signature, joined assistant text, tool calls
+in content order). Then:
+
+- `specs` records the ordered `{ role, type, key, sha256(canonical(event data)) }` list; it
+  never contains reasoning text, signature text, tool arguments or usage.
+- `manifestSha256` is the canonical hash of the ordered specification digest list.
+- `publicSha256` is the canonical hash of `{ text, toolCalls, stopReason }`, where `text` and
+  `toolCalls` are the public values and `toolCalls` preserve order. A small local canonical JSON
+  function sorts object keys recursively, preserves array order, and refuses non-JSON values
+  before the first append.
+- `stopReason` is scrubbed and stored in the begin receipt. The returned stop reason always
+  comes from the **stored** begin receipt, never from fresh `clean.stopReason`.
+- The done receipt repeats `manifestSha256`, stores the actual `publicSha256` derived from the
+  acknowledged stored content, and stores the ordered `contentSeqs` of the acknowledged content
+  events. It contains no private completion text.
+
+The begin receipt is checked for `maximumReasoningTextBytes` and the planned content-plus-begin
+bytes are checked against `maximumRetainedBytes` before the first append; the done receipt is
+checked before its own append and the cumulative retained total is checked before the done
+append. An oversized receipt fails `retention_too_large` with no success frame; a failure after
+the begin or a content prefix may leave the allowed private partial trace. The receipt is
+scrubbed by the sink and again by `SessionLog`; `runs.append` performs the actual fence. The
+`specs` digests are local reasoning-class evidence only; they are not returned to the child,
+exported or logged, and a digest is not the reasoning/signature value. Incoming `clean` is never
+mutated and no reasoning/signature value is returned.
+
+**Reconciliation before appending.** Use the existing `SessionLog.readAll(sessionId, 'person')`
+and filter events with `spanId === requestId` (all private completion events set it). This is an
+existing read API; `TrialHostConfig.session` / the sink's structural type widens from
+`Pick<SessionLog, 'session'>` to include `readAll`; no server edit is needed. The read occurs
+after `scrubber.isReady()` and before the first append.
+
+1. No request-scoped event: a new completion; append the new begin receipt as the first durable
+   acknowledgement, then continue.
+2. Events exist but no valid begin receipt: this is a pre-fix/legacy partial trace. Refuse
+   `retention_idempotency_conflict` **before any append or success frame**; preserve the rows.
+   This is the compatibility boundary for already-partial local fixture records.
+3. Begin receipt exists: append the begin receipt with the same key and `expectedSeq` **before**
+   comparing identity. The existing `runs.append` idempotency check is authoritative: a changed
+   begin payload throws `idempotency_conflict` (mapped to `retention_idempotency_conflict`) and a
+   stale/deposed attempt throws `stale_lease` (mapped to `retention_fenced`), both before any
+   content or success frame. The duplicate returns the stored receipt; parse and validate it and
+   compare the version, phase, request id, stopReason, ordered specs, `manifestSha256` and
+   `publicSha256`. A malformed or purged stored receipt is a conflict.
+4. Filter stored content events (exclude both receipts) in `seq` order and compare them with
+   `specs`. Every content `seq` must be greater than the begin receipt `seq`; content before the
+   begin is a conflict. With no done receipt the content list must be an exact prefix of `specs`;
+   with a done receipt it must be exactly the full list and every content `seq` must be less than
+   the done receipt `seq`. Any extra, gap, reorder or digest mismatch is a conflict.
+5. If the done receipt exists, verify its `manifestSha256`, `publicSha256`, `contentSeqs` and
+   stored content; re-append the done receipt as an idempotent duplicate so its R1 fence is also
+   checked; return the stored projection. If it does not exist, append only the missing content
+   specifications in manifest order, verify the stored events, append the done receipt, and only
+   then return.
+6. Purged/unreadable receipt data: refuse; never reconstruct `stopReason` or guess a projection.
+
+**Append sequence, first/final acknowledgement and failure behaviour.**
+
+- New completion: scrub/validate → begin receipt append (first durable ACK) → each content
+  event append (durable per-event ACK) → done receipt append (final durable ACK) → derive and
+  return the public projection from the stored assistant/tool events and the stored begin
+  `stopReason`. The channel emits no `status:'ok'` frame before the done append settles.
+- Empty completion: the same sequence with zero content events; begin and done are both
+  written, and the projection is `{ text: '', toolCalls: [], stopReason: <stored> }`. The
+  existing channel may emit its fixed error frame on a retention rejection; that is not a
+  public completion success frame.
+- Failure before begin: no events; retry starts clean.
+- Failure after begin and before done: no success; the begin and any content prefix remain.
+  Retry with the unchanged manifest revalidates the prefix, appends missing content, appends
+  done, and returns. Retry with a changed manifest conflicts at the begin receipt before
+  content.
+- Failure after done: no success may have been delivered; a retry revalidates and returns the
+  stored projection without duplicating rows. A same-key retry with changed evidence is
+  refused.
+- Sink recreation/restart: no in-memory receipt cache is used; all decisions come from K2 rows
+  and the R1 append fence. A new sink sees the same begin/done rows.
+- Abort/readiness withdrawal/late scrub: a withdrawn scrubber yields `retention_not_ready`
+  before the next append; a late registered value that changes a stored payload makes the
+  digest comparison fail before success; a partial private trace may remain, as before. No
+  response is emitted until the final acknowledgement.
+
+**Exact contradictory retries that must refuse before any success frame:** changed `stopReason`;
+changed text or tool arguments; removed or added specification; reordered tool calls or reasoning
+specifications; identical public projection but changed private reasoning/signature; a
+pre-fix/legacy partial trace with no begin receipt; an extra/gapped/reordered stored content
+list; a done receipt whose content sequence/public digest does not match; a purged receipt; a
+canceled/deposed attempt (through the begin append's `stale_lease`); and a late scrub that
+changes an acknowledged digest. The fixed code is `retention_idempotency_conflict` for identity
+contradictions, `retention_fenced` for the lease, `retention_not_ready` for readiness, and
+`retention_failed` for other storage failures. The channel exposes only its existing fixed
+`channel_failed` code to the child, never raw K2 text.
+
+**Exact files (implementation, not this commit):**
+
+- `packages/bench/src/k2-retention.ts` — canonical hashes, receipt construction, readAll
+  reconciliation, begin/content/done ordering, stored stopReason, receipt bounds.
+- `packages/bench/src/trial-host.ts` — widen `session` to `Pick<SessionLog, 'session' | 'readAll'>`.
+- `packages/bench/test/k2-retention.test.ts` — changed stopReason/content/reorder, sink
+  recreation, partial-trace retry, legacy no-receipt refusal, empty paths, late scrub/withdrawal,
+  export/remote omission and append counts.
+- `packages/bench/test/trial-host.test.ts` / `trial-binding.test.ts` — type/composition only if
+  their fixtures need the widened session type.
+- `packages/bench/PRIVATE_CHANNEL.md`, `PRIVATE_PROCESS.md`, `README.md` — receipt semantics and
+  the stored-stopReason rule.
+
+### 14.4 Red/green matrix and observable proof
+
+`red` is an assertion expected to fail at pin `a00d53b`; `green` is the required post-fix
+observation. Real process-table rows are root/reviewer-owned; worker seam results alone are not
+acceptance evidence.
+
+| Case | Red at the pin | Green expected |
+| --- | --- | --- |
+| Reused PIDs, stale record, live newer supervisor | reaper removes stale record and kills newer group | `cleanup_unconfirmed`; record preserved; newer supervisor/client alive; no signal |
+| Live mismatched supervisor but no matching client | may fall through to client/group logic | fail closed before client lookup; record preserved |
+| Unknown live group, no exact supervisor/client token | already quarantines | still quarantines; record preserved |
+| v1 record with live group | weak client fallback can kill | no client fallback; quarantine; unlink only when group gone |
+| v2 forced supervisor death with exact client token | current test uses v1/no token | reaper removes only after actual group `ESRCH`; client/grandchild gone; record absent |
+| Parent death, record left behind | current path passes | record persists, group `ESRCH`, default reaper removes; assertions unchanged |
+| Near-miss supervisor argv | already refuses | still refuses; no substring or numeric-only match |
+| Real `/bin/ps` observation | worker cannot run it | root/reviewer observes actual supervisor/client identity and `ESRCH`; no fake-seam green |
+| Empty valid completion | no append; returns success | begin+done receipts; empty projection; stored stopReason; no assistant/tool rows |
+| Empty canceled attempt | resolves success | rejects `retention_fenced`; no receipt/content; no success frame |
+| Empty deposed attempt | resolves success | rejects `retention_fenced`; no success frame |
+| Changed stopReason (`stop` → `length`), same key | resolves with changed projection | `retention_idempotency_conflict`; retained count unchanged; original stopReason |
+| Removed content spec after partial append | may return a shorter result | begin manifest conflict before content/response |
+| Reordered tool calls, same key | per-key dedupe may return changed order | manifest/public conflict before content/response |
+| Same public projection, changed reasoning/signature | may dedupe private rows | manifest digest conflict; no response |
+| Sink recreation between attempts | fresh `clean.stopReason` returned | new sink validates stored begin/done; same projection; no duplicates |
+| Partial begin+content, same payload retry | no receipt today | begin duplicate, missing content, done; no duplicate rows |
+| Legacy no-receipt partial trace | may be adopted | `retention_idempotency_conflict`; rows preserved; no append |
+| Late scrub/registered value after begin | may project/store different evidence | digest mismatch or `retention_not_ready`; no success; partial trace allowed |
+| Oversized receipt | no receipt today | `retention_too_large` before the first append |
+| Export/remote reads | receipts do not exist | receipts stay in reasoning class; remote/export omit both reasoning and receipt envelope |
+
+The existing assertions for supervisor death, parent death, group `ESRCH` before unlink, record
+preservation on uncertainty, no unlink after an unissued/unvalidated kill, fd 3/4 isolation,
+no private identity in child argv/env/frames, and no success before retention settlement are
+retained and must not be weakened. New guard mutations for acceptance: remove the live-mismatch
+early return, remove token-hash comparison, remove the begin receipt, remove the stored-stopReason
+read, remove the ordered manifest comparison, and remove the readAll legacy refusal; the named
+tests must fail with an assertion.
+
+### 14.5 Validation and ownership
+
+Worker-targeted commands after root authorizes code (from this clone, `nice -n 10`):
+
+```bash
+export GUANXI_WEB_PORT=5212 GUANXI_API_PORT=4412 GUANXI_DATA_DIR="$PWD/.lane-data"
+node -e "console.log(require.resolve('@guanxi/contract'))"
+
+nice -n 10 node --test packages/bench/test/k2-retention.test.ts \
+  packages/bench/test/private-process.test.ts packages/bench/test/trial-host.test.ts \
+  packages/bench/test/trial-binding.test.ts packages/bench/test/private-channel.test.ts \
+  packages/bench/test/private-stream.test.ts packages/bench/test/k3-gateway.test.ts \
+  packages/bench/test/request-admission.test.ts packages/bench/test/budget.test.ts \
+  packages/bench/test/plugin.test.ts packages/bench/test/k3-admission.test.ts
+
+nice -n 10 node --test packages/server/test/session-log.test.ts \
+  packages/server/test/durable-run-followup.test.ts packages/server/test/session-log-readiness.test.ts
+
+nice -n 10 npx tsc --noEmit -p packages/bench/tsconfig.json
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+```
+
+The real `/bin/ps` process-table probe is **not** a worker check: this DSH sandbox blocks it.
+Root/reviewer runs the external process probe unsandboxed on the same Mac/Node26 and records
+the actual observation. This worker does not run `npm test`, the browser gate, build,
+Storybook, mutation tooling, `agent-dev`, a nested sandbox/container, SSH, a live model, a paid
+call or the full gates. No check is run for this plan-only commit.
+
+### 14.6 Migration, compatibility, rollback
+
+- **Database:** no migration. The receipt uses existing `reasoning` rows; existing K2/R1 schema,
+  indexes and retention remain. No new event type or REST/SSE field.
+- **Already-partial K2 fixture records:** a request with content rows but no begin receipt is
+  a legacy/uncertain trace. It is never auto-adopted: the sink returns
+  `retention_idempotency_conflict` before append/response and preserves the rows for local
+  inspection. A new request id/binding works normally. If a begin receipt exists, the ordered
+  prefix is reconciled as described; a changed retry conflicts.
+- **Already-partial process records:** v1 records remain readable for exact supervisor cleanup
+  and group-gone unlink, but their client fallback is disabled. A live v1 group with no exact
+  supervisor is quarantined; `runPrivateTrial` refuses to spawn for that binding until the
+  record is resolved. There is no file migration; v1 records are ephemeral private state. New
+  spawns write v2 with a fresh token.
+- **Rollback:** old code sees a v2 process record as invalid and returns `cleanup_unconfirmed`
+  (fail closed, no kill); old retention code ignores receipt rows and can again return fresh
+  `stopReason` on a same-key retry. Therefore rollback with live v2 records/receipts is not
+  safe without root reconciliation; forward-fix is preferred. No user data or database schema
+  is changed by rollback.
+- **Retention expiry:** after the reasoning TTL, receipt data is purged but the idempotency
+  row/hash remains. A same-key retry fails closed rather than reconstructing `stopReason` or
+  returning fresh evidence.
+
+### 14.7 Risks, residuals and non-claims
+
+- The cleanup token is visible to the client and `ps`; same-UID tampering/spoofing remains
+  outside the proof. This is cleanup, not isolation; the rootless-Podman/cgroup boundary is
+  unchanged.
+- The real `/bin/ps` path and exact macOS argv/state parsing remain root/reviewer-owned; the
+  worker seam is not production evidence.
+- `readAll` reconciliation is O(session) per completion. No new index/query API or hidden cap
+  is added; the cost is a residual for long sessions, and a future optimization is separate.
+  It uses the existing person-audience read and only in-memory comparison; it does not export
+  reasoning or write it to a log.
+- The two receipts add private reasoning rows per completion and increase the
+  `excluded.reasoning` export count; they do not enter public frames. A reasoning purge can
+  make a very late retry fail closed.
+- Per-event appends remain non-atomic; an allowed private partial trace can remain after a
+  failure. No response is emitted until the done acknowledgement. There is no automatic
+  redispatch/retry and no distributed inference-cessation claim.
+- No server, contract, UI, dependency, migration, paid path, real model/provider call, Harbor,
+  Podman/container, SSH, GPU, public corpus, five-seed experiment or B1 quality result is
+  included. Stock paid execution remains OFF; D-194 remains in force.
+
+### 14.8 Root choices
+
+1. **Ownership proof:** approve the fresh non-identifying cleanup token in the client argv
+   (stored only as a hash, exact-match at reap) as the recommended precise generation proof, or
+   require a different platform-supported proof. The token preserves actual forced-supervisor
+   death cleanup and makes live mismatch/uncertainty quarantine; it does not use PID uniqueness
+   or binding identity in child argv.
+2. **Receipt:** approve the private two-phase `reasoning` envelope with begin/done keys and
+   stored-stopReason return, rather than `turn.done` (whole-turn, standard/exported) or a new
+   schema.
+3. **Legacy state:** approve fail-closed refusal of no-receipt partial K2 traces and of v1
+   process records that cannot prove an exact supervisor (no client fallback, no auto-adoption
+   or file migration), with root/reviewer reconciliation. A v1 record with an exact live
+   supervisor keeps its existing supervisor-cleanup path; v1 forced-supervisor-death cleanup is
+   not proved and quarantines.
+4. **Authorization:** this section authorizes no code. Root reviews it and explicitly authorizes
+   implementation before any production, test, dependency or status edit; then the worker
+   implements, runs the scoped checks, records evidence and stops for independent review.
+
+### 14.9 File list for the authorized implementation
+
+- Production: `packages/bench/src/private-process.ts`,
+  `packages/bench/src/private-supervisor.mjs`, `packages/bench/src/k2-retention.ts`,
+  `packages/bench/src/trial-host.ts` (structural `session` type only).
+- Tests/fixtures: `packages/bench/test/private-process.test.ts`,
+  `packages/bench/test/k2-retention.test.ts`, `packages/bench/test/trial-host.test.ts`,
+  `packages/bench/test/trial-binding.test.ts` if its fixture type changes, and
+  `packages/bench/test/fixtures/private-client.mjs` only if the token observability needs an
+  explicit assertion.
+- Docs: `packages/bench/PRIVATE_PROCESS.md`, `packages/bench/PRIVATE_CHANNEL.md`,
+  `packages/bench/README.md`, and the lane handoff after implementation.
+- Not touched: `packages/server`, `packages/contract`, `packages/web`, `packages/ui`,
+  `packages/cli`, migrations, `docs/plans/PHASE_STATUS.md`, `docs/plans/NEXT_AGENT_PROMPT.md`,
+  approval/status files, `main`, dependencies and third-party notices.
+- External: `/Users/yuzuru/Projects/Guanxi-lanes/reviews/*` probes are read-only inputs; root
+  updates/runs them. No external file is committed from this checkout.
