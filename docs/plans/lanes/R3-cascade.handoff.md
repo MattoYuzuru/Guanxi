@@ -107,7 +107,6 @@ Agent-dev source attestation remains unverifiable due the inherited external gua
 this is observed local evidence, not a reusable source certificate. Active K3 POST settlement
 is an explicitly failing external activation dependency, not included as a passed assertion.
 
-
 ## Independent review fixes and final evidence
 
 Initial production `c92696d` and docs `feefbfd` received separate GPT review. Two P2s were
