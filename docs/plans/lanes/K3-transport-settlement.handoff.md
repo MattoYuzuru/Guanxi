@@ -2,8 +2,8 @@
 
 **Status:** implemented and locally validated; root full gates and independent GPT review pending ·
 **Updated:** 2026-10-22 · **Branch:** `codex/k3-transport-settlement` · **Base:**
-`af0ccab0c7c3164539fe597aa55527e69fa0369a` · **Code/test candidate:** `13881c7` (handoff and
-plan-status commit follow)
+`af0ccab0c7c3164539fe597aa55527e69fa0369a` · **Code/test candidate:** `da3ffa0` (docs snapshot
+follows)
 
 ## Finding
 
@@ -44,31 +44,31 @@ assertions failed on the pre-fix client and pass after the fix.
 
 ## Tests
 
-**New:** 14 tests.
+**New:** 15 tests.
 
 - `packages/server/test/connections/model-transport-settlement.test.ts` — 5 real
   `Connections.localChat` + `ResourceGovernor` tests with injected fetch:
   abort keeps call and permit owned until fetch settlement; late response body cancel ACK;
   deadline ownership without external abort (runtime failure, not cancellation); synchronous
   `onStarted` throw ownership; no unhandled rejection after a late failure.
-- `packages/server/test/ollama-client.test.ts` — 9 new client tests: uncooperative POST fetch,
+- `packages/server/test/ollama-client.test.ts` — 10 new client tests: uncooperative POST fetch,
   late POST body disposal, non-stream `response.text()` settlement, error-body cancel ACK, load
-  timeout after settlement, GET observation liveness with consumed late failure, synchronous
-  dispatch observer throw with late body disposal, aborted `warm`, and pending `reader.read()` /
-  `reader.cancel()` ownership.
+  timeout after settlement, GET observation liveness with consumed late failure, late GET
+  response-body disposal, synchronous dispatch observer throw with late body disposal, aborted
+  `warm`, and pending `reader.read()` / `reader.cancel()` ownership.
 
 **Regression envelope:** 99 pre-existing tests across five files (the 11 pre-existing
 `ollama-client` tests, 50 `model-access`, 7 `relay/review`, 22 `inference-concurrency` and 9
-`model-service` tests). Total executed with new tests: 113 over six files. Three
+`model-service` tests). Total executed with new tests: 114 over six files. Three
 `ollama-client` tests were strengthened, not weakened: the two timeout classification fixtures
 now acknowledge abort, and the stuck-cancel test asserts cleanup stays blocked until the
 provider cancel promise settles instead of expecting an early release.
 
-## Exact commands and results (local candidate `13881c7`)
+## Exact commands and results (local candidate `da3ffa0`)
 
 ```text
 nice -n 10 node --test --test-timeout=5000 packages/server/test/ollama-client.test.ts
-# tests 20, pass 20, fail 0
+# tests 21, pass 21, fail 0
 
 nice -n 10 node --test --test-timeout=30000 packages/server/test/connections/model-transport-settlement.test.ts
 # tests 5, pass 5, fail 0
@@ -90,7 +90,7 @@ nice -n 10 node --test --test-timeout=30000 \
   packages/server/test/connections/model-transport-settlement.test.ts \
   packages/server/test/connections/model-access.test.ts \
   packages/server/test/relay/review.test.ts
-# tests 82, pass 82, fail 0
+# tests 83, pass 83, fail 0
 
 nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
 # exit 0, no output
@@ -105,7 +105,8 @@ cleanup was touched.
 - **Finding:** K3 model POST released client/governor ownership before the actual transport
   settled (independently reproduced; confirmed bug).
 - **Behaviour fix:** `6cc95c1 fix(ollama): hold model POST ownership until transport settlement`.
-- **Regression coverage:** `13881c7 test(ollama): prove model POST settlement before release`.
+- **Regression coverage:** `13881c7 test(ollama): prove model POST settlement before release`
+  and `da3ffa0 test(ollama): assert late GET response disposal`.
 - **Verification:** adapted probe tests failed before `6cc95c1` (4 of 5 settlement tests) and
   pass after it; the list above is the post-fix run.
 
