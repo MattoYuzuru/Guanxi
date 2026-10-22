@@ -244,12 +244,15 @@ describe('inflection controls', () => {
     assert.equal(applyGlossary(glossary, 'пиара\u0301').text, 'PR-а\u0301')
   })
 
-  it('requires a stem of at least two letters', () => {
-    const oneLetter = compileGlossary([
-      { id: 'pr', canonical: 'PR', variants: ['п'], language: 'en' },
+  it('requires a stem of at least three letters', () => {
+    const short = compileGlossary([
+      { id: 'pr', canonical: 'PR', variants: ['п', 'пр'], language: 'en' },
     ])
-    assert.equal(applyGlossary(oneLetter, 'па').text, 'па')
-    assert.equal(applyGlossary(oneLetter, 'п').text, 'PR')
+    assert.equal(applyGlossary(short, 'па').text, 'па')
+    assert.equal(applyGlossary(short, 'про').text, 'про')
+    assert.equal(applyGlossary(short, 'п').text, 'PR')
+    assert.equal(applyGlossary(short, 'пр').text, 'PR')
+    assert.equal(applyGlossary(glossary, 'пиара').text, 'PR-а')
   })
 
   it('prefers a full direct match over inflecting another entry', () => {

@@ -387,7 +387,7 @@ function inflectionMatch(
     if (!lastLower.text.endsWith(ending)) continue
     const stemEnd = lastLower.boundaries[lastLower.text.length - ending.length]!
     const stem = lastRaw.slice(0, stemEnd)
-    if (countLetters(stem) < 2) continue
+    if (countLetters(stem) < 3) continue
 
     const key = prefixKey + foldKey(stem)
     const forms = matcher.inflectByKey.get(key)

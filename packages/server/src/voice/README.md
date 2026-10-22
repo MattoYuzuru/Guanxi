@@ -48,7 +48,8 @@ Latin canonical is never a stem, so common Russian words such as `про`, `пр
 unchanged instead of becoming `PR-о`, `PR-и` and `PR-а`. Combining marks, including a stress
 mark, are ignored while matching the ending and the original ending slice keeps them in the
 output: `пиара́` becomes `PR-а́`. `inflect: false` and `caseSensitive: true` disable inflection.
-Stems shorter than two letters are rejected.
+Stems shorter than three letters are rejected, so a two-letter variant such as `пр` does not turn
+`про` into `PR-о`; `пиара` still becomes `PR-а` from the four-letter stem `пиар`.
 
 Text inside backtick code spans and `https?://\S+` URLs is protected. All other characters,
 including spacing and newlines, are preserved byte-for-byte.
