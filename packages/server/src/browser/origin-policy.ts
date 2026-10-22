@@ -59,6 +59,7 @@ import type {
 export type { BrowserAction, BrowserDecision, BrowserDecisionCode, BrowserMode, RunBrowserPolicy } from './types.ts'
 
 const HTTP_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:'])
+const INTERACTION_KINDS: ReadonlySet<string> = new Set(['type', 'submit', 'upload', 'download', 'click'])
 const BASE64_HEX = /^[A-Za-z0-9_+=-]+$/
 const CLEAN_PATH_LIMIT = 200
 const MODEL_TOTAL_LIMIT = 200
@@ -126,6 +127,9 @@ function decideInteraction(
   policy: RunBrowserPolicy,
   action: Exclude<BrowserAction, { kind: 'navigate' }>,
 ): BrowserDecision {
+  // The untyped HTTP/tool boundary can send any string. Whitelist the spec's interaction kinds
+  // before parsing the origin so an unknown kind is always invalid_action, never a write path.
+  if (!INTERACTION_KINDS.has(action.kind)) return deny('invalid_action')
   const parsed = parseHttpUrl(action.origin)
   if ('code' in parsed) return deny(parsed.code)
   const origin = canonicalOrigin(parsed.url)

@@ -38,6 +38,7 @@ bypass the model-data rule.
 | `type`, `submit`, `upload`, `download` in `full` | target origin must be writable, else `write_not_allowed`. |
 | `javascript:`, `data:`, `file:`, `blob:` | always `scheme_refused`; malformed references are `invalid_url`. |
 | `navigate` with missing/unknown `via` | `invalid_action`; never falls through to clean-link handling. |
+| unknown action kind (for example `evaluate` or `scroll`) | `invalid_action` before any origin check; only the action kinds in the spec are whitelisted. |
 | unknown runtime `mode` | write actions fail closed as `read_only`. |
 
 ### Clean-link heuristic (exact)
@@ -149,10 +150,10 @@ npx markdownlint-cli2 packages/server/src/browser/README.md docs/plans/lanes/C1-
 
 The two test files cover normalization and each origin rule, clean-link and model heuristics,
 the explicit Read-only form-submission block, full-mode writable checks, refused schemes,
-missing/unknown `via` and `mode` fail-closed paths, determinism, migration reopen and file
-modes, the agent-channel and wildcard refusals, project/role/account scoping, expiry,
-revocation context lists, context lifecycle including the required account/project/role guard,
-secret-field rejection and `touch`.
+missing/unknown `via` and `mode`, unknown action kinds and other fail-closed paths, determinism,
+migration reopen and file modes, the agent-channel and wildcard refusals, project/role/account
+scoping, expiry, revocation context lists, context lifecycle including the required
+account/project/role guard, secret-field rejection and `touch`.
 
 ## Residuals
 

@@ -216,6 +216,21 @@ test('model navigation to a non-readable origin is refused before its data shape
   })
 })
 
+test('unknown action kinds are refused as invalid_action in every mode', () => {
+  const policies: RunBrowserPolicy[] = [
+    fullPolicy({ readable: [WRITE], writable: [WRITE] }),
+    { mode: 'read_only', readable: [WRITE], writable: [] },
+  ]
+  for (const kind of ['evaluate', 'scroll']) {
+    for (const policy of policies) {
+      assert.deepEqual(decide(policy, { kind, origin: WRITE } as unknown as BrowserAction), {
+        allowed: false,
+        code: 'invalid_action',
+      }, `${kind} in ${policy.mode}`)
+    }
+  }
+})
+
 test('read_only refuses type, submit, upload and download on every origin', () => {
   const policy: RunBrowserPolicy = { mode: 'read_only', readable: [READ, WRITE], writable: [WRITE] }
   for (const kind of INTERACTIONS) {
