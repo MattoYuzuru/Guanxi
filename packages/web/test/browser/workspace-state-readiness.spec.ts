@@ -163,7 +163,7 @@ for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) for (const density
       await expect(error).toHaveCount(1)
       await error.locator('summary').click()
       for (const node of [empty, empty.locator('p'), error, error.locator('pre'), error.locator('summary')]) await fits(node)
-      for (const action of [empty.getByRole('button'), error.getByRole('button').nth(0), error.getByRole('button').nth(1)]) await target(action)
+      for (const action of [empty.getByRole('button'), ...await error.locator('button,summary').all()]) await target(action)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       expect(await page.getByTestId('controlled').evaluate(node => getComputedStyle(node).fontSize)).toBe(density === 'compact' ? '13px' : '14px')
       for (const node of [empty, error]) expect(await node.evaluate(element => getComputedStyle(element).backdropFilter)).toBe('none')
