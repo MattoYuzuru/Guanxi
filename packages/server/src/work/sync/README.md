@@ -105,9 +105,12 @@ Jira transitions are optional configuration. An unmapped status is comment-only.
 
 ## Polling
 
-`engine.poll(link, now)` sends ETag / If-Modified-Since where the tracker supports it. `304`
-returns `notModified: true`, no changes, the same link and unchanged display metadata. A `200`
-returns a field diff and updates `lastRemoteEtag` / `lastRemoteUpdatedAt`. A retryable read
+`engine.poll(link, now)` sends ETag / If-Modified-Since where the tracker supports it. When a
+read response carries `Last-Modified`, the adapter stores that exact value as
+`lastRemoteUpdatedAt` and uses it for the next `If-Modified-Since`; otherwise it falls back to
+the body's `updated_at` / `updated`. `304` returns `notModified: true`, no changes, the same
+link and unchanged display metadata. A `200` returns a field diff and updates
+`lastRemoteEtag` / `lastRemoteUpdatedAt`. A retryable read
 (429, secondary-limit 403, 5xx) returns `deferred` with the exact retry time instead of
 throwing. Scheduling is the caller's job; D-175 expects every ten minutes. This core starts
 no timer and opens no socket.
@@ -182,7 +185,7 @@ a network. The suite covers:
   unavailable mapped transition that warns and stays comment-only;
 - exact 80/min, 500/h, 20-per-issue burst, `retry-after`, reset-header and bounded `5xx`
   backoff times, plus engine deferral;
-- conditional `304` polling for GitHub and Jira;
+- conditional `304` polling for GitHub and Jira, including `Last-Modified` validators;
 - credential hygiene across errors, results and the recorded request log;
 - Jira v3 ADF `strong`/`code` marks, v2 wiki markup, and ADF marker extraction.
 

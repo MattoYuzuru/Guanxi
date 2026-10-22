@@ -238,7 +238,9 @@ export class GitHubAdapter implements TrackerAdapter {
       notModified: false,
       fields,
       etag: headerValue(response.headers, 'etag') ?? null,
-      updatedAt: typeof issue.updated_at === 'string' ? issue.updated_at : null,
+      // Last-Modified is the validator GitHub actually uses for If-Modified-Since.
+      updatedAt: headerValue(response.headers, 'last-modified')
+        ?? (typeof issue.updated_at === 'string' ? issue.updated_at : null),
     }
   }
 

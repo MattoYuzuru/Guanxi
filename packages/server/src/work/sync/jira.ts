@@ -269,7 +269,9 @@ export class JiraAdapter implements TrackerAdapter {
       notModified: false,
       fields: business,
       etag: headerValue(response.headers, 'etag') ?? null,
-      updatedAt: typeof fields.updated === 'string' ? fields.updated : null,
+      // Last-Modified is the validator Jira uses for If-Modified-Since when present.
+      updatedAt: headerValue(response.headers, 'last-modified')
+        ?? (typeof fields.updated === 'string' ? fields.updated : null),
     }
   }
 

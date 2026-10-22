@@ -73,13 +73,14 @@ function pathOf(request: HttpRequest): string {
   return new URL(request.url).pathname
 }
 
-test('GitHub reads business fields and honours ETag conditionals', async () => {
+test('GitHub reads business fields and honours ETag and Last-Modified', async () => {
   const initial = fixture<Record<string, unknown>>('github-issue-initial')
+  const lastModified = new Date('2026-10-20T12:30:00Z').toUTCString()
   const transport = new ScriptedTransport(request => {
     if (request.headers['if-none-match'] === 'W/"issue-1"') {
       return { status: 304, headers: {}, body: '' }
     }
-    return json(200, initial, { etag: 'W/"issue-1"' })
+    return json(200, initial, { etag: 'W/"issue-1"', 'last-modified': lastModified })
   })
   const adapter = githubAdapter(transport)
   assert.equal(adapter.tracker, 'github')
@@ -94,7 +95,7 @@ test('GitHub reads business fields and honours ETag conditionals', async () => {
   assert.equal(first.fields.assignee, 'tracker-user')
   assert.deepEqual(first.fields.labels, ['bug', 'priority:high'])
   assert.equal(first.etag, 'W/"issue-1"')
-  assert.equal(first.updatedAt, '2026-10-20T12:00:00Z')
+  assert.equal(first.updatedAt, lastModified)
   assert.match(transport.requests[0]!.headers.authorization ?? '', /^Bearer /)
   assert.equal(transport.requests[0]!.headers.accept, 'application/vnd.github+json')
 
@@ -104,10 +105,8 @@ test('GitHub reads business fields and honours ETag conditionals', async () => {
   })
   assert.deepEqual(second, { notModified: true })
   assert.equal(transport.requests[1]!.headers['if-none-match'], 'W/"issue-1"')
-  assert.equal(
-    transport.requests[1]!.headers['if-modified-since'],
-    new Date(NOW).toUTCString(),
-  )
+  assert.equal(transport.requests[1]!.headers['if-modified-since'], lastModified)
+  assert.notEqual(transport.requests[1]!.headers['if-modified-since'], new Date(NOW).toUTCString())
 })
 
 test('Jira v3 and v2 read the same business model with version-specific descriptions', async () => {
@@ -132,6 +131,26 @@ test('Jira v3 and v2 read the same business model with version-specific descript
     assert.equal(v2.fields.assignee, 'tracker-user')
   }
   assert.equal(pathOf(v2Transport.requests[0]!), '/rest/api/2/issue/PROJ-12')
+})
+
+test('Jira uses Last-Modified for the next conditional read', async () => {
+  const lastModified = new Date('2026-10-20T14:00:00Z').toUTCString()
+  let calls = 0
+  const transport = new ScriptedTransport(request => {
+    calls += 1
+    if (calls === 1) {
+      return json(200, fixture('jira-issue-v3'), { 'last-modified': lastModified })
+    }
+    assert.equal(request.headers['if-modified-since'], lastModified)
+    return { status: 304, headers: {}, body: '' }
+  })
+  const adapter = jiraAdapter(transport, 3)
+  const first = await adapter.read('PROJ-12')
+  assert.equal(first.notModified, false)
+  if (first.notModified) return
+  assert.equal(first.updatedAt, lastModified)
+  const second = await adapter.read('PROJ-12', { updatedAt: first.updatedAt })
+  assert.deepEqual(second, { notModified: true })
 })
 
 test('Jira conditional polling returns 304 without changes', async () => {
