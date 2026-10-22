@@ -400,4 +400,26 @@ describe('performance', () => {
     // The contract is <200 ms. Allow 2x for shared/CI machines; local runs are far below.
     assert.ok(elapsed < 400, `expected <400 ms with the 2x CI margin, got ${elapsed.toFixed(1)} ms`)
   })
+
+  it('processes 50 KB with 500 long multi-word entries under the 200 ms bound (2x CI cap)', () => {
+    const suffixes = ['', ' для', ' для проверки']
+    const entries: GlossaryEntry[] = Array.from({ length: 500 }, (_, index) => ({
+      id: `long-term-${index}`,
+      canonical: `LongTerm${index}`,
+      variants: [`очень длинное название термина номер ${index}${suffixes[index % 3]}`],
+      language: 'en',
+    }))
+    const bigGlossary = compileGlossary(entries)
+    const unit = 'очень длинное название термина номер 0 и просто текст без терминов для проверки '
+    let source = ''
+    while (source.length < 50_000) source += unit
+
+    const started = performance.now()
+    const result = applyGlossary(bigGlossary, source)
+    const elapsed = performance.now() - started
+
+    assert.ok(result.replacements.length > 0)
+    // The contract is <200 ms. Allow 2x for shared/CI machines; local runs are far below.
+    assert.ok(elapsed < 400, `expected <400 ms with the 2x CI margin, got ${elapsed.toFixed(1)} ms`)
+  })
 })

@@ -57,7 +57,7 @@ interface CompiledMatcher {
   readonly entries: readonly CompiledGlossaryEntry[]
   readonly byKey: ReadonlyMap<string, readonly CompiledForm[]>
   readonly inflectByKey: ReadonlyMap<string, readonly CompiledForm[]>
-  readonly maxKeyLength: number
+  readonly maxWordCount: number
 }
 
 const MATCHER = Symbol('guanxi.glossary.matcher')
@@ -163,7 +163,7 @@ export function compileGlossary(entries: GlossaryEntry[]): CompiledGlossary {
   const byKey = new Map<string, CompiledForm[]>()
   const inflectByKey = new Map<string, CompiledForm[]>()
   const normalizedEntries: CompiledGlossaryEntry[] = []
-  let maxKeyLength = 0
+  let maxWordCount = 0
 
   for (let entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
     const entry = entries[entryIndex]
@@ -235,7 +235,8 @@ export function compileGlossary(entries: GlossaryEntry[]): CompiledGlossary {
       ...variants.map((variant) => ({ raw: variant, key: foldKey(variant) })),
     ]
     for (const form of forms) {
-      maxKeyLength = Math.max(maxKeyLength, form.key.length)
+      const wordCount = form.raw.split(/\s+/u).length
+      maxWordCount = Math.max(maxWordCount, wordCount)
       const owner = keyOwners.get(form.key)
       if (owner !== undefined && owner !== entry.id) {
         throw new TypeError(
@@ -248,7 +249,7 @@ export function compileGlossary(entries: GlossaryEntry[]): CompiledGlossary {
         entryIndex,
         key: form.key,
         raw: form.raw,
-        wordCount: form.raw.split(/\s+/u).length,
+        wordCount,
         caseSensitive,
       }
       const bucket = byKey.get(form.key)
@@ -267,7 +268,7 @@ export function compileGlossary(entries: GlossaryEntry[]): CompiledGlossary {
     entries: Object.freeze(normalizedEntries),
     byKey,
     inflectByKey,
-    maxKeyLength,
+    maxWordCount,
   }
   const compiled: CompiledGlossaryInternal = {
     entries: matcher.entries,
@@ -341,6 +342,7 @@ function inflectionMatch(
   from: number,
   tokenCount: number,
   text: string,
+  prefixKey: string,
 ): { entryIndex: number; replacement: string } | null {
   const first = tokens[from]!
   const last = tokens[from + tokenCount - 1]!
@@ -354,11 +356,7 @@ function inflectionMatch(
     const stem = lastRaw.slice(0, lastRaw.length - ending.length)
     if (countLetters(stem) < 2) continue
 
-    let key = ''
-    for (let index = from; index < from + tokenCount - 1; index += 1) {
-      key += tokens[index]!.key
-    }
-    key += foldKey(stem)
+    const key = prefixKey + foldKey(stem)
     const forms = matcher.inflectByKey.get(key)
     if (forms === undefined || forms.length === 0) continue
     const form = forms.find((candidate) => candidate.wordCount === tokenCount)
@@ -380,23 +378,26 @@ function findMatch(
   from: number,
   text: string,
 ): Match | null {
-  const maximum = Math.min(tokens.length - from, matcher.maxKeyLength)
-  for (let tokenCount = maximum; tokenCount >= 1; tokenCount -= 1) {
+  const maximum = Math.min(tokens.length - from, matcher.maxWordCount)
+  let key = ''
+  let best: Match | null = null
+  for (let tokenCount = 1; tokenCount <= maximum; tokenCount += 1) {
+    const prefixKey = key
+    key += tokens[from + tokenCount - 1]!.key
     const first = tokens[from]!
     const last = tokens[from + tokenCount - 1]!
     const raw = text.slice(first.start, last.end)
-    let key = ''
-    for (let index = from; index < from + tokenCount; index += 1) {
-      key += tokens[index]!.key
-    }
 
     const direct = directMatch(matcher, key, raw, tokenCount)
-    if (direct !== null) return { ...direct, tokenCount }
+    if (direct !== null) {
+      best = { ...direct, tokenCount }
+      continue
+    }
 
-    const inflected = inflectionMatch(matcher, tokens, from, tokenCount, text)
-    if (inflected !== null) return { ...inflected, tokenCount }
+    const inflected = inflectionMatch(matcher, tokens, from, tokenCount, text, prefixKey)
+    if (inflected !== null) best = { ...inflected, tokenCount }
   }
-  return null
+  return best
 }
 
 /** Apply a compiled glossary to text. The input string is never mutated. */
