@@ -4,7 +4,9 @@ import { test } from 'node:test'
 import { Hono } from 'hono'
 import { sessionExportSchema, type SessionEvent } from '@guanxi/contract'
 import type { Connections } from '../../server/src/connections/service.ts'
-import type { SessionLogOptions } from '../../server/src/session-log/log.ts'
+import type { Attempt } from '../../server/src/runs/types.ts'
+import type { Db } from '../../server/src/store/db.ts'
+import type { SessionEventInput, SessionLogOptions } from '../../server/src/session-log/log.ts'
 import { sessionLogRoutes } from '../../server/src/session-log/routes.ts'
 import { runFixture } from '../../server/test/fixtures/durable-runs.ts'
 import { createK2TrialRetention, SIGNATURE_PREFIX, type RetentionPolicy } from '../src/k2-retention.ts'
@@ -21,6 +23,8 @@ const policy: RetentionPolicy = {
 const fakeSecret = 'fixture-fake-secret-value'
 const RECEIPT_PREFIX = 'guanxi.bench.completion-receipt/v1\n'
 const SPAN_DOMAIN = 'guanxi.bench.completion-span/v1\n'
+const SQLITE_READ = 20
+const SQLITE_DENY = 1
 
 function spanFor(binding: TrialBinding, requestId: string): string {
   return createHash('sha256').update(`${SPAN_DOMAIN}${binding.nonce}\n${requestId}`).digest('hex')
@@ -249,6 +253,121 @@ test('another binding is not rejected by a raw-span legacy row that carries a di
   } finally { x.f.close() }
 })
 
+test('a legacy raw-span tool row stays authoritative after its toolCallId is redacted', async () => {
+  const x = fixture()
+  try {
+    const requestId = 'request-legacy-redacted-tool:%_:'
+    const toolCallId = 'legacy-tool-late-secret-abcdef'
+    const head = x.f.log.session(x.binding.sessionId)!.lastSeq
+    x.f.store.append(x.attempt!, { type: 'tool.call', spanId: requestId,
+      data: { toolCallId, name: 'shell', arguments: {}, source: 'builtin',
+        parsedFrom: 'native', diffPath: null } },
+    { idempotencyKey: `bench:${x.binding.nonce}:${requestId}:tool:${createHash('sha256').update(toolCallId).digest('hex')}`,
+      expectedSeq: head + 1 })
+    // The stored payload keeps its bytes; every later read hides the new secret in the tool id.
+    x.f.scrubber.register('secret://fixture/legacy-tool', toolCallId)
+    const raw = x.f.log.readAll(x.binding.sessionId, 'person').filter(event => event.spanId === requestId)
+    assert.equal(raw.length, 1)
+    assert.notEqual((raw[0]!.data as { toolCallId: string }).toolCallId, toolCallId)
+    const before = rowCount(x.f)
+    await assert.rejects(x.sink.retainAndProject(requestId, result()),
+      { code: 'retention_idempotency_conflict' })
+    assert.equal(rowCount(x.f), before)
+    assert.equal(receiptEvents(x.f, x.binding).length, 0)
+    assert.equal(contentForSpan(x.f, spanFor(x.binding, requestId)).length, 0)
+  } finally { x.f.close() }
+})
+
+test('a new binding is not blocked by another binding redacted legacy tool row and does not adopt it', async () => {
+  const x = fixture()
+  try {
+    const requestId = 'request-shared-redacted-tool'
+    const toolCallId = 'legacy-tool-shared-secret-abcdef'
+    const head = x.f.log.session(x.binding.sessionId)!.lastSeq
+    x.f.store.append(x.attempt!, { type: 'tool.call', spanId: requestId,
+      data: { toolCallId, name: 'shell', arguments: {}, source: 'builtin',
+        parsedFrom: 'native', diffPath: null } },
+    { idempotencyKey: `bench:${x.binding.nonce}:${requestId}:tool:${createHash('sha256').update(toolCallId).digest('hex')}`,
+      expectedSeq: head + 1 })
+    x.f.scrubber.register('secret://fixture/shared-legacy-tool', toolCallId)
+    const other = bindingFor(x.run, x.attempt!)
+    const sinkB = createK2TrialRetention({ binding: other, attempt: x.attempt!,
+      runs: x.f.store, session: x.f.log, scrubber: x.f.scrubber, policy })
+    const before = rowCount(x.f)
+    const projection = await sinkB.retainAndProject(requestId, result({
+      content: [{ type: 'text', text: 'fresh binding reply' }] }))
+    assert.equal(projection.text, 'fresh binding reply')
+    assert.deepEqual(projection.toolCalls, [])
+    assert.equal(rowCount(x.f), before + 3)
+    const old = x.f.log.readAll(x.binding.sessionId, 'person').filter(event => event.spanId === requestId)
+    assert.equal(old.length, 1)
+    assert.equal(old[0]!.type, 'tool.call')
+    const fresh = contentForSpan(x.f, spanFor(other, requestId))
+    assert.equal(fresh.length, 1)
+    assert.equal(fresh[0]!.type, 'assistant.message')
+    assert.equal((fresh[0]!.data as { text: string }).text, 'fresh binding reply')
+  } finally { x.f.close() }
+})
+
+test('a metadata-read SQLite fault fails closed as retention_failed without a false clear or append', async () => {
+  const x = fixture()
+  const base = x.f.store
+  try {
+    const requestId = 'request-legacy-sql-fault'
+    const toolCallId = 'legacy-tool-sql-fault'
+    const head = x.f.log.session(x.binding.sessionId)!.lastSeq
+    base.append(x.attempt!, { type: 'tool.call', spanId: requestId,
+      data: { toolCallId, name: 'shell', arguments: {}, source: 'builtin',
+        parsedFrom: 'native', diffPath: null } },
+    { idempotencyKey: `bench:${x.binding.nonce}:${requestId}:tool:${createHash('sha256').update(toolCallId).digest('hex')}`,
+      expectedSeq: head + 1 })
+    let faulted = false
+    const runs = {
+      get: base.get.bind(base),
+      renew: base.renew.bind(base),
+      append: base.append.bind(base),
+      mutate: <T>(attempt: Attempt, body: (db: Db, emit: (event: SessionEventInput) => void) => T): T =>
+        base.mutate(attempt, (db, emit) => {
+          if (faulted) return body(db, emit)
+          faulted = true
+          // Deny the metadata table read at SQLite's authorizer, independently of the query text.
+          const authorized = db as Db & {
+            setAuthorizer(callback: ((action: number, table: string | null) => number) | null): void
+          }
+          authorized.setAuthorizer((action, table) =>
+            action === SQLITE_READ && table === 'session_events' ? SQLITE_DENY : 0)
+          try { return body(db, emit) } finally { authorized.setAuthorizer(null) }
+        }),
+    }
+    const sink = createK2TrialRetention({ binding: x.binding, attempt: x.attempt!,
+      runs, session: x.f.log, scrubber: x.f.scrubber, policy })
+    const before = rowCount(x.f)
+    await assert.rejects(sink.retainAndProject(requestId, result()), { code: 'retention_failed' })
+    assert.equal(faulted, true)
+    assert.equal(rowCount(x.f), before)
+    assert.equal(receiptEvents(x.f, x.binding).length, 0)
+  } finally { x.f.close() }
+})
+
+test('a stale attempt with a legacy raw-span row fails the metadata fence as retention_fenced', async () => {
+  const x = fixture()
+  try {
+    const requestId = 'request-legacy-fenced'
+    const toolCallId = 'legacy-tool-fenced'
+    const head = x.f.log.session(x.binding.sessionId)!.lastSeq
+    x.f.store.append(x.attempt!, { type: 'tool.call', spanId: requestId,
+      data: { toolCallId, name: 'shell', arguments: {}, source: 'builtin',
+        parsedFrom: 'native', diffPath: null } },
+    { idempotencyKey: `bench:${x.binding.nonce}:${requestId}:tool:${createHash('sha256').update(toolCallId).digest('hex')}`,
+      expectedSeq: head + 1 })
+    x.f.store.cancel(x.run.id)
+    const before = rowCount(x.f)
+    await assert.rejects(x.sink.retainAndProject(requestId, result()), { code: 'retention_fenced' })
+    assert.equal(rowCount(x.f), before)
+    assert.equal(receiptEvents(x.f, x.binding).length, 0)
+  } finally { x.f.close() }
+})
+
 test('changed stop reason, removed or reordered tools and changed private evidence refuse at the stored manifest', async () => {
   const x = fixture()
   try {
@@ -326,7 +445,8 @@ test('a late scrub that changes stored bytes within bounds fails closed after th
   const late = 'late-secret-value-abcdef'
   let armed = false
   const sink = createK2TrialRetention({ binding: x.binding, attempt: x.attempt!,
-    runs: { get: x.f.store.get.bind(x.f.store), renew: x.f.store.renew.bind(x.f.store),
+    runs: { get: x.f.store.get.bind(x.f.store), mutate: x.f.store.mutate.bind(x.f.store),
+      renew: x.f.store.renew.bind(x.f.store),
       append: (attempt, input, options) => {
         if (!armed) { armed = true; x.f.scrubber.register('secret://fixture/late-bounded', late) }
         return x.f.store.append(attempt, input, options)
@@ -628,7 +748,8 @@ test('the K2 sink scrubs the full completion through the configured scrubber bef
     whenReady: (signal?: AbortSignal) => x.f.scrubber.whenReady(signal),
   }
   const sink = createK2TrialRetention({ binding: x.binding, attempt: x.attempt!,
-    runs: { get: x.f.store.get.bind(x.f.store), renew: x.f.store.renew.bind(x.f.store),
+    runs: { get: x.f.store.get.bind(x.f.store), mutate: x.f.store.mutate.bind(x.f.store),
+      renew: x.f.store.renew.bind(x.f.store),
       append: (attempt, input, options) => { appends++; return x.f.store.append(attempt, input, options) } },
     session: x.f.log, scrubber: spy, policy })
   try {
@@ -644,7 +765,8 @@ test('a bound is rechecked after K2 write-time scrubbing so a late secret cannot
   const strict = { ...policy, maximumAssistantTextBytes: 30 }
   let armed = false
   const sink = createK2TrialRetention({ binding: x.binding, attempt: x.attempt!,
-    runs: { get: x.f.store.get.bind(x.f.store), renew: x.f.store.renew.bind(x.f.store),
+    runs: { get: x.f.store.get.bind(x.f.store), mutate: x.f.store.mutate.bind(x.f.store),
+      renew: x.f.store.renew.bind(x.f.store),
       append: (attempt, input, options) => {
         if (!armed) { armed = true; x.f.scrubber.register('secret://fixture/late', late) }
         return x.f.store.append(attempt, input, options)

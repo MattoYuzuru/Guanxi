@@ -15,7 +15,7 @@ export interface TrialHostConfig {
   budget: Budget
   k3: Pick<Connections, 'snapshot' | 'complete'>
   billing: BillingAdapter
-  runs: Pick<RunStore, 'append' | 'get' | 'renew'>
+  runs: Pick<RunStore, 'append' | 'get' | 'mutate' | 'renew'>
   session: Pick<SessionLog, 'session' | 'readAll'>
   scrubber: EgressScrubber
   retentionPolicy: RetentionPolicy

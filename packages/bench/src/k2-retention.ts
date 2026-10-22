@@ -9,7 +9,7 @@ import { storedPublicMessage, type PublicAssistantMessage, type PublicToolCall }
 import type { TrialBinding } from './trial-binding.ts'
 
 type CompletionResult = Awaited<ReturnType<Connections['complete']>>
-type TrialRunStore = Pick<RunStore, 'append' | 'get' | 'renew'>
+type TrialRunStore = Pick<RunStore, 'append' | 'get' | 'mutate' | 'renew'>
 type SessionReader = Pick<SessionLog, 'session' | 'readAll'>
 
 /** Versioned private-retention envelope inside the existing reasoning event class. */
@@ -20,7 +20,7 @@ export const COMPLETION_RECEIPT_PREFIX = 'guanxi.bench.completion-receipt/v1\n'
 const SPAN_DOMAIN = 'guanxi.bench.completion-span/v1\n'
 const BINDING_NAMESPACE_DOMAIN = 'guanxi.bench.completion-binding/v1\n'
 const REQUEST_NAMESPACE_DOMAIN = 'guanxi.bench.completion-request/v1\n'
-const LEGACY_PROBE_TEXT = 'guanxi.bench.legacy-probe/v1'
+const LEGACY_KEY_PREFIX_MAXIMUM = 512
 const STOP_REASON_MAXIMUM = 200
 
 export type TrialRetentionCode = 'retention_not_ready' | 'retention_fenced'
@@ -431,46 +431,29 @@ function nextSeq(session: SessionReader, sessionId: string): number {
 }
 
 /**
- * Refuse a legacy raw-span trace only when the existing fenced append path
- * proves that one of this binding's own idempotency keys already exists. Each
- * probe uses expectedSeq at the current head, so the key/sequence checks refuse
- * before any insert; another binding's raw-span rows never match this nonce.
+ * Refuse a legacy raw-span trace only when the fenced store metadata proves that
+ * this binding/request key prefix has a row under the old raw span. The old tool
+ * key contains a hash of the toolCallId; a secret registered after that append
+ * hides the id on read, so the key cannot be recomputed from an event. The query
+ * reads no payload, binds every parameter and compares an exact bounded prefix,
+ * so another binding or request can never match it.
  */
-async function rejectLegacyTrace(events: readonly SessionEvent[], span: string, requestId: string,
-  binding: TrialBinding, attempt: Attempt, runs: TrialRunStore, session: SessionReader): Promise<void> {
-  if (span === requestId) return
-  const raw = events.filter(event => event.spanId === requestId &&
-    (event.type === 'reasoning' || event.type === 'assistant.message' || event.type === 'tool.call'))
-  if (raw.length === 0) return
-  let head: { lastSeq: number } | null
-  try { head = session.session(binding.sessionId) } catch (error) { mapAppendError(error) }
-  if (!head || head.lastSeq < 1) return
-  const candidates = new Set<string>()
-  for (let index = 0; index < raw.length; index++) {
-    candidates.add(`reasoning:${index}`)
-    candidates.add(`reasoning-signature:${index}`)
-  }
-  if (raw.some(event => event.type === 'assistant.message')) candidates.add('assistant')
-  for (const event of raw) {
-    if (event.type !== 'tool.call' || event.data === null) continue
-    const toolCallId = (event.data as SessionEventData<'tool.call'>).toolCallId
-    if (typeof toolCallId === 'string' && toolCallId.length > 0) candidates.add(`tool:${sha256(toolCallId)}`)
-  }
-  const probe: SessionEventInput<'reasoning'> = { type: 'reasoning', spanId: requestId,
-    data: { messageId: requestId, step: null, text: LEGACY_PROBE_TEXT } }
-  for (const suffix of candidates) {
-    try {
-      runs.append(attempt, probe,
-        { idempotencyKey: contentKey(binding, requestId, suffix), expectedSeq: head.lastSeq } satisfies AppendOptions & { expectedSeq: number })
-      // A non-throwing probe matched an existing row; this request is not freshly namespaced.
-      conflict()
-    } catch (error) {
-      const code = appendCode(error)
-      if (code === 'idempotency_conflict' || code === 'invalid_event') conflict()
-      if (code === 'sequence_conflict') continue
-      mapAppendError(error)
-    }
-  }
+function rejectLegacyTrace(requestId: string, binding: TrialBinding,
+  attempt: Attempt, runs: TrialRunStore): void {
+  const prefix = contentKey(binding, requestId, '')
+  if (prefix.length > LEGACY_KEY_PREFIX_MAXIMUM) fail('retention_id_invalid')
+  let present = false
+  try {
+    present = runs.mutate(attempt, db => {
+      const row = db.prepare(
+        `SELECT 1 AS present FROM session_events
+         WHERE session_id = ? AND span_id = ? AND substr(idempotency_key, 1, ?) = ?
+         LIMIT 1`,
+      ).get(binding.sessionId, requestId, prefix.length, prefix) as { present?: number } | undefined
+      return row !== undefined
+    })
+  } catch (error) { mapAppendError(error) }
+  if (present) conflict()
 }
 
 /**
@@ -542,8 +525,8 @@ export function createK2TrialRetention(input: {
     if (plannedContentBytes + bytes(beginData) > policy.maximumRetainedBytes) fail('retention_too_large')
 
     let events = readAll()
-    await rejectLegacyTrace(events, span, requestId, binding, attempt, runs, session)
     let state = classifyScoped(events, span, { span, bindingHash, requestHash }, policy)
+    rejectLegacyTrace(requestId, binding, attempt, runs)
     let authoritativeBegin: AppendResult | undefined
     if (!state.begin) {
       if (state.content.length > 0 || state.done) conflict()
