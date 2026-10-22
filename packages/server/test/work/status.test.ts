@@ -309,6 +309,23 @@ test('nextReady derives capacity from leases and permits, and review queues cap 
   )
 })
 
+test('capacity counts must be non-negative integers', () => {
+  const p = plan([item('a')])
+  const statuses = deriveStatuses(p, [])
+  const capacity = { freeWorktreeLeases: 1, governorPermits: 1, inProgress: 0, reviewQueueByPerson: {} }
+  assert.deepEqual(nextReady(statuses, p, capacity).map(entry => entry.id), ['a'])
+  for (const name of ['freeWorktreeLeases', 'governorPermits', 'inProgress'] as const) {
+    assert.throws(
+      () => nextReady(statuses, p, { ...capacity, [name]: 1.5 }),
+      (error: unknown) => {
+        assert.ok(error instanceof TypeError)
+        assert.match(error.message, new RegExp(`invalid_capacity: capacity\\.${name} must be a non-negative integer`))
+        return true
+      },
+    )
+  }
+})
+
 test('nextReady includes accepted proposals after plan items', () => {
   const p = plan([item('a')])
   const d = item('d', { title: 'Proposal D' })

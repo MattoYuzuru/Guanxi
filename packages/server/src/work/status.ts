@@ -2,9 +2,24 @@ import type {
   AcceptanceResultEvent, Capacity, DerivedItem, DerivedStatus, DerivedStatuses,
   EvidenceEvent, ItemSpec, JudgeVerdict, PlanRevision, StatusWarning, StripView,
 } from './types.ts'
-import { WorkError } from './types.ts'
 
 const ACTIVE: readonly DerivedStatus[] = ['in_progress', 'verification_requested']
+
+/** Capacity is a count, so fractional or negative input is a caller type error, not a state. */
+class CapacityError extends TypeError {
+  readonly code = 'invalid_capacity'
+  constructor(message: string) {
+    super(`invalid_capacity: ${message}`)
+    this.name = 'CapacityError'
+  }
+}
+
+function capacityInteger(name: string, value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new CapacityError(`capacity.${name} must be a non-negative integer`)
+  }
+  return value
+}
 
 interface Decision {
   decision: 'accepted' | 'rejected'
@@ -249,17 +264,14 @@ export function nextReady(
   plan: PlanRevision,
   capacity: Capacity,
 ): ItemSpec[] {
-  for (const [name, value] of Object.entries(capacity)) {
-    if (name === 'reviewQueueByPerson') continue
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      throw new WorkError('invalid_capacity', `capacity.${name} must be a non-negative number`)
-    }
-  }
-  const free = Math.max(0, Math.min(capacity.freeWorktreeLeases, capacity.governorPermits) - capacity.inProgress)
+  const leases = capacityInteger('freeWorktreeLeases', capacity.freeWorktreeLeases)
+  const permits = capacityInteger('governorPermits', capacity.governorPermits)
+  const inProgress = capacityInteger('inProgress', capacity.inProgress)
+  const free = Math.max(0, Math.min(leases, permits) - inProgress)
   let reviewSlots = 0
   for (const value of Object.values(capacity.reviewQueueByPerson)) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new WorkError('invalid_capacity', 'reviewQueueByPerson values must be finite numbers')
+      throw new CapacityError('reviewQueueByPerson values must be finite numbers')
     }
     reviewSlots += Math.max(0, 3 - Math.max(0, Math.floor(value)))
   }

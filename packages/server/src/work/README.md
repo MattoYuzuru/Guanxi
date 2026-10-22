@@ -117,8 +117,10 @@ or more executors, a linked tracker, or an opened backlog; otherwise `off`. It n
 ## Pull and WIP
 
 `nextReady(statuses, plan, capacity)` returns ready graph items in plan order, then accepted
-proposals. The executor limit is `max(0, min(freeWorktreeLeases, governorPermits) - inProgress)`; no other numeric caps
-are applied. Reviewer-owned items additionally consume review capacity.
+proposals. The executor limit is `max(0, min(freeWorktreeLeases, governorPermits) - inProgress)`;
+no other numeric caps are applied. Capacity counts must be non-negative integers: a fractional,
+negative or non-numeric value throws `TypeError` with code `invalid_capacity`. Reviewer-owned
+items additionally consume review capacity.
 
 The item model has no assignee, so reviewer capacity is the aggregate remaining capacity of the
 named queues: `sum(max(0, 3 - reviewQueueByPerson[person]))` (D-176). Each reviewer item
