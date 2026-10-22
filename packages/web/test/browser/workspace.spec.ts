@@ -269,7 +269,7 @@ for (const [path, mode, source] of [
   ['/api/layouts', 'developer', 'load-developer-layouts: GET /api/layouts'],
   ['/api/layouts', 'visual', 'load-visual-layouts: GET /api/layouts'],
   ['/api/layouts/geometry', '', 'load-layout-geometry: GET /api/layouts/geometry'],
-]) test(`workspace state failure ${source} preserves observed facts, safe details and actual Retry`, async ({ page, context }) => {
+]) test(`workspace state failure ${source} preserves observed facts, safe details and actual Retry`, async ({ page, context }, testInfo) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.clock.setFixedTime(new Date('2026-10-22T12:00:00.000Z'))
   await setup(page)
@@ -296,14 +296,15 @@ for (const [path, mode, source] of [
     await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
     await page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.setLocale('en'))
     await expect(error).toContainText('Observed')
+    await page.screenshot({ path: testInfo.outputPath('actual-layout-context-error.png') })
   }
   await error.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(page.locator('.dv-tab')).toHaveCount(11)
   await expect(error).toHaveCount(0)
 })
 
-test('workspace state loading reserves known geometry without actionable or empty content', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
+for (const width of [390, 1600]) test(`workspace state loading reserves known geometry without actionable or empty content (${width})`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 900 })
   await setup(page)
   await stateFault(page, { path: '/api/layouts/context', kind: 'hold' })
   await page.goto('/workspace')
@@ -316,15 +317,19 @@ test('workspace state loading reserves known geometry without actionable or empt
   const before = await geometry.boundingBox()
   const placeholders = await geometry.locator('.gx-workspace-loading-control').count()
   const toolbarBefore = (await geometry.locator('.gx-workspace-toolbar').boundingBox())!
+  const knownMinimum = await geometry.evaluate(node => { const style = getComputedStyle(node); return parseFloat(style.getPropertyValue('--control-height')) + parseFloat(style.getPropertyValue('--panel-padding')) * 2 })
+  expect(toolbarBefore.height).toBeGreaterThanOrEqual(knownMinimum)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect(before!.height).toBeGreaterThan(100)
+  await page.screenshot({ path: testInfo.outputPath(`loading-${width}.png`) })
   await page.evaluate(() => (window as any).__STATE_FAULT__.release())
-  await expect(page.locator('.dv-tab')).toHaveCount(11)
-  const after = await page.locator('.workspace').boundingBox()
   const toolbar = page.getByRole('group', { name: 'Session workspace', exact: true })
+  await expect(toolbar).toHaveCount(1)
+  const after = await page.locator('.workspace').boundingBox()
   expect(placeholders).toBe(await toolbar.locator('button,input').count())
-  expect((await toolbar.boundingBox())!.height).toBeCloseTo(toolbarBefore.height, 0)
   expect(after!.width).toBeCloseTo(before!.width, 0)
-  expect(after!.height).toBeCloseTo(before!.height, 0)
+  // Saved density, control labels/wrapping and phone content height arrive with the layout.
+  if (width === 1600) expect(after!.height).toBeCloseTo(before!.height, 0)
   await expect(geometry).toHaveCount(0)
 })
 

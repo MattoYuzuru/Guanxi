@@ -32,6 +32,8 @@ Default pane; empty pane; unavailable block placeholder; error with retry; phone
 Loading reserves the known toolbar/content geometry with a static, noninteractive skeleton;
 the saved docking grid is unknown before hydration. Pane descriptions are supporting text,
 not empty collections. Real empty content has one meaningful action.
+The skeleton reserves the known control slots and workspace extent; saved density, dynamic
+labels, toolbar wrapping and phone content height are not known before the layout arrives.
 Controlled terminal draft; toolbar with save; open move dialog. Toolbar actions expose disabled while persistence is pending. Move choices are named menus.
 
 ## Accessibility
