@@ -63,7 +63,9 @@ export async function sandboxCommand(policy: SandboxPolicy, command: string, sig
   if (writable.some(root => directory === root || directory.startsWith(root + sep))) {
     await rm(directory, { recursive: true, force: true }); throw new Error('runtime_overlaps_roots')
   }
-  const networkDirectory = await realpath(await mkdtemp(join(process.platform === 'darwin' ? '/private/tmp' : tmpdir(), 'gx-proxy-')))
+  // The runtime appends Unix socket names here; an inherited long TMPDIR can exceed
+  // sockaddr_un's pathname capacity before the sandbox workload starts.
+  const networkDirectory = await realpath(await mkdtemp(join(process.platform === 'darwin' ? '/private/tmp' : '/tmp', 'gx-proxy-')))
   if (writable.some(root => networkDirectory === root || networkDirectory.startsWith(root + sep))) {
     await Promise.all([directory, networkDirectory].map(path => rm(path, { recursive: true, force: true }))); throw new Error('runtime_overlaps_roots')
   }
