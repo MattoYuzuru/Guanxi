@@ -8,7 +8,7 @@ slice implemented; **P1 remains in progress**.
 - `packages/server/src/plugins/integrity.ts` — canonical SHA-256 identity over sorted relative paths and file hashes; symlinks, non-regular entries and paths outside the source are refused.
 - `packages/server/src/plugins/manager.ts` — `PluginManager` with read-only `inspect`, transactional `install`/upgrade, `uninstall`, `setEnabled`, `list`, `bootSet`, engine/peer checks and exported fault points.
 - `packages/server/src/plugins/README.md` — API, state schemas, integrity format, supported ranges, transaction order and residual risks.
-- `packages/server/test/plugins/manager.test.ts` — 16 tests, including install rollback at every exported fault point and uninstall/enable rollback loops.
+- `packages/server/test/plugins/manager.test.ts` — 29 tests, including install rollback at every exported fault point, fresh/same-version loops, crash recovery, lock and dependency checks.
 
 Commits: `c6aecf04` feat(plugins): add T1 plugin inspection and integrity; `0989672c` feat(plugins): add transactional install with rollback and safe-mode boot set; `5e088cad` test(plugins): cover install rollback at every fault point; docs commit: this hand-off plus the plugin README.
 
@@ -20,7 +20,7 @@ nice -n 10 npx tsc --noEmit -p packages/server
 npx markdownlint-cli2 packages/server/src/plugins/README.md docs/plans/lanes/P1-b.handoff.md
 ```
 
-Results: `tests 16`, `pass 16`, `fail 0`, `skipped 0`; `tsc` exit 0 with no output; markdownlint `0 error(s)` for the README and this hand-off.
+Results: `tests 29`, `pass 29`, `fail 0`, `skipped 0`; `tsc` exit 0 with no output; markdownlint `0 error(s)` for the README and this hand-off.
 
 ## New envelope
 
@@ -40,9 +40,9 @@ Results: `tests 16`, `pass 16`, `fail 0`, `skipped 0`; `tsc` exit 0 with no outp
 
 - The canonical listing is a UTF-8 JSON array of `[path, sha256]` pairs sorted by path bytes; the published form is `sha256-<hex>`. `expectedIntegrity` also accepts the SRI base64 form of the same digest.
 - State parsing tolerates earlier array/object variants, but the manager writes one canonical form. Hand-edited state is trusted local data, not signed.
-- Only in-process throws are rolled back. A real process kill between the two metadata renames or the final directory rename is not recovered by this slice.
+- A real process kill is recovered by `recover()`: the verified directory is committed before the state files, and leftover staging/unreferenced directories are swept.
 - Cleanup after `install:committed` is best-effort: a failed removal of the previous version leaves it behind rather than turning a successful install into a failure.
-- The in-process queue does not coordinate with another process writing the same `pluginsDir`.
+- Mutations coordinate between processes through `<pluginsDir>/.lock`; a lock stale for more than 30 minutes can be taken over.
 
 ## Residuals (P1 remains in progress)
 
@@ -51,8 +51,34 @@ Results: `tests 16`, `pass 16`, `fail 0`, `skipped 0`; `tsc` exit 0 with no outp
 - Wiring installed plugins and `bootSet` into kernel boot/profile rows.
 - The agent-facing `plugin_manager` tool; UI for install/enable/remove.
 - T2 out-of-process plugins and their capability broker.
-- Recovery of interrupted metadata/directory renames across a real process crash.
 
 ## Independent verification
 
-A separate reviewer subagent read the implementation and traced all 20 install fault points through `installLocked` -> catch -> `rollbackInstall`; it reported no findings. It checked byte-snapshot restoration, staging/partial cleanup, same-version backup restore, and that old-version deletion runs only after `install:committed`.
+A separate reviewer subagent first read the implementation and traced all 20 install fault points through `installLocked` -> catch -> rollback; it reported no findings. A later independent review found the defects fixed above, so those findings supersede the clean first pass. The install order, recovery, reinstall and rollback-failure behaviour have changed since that pass.
+
+## Independent review fixes
+
+The independent review findings were fixed in separate commits, each with a failing-first test
+(or a test-only commit where the existing behaviour already matched the new assertion):
+
+- `9173bfc5` — commit the verified directory before the state files, fsync the parent, add
+  `recover()`, make same-version reinstall a no-op or `version_exists`, and make `bootSet()` skip
+  and report missing/tampered entries.
+- `6f4f822f` — fresh-install and same-version every-fault-point loops, plus a happy-install
+  self-check that deep-equals the fired points with `INSTALL_FAULT_POINTS`.
+- `82433dcd` — attach rollback failures to the original error as an `AggregateError` cause.
+- `003561a7` — refuse hard-linked source files (`source_hardlink`).
+- `1217156e` — open source files with `O_NONBLOCK` and refuse non-regular handles; FIFO test
+  skips only when `mkfifo` is unavailable.
+- `4eef549e` — require the lock directory to equal `id@version` when reading.
+- `72407999` — `<pluginsDir>/.lock` with `O_EXCL` and a 30-minute stale-lock policy; a second
+  manager's install fails with `plugins_busy`.
+- `0684a4d1` — `dependency_in_use` for uninstall, disable and upgrades that drop a required
+  `provides` entry.
+- `71343d0c` — trust check before build-script approval; T0 with scripts is a trust refusal.
+- `2e586dc5` — caret-range tests for `^0.0.z` and `^1.y.z`.
+
+Final checks after the fixes: `tests 29`, `pass 29`, `fail 0`, `skipped 0`; `tsc` exit 0 with
+no output; markdownlint `0 error(s)` for the plugin README and this hand-off. macOS `fsync` is
+documented as not being `F_FULLFSYNC` in the README residual risk; Node exposes no portable
+`F_FULLFSYNC` in this slice.
