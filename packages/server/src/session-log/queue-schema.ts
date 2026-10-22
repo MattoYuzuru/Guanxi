@@ -226,6 +226,19 @@ function assertGlobalPrerequisites(db: Db): void {
       'The session event table or policy trigger is missing',
     )
   }
+  const eventColumns = columnNames(db, 'session_events')
+  for (const required of [
+    'session_id', 'seq', 'id', 'event_version', 'type', 'class', 'writer_epoch',
+    'payload', 'payload_sha256', 'search_text', 'redactions', 'created_at',
+    'expires_at', 'purged_at',
+  ]) {
+    if (!eventColumns.includes(required)) {
+      throw new SessionQueueSchemaError(
+        'queue_schema_incompatible',
+        'The session event table has an incompatible shape',
+      )
+    }
+  }
   const artifactColumns = columnNames(db, 'session_input_artifacts')
   for (const required of ['artifact_id', 'session_id', 'checksum', 'byte_size', 'media_type', 'created_at']) {
     if (!artifactColumns.includes(required)) {
@@ -283,6 +296,7 @@ export function installSessionQueueSchema(db: Db, options: SessionQueueSchemaOpt
           'The session queue ledger does not match the installed policy trigger',
         )
       }
+      assertGlobalPrerequisites(db)
       db.exec('COMMIT')
       began = false
       return
