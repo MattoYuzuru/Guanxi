@@ -56,10 +56,15 @@ silently truncated. Discovery reports a non-regular `SKILL.md` as `not_regular_f
 including `projectRoot`; `cwd` outside the root throws `TypeError`. `fileNames` defaults to
 `['AGENTS.md']`; pass `['AGENTS.md', 'CLAUDE.md']` to opt in to Claude files. The returned
 text is project-root first and nearest last, each file prefixed with `## <relative path>`.
+Candidates are de-duplicated by real path, so `CLAUDE.md` symlinked to `AGENTS.md` appears
+once, under the first matching name.
 
 Whole files are included from the nearest outward while their bytes fit; a file is never
 cut. The first file that does not fit and every farther file are listed in
 `overflow.omitted`, and the text ends with the omitted paths, budget and total found bytes.
+The budget counts file contents only: `## path` headers, separators and notices are outside
+it. Each file is read for at most its `stat` size plus one byte; if it grew meanwhile it is
+skipped and listed in `changed` instead of being included with a stale budget.
 Symlinked files resolving outside the project root are skipped and reported in `files` and
 the text; they are never read. An unreadable file (EACCES) is skipped the same way, listed in
 `unreadable` and the text, without rejecting the call. `files` reports every candidate with

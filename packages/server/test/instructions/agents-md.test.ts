@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, chmod } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { loadInstructions } from '../../src/instructions/agents-md.ts'
+import { loadInstructions, readInstructionFile } from '../../src/instructions/agents-md.ts'
 
 async function baseDir(t: { after(callback: () => unknown): void }): Promise<string> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'p1a-instructions-')))
@@ -175,6 +175,53 @@ test('an empty instruction tree returns empty text and no overflow', async t => 
   assert.deepEqual(result.files, [])
   assert.equal(result.text, '')
   assert.equal(result.overflow, null)
+})
+
+test('CLAUDE.md symlinked to AGENTS.md is included once by real path', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeAt(projectRoot, 'AGENTS.md', 'rules\n')
+  if (!await link('AGENTS.md', join(projectRoot, 'CLAUDE.md'), 'file')) {
+    t.skip('symlinks are unavailable')
+    return
+  }
+
+  const result = await loadInstructions({
+    projectRoot,
+    cwd: projectRoot,
+    budgetBytes: 100,
+    fileNames: ['AGENTS.md', 'CLAUDE.md'],
+  })
+  assert.deepEqual(result.files, [{ path: 'AGENTS.md', bytes: 6, included: true }])
+  assert.equal(result.text, '## AGENTS.md\nrules\n')
+  assert.equal(result.text.match(/rules/g)?.length, 1)
+})
+
+test('a nearer overflow still omits a farther file that would fit', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const cwd = join(projectRoot, 'sub/deep')
+  await writeAt(projectRoot, 'AGENTS.md', 'r'.repeat(10))
+  await writeAt(projectRoot, 'sub/deep/AGENTS.md', 'd'.repeat(100))
+
+  const result = await loadInstructions({ projectRoot, cwd, budgetBytes: 50 })
+  assert.deepEqual(result.files.map(file => [file.path, file.bytes, file.included]), [
+    ['AGENTS.md', 10, false],
+    ['sub/deep/AGENTS.md', 100, false],
+  ])
+  assert.deepEqual(result.overflow, {
+    totalBytes: 110,
+    budgetBytes: 50,
+    omitted: ['AGENTS.md', 'sub/deep/AGENTS.md'],
+  })
+  assert.equal(result.text, 'Omitted instruction files: AGENTS.md, sub/deep/AGENTS.md (budget 50 bytes; 110 bytes found).')
+})
+
+test('a file that grows past its stat size is reported as changed', async t => {
+  const base = await baseDir(t)
+  const path = await writeAt(base, 'AGENTS.md', '0123456789')
+  assert.deepEqual(await readInstructionFile(path, 9), { problem: 'changed' })
+  assert.deepEqual(await readInstructionFile(path, 10), { text: '0123456789' })
 })
 
 test('an unreadable instruction file is skipped and reported', async t => {

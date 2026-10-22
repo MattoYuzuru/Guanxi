@@ -1,6 +1,6 @@
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
-import { assertBudget, readFailureCode } from './safe-read.ts'
+import { assertBudget, openRegularFile, readToEnd } from './safe-read.ts'
 
 interface Candidate {
   path: string
@@ -18,6 +18,31 @@ function posixPath(root: string, target: string): string {
   return relative(root, target).split(sep).join('/')
 }
 
+export type InstructionRead = { text: string } | { problem: 'unreadable' | 'changed' }
+
+/**
+ * Reads at most the size observed by `stat` plus one byte. The extra byte
+ * detects a file that grew between `stat` and the read; such a file is reported
+ * as changed instead of being included with a stale budget.
+ */
+export async function readInstructionFile(path: string, expectedBytes: number): Promise<InstructionRead> {
+  let handle
+  try {
+    handle = await openRegularFile(path)
+  } catch {
+    return { problem: 'unreadable' }
+  }
+  try {
+    const read = await readToEnd(handle, 0, expectedBytes)
+    if (read.overflow) return { problem: 'changed' }
+    return { text: read.bytes.toString('utf8') }
+  } catch {
+    return { problem: 'unreadable' }
+  } finally {
+    await handle.close()
+  }
+}
+
 /**
  * Loads instruction files from `cwd` up to `projectRoot` without cutting a file
  * in the middle. Nearest files are tried first; the first that does not fit and
@@ -33,6 +58,7 @@ export async function loadInstructions(input: {
   files: { path: string; bytes: number; included: boolean }[]
   text: string
   unreadable: string[]
+  changed: string[]
   overflow: null | { totalBytes: number; budgetBytes: number; omitted: string[] }
 }> {
   const budget = assertBudget(input.budgetBytes, 'instructions_budget_invalid')
@@ -63,6 +89,7 @@ export async function loadInstructions(input: {
   }
 
   const groups: { items: Candidate[] }[] = []
+  const seenReal = new Set<string>()
   for (const directory of directories) {
     const items: Candidate[] = []
     for (const name of names) {
@@ -71,6 +98,8 @@ export async function loadInstructions(input: {
       if (!info?.isFile()) continue
       let real: string
       try { real = await realpath(absolute) } catch { continue }
+      if (seenReal.has(real)) continue
+      seenReal.add(real)
       items.push({
         path: posixPath(projectRoot, absolute),
         bytes: info.size,
@@ -105,15 +134,17 @@ export async function loadInstructions(input: {
 
   const parts: string[] = []
   const unreadable: string[] = []
+  const changed: string[] = []
   for (const candidate of ordered) {
     if (!included.has(candidate)) continue
-    try {
-      parts.push(`## ${candidate.path}\n${await readFile(candidate.real, 'utf8')}`)
-    } catch (error) {
-      if (readFailureCode(error) !== 'unreadable') throw error
+    const read = await readInstructionFile(candidate.real, candidate.bytes)
+    if ('problem' in read) {
       included.delete(candidate)
-      unreadable.push(candidate.path)
+      if (read.problem === 'unreadable') unreadable.push(candidate.path)
+      else changed.push(candidate.path)
+      continue
     }
+    parts.push(`## ${candidate.path}\n${read.text}`)
   }
   let text = parts.join('\n\n')
   if (outsidePaths.length > 0) {
@@ -122,6 +153,10 @@ export async function loadInstructions(input: {
   }
   if (unreadable.length > 0) {
     const notice = `Unreadable instruction files: ${unreadable.join(', ')}.`
+    text = text ? `${text}\n\n${notice}` : notice
+  }
+  if (changed.length > 0) {
+    const notice = `Changed while reading instruction files: ${changed.join(', ')}.`
     text = text ? `${text}\n\n${notice}` : notice
   }
   if (omittedPaths.length > 0) {
@@ -133,6 +168,7 @@ export async function loadInstructions(input: {
     files: ordered.map(candidate => ({ path: candidate.path, bytes: candidate.bytes, included: included.has(candidate) })),
     text,
     unreadable,
+    changed,
     overflow: omittedPaths.length > 0
       ? { totalBytes, budgetBytes: budget, omitted: omittedPaths }
       : null,
