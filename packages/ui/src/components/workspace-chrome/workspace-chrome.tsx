@@ -56,7 +56,7 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
     <span role="status" aria-label={props.title} className="gx-sr-only">{props.title}</span>
     <div data-slot="workspace-loading-geometry" aria-hidden="true" className="gx-workspace-loading-geometry">
       <div className="gx-workspace-toolbar">{Array.from({ length: 11 }, (_, index) => index === 6
-        ? <div key={index} className="gx-workspace-field"><span className="gx-workspace-loading-label">&nbsp;</span><span className="gx-workspace-loading-control" /></div>
+        ? <div key={index} className="gx-workspace-field"><span className="gx-workspace-loading-label">{'\u00a0'}</span><span className="gx-workspace-loading-control" /></div>
         : <span key={index} className="gx-workspace-loading-control" />)}</div>
       <div className="gx-workspace-loading-content" />
     </div>
