@@ -70,3 +70,13 @@ fetch is still pending. The mandated probe against the old client prints
 
 Provider adapters other than the local Ollama `/api/chat` path, backend cooperative
 cancellation, and remote hardware cancellation guarantees are out of scope.
+
+## Review-fix 3 (2026-10-22) — non-stream body cancellation
+
+The P2 non-stream finding extends the same ownership rule to `awaitTransportSettlement` POST
+bodies. The client owns their reader and UTF-8 decoding, exposes one memoized consumer cancel,
+requests it before awaiting a pending read on abort/deadline, and awaits both the read and the
+provider cancel acknowledgement before releasing the caller. `Response.text()` parity (BOM,
+split multibyte, empty/null body, invalid JSON mapping) and the absence of a hidden body-size
+ceiling are asserted. GET/observation paths keep their previous `response.text()` behavior. Test
+and fix evidence is appended to the handoff (red at `5fc995d`, fix `3439a7f`).

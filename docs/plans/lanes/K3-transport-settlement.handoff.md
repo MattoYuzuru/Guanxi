@@ -200,3 +200,101 @@ resolved to this clone and `require.resolve` was confirmed.
 owning promise/permit pending honestly; this proves local client/permit ownership, not backend
 inference termination. The R2 fourth-argument seam still needs the separately owned reconciliation,
 and root owns full gates, merge/rebase/push and status files.
+
+## Review-fix section 3 (2026-10-22) — P2 non-stream body cancel liveness
+
+**Finding:** the independent combined K3/R2 review at pin `1328780` reproduced a non-stream
+counterpart of the earlier stream-reader deadlock. `OllamaClient.request` passed
+`response.text()` to `withinDeadline` with `awaitSettlement` but no body-cancel initiator.
+`response.text()` had already taken and hidden the body reader, so a producer whose pending read
+resolves only after consumer cancellation could never settle: abort/deadline waited forever for
+the text read, the public call and the caller's governor permit stayed owned, and no cancel was
+requested. The mandated read-only probe
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/r2-merged-body-cancel-probe-20261022.ts` was run as
+a temp-only copy with only its import repointed at this clone (the external file and the separate
+`r2-trusted-start` clone were not edited). Against `48c7e28` it printed
+`{"cancelRequested":false,"settled":false,"bodyLocked":true}` and failed its cancellation
+assertion. The passing stream probe was copied the same way and remained green.
+
+**Behaviour fix (`3439a7f`)** — `fix(ollama): cancel non-stream body reader before awaiting read`:
+
+- For `awaitTransportSettlement` POST bodies only, the client now owns the response reader and
+  performs its own UTF-8 decoding instead of calling `response.text()`. Decoding matches
+  `Response.text()`: BOM stripped, multibyte sequences split across chunks preserved, invalid
+  bytes replaced, empty/null body yields `''`, and no body-size ceiling is introduced.
+- One memoized `reader.cancel()` request is exposed to the private settlement policy. Abort,
+  deadline and other control outcomes request it synchronously before the pending read is
+  awaited; the call then waits for **both** the read/text operation and the actual provider
+  cancel acknowledgement before surfacing the existing error and releasing the caller.
+- Cancel rejection is consumed (no unhandled rejection), the reader lock stays owned until the
+  pending read has settled, and the lock is released only after the settlement path finishes.
+  A late/partial body cannot produce partial-JSON success.
+- GET/version/tags/ps/show and all other non-settlement bodies still use the previous
+  `response.text()` path and keep their abort-race responsiveness. No retry, second POST, second
+  body read, wall-clock ACK, timeout-derived ownership release or hidden size cap was added.
+- `connections/service.ts`, R2 dispatch authorization/source and the optional fourth `chat`
+  argument were not touched. The existing stream consumer is unchanged.
+
+**New review-fix tests (7; one earlier new test strengthened, not counted again):**
+
+- `packages/server/test/ollama-client.test.ts` — 6 new: cancel-driven non-stream read on external
+  abort (request before await, call and lock held until ACK, exactly one cancel); the same on an
+  internal load deadline; rejected late cancel consumed while abort remains authoritative;
+  BOM-prefixed 96 KiB body split inside a UTF-8 sequence decodes like `Response.text()` with no
+  stream line ceiling; null/empty and invalid JSON map to the existing protocol error; a body
+  read failure keeps the existing `Ollama response body failed` mapping. The former non-stream
+  settlement test now withholds cancel ACK and also asserts no partial-JSON success.
+- `packages/server/test/connections/model-transport-settlement.test.ts` — 1 new: a real
+  `Connections.localChat` call under a real `ResourceGovernor` lease stays owned while the
+  non-stream body cancel ACK is withheld, then releases exactly once after the fixed abort
+  outcome.
+
+**Red evidence at test commit `5fc995d` with the old client:** 37 tests, 32 pass, 5 fail; every
+failure was `0 !== 1` on requesting body cancel (abort, load deadline, rejected ACK, partial-body
+ownership, governor lease). The adapted external body probe also failed on the old client with the
+JSON above. **Green at `3439a7f`: 37/37 targeted, 125/125 for the six-file scoped envelope**
+(**26 new / 99 old regression**; the 118-case pre-review envelope plus 7 new tests). The adapted
+external body probe now prints
+`{"cancelRequested":true,"settled":false,"bodyLocked":true}` with `tests 1, pass 1, fail 0`; the
+adapted stream probe still prints the same `cancelRequested=true` shape and passes.
+
+**Exact commands and results at `3439a7f`:**
+
+```text
+nice -n 10 node --test --test-timeout=10000 \
+  packages/server/test/ollama-client.test.ts \
+  packages/server/test/connections/model-transport-settlement.test.ts
+# tests 37, pass 37, fail 0
+
+nice -n 10 node --test --test-timeout=30000 \
+  packages/server/test/ollama-client.test.ts \
+  packages/server/test/connections/model-transport-settlement.test.ts \
+  packages/server/test/connections/model-access.test.ts \
+  packages/server/test/relay/review.test.ts \
+  packages/server/test/inference-concurrency.test.ts \
+  packages/server/test/model-service.test.ts
+# tests 125, pass 125, fail 0
+
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+# exit 0, no output
+
+nice -n 10 npx eslint packages/server/src/ollama/client.ts \
+  packages/server/test/ollama-client.test.ts \
+  packages/server/test/connections/model-transport-settlement.test.ts
+# exit 0, no output
+
+nice -n 10 npx markdownlint-cli2 \
+  docs/plans/lanes/K3-transport-settlement.handoff.md \
+  docs/plans/lanes/K3-transport-settlement.plan.md
+# exit 0
+```
+
+No `npm test`, browser, build, Storybook, container, nested sandbox, `agent-dev`, live server,
+model/provider, network, SSH, owner-data or workspace-cleanup command was run. `@guanxi/contract`
+resolved to this clone's `packages/contract/src/index.ts`. The temp probe copies were removed
+before hand-off.
+
+**Residuals:** a provider that requests neither abort nor cancel acknowledgement still leaves the
+owning promise/permit pending honestly; this proves local client/permit ownership, not backend
+inference termination. The R2 fourth-argument seam still needs the separately owned reconciliation,
+and root owns full gates, merge/rebase/push and status files.

@@ -35,6 +35,10 @@ function tick(): Promise<void> {
   return new Promise<void>((resolve) => setImmediate(resolve))
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
 function track<T>(promise: Promise<T>): { tracked: Promise<T>; isSettled(): boolean } {
   let settled = false
   const tracked = promise.then(
@@ -422,37 +426,234 @@ describe('Ollama client timeout and protocol boundaries', () => {
     await assert.rejects(state.tracked, abortError)
   })
 
-  it('waits for the non-stream response body before surfacing abort', async () => {
-    const entered = deferred<void>()
+  it('keeps a partial non-stream body owned until cancellation acknowledges before abort', async () => {
     const textStarted = deferred<void>()
     const textGate = deferred<void>()
+    const cancelGate = deferred<void>()
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    let cancelRequested = false
+    let cancelCalls = 0
+    let pulls = 0
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        source = controller
+      },
+      async pull(controller) {
+        pulls += 1
+        if (pulls === 1) return
+        textStarted.resolve()
+        await textGate.promise
+        if (cancelRequested) return
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({
+          model: 'fixture', created_at: '2026-08-02T12:00:00.000Z', done: true,
+        })))
+        controller.close()
+      },
+      cancel() {
+        cancelRequested = true
+        cancelCalls += 1
+        return cancelGate.promise
+      },
+    })
     const client = await clientWith(async (input) => {
       if (new URL(String(input)).pathname === '/api/version') {
         return Response.json({ version: 'fixture' })
       }
-      entered.resolve()
-      const body = new ReadableStream<Uint8Array>({
-        async pull(controller) {
-          textStarted.resolve()
-          await textGate.promise
-          controller.enqueue(new TextEncoder().encode(JSON.stringify({
-            model: 'fixture', created_at: '2026-08-02T12:00:00.000Z', done: true,
-          })))
-          controller.close()
-        },
-      })
       return new Response(body, { status: 200 })
     })
     const controller = new AbortController()
     const state = track(client.chat(REQUEST, controller.signal))
-    await entered.promise
     await textStarted.promise
     controller.abort('fixture stop')
     await tick()
+    try {
+      assert.equal(cancelCalls, 1, 'abort must request body cancel before awaiting the pull')
+      assert.equal(state.isSettled(), false, 'body cancellation must settle before return')
+      assert.equal(body.locked, true, 'the reader lock stays owned while cancellation settles')
+      cancelGate.resolve()
+      await assert.rejects(state.tracked, abortError)
+      assert.equal(cancelCalls, 1, 'cleanup must reuse the one cancellation request')
+    } finally {
+      textGate.resolve()
+      if (!cancelRequested) {
+        source.enqueue(new TextEncoder().encode(JSON.stringify({ done: true })))
+        source.close()
+      }
+      cancelGate.resolve()
+      await state.tracked.catch(() => undefined)
+    }
+  })
 
-    assert.equal(state.isSettled(), false, 'response.text() must settle before return')
-    textGate.resolve()
-    await assert.rejects(state.tracked, abortError)
+  it('requests body cancel before awaiting a cancel-driven non-stream read', async () => {
+    const reading = deferred<void>()
+    const cancelGate = deferred<void>()
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    let cancelCalls = 0
+    let cancelAcknowledged = false
+    let pulls = 0
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        source = controller
+      },
+      pull() {
+        pulls += 1
+        if (pulls > 1) reading.resolve()
+      },
+      cancel() {
+        cancelCalls += 1
+        return cancelGate.promise.then(() => {
+          cancelAcknowledged = true
+        })
+      },
+    })
+    const client = await clientWith(async (input) => {
+      if (new URL(String(input)).pathname === '/api/version') {
+        return Response.json({ version: 'fixture' })
+      }
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const controller = new AbortController()
+    const state = track(client.chat(REQUEST, controller.signal))
+    await reading.promise
+    await tick()
+    assert.equal(body.locked, true, 'the client owns the reader while the read is pending')
+    controller.abort('fixture stop')
+    await tick()
+    try {
+      assert.equal(cancelCalls, 1, 'abort must request body cancel before awaiting the read')
+      assert.equal(state.isSettled(), false, 'the call must wait for the actual cancel acknowledgement')
+      assert.equal(body.locked, true, 'the reader lock stays owned while cancellation settles')
+      cancelGate.resolve()
+      await assert.rejects(state.tracked, abortError)
+      assert.equal(cancelAcknowledged, true)
+      assert.equal(cancelCalls, 1, 'cleanup must reuse the one cancellation request')
+    } finally {
+      if (cancelCalls === 0) {
+        source.enqueue(new TextEncoder().encode(JSON.stringify({ done: true })))
+        source.close()
+      }
+      cancelGate.resolve()
+      await state.tracked.catch(() => undefined)
+    }
+  })
+
+  it('requests body cancel before awaiting a cancel-driven non-stream read on a deadline', async () => {
+    const reading = deferred<void>()
+    const cancelStarted = deferred<void>()
+    const cancelGate = deferred<void>()
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    let cancelCalls = 0
+    let pulls = 0
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        source = controller
+      },
+      pull() {
+        pulls += 1
+        if (pulls > 1) reading.resolve()
+      },
+      cancel() {
+        cancelCalls += 1
+        cancelStarted.resolve()
+        return cancelGate.promise
+      },
+    })
+    const client = await ollamaClientThroughKernel({
+      host: 'http://fixture.invalid',
+      connectTimeoutMs: 100,
+      loadTimeoutMs: 40,
+      fetch: async (input) => {
+        if (new URL(String(input)).pathname === '/api/version') {
+          return Response.json({ version: 'fixture' })
+        }
+        return new Response(body, { status: 200 })
+      },
+    })
+    const state = track(client.chat(REQUEST))
+    await reading.promise
+    await Promise.race([cancelStarted.promise, delay(300)])
+    try {
+      assert.equal(cancelCalls, 1, 'the deadline must request body cancel before awaiting the read')
+      assert.equal(state.isSettled(), false, 'the deadline must await the cancel acknowledgement')
+      assert.equal(body.locked, true, 'the reader lock stays owned while cancellation settles')
+      cancelGate.resolve()
+      await assert.rejects(
+        state.tracked,
+        (error) =>
+          error instanceof OllamaTimeoutError
+          && error.phase === 'load'
+          && error.timeoutMs === 40,
+      )
+      assert.equal(cancelCalls, 1)
+    } finally {
+      if (cancelCalls === 0) {
+        source.enqueue(new TextEncoder().encode(JSON.stringify({ done: true })))
+        source.close()
+      }
+      cancelGate.resolve()
+      await state.tracked.catch(() => undefined)
+    }
+  })
+
+  it('consumes a rejected late non-stream body cancel and preserves the abort outcome', async () => {
+    const reading = deferred<void>()
+    const cancelGate = deferred<void>()
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    let cancelCalls = 0
+    let pulls = 0
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          source = controller
+        },
+        pull() {
+          pulls += 1
+          if (pulls > 1) reading.resolve()
+        },
+        cancel() {
+          cancelCalls += 1
+          return cancelGate.promise
+        },
+      })
+      const client = await clientWith(async (input) => {
+        if (new URL(String(input)).pathname === '/api/version') {
+          return Response.json({ version: 'fixture' })
+        }
+        return new Response(body, { status: 200 })
+      })
+      const controller = new AbortController()
+      const state = track(client.chat(REQUEST, controller.signal))
+      await reading.promise
+      controller.abort('fixture stop')
+      await tick()
+      try {
+        assert.equal(cancelCalls, 1, 'abort must request body cancel before awaiting the read')
+        assert.equal(state.isSettled(), false)
+        cancelGate.reject(new Error('fixture late body cancel failure'))
+        await assert.rejects(state.tracked, abortError)
+        await tick()
+        await tick()
+        assert.equal(cancelCalls, 1)
+        assert.deepEqual(unhandled, [])
+      } finally {
+        if (cancelCalls === 0) {
+          source.enqueue(new TextEncoder().encode(JSON.stringify({ done: true })))
+          source.close()
+        }
+        cancelGate.resolve()
+        await state.tracked.catch(() => undefined)
+      }
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled)
+    }
   })
 
   it('waits for an error response body cancel before preserving the mapped HTTP error', async () => {
@@ -774,6 +975,95 @@ describe('Ollama client timeout and protocol boundaries', () => {
     } finally {
       process.removeListener('unhandledRejection', onUnhandled)
     }
+  })
+
+  it('decodes a BOM-prefixed non-stream body split inside UTF-8 sequences without a size ceiling', async () => {
+    const content = `héllo 🚀 ${'x'.repeat(96 * 1024)}`
+    const payload = JSON.stringify({
+      model: 'fixture',
+      created_at: '2026-08-02T12:00:00.000Z',
+      message: { role: 'assistant', content },
+      done: true,
+    })
+    const encoder = new TextEncoder()
+    const bytes = encoder.encode(`\uFEFF${payload}`)
+    const rocket = encoder.encode('🚀')
+    let rocketAt = -1
+    for (let index = 0; index + rocket.length <= bytes.length; index += 1) {
+      if (rocket.every((byte, offset) => bytes[index + offset] === byte)) {
+        rocketAt = index
+        break
+      }
+    }
+    assert.notEqual(rocketAt, -1, 'the fixture contains a split-blocking multibyte sequence')
+    const splitAt = rocketAt + 2
+    let reads = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (reads === 0) {
+          reads += 1
+          controller.enqueue(bytes.slice(0, splitAt))
+          return
+        }
+        controller.enqueue(bytes.slice(splitAt))
+        controller.close()
+      },
+    })
+    const client = await ollamaClientThroughKernel({
+      host: 'http://fixture.invalid',
+      connectTimeoutMs: 500,
+      loadTimeoutMs: 500,
+      fetch: async (input) => {
+        if (new URL(String(input)).pathname === '/api/version') {
+          return Response.json({ version: 'fixture' })
+        }
+        return new Response(body, { status: 200 })
+      },
+    })
+
+    const result = await client.chat(REQUEST)
+    assert.equal(result.message?.content, content)
+    assert.equal(result.message?.content?.length, content.length)
+  })
+
+  it('maps empty and invalid non-stream bodies to the existing protocol error', async () => {
+    for (const invalid of [
+      new Response(null, { status: 200 }),
+      new Response('{not json', { status: 200 }),
+    ]) {
+      const client = await clientWith(async (input) => {
+        if (new URL(String(input)).pathname === '/api/version') {
+          return Response.json({ version: 'fixture' })
+        }
+        return invalid
+      })
+      await assert.rejects(
+        client.chat(REQUEST),
+        (error) => error instanceof OllamaProtocolError && error.endpoint === '/api/chat',
+      )
+    }
+  })
+
+  it('maps a non-stream body read failure to the existing body error', async () => {
+    const client = await clientWith(async (input) => {
+      if (new URL(String(input)).pathname === '/api/version') {
+        return Response.json({ version: 'fixture' })
+      }
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new Error('fixture body failure'))
+        },
+      }), { status: 200 })
+    })
+
+    await assert.rejects(
+      client.chat(REQUEST),
+      (error) =>
+        error instanceof OllamaError
+        && !(error instanceof OllamaProtocolError)
+        && error.status === 200
+        && /Ollama response body failed/u.test(error.message),
+    )
   })
 
   it('rejects malformed version and ps responses as protocol failures', async () => {
