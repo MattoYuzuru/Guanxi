@@ -1,11 +1,11 @@
 # U1 transitive primitive readiness — author handoff
 
-**Status:** bounded implementation and author checks complete; independent review pending.
+**Status:** independent render-merge P2 fixed in separate author commits; re-review pending.
 **Updated:** 2026-10-22
 **Branch/checkout:** `codex/u1-primitive-readiness`, standalone
 `/Users/yuzuru/Projects/Guanxi-lanes/u1-primitive-readiness`.
 **Assigned base:** `bfef83cda9bffdcef788a59966833371c5e7e978` (reviewed U1 mount plus root plan).
-**Last executable/test pin:** `437f50428101ec98fd64bc700d537c67b3addf6c`.
+**Last executable/test pin:** `bf4980f932eed83e9a0c22001e5f4a5a021d86cd`.
 **Plan committed first:** `dd9a5fd0`, [bounded plan](U1-primitive-readiness.plan.md).
 
 This is primitive readiness evidence, not independent author approval, component promotion,
@@ -21,11 +21,13 @@ All review records remain unchanged (`draft` for IconButton/Menu/Tooltip, approv
 
 ## Implemented changes
 
-1. Added one actual-browser fixture and 23 maintainable cases using public `@guanxi/ui`
+1. Added one actual-browser fixture and 23 original maintainable cases using public `@guanxi/ui`
    components and the existing web Playwright runner. The fixture has uncontrolled Menu and
    Tooltip compositions, a real default Dialog close control, locale messages and the same
    theme/density/material attributes as the catalog. No mocked interaction engine or API is
    needed. Its counters expose exact activation counts and forbidden disabled activation.
+   The independent-review repair below adds two render-prop cases, for 25 new repository
+   cases overall; the original complete25 run remains 23 new plus two inherited palette cases.
 2. Reconciled Menu's draft documentation: disabled commands can receive focus and expose
    `aria-disabled`, but cannot activate. Actual browser arrows/Home/End/typeahead, Enter,
    Space and pointer checks support this. Accepted design/vision/decision search found no
@@ -165,3 +167,62 @@ Freeze the clean final handoff pin for independent `encoding_review2`; it must i
 demonstrated fixes, controls, compatibility and claimed assertions. Root then integrates
 other U1 fixes and shrinks the stale allowances, runs union gates, and separately decides any
 unsigned draft-to-review transition. Approval remains null, and whole U1/MS1 stay open.
+
+## Independent render-description P2 repair
+
+Independent review at `34a9ea2b` found that a supported render element's existing
+aria-describedby overrides the Tooltip wrapper's association in Base UI's final merge.
+The preserved outside report is
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-u1-primitive-readiness-20261022.md`.
+Its actual browser `check-3xb0x6co` failed the render-element relationship and passed two
+controlled-refusal/canceled-close controls. Root committed the bounded repair plan first
+as `320fa427`; those outside controls and config remain unchanged for independent recheck.
+
+Separate test commit `ec2b5240` adds render-element and render-function controls using the
+public Tooltip and Button. The actual red `check-83i4gwe1` at that clean pin loses both
+custom-description (live Tooltip) and existing-description (explicit wrapper) while retaining
+only rendered-element descriptions. The command stops after the first failure: **one failed,
+one did not run**. It is a semantic red, not a harness/setup failure.
+
+Separate source fix `b948f944` merges description IDs at the final render boundary, covering
+both supported render forms. It clones only the aria-describedby prop, preserving the
+rendered element's other props/ref and Base UI's event/ref handling. Existing consumer and
+wrapper IDs are deduplicated; the live Tooltip ID is added only while open. Native Trigger
+rendering and controlled/cancelled state logic are unchanged. Tooltip docs state this public
+contract. Generated metadata commit `ea020873` changes only six dependent sourceHash fields
+(app-shell-chrome, dialog, icon-button, toast, tooltip, workspace-chrome), no statuses,
+approvals, usage or snapshot hashes. Menu and every other component source are unchanged
+since the reviewed pin.
+
+| Repair check | Actual clean pin | Result | Receipt |
+| --- | --- | --- | --- |
+| Identical render-prop browser selection | `ea020873` | 2/2 pass, no skips | `check-mwifoc4k` |
+| Existing Tooltip compositions/compatibility | `ea020873` | 5/5 pass, no skips | `check-2n7re6g4` |
+| UI workspace TypeScript | `ea020873` | passed | `check-rpwqfsky` |
+| Explicit fixture/spec strict TypeScript | `bf4980f9` | passed | `check-swkm42j3` |
+| Scoped Tooltip/fixture/spec ESLint | `bf4980f9` | passed | `check-r21_eaxs` |
+
+The new two cases assert exact complete ID sets (so duplicates fail), close-time retention
+of all three caller IDs and removal of only the Tooltip ID, one popup/custom ID, name/focus
+preservation, exactly one wrapper and consumer click effect, a working wrapper ref, and the
+render-element callback ref. The five inherited controls cover IconButton and Dialog pointer/
+keyboard Tooltip opening/Escape, custom IDs with default/controlled state, and canceled open.
+They are **two newly added cases / five inherited cases** for this repair, not seven new
+cases. No blanket23 run was repeated; the earlier23 and complete25 observations retain the
+actual pins/counts above. The separately preserved independent refusal/canceled-close cases
+remain available for reviewer rerun, not newly claimed author executions.
+
+The first explicit fixture/spec types command `check-n0q822gd` at `ea020873` failed because
+the fixture declared an HTMLElement ref where the Button composition requires
+HTMLButtonElement. Separate test-only `bf4980f9` narrows that type. It changes no emitted
+JavaScript or runtime assertion, so the passing browser source at `ea020873` is equivalent
+to the final fixture runtime; no extra blanket rerun was justified. All checks are terminal,
+source was quiet during each check, and the inherited external skill symlink still prevents
+reusable whole-source certificates.
+
+Independent probe SHA-256, verified unchanged after the author fix:
+`332a31f54cd06d75d662ec0633e737f87ec3a8bfaf132cbd396c970c5b6fff3c` (spec),
+`0c0d940ba82603636ce66324b7d6620f71f2ffe81131e46919ab626c5c67a8fe` (config).
+No Menu/host/G11, status, owner approval/key, baseline, dependency, token or suppression
+changes. The existing fast-gate/host-state/readiness residuals remain. This is an author
+repair handoff to the independent reviewer, not self-closure of the P2.
