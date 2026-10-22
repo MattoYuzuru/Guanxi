@@ -125,7 +125,10 @@ returns the exact next-allowed epoch millisecond.
 - A retryable read response becomes `TrackerRetryableError`; `poll()` and `sync()` translate
   it into a deferral at the exact `retry-after` / reset / backoff time. `304` counts as a
   successful read for observation.
-- GitHub label writes skip the content-creation buckets but still honour server backoff.
+- Every GitHub mutating label request counts against the content buckets: each stale-label
+  `DELETE` and the target-label `POST` consumes one token. The engine reserves the first
+  token before the swap and charges the adapter's reported additional requests afterwards;
+  a skipped swap refunds the reservation.
 - `x-ratelimit-remaining: 0` defers until `x-ratelimit-reset`; `retry-after` accepts delta
   seconds or an HTTP date and wins over local timing.
 - Secondary-limit `403` uses a 60 s initial bounded exponential backoff when no server time

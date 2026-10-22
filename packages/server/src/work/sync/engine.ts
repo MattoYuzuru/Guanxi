@@ -367,7 +367,9 @@ export class TrackerSyncEngine {
       const decision = this.governor.checkWrite({
         tracker: link.tracker,
         key: link.externalKey,
-        contentCreation: false,
+        // Label swaps are content-creating mutations; reserve the first request now and
+        // charge any additional DELETE/POST requests after the adapter reports them.
+        contentCreation: mapping === 'label',
         now,
       })
       // Keep the pre-transition link until every write for this transition succeeds.
@@ -383,6 +385,7 @@ export class TrackerSyncEngine {
             : { kind: 'transition', status: target },
         )
       } catch (error) {
+        if (mapping === 'label') this.governor.refundContentCreations(1, now)
         if (error instanceof TrackerTransportError) {
           const observation = this.governor.observeTransportFailure({
             tracker: link.tracker,
@@ -395,6 +398,15 @@ export class TrackerSyncEngine {
           return deferred(link, this.readDeferral(link, error, now), writes)
         }
         throw error
+      }
+
+      if (mapping === 'label') {
+        const requests = result.mutatingRequests ?? (result.skipped === true ? 0 : 1)
+        if (requests === 0) {
+          this.governor.refundContentCreations(1, now)
+        } else if (requests > 1) {
+          this.governor.consumeContentCreations(requests - 1, now)
+        }
       }
 
       const observation = this.governor.observeWrite({

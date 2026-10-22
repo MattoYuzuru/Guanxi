@@ -592,6 +592,52 @@ test('conditional polling returns 304 without touching metadata', async () => {
   assert.equal(fake.requests[1]!.headers['if-none-match'], fake.etag)
 })
 
+test('each mutating label request consumes one content-budget token', async () => {
+  const fake = new FakeGitHub()
+  fake.setRemote({
+    ...issueFromFixture('github-issue-initial'),
+    labels: ['bug', 'guanxi:in_progress'],
+  })
+  fake.comments.push({
+    id: 9001,
+    author: 'guanxi-bot',
+    body: 'Guanxi item is now done.\n\n<!-- guanxi:transition:wg2-a:done:1 -->',
+  })
+  const governor = new RateLimitGovernor({
+    now: () => START,
+    github: { contentPerMinute: 2, contentPerHour: 1_000 },
+  })
+  const adapter = new GitHubAdapter({
+    http: request => fake.request(request),
+    authorize: headers => {
+      headers.authorization = `Bearer ${TOKEN}`
+    },
+    credential: 'secret://vault/github/default',
+  })
+  const engine = new TrackerSyncEngine({ adapter, governor, now: () => START })
+
+  const result = await engine.sync(link({ lastSyncedStatus: 'in_progress' }), 'done', {
+    now: START,
+  })
+  assert.equal(result.outcome, 'synced')
+  assert.equal(fake.commentPosts().length, 0)
+  const deletions = fake.requests.filter(request => request.method === 'DELETE')
+  const additions = fake.requests.filter(
+    request => request.method === 'POST' && /\/labels$/.test(new URL(request.url).pathname),
+  )
+  assert.equal(deletions.length, 1)
+  assert.equal(additions.length, 1)
+
+  const denied = governor.checkWrite({
+    tracker: 'github',
+    key: EXTERNAL_KEY,
+    contentCreation: true,
+    now: START,
+  })
+  assert.equal(denied.allowed, false)
+  assert.equal(denied.nextAllowedAt, START + 30_000)
+})
+
 test('the engine defers a budgeted write and the caller retries at the exact time', async () => {
   const fake = new FakeGitHub()
   const governor = new RateLimitGovernor({ now: () => START })
@@ -621,7 +667,22 @@ test('the engine defers a budgeted write and the caller retries at the exact tim
   const retried = await engine.sync(link(), 'in_progress', {
     now: deferred.deferred!.nextAllowedAt,
   })
-  assert.equal(retried.outcome, 'synced')
+  // The comment now consumes the one available token; the label swap needs the next one,
+  // so the caller gets a second exact deferral instead of an over-budget label request.
+  assert.equal(retried.outcome, 'deferred')
+  assert.equal(retried.commentPosted, true)
+  assert.equal(retried.deferred?.reason, 'content_budget')
+  assert.equal(retried.deferred?.nextAllowedAt, START + 1_500)
+  assert.equal(retried.link.lastTransitionSeq, 0)
+  assert.equal(fake.commentPosts().length, 1)
+  assert.equal(fake.comments.length, 1)
+
+  const finished = await engine.sync(link(), 'in_progress', {
+    now: retried.deferred!.nextAllowedAt,
+  })
+  assert.equal(finished.outcome, 'synced')
+  assert.equal(finished.commentPosted, false)
+  assert.equal(finished.link.lastTransitionSeq, 1)
   assert.equal(fake.commentPosts().length, 1)
   assert.equal(fake.comments.length, 1)
 })

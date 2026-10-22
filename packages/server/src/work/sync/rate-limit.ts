@@ -82,6 +82,18 @@ export class TokenBucket {
     }
     this.tokens = Math.max(0, this.tokens - 1)
   }
+
+  /** Charges several requests; a debt stays visible to `nextAllowedAt`. */
+  consume(now: number, count = 1): void {
+    this.refill(now)
+    this.tokens -= count
+  }
+
+  /** Returns a reservation for a request that was not sent. */
+  refund(now: number, count = 1): void {
+    this.refill(now)
+    this.tokens = Math.min(this.capacity, this.tokens + count)
+  }
 }
 
 export interface RateLimitCheck {
@@ -322,6 +334,20 @@ export class RateLimitGovernor {
     const delay = backoffMs(attempts, base, max)
     this.setDefer(input.tracker, input.key, now + delay, 'server_backoff')
     return { retry: true, reason: 'server_backoff', nextAllowedAt: now + delay }
+  }
+
+  /** Charge additional GitHub content-creation requests after a multi-request mutation. */
+  consumeContentCreations(count: number, now = this.clock()): void {
+    if (count <= 0) return
+    this.githubMinute.consume(now, count)
+    this.githubHour.consume(now, count)
+  }
+
+  /** Return the reservation for a content-creation request that was not sent. */
+  refundContentCreations(count = 1, now = this.clock()): void {
+    if (count <= 0) return
+    this.githubMinute.refund(now, count)
+    this.githubHour.refund(now, count)
   }
 
   /** Earliest time a write could pass, without consuming budget. */

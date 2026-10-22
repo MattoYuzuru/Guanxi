@@ -134,6 +134,8 @@ export interface TrackerWriteResult {
   commentId?: string
   /** True when the requested write was already satisfied and no request was sent. */
   skipped?: boolean
+  /** Mutating HTTP requests actually attempted by this operation (labels: DELETEs + POST). */
+  mutatingRequests?: number
 }
 
 export interface TrackerAdapter {

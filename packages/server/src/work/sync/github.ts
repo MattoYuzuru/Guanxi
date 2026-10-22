@@ -360,8 +360,10 @@ export class GitHubAdapter implements TrackerAdapter {
     const current = labelNames(issue.labels)
     const stale = current.filter(label => GUANXI_STATUS_LABELS.has(label) && label !== target)
     let last: HttpResponse | null = null
+    let mutatingRequests = 0
 
     for (const label of stale) {
+      mutatingRequests += 1
       const removal = await this.send(
         'DELETE',
         `${this.issueUrl(ref)}/labels/${encodeURIComponent(label)}`,
@@ -371,7 +373,7 @@ export class GitHubAdapter implements TrackerAdapter {
       last = removal
       if (!isSuccessStatus(removal.status)) {
         const result = this.result(removal)
-        if (result.retryable) return result
+        if (result.retryable) return { ...result, mutatingRequests }
         throw new TrackerSyncError(
           'remote_rejected',
           `GitHub label removal rejected with status ${removal.status}`,
@@ -380,6 +382,7 @@ export class GitHubAdapter implements TrackerAdapter {
     }
 
     if (!current.includes(target)) {
+      mutatingRequests += 1
       const addition = await this.send(
         'POST',
         `${this.issueUrl(ref)}/labels`,
@@ -389,7 +392,7 @@ export class GitHubAdapter implements TrackerAdapter {
       last = addition
       if (!isSuccessStatus(addition.status)) {
         const result = this.result(addition)
-        if (result.retryable) return result
+        if (result.retryable) return { ...result, mutatingRequests }
         throw new TrackerSyncError(
           'remote_rejected',
           `GitHub label addition rejected with status ${addition.status}`,
@@ -398,9 +401,9 @@ export class GitHubAdapter implements TrackerAdapter {
     }
 
     if (last === null) {
-      return { status: 200, headers: {}, retryable: false, skipped: true }
+      return { status: 200, headers: {}, retryable: false, skipped: true, mutatingRequests }
     }
-    return this.result(last)
+    return { ...this.result(last), mutatingRequests }
   }
 
   private issueUrl(ref: GitHubIssueRef): string {
