@@ -136,7 +136,7 @@ product usage and no owner approval.
 Reviewed source and private stream adapter are merged locally as `7366df8`. The
 [B1 evidence](B1.md) records candidate `70e4be2` and all affected passing gates, including
 132 selected cases (55 new / 77 inherited) plus full npm regression. Browser source is unchanged.
-Post-merge checks are pending; no whole B1 or MS1 closure is claimed.
+Post-merge checks completed below; no whole B1 or MS1 closure is claimed.
 
 R3 repaired candidate `cd00a82` now includes verified main and passes server types, all relay/R1
 155-case envelope (31 new / 124 inherited), Markdown, licenses and lint. It remains unmerged.
@@ -148,3 +148,66 @@ U1-c `2c4a02f` now passes 86/86 mocked Chromium and UI browser gates (`check-j2m
 initial-failure fixture (84/85); a separate two-schedule Retry fixture repair is active. The
 new shell pattern passed bounded axe/clipping/motion but the 390px controlled host exposed a
 2px sidebar border-box overflow; a separate author repair is active before snapshots/product use.
+
+## B1 post-merge verification and local continuation
+
+All eight integration commands pass at clean, unchanged main `6da2058`:
+
+| Command | Receipt | Observed scope |
+| --- | --- | --- |
+| `npm run typecheck` | `check-tk5kiq67` | all workspaces |
+| `npm test` | `check-_akh1l3o` | core 1261/1261, kernel 106, web 318, UI gates 89, codemod 6, catalog 74, UI 17, bench 82; zero skips |
+| `npm run test:web:browser` | `check-ayq8gie9` | 66/66 mocked Chromium cases |
+| `npm run ui:check:browser` | `check-qzcfkzfm` | catalog browser gates and pinned-image visual comparison |
+| `npm run build` | `check-3vc8fdu2` | web/server/CLI |
+| `npm run lint:md` | `check-0kzrxgie` | Markdown and links |
+| `npm run check:licenses` | `check-q2vhna6i` | 658 packages, zero disallowed |
+| `npm run lint` | `check-fojx544n` | JS/CSS and suppression ratchet |
+
+These are regression results, not new B1 tests or a real benchmark. The inherited external
+skill symlink still prevents portable source attestation; receipts were inspected as local
+observations with matching clean HEAD and unchanged source.
+
+An earlier browser run at the same main failed two catalog cases (`check-5br628v6`). Local
+`pmset` records clamshell sleep at 01:25:39, 24 seconds after its start, followed by repeated
+sleep/dark-wake cycles. After the machine resumed, the seven-case catalog file passed
+(`check-uxp7ae3g`), then the full 66 cases passed above. No test was weakened or marked flaky.
+The earlier AppShellChrome G16 timeout also overlaps sleep; its nine-story rerun now passes
+(`check-gpxe0u5r`). This does not claim operation through physical sleep.
+
+U1 candidate `a4a42da` combines the reviewed replication/layout, current main and CSS source.
+Types pass (`check-udavm1x_`), but `npm test` stops at G5/G6/G7 (`check-a6cxb2j3`): stale legacy
+allowances must shrink and literal animation names/step timing remain outside tokens. The
+CSS author is proposing a separate canonical motion recipe correction; no new allowance or
+ratchet-policy exception is authorized. Projects fixture repair `3d14692` adds an assertion
+that the forced schedule actually aborts before network start; its Chromium recheck is pending.
+
+K4 input-artifact candidate `419a997` passes 83 scoped server and 33 web cases, but independent
+additional fixtures reproduce three P2 defects: concurrent accepted queue items overwrite,
+orphan reaping can detach a newly live canonical reference, and stop during an aborted input
+write omits the durable intervention. Separate author fixes and independent recheck are active;
+this candidate is not accepted. Its prior counts are 43 new / 73 inherited, not 74 inherited.
+R2 trusted public start and R3 cascade implementation continue in isolated GPT lanes. F2-b
+reviewed source remains unmerged until U1/F2-a. No SSH or remote execution is used.
+
+The DS2 production helper is installed at its documented Application Support path. Production
+build/ad-hoc code-sign verification and `build.sh --check` pass (`check-jgk64o2l`). No key was
+created, no owner-presence prompt was triggered and no approval signature was produced.
+The production owner-present Secure Enclave gate remains unverified.
+
+## R3 observational foundation integrated locally
+
+Merge `fad69e5` incorporates candidate `4657f47` after synchronization with main `6da2058`.
+The [ETA evidence](R3-eta.md) and [signal/cancellation evidence](R3-signals.md) retain separate
+author and independent findings/fixes. Its 31 new / 124 inherited relay/R1 cases passed
+before integration. Full candidate gates at clean `4657f47` also pass: all-workspace types
+`check-d2cmzhkg`, `npm test` `check-womzyc79` (core 1292/1292, kernel 106, web 318, catalog 74,
+UI 17, bench 82; zero skips), build `check-_4omlr3c`, Markdown `check-eq__69xg`, licenses
+`check-bd2wfp97`, source lint `check-m25y002g`. Candidate web source is unchanged relative to
+current main. Full post-merge main checks are next; no further executable merge precedes them.
+
+The added collector is read-only and optional. Stop/wall cancellation does not wait for an
+uncooperative observer; late results are discarded after an R1 fence recheck. This does not
+release model/tool work without cleanup acknowledgement. ETA remains uncalibrated, with stated
+provenance and scope. The full judge cascade, model grading, calibration/night wake and MS1
+remain open in separate work.

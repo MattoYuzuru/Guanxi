@@ -5,54 +5,59 @@
 Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md),
 [PHASE_STATUS](PHASE_STATUS.md) and the [continuation record](evidence/coordination-2026-10-22.md).
 The owner authorized autonomous completion of current in-progress work and MS1 where feasible.
-Do not reopen an old lane prompt from its stale running label. Inspect branch, HEAD, live
-worker and latest handoff. Root owns central status; workers use isolated branches/handoffs.
-The owner currently requires **local-only work**. Do not use SSH/Fedora or other remote hosts
-until the owner changes that scope. Existing local Colima is available for bounded fixtures;
-D-194 still excludes real benchmark execution on this Mac.
+Inspect actual branch/HEAD, live worker and latest handoff before reopening an old lane.
+Root owns central status; workers use isolated branches and handoffs.
 
-K4 follow-up 2 is merged as `8006cd8` after full gates;
-[evidence](evidence/K4-followup-2.md) retains exact scope and receipts. Remaining K4 work is
-input-artifact integration, expanded UI evidence and the platform envelope. Positive HTTPS
-source `8803855` is reviewed, merged locally and included in the passing full core envelope.
+The owner currently requires **local-only work**: no SSH/Fedora or other remote execution
+hosts until that scope changes. Local Colima fixtures are available; D-194 excludes real
+benchmark execution on this Mac. No real model/paid call or owner key belongs in ordinary tests.
 
-Current queue:
+Current integration boundary: K4 retention/R1 `8006cd8`, DS2 `03c655b`, positive HTTPS
+`8803855` and B1 foundation/admission/gateway/staging/private stream `7366df8` are merged locally.
+All eight integration gates pass at clean `6da2058`; exact receipts and scope are in the
+continuation record. Whole K4, DS2, B1 and MS1 gates remain open.
 
-1. DS2 source merged locally as `03c655b`, and positive HTTPS test `8803855` is incorporated.
-   All eight post-merge gates pass at clean main `5e9bbfe`. [Evidence](evidence/DS2.md). Real production
-   user-presence signing is unverified; never create an owner key in ordinary tests.
-2. X1 `codex/x1-parent-read-boundary` (`647c5d0`): perform repaired-source Linux evidence
-   inside an explicit integration envelope, then full gates. Preserve named X1 residuals.
-3. U1 `codex/u1-completion`: local layout and signed replication are independently reviewed
-   at `e5f8e0a`, including separate review fixes; handoff `646bf3d`. Initial candidate gates pass;
-   candidate `a613f7a` now includes verified main `5e9bbfe` and is under integration gates. Shell and
-   partial CSS token migration are active in separate worktrees; zero-suppression exit remains.
-4. **Current boundary:** B1 source merged locally as `7366df8`; [candidate evidence](evidence/B1.md)
-   includes full affected gates and independent private stream review. Run full post-merge checks
-   before another executable merge. Continue process/peer/K2 binding, corpus/images and paired
-   execution. No fixture
-   measurement activates ADR-0025 or authorizes an unbounded paid run.
-5. R3 `codex/ms1-r3` (`bf6a222`): independently reviewed ETA foundation, integration pending.
-   Judge/delegation and real replay/calibration/night evidence remain. F2 offer/reservation work
-   follows reviewed U1 minor1 with minor2 plus an explicit feature capability. Actual remote
-   dispatch is not implemented by a reservation receipt.
+1. U1 layout/replication and CSS combined candidate `a4a42da` passes types but fails fast
+   G5/G6/G7 (unused legacy allowances and new literal animation shorthands). The CSS author
+   is proposing a proper token/recipe correction; do not grow allowances or weaken the ratchet.
+   Projects fixture repair `3d14692` still needs actual Chromium/full candidate gates. Shell
+   prep is separate (`codex/u1-shell`); Input invalid-story fix `7479d96` is independently read.
+   AppShellChrome border-box fix `218e150` passes controlled 390px behavior and scoped axe,
+   clipping and motion; pinned-image baselines/readiness work is active in its isolated clone.
+2. **Current boundary:** R3 ETA/signals is merged locally as `fad69e5` after candidate
+   `4657f47` passes full affected gates. Run full main post-merge checks before another executable merge.
+   Original repaired source `cd00a82` has independent pending-collector cancellation review
+   closure and 31 new / 124 inherited relay/R1 passes. Candidate evidence is in [ETA](evidence/R3-eta.md) and [signals](evidence/R3-signals.md). The broader judge cascade is a separate GPT lane; real calibration,
+   night wake and B3 remain unfinished.
+3. Integrate reviewed F2-a `5c66e27` after U1, then F2-b `ffa9d1a` with separate grant/cancel
+   fixes and independent 30-case review closure. F2-b author envelope is 181 (30 new / 151
+   inherited). Offers alone have dispatchAuthorized:false. Cost/toolful transport and physical
+   two-host/hibernation/six-hour observations remain open.
+4. K4 input-artifact candidate `419a997` requires three independent P2 fixes: FIFO queue
+   mutations, live-reference/canonical-directory reaper race, and durable stop intervention
+   before one terminal when pending input I/O aborts. Author fix round is active. Re-run the
+   independent probes, broader native tests and full integration gates before accepting it.
+   Queue full text remains inline; no whole K4 input/memory closure is claimed.
+5. R2 trusted start/status/stop plus CLI is being implemented by an isolated GPT worker.
+   Default missing rendered-tokenizer/workspace authorities must refuse. Do not infer context
+   capacity or local model placement from caller JSON/catalog defaults. Migrations 38 (R3) and
+   39 (R2) are independently reserved; K4 input is 33, F2-b 37.
+6. B1 process/peer/K2 binding, real fresh corpus/images, verified pricing/meters and paired
+   five-seed execution remain unfinished. A proposed next binding contract is being prepared;
+   fixture tests cannot enable the stock paid executor or activate ADR-0025.
+7. X1 reviewed `647c5d0` still needs repaired-source Linux evidence inside an explicit local
+   integration envelope and full gates; no remote host is currently authorized.
+8. DS2 helper is installed and production build/code-sign checks pass (`check-jgk64o2l`).
+   Owner-present Secure Enclave key creation/signing remains unverified; never fake approval.
+   Unsigned component draft→review is allowed once stories/docs/readiness are complete; only
+   the owner's valid signature permits approved and a stage exit using that component.
 
-Use Node 26, each checkout's own dependencies/ports, and shared `agent-dev` resource `heavy`
-under `/Users/yuzuru/.local/state/agent-dev`; stop a gate sequence on failure. Source changes
-during a check invalidate that evidence. Keep new and regression counts separate.
+Use Node26, each checkout's own dependencies/ports and shared `agent-dev` resource `heavy`
+under `/Users/yuzuru/.local/state/agent-dev`. Stop sequences on failure; freeze source while
+checks run. The external skill symlink prevents reusable attestation, so inspect receipts and
+report local scope honestly. Keep new and regression counts separate. After each bounded
+slice update status and this prompt, with independent review fixes in separate commits.
 
-MS1 still requires K5/R3/F2/B3: real delegation to a 30B-class model on another node for at
-least six hours, zero lead tokens during hibernation, exactly one wake, all items/gates green
-in a clean checkout, and the B3 gate. Do not replace these observations with fixture passes.
-Prepare any owner-required action concretely while continuing independent work.
-
-Central-doc independent review found a stale B1 status row in `c09e2be`; the separate
-documentation correction names the reviewed request-admission source and active work.
-The R3 signal evaluator `5919d0b` is reviewed with 10 new independent passes but still needs
-review closure of its relay integration at `a8d5997`. Independent review found a pending
-collector can block stop/wall cancellation; a separate DeepSeek repair is active. Do not merge
-until its narrow independent recheck passes, and do not count this as the full judge stage.
-
-After U1, integrate reviewed F2 reservation candidate `5c66e27` with its separate independent
-evidence. F2-b renewable home grants and actual execution are unfinished; reserved receipts
-explicitly carry dispatchAuthorized:false. Keep the local-only runtime boundary.
+MS1 requires K5/R3/F2/B3 and real delegation to a 30B-class model on another node for at
+least six hours, zero lead tokens during hibernation, exactly one wake and all item gates green
+in a clean checkout. Prepare owner-required steps concretely while advancing independent work.
