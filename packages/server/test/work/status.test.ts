@@ -74,7 +74,7 @@ test('a planted done claim needs clean acceptance and an accepted commit', () =>
   assert.equal(statuses.get('a')!.status, 'failed')
   assert.equal(statuses.get('a')!.reason, 'acceptance_failed')
 
-  const dirtyPass = [...claimAndClaimDone, acceptance('a', true, false)]
+  const dirtyPass = [...claimAndClaimDone, acceptance('a', true, false), commitAccepted('a')]
   statuses = deriveStatuses(p, dirtyPass)
   assert.equal(statuses.get('a')!.status, 'verification_requested')
   assert.notEqual(statuses.get('a')!.status, 'done')
