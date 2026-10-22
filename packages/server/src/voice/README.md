@@ -175,11 +175,14 @@ token of a multi-word term and accepts any non-empty all-Cyrillic suffix (combin
 so `worktree-ах` and `PR-а́` also match. This deliberately mirrors the output shape of
 `glossary.ts` without reimplementing its ending table; it is not general Russian morphology.
 
-Insertions are attributed to U-WER unless the inserted hypothesis token is covered by a glossary
-term occurrence, in which case they are charged to B-WER. Substitutions and deletions are
-attributed by the reference token. B-WER's denominator remains the number of biased reference
-words, so biased insertions can make it exceed 1; when that denominator is zero the value is
-`null`, not 0, even if biased insertions exist. U-WER uses all non-biased reference words.
+Insertions are charged to B-WER when the inserted hypothesis token is covered by a glossary term
+occurrence, or when the insertion falls between two reference tokens of one multi-word term
+occurrence. For example, with term `pull request`, `open pull request now` versus
+`open pull the request now` charges `the` to B-WER even though `the` is not a term token, because
+it splits a reference term occurrence. Every other insertion goes to U-WER. Substitutions and
+deletions are attributed by the reference token. B-WER's denominator remains the number of biased
+reference words, so biased insertions can make it exceed 1; when that denominator is zero the value
+is `null`, not 0, even if biased insertions exist. U-WER uses all non-biased reference words.
 
 Term occurrences are extracted non-overlapping and leftmost-longest per item; equal token lengths
 keep glossary input order. Counts are then aggregated over the whole corpus with multiset

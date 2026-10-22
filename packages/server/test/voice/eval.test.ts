@@ -427,6 +427,17 @@ describe('scoreEval B-WER and U-WER', () => {
     assert.equal(score.uWer, 0)
   })
 
+  it('charges an insertion inside a multi-word reference term to B-WER', () => {
+    const score = scoreEval(
+      [item('one', 'open pull request now', 'open pull the request now')],
+      ['pull request'],
+    )
+    assert.equal(score.counts.biasedInsertions, 1)
+    assert.equal(score.counts.unbiasedInsertions, 0)
+    assert.ok(score.bWer !== null && score.bWer > 0)
+    assert.equal(score.uWer, 0)
+  })
+
   it('does not transliterate a Cyrillic spoken form into a Latin term', () => {
     const score = scoreEval([item('one', 'хоно и Hono', 'хоно и Hono')], ['Hono'])
     assert.equal(score.counts.biasedRefWords, 1)

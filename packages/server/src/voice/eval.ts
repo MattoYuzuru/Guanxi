@@ -4,7 +4,8 @@
  * Pure and in-memory: no storage, STT adapter, network, filesystem or module-level mutable state.
  * B-WER/U-WER follow the standard biased/unbiased split (Le et al., Interspeech 2021): reference
  * words covered by a glossary term are biased, all other reference words are unbiased, and an
- * insertion is biased only when the inserted hypothesis token belongs to a glossary term.
+ * insertion is charged to B-WER when the inserted token belongs to a glossary term or falls
+ * between two words of one reference term occurrence.
  */
 
 import { createHash } from 'node:crypto'
@@ -291,6 +292,28 @@ function extractTermOccurrences(tokens: string[], terms: CompiledTerm[]): string
   return occurrences
 }
 
+/**
+ * Mark the token boundaries that fall strictly inside any multi-word term occurrence. An
+ * insertion at boundary N sits between reference tokens N - 1 and N; marking the interior
+ * boundaries lets a split multi-word term still charge the inserted token to B-WER.
+ */
+function collectInternalTermBoundaries(
+  tokens: string[],
+  terms: CompiledTerm[],
+): Uint8Array {
+  const marks = new Uint8Array(tokens.length + 1)
+  for (const term of terms) {
+    const length = term.tokens.length
+    if (length < 2) continue
+    for (let index = 0; index + length <= tokens.length; index += 1) {
+      if (matchesTermAt(tokens, index, term)) {
+        marks.fill(1, index + 1, index + length)
+      }
+    }
+  }
+  return marks
+}
+
 function ratio(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator
 }
@@ -303,9 +326,10 @@ function sha256(value: unknown): string {
  * Score a corpus of reference/hypothesis pairs.
  *
  * Corpus metrics aggregate token counts, not per-item averages. B-WER and U-WER use reference
- * token counts as denominators; insertions in a glossary term are charged to B-WER, every other
- * insertion to U-WER. Term precision and recall use multiset matching over extracted term
- * occurrences and share the normalised token stream, so matching is case-insensitive.
+ * token counts as denominators; insertions in a glossary term or inside a multi-word reference
+ * term occurrence are charged to B-WER, every other insertion to U-WER. Term precision and recall
+ * use multiset matching over extracted term occurrences and share the normalised token stream, so
+ * matching is case-insensitive.
  *
  * Each item contributes a fingerprint over its id and normalised reference tokens, and the
  * compiled glossary contributes one over its sorted keys. `compareEval` uses them to reject
@@ -371,6 +395,7 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
 
     const refBiased = collectBiasedTokens(reference, terms)
     const hypBiased = collectBiasedTokens(hypothesis, terms)
+    const refInternalBoundaries = collectInternalTermBoundaries(reference, terms)
     let biasedCount = 0
     for (const mark of refBiased) {
       if (mark === 1) biasedCount += 1
@@ -399,8 +424,11 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
         refIndex += 1
         continue
       }
-      if (hypBiased[hypIndex] === 1) biasedInsertions += 1
-      else unbiasedInsertions += 1
+      if (hypBiased[hypIndex] === 1 || refInternalBoundaries[refIndex] === 1) {
+        biasedInsertions += 1
+      } else {
+        unbiasedInsertions += 1
+      }
       hypIndex += 1
     }
 
