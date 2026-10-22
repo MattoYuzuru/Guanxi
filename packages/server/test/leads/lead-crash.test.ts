@@ -53,6 +53,8 @@ for (const stage of ['delegate', 'wake', 'cancel'] as const) {
     const { points } = JSON.parse(probe.stdout) as { points: string[] }
     assert.ok(points.length >= 8)
     const ackIdx = points.indexOf('model_started:committed')
+    const intentIdx = points.indexOf('lead:delegate:intent_persisted')
+    if (stage === 'delegate') assert.ok(intentIdx > 0, 'the probe reaches the durable delegation intent')
     if (stage === 'wake') assert.ok(ackIdx > 0, 'the probe reaches the acknowledgement')
     const crashClock = stage === 'wake' ? START + HOUR : START
     for (let index = 0; index < points.length; index++) {
@@ -82,6 +84,8 @@ for (const stage of ['delegate', 'wake', 'cancel'] as const) {
         const runId = lead.id
         // The lead's first turn is never re-prompted by recovery. A person retries explicitly.
         if (stage === 'delegate' && w.runs.promises(runId).length === 0) {
+          // Once the intent committed, recovery completes the delegation itself: the lead decided already.
+          assert.ok(index < intentIdx, `a committed intent must be completed by recovery without prompting the lead: ${label}`)
           assert.equal(w.runs.get(runId).state, 'interrupted', label)
           assert.equal(count(w.db, 'SELECT COUNT(*) AS n FROM lead_delegations'), 0, 'no intent exists, so nothing is completed on the lead\'s behalf')
           assert.equal((await w.lead.resume(runId, 'delegate now')).outcome, 'hibernated', label)

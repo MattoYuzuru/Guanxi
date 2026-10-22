@@ -94,6 +94,7 @@ async function leadPrompt(frame) {
   sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: resumed ? 'resumed lead turn' : 'planning delegation' } })
   if (resumed && lead.crashOnResume) { leadLog('crash', { sessionId }); process.exit(31) }
   const brief = (lead.briefs ?? [])[calls]
+  if (resumed && lead.resumeDelayMs) await new Promise(resolve => setTimeout(resolve, lead.resumeDelayMs))
   if (!brief || (resumed && !lead.redelegate)) { finish('end_turn', { resumed }); return }
   toolAbort = new AbortController()
   try {
@@ -175,6 +176,7 @@ lines.on('line', line => {
       reply(frame, tape.newSession); return
     }
     if (frame.method === 'session/load') {
+      leadLog('session_load_requested', { sessionId: frame.params.sessionId })
       if (!lead || lead.loadSession !== true || lead.loadFails) { send({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'unknown session' } }); return }
       mcp = frame.params.mcpServers.find(server => server.type === 'http') ?? null
       leadLog('session_load', { sessionId: frame.params.sessionId, servers: frame.params.mcpServers.length })

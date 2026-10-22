@@ -114,6 +114,22 @@ test('an advertised loadSession that the agent refuses falls back to a seeded se
   assert.equal(f.runs().wakes(runId).filter(w => w.acknowledged_at !== null).length, 1)
 })
 
+test('an agent that no longer advertises loadSession is never asked to load the saved session', async t => {
+  const f = await leadFixture(t)
+  const { runId, first } = f.start()
+  await first
+  assert.equal(f.lead().sessions()[0]!.loadSession, true, 'the first run advertised it')
+  await f.scenario({ loadSession: false })
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(f.runs().get(runId).state, 'completed')
+  const events = await f.events()
+  assert.equal(events.filter(e => e.event === 'session_load_requested').length, 0)
+  assert.equal(events.filter(e => e.event === 'session_new').length, 2)
+  assert.equal(f.db.prepare('SELECT resume_mode FROM lead_wakes WHERE run_id=?').get(runId)!.resume_mode, 'seeded')
+})
+
 test('an escalation wakes the lead without resolving the promise, and the completion wakes it again', async t => {
   const f = await leadFixture(t)
   const { runId, first } = f.start()

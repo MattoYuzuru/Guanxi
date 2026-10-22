@@ -43,6 +43,15 @@ test('free text is scrubbed before it is cut, so a clip can never leave a prefix
   scrubber.close()
 })
 
+test('the finished packet is scrubbed again, covering fields that never pass through the report', () => {
+  const scrubber = new SecretScrubber()
+  const secret = 'identifier_secret_ABCDEFGHIJKLMNOP'
+  scrubber.register('secret://t/id', secret)
+  const built = buildWakePacket(input({ runId: `run-${secret}`, child: { ...child, runId: `child-${secret}` }, pendingChildren: [`other-${secret}`] }), scrubber)
+  assert.ok(!(JSON.stringify(built.packet) + built.text).includes(secret))
+  scrubber.close()
+})
+
 test('a large report is reduced in a fixed order, records every reduction and fits the budget', () => {
   const scrubber = new SecretScrubber()
   const items = Array.from({ length: 300 }, (_, i) => ({ id: `t${i}`, title: `Item ${i} ${'y'.repeat(250)}`, status: 'open' as const }))

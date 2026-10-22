@@ -59,9 +59,13 @@ test('an unavailable lead keeps the wake and packet, notifies, backs off and is 
   const { runId, first } = f.start()
   await first
   await f.scenario({ mcpHttp: false })
+  const childId = f.children.launches[0]!.childRunId
+  const report = (narrative: string) => ({ items: [], gates: [], head: null, diffstat: '', handoff: null, narrative, openQuestions: [], metrics: { cycles: null, tokens: null, moneyMicros: null } })
+  f.children.reports.set(childId, report('FIRST-REPORT'))
   f.children.complete()
   f.lead().pump()
   await f.lead().idle()
+  f.children.reports.set(childId, report('SECOND-REPORT'))
   const run = f.runs()
   assert.equal(run.get(runId).state, 'submitted', 'the lead waits for a retry, it is not failed')
   assert.equal(run.wakes(runId)[0]!.acknowledged_at, null)
@@ -72,6 +76,7 @@ test('an unavailable lead keeps the wake and packet, notifies, backs off and is 
   f.lead().pump()
   await f.lead().idle()
   assert.equal(run.wakes(runId)[0]!.deliveries, 1)
+  const packetBefore = f.db.prepare('SELECT packet, packet_hash FROM lead_wakes').get()
   await f.scenario({ mcpHttp: true })
   f.advance(1_001)
   f.lead().pump()
@@ -81,7 +86,11 @@ test('an unavailable lead keeps the wake and packet, notifies, backs off and is 
   assert.equal(run.wakes(runId)[0]!.deliveries, 2)
   assert.ok(run.wakes(runId)[0]!.acknowledged_at !== null)
   assert.equal((await resumedPrompts(f)).length, 1, 'exactly one resumed turn reached the lead')
+  const resumed = String((await resumedPrompts(f))[0]!.text)
+  assert.match(resumed, /FIRST-REPORT/)
+  assert.ok(!resumed.includes('SECOND-REPORT'), 'a redelivery never rebuilds the packet from newer facts')
   assert.equal(f.lead().sessions()[0]!.failures, 0)
+  assert.deepEqual(f.db.prepare('SELECT packet, packet_hash FROM lead_wakes').get(), packetBefore, 'the redelivery used the packet built for the first delivery')
 })
 
 test('the run policy fallback lead is used only when named, with a seeded session', async t => {
@@ -220,4 +229,28 @@ test('a wake whose packet cannot be built is deferred with a notice and the lead
   assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM lead_wakes').get()!.n, 0, 'no half-built packet is stored')
   assert.equal((await resumedPrompts(f)).length, 0)
   assert.equal(run.attempts(runId).filter(a => ['delivered', 'started'].includes(a.state)).length, 0, 'the claimed attempt was released')
+})
+
+test('a wake that arrives while the lead is mid-turn waits: turns never overlap and each wake is acknowledged once', async t => {
+  const f = await leadFixture(t, { lead: { resumeDelayMs: 300 } })
+  const { runId, first } = f.start()
+  await first
+  const run = f.runs()
+  run.signal(f.children.attempt(), 'first-flag')
+  f.lead().pump()
+  // The resumed turn is running (delayed inside the agent); a second signal and pumps must not start another.
+  for (let i = 0; i < 200 && (await resumedPrompts(f)).length === 0; i++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal((await resumedPrompts(f)).length, 1)
+  run.signal(f.children.attempt(), 'second-flag')
+  f.lead().pump()
+  f.lead().pump()
+  assert.equal((await resumedPrompts(f)).length, 1, 'no concurrent resumed turn')
+  assert.equal(run.wakes(runId)[1]!.acknowledged_at, null)
+  await f.lead().idle()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.wakes(runId).length, 2)
+  assert.deepEqual(run.wakes(runId).map(w => w.acknowledged_at !== null), [true, true])
+  const sequence = (await f.events()).filter(e => (e.event === 'prompt' && String(e.text).includes('guanxi.wake/v1')) || (e.event === 'turn_end' && e.resumed === true)).map(e => e.event)
+  assert.deepEqual(sequence, ['prompt', 'turn_end', 'prompt', 'turn_end'])
 })
