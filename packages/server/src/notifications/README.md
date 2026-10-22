@@ -334,3 +334,60 @@ Evidence: `ms2-notifications-routes.test.ts` (24 tests), the notification parts 
 
 Still later: the notification center UI, OS and push delivery, quota producers calling `ingest`,
 the `wake_leads`, `switch_connection`, `pause_runs` and `resume_runs` ports, run-policy reactions.
+
+## NC1-e: OS notification adapters
+
+**Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-e
+
+This section supersedes the per-platform OS adapter item in "Still later" for macOS and Linux;
+Windows toast and Web Push remain later work.
+
+`os-adapter.ts` delivers the content-free NC1-b `osPayload` through a desktop notification.
+`createOsNotifier({ platform, runner, appName, resolveBinary })` returns an `OsNotifier` with
+`notify({ title, tag })`, or `{ unavailable }`. Results are
+`{ delivered: true, code: 'delivered' }`, `{ delivered: false, code: 'payload_invalid' }` or
+`{ delivered: false, code: 'os_notify_failed' }`. The tag is never displayed or passed to a
+process; callers use it for de-duplication.
+
+### Payload boundary
+
+Validation accepts exactly the two own keys `title` and `tag`; any other own key (enumerable,
+non-enumerable or symbol) is refused before a value is read, while inherited properties are
+ignored and never read. `title` is trimmed, must be 1–120 characters after trimming and may not
+contain C0/C1 controls or U+2028/U+2029; `tag` must be a string with the same control-character
+restriction and has no display-length cap. A malformed payload never reaches a runner, and no
+payload text is logged.
+
+### Platform commands
+
+- macOS: `/usr/bin/osascript` receives three constant `-e` lines (`on run argv`,
+  `display notification (item 1 of argv) with title (item 2 of argv)`, `end run`) followed by
+  `--`, the payload title and the app name. The message is the payload title, the notification
+  title is the app name, and no payload text is interpolated into AppleScript.
+- Linux: `resolveBinary('notify-send')` must return a non-empty absolute path, otherwise the
+  notifier is `{ unavailable: 'notify_send_missing' }` (null, empty or a throwing lookup) or
+  `{ unavailable: 'notify_send_path_invalid' }` (relative or NUL-containing). The command is
+  `notify-send --app-name <appName> -- <title>`; there is no body.
+- Windows and every other platform return `{ unavailable: 'platform_unsupported' }`; Windows
+  toast is later work. An empty, control-bearing or overlong app name returns
+  `{ unavailable: 'app_name_invalid' }`.
+
+### Runner
+
+The default runner is `execFile` with no shell, a 64 KiB output buffer and the adapter's 5 s
+timeout, enforced with SIGKILL so a child that ignores SIGTERM cannot outlive the limit and
+later report success. Success requires exit code 0 with no signal; a non-zero exit, any signal,
+a timeout, a spawn error or a thrown runner maps to `os_notify_failed`, and the runner's
+message is never returned or logged. Tests inject a fake runner except for one darwin-only
+`/usr/bin/true` smoke that proves the default runner can execute an absolute binary without
+opening a notification.
+
+### NC1-e test evidence
+
+```bash
+nice -n 10 node --test packages/server/test/notifications/*.test.ts
+nice -n 10 npx tsc --noEmit -p packages/server
+```
+
+The command runs 99 tests: 13 NC1-e tests and the 86 NC1-a…d tests as the regression envelope.
+`tsc` reports no diagnostics.
