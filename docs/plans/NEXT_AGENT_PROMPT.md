@@ -25,7 +25,7 @@ continuation record. Whole K4, DS2, B1 and MS1 gates remain open.
    AppShellChrome border-box fix `218e150` passes controlled 390px behavior and scoped axe,
    clipping and motion; pinned-image baselines/readiness work is active in its isolated clone.
 2. **Current boundary:** R3 ETA/signals is merged locally as `fad69e5` after candidate
-   `4657f47` passes full affected gates. Run full main post-merge checks before another executable merge.
+   `4657f47` passes full affected gates. All eight full main post-merge checks pass at clean `af0ccab`.
    Original repaired source `cd00a82` has independent pending-collector cancellation review
    closure and 31 new / 124 inherited relay/R1 passes. Candidate evidence is in [ETA](evidence/R3-eta.md) and [signals](evidence/R3-signals.md). The broader judge cascade is a separate GPT lane; real calibration,
    night wake and B3 remain unfinished.
@@ -35,8 +35,8 @@ continuation record. Whole K4, DS2, B1 and MS1 gates remain open.
    two-host/hibernation/six-hour observations remain open.
 4. K4 input-artifact candidate `419a997` requires three independent P2 fixes: FIFO queue
    mutations, live-reference/canonical-directory reaper race, and durable stop intervention
-   before one terminal when pending input I/O aborts. Author fix round is active. Re-run the
-   independent probes, broader native tests and full integration gates before accepting it.
+   before one terminal when pending input I/O aborts. Final repaired source `afd7345` has independent four-probe closure. Synchronize current main,
+   then run broader native tests and full candidate/integration gates before accepting it.
    Queue full text remains inline; no whole K4 input/memory closure is claimed.
 5. R2 trusted start/status/stop plus CLI is being implemented by an isolated GPT worker.
    Default missing rendered-tokenizer/workspace authorities must refuse. Do not infer context

@@ -5,7 +5,7 @@
 merged; K4, K5 and R2 have merged bounded implementations with named unfinished scope.
 K4 follow-up 2 is merged after full integrator gates. DS2 source and positive HTTPS evidence
 are merged locally; all eight post-merge gates pass at clean `5e9bbfe`. X1 remains a reviewed
-candidate; U1 replication and R3 ETA/signals have a bounded local merge (`fad69e5`), with post-merge gates pending. B1 admission/gateway,
+candidate; U1 replication and R3 ETA/signals have a bounded local merge (`fad69e5`), with all eight post-merge gates passing at `af0ccab`. B1 admission/gateway,
 staging and private stream source is merged locally as `7366df8`; all eight post-merge gates pass at clean `6da2058`. Their full stage gates remain open.
 See the [continuation record](evidence/coordination-2026-10-22.md) for current ownership and
 pinned candidates; the [previous audit](evidence/coordination-2026-10-21.md) retains the initial
@@ -246,7 +246,7 @@ decision was made.
 | R2 Relay executor | internal single-node implementation merged (`726efc3`); review fixes included | [evidence/R2](evidence/R2.md); trusted live runtime meter/admission and independent semantic probe evidence remain open. No public start flow or live long-run claim. |
 | U1 Shell, layout, modes | layout plus signed-replication candidate independently reviewed (`codex/u1-completion`, `e5f8e0a`); full candidate gates pass, integration pending; shell/CSS migration active | [lanes/U1](lanes/U1.md); current main has no U1 replication. Candidate uses real signed F1 operations; actual remote-node operation is unmeasured. |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
-| R3 Judge + ETA | ETA and observational signal wiring independently reviewed and merged locally (`fad69e5`); post-merge gates pending | 31 new / 124 inherited relay/R1 tests pass; candidate full affected gates pass at `4657f47`, including core 1292/1292. Stop/wall pending-collector fix separately verified. Full judge/delegation, real calibration/night-run exit gates remain open. |
+| R3 Judge + ETA | ETA and observational signal wiring independently reviewed and merged locally (`fad69e5`); all eight post-merge gates pass at `af0ccab` | 31 new / 124 inherited relay/R1 tests pass; candidate full affected gates pass at `4657f47`, including core 1292/1292. Stop/wall pending-collector fix separately verified. Full judge/delegation, real calibration/night-run exit gates remain open. |
 | F2 Remote attempts | offer/reservation foundation independently reviewed (`codex/ms1-f2`, `5c66e27`); integration pending after U1 | 17 new / 9 independent governor envelope = 26 pass. Renewable grant/execution/results candidate `ffa9d1a` is separately reviewed (30 new / 151 inherited), not integrated. Cost/toolful transport/physical host evidence remain open. |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
 
