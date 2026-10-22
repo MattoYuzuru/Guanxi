@@ -50,7 +50,7 @@ describe('DS1-a extension registrations', () => {
         // The actual mounted shell reaches draft components; this is expected policy evidence
         // until the owner's separate readiness decision, not a green registration.
         assert.equal(clean.ok, false, 'G11 must report the actual mounted draft closure')
-        assert.ok(clean.errors.some((error) => /icon-button/.test(error) && /MountedShell/.test(error)), clean.errors.join('\n'))
+        assert.ok(clean.errors.some((error) => /icon-button/.test(error) && /draft component/.test(error)), clean.errors.join('\n'))
       } else {
         assert.equal(clean.ok, true, clean.errors.join('\n'))
       }
