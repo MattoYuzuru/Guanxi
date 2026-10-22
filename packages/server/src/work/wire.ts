@@ -9,22 +9,22 @@ import {
   type WorkErrorCode,
   type WorkItemsPage as WorkItemsPageWire,
 } from '@guanxi/contract'
-import { commonFailure, type RouteFailure } from '../http/local-guard.ts'
+import { commonFailure, wire, type RouteFailure } from '../http/local-guard.ts'
 import type { WorkItemsPage } from './ledger.ts'
 import { WorkError, type Activation, type PlanRevision, type StoredEvidenceEvent } from './types.ts'
 
-export const toPlanRevisionWire = (plan: PlanRevision) => workPlanRevisionSchema.parse(plan)
+export const toPlanRevisionWire = (plan: PlanRevision) => wire(workPlanRevisionSchema, plan)
 export const toLatestRevisionWire = (plan: PlanRevision | null) =>
-  latestWorkRevisionResponseSchema.parse({ revision: plan === null ? null : toPlanRevisionWire(plan) })
-export const toModeWire = (activation: Activation) => workModeSnapshotSchema.parse(activation)
+  wire(latestWorkRevisionResponseSchema, { revision: plan === null ? null : toPlanRevisionWire(plan) })
+export const toModeWire = (activation: Activation) => wire(workModeSnapshotSchema, activation)
 
 export function toEventWire(stored: StoredEvidenceEvent): AppendWorkEventResponse {
   const { seq, ...event } = stored
-  return appendWorkEventResponseSchema.parse({ seq, event })
+  return wire(appendWorkEventResponseSchema, { seq, event })
 }
 
 export function toItemsPageWire(page: WorkItemsPage): WorkItemsPageWire {
-  return workItemsPageSchema.parse(page)
+  return wire(workItemsPageSchema, page)
 }
 
 const FAILURES: Record<string, RouteFailure> = {

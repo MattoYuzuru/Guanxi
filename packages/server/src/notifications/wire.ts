@@ -6,14 +6,14 @@ import {
   type NotificationErrorCode,
   type NotificationWire,
 } from '@guanxi/contract'
-import { commonFailure, type RouteFailure } from '../http/local-guard.ts'
+import { commonFailure, wire, type RouteFailure } from '../http/local-guard.ts'
 import { NotificationActionError, type ActionExecution } from './actions.ts'
 import { InboxError } from './inbox.ts'
 import { NotificationStoreError, type StoredNotification } from './store.ts'
 
 /** Account ids, idempotency keys and window instance keys stay on the node. */
 export function toNotificationWire(row: StoredNotification): NotificationWire {
-  return notificationSchema.parse({
+  return wire(notificationSchema, {
     id: row.id,
     kind: row.kind,
     severity: row.severity,
@@ -48,7 +48,7 @@ function scalarResult(result: unknown): Record<string, string | number | boolean
 }
 
 export function toActionResponse(execution: ActionExecution): NotificationActionResponse {
-  return notificationActionResponseSchema.parse({
+  return wire(notificationActionResponseSchema, {
     notificationId: execution.notificationId,
     action: execution.action,
     status: execution.status,

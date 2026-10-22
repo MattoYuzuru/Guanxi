@@ -10,7 +10,7 @@ import {
   snoozeNotificationBodySchema,
   type NotificationErrorCode,
 } from '@guanxi/contract'
-import { ServiceUnavailableError, failureResponse, localGuard } from '../http/local-guard.ts'
+import { ServiceUnavailableError, failureResponse, localGuard, wire } from '../http/local-guard.ts'
 import type { NotificationInbox } from './inbox.ts'
 import { notificationFailure, toActionResponse, toNotificationWire } from './wire.ts'
 
@@ -38,12 +38,12 @@ export function notificationRoutes(resolve: () => NotificationInbox | undefined,
   routes.get('/', (c) => {
     const query = listNotificationsQuerySchema.parse(c.req.query())
     const page = inbox().list(accountId, { states: query.state, limit: query.limit, before: query.before })
-    return c.json(listNotificationsResponseSchema.parse({
+    return c.json(wire(listNotificationsResponseSchema, {
       notifications: page.items.map(toNotificationWire),
       nextCursor: page.nextCursor,
     }))
   })
-  routes.get('/actions', (c) => c.json(notificationActionsResponseSchema.parse({ actions: inbox().availability() })))
+  routes.get('/actions', (c) => c.json(wire(notificationActionsResponseSchema, { actions: inbox().availability() })))
   routes.get('/:id', (c) => c.json(toNotificationWire(inbox().get(accountId, notificationIdSchema.parse(c.req.param('id'))))))
   routes.post('/:id/read', async (c) => {
     const id = notificationIdSchema.parse(c.req.param('id'))

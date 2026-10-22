@@ -57,7 +57,7 @@ export type WorkPlanRevisionWire = z.infer<typeof workPlanRevisionSchema>
 export const latestWorkRevisionResponseSchema = z.object({ revision: workPlanRevisionSchema.nullable() }).strict()
 
 const at = z.union([z.string().min(1), z.number().finite()])
-const base = { itemId: itemId, at, source: z.string().min(1) }
+const base = { itemId: itemId, at, source: z.string().min(1), seq: z.number().int().positive().safe().optional() }
 /** Every evidence type, as stored. Only the human subset is writable. */
 export const workEvidenceEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('proposed'), ...base, item: workItemSpecSchema }).strict(),

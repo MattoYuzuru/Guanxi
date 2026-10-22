@@ -6,7 +6,7 @@
  */
 import type { Context, MiddlewareHandler } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
-import { ZodError } from 'zod'
+import { ZodError, type ZodTypeAny, type output } from 'zod'
 import { isLoopbackPeer } from '../session-log/routes.ts'
 
 /** Local owner scope only; account authentication replaces this binding in the account stage. */
@@ -53,6 +53,24 @@ export function localGuard(devOrigins: readonly string[] = []): MiddlewareHandle
     }
     await next()
   }
+}
+
+/** A response we built does not match its own contract: a server bug, never the caller's fault. */
+export class ResponseShapeError extends Error {
+  constructor() {
+    super('response does not match the contract')
+    this.name = 'ResponseShapeError'
+  }
+}
+
+/**
+ * Validates an outgoing value with its contract schema. A mismatch is reported as an internal
+ * error, so a mapping bug can never masquerade as `validation_failed` (a caller error).
+ */
+export function wire<S extends ZodTypeAny>(schema: S, value: unknown): output<S> {
+  const parsed = schema.safeParse(value)
+  if (!parsed.success) throw new ResponseShapeError()
+  return parsed.data
 }
 
 /** Zod and JSON syntax failures are caller errors; everything unknown is an internal error. */

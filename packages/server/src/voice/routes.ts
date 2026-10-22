@@ -11,9 +11,9 @@ import {
   updateGlossaryEntryBodySchema,
   type GlossaryErrorCode,
 } from '@guanxi/contract'
-import { ServiceUnavailableError, failureResponse, localGuard } from '../http/local-guard.ts'
+import { ServiceUnavailableError, failureResponse, localGuard, wire } from '../http/local-guard.ts'
 import type { VoiceGlossary } from './plugin.ts'
-import { glossaryFailure, toPreviewWire, toRevisionWire, toStoredEntryWire } from './wire.ts'
+import { glossaryFailure, mutating, toPreviewWire, toRevisionWire, toStoredEntryWire } from './wire.ts'
 
 /**
  * REST surface of the voice glossary. `accountId` is the single local owner today and is passed
@@ -38,12 +38,12 @@ export function glossaryRoutes(resolve: () => VoiceGlossary | undefined, account
   routes.get('/', (c) => {
     const query = listGlossaryQuerySchema.parse(c.req.query())
     const rows = voice().store.list(accountId, { projectId: query.projectId, includeInactive: query.includeInactive })
-    return c.json(listGlossaryResponseSchema.parse({ entries: rows.map(toStoredEntryWire) }))
+    return c.json(wire(listGlossaryResponseSchema, { entries: rows.map(toStoredEntryWire) }))
   })
   routes.post('/', async (c) => {
     const body = createGlossaryEntryBodySchema.parse(await c.req.json())
     const id = body.id ?? `gl_${randomUUID()}`
-    const row = voice().store.create(accountId, body.scope, body.projectId ?? null, { ...body.entry, id }, 'user')
+    const row = mutating(() => voice().store.create(accountId, body.scope, body.projectId ?? null, { ...body.entry, id }, 'user'))
     return c.json(toStoredEntryWire(row), 201)
   })
   routes.post('/apply-preview', async (c) => {
@@ -57,17 +57,17 @@ export function glossaryRoutes(resolve: () => VoiceGlossary | undefined, account
   routes.put('/:id', async (c) => {
     const id = glossaryEntryIdSchema.parse(c.req.param('id'))
     const body = updateGlossaryEntryBodySchema.parse(await c.req.json())
-    return c.json(toStoredEntryWire(voice().store.update(accountId, id, { ...body.entry, id }, 'user')))
+    return c.json(toStoredEntryWire(mutating(() => voice().store.update(accountId, id, { ...body.entry, id }, 'user'))))
   })
   routes.get('/:id/history', (c) => {
     const id = glossaryEntryIdSchema.parse(c.req.param('id'))
-    return c.json(glossaryHistoryResponseSchema.parse({ revisions: voice().store.history(accountId, id).map(toRevisionWire) }))
+    return c.json(wire(glossaryHistoryResponseSchema, { revisions: voice().store.history(accountId, id).map(toRevisionWire) }))
   })
   for (const command of ['deactivate', 'reactivate', 'revert'] as const) {
     routes.post(`/:id/${command}`, async (c) => {
       const id = glossaryEntryIdSchema.parse(c.req.param('id'))
       glossaryEmptyBodySchema.parse(await c.req.json())
-      return c.json(toStoredEntryWire(voice().store[command](accountId, id)))
+      return c.json(toStoredEntryWire(mutating(() => voice().store[command](accountId, id))))
     })
   }
   return routes

@@ -82,21 +82,29 @@ const METHOD_FOR: Record<Exclude<NotificationAction, 'wake_leads'>, PortMethod> 
   raise_budget: 'raiseBudget',
 }
 
+function hostSupplies(host: Partial<ActionPorts>, action: NotificationAction): boolean {
+  return action === 'wake_leads' ? typeof host.wakeLeads === 'function' : typeof host[METHOD_FOR[action]] === 'function'
+}
+
 function configuredActions(host: Partial<ActionPorts>): Set<NotificationAction> {
   const configured = new Set<NotificationAction>(BUILT_IN)
-  for (const action of NOTIFICATION_ACTIONS) {
-    if (action === 'wake_leads') {
-      if (typeof host.wakeLeads === 'function') configured.add(action)
-    } else if (typeof host[METHOD_FOR[action]] === 'function') {
-      configured.add(action)
-    }
-  }
+  for (const action of NOTIFICATION_ACTIONS) if (hostSupplies(host, action)) configured.add(action)
   return configured
 }
 
-function buildPorts(host: Partial<ActionPorts>): ActionPorts {
-  const hostEffects = [...configuredActions(host)].some((action) => !BUILT_IN.has(action))
+function buildPorts(host: Partial<ActionPorts>, store: NotificationStore): ActionPorts {
   const probe = host.hasCompleted
+  // Built-in ports have no effect outside the store, so replaying them after a crash is safe.
+  // Any other action needs a host probe to say whether its key already took effect; without
+  // one the answer is "unknown" and nothing is replayed.
+  const hasCompleted = (key: string): boolean | Promise<boolean> => {
+    const row = store.db.prepare('SELECT action FROM notification_actions WHERE idempotency_key=?').get(key) as
+      { action: string } | undefined
+    const action = row?.action as NotificationAction | undefined
+    if (action !== undefined && BUILT_IN.has(action) && !hostSupplies(host, action)) return false
+    if (probe === undefined) throw new InboxError('not_configured')
+    return probe.call(host, key)
+  }
   return {
     open: host.open ?? (async () => ({ acknowledged: true })),
     addPrompt: host.addPrompt ?? (async () => refused()),
@@ -108,11 +116,7 @@ function buildPorts(host: Partial<ActionPorts>): ActionPorts {
     resumeRuns: host.resumeRuns ?? (async () => refused()),
     snooze: host.snooze ?? (async (context: ActionPortContext<'snooze'>) => ({ untilMs: context.args.untilMs })),
     raiseBudget: host.raiseBudget ?? (async () => refused()),
-    // Built-in ports have no effect outside the store, so replay is safe. Once a host port with a
-    // real effect exists, only the host can say whether a key already took effect.
-    ...(probe !== undefined
-      ? { hasCompleted: (key: string) => probe.call(host, key) }
-      : hostEffects ? {} : { hasCompleted: () => false }),
+    hasCompleted,
   }
 }
 
@@ -130,7 +134,7 @@ export class NotificationInbox {
     this.options = options
     const host = options.ports ?? {}
     this.configured = configuredActions(host)
-    this.ports = buildPorts(host)
+    this.ports = buildPorts(host, store)
   }
 
   /** Availability of every action on this node, so a client can disable what would be refused. */

@@ -8,7 +8,7 @@ import {
   workProjectIdSchema,
   type WorkErrorCode,
 } from '@guanxi/contract'
-import { ServiceUnavailableError, failureResponse, localGuard } from '../http/local-guard.ts'
+import { ServiceUnavailableError, failureResponse, localGuard, wire } from '../http/local-guard.ts'
 import type { WorkLedger } from './ledger.ts'
 import { toEventWire, toItemsPageWire, toLatestRevisionWire, toModeWire, toPlanRevisionWire, workFailure } from './wire.ts'
 
@@ -61,7 +61,7 @@ export function workRoutes(resolve: () => WorkLedger | undefined, accountId: str
   })
   routes.get('/projects/:projectId/export', (c) => {
     const id = project(c.req.param('projectId'))
-    return c.json(workExportResponseSchema.parse({ projectId: id, ...ledger().exportMarkdown(id) }))
+    return c.json(wire(workExportResponseSchema, { projectId: id, ...ledger().exportMarkdown(id) }))
   })
   return routes
 }

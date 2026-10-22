@@ -7,7 +7,7 @@ import {
   type GlossaryPreviewResponse,
   type StoredGlossaryEntryWire,
 } from '@guanxi/contract'
-import { commonFailure, type RouteFailure } from '../http/local-guard.ts'
+import { commonFailure, wire, type RouteFailure } from '../http/local-guard.ts'
 import type { GlossaryEntry, ReplaceResult } from './glossary.ts'
 import { glossaryRevisionHash } from './marker.ts'
 import { GlossaryStoreError, type GlossaryRevision, type StoredGlossaryEntry } from './store.ts'
@@ -25,7 +25,7 @@ function entryWire(entry: GlossaryEntry) {
 
 /** The account id stays on the node. */
 export function toStoredEntryWire(row: StoredGlossaryEntry): StoredGlossaryEntryWire {
-  return storedGlossaryEntrySchema.parse({
+  return wire(storedGlossaryEntrySchema, {
     id: row.id,
     scope: row.scope,
     projectId: row.projectId,
@@ -38,7 +38,7 @@ export function toStoredEntryWire(row: StoredGlossaryEntry): StoredGlossaryEntry
 }
 
 export function toRevisionWire(revision: GlossaryRevision) {
-  return glossaryRevisionSchema.parse({
+  return wire(glossaryRevisionSchema, {
     entryId: revision.entryId,
     revision: revision.revision,
     op: revision.op,
@@ -52,7 +52,7 @@ export function toPreviewWire(
   result: ReplaceResult,
   effective: ReadonlyArray<{ id: string; revision: number }>,
 ): GlossaryPreviewResponse {
-  return glossaryPreviewResponseSchema.parse({
+  return wire(glossaryPreviewResponseSchema, {
     text: result.text,
     replacements: result.replacements.map((item) => ({
       start: item.start, end: item.end, original: item.original, replacement: item.replacement, entryId: item.entryId,
@@ -60,6 +60,27 @@ export function toPreviewWire(
     glossaryRevision: glossaryRevisionHash(effective.map((entry) => ({ id: entry.id, revision: entry.revision }))),
     entryCount: effective.length,
   })
+}
+
+/** A mutation the glossary compiler refused (bad term, collision). Its message is never kept. */
+export class GlossaryInvalidError extends Error {
+  constructor() {
+    super('glossary entry is invalid')
+    this.name = 'GlossaryInvalidError'
+  }
+}
+
+/**
+ * The compiler reports bad input as `TypeError`s whose messages quote the user's terms. Only a
+ * `TypeError` raised inside a store mutation is the caller's input; anywhere else it is a bug.
+ */
+export function mutating<T>(run: () => T): T {
+  try {
+    return run()
+  } catch (error) {
+    if (error instanceof TypeError) throw new GlossaryInvalidError()
+    throw error
+  }
 }
 
 const FAILURES: Record<string, RouteFailure> = {
@@ -76,8 +97,8 @@ const FAILURES: Record<string, RouteFailure> = {
 }
 
 /**
- * Codes only. Compilation and collision failures are `TypeError`s whose messages quote the
- * user's terms, so the message is dropped and the stable `glossary_invalid` code returned.
+ * Codes only. Compilation and collision failures arrive as `GlossaryInvalidError` (see
+ * `mutating`); a stray `TypeError` is an internal error.
  */
 export function glossaryFailure(error: unknown): RouteFailure {
   const common = commonFailure(error)
@@ -85,6 +106,6 @@ export function glossaryFailure(error: unknown): RouteFailure {
   if (error instanceof GlossaryStoreError) {
     return FAILURES[error.code] ?? { code: 'internal_error' satisfies GlossaryErrorCode, status: 500 }
   }
-  if (error instanceof TypeError) return { code: 'glossary_invalid', status: 422 }
+  if (error instanceof GlossaryInvalidError) return { code: 'glossary_invalid', status: 422 }
   return { code: 'internal_error', status: 500 }
 }
