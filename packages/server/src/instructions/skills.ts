@@ -210,10 +210,12 @@ function truncate(text: string, max: number | undefined): string {
   return `${points.slice(0, limit - 1).join('')}…`
 }
 
-async function listFiles(root: string): Promise<string[]> {
+async function listFiles(root: string, maxFiles: number): Promise<{ files: string[]; overflow: boolean }> {
   const files: string[] = []
   const visited = new Set<string>()
+  let overflow = false
   const walk = async (directory: string, prefix: string): Promise<void> => {
+    if (overflow) return
     let real: string
     try { real = await realpath(directory) } catch { return }
     if (!inside(root, real) || visited.has(real)) return
@@ -222,6 +224,7 @@ async function listFiles(root: string): Promise<string[]> {
     try { entries = await readdir(directory, { withFileTypes: true }) } catch { return }
     entries.sort((left, right) => compareText(left.name, right.name))
     for (const entry of entries) {
+      if (overflow) return
       if (!prefix && entry.name === 'SKILL.md') continue
       const path = join(directory, entry.name)
       const name = prefix ? `${prefix}/${entry.name}` : entry.name
@@ -233,11 +236,17 @@ async function listFiles(root: string): Promise<string[]> {
         await walk(path, name)
         continue
       }
-      if (info?.isFile()) files.push(name)
+      if (info?.isFile()) {
+        if (files.length >= maxFiles) {
+          overflow = true
+          return
+        }
+        files.push(name)
+      }
     }
   }
   await walk(root, '')
-  return files.sort(compareText)
+  return { files: files.sort(compareText), overflow }
 }
 
 /**
@@ -394,12 +403,15 @@ export function skillContext(index: SkillIndex, count: (text: string) => number,
 export async function loadSkill(
   index: SkillIndex,
   id: string,
-  opts: { maxBodyBytes: number },
+  opts: { maxBodyBytes: number; maxFiles?: number },
 ): Promise<
-  { id: string; body: string; files: string[]; truncated: false } |
+  { id: string; body: string; files: string[]; truncated: false; overflow: boolean } |
   { id: string; error: 'not_found' | 'too_large' | 'outside_root' | 'unreadable' | 'not_regular_file' }
 > {
   const maxBodyBytes = assertBudget(opts.maxBodyBytes, 'max_body_bytes_invalid')
+  const maxFiles = opts.maxFiles === undefined
+    ? 200
+    : Math.floor(assertBudget(opts.maxFiles, 'max_files_invalid'))
   const summary = index.skills.find(skill => skill.id === id)
   if (!summary) return { id, error: 'not_found' }
   let dir: string
@@ -436,5 +448,6 @@ export async function loadSkill(
   } catch (error) {
     return { id, error: readFailureCode(error) ?? 'not_found' }
   }
-  return { id, body: body.toString('utf8'), files: await listFiles(dir), truncated: false }
+  const listing = await listFiles(dir, maxFiles)
+  return { id, body: body.toString('utf8'), files: listing.files, truncated: false, overflow: listing.overflow }
 }

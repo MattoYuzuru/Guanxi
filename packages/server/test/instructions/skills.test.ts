@@ -450,12 +450,37 @@ test('loadSkill returns the exact body and lists only files inside the skill dir
   assert.equal(loaded.id, id)
   assert.equal(loaded.body, '# Loader\nBody text\n')
   assert.equal(loaded.truncated, false)
+  assert.equal(loaded.overflow, false)
   const expected = ['inside.md', 'notes.md', 'scripts/run.mjs']
   if (insideLink) expected.push('inside-link.md')
   expected.sort()
   assert.deepEqual(loaded.files, expected)
   assert.ok(loaded.files.every(file => !file.startsWith('/') && !file.includes('..') && file !== 'SKILL.md'))
   assert.deepEqual(await loadSkill(index, 'project:missing', { maxBodyBytes: 1024 }), { id: 'project:missing', error: 'not_found' })
+})
+
+test('loadSkill caps the file listing at maxFiles and reports overflow', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const dir = await writeSkill(projectRoot, '.agents/skills/many', 'name: many\ndescription: many')
+  for (let index = 0; index < 201; index++) {
+    await writeFile(join(dir, `file-${String(index).padStart(3, '0')}.md`), 'x')
+  }
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'many').id
+
+  const loaded = await loadSkill(index, id, { maxBodyBytes: 1024 })
+  assert.ok(!('error' in loaded))
+  assert.equal(loaded.files.length, 200)
+  assert.equal(loaded.overflow, true)
+  assert.deepEqual(loaded.files, [...loaded.files].sort())
+
+  const two = await loadSkill(index, id, { maxBodyBytes: 1024, maxFiles: 2 })
+  assert.ok(!('error' in two))
+  assert.deepEqual(two.files, ['file-000.md', 'file-001.md'])
+  assert.equal(two.overflow, true)
+
+  await assert.rejects(loadSkill(index, id, { maxBodyBytes: 1024, maxFiles: -1 }), TypeError)
 })
 
 test('a closing delimiter split across read chunks does not shift the body', async t => {

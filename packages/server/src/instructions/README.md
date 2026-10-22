@@ -42,11 +42,12 @@ name and returns `{ text, included, omitted }`. The final line reports omitted s
 even that line cannot fit, `text` is empty; `count(text) <= budget` holds for non-negative
 budgets. A 50 KiB body cannot change the count because no body byte reaches this function.
 
-`loadSkill(index, id, { maxBodyBytes })` returns the byte-exact body after the closing `---`
-for a discovered id, `truncated: false`, and sorted relative sibling paths. Bodies over the
-limit return `too_large` (never a partial body); unknown ids return `not_found`; redirected
-paths outside the captured boundary return `outside_root`; unreadable files return
-`unreadable`. File listing is recursive and
+`loadSkill(index, id, { maxBodyBytes, maxFiles? })` returns the byte-exact body after the
+closing `---` for a discovered id, `truncated: false`, and sorted relative sibling paths. At
+most `maxFiles` entries are listed (default 200); `overflow: true` means more files exist and
+were not listed. Bodies over the limit return `too_large` (never a partial body); unknown ids
+return `not_found`; redirected paths outside the captured boundary return `outside_root`;
+unreadable files return `unreadable`. File listing is recursive and
 skips anything whose real path leaves the skill directory. Instruction files are opened
 read-only, non-blocking and without following symlinks; handles are `fstat`ed and non-regular
 files (FIFOs, devices) are refused with `not_regular_file`. A body larger than `maxBodyBytes`
