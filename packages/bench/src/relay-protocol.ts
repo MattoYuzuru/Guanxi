@@ -45,6 +45,7 @@ const itemsGroup = orUnknown(z.object({
   manifest: z.object({ ref: id, sha256: sha, assignedAtMs: uint, opportunities: z.array(id).max(MAX_ITEM_ROWS) }).strict(),
   assessments: z.array(z.discriminatedUnion('state', [
     z.object({ opportunity: id, state: z.literal('unknown'), reason }).strict(),
+    // `head` is reported structure only: evidence metadata carries no head field to bind it to.
     z.object({ opportunity: id, state: z.literal('observed'), ref: id, head: revision, acceptanceSha256: sha, assessedAtMs: uint, result: z.enum(['passed', 'failed']) }).strict(),
   ])).max(MAX_ITEM_ROWS),
 }).strict())

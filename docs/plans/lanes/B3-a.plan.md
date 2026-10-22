@@ -81,6 +81,14 @@ critical probe accuracy, guarded repeats, truncation, ledger/handoff consistency
 typed as the literal `unevaluated` with fixed reasons. MS1's six-hour other-node run, `E`
 calibration, the real cohort and D-194 measurement are never touched.
 
+## Documented deviation: assessment `head`
+
+`items[].assessments[].head` is a revision string retained as reported structure. Evidence
+metadata (`relayEvidenceDigest`) carries id, kind, trial, attempt and cycle only; it carries no
+head field, so no supplied record can bind the assessment head. The validator therefore does
+not reject a swapped head. Binding it requires a later evidence version with a head-bearing
+reference; until then this is a known limitation, not an asserted rule.
+
 ## Review-point mapping
 
 | Review point | Handling |
