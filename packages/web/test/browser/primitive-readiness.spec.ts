@@ -25,6 +25,17 @@ async function target24(control: Locator) {
   expect(box!.height).toBeGreaterThanOrEqual(24)
 }
 
+function contrast(foreground: string, background: string) {
+  const luminance = (color: string) => {
+    const channels = color.match(/[\d.]+/g)?.slice(0, 3).map(Number)
+    if (!channels || channels.length !== 3) throw new Error(`Expected a resolved system RGB color: ${color}`)
+    const linear = channels.map(value => value / 255 <= 0.04045 ? value / 255 / 12.92 : ((value / 255 + 0.055) / 1.055) ** 2.4)
+    return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
+  }
+  const values = [luminance(foreground), luminance(background)].sort((a, b) => a - b)
+  return (values[1]! + 0.05) / (values[0]! + 0.05)
+}
+
 async function tooltipFor(page: Page, trigger: Locator, label: string) {
   const tooltip = page.getByRole('tooltip')
   await expect(tooltip).toHaveCount(1)
@@ -229,7 +240,7 @@ test('forced colors preserves visible trigger focus, highlighted command contras
   })
   expect(ring.style).toBe('solid')
   expect(ring.width).toBeGreaterThanOrEqual(2)
-  expect(ring.color).not.toBe(ring.background)
+  expect(contrast(ring.color, ring.background)).toBeGreaterThanOrEqual(3)
   await page.keyboard.press('ArrowDown')
   const highlighted = page.getByRole('menuitem').first()
   await expect(highlighted).toBeFocused()
@@ -237,6 +248,7 @@ test('forced colors preserves visible trigger focus, highlighted command contras
   const colors = await highlighted.evaluate(node => ({ fg: getComputedStyle(node).color, bg: getComputedStyle(node).backgroundColor }))
   expect(colors.fg).not.toBe(colors.bg)
   expect(colors.bg).not.toBe('rgba(0, 0, 0, 0)')
+  expect(contrast(colors.fg, colors.bg)).toBeGreaterThanOrEqual(4.5)
   await page.keyboard.press('Escape')
   await page.getByTestId('icon').focus()
   const tooltip = await tooltipFor(page, page.getByTestId('icon'), 'Open settings')
@@ -259,8 +271,16 @@ for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfor
       await expect(page.getByRole('menuitem').first()).toBeFocused()
       await settled(page)
       await fitsViewport(menu)
+      const regime = await menu.evaluate(node => ({ backdrop: getComputedStyle(node).backdropFilter,
+        row: parseFloat(getComputedStyle(node.querySelector('[role="menuitem"]')!).minHeight),
+        font: parseFloat(getComputedStyle(node.querySelector('[role="menuitem"]')!).fontSize) }))
+      expect(regime.row).toBe(density === 'compact' ? 26 : 32)
+      expect(regime.font).toBe(density === 'compact' ? 13 : 14)
+      expect(regime.backdrop).toContain(glass === 'solid' ? 'none' : glass === 'glass' ? 'blur(20px)' : 'blur(12px)')
       await expect(page.getByRole('menuitem').nth(2)).toHaveAttribute('aria-disabled', 'true')
-      await testInfo.attach(`${locale}-menu`, { body: await page.screenshot(), contentType: 'image/png' })
+      const menuImage = testInfo.outputPath(`${locale}-menu.png`)
+      await page.screenshot({ path: menuImage })
+      await testInfo.attach(`${locale}-menu`, { path: menuImage, contentType: 'image/png' })
       await page.keyboard.press('Escape')
       await expect(trigger).toBeFocused()
       const icon = page.getByTestId('icon')
@@ -269,7 +289,9 @@ for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfor
       const tooltip = await tooltipFor(page, icon, iconLabel)
       await settled(page)
       await fitsViewport(tooltip)
-      await testInfo.attach(`${locale}-tooltip`, { body: await page.screenshot(), contentType: 'image/png' })
+      const tooltipImage = testInfo.outputPath(`${locale}-tooltip.png`)
+      await page.screenshot({ path: tooltipImage })
+      await testInfo.attach(`${locale}-tooltip`, { path: tooltipImage, contentType: 'image/png' })
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       const axe = await new AxeBuilder({ page }).include('main').include('[role="tooltip"]').analyze()
       expect(axe.violations.filter(item => item.impact === 'critical' || item.impact === 'serious')).toEqual([])

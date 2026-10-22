@@ -49,7 +49,8 @@ export function Tooltip({ open, defaultOpen = false, disabled, onOpenChange, ...
 
 export function TooltipTrigger({ 'aria-describedby': describedBy, ...props }: TooltipTriggerProps) {
   const description = useContext(TooltipDescriptionContext)
-  const ids = [describedBy, description?.open ? description.contentId : undefined].filter(Boolean).join(' ')
+  const ids = [...new Set([describedBy, description?.open ? description.contentId : undefined]
+    .filter(Boolean).join(' ').split(/\s+/).filter(Boolean))].join(' ')
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} aria-describedby={ids || undefined} />
 }
 
