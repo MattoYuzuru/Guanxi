@@ -522,8 +522,12 @@ describe('Settings language and glossary', () => {
     expect(session.en.definition).toMatch(/lossless/u)
     expect(session.en.definition).toMatch(/append-only/u)
     expect(session.en.definition).toMatch(/not a Run and not a Chat/u)
+    expect(session.en.definition).toMatch(/retention policy/u)
+    expect(session.en.example).toMatch(/retention policy/u)
     expect(session.ru.definition).toMatch(/полной/u)
     expect(session.ru.definition).toMatch(/не является ни запуском, ни чатом/u)
+    expect(session.ru.definition).toMatch(/политик[аи] хранения/u)
+    expect(session.ru.example).toMatch(/политик[аи] хранения/u)
 
     const run = entryFor('run')
     expect(run.en.definition).toMatch(/durable/u)

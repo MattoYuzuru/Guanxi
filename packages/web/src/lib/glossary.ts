@@ -100,8 +100,8 @@ export const glossaryEntries: readonly GlossaryEntry[] = [
   },
   {
     key: 'session',
-    en: { term: 'Session', definition: 'The lossless, append-only event container for one conversation: every prompt, event and result is kept in one log with one writer Node. A Session contains Runs; it is not a Run and not a Chat.', example: 'A Run can retry as a new Attempt while the Session still keeps every event from the first Attempt.' },
-    ru: { term: 'Сессия', definition: 'Контейнер с полной, только дописываемой историей событий одной беседы: каждый запрос, событие и результат хранятся в одном журнале с одним узлом-писателем. Сессия содержит запуски и сама не является ни запуском, ни чатом.', example: 'Запуск может повториться новой попыткой, но сессия по-прежнему хранит все события первой попытки.' },
+    en: { term: 'Session', definition: 'The lossless, append-only event container for one conversation: every prompt, event and result that the retention policy keeps stays in one log with one writer Node. A Session contains Runs; it is not a Run and not a Chat.', example: 'A Run can retry as a new Attempt while the Session still keeps every first-Attempt event that the retention policy retains.' },
+    ru: { term: 'Сессия', definition: 'Контейнер с полной, только дописываемой историей событий одной беседы: каждый запрос, событие и результат, которые сохраняет политика хранения, остаются в одном журнале с одним узлом-писателем. Сессия содержит запуски и сама не является ни запуском, ни чатом.', example: 'Запуск может повториться новой попыткой, но сессия по-прежнему хранит все события первой попытки, которые сохраняет политика хранения.' },
   },
   {
     key: 'run',
