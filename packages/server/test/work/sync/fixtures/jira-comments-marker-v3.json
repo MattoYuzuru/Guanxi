@@ -1,0 +1,28 @@
+{
+  "startAt": 0,
+  "maxResults": 100,
+  "total": 1,
+  "comments": [
+    {
+      "id": "20003",
+      "body": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "Guanxi item wg2-a is now in_progress." }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              { "type": "text", "text": "<!-- guanxi:transition:wg2-a:in_progress:1 -->" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
