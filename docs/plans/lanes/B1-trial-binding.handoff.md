@@ -231,6 +231,7 @@ Root reviewed the plan at `1bbd034` and authorized code after the separate corre
 - Legacy raw-span refusal uses the existing fenced `runs.append` idempotency lookup with
   `expectedSeq` at the current head: a probe that finds this binding's own key refuses without
   writing; a genuinely new binding is not rejected by another binding's raw-span rows.
+  (Superseded by `9d3c836`; see the metadata-authority follow-up below.)
 - Receipts are bounded by the existing reasoning/retained limits before their first append, and
   stored receipt text is re-bounded before parsing. No new wire/schema/migration/dependency,
   `turn.done`, or in-memory-only identity was added.
@@ -300,10 +301,6 @@ evidence.
 - The external parent-death probe was not rerun by this worker. The supervisor still never
   unlinks its record, and parent/reaper removal ordering is unchanged; the independent probe
   remains the acceptance evidence.
-- A late secret registered after a legacy tool event could redact the stored `toolCallId`, so the
-  old tool key may not be derivable by the legacy probe in that narrow edge. Normal legacy
-  assistant/reasoning/signature/tool rows and all cross-binding cases are covered. No shared
-  server reader extension was added.
 - Same-UID cleanup is not isolation; a `setsid` descendant escapes the group proof and is cleaned
   by its explicit fixture PID. The cleanup token is visible in client argv/`ps`; it is a cleanup
   generation, not authentication.
@@ -316,3 +313,72 @@ evidence.
   sandbox/container, SSH, live model, paid/provider call, Harbor, public corpus or real B1
   execution was run. Stock paid execution remains OFF; D-194 still excludes real bench execution
   on this Mac.
+
+## Legacy metadata-authority follow-up (2026-10-22, append-only)
+
+Root rejected the late-redaction residual recorded in the P2 section: a legacy `toolCallId`
+registered as a secret after its append is hidden by `readAll`, so the append-key probe could
+not derive the stored tool key. That made the promised same-binding no-receipt refusal fail
+while a fresh different binding still had to be accepted. Guessing private keys from redacted
+output was removed rather than exempting the case.
+
+`9d3c836` extends only the structural bench `RunStore` pick with the existing `mutate` method.
+After scoped classification and before any append, `retainAndProject` performs a synchronous
+fenced metadata existence query in `runs.mutate(attempt, db => ...)`. It binds `session_id`,
+the old raw `span_id` and the exact bounded `bench:<nonce>:<requestId>:` prefix with `substr`;
+it selects no payload, reads no private content and uses no `LIKE`/`GLOB`. A matching row
+refuses `retention_idempotency_conflict` before begin/content; another binding's identical
+session/request/raw-span row does not match. A failed fence maps to `retention_fenced`; an
+open-database query fault maps to `retention_failed` with no false clear. `SessionLog.readAll`
+remains for receipt/content reconciliation only. Receipt spans, ordered manifest, digest,
+stored stop reason, final projection, counts and the no-append-on-refusal invariant are
+unchanged. No server, contract, UI, CLI, migration, dependency or public field changed.
+
+New cases (4):
+
+- legacy-only tool row with `toolCallId` registered after append: same binding/request refuses
+  before begin or any new row;
+- fresh different binding with the same session/request id succeeds against that old redacted
+  row and does not adopt it;
+- denying the metadata table read at SQLite's authorizer surfaces `retention_failed` with no
+  append;
+- a stale attempt with a legacy raw-span row surfaces `retention_fenced`.
+
+Exact commands (all `nice -n 10`, Node 26.9.0; contract resolved inside this checkout):
+
+```bash
+export GUANXI_WEB_PORT=5212 GUANXI_API_PORT=4412 GUANXI_DATA_DIR="$PWD/.lane-data"
+node -e "console.log(require.resolve('@guanxi/contract'))"
+# /Users/yuzuru/Projects/Guanxi-lanes/b1-trial-binding/packages/contract/src/index.ts
+
+node --test packages/bench/test/k2-retention.test.ts \
+  packages/bench/test/private-process.test.ts packages/bench/test/trial-host.test.ts \
+  packages/bench/test/trial-binding.test.ts packages/bench/test/private-channel.test.ts \
+  packages/bench/test/private-stream.test.ts packages/bench/test/k3-gateway.test.ts \
+  packages/bench/test/request-admission.test.ts packages/bench/test/budget.test.ts \
+  packages/bench/test/plugin.test.ts packages/bench/test/k3-admission.test.ts
+# 100/100 pass, 0 fail, 0 skipped
+
+node --test packages/server/test/session-log.test.ts \
+  packages/server/test/durable-run-followup.test.ts packages/server/test/session-log-readiness.test.ts
+# 38/38 pass, 0 fail, 0 skipped
+
+npx tsc --noEmit -p packages/bench/tsconfig.json
+npx tsc --noEmit -p packages/server/tsconfig.json
+# both exit 0
+
+npx eslint packages/bench/src/k2-retention.ts packages/bench/src/trial-host.ts \
+  packages/bench/test/k2-retention.test.ts packages/bench/test/trial-host.test.ts
+git diff --check
+# both exit 0
+```
+
+Red-first: before `9d3c836`, the same-binding late-redaction case resolved instead of refusing,
+and the metadata-read fault case returned `retention_idempotency_conflict` from the old probe
+instead of `retention_failed`; both new assertions failed. The two guarding cases (fresh
+different binding and stale fence) also passed before the fix and remain green.
+
+Envelope: **4 new / 96 inherited bench cases (100 in the eleven files) + 38 server K2/R1
+cases**, not one inflated headline. No old assertion was weakened. Real `/bin/ps` and
+parent-death probes remain pending root/GPT checks; no full gate, browser, build, live model,
+paid/provider call, container, SSH or B1 quality claim is included.

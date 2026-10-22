@@ -112,9 +112,12 @@ completion, including an empty one. Begin and done receipts carry only ordered s
 public digest and the scrubbed public stop reason; the returned projection is derived from the
 acknowledged stored content. A new completion gets a stable opaque correlation span derived
 from the binding nonce and request id, so a shared session/request id cannot conflate bindings.
-Legacy raw-span traces are refused only with same-binding idempotency evidence; changed
-reason/removed/reordered specs, partial-prefix gaps, purged receipts and a recreated sink are
-reconciled or fail closed as documented.
+Legacy raw-span traces are refused by a fenced metadata existence read of the stored event
+rows: same session, old raw span and this binding/request key prefix, with no payload read and
+no `LIKE`/`GLOB`. A tool id redacted after its append therefore stays authoritative, while
+another binding's raw-span rows never match. Changed reason/removed/reordered specs,
+partial-prefix gaps, purged receipts and a recreated sink are reconciled or fail closed as
+documented.
 
 The supervisor is a trusted source-run asset. It generates a fresh 256-bit cleanup generation,
 writes only its hash to a `0600` version-2 record under a `0700` directory, and passes the token

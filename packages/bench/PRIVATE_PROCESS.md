@@ -130,12 +130,12 @@ and fails closed without signalling.
 
 ## K2 retention and the public projection
 
-`createK2TrialRetention` is a structural adapter around the real `RunStore.append` and
-`SessionLog`. It imports only types from the server package; the coordinator wires the actual
-instances. `createBoundTrialHost` checks the R1 run's session, uses the actual R1 run id for K3,
-keeps the experiment id in the budget ledger, and supplies `attemptFence.assert =
-runs.renew(attempt)`. The session type now includes the existing `readAll` method; no server
-code changed.
+`createK2TrialRetention` is a structural adapter around the real `RunStore.append`,
+`RunStore.mutate` and `SessionLog`. It imports only types from the server package; the
+coordinator wires the actual instances. `createBoundTrialHost` checks the R1 run's session,
+uses the actual R1 run id for K3, keeps the experiment id in the budget ledger, and supplies
+`attemptFence.assert = runs.renew(attempt)`. The structural picks include the existing
+`readAll` and `mutate` methods; no server code changed.
 
 Every completion, including an empty one, is retained inside the existing `reasoning` class as
 a bounded versioned two-phase receipt. No new event type, wire field, schema, migration,
@@ -158,10 +158,13 @@ idempotency keys stay `bench:<nonce>:<requestId>:<spec-key>`; public message ids
 3. scrubs the full completion, builds the complete ordered specification manifest, validates the
    explicit content/receipt bounds and rejects unsupported content, invalid/long tool IDs and
    duplicate tool IDs **before** the first append;
-4. reads the person-audience session events once. Pre-fix raw-span rows are refused only when the
-   existing fenced append idempotency lookup proves that this binding's own key exists; probes use
-   `expectedSeq` at the current head, so a refused probe writes no event. A genuinely new binding
-   is not rejected by another binding's raw-span rows;
+4. reads the person-audience session events once and classifies the opaque-span content and
+   receipts. It then uses the existing fenced `RunStore.mutate` callback for a synchronous
+   metadata-only existence read: same `session_id`, old raw `span_id` and the exact bounded
+   `bench:<nonce>:<requestId>:` prefix compared with `substr` (no payload selection, no
+   `LIKE`/`GLOB`). A match refuses a pre-fix trace before the first append; a failed fence is
+   `retention_fenced` and a SQL read fault is `retention_failed`. A genuinely new binding is not
+   rejected by another binding's raw-span rows;
 5. appends the begin receipt (`receipt:begin`) through `runs.append`; this is the first durable
    R1-fenced acknowledgement. A duplicate begin is the authoritative check for a same-key changed
    receipt payload;

@@ -1241,7 +1241,8 @@ Three corrections are binding before code:
    genuinely new binding is not rejected just because another binding left raw-span rows. A
    dedicated cross-binding same-session identical-request-id regression and a legacy-refusal
    regression are required. No shared server change is needed; the existing `readAll` and append
-   APIs are used.
+   APIs are used. (§14.12 replaces this append-probe detail with a fenced metadata-authority
+   query; the refusal and cross-binding requirements are unchanged.)
 2. **Process truth.** The reaper must not describe a zombie or a missing observer result as proven
    death. The real `ps` observation parses state and distinguishes an observed zombie from an
    unknown observation; unknown or a live mismatched supervisor preserves the record and never
@@ -1284,3 +1285,29 @@ Scoped evidence is **19 new / 77 bench regression-envelope cases + 38 server env
 (134 executed), plus bench/server type checks. The worker did not execute `/bin/ps`; the
 unsandboxed real process-table probe and parent-death probe remain independent root/GPT checks.
 No full gate, browser, build, live execution, provider call or B1 quality claim is included.
+
+### 14.12 Legacy metadata authority correction (2026-10-22)
+
+Root rejected the late-redaction residual recorded after §14.11. A legacy stored `toolCallId`
+registered as a secret after its append is hidden by `readAll`, so the append-probe workaround
+could no longer derive the stored tool key and the promised same-binding no-receipt refusal
+failed. Guessing private keys from redacted output is not authority.
+
+The authorized minimal fix extends only the structural bench `RunStore` pick with the existing
+`RunStore.mutate` method. After scoped classification and before any append,
+`retainAndProject` uses the actual `runs.mutate(attempt, db => ...)` fence for a synchronous
+metadata existence query. It binds `session_id`, the old raw `span_id` and the exact bounded
+`bench:<nonce>:<requestId>:` prefix compared with `substr`; it selects no payload, reads no
+private content and uses no `LIKE`/`GLOB`. A matching row refuses with
+`retention_idempotency_conflict` before begin/content. Another binding's identical
+session/request/raw-span row does not match. A failed fence is `retention_fenced`; an
+open-database query fault is `retention_failed` with no false clear. `SessionLog.readAll`
+remains for receipt/content reconciliation only. New receipt spans, ordered manifest, digest,
+stored stop reason and final projection behavior are unchanged.
+
+Implementation `9d3c836` is the code/test fix; the docs/handoff commit follows it. New K2 cases:
+late-redacted legacy tool-row refusal; fresh different-binding acceptance without adopting the
+old row; SQLite metadata-read denial; and stale-fence mapping. Envelope evidence is **4 new /
+96 inherited bench cases (100 in the eleven files) + 38 server K2/R1 cases**, with bench and
+server type checks green. The external `/bin/ps` and parent-death probes remain pending
+root/GPT checks, not worker claims.
