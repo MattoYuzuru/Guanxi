@@ -96,3 +96,13 @@ relay/model.ts and Connections; root resolves its plugin construction seam on in
 Independent review pending. Findings must be fixed in separate commits. Next: merge the separately
 reviewed K3 client/R2 preparation fixes, run the actual active-POST ownership/fence fixtures, then
 independently review this pinned opt-in foundation. Live policy remains gated by ADR0025 evidence.
+
+## Pinned author envelope
+
+Clean production pin `c92696d` passed all relay test files: **116/116, zero skips**,
+**24 new / 92 regression**, shared-heavy Node26 receipt `check-i79go72w`; source unchanged.
+The envelope includes existing filesystem/git workspace regressions but no live inference.
+Server tsc, scoped ESLint and three touched Markdown files passed before the source commit.
+Agent-dev source attestation remains unverifiable due the inherited external guanxi-ui symlink;
+this is observed local evidence, not a reusable source certificate. Active K3 POST settlement
+is an explicitly failing external activation dependency, not included as a passed assertion.
