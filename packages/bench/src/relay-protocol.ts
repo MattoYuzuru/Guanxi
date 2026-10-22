@@ -19,6 +19,14 @@ const MAX_HORIZON = 64
 const MAX_ISSUES = 50
 const MAX_EVIDENCE = 50_000
 const MAX_TRIALS = 10_000
+const MAX_TASKS = 64
+const MAX_SEEDS = 16
+const MAX_ATTEMPTS = 16
+const MAX_ITEM_ROWS = 256
+const MAX_PROBE_OCCASIONS = 64
+const MAX_PROBE_GRADES = 512
+const MAX_CONTEXT_ROWS = 256
+const MAX_GUARD_ROWS = 256
 // Opaque identifiers: never paths, URLs or free text, never opened or fetched.
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/)
 const sha = z.string().regex(/^[a-f0-9]{64}$/)
@@ -34,35 +42,35 @@ const observedFact = <T extends z.ZodTypeAny>(value: T) => z.object({ state: z.l
 
 const itemsGroup = orUnknown(z.object({
   state: z.literal('observed'),
-  manifest: z.object({ ref: id, sha256: sha, assignedAtMs: uint, opportunities: z.array(id).max(256) }).strict(),
+  manifest: z.object({ ref: id, sha256: sha, assignedAtMs: uint, opportunities: z.array(id).max(MAX_ITEM_ROWS) }).strict(),
   assessments: z.array(z.discriminatedUnion('state', [
     z.object({ opportunity: id, state: z.literal('unknown'), reason }).strict(),
     z.object({ opportunity: id, state: z.literal('observed'), ref: id, head: revision, acceptanceSha256: sha, assessedAtMs: uint, result: z.enum(['passed', 'failed']) }).strict(),
-  ])).max(256),
+  ])).max(MAX_ITEM_ROWS),
 }).strict())
 const probesGroup = orUnknown(z.object({
   state: z.literal('observed'),
-  manifest: z.object({ ref: id, sha256: sha, occasions: z.array(z.object({ id, scope: z.enum(['whole_answer', 'critical_field']), field: z.enum(RELAY_FIELD_KEYS).nullable() }).strict()).max(64) }).strict(),
+  manifest: z.object({ ref: id, sha256: sha, occasions: z.array(z.object({ id, scope: z.enum(['whole_answer', 'critical_field']), field: z.enum(RELAY_FIELD_KEYS).nullable() }).strict()).max(MAX_PROBE_OCCASIONS) }).strict(),
   grades: z.array(z.discriminatedUnion('state', [
     z.object({ occasion: id, attempt: z.number().int().min(1).max(8), state: z.literal('unknown'), reason }).strict(),
     z.object({ occasion: id, attempt: z.number().int().min(1).max(8), state: z.literal('observed'), ref: id, result: z.enum(['correct', 'incorrect']) }).strict(),
-  ])).max(512),
+  ])).max(MAX_PROBE_GRADES),
 }).strict())
 const contextGroup = orUnknown(z.object({
   state: z.literal('observed'),
-  manifest: z.object({ ref: id, sha256: sha, samples: z.array(id).max(256) }).strict(),
+  manifest: z.object({ ref: id, sha256: sha, samples: z.array(id).max(MAX_CONTEXT_ROWS) }).strict(),
   samples: z.array(z.discriminatedUnion('state', [
     z.object({ sample: id, state: z.literal('unknown'), reason }).strict(),
     z.object({ sample: id, state: z.literal('observed'), ref: id, actualWindowTokens: posint, renderedTokens: uint, truncationEvents: uint }).strict(),
-  ])).max(256),
+  ])).max(MAX_CONTEXT_ROWS),
 }).strict())
 const guardsGroup = orUnknown(z.object({
   state: z.literal('observed'),
-  manifest: z.object({ ref: id, sha256: sha, checks: z.array(z.object({ id, deadEnd: id }).strict()).max(256) }).strict(),
+  manifest: z.object({ ref: id, sha256: sha, checks: z.array(z.object({ id, deadEnd: id }).strict()).max(MAX_GUARD_ROWS) }).strict(),
   checks: z.array(z.discriminatedUnion('state', [
     z.object({ check: id, state: z.literal('unknown'), reason }).strict(),
     z.object({ check: id, state: z.literal('observed'), ref: id, guardActive: z.boolean(), repeated: z.boolean() }).strict(),
-  ])).max(256),
+  ])).max(MAX_GUARD_ROWS),
 }).strict())
 const integrityGroup = orUnknown(observedFact(z.object({
   ledgerSha256: sha, handoffLedgerSha256: sha, bundleSha256: sha, reportedValidation: z.enum(['passed', 'failed']),
@@ -83,7 +91,7 @@ const trialSlot = z.discriminatedUnion('state', [
   z.object({ task: id, arm: id, seed: uint, state: z.literal('missing'), reason }).strict(),
   z.object({
     task: id, arm: id, seed: uint, state: z.literal('observed'), runId: id, outcome: z.enum(RELAY_OUTCOMES),
-    attempts: z.array(z.object({ id, epoch: uint, receiptRef: id }).strict()).min(1).max(16),
+    attempts: z.array(z.object({ id, epoch: uint, receiptRef: id }).strict()).min(1).max(MAX_ATTEMPTS),
     startedAtMs: orUnknown(observedValue(uint)), finishedAtMs: orUnknown(observedValue(uint)),
     cycles: z.array(cycleSlot).max(MAX_HORIZON), forecasts: z.array(forecast).max(MAX_HORIZON),
   }).strict(),
@@ -108,7 +116,7 @@ const planSchema = z.object({
     eCalibration: orUnknown(z.object({ state: z.literal('observed'), ref: id, effectiveTokens: posint }).strict()),
   }).strict(),
   taskManifestSha256: sha, acceptanceSha256: sha, verifierSetSha256: sha, sourceCommit: revision,
-  tasks: z.array(id).min(1).max(64), seeds: z.array(uint).min(1).max(16), arms: z.array(arm).min(1).max(RELAY_ARM_KINDS.length),
+  tasks: z.array(id).min(1).max(MAX_TASKS), seeds: z.array(uint).min(1).max(MAX_SEEDS), arms: z.array(arm).min(1).max(RELAY_ARM_KINDS.length),
   horizon: ordinal, eta: z.object({ selectionCycle: ordinal, cohortId: id }).strict(),
 }).strict()
 export const relayMeasurementSchema = z.object({
@@ -384,14 +392,43 @@ function validateCycle(input: RelayMeasurementInput, t: RelayObservedTrial, c: R
   if (c.integrity.state === 'observed') resolve(c.integrity.ref, 'seal_reference', ctx, `${at}.integrity.ref`)
 }
 
+const recordOf = (v: unknown): Record<string, unknown> | null => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null
 const bounded = (v: unknown, max: number) => !Array.isArray(v) || v.length <= max
+function groupWithin(slot: Record<string, unknown>, groupKey: string, manifestKey: string, manifestMax: number, rowKey: string, rowMax: number): boolean {
+  const group = recordOf(slot[groupKey])
+  if (!group) return true
+  const manifest = recordOf(group.manifest)
+  return (!manifest || bounded(manifest[manifestKey], manifestMax)) && bounded(group[rowKey], rowMax)
+}
+// Walk only the fixed nesting levels and bounds; never touch the elements of an oversized array.
+function nestedWithin(raw: Record<string, unknown>): boolean {
+  if (!bounded(raw.evidence, MAX_EVIDENCE) || !bounded(raw.trials, MAX_TRIALS)) return false
+  const plan = recordOf(raw.plan)
+  if (plan && (!bounded(plan.tasks, MAX_TASKS) || !bounded(plan.seeds, MAX_SEEDS) || !bounded(plan.arms, RELAY_ARM_KINDS.length))) return false
+  if (!Array.isArray(raw.trials)) return true
+  for (const trialRaw of raw.trials) {
+    const trial = recordOf(trialRaw)
+    if (!trial) continue
+    if (!bounded(trial.attempts, MAX_ATTEMPTS) || !bounded(trial.cycles, MAX_HORIZON) || !bounded(trial.forecasts, MAX_HORIZON)) return false
+    if (!Array.isArray(trial.cycles)) continue
+    for (const cycleRaw of trial.cycles) {
+      const cycle = recordOf(cycleRaw)
+      if (!cycle) continue
+      if (!groupWithin(cycle, 'items', 'opportunities', MAX_ITEM_ROWS, 'assessments', MAX_ITEM_ROWS)) return false
+      if (!groupWithin(cycle, 'probes', 'occasions', MAX_PROBE_OCCASIONS, 'grades', MAX_PROBE_GRADES)) return false
+      if (!groupWithin(cycle, 'context', 'samples', MAX_CONTEXT_ROWS, 'samples', MAX_CONTEXT_ROWS)) return false
+      if (!groupWithin(cycle, 'guards', 'checks', MAX_GUARD_ROWS, 'checks', MAX_GUARD_ROWS)) return false
+    }
+  }
+  return true
+}
 /** Non-throwing structured validation. Never coerces: any malformed input is refused whole. */
 export function checkRelayMeasurement(raw: unknown): RelayCheck {
   try {
-    const record = typeof raw === 'object' && raw !== null && !Array.isArray(raw) ? raw as Record<string, unknown> : null
+    const record = recordOf(raw)
     if (record && record.format !== undefined && record.format !== RELAY_MEASUREMENT_FORMAT) return { ok: false, issues: [{ code: 'schema_invalid', rule: 'format_unsupported', location: 'format' }] }
-    // Refuse oversized arrays before the schema walks every element.
-    if (record && (!bounded(record.evidence, MAX_EVIDENCE) || !bounded(record.trials, MAX_TRIALS))) return { ok: false, issues: [{ code: 'schema_invalid', rule: 'bounds', location: 'input' }] }
+    // Refuse oversized arrays before the schema walks every element, including nested groups.
+    if (record && !nestedWithin(record)) return { ok: false, issues: [{ code: 'schema_invalid', rule: 'bounds', location: 'input' }] }
     const parsed = relayMeasurementSchema.safeParse(raw)
     if (!parsed.success) {
       const issues = parsed.error.issues.slice(0, MAX_ISSUES).map(i => ({ code: 'schema_invalid' as const, rule: 'schema', location: safeLocation(i.path) }))

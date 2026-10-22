@@ -291,6 +291,36 @@ test('every remaining structural rule fails when violated', () => {
   assert.equal(checkRelayMeasurement(resign(shared)).ok, true) // one verifier run may back several items of one cycle
 })
 
+test('oversized nested arrays are refused before the schema walks their elements', () => {
+  const bounds = { ok: false, issues: [{ code: 'schema_invalid', rule: 'bounds', location: 'input' }] }
+  // A poison element proves the bound check reads only lengths, not array contents.
+  const poison = new Proxy({}, { get() { throw new Error('SECRET-NESTED-TEXT') } })
+  const c = (r: Raw) => relayCycle(r)
+  const cases: Array<[string, (r: Raw) => void]> = [
+    ['attempts', r => { trialOf(r, 'task-a', 'arm-relay', 1).attempts = new Array(17).fill(poison) }],
+    ['forecasts', r => { trialOf(r, 'task-a', 'arm-relay', 1).forecasts = new Array(65).fill(poison) }],
+    ['items assessments', r => { c(r).items.assessments = new Array(257).fill(poison) }],
+    ['item opportunities', r => { c(r).items.manifest.opportunities = new Array(257).fill(poison) }],
+    ['probe occasions', r => { c(r).probes.manifest.occasions = new Array(65).fill(poison) }],
+    ['probe grades', r => { c(r).probes.grades = new Array(513).fill(poison) }],
+    ['context rows', r => { c(r).context.samples = new Array(257).fill(poison) }],
+    ['context manifest', r => { c(r).context.manifest.samples = new Array(257).fill(poison) }],
+    ['guard rows', r => { c(r).guards.checks = new Array(257).fill(poison) }],
+    ['guard manifest', r => { c(r).guards.manifest.checks = new Array(257).fill(poison) }],
+    ['plan tasks', r => { r.plan.tasks = new Array(65).fill(poison) }],
+    ['plan seeds', r => { r.plan.seeds = new Array(17).fill(poison) }],
+    ['plan arms', r => { r.plan.arms = new Array(6).fill(poison) }],
+  ]
+  for (const [name, patch] of cases) {
+    const r = build(); patch(r)
+    assert.deepEqual(checkRelayMeasurement(r), bounds, name)
+  }
+  // One large shared-reference array stays fast: 300k cycles are rejected on length alone.
+  const huge = build()
+  trialOf(huge, 'task-a', 'arm-relay', 1).cycles = new Array(300_000).fill(poison)
+  assert.deepEqual(checkRelayMeasurement(huge), bounds)
+})
+
 test('hostile input yields a fixed schema_invalid and is bounded before parsing', () => {
   const getter = { get format(): string { throw new Error('SECRET-GETTER-TEXT') } }
   const result = checkRelayMeasurement(getter)
