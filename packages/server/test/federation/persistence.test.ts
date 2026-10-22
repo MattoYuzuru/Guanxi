@@ -10,6 +10,7 @@ import { hash, requestProof, signValue } from '../../src/federation/crypto.ts'
 import { replicaBody } from '../../src/federation/replicas.ts'
 import { SimNode, identity } from './harness.ts'
 import type { StreamBinding } from '@guanxi/contract/federation'
+import { promptTextOf } from '@guanxi/contract'
 
 function setup() {
   const home = new SimNode(identity('home')); const peer = new SimNode(identity('peer'))
@@ -194,7 +195,7 @@ test('remote prompt accepts content beyond identifier length without a hidden mo
     assert.ok(text.length>200)
     assert.equal(home.federation.receiveCommand(peer.context(),command),'applied')
     assert.deepEqual(home.federation.pendingPrompts(run.id),[command])
-    assert.equal(home.log.readAll(run.session_id,'person').filter((event)=>event.type==='prompt'&&event.data.text===text).length,1)
+    assert.equal(home.log.readAll(run.session_id,'person').filter((event)=>event.type==='prompt'&&promptTextOf(event)===text).length,1)
   } finally {close()}
 })
 
@@ -223,7 +224,7 @@ test('restart preserves nonce rejection, command receipts and prompt acceptance 
     assert.deepEqual(home.federation.pendingPrompts(run.id),[first,second])
     assert.equal(home.db.prepare('SELECT COUNT(*) AS n FROM federation_command_receipts').get()!.n,2)
     const prompts=home.log.readAll(run.session_id,'person').filter((e)=>e.type==='prompt')
-    assert.deepEqual(prompts.map((e)=>e.data.text),['first','second'])
+    assert.deepEqual(prompts.map((e)=>e.type==='prompt'?promptTextOf(e):''),['first','second'])
   } finally {home.close();peer.close();rmSync(dir,{recursive:true,force:true})}
 })
 

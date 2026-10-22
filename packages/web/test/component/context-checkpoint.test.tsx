@@ -162,7 +162,7 @@ describe('visible non-destructive context checkpoint', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Создать checkpoint' }))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('injected checkpoint failure')
-    expect(alert).toBe(document.activeElement)
+    await waitFor(() => expect(alert).toBe(document.activeElement))
     fireEvent.click(screen.getByRole('button', { name: 'Повторить checkpoint' }))
     await waitFor(() => expect(onCompact).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())

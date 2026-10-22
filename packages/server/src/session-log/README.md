@@ -114,8 +114,21 @@ daemon). Anything else or unknown, including a loopback proxy, is `remote_agent`
   never read them.
 - Sessions created before migration 29 have no backfilled trace; their trace starts with the
   next turn.
-- Large payloads are stored inline; content-addressed artifacts with excerpts (ADR-0023 §4)
-  are not wired yet.
+- Native typed `prompt` and `tool.call` inputs above the published 16 KiB representation
+  threshold use event version 2: the scrubbed full bytes live in a session-owned
+  `session-artifacts/<sha256(sessionId)>` CAS, while the event, FTS, title, search, REST,
+  export and the query tool carry only a scrubbed excerpt of at most 8 KiB and a reference.
+  The metadata row and event commit in one fenced transaction; a published blob without a row
+  is an orphan. Below the threshold v1 is byte-identical. Chat, K5, assistant output,
+  reasoning, tool results, images and model requests remain on their current paths.
+- Queued prompt text is **not** artifactized in this slice: `agent.queue` keeps the full text
+  inline even after consumption. A consumed queued prompt may produce a v2 `prompt` event, but
+  the earlier queue event remains inline. No input cap was added.
+- Other large payloads are still stored inline; ADR-0023 §4 remains proposed, not accepted.
+  Output paging still reads and scrubs a whole artifact in memory, command tails beyond the
+  explicit 64 KiB bound stay discarded, and a published orphan of a live session is not
+  reclaimed until the whole session is deleted. A future per-blob GC must hold the K2 writer
+  fence and re-check the `(session_id, checksum)` row before removing a blob.
 - The query tool is built and tested through the legacy `ToolRegistry`, but no agent loop
   registers it by default; K4 does.
 - Reasoning retention is the fixed 7-day default (or the parent's sooner TTL); a per-project

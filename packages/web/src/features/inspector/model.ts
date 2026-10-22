@@ -5,6 +5,8 @@
 import {
   REDACTION_MARKER_CLOSE,
   REDACTION_MARKER_PREFIX,
+  promptTextOf,
+  toolCallArgumentsTextOf,
   type SessionEvent,
   type SessionEventType,
 } from '@guanxi/contract'
@@ -79,12 +81,13 @@ export function eventDetail(event: SessionEvent): string | null {
     case 'agent.note':
       return event.data.text
     case 'prompt':
+      return promptTextOf(event)
     case 'assistant.message':
       return event.data.text
     case 'reasoning':
       return event.data?.text ?? null
     case 'tool.call':
-      return `${event.data.name} ${JSON.stringify(event.data.arguments)}`
+      return `${event.data.name} ${toolCallArgumentsTextOf(event)}`
     case 'tool.result':
       return event.data.error ?? event.data.result
     case 'tool.approval':

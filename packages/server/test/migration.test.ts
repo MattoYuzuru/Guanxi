@@ -71,7 +71,7 @@ describe('SQLite turn-state migration', () => {
 
     const version = db.prepare('PRAGMA user_version').get() as { user_version: number }
     const columns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>
-    assert.equal(version.user_version, 32)
+    assert.equal(version.user_version, 33)
     assert.deepEqual(
       columns
         .map((column) => column.name)
@@ -180,7 +180,7 @@ describe('SQLite turn-state migration', () => {
 
     const recovered = openDb(path)
     const version = recovered.prepare('PRAGMA user_version').get() as { user_version: number }
-    assert.equal(version.user_version, 32)
+    assert.equal(version.user_version, 33)
     recovered.close()
   })
 })
