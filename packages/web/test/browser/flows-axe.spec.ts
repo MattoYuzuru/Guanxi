@@ -5,10 +5,9 @@
  * also has a seeded violation, an unnamed icon-only button injected into it, which the scan
  * must report, so a scan that silently checks nothing fails.
  *
- * One legacy violation is known and not fixed in DS1-b (scope decision in docs/plans/evidence/DS1-b.md):
- * the inactive rows of the Context panel's cache bar dim their text with `opacity-45`, which
- * fails color-contrast. It is listed by exact rule and target, and the test asserts it is still
- * present, so the entry has to be removed once the screen is fixed.
+ * The DS1-b residual for the inactive Context panel cache rows (text dimmed with `opacity-45`)
+ * was repaired in the U1 shell-mount review round. The new-session flow now has to be clean,
+ * and a direct computed-style check fails against the old opacity before the axe scan does.
  */
 import AxeBuilder from '@axe-core/playwright'
 import { SESSION_ROUTES } from '@guanxi/contract'
@@ -71,9 +70,6 @@ async function seriousViolations(page: Page): Promise<string[]> {
     .flatMap((violation) => violation.nodes.map((node) => `${violation.id}: ${node.target.join(' ')}`))
 }
 
-/** Known legacy violation: ContextPanel CacheBar, inactive row (label and duration). */
-const KNOWN_CACHE_BAR = /^color-contrast: .*\.opacity-45\.gap-2\.flex > \.(w-16\.shrink-0|w-12\.text-right\.tabular-nums)$/
-
 function seeded(violations: string[]): boolean {
   return violations.some((line) => line.startsWith('button-name: ') && line.includes('data-g14-seed'))
 }
@@ -125,9 +121,19 @@ test('G14 new-session flow has no serious or critical axe violation', async ({ p
   await page.getByRole('button', { name: 'Создать диалог' }).click()
   await expect(page).toHaveURL(/\/chat\/thread-p0-e-full$/)
   await expect(page.getByRole('textbox', { name: 'Сообщение' })).toBeVisible()
-  const dialog = await seriousViolations(page)
-  expect(dialog.filter((line) => !KNOWN_CACHE_BAR.test(line)), 'new dialog with composer').toEqual([])
-  expect(dialog.filter((line) => KNOWN_CACHE_BAR.test(line)), 'known cache-bar violation still present').toHaveLength(2)
+
+  // The fixture reports a cache miss, so the hit row is the inactive one. It used to dim its
+  // label and duration with `opacity-45`; the semantic secondary text token replaced that, so
+  // this fails against the old contrast implementation even before axe runs.
+  const inactive = page.getByText('Попадание', { exact: true }).locator('xpath=..')
+  const active = page.getByText('Промах', { exact: true }).locator('xpath=..')
+  await expect(inactive).toBeVisible()
+  await expect(active).toBeVisible()
+  await expect(inactive).toHaveCSS('opacity', '1')
+  expect(await inactive.evaluate((row) => getComputedStyle(row).color))
+    .not.toBe(await active.evaluate((row) => getComputedStyle(row).color))
+
+  expect(await seriousViolations(page), 'new dialog with composer').toEqual([])
 })
 
 test('G14 seeded: an unnamed icon button in the new-session flow is reported', async ({ page }) => {
