@@ -73,13 +73,14 @@ same-session equal checksums share one metadata/blob row. A failure after an ear
 insert rolls the whole snapshot back.
 
 `queue-schema.ts` owns `session_queue_migrations` (one row, version 40) in the same database.
-It runs in `SessionLog` construction after `openDb` applied global 33, takes
+It runs in every `SessionLog` construction after `openDb` applied global 33, takes
 `BEGIN IMMEDIATE`, re-reads the ledger and trigger, rejects future/unknown/incompatible shapes,
-and commits the trigger replacement with the ledger row. Main `user_version` stays 33 and
-migrations 1–33, independent ledgers 34–39 and the `session_input_artifacts` table are not
-edited. Migration 40 replaces only `session_events_policy_insert`; its v1/v2/reasoning clauses
-are verbatim, and its v3 branch checks every `json_each` item, the exact UTF-8 inline bound,
-unique ids, the text media type, exact excerpt bytes and same-session metadata matching.
+and commits the trigger replacement with the ledger row. The constructor has no install opt-out:
+a future or incompatible ledger refuses before the log serves any write. Main `user_version`
+stays 33 and migrations 1–33, independent ledgers 34–39 and the `session_input_artifacts` table
+are not edited. Migration 40 replaces only `session_events_policy_insert`; its v1/v2/reasoning
+clauses are verbatim, and its v3 branch checks every `json_each` item, the exact UTF-8 inline
+bound, unique ids, the text media type, exact excerpt bytes and same-session metadata matching.
 
 On read, each v3 item is projected independently with the current registry. An artifact excerpt
 is bounded again after marker expansion and gets exact `excerptBytes`; a queue id or artifact
@@ -205,8 +206,10 @@ this client; no mutation or partial-success retry is performed.
   current paths.
 - Q0 adds the v3 queue contract, migration 40, atomic log append/read/privacy support, export 3
   and an inspector renderer. The native producer still writes v1 `agent.queue`; native
-  progress remains the legacy v1 body and its service/routes/UI/CLI are Q1/Q2 work. Q0 is an
-  unreleased compatibility foundation, not a whole-node v3 rollback floor and not an
+  progress remains the legacy v1 body and refuses a present v3 snapshot with the existing
+  content-free `agent_unavailable` instead of reusing an older v1 queue. The native
+  service/routes/UI/CLI v3 consumer and progress2 are Q1/Q2 work. Q0 is an unreleased
+  compatibility foundation, not a whole-node v3 rollback floor and not an
   artifactization-complete claim. Legacy v1 queue events remain readable and are not rewritten
   in place; an old immutable inline snapshot can still be larger than the published excerpt
   bound, and the inspector shows a bounded preview rather than the full tail.
