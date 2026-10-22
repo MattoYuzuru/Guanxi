@@ -21,7 +21,11 @@ The original Claude publication remains unchanged; the separate local HTML names
 
 Reviewed candidate `73ebbb18` is merged into local main `1b6f495`, with no conflicts/manual
 resolutions and an identical source tree. All eight post-merge main gates pass at clean, unchanged `1b6f495`; the complete
-coordinator exits 0. Later central changes are documentation only.
+coordinator exits 0. Focused Linux proxy repair45491863 is now fast-forwarded into local main;
+its types/build/Markdown/license/lint pass, earlier Mac full npm and actual Fedora214 envelope
+pass with identical production, and the strengthened final samecase1/1 passes on Fedora.
+Read the [focused handoff](lanes/K4-linux-proxy-path.handoff.md) for actual pins; do not
+relabel all-eight1b6 as a new all-eight454 result.
 
 The bundle includes U1 layout/F1 replication/canonical CSS/shell preparation/search, K4
 privacy and bounded write encoding, K5 durable same-node account admission/atomic learning,
@@ -61,14 +65,19 @@ then committed the accepted next plan `8a001b66` in
 `/Users/yuzuru/Projects/Guanxi-lanes/u1-workspace-states`, branch `codex/u1-workspace-states`.
 This is an author base, not validated main. Own npmci `check-z2yiultz` passes and contract
 resolves inside; Node26, ports5205/4405, data.lane-data and the shared Mac heavy lock apply.
-The Sol author owns truthful Workspace loading/error/empty states, per-await safe failure
-facts/client observation time, meaningful Show-hidden/Add-Chat actions, geometry-only retry
-following a known-successful layout PUT, stable Save-as ID for unconfirmed PUTs, and actual
-Textarea/EmptyState/ErrorState readiness. Read its committed plan before changing anything.
+The Sol author completed truthful Workspace loading/error/empty states, per-await safe
+failure facts/client observation time, meaningful Show-hidden/Add-Chat actions, geometry-only
+retry after a known-successful layout PUT, stable Save-as ID for unconfirmed PUTs, and actual
+Textarea/EmptyState/ErrorState readiness. Final clean1776389c is independently closed:
+**97/97 repository cases =55 new/42 inherited**, plus unchanged outside held-Save-as control1.
+Actual receipts are web7 hlul0l22, UI25 poudrs0d, browser65 i9s7d5e5, outside1 q9epx5m8.
+The independent report is outside `reviews/codex-u1-workspace-states-20261022.md`.
+All author/reviewer commands are terminal; source is released to root. Read the committed
+`U1-workspace-states.handoff.md`; do not repeat closed feature/readiness rounds.
 
 Root locked an exact12-image pinned-Docker baseline allowance (Textarea Invalid4; Workspace
 empty/placeholder/error/loading light/dark8). Author diagnostic captures are not baselines;
-root owns production/inspection after a clean handoff. Other images, owner keys/signatures/
+root owns production/inspection after this clean handoff. Other images, owner keys/signatures/
 approved statuses, wire/storage/docking, existing primitive fixes and G11 stay untouched.
 ErrorState adds a sixth reachable draft; only independent actual closure may precede root's
 separate unsigned draft→review transitions. No status promotion merely to silence G11.
@@ -84,18 +93,18 @@ approval remain separate. D-135 backend remains proposed; durable chat is not ep
 
 ## Fedora continuation
 
-Current source transfer is main3e4840bb/executable1b6, separate clean dedicated-user checkout at
-`/home/guanxi-bench/checks/guanxi-linux-3e4840bb-20261022/source`; do not use the older owner clone.
-Root accepted the outside Fedora envelope. First setup failed before npmci/tests because npm
-refused two config paths both/dev/null; distinct private task configs and a new deps unit repair
-that setup, preserving the failed unit. Own npmci/contract resolution passes check-yhd08czp;
-actual X1/kernel62/62 passes with no skips, check-kuwdfp_z. The selected14-file core scope fails
-25/213 (182pass/6Darwin-onlyskip), check-4bonvt3c:22 native sandbox startup failures plus3
-dependent relay cases. Do not rerun blindly; independent content-free diagnosis is active.
-The successful deps unit was already unloaded; final unit metadata is
-unavailable, not fake terminal success. Read evidence for actual receipt/count-parser limits.
-Detached units have real time/memory/CPU
-caps, sanitized environment and shared remoteheavy; no model or corpus benchmark is implied.
+The initial main3e4840bb dedicated-user task passes actual X1/kernel62/62, zero skips,
+check-kuwdfp_z. Its selected213 native/core cases fail25; keep that original result. Diagnosis
+confirmed110-byte proxy socket names inherited from long TMPDIR. Focused repair45491863 is
+now integrated locally; actual separate candidate task
+`/home/guanxi-bench/checks/guanxi-linux-proxy-path-20261022/source` passes214 total/208pass/
+6Darwin-only skips at3e75852c/check-2jqnqayy. Stronger samecase1/1, zero skips passes at28653d92/
+check-abea4ty4 with unchanged production. Separate corrected lifecycle/policy control passes
+check-bmjp2k61, preserving earlier failed controls and their confirmed hidden-tmpfs premise
+error. Read Fedora evidence/handoff for exact red/green/JUnit/certificate/unit boundaries.
+Do not reuse the old owner clone or infer terminal status from an unloaded successful unit.
+Root owns bounded uid1001/Node22 detached units, sanitized environment and shared remoteheavy.
+No model/corpus/MS1 benchmark is implied. This repair is closed; no blind repeated core run.
 
 ## Subsequent local work and preserved boundaries
 
@@ -105,12 +114,20 @@ caps, sanitized environment and shared remoteheavy; no model or corpus benchmark
   was independently reviewed, corrected and root-accepted for Q0 only. New standalone
   `/Users/yuzuru/Projects/Guanxi-lanes/k4-queue-v3-foundation`, branch
   `codex/k4-queue-v3-foundation`, plan4cebea71 fromf8c65df4 reserves independentledger40;
-  ownCI check-eqbxl77e passes and contract resolves inside. DSH author session74442 is active.
+  ownCI check-eqbxl77e passes and contract resolves inside. DSH finished, root repaired two
+  further fixture findings, and independent64 repository (34new/30inherited) plus original
+  outside5 pass at71dc6bb0. Current14db1971 is docs-only afterward, Markdownyee4gsv5 passes.
+  Subsequent native/helper/CLI79/79 passes (newnative1/inherited78), but inspector components
+  have23pass/1fail: a Russian test selects an English timeline label. Root must separately
+  fix that oracle and the confirmed preview copy/unit issue; see outside
+  `reviews/codex-k4-Q0-acceptance-20261022.md`. All checks are terminal/source released; browser
+  and full union gates remain. Do not reopen closed migration/outside controls unnecessarily.
   Read its committed K4-queue-v3.plan.md: native producer staysv1; Q0 is unreleased foundation,
   Q1 restricted reader rollback floor and Q2 producer need separate sequential review rounds.
 - B3-a outside plan `/Users/yuzuru/Projects/Guanxi-lanes/reviews/b3-next-local-plan-20261022.md`
-  proposes strict offline evidence/measurement-only reduction. Lock its bounded format before
-  authoring; no fixture label or generic B1 margin can pass B3. Real cohort/calibration follows.
+  proposes strict offline evidence/measurement-only reduction. A separate Sol plan review is
+  active; lock its bounded format before authoring. No fixture label or generic B1 margin can
+  pass B3. Real cohort/calibration follows.
 - K5 admission is already implemented. Effective implicit bare stays unknown without a valid
   observation; Codex quota read/update exists, Claude automatic producer/vendor captures and
   authenticated inter-node delivery remain. Do not invent an ACP carrier or infer from login.

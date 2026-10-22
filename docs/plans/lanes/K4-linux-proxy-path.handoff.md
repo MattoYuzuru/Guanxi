@@ -1,6 +1,7 @@
 # K4 Linux proxy socket-path repair handoff
 
-**Status:** implemented candidate, actual Fedora regression passes; root integration pending.
+**Status:** independently verified and integrated into local main45491863; actual Fedora
+regression passes. No whole K4/platform/MS1 closure.
 **Date:** 2026-10-22. Branch `codex/k4-linux-proxy-path`, base main `d64ce92b`.
 Author root; separate reviewer GPT6.1Sol/high `encoding_review2`.
 
@@ -82,7 +83,11 @@ actual clean pins and observed results, not a portable source certificate.
 
 ## Integration, rollback and residuals
 
-Root still owns final candidate types/build/Markdown/license/lint and focused main merge.
+Final candidate45491863 types/build/Markdown/license/lint pass respectively:
+check-fo_1sgj2, check-2f9913p3, check-d6e5mxce, check-_y5egedl (675/0) and check-ccs7zg8j.
+Coordinator exits0; source stays clean/unchanged. Root fast-forwarded this exact reviewed tree
+into local main without conflict or resolution. The all-eight main sequence remains at1b6;
+no repeated npm/browser run is claimed at454 after the test-only tightening/docs.
 No web code changes in this slice. No database/data migration or down migration is needed;
 rollback reverts the focused allocation/test/docs commits. The source rollback reintroduces
 the demonstrated long-parent Linux startup failure, so prefer a forward repair.
