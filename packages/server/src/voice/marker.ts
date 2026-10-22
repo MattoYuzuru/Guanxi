@@ -159,7 +159,7 @@ function quoted(value: string): string {
  * Mentions that the prompt was dictated, the backend/model/language and glossary revision, at
  * most five replaced terms and at most five low-confidence fragments from `finalText`. It never
  * contains audio, full prompt text or credentials. The result is always at most `maxChars`
- * characters.
+ * code points, so truncation never splits a surrogate pair.
  */
 export function voiceBlock(origin: VoiceOrigin, finalText: string, maxChars = 400): string {
   const validated = validateVoiceOrigin(origin, finalText)
@@ -193,9 +193,10 @@ export function voiceBlock(origin: VoiceOrigin, finalText: string, maxChars = 40
   }
 
   const note = parts.join(' ')
-  if (note.length <= limit) return note
+  const characters = [...note]
+  if (characters.length <= limit) return note
   if (limit === 1) return '…'
-  return `${note.slice(0, limit - 1)}…`
+  return `${characters.slice(0, limit - 1).join('')}…`
 }
 
 function canonicalRevisionJson(entries: readonly GlossaryRevisionEntry[]): string {

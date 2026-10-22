@@ -257,6 +257,43 @@ describe('voiceBlock', () => {
     expectTypeError(() => voiceBlock(origin, FINAL_TEXT, Number.POSITIVE_INFINITY))
   })
 
+  it('truncates on code points without splitting surrogate pairs', () => {
+    const finalText = '😀'.repeat(40)
+    const origin: VoiceOrigin = {
+      ...validOrigin(),
+      confidenceSpans: [{ start: 0, end: finalText.length, confidence: 0.1 }],
+      replacements: [],
+    }
+    const full = voiceBlock(origin, finalText, 10_000)
+    let boundary = -1
+    for (let index = 0; index < full.length - 1; index += 1) {
+      const high = full.charCodeAt(index)
+      const low = full.charCodeAt(index + 1)
+      if (high >= 0xd800 && high <= 0xdbff && low >= 0xdc00 && low <= 0xdfff) {
+        boundary = index
+        break
+      }
+    }
+    assert.ok(boundary > 0, 'expected an emoji surrogate pair in the full block')
+
+    const limit = boundary + 2
+    const block = voiceBlock(origin, finalText, limit)
+    for (let index = 0; index < block.length; index += 1) {
+      const code = block.charCodeAt(index)
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const next = block.charCodeAt(index + 1)
+        assert.ok(
+          next >= 0xdc00 && next <= 0xdfff,
+          'high surrogate must be followed by a low surrogate',
+        )
+        index += 1
+      } else {
+        assert.ok(code < 0xdc00 || code > 0xdfff, 'low surrogate must follow a high surrogate')
+      }
+    }
+    assert.ok([...block].length <= limit)
+  })
+
   it('caps the listed replacements and low-confidence fragments', () => {
     const finalText = Array.from({ length: 7 }, () => 'Hono').join(' ')
     const origin: VoiceOrigin = {

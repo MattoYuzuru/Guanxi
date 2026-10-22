@@ -105,7 +105,8 @@ spans inside `finalText.length`, finite confidence in [0, 1] and replacement sli
 `finalText.slice(start, end)`. `voiceBlock(origin, finalText, maxChars = 400)` revalidates the
 origin against `finalText`, states that the prompt was dictated, names the backend, model,
 language and glossary revision, lists at most five replaced terms and at most five low-confidence
-(<0.6) quoted fragments, and truncates to `maxChars`. The final text is supplied by the caller
+(<0.6) quoted fragments, and truncates to `maxChars` code points without splitting surrogate
+pairs. The final text is supplied by the caller
 and is not stored on the origin, so a spread or `structuredClone` of the origin produces the same
 block. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is independent of
 input order.
