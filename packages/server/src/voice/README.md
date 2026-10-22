@@ -187,18 +187,31 @@ intersection, so a missed occurrence in one item can be offset by an extra occur
 Terms are case-insensitive because they use `normalizeForWer`; identifier casing is not scored by
 this slice.
 
+### Evaluation-set fingerprints
+
+`scoreEval` refuses duplicate item ids with a `TypeError`. It records a SHA-256 fingerprint per
+item over the id and normalised reference tokens, sorted by id, plus one over the sorted compiled
+glossary keys. `compareEval` requires both before evaluating a gate: the same id with a changed
+reference is `item_mismatch`, and a different scoring glossary is `glossary_mismatch`. Refusal
+precedence is `empty`, `item_mismatch`, `glossary_mismatch`, `mixed_origin`, `synthetic_eval`.
+
+A V2 candidate changes the glossary used for **replacement**, not the term list used for
+**scoring**. Callers must score the baseline and the candidate with the same scoring term list; the
+glossary fingerprint enforces this because a different list changes the term metrics and their
+denominators.
+
 ### Origin and gates
 
 `scoreEval` reports `origin` as `synthetic`, `owner_recording`, `mixed` or `empty`, counts both
 origins, and keeps a sorted `itemIds` list. `compareEval` converts metric differences to percentage
 points, rounded to nine decimals so inclusive boundaries are stable, and refuses evidence unless
-both reports are non-empty owner recordings over the same item ids.
+both reports are non-empty owner recordings over the same item references and scoring glossary.
 
 - `v1Gate` is evaluated only on that evidence. Its `reason` is `owner_recordings`; `met` is true
   only when the term-F1 delta is at least 10 points and the U-WER delta is at most 1 point, both
   inclusive. A missing delta leaves `met` false.
-- Refusal reasons, in precedence order, are `empty`, `item_mismatch`, `mixed_origin` and
-  `synthetic_eval`; refused gates omit `met`.
+- Refusal reasons, in precedence order, are `empty`, `item_mismatch`, `glossary_mismatch`,
+  `mixed_origin` and `synthetic_eval`; refused gates omit `met`.
 - `v2Apply` is the ADR-0028 §5 pre-apply gate. It is allowed only on the same owner-recording
   evidence, with a term-F1 delta of at least 0 and a U-WER delta of at most 1 point, both
   inclusive. It reports `within_bounds`, `term_f1_drop`, `u_wer_rise` or `missing_metrics`.

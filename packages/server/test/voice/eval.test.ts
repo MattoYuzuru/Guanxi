@@ -596,6 +596,70 @@ describe('scoreEval origin labelling', () => {
   })
 })
 
+describe('evaluation-set fingerprints', () => {
+  it('refuses duplicate item ids in one evaluation set', () => {
+    assert.throws(
+      () => scoreEval([item('x', 'a', 'a'), item('x', 'b', 'b')], []),
+      /duplicate item id/i,
+    )
+  })
+
+  it('records per-item reference and glossary fingerprints', () => {
+    const score = scoreEval(
+      [
+        item('b', 'Hono is fast', 'hono is fast'),
+        item('a', 'open pull request', 'open pull request'),
+      ],
+      ['Hono', 'Open Pull', 'hono'],
+    )
+    assert.deepEqual(
+      score.fingerprint.items.map((entry) => entry.id),
+      ['a', 'b'],
+    )
+    for (const entry of score.fingerprint.items) {
+      assert.match(entry.reference, /^[0-9a-f]{64}$/)
+    }
+    assert.match(score.fingerprint.glossary, /^[0-9a-f]{64}$/)
+
+    const repunctuated = scoreEval(
+      [
+        item('a', 'Open, pull request!', 'open pull request'),
+        item('b', 'HONO is fast', 'hono is fast'),
+      ],
+      ['hono', 'open pull'],
+    )
+    assert.deepEqual(repunctuated.fingerprint, score.fingerprint)
+  })
+
+  it('refuses reports whose item has the same id but a different reference', () => {
+    const baseline = scoreEval(
+      [item('x', 'Hono is fast', 'Hono is fast', 'owner_recording')],
+      ['Hono'],
+    )
+    const candidate = scoreEval(
+      [item('x', 'nothing here', 'nothing here', 'owner_recording')],
+      ['Hono'],
+    )
+    const comparison = compareEval(baseline, candidate)
+    assert.deepEqual(comparison.v1Gate, { evaluated: false, reason: 'item_mismatch' })
+    assert.deepEqual(comparison.v2Apply, { allowed: false, reason: 'item_mismatch' })
+  })
+
+  it('refuses reports scored against different glossary keys', () => {
+    const baseline = scoreEval(
+      [item('x', 'Hono and Codex', 'Hono and Codex', 'owner_recording')],
+      ['Hono', 'Codex'],
+    )
+    const candidate = scoreEval(
+      [item('x', 'Hono and Codex', 'Hono and Codex', 'owner_recording')],
+      ['Hono'],
+    )
+    const comparison = compareEval(baseline, candidate)
+    assert.deepEqual(comparison.v1Gate, { evaluated: false, reason: 'glossary_mismatch' })
+    assert.deepEqual(comparison.v2Apply, { allowed: false, reason: 'glossary_mismatch' })
+  })
+})
+
 describe('determinism', () => {
   it('returns the same score for repeated and reordered input', () => {
     const items = [
