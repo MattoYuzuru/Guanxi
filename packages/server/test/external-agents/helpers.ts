@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { TestContext } from 'node:test'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
 import type { Connections } from '../../src/connections/service.ts'
-import { bootServerKernel } from '../../src/runtime/kernel.ts'
+import { bootServerKernel, type ServerKernelOptions } from '../../src/runtime/kernel.ts'
 import { openDb } from '../../src/store/db.ts'
 import { externalAgentPlugin, EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../../src/external-agents/plugin.ts'
 import { ADAPTERS } from '../../src/external-agents/profiles.ts'
@@ -16,10 +16,10 @@ import type { VaultKeychain } from '../../src/vault/keychain.ts'
 export const owner = 'fixture-owner'
 export const nodeId = 'fixture-node'
 export const versions = { 'claude-code': '0.94.0', copilot: '1.0.101', 'gemini-cli': '0.65.0', opencode: '1.19.3', goose: '1.55.0', codex: '0.163.0' } as const
-export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'], policy: Partial<ExternalPolicy> = {}) {
+export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'], policy: Partial<ExternalPolicy> = {}, kernelOptions: Pick<ServerKernelOptions, 'runs'> = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k5-'))
   const db = openDb(join(dir, 'node.sqlite'))
-  const kernel = await bootServerKernel(undefined, { db })
+  const kernel = await bootServerKernel(undefined, { db, ...kernelOptions })
   const keychain: VaultKeychain = { key: () => Buffer.alloc(32, 7) }
   await kernel.node.plugin(connectionsPlugin, { databasePath: join(dir, 'connections.sqlite'), keychain: async () => keychain,
     localHost: () => 'http://127.0.0.1:11434', transport: async () => { throw new Error('Network forbidden') } })
@@ -51,7 +51,7 @@ export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'],
   let closed = false
   const close = async () => { if (closed) return; closed = true; await kernel.node.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) }
   t.after(close)
-  return { dir, kernel, connections, installations, bindings, secret, tapes, close,
+  return { dir, db, kernel, connections, installations, bindings, secret, tapes, close,
     service: () => kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!,
     async scenario(adapter: AdapterId, extra: Record<string, unknown>) {
       await rm(join(dir, adapter, 'trace.json'), { force: true })
