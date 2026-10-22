@@ -438,7 +438,6 @@ buffers, HTTP body/full scrubbed strings, total queue count growth, per-blob GC,
 output tail recovery, peak RSS/end-to-end streaming, platform expansion and operational
 K4/MS1 exits. This slice closes none of those residuals.
 
-
 ## Root Q0 authorization and exact ownership
 
 Implement only Q0 now: contract shared-leaf/v3/progress2 definitions; independent40 append/
