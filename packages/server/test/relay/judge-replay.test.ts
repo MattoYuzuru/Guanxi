@@ -309,8 +309,6 @@ test('recorded corpus with all required classes can evaluate the gate; missing c
   assert.equal(complete.gate.evaluated, true)
   assert.equal(complete.gate.reason, 'recorded_corpus')
   assert.equal(complete.gate.met, true)
-  assert.equal(complete.gate.met, complete.micro.recall !== null && complete.micro.precision !== null
-    && complete.micro.recall >= 0.9 && complete.micro.precision >= 0.8)
   assert.equal(complete.gate.rule, R3_GATE_RULE)
   assert.equal(complete.origins.recorded.runs, 3)
   assert.equal(complete.origins.synthetic.runs, 0)
@@ -345,8 +343,20 @@ test('recorded corpus with all required classes can evaluate the gate; missing c
     [step(0, { outOfScopeEdits: ['synthetic/out-of-scope/noise.ts'] }), step(1)], [], 'recorded'))
   const optionalScore = score(optionalNoise)
   assert.equal(optionalScore.gate.evaluated, true)
-  assert.equal(optionalScore.gate.met, false)
+  assert.equal(optionalScore.gate.met, true, 'optional classes are reported but do not decide the gate')
   assert.equal(optionalScore.classes.out_of_scope_edit.fp, 1)
+
+  const dominated = record()
+  for (let i = 0; i < 20; i++) {
+    dominated.runs.push(run(`recorded-loop-${i}`, [step(0, { noProgressCycles: 3 }), step(1)], [{ fault: 'loop', firstStep: 0 }], 'recorded'))
+  }
+  dominated.runs.find(value => value.id === 'recorded-premature')!.steps[1]!.acceptancePassed = true
+  const dominatedScore = score(dominated)
+  assert.equal(dominatedScore.classes.premature_done.recall, 0)
+  assert.ok((dominatedScore.micro.recall ?? 0) >= 0.9, 'micro recall alone would pass')
+  assert.equal(dominatedScore.gate.met, false, 'a required class at zero recall fails the gate')
+
+  assert.equal(score({ version: 1, runs: [] }).gate.reason, 'empty_corpus')
 
   const mixed = record()
   mixed.runs[0]!.origin = 'synthetic'

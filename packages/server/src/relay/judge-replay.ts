@@ -335,6 +335,7 @@ function resolveDetectors(custom?: Partial<Record<FaultClass, Detector>>): Recor
   for (const fault of FAULT_CLASSES) {
     if (!Object.hasOwn(custom, fault)) continue
     const detector = custom[fault]
+    if (detector === undefined) continue
     if (typeof detector !== 'function') throw new TypeError(`detectors.${fault}: expected function`)
     resolved[fault] = detector
   }
@@ -496,9 +497,10 @@ function originScore(runs: readonly ReplayRun[], origin: ReplayOrigin, detectors
 }
 
 /** The R3 rule is evaluated only on a non-empty, fully recorded corpus with at least one
- * labelled run for loop, protected_path_edit and premature_done. `met` compares the corpus-wide
- * micro precision and recall with the rule thresholds. */
-function evaluateGate(runs: readonly ReplayRun[], micro: MicroScore): GateScore {
+ * labelled run for loop, protected_path_edit and premature_done. `met` requires EACH required
+ * class to reach the thresholds, so a large class cannot hide another at zero recall; the
+ * optional classes (stall, out_of_scope_edit) are reported but do not decide the gate. */
+function evaluateGate(runs: readonly ReplayRun[], classes: Record<FaultClass, ClassScore>): GateScore {
   if (runs.length === 0) {
     return { rule: R3_GATE_RULE, evaluated: false, reason: 'empty_corpus' }
   }
@@ -517,7 +519,10 @@ function evaluateGate(runs: readonly ReplayRun[], micro: MicroScore): GateScore 
     rule: R3_GATE_RULE,
     evaluated: true,
     reason: 'recorded_corpus',
-    met: micro.precision !== null && micro.recall !== null && micro.recall >= 0.9 && micro.precision >= 0.8,
+    met: REQUIRED_GATE_CLASSES.every(fault => {
+      const c = classes[fault]
+      return c.precision !== null && c.recall !== null && c.recall >= 0.9 && c.precision >= 0.8
+    }),
   }
 }
 
@@ -539,6 +544,6 @@ export function score(
       synthetic: originScore(corpus.runs, 'synthetic', active),
       recorded: originScore(corpus.runs, 'recorded', active),
     },
-    gate: evaluateGate(corpus.runs, overall.micro),
+    gate: evaluateGate(corpus.runs, overall.classes),
   }
 }

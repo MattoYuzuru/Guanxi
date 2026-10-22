@@ -25,7 +25,7 @@
 - The gate is never evaluated for synthetic corpora (`evaluated: false`,
   `reason: 'synthetic_corpus'`). It is evaluated only when every run is recorded and at
   least one run is labelled for `loop`, `protected_path_edit` and `premature_done`; `met`
-  compares the corpus-wide micro precision/recall with the rule thresholds.
+  requires each required class (loop, protected path edit, premature done) to meet the thresholds; optional classes do not decide it.
 - `packages/server/src/relay/judge-replay-inject.ts` generates deterministic synthetic
   corpora with mulberry32 and a caller policy. Faulty runs rotate through all five classes
   and cross the relevant threshold/list/claim/heartbeat boundary at `firstStep`. Healthy
@@ -75,3 +75,12 @@ conditions, generator patterns and test non-vacuity. It found no blocking correc
 findings. Review-driven hardening (bounded latency selection, positive run-count validation,
 origin/generator/early-only/mixed-origin assertions) is recorded in the review-fix commit.
 No live or recorded corpus was used.
+
+## Independent review fixes (Opus, 2026-10-23)
+
+- P2: `met` was computed from the micro average over all five classes, so 20 detected loops hid a
+  fully missed premature-done class (`met: true`). It now requires each required class to reach
+  recall ≥ 0.9 and precision ≥ 0.8; optional classes are reported only. New dominated-class
+  assertion; the optional-noise expectation now keeps `met: true`.
+- P3: empty-corpus reason asserted; an explicit `undefined` detector override is skipped.
+- Residual P3s kept: `unknown` counts steps (documented), `score()` expects a parsed corpus.
