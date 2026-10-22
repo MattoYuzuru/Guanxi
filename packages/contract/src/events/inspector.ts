@@ -19,7 +19,9 @@ import {
 export const SESSION_EXPORT_VERSION = 1
 /** The first export body that may contain a v2 input-artifact reference. */
 export const SESSION_EXPORT_VERSION_2 = 2
-export const SESSION_EXPORT_MAX_VERSION = 2
+/** The first export body that may contain a v3 queue snapshot. */
+export const SESSION_EXPORT_VERSION_3 = 3
+export const SESSION_EXPORT_MAX_VERSION = 3
 
 /** URL- and header-safe: session ids appear in paths and in the export's file name. */
 const sessionId = z.string().regex(/^[A-Za-z0-9._:-]{1,200}$/u)
@@ -113,7 +115,7 @@ export const sessionEventsQuery = z
     after: z.coerce.number().int().min(0).default(0),
     limit: z.coerce.number().int().min(1).max(500).default(200),
     /** The highest event envelope the client can parse; omitting it means v1. */
-    eventVersion: z.coerce.number().int().min(1).max(2).default(1),
+    eventVersion: z.coerce.number().int().min(1).max(3).default(1),
   })
   .strict()
 export type SessionEventsQuery = z.infer<typeof sessionEventsQuery>
@@ -192,7 +194,7 @@ export type SessionSearchResponse = z.infer<typeof sessionSearchResponse>
 export const sessionExportQuery = z
   .object({
     /** The highest export body the client can parse; omitting it means v1. */
-    exportVersion: z.coerce.number().int().min(1).max(2).default(1),
+    exportVersion: z.coerce.number().int().min(1).max(3).default(1),
   })
   .strict()
 export type SessionExportQuery = z.infer<typeof sessionExportQuery>
@@ -215,6 +217,20 @@ export const sessionExportSchema = z.union([
   z
     .object({
       exportVersion: z.literal(SESSION_EXPORT_VERSION_2),
+      sessionId,
+      exportedAt: z.string().datetime(),
+      lastSeq: z.number().int().nonnegative(),
+      excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
+      // Keep a max-2 body exact even after the shared event union learned v3.
+      events: z.array(sessionEventSchema).refine(
+        (events) => events.every((event) => event.version <= SESSION_EXPORT_VERSION_2),
+        { message: 'A v2 export contains only v1 and v2 events' },
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      exportVersion: z.literal(SESSION_EXPORT_VERSION_3),
       sessionId,
       exportedAt: z.string().datetime(),
       lastSeq: z.number().int().nonnegative(),
