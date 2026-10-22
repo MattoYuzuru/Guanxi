@@ -3,61 +3,75 @@
 **Status:** active continuation · **Updated:** 2026-10-22
 
 Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md),
-[PHASE_STATUS](PHASE_STATUS.md) and the [continuation record](evidence/coordination-2026-10-22.md).
-The owner authorized autonomous completion of current in-progress work and MS1 where feasible.
-Inspect actual branch/HEAD, live worker and latest handoff before reopening an old lane.
-Root owns central status; workers use isolated branches and handoffs.
+[PHASE_STATUS](PHASE_STATUS.md) and the [continuation audit](evidence/coordination-2026-10-22.md).
+The owner authorizes autonomous completion of in-progress work and MS1 where feasible. Inspect
+live workers, exact HEAD, dirty state and latest handoffs before reopening a lane. Root owns
+central status; workers use isolated branches and handoffs.
 
-The owner currently requires **local-only work**: no SSH/Fedora or other remote execution
-hosts until that scope changes. Local Colima fixtures are available; D-194 excludes real
-benchmark execution on this Mac. No real model/paid call or owner key belongs in ordinary tests.
+Work is **local only**: no SSH/Fedora or other remote execution host. Local synthetic Colima
+fixtures are allowed; D-194 excludes real benchmark execution on this Mac. No real model,
+paid call, owner workspace or owner key belongs in ordinary tests. Original Claude publication
+is unchanged; the refreshed local HTML snapshot distinguishes estimates from accepted exits.
 
-Current integration boundary: K4 retention/R1 `8006cd8`, DS2 `03c655b`, positive HTTPS
-`8803855` and B1 foundation/admission/gateway/staging/private stream `7366df8` are merged locally.
-All eight integration gates pass at clean `6da2058`; exact receipts and scope are in the
-continuation record. Whole K4, DS2, B1 and MS1 gates remain open.
+Current executable main is `53b1e76`: K4 retention/R1, DS2, positive HTTPS, B1 bounded
+foundation/private stream, R3 ETA/signals and reviewed K4 input artifacts are integrated.
+All eight individual main checks pass; the coordinator wrapper failed afterwards due to its
+own running-script edit. Exact receipts and that limitation are recorded in the audit.
+Do not call the whole K4/B1/DS2/MS1 gate complete.
 
-1. U1 layout/replication and CSS combined candidate `a4a42da` passes types but fails fast
-   G5/G6/G7 (unused legacy allowances and new literal animation shorthands). The CSS author
-   is proposing a proper token/recipe correction; do not grow allowances or weaken the ratchet.
-   Projects fixture repair `3d14692` still needs actual Chromium/full candidate gates. Shell
-   prep is separate (`codex/u1-shell`); Input invalid-story fix `7479d96` is independently read.
-   AppShellChrome border-box fix `218e150` passes controlled 390px behavior and scoped axe,
-   clipping and motion; pinned-image baselines/readiness work is active in its isolated clone.
-2. **Current boundary:** R3 ETA/signals is merged locally as `fad69e5` after candidate
-   `4657f47` passes full affected gates. All eight full main post-merge checks pass at clean `af0ccab`.
-   Original repaired source `cd00a82` has independent pending-collector cancellation review
-   closure and 31 new / 124 inherited relay/R1 passes. Candidate evidence is in [ETA](evidence/R3-eta.md) and [signals](evidence/R3-signals.md). The broader judge cascade is a separate GPT lane; real calibration,
-   night wake and B3 remain unfinished.
-3. Integrate reviewed F2-a `5c66e27` after U1, then F2-b `ffa9d1a` with separate grant/cancel
-   fixes and independent 30-case review closure. F2-b author envelope is 181 (30 new / 151
-   inherited). Offers alone have dispatchAuthorized:false. Cost/toolful transport and physical
-   two-host/hibernation/six-hour observations remain open.
-4. K4 input-artifact candidate `419a997` requires three independent P2 fixes: FIFO queue
-   mutations, live-reference/canonical-directory reaper race, and durable stop intervention
-   before one terminal when pending input I/O aborts. Final repaired source `afd7345` has independent four-probe closure. Synchronize current main,
-   then run broader native tests and full candidate/integration gates before accepting it.
-   Queue full text remains inline; no whole K4 input/memory closure is claimed.
-5. R2 trusted start/status/stop plus CLI is being implemented by an isolated GPT worker.
-   Default missing rendered-tokenizer/workspace authorities must refuse. Do not infer context
-   capacity or local model placement from caller JSON/catalog defaults. Migrations 38 (R3) and
-   39 (R2) are independently reserved; K4 input is 33, F2-b 37.
-6. B1 process/peer/K2 binding, real fresh corpus/images, verified pricing/meters and paired
-   five-seed execution remain unfinished. A proposed next binding contract is being prepared;
-   fixture tests cannot enable the stock paid executor or activate ADR-0025.
-7. X1 reviewed `647c5d0` still needs repaired-source Linux evidence inside an explicit local
-   integration envelope and full gates; no remote host is currently authorized.
-8. DS2 helper is installed and production build/code-sign checks pass (`check-jgk64o2l`).
-   Owner-present Secure Enclave key creation/signing remains unverified; never fake approval.
-   Unsigned component draft→review is allowed once stories/docs/readiness are complete; only
-   the owner's valid signature permits approved and a stage exit using that component.
+1. **First unfinished privacy slice:** independent U1 review reproduced a late long-secret
+   prefix leak in K4's truncated excerpt/title. Original outside probe
+   `u1-v2-metadata-integration-probe-20261022.ts` has one expected failure (`check-821298cf`).
+   A GPT author owns the isolated `codex/k4-input-artifacts` follow-up: protect known right
+   truncation with current registry forms before title/search/frame projection, preserve sync
+   APIs and immutable rows, no full artifact reads or arbitrary fragment minimum. The original
+   reviewer must verify it independently, then root runs candidate/main gates. Keep current
+   prompt on this repair until the original probe and all affected output boundaries pass.
+2. U1 combined candidate `985dfed` joins reviewed layout/replication, shell preparation/search,
+   unsigned AppShell/Dialog/Input readiness and canonical CSS fixes. Types pass; npm test
+   fails locale inventory (351/352 web). Separate DSH repair in `codex/u1-search` must keep
+   brand interpolation central and internal discriminator IDs stable, without scanner
+   exceptions. Earlier union `387453b` passed eight gates and 87 browser cases; that is not
+   certification of the later union. Merge the privacy/inventory fixes, rerun full gates, and
+   integrate only after independent review. Product mounting, new-session/finished-unseen,
+   true ephemeral D-135 side chat, 112 CSS suppressions and owner-signed approval remain.
+3. R2 admission `c4dbaff` is independently closed. Current combined candidate `d21661b`
+   includes main K4 and K3 nonstream body-cancel source `3439a7f` / handoff `19664d3`.
+   Independent reviewer is rerunning the original body/stream probes; preserve fourth-argument
+   async authorization and final synchronous prepare before POST, then actual read/cancel ACK
+   before release. Missing stock exact counter/owned-checkout authority must refuse; no byte
+   count/catalog context or fake local placement fallback. Full candidate/main gates follow.
+4. R3 cascade production `9e62da8`, handoff `f0733b2`, has independent window/facts repair
+   closure. Author relay scope is 29 new / 92 inherited plus original window probe. Integrate
+   after K3/R2 seams, then broader gates. Real grading, calibration, night wake and B3 remain.
+5. X1 repaired-source Linux `c7773d4`, handoff `7a471d0`, passes 62 local Linux cases without
+   skips and separate source/two-case review. Merge current main, review census/conflicts,
+   run all candidate/main gates; do not substitute old Fedora evidence or call nested-Colima
+   permissions rootless production validation. Preserve exact image/source bindings.
+6. B1 process/K2 source `96ebde6` repairs three reproduced P2s, with 19 new / 115 inherited
+   author cases. Its late-redacted legacy tool-key residual is being fixed through existing
+   trusted fenced metadata access; it must not be waived. Independent real `/bin/ps`, parent/
+   supervisor death, original K2 probes and full gates follow. Stock paid executor stays off;
+   real corpus/images, verified billing, actual arm execution and five seeds remain open.
+7. K5 has a proposed durable same-node account-admission plan in `codex/k5-durable-admission`.
+   Review actual child/group cleanup acknowledgement before code authorization: no timeout
+   frees an occupied account, SQL errors surface, orphans remain blocked. Same-node is not
+   distributed admission; help/auth fixtures do not prove effective bare or real compatibility.
+8. Integrate reviewed F2-a `5c66e27` after U1, then F2-b `ffa9d1a`; preserve its separate
+   abort/grant review repairs. Offers alone have dispatchAuthorized:false. Cost/toolful
+   transport, physical two-host power and six-hour observations remain open.
+9. DS2 helper is installed; production build/code-sign checks pass (`check-jgk64o2l`). Actual
+   owner-present Secure Enclave signing remains unverified. Unsigned draft to review is
+   allowed after readiness; only the owner's valid signature permits approved and stage exit.
 
-Use Node26, each checkout's own dependencies/ports and shared `agent-dev` resource `heavy`
-under `/Users/yuzuru/.local/state/agent-dev`. Stop sequences on failure; freeze source while
-checks run. The external skill symlink prevents reusable attestation, so inspect receipts and
-report local scope honestly. Keep new and regression counts separate. After each bounded
-slice update status and this prompt, with independent review fixes in separate commits.
+Use each checkout's own Node26 dependencies/ports and shared heavy lock under
+`/Users/yuzuru/.local/state/agent-dev`. Freeze source and the coordinator script throughout
+checks. Stop command sequences on failure. The external skill symlink prevents reusable
+attestation: inspect actual receipts and report clean HEAD/real scope. Keep new and regression
+counts separate, fix independent findings in separate commits, then update status and this
+prompt. Do not push during the local-only continuation.
 
-MS1 requires K5/R3/F2/B3 and real delegation to a 30B-class model on another node for at
-least six hours, zero lead tokens during hibernation, exactly one wake and all item gates green
-in a clean checkout. Prepare owner-required steps concretely while advancing independent work.
+MS1 still requires its accepted K5/R3/F2/B3 dependencies and real delegation to a 30B-class
+model on another node for at least six hours, zero lead tokens during hibernation, exactly one
+wake and every item exit green. Advance local code and prepare concrete owner-required steps;
+never replace these operational gates with synthetic fixtures or rewrite milestone scope.
