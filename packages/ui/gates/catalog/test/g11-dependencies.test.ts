@@ -78,6 +78,14 @@ describe('G11 transitive component lifecycle', () => {
     })
   })
 
+  it('does not skip a named-barrel runtime side effect', async () => {
+    await withFixture('transitive-barrel-side-effect', async (scratch) => {
+      const result = await g11.run(context(scratch))
+      const file = 'packages/web/src/features/seeded/G11BarrelUse.tsx'
+      assert.deepEqual(errors(result, file).map((finding) => finding.component).sort(), ['g11-barrel-draft'])
+    })
+  })
+
   it('finds two-hop and helper-barrel aliased drafts through the component graph', async () => {
     await withFixture('transitive-helper-alias', async (scratch) => {
       const result = await g11.run(context(scratch))

@@ -45,6 +45,55 @@ describe('scanComponentDependencies', () => {
     }
   })
 
+  it('preserves a named-import barrel runtime side effect', () => {
+    const subject = tree({
+      'src/components/a/index.ts': "export { A } from './a.tsx'\n",
+      'src/components/a/a.tsx': "import { B } from '../../lib/barrel.ts'\nexport const A = B\n",
+      'src/lib/barrel.ts': "import '../components/c/c.tsx'\nexport { B } from '../components/b/b.tsx'\n",
+      'src/components/b/b.tsx': 'export function B() { return null }\n',
+      'src/components/c/c.tsx': 'export function C() { return null }\nconsole.log(C)\n',
+    })
+    try {
+      const scan = scanComponentDependencies(subject.uiRoot, ['a'])
+      assert.deepEqual([...(scan.closures.get('a') ?? [])].sort(), ['a', 'b', 'c'])
+      assert.deepEqual(scan.unresolved, [])
+    } finally {
+      subject.dispose()
+    }
+  })
+
+  it('preserves a named-export barrel runtime side effect', () => {
+    const subject = tree({
+      'src/components/a/index.ts': "export { A } from '../../lib/barrel.ts'\n",
+      'src/components/a/a.tsx': 'export function A() { return null }\n',
+      'src/lib/barrel.ts': "import '../components/c/c.tsx'\nexport { A } from '../components/a/a.tsx'\n",
+      'src/components/c/c.tsx': 'export function C() { return null }\n',
+    })
+    try {
+      const scan = scanComponentDependencies(subject.uiRoot, ['a'])
+      assert.deepEqual([...(scan.closures.get('a') ?? [])].sort(), ['a', 'c'])
+      assert.deepEqual(scan.unresolved, [])
+    } finally {
+      subject.dispose()
+    }
+  })
+
+  it('reports a resolved runtime import outside the UI source root instead of following it', () => {
+    const subject = tree({
+      'src/components/a/index.ts': "export { A } from './a.tsx'\n",
+      'src/components/a/a.tsx': "import './a.css'\nimport { outside } from '../../../outside.ts'\nexport const A = outside\n",
+      'outside.ts': "import { C } from './src/components/c/c.tsx'\nexport const outside = C\n",
+      'src/components/c/c.tsx': 'export function C() { return null }\n',
+    })
+    try {
+      const scan = scanComponentDependencies(subject.uiRoot, ['a'])
+      assert.deepEqual([...(scan.closures.get('a') ?? [])], ['a'])
+      assert.deepEqual(scan.unresolved, [{ file: 'src/components/a/a.tsx', specifier: '../../../outside.ts' }])
+    } finally {
+      subject.dispose()
+    }
+  })
+
   it('terminates cycles and still reaches a draft beyond the cycle', () => {
     const subject = tree({
       'src/components/a/index.ts': "export { A } from './a.tsx'\n",
