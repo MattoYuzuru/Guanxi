@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { RELAY_CRITERIA, reduceRelayMeasurement, type RelayMeasurementReport } from '../src/relay-measurement.ts'
 import { RelayMeasurementError } from '../src/relay-protocol.ts'
-import { addRetry, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
+import { addEvidence, addRetry, build, resign, trialOf, type Raw } from './relay-fixtures.ts'
 
 const arm = (report: RelayMeasurementReport, id: string) => report.arms.find(a => a.id === id)!
 const relayCycle = (raw: Raw, k = 0, task = 'task-a', seed = 1) => trialOf(raw, task, 'arm-relay', seed).cycles[k]
@@ -93,6 +93,17 @@ test('whole-answer probes never become field grades; retry rescue does not impro
   const fu = arm(reduce(resign(finalUnknown)), 'arm-relay').totals.probes.criticalField
   assert.deepEqual([fu.firstIncorrect, fu.finalUnknown, fu.complete], [1, 1, false])
   assert.ok(reduce(resign(finalUnknown)).unresolved.includes('probes_unknown'))
+})
+
+test('duplicate (scope, field) probe occasions are rejected so the denominator cannot double count', () => {
+  const raw = build()
+  const c = relayCycle(raw)
+  c.probes.manifest.occasions.push({ id: 'p-head-2', scope: 'critical_field', field: 'head' })
+  c.probes.grades.push({ occasion: 'p-head-2', attempt: 1, state: 'observed', ref: addEvidence(raw, 'probe_grading', 'task-a', 'arm-relay', 1, 'att-1', 1), result: 'correct' })
+  assert.throws(() => reduce(resign(raw)), (e: unknown) => e instanceof RelayMeasurementError && e.code === 'duplicate_key')
+  // The valid fixture has one head occasion per observed group, so the counts stay at 24 / 12.
+  const p = arm(reduce(build()), 'arm-relay').totals.probes
+  assert.deepEqual([p.criticalField.expected, p.byField.head.expected], [24, 12])
 })
 
 test('unknown stays unknown: one unknown grade gives a conservative incomplete fraction, an unknown manifest gives null', () => {

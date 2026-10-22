@@ -347,8 +347,12 @@ function validateCycle(input: RelayMeasurementInput, t: RelayObservedTrial, c: R
     const g = `${at}.probes`
     resolve(probes.manifest.ref, 'probe_manifest', ctx, `${g}.manifest.ref`)
     if (relayProbeManifestDigest(probes.manifest.occasions) !== probes.manifest.sha256) out.add('reference_mismatch', 'manifest_digest', `${g}.manifest`)
+    const fieldKeys = new Set<string>()
     probes.manifest.occasions.forEach((o, i) => {
       if ((o.scope === 'whole_answer') !== (o.field === null)) out.add('schema_invalid', 'probe_field_scope', `${g}.manifest.occasions[${i}]`)
+      const key = `${o.scope}\u0000${o.field ?? ''}`
+      if (fieldKeys.has(key)) out.add('duplicate_key', 'probe_field_repeat', `${g}.manifest.occasions[${i}]`)
+      fieldKeys.add(key)
     })
     const ids = probes.manifest.occasions.map(o => o.id)
     seen(ids, (_, i) => out.add('duplicate_key', 'probe_occasion_repeat', `${g}.manifest.occasions[${i}]`))

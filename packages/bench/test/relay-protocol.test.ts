@@ -188,6 +188,11 @@ test('probe rules: scope and field agree, retries only follow failures, attempts
   expectIssue(resign(gap), 'missing_slot', 'probe_attempt_gap')
   const repeat = build(); { const c = relayCycle(repeat); c.probes.grades.push(structuredClone(c.probes.grades[0])) }
   expectIssue(repeat, 'duplicate_key', 'probe_row_repeat')
+  const duplicateField = build()
+  { const c = relayCycle(duplicateField)
+    c.probes.manifest.occasions.push({ id: 'p-head-2', scope: 'critical_field', field: 'head' })
+    c.probes.grades.push({ occasion: 'p-head-2', attempt: 1, state: 'observed', ref: addEvidence(duplicateField, 'probe_grading', 'task-a', 'arm-relay', 1, 'att-1', 1), result: 'correct' }) }
+  expectIssue(resign(duplicateField), 'duplicate_key', 'probe_field_repeat')
   const guard = build(); relayCycle(guard).guards.manifest.checks.push({ id: 'g-1', deadEnd: 'd-2' })
   expectIssue(resign(guard), 'duplicate_key')
 })
