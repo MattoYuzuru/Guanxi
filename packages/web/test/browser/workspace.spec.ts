@@ -352,6 +352,26 @@ test('workspace state recovered-winner geometry failure retains the acknowledged
   expect((await state(page)).rev).toBe(900)
 })
 
+test('workspace state activation retry applies an acknowledged recovery exactly once', async ({ page }) => {
+  const initial = builtInLayout({ account: 'local', device: 'device-a', deviceClass: 'desktop', mode: 'developer' })
+  const candidate = { ...initial, id: 'candidate-layout', name: 'Candidate layout' }
+  await setup(page, initial, false, { documents: [candidate], winner: candidate })
+  await stateFault(page, { path: '/api/layouts/geometry', remaining: 0 })
+  await page.goto('/workspace')
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.evaluate(() => { (window as any).__STATE_FAULT__.remaining = 1 })
+  await pick(page, 'Named layout', 'Candidate layout')
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText('activate-layout-geometry: GET /api/layouts/geometry')
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').length)).toBe(1)
+  await page.getByRole('button', { name: 'Named layout', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Recovered layout', exact: true })).toHaveCount(1)
+  await page.keyboard.press('Escape')
+})
+
 test('workspace state known-successful Save-as geometry failure retries only geometry', async ({ page }) => {
   await setup(page)
   await stateFault(page, { path: '/api/layouts/geometry', method: 'PUT' })
