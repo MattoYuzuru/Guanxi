@@ -1,6 +1,6 @@
 # K4 Linux proxy socket path repair
 
-**Status: root-authorized bounded implementation.** Date:2026-10-22.
+**Status: implemented candidate; actual Fedora regression passes, integration pending.** Date:2026-10-22.
 Checkout `/Users/yuzuru/Projects/Guanxi-lanes/k4-linux-proxy-path`, branch
 `codex/k4-linux-proxy-path`, base main `d64ce92bf4570e99b61db1b4a0f0e929b9c9b398`.
 This is separate from the active queue-v3 and workspace-state author checkouts.
