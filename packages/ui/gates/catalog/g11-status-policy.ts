@@ -7,7 +7,8 @@
  * can write a signed deprecation an agent could otherwise mark a never-approved component
  * deprecated and put it on a product screen.
  */
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
+import { scanComponentDependencies } from '../../catalog/tooling/dependencies.ts'
 import { readInventory } from '../../catalog/tooling/inventory.ts'
 import { scanUsage } from '../../catalog/tooling/usage.ts'
 import { componentStatuses } from './lib/statuses.ts'
@@ -52,7 +53,22 @@ export const g11: CatalogGate = {
       for (const file of files) set.add(file)
       filesById.set(id, set)
     }
+    const dependencies = scanComponentDependencies(context.uiRoot, filesById.keys())
+    for (const edge of dependencies.unresolved) {
+      const file = relative(context.repoRoot, join(context.uiRoot, edge.file)).split(sep).join('/')
+      findings.push({ severity: 'error', file, message: `cannot resolve runtime dependency "${edge.specifier}" while following component usage` })
+    }
+    // A product import attributes its whole runtime component closure to the same product
+    // file: the parent's status never approves a child, and a shared child is reported once.
+    const reachable = new Map<string, Set<string>>()
     for (const [id, files] of filesById) {
+      for (const dependency of dependencies.closures.get(id) ?? new Set([id])) {
+        const set = reachable.get(dependency) ?? new Set<string>()
+        for (const file of files) set.add(file)
+        reachable.set(dependency, set)
+      }
+    }
+    for (const [id, files] of reachable) {
       const status = statuses.get(id) ?? 'invalid'
       for (const file of files) {
         if (status === 'draft' || status === 'invalid' || status === 'deprecated') {
