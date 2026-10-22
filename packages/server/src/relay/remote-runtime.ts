@@ -98,7 +98,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
     if (error instanceof RelayError) throw error
     if (error instanceof ZodError) throw new RelayError('runtime_identity_unknown')
     if (error instanceof FederationError) {
-      if (['invalid_signature', 'relay_evidence_mismatch'].includes(error.code)) throw new RelayError('runtime_identity_unknown')
+      if (['invalid_signature', 'relay_evidence_mismatch', 'not_home'].includes(error.code)) throw new RelayError('runtime_identity_unknown')
       if (error.code === 'peer_refused' && [403, 404, 409].includes(error.status)) throw new RelayError('runtime_identity_unknown')
     }
     if (error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 'stale_lease') throw error
@@ -121,7 +121,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
     this.options.onBind?.(run)
     this.attempt = attempt
   }
-  async close(): Promise<void> { this.lifetime.abort(); this.cache.clear() }
+  async close(): Promise<void> { this.lifetime.abort(new RelayError('relay_stopped')); this.cache.clear() }
   private signalFor(signal: AbortSignal): AbortSignal { return AbortSignal.any([this.lifetime.signal, signal]) }
 
   async observe(reference: string, signal: AbortSignal): Promise<RelayRuntimeObservation> {
@@ -250,7 +250,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
   /** Cancel at the home first, so renewals and late results are refused, then ask the executor directly and wait for its
    * ACK. Without an ACK the wait ends when the holder TTL has elapsed: by then the holder has fenced itself. */
   private async stop(childId: string, ref: { id: string; homeNodeId: string; executorNodeId: string } | undefined, dispatched: boolean): Promise<void> {
-    try { this.options.runs.cancel(childId) } catch { /* A deposed home cannot cancel; the holder fences itself on its next renewal. */ }
+    // An executor that stopped renewing leaves its child `interrupted` (R1 expiry); that is a loss, not a cancel.
+    try { if (this.options.runs.get(childId).state !== 'interrupted') this.options.runs.cancel(childId) } catch { /* A deposed home cannot cancel; the holder fences itself on its next renewal. */ }
     if (!ref) return
     const end = Date.now() + this.options.cancelWaitMs
     const missing = (error: unknown) => error instanceof FederationError && error.code === 'peer_refused' && error.status === 404

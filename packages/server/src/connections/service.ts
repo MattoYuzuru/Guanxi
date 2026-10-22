@@ -215,7 +215,7 @@ export class Connections {
       const host = new URL(transport ? transport.host : normalizeHost(this.localHost()))
       const remote = transport?.remote
       if (remote) {
-        if (host.protocol !== 'federation:' || host.hostname !== encodeURIComponent(remote.nodeId) || host.username || host.password || host.search || host.hash) throw new Error('Remote runtime must be a pinned federation node')
+        if (host.protocol !== 'federation:' || host.hostname !== encodeURIComponent(remote.nodeId) || (host.pathname !== '' && host.pathname !== '/') || host.username || host.password || host.search || host.hash) throw new Error('Remote runtime must be a pinned federation node')
       } else if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
       const context = request.options?.num_ctx
       if (!context || !Number.isSafeInteger(context) || context <= 0) throw new Error('Explicit runtime context is required')

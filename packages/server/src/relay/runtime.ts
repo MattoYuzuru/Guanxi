@@ -105,7 +105,7 @@ export class RelayRuntimeSource {
       const host = new URL(runtimeHost())
       invariant(runtimeHost() === admittedHost, 'runtime_identity_changed')
       // A remote runtime has no loopback origin: its identity is the signed executor node, checked by its session.
-      if (observer?.remote) invariant(host.protocol === 'federation:' && host.hostname === encodeURIComponent(observer.remote.nodeId) && !host.username && !host.password && !host.search && !host.hash, 'relay_local_connection_required')
+      if (observer?.remote) invariant(host.protocol === 'federation:' && host.hostname === encodeURIComponent(observer.remote.nodeId) && (host.pathname === '' || host.pathname === '/') && !host.username && !host.password && !host.search && !host.hash, 'relay_local_connection_required')
       else invariant(['http:', 'https:'].includes(host.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(host.hostname) &&
         !host.username && !host.password && !host.search && !host.hash, 'relay_local_connection_required')
       if (observer) {
