@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { EtaProjection } from './eta.ts'
 
 import { relayPlanSchema, relayCapsSchema, relayRelativePathSchema } from '@guanxi/contract'
 export const relativePath = relayRelativePathSchema
@@ -21,7 +22,7 @@ export interface Ledger {
   items: Record<string, 'open' | 'verification_requested' | 'done'>;
   head: string; files: string[]; diffstat: string; evidence: Evidence[];
   noProgress: number; tokens: number; moneyMicros: number; unknownCosts: number;
-  errors: number; proposals: string[]; eta: null; withheld?: boolean;
+  errors: number; proposals: string[]; eta: EtaProjection | null; withheld?: boolean;
   baseline: { statuses: string; gates: string; head: string; done?: string[]; passed?: string[] }; pendingCall: string | null;
 }
 export interface Handoff {

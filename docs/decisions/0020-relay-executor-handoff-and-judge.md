@@ -113,7 +113,10 @@ atomic uploads of JSON, Markdown, the snapshot and git bundle to the R1 home dat
 
 Runtime admission requires an execution-host observation of the actual loaded window and
 rendered-request token count; K3 has no universal meter yet. The tests use fixture meters and
-K3 fixture transports, without live models. Judge requests are emitted for R3; judge execution,
-ETA, delegation policy, cross-node transport and B3 quality/non-inferiority remain proposed.
+K3 fixture transports, without live models. Judge requests are emitted for R3. The R3-a
+optional host-supplied ETA projection now persists empirical P50/P80 forecasts with explicit
+unknown/uncalibrated states at safe executor boundaries; see the service README. It is not
+live calibration evidence. Judge execution, delegation policy, automatic timing collection,
+cross-node transport and B3 quality/non-inferiority remain proposed.
 Linked/gitlink repository trees are refused by the current clean-checkout implementation.
 See the [R2 hand-off](../plans/evidence/R2.md) for assertions, mutations and exact scope.

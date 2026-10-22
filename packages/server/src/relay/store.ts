@@ -6,6 +6,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionEventInput } from '../session-log/log.ts'
 import { planSchema, capsSchema, invariant, type Ledger, type Plan, type Caps, type Note, type NoteKind, type CycleState, type Handoff } from './types.ts'
 import { canonical, hash, strip, byteHash, validateHandoff } from './handoff.ts'
+import { projectEta, type EtaInput } from './eta.ts'
 
 // Independent additive ledger, in the SAME database as R1 and K2 for atomic commits.
 // 35 is reserved to R2; F1's independent federation ledger owns 34. No user_version change.
@@ -99,6 +100,10 @@ export class RelayStore {
       invariant(l.state === 'boot', 'cycle_transition')
       l.cycle++; l.state = 'orient'; l.baseline = { ...progressState(l), head: l.head }
     })
+  }
+  /** Sample at synchronous executor boundaries; never mutate a sealed snapshot in flight. */
+  updateEta(a: Attempt, input: EtaInput): void {
+    this.change(a, 'eta_observed', l => { l.eta = this.scrubber.scrub(projectEta(l, input, this.clock())) })
   }
   /** Explicit recovery only, after R1 admitted a NEW fence. Never resumes a pending model call. */
   recover(a: Attempt): void {

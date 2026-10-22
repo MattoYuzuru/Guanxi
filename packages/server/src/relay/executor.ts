@@ -8,6 +8,9 @@ import type { RelayWorkspace } from './workspace.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type Measure } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
+import { etaInputSchema, type EtaInput } from './eta.ts'
+import { evaluateJudgeSignals, type JudgeObservation } from './judge-signals.ts'
+import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput } from './judge-host.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tool'), name: z.string(), args: z.record(z.unknown()) }).strict(),
@@ -21,9 +24,13 @@ export class RelayExecutor {
   private turns: string[] = []
   private controller = new AbortController()
   private running = false
+  private readonly eta?: EtaInput
+  private readonly judge?: PreparedRelayJudge
   readonly store: RelayStore; readonly model: RelayModel; readonly workspace: RelayWorkspace; readonly reserves: Reserves; readonly scrubber: EgressScrubber; readonly limits: RelayLimits
-  constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber, limits: RelayLimits = DEFAULT_RELAY_LIMITS) {
+  constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber, limits: RelayLimits = DEFAULT_RELAY_LIMITS, eta?: EtaInput, judgeSignals?: RelayJudgeInput) {
     this.store = store; this.model = model; this.workspace = workspace; this.reserves = reserves; this.scrubber = scrubber; this.limits = limits
+    this.eta = eta ? etaInputSchema.parse(eta) : undefined
+    this.judge = judgeSignals ? prepareJudgeSignals(judgeSignals) : undefined
   }
   stop() { this.controller.abort() }
   private caps(l: Ledger, nextCycle = false): string | null {
@@ -51,6 +58,74 @@ export class RelayExecutor {
   /** A cancel or takeover can revoke the fence while the executor is already reporting. */
   private lost(error: unknown): boolean {
     return error instanceof Error && 'code' in error && ['stale_lease', 'writer_busy', 'invalid_transition'].includes(String((error as { code?: unknown }).code))
+  }
+  /** R1 has no separate read-only fence probe; its existing fenced extension transaction is
+   * the execution-fence check before the host await. */
+  private checkExecution(a: Attempt): void {
+    this.store.runs.mutate(a, () => undefined)
+  }
+  /** Await the trusted read-only collector without letting it own run completion. The race uses
+   * the existing run signal only: there is no timeout and no new cancellation authority. A
+   * collector that ignores the signal may still need cooperative cleanup of its underlying read,
+   * but it cannot hold the executor, renewal or plugin disposal open. Late resolution/rejection
+   * is consumed and discarded, so it cannot publish a note or resume work. */
+  private collectJudge(judge: PreparedRelayJudge, input: RelayJudgeCollectInput): Promise<JudgeObservation> {
+    const { signal } = input
+    return new Promise<JudgeObservation>((resolve, reject) => {
+      let settled = false
+      const finish = (action: () => void): void => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', aborted)
+        action()
+      }
+      const aborted = () => finish(() => reject(signal.reason))
+      if (signal.aborted) { aborted(); return }
+      signal.addEventListener('abort', aborted, { once: true })
+      // Recheck after installing the listener so an abort cannot slip between the two steps.
+      if (signal.aborted) { aborted(); return }
+      let pending: Promise<JudgeObservation>
+      try { pending = judge.collect(input) } catch (error) { finish(() => reject(error)); return }
+      // Both outcomes stay observed even after an abort wins the race.
+      pending.then(
+        observation => finish(() => resolve(observation)),
+        error => finish(() => reject(error)),
+      )
+    })
+  }
+  /** One host observation at a synchronous boundary. The collector gets a detached ledger,
+   * a detached attempt and the actual run signal; the note is published only after a successful
+   * collection and evaluation, in the same R1-fenced transaction. No signal changes control flow. */
+  private async judgeSample(a: Attempt, phase: JudgePhase, signal: AbortSignal): Promise<void> {
+    const judge = this.judge
+    if (!judge) return
+    signal.throwIfAborted()
+    this.checkExecution(a)
+    const ledger = structuredClone(this.store.read(a.run_id))
+    const cycle = ledger.cycle
+    const attempt = { id: a.id, runId: a.run_id, epoch: a.epoch, token: a.token }
+    let observation: JudgeObservation
+    try {
+      observation = await this.collectJudge(judge, { attempt, ledger, signal })
+    } catch (error) {
+      // Cancellation and a revoked fence keep their existing loss/cancel semantics. Only a
+      // live collector failure becomes the fixed observer error; no exception text is kept.
+      signal.throwIfAborted()
+      if (this.lost(error)) throw error
+      throw new RelayError('judge_observation_unavailable')
+    }
+    signal.throwIfAborted()
+    // The collector is a host await: recheck the execution fence before any publication.
+    this.checkExecution(a)
+    let signals: ReturnType<typeof evaluateJudgeSignals>
+    try {
+      signals = evaluateJudgeSignals(observation, judge.policy)
+    } catch {
+      throw new RelayError('judge_observation_invalid')
+    }
+    this.store.emit(a, { type: 'agent.note', data: { text: canonical({
+      relay: 'judge_signals', phase, cycle, signals, unknownFacts: judgeUnknownFacts(observation),
+    }) } })
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<Reply> {
     signal.throwIfAborted()
@@ -154,6 +229,8 @@ export class RelayExecutor {
       }
     }
     this.store.countProgress(a, observation.nonemptyCommit)
+    if (this.eta) this.store.updateEta(a, this.eta)
+    await this.judgeSample(a, 'pre_seal', signal)
     let narrative = '', degraded = false
     try {
       const ledger = this.store.read(a.run_id)
@@ -218,6 +295,8 @@ export class RelayExecutor {
         if (cap) { this.wrap(a, cap); return current }
         const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w)
         this.store.begin(a)
+        if (this.eta) this.store.updateEta(a, this.eta)
+        await this.judgeSample(a, 'cycle_start', signal)
         const narrative = await this.orient(a, w, t, signal, measure)
         this.store.transition(a, 'work'); this.turns = []
         let invalidActions = 0

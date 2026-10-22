@@ -13,11 +13,15 @@ import { RelayExecutor } from './executor.ts'
 import { RelayStore } from './store.ts'
 import { invariant } from './types.ts'
 import { RelayStarts, type RelayStartHost } from './start.ts'
+import type { EtaInput } from './eta.ts'
+import type { RelayJudgeInput } from './judge-host.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
 export interface RelayConfig { db: Db; limits?: Partial<RelayLimits>; startHost?: RelayStartHost }
 export interface RelayInput {
   connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves; limits?: Partial<RelayLimits>
+  eta?: EtaInput
+  judgeSignals?: RelayJudgeInput
 }
 /** T0 internal API. Workspace and runtime attestations are supplied by the execution host,
  * never parsed from model JSON or HTTP. Merely loading the plugin starts no inference. */
@@ -39,8 +43,9 @@ export const relayPlugin = definePlugin<RelayConfig>({
       read: (id: string) => store.read(id),
       async execute(a: Attempt, input: RelayInput) {
         invariant(!closed && !active.has(a.run_id), 'relay_busy')
+        invariant(!input.eta || input.eta.scope.model === input.model, 'eta_model')
         const limits = { ...DEFAULT_RELAY_LIMITS, ...config.limits, ...input.limits }
-        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits)
+        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits, input.eta, input.judgeSignals)
         const promise = executor.run(a)
         active.set(a.run_id, { executor, promise })
         try { return await promise } finally { active.delete(a.run_id) }
