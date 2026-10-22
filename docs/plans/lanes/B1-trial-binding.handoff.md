@@ -112,6 +112,10 @@ taken. Root owns full integration gates.
 
 ## Guard-mutation evidence
 
+A pre-code red run against the base tree would fail only on missing modules/imports, which root
+correction 4 explicitly rejects as behavioural proof; no such red-only result is claimed.
+Acceptance rests on the observable assertions below and the temporary no-guard mutations.
+
 Temporary no-guard edits were applied to committed source, the named test was run, and the file
 was restored with `git checkout --`; no mutation was committed. Each run failed with an
 assertion:
