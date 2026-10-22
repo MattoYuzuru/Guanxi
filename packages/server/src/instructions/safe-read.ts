@@ -64,7 +64,7 @@ export async function readToEnd(
   offset: number,
   cap: number,
 ): Promise<{ bytes: Buffer; overflow: boolean }> {
-  const limit = cap + 1
+  const limit = Math.floor(cap) + 1
   const chunks: Buffer[] = []
   let total = 0
   while (total < limit) {

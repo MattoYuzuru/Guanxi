@@ -65,13 +65,14 @@ function findFrontMatter(buffer: Buffer, complete: boolean): { text: string; bod
  * a whole body.
  */
 export async function readSkillHead(path: string, maxBytes: number): Promise<SkillHead | null> {
+  const limit = Math.floor(assertBudget(maxBytes, 'max_bytes_invalid'))
   const handle = await openRegularFile(path)
   try {
     const info = await handle.stat()
     const chunks: Buffer[] = []
     let total = 0
-    while (total < maxBytes && total < info.size) {
-      const length = Math.min(READ_CHUNK, maxBytes - total, info.size - total)
+    while (total < limit && total < info.size) {
+      const length = Math.min(READ_CHUNK, limit - total, info.size - total)
       const chunk = Buffer.alloc(length)
       const { bytesRead } = await handle.read(chunk, 0, length, total)
       if (bytesRead === 0) break

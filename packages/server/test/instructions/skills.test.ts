@@ -395,16 +395,22 @@ test('a capped read detects growth instead of silently truncating', async t => {
 test('non-finite and negative budgets are rejected with TypeError', async t => {
   const base = await baseDir(t)
   const projectRoot = join(base, 'project')
-  await writeSkill(projectRoot, '.agents/skills/bounded', 'name: bounded\ndescription: bounded')
+  const dir = await writeSkill(projectRoot, '.agents/skills/bounded', 'name: bounded\ndescription: bounded', 'x')
   const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
   const id = summary(index, 'bounded').id
+  const file = join(dir, 'SKILL.md')
 
   for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
     await assert.rejects(loadSkill(index, id, { maxBodyBytes: bad }), TypeError)
     await assert.rejects(discoverSkills({ projectRoot, userSkillDirs: [], maxSkills: bad }), TypeError)
     await assert.rejects(discoverSkills({ projectRoot, userSkillDirs: [], maxDescriptionChars: bad }), TypeError)
+    await assert.rejects(readSkillHead(file, bad), TypeError)
     assert.throws(() => skillContext(index, text => text.length, bad), TypeError)
   }
+
+  const fractional = await loadSkill(index, id, { maxBodyBytes: 1.5 })
+  assert.ok(!('error' in fractional))
+  assert.equal(fractional.body, 'x')
 })
 
 test('an unreadable SKILL.md reports unreadable and loadSkill refuses it', async t => {
