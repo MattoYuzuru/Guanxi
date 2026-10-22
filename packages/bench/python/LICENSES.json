@@ -1,0 +1,143 @@
+{
+  "colorama==0.4.6": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/colorama/0.4.6/json",
+    "sha256": "43fb351344384a44c2b7d7fff1c63496b89ac830aea714301525c1f3718addd1",
+    "upstream": {
+      "Homepage": "https://github.com/tartley/colorama"
+    }
+  },
+  "fastuuid==0.14.0": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/fastuuid/0.14.0/json",
+    "sha256": "6d0fc0cb24c54f9da1e75225686d391d122dc1a54735699891603c5f92699e3c",
+    "upstream": {
+      "homepage": "https://github.com/thedrow/fastuuid/"
+    }
+  },
+  "fsspec==2026.7.0": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/fsspec/2026.7.0/json",
+    "sha256": "55eeed4d2aa6c53010b8dc6ac67ce83f2620ef17203c5922f5a642f479b484b0",
+    "upstream": {
+      "Changelog": "https://filesystem-spec.readthedocs.io/en/latest/changelog.html",
+      "Documentation": "https://filesystem-spec.readthedocs.io/en/latest/",
+      "Homepage": "https://github.com/fsspec/filesystem_spec"
+    }
+  },
+  "jinja2==3.1.6": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/jinja2/3.1.6/json",
+    "sha256": "1bc757d7065f3e67d3a49e72ebc731d0774055575732592eede9820c136329cc",
+    "upstream": {
+      "Changes": "https://jinja.palletsprojects.com/changes/",
+      "Chat": "https://discord.gg/pallets",
+      "Documentation": "https://jinja.palletsprojects.com/",
+      "Donate": "https://palletsprojects.com/donate",
+      "Source": "https://github.com/pallets/jinja/"
+    }
+  },
+  "markdown-it-py==4.2.0": {
+    "license": "MIT",
+    "source": "https://pypi.org/pypi/markdown-it-py/4.2.0/json",
+    "sha256": "62affba459c80b1279b5759735f7da3e9c7d24966086ff81ec0303c94512b966",
+    "upstream": {
+      "Documentation": "https://markdown-it-py.readthedocs.io",
+      "Homepage": "https://github.com/executablebooks/markdown-it-py"
+    }
+  },
+  "mdit-py-plugins==0.6.1": {
+    "license": "MIT",
+    "source": "https://pypi.org/pypi/mdit-py-plugins/0.6.1/json",
+    "sha256": "bf1153ba20342c126a212c3df62a74dd1e07e807e979cbdd4b7d8dd2772d29a0",
+    "upstream": {
+      "Documentation": "https://mdit-py-plugins.readthedocs.io",
+      "Homepage": "https://github.com/executablebooks/mdit-py-plugins"
+    }
+  },
+  "mdurl==0.1.2": {
+    "license": "MIT",
+    "source": "https://pypi.org/pypi/mdurl/0.1.2/json",
+    "sha256": "c7baac0b363d92cf55f1f3a313f4bb0564bff27343e6a0a4e9d7ff03afc8a6c7",
+    "upstream": {
+      "Homepage": "https://github.com/executablebooks/mdurl"
+    }
+  },
+  "pandas==3.0.6": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/pandas/3.0.6/json",
+    "sha256": "ea78ab4387dcc2f27bf36d97007f897e5ba2d31a658c08925bdd9a362375ca2a",
+    "upstream": {
+      "documentation": "https://pandas.pydata.org/docs/",
+      "homepage": "https://pandas.pydata.org",
+      "repository": "https://github.com/pandas-dev/pandas"
+    }
+  },
+  "pathspec==1.1.1": {
+    "license": "MPL-2.0",
+    "source": "https://pypi.org/pypi/pathspec/1.1.1/json",
+    "sha256": "24f66829a7f40485bdccfcf32294218b0f4260b289ee4806ab644feb6c194766",
+    "upstream": {
+      "Change Log": "https://python-path-specification.readthedocs.io/en/latest/changes.html",
+      "Documentation": "https://python-path-specification.readthedocs.io/en/latest/index.html",
+      "Issue Tracker": "https://github.com/cpburnz/python-pathspec/issues",
+      "Source Code": "https://github.com/cpburnz/python-pathspec"
+    }
+  },
+  "prompt-toolkit==3.0.53": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/prompt-toolkit/3.0.53/json",
+    "sha256": "6ca170e9088be13eab820444feb4a9cbc8432293efcba8695b8528f5b37c0119",
+    "upstream": {
+      "Documentation": "https://python-prompt-toolkit.readthedocs.io/en/stable/",
+      "Homepage": "https://github.com/prompt-toolkit/python-prompt-toolkit"
+    }
+  },
+  "python-dateutil==2.9.0.post0": {
+    "license": "Apache-2.0 OR BSD-3-Clause",
+    "source": "https://pypi.org/pypi/python-dateutil/2.9.0.post0/json",
+    "sha256": "65747bc111eb972ae6f477f211253f21e25738cb7d894ddb80ddd65f620b58a7",
+    "upstream": {
+      "Documentation": "https://dateutil.readthedocs.io/en/stable/",
+      "Homepage": "https://github.com/dateutil/dateutil",
+      "Source": "https://github.com/dateutil/dateutil"
+    }
+  },
+  "semver==3.1.0": {
+    "license": "BSD-3-Clause",
+    "source": "https://pypi.org/pypi/semver/3.1.0/json",
+    "sha256": "ff3fd2c6d7dd88a2edad51d7d828f61223a4873daa91f1fb33569002ad4abe61",
+    "upstream": {
+      "Bug Tracker": "https://github.com/python-semver/python-semver/issues",
+      "Changelog": "https://python-semver.readthedocs.io/en/latest/changelog.html",
+      "Documentation": "https://python-semver.rtfd.io",
+      "GitHub Homepage": "https://github.com/python-semver/python-semver",
+      "Releases": "https://github.com/python-semver/python-semver/releases"
+    }
+  },
+  "strenum==0.4.15": {
+    "license": "MIT",
+    "source": "https://pypi.org/pypi/strenum/0.4.15/json",
+    "sha256": "9eb4ff3f025ee8bc7aa9029aebc78cfdc4836a077da988d846f3cf39ed2c84ac",
+    "upstream": {
+      "Homepage": "https://github.com/irgeek/StrEnum"
+    }
+  },
+  "tokenizers==0.23.3": {
+    "license": "Apache-2.0",
+    "source": "https://pypi.org/pypi/tokenizers/0.23.3/json",
+    "sha256": "c08480d45857e1c4d1174f000a98e74f542a875d07130d19b9c500090214487e",
+    "upstream": {
+      "Homepage": "https://github.com/huggingface/tokenizers",
+      "Source": "https://github.com/huggingface/tokenizers"
+    }
+  },
+  "wcwidth==0.9.3": {
+    "license": "MIT",
+    "source": "https://pypi.org/pypi/wcwidth/0.9.3/json",
+    "sha256": "15de5566addf5015778ad913917cdc0d9a85d9bda679a43334da68bb3c0c04c9",
+    "upstream": {
+      "Homepage": "https://github.com/jquast/wcwidth"
+    }
+  }
+}
