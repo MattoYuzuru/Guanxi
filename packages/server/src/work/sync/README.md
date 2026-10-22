@@ -87,7 +87,8 @@ ADR-0032 §7 has one blocked outward state. Moving between `failed` and `blocked
 stored derived status but posts no comment and writes no label or transition.
 
 The comment body ends with
-`<!-- guanxi:transition:<itemId>:<status>:<seq> -->`. Before posting, the engine lists existing
+`<!-- guanxi:transition:<itemId>:<status>:<seq> -->`. The marker is kept as plain text on
+every tracker, so it stays visible in Jira and survives ADF flattening. Before posting, the engine lists existing
 comments and looks for that exact marker, but only on comments authored by the authenticated
 tracker identity (`adapter.self()`, cached from GitHub `GET /user` or Jira `/rest/api/*/myself`).
 A user can copy marker text into a comment; it does not suppress the status comment. If the
@@ -156,8 +157,10 @@ writes read the issue first, remove stale coarse status labels, and add the targ
 One adapter, selected by `apiVersion`: Cloud uses `/rest/api/3`, Data Center uses
 `/rest/api/2` (D-121). Reads summary, description, priority, assignee, labels and `updated`.
 Cloud descriptions are flattened from ADF; Data Center descriptions remain plain/wiki text.
-Cloud comments are sent as an ADF document; Data Center comments are sent as plain text.
-Comment reads flatten ADF to text so marker checks work on both variants; the author is
+Cloud comments are sent as ADF with `strong` and `code` marks; Data Center comments use wiki
+markup (`*bold*`, `{{code}}`). The engine emits one markdown-like source body and each adapter
+translates it, so no literal `**` or backticks reach Jira. Comment reads flatten ADF to text
+so marker checks work on both variants; the author is
 `accountId` (Cloud) or `name` (Data Center), and `self()` caches `GET /rest/api/*/myself`.
 `transitions` maps an outward state (`in_progress`, `blocked`, `done`) to a transition id or
 name; configure `blocked` once for both `blocked` and `failed`. The adapter resolves it from
@@ -178,7 +181,7 @@ a network. The suite covers:
   backoff times, plus engine deferral;
 - conditional `304` polling for GitHub and Jira;
 - credential hygiene across errors, results and the recorded request log;
-- Jira v2 and v3 comment payloads and ADF marker extraction.
+- Jira v3 ADF `strong`/`code` marks, v2 wiki markup, and ADF marker extraction.
 
 ## Residuals
 

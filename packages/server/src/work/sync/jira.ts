@@ -92,13 +92,43 @@ export function adfToText(value: unknown): string {
   return walk(value).replace(/\n{2,}/g, '\n').trim()
 }
 
-/** Builds the Cloud ADF comment body from plain text, preserving each line. */
+/**
+ * Builds Cloud ADF inline nodes. The engine writes markdown-like source text; Cloud needs
+ * `strong`/`code` marks and Data Center needs wiki markup, so each adapter translates.
+ */
+function adfInline(line: string): unknown[] {
+  const nodes: unknown[] = []
+  const pattern = /\*\*([^*\n]+)\*\*|`([^`\n]+)`/g
+  let last = 0
+  for (let match = pattern.exec(line); match !== null; match = pattern.exec(line)) {
+    if (match.index > last) {
+      nodes.push({ type: 'text', text: line.slice(last, match.index) })
+    }
+    if (match[1] !== undefined) {
+      nodes.push({ type: 'text', text: match[1], marks: [{ type: 'strong' }] })
+    } else {
+      nodes.push({ type: 'text', text: match[2], marks: [{ type: 'code' }] })
+    }
+    last = pattern.lastIndex
+  }
+  if (last < line.length) nodes.push({ type: 'text', text: line.slice(last) })
+  return nodes
+}
+
+/** Builds the Cloud ADF comment body, preserving lines and converting strong/code marks. */
 export function adfDocument(text: string): Record<string, unknown> {
   const content = text.split(/\r?\n/).map(line => ({
     type: 'paragraph',
-    content: line === '' ? [] : [{ type: 'text', text: line }],
+    content: adfInline(line),
   }))
   return { type: 'doc', version: 1, content }
+}
+
+/** Data Center wiki markup for the same source text. The marker stays plain text. */
+export function wikiMarkup(text: string): string {
+  return text
+    .replace(/`([^`\n]+)`/g, '{{$1}}')
+    .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
 }
 
 function jiraCommentAuthor(comment: Record<string, unknown>): string | null {
@@ -329,7 +359,7 @@ export class JiraAdapter implements TrackerAdapter {
         }
         const payload = this.apiVersion === 3
           ? { body: adfDocument(mutation.body) }
-          : { body: mutation.body }
+          : { body: wikiMarkup(mutation.body) }
         const response = await this.send(
           'POST',
           `${this.apiBase()}/issue/${issueKey}/comment`,

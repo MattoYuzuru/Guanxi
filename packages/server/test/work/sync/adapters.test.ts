@@ -408,7 +408,7 @@ test('Jira maps statuses to transitions and leaves unmapped statuses comment-onl
   assert.equal(transport.requests.length, before)
 })
 
-test('Jira v3 uses an ADF comment body and v2 uses plain text', async () => {
+test('Jira v3 uses ADF marks and v2 uses wiki markup for the same comment', async () => {
   const marker = '<!-- guanxi:transition:wg2-a:in_progress:1 -->'
   const text = `Guanxi item \`wg2-a\` is now **in_progress**.\n\n${marker}`
 
@@ -424,7 +424,29 @@ test('Jira v3 uses an ADF comment body and v2 uses plain text', async () => {
   assert.equal(v3Payload.body.type, 'doc')
   assert.equal(v3Payload.body.version, 1)
   assert.ok(v3Payload.body.content.length > 0)
-  assert.match(adfToText(v3Payload.body), /guanxi:transition:wg2-a:in_progress:1/)
+  const flattened = adfToText(v3Payload.body)
+  assert.match(flattened, /guanxi:transition:wg2-a:in_progress:1/)
+  assert.equal(flattened.includes('**'), false)
+  assert.equal(flattened.includes('\u0060'), false)
+
+  const markedTypes: string[] = []
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) walk(entry)
+      return
+    }
+    if (value === null || typeof value !== 'object') return
+    const record = value as Record<string, unknown>
+    if (Array.isArray(record.marks)) {
+      for (const mark of record.marks) {
+        const type = (mark as Record<string, unknown>).type
+        if (typeof type === 'string') markedTypes.push(type)
+      }
+    }
+    walk(record.content)
+  }
+  walk(v3Payload.body)
+  assert.deepEqual(markedTypes.sort(), ['code', 'strong'])
 
   const v2Transport = new ScriptedTransport(() => json(200, fixture('jira-comment-created-v2')))
   const v2 = await jiraAdapter(v2Transport, 2).mutate('PROJ-12', {
@@ -434,7 +456,12 @@ test('Jira v3 uses an ADF comment body and v2 uses plain text', async () => {
   assert.equal(pathOf(v2Transport.requests[0]!), '/rest/api/2/issue/PROJ-12/comment')
   const v2Payload = JSON.parse(v2Transport.requests[0]!.body ?? '{}') as { body: unknown }
   assert.equal(typeof v2Payload.body, 'string')
-  assert.equal(v2Payload.body, text)
+  assert.equal(
+    v2Payload.body,
+    `Guanxi item {{wg2-a}} is now *in_progress*.\n\n${marker}`,
+  )
+  assert.equal(String(v2Payload.body).includes('**'), false)
+  assert.match(String(v2Payload.body), /guanxi:transition:wg2-a:in_progress:1/)
 })
 
 test('Jira comment reads flatten ADF so idempotency markers survive', async () => {
