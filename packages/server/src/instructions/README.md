@@ -4,6 +4,8 @@
 
 Filesystem-only readers for Agent Skills and repository instructions. They are not wired into
 the native agent loop: legacy orientation reports `Skills=off`, so skills stay off by default.
+Every byte or count budget must be a finite non-negative number; non-finite or negative values
+throw `TypeError` before any comparison.
 
 ## Agent Skills
 

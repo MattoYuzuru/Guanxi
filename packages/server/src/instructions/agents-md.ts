@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { assertBudget } from './safe-read.ts'
 
 interface Candidate {
   path: string
@@ -33,6 +34,7 @@ export async function loadInstructions(input: {
   text: string
   overflow: null | { totalBytes: number; budgetBytes: number; omitted: string[] }
 }> {
+  const budget = assertBudget(input.budgetBytes, 'instructions_budget_invalid')
   const projectRoot = await realpath(input.projectRoot)
   let cwd: string
   try {
@@ -79,7 +81,6 @@ export async function loadInstructions(input: {
   }
 
   const ordered = [...groups].reverse().flatMap(group => group.items)
-  const budget = input.budgetBytes
   const included = new Set<Candidate>()
   const omitted = new Set<Candidate>()
   let used = 0

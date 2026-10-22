@@ -176,3 +176,15 @@ test('an empty instruction tree returns empty text and no overflow', async t => 
   assert.equal(result.text, '')
   assert.equal(result.overflow, null)
 })
+
+test('non-finite and negative budgets are rejected with TypeError', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeAt(projectRoot, 'AGENTS.md', 'rules')
+  for (const budgetBytes of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(
+      loadInstructions({ projectRoot, cwd: projectRoot, budgetBytes }),
+      TypeError,
+    )
+  }
+})

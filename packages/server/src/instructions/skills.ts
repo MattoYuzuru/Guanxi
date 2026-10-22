@@ -1,6 +1,6 @@
 import { readdir, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
-import { openRegularFile, readFailureCode, readToEnd } from './safe-read.ts'
+import { assertBudget, openRegularFile, readFailureCode, readToEnd } from './safe-read.ts'
 
 export interface SkillSource { kind: 'project' | 'user'; root: string }
 export interface SkillSummary { id: string; name: string; description: string; source: 'project' | 'user'; dir: string; bytes: number }
@@ -251,6 +251,10 @@ export async function discoverSkills(input: {
 }): Promise<SkillIndex> {
   const projectRoot = await realpath(input.projectRoot)
   const readHead = input.readHead ?? readSkillHead
+  const maxSkills = input.maxSkills === undefined
+    ? undefined
+    : Math.floor(assertBudget(input.maxSkills, 'max_skills_invalid'))
+  if (input.maxDescriptionChars !== undefined) assertBudget(input.maxDescriptionChars, 'max_description_chars_invalid')
   const sources: ScanSource[] = [
     { kind: 'project', root: join(projectRoot, '.agents/skills'), boundary: projectRoot, scan: join(projectRoot, '.agents/skills') },
     { kind: 'project', root: join(projectRoot, '.claude/skills'), boundary: projectRoot, scan: join(projectRoot, '.claude/skills') },
@@ -349,7 +353,7 @@ export async function discoverSkills(input: {
     compareText(left.summary.name, right.summary.name) ||
     compareText(left.summary.source, right.summary.source) ||
     compareText(left.summary.dir, right.summary.dir))
-  const limit = input.maxSkills === undefined ? Number.POSITIVE_INFINITY : Math.max(0, Math.floor(input.maxSkills))
+  const limit = maxSkills ?? Number.POSITIVE_INFINITY
   const kept = Number.isFinite(limit) ? ordered.slice(0, limit) : ordered
   for (const entry of ordered.slice(kept.length)) {
     warnings.push({ path: join(entry.summary.dir, 'SKILL.md'), code: 'max_skills' })
@@ -366,7 +370,7 @@ export async function discoverSkills(input: {
 export function skillContext(index: SkillIndex, count: (text: string) => number, budget: number): { text: string; included: number; omitted: number } {
   const summaries = [...index.skills].sort((left, right) => compareText(left.name, right.name) || compareText(left.id, right.id))
   const lines = summaries.map(skill => `- ${skill.name}: ${skill.description.replace(/\s+/g, ' ').trim()}`)
-  const available = Math.max(0, budget)
+  const available = assertBudget(budget, 'skill_context_budget_invalid')
   const all = lines.join('\n')
   if (count(all) <= available) return { text: all, included: lines.length, omitted: 0 }
   for (let included = lines.length - 1; included >= 0; included--) {
@@ -387,6 +391,7 @@ export async function loadSkill(
   { id: string; body: string; files: string[]; truncated: false } |
   { id: string; error: 'not_found' | 'too_large' | 'outside_root' | 'unreadable' | 'not_regular_file' }
 > {
+  const maxBodyBytes = assertBudget(opts.maxBodyBytes, 'max_body_bytes_invalid')
   const summary = index.skills.find(skill => skill.id === id)
   if (!summary) return { id, error: 'not_found' }
   let dir: string
@@ -405,12 +410,12 @@ export async function loadSkill(
   if (!head) return { id, error: 'not_found' }
   const bodyBytes = head.size - head.bodyOffset
   if (bodyBytes < 0) return { id, error: 'not_found' }
-  if (bodyBytes > opts.maxBodyBytes) return { id, error: 'too_large' }
+  if (bodyBytes > maxBodyBytes) return { id, error: 'too_large' }
   let body: Buffer
   try {
     const handle = await openRegularFile(file)
     try {
-      const read = await readToEnd(handle, head.bodyOffset, opts.maxBodyBytes)
+      const read = await readToEnd(handle, head.bodyOffset, maxBodyBytes)
       if (read.overflow) return { id, error: 'too_large' }
       body = read.bytes
     } finally {

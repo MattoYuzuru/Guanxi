@@ -17,6 +17,12 @@ export class ReadFailureError extends Error {
 
 const READ_FLAGS = constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0)
 
+/** Rejects negative, non-finite or non-numeric budgets before any comparison. */
+export function assertBudget(value: unknown, code: string): number {
+  if (typeof value !== 'number' || !(value >= 0) || !Number.isFinite(value)) throw new TypeError(code)
+  return value
+}
+
 /**
  * Opens a regular file without blocking on FIFOs or following a swapped-in
  * symlink. The handle is fstat'ed before any read so devices and FIFOs are

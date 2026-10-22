@@ -363,6 +363,21 @@ test('a capped read detects growth instead of silently truncating', async t => {
   assert.equal(capped.bytes.toString('utf8'), '0123456789')
 })
 
+test('non-finite and negative budgets are rejected with TypeError', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeSkill(projectRoot, '.agents/skills/bounded', 'name: bounded\ndescription: bounded')
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'bounded').id
+
+  for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(loadSkill(index, id, { maxBodyBytes: bad }), TypeError)
+    await assert.rejects(discoverSkills({ projectRoot, userSkillDirs: [], maxSkills: bad }), TypeError)
+    await assert.rejects(discoverSkills({ projectRoot, userSkillDirs: [], maxDescriptionChars: bad }), TypeError)
+    assert.throws(() => skillContext(index, text => text.length, bad), TypeError)
+  }
+})
+
 test('loadSkill returns the exact body and lists only files inside the skill dir', async t => {
   const base = await baseDir(t)
   const projectRoot = join(base, 'project')
