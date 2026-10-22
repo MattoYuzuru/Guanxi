@@ -49,15 +49,16 @@ export function buildWakePacket(input: PacketInput, scrubber: EgressScrubber, ma
   const report = scrubber.scrub(input.report)
   const truncated: string[] = []
   const draft: LeadWakePacket = {
-    format: LEAD_WAKE_FORMAT, runId: input.runId, wakeSeq: input.wakeSeq, kind: input.kind, outcome: input.outcome, child: input.child,
-    items: (report?.items ?? []).map(item => ({ id: item.id, title: oneLine(clip(item.title, 200)), status: item.status })),
-    gates: (report?.gates ?? []).map(gate => ({ item: gate.item, ok: gate.ok, head: clip(gate.head, 12), output: oneLine(clip(gate.output, 400)) })),
-    head: report?.head ?? null, diffstat: oneLine(clip(report?.diffstat ?? '', 800)),
-    handoff: report?.handoff ?? null, narrative: oneLine(clip(report?.narrative ?? '', 1_500)),
+    format: LEAD_WAKE_FORMAT, runId: input.runId, wakeSeq: input.wakeSeq, kind: input.kind, outcome: input.outcome,
+    child: { ...input.child, costs: input.child.costs.slice(0, 8).map(cost => ({ ...cost, currency: clip(cost.currency, 16) })) },
+    items: (report?.items ?? []).map(item => ({ id: clip(item.id, 80), title: oneLine(clip(item.title, 200)), status: item.status })),
+    gates: (report?.gates ?? []).map(gate => ({ item: clip(gate.item, 80), ok: gate.ok, head: clip(gate.head, 12), output: oneLine(clip(gate.output, 400)) })),
+    head: report?.head ? clip(report.head, 80) : null, diffstat: oneLine(clip(report?.diffstat ?? '', 800)),
+    handoff: report?.handoff ? { ...report.handoff, ref: clip(report.handoff.ref, 200) } : null, narrative: oneLine(clip(report?.narrative ?? '', 1_500)),
     openQuestions: (report?.openQuestions ?? []).slice(0, 10).map(question => oneLine(clip(question, 300))),
     metrics: report?.metrics ?? { cycles: null, tokens: null, moneyMicros: null },
-    drilldown: [{ kind: 'run' as const, id: input.child.runId }, ...input.pendingChildren.filter(id => id !== input.child.runId).map(id => ({ kind: 'run' as const, id })),
-      ...(report?.handoff ? [{ kind: 'handoff' as const, id: report.handoff.ref }] : [])],
+    drilldown: [{ kind: 'run' as const, id: input.child.runId }, ...input.pendingChildren.filter(id => id !== input.child.runId).map(id => ({ kind: 'run' as const, id: clip(id, 200) })),
+      ...(report?.handoff ? [{ kind: 'handoff' as const, id: clip(report.handoff.ref, 200) }] : [])],
     truncated,
   }
   if ((report?.openQuestions.length ?? 0) > 10) truncated.push(`openQuestions:+${report!.openQuestions.length - 10}`)
@@ -85,6 +86,12 @@ export function buildWakePacket(input: PacketInput, scrubber: EgressScrubber, ma
     truncated.push(`items:-${dropped}`)
     draft.items = draft.items.slice(0, draft.items.length - dropped)
     draft.gates = draft.gates.filter(gate => draft.items.some(item => item.id === gate.item)).slice(0, draft.items.length)
+  }
+  if (!fits()) {
+    // Outcome, state and metrics always fit; everything else is a reference the lead can fetch.
+    draft.items = []; draft.gates = []; draft.handoff = null; draft.head = null; draft.child.costs = []
+    draft.drilldown = draft.drilldown.slice(0, 1)
+    truncated.push('minimal')
   }
   const packet = leadWakePacketSchema.parse(scrubber.scrub(draft))
   const text = renderWakePacket(packet)

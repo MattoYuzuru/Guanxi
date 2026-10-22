@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { leadDelegateInputSchema, type LeadDelegateInput, type LeadWakePacket } from '@guanxi/contract'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -54,6 +54,8 @@ interface Turn {
   seededPrompt?: string
   resume: { acpSessionId: string } | null
   delegating?: { key: string }
+  /** Set by `runTurn`; the tool handler and the settle step share it. */
+  observed?: Observed
 }
 interface Live { cancel: AbortController; hibernate: AbortController; userCancel: boolean; done: Promise<LeadTurnResult> | null }
 interface Observed { text: string; usage: LeadUsage | null; acp: LeadSessionInfo | null; activity: boolean }
@@ -118,7 +120,7 @@ export class LeadService {
     }
     const runId = input.runId ?? randomUUID()
     leadInvariant(!this.store.session(runId), 'lead_exists')
-    const task = this.scrubber.scrub(clip(input.prompt, 4_000))
+    const task = clip(this.scrubber.scrub(input.prompt), 4_000)
     const attempt = this.runs.createStarted({ id: runId, sessionId: runId }, (a, db, emit) => {
       this.store.insertSession(db, { run_id: runId, owner_account_id: input.ownerAccountId, actor_account_id: input.actorAccountId,
         project_id: input.projectId, session_roles: canonical(roles), fallback: input.fallback ? canonical(input.fallback) : null,
@@ -144,8 +146,14 @@ export class LeadService {
       seededPrompt: `${this.seedPrefix(session)}\n\n${prompt}` }))
   }
   private agents() { return this.o.agents }
+  /** The saved ACP session, only while the agent advertised `loadSession` and the lead binding is unchanged. */
   private loadable(session: LeadSession): { acpSessionId: string } | null {
-    return session.acp_session_id && session.load_session === 1 ? { acpSessionId: session.acp_session_id } : null
+    if (!session.acp_session_id || session.load_session !== 1) return null
+    try {
+      const digest = digestOf(this.agents().resolve(session.owner_account_id, session.project_id, 'lead', this.rolesOf(session)).binding)
+      if (digest !== session.binding_digest) return null
+    } catch { /* The turn reports an unresolved role as lead_unavailable. */ }
+    return { acpSessionId: session.acp_session_id }
   }
   private seedPrefix(session: LeadSession): string {
     return `Guanxi resumed this lead in a new session; the earlier session could not be loaded. Lead handoff:\n${session.handoff || clip(session.task, 2_000)}`
@@ -158,6 +166,7 @@ export class LeadService {
     const runId = attempt.run_id
     const live: Live = { cancel: new AbortController(), hibernate: new AbortController(), userCancel: false, done: null }
     const observed: Observed = { text: '', usage: null, acp: null, activity: false }
+    turn.observed = observed
     let abortCode: string | null = null
     let failure: unknown = null
     const guard = (body: () => void) => { try { body() } catch (error) { abortCode ??= code(error); live.cancel.abort() } }
@@ -177,7 +186,7 @@ export class LeadService {
             ...(turn.seededPrompt === undefined ? {} : { seededPrompt: turn.seededPrompt }),
             hibernateSignal: live.hibernate.signal, ...(this.o.cancelGraceMs === undefined ? {} : { cancelGraceMs: this.o.cancelGraceMs }),
             onSession: info => guard(() => this.onSession(turn, session, info, observed)),
-            onActivity: () => { if (!observed.activity) { observed.activity = true; guard(() => this.onActivity(turn)) } },
+            onActivity: () => guard(() => this.markActivity(turn)),
             onUsage: usage => { observed.usage = usage } } })
         observed.text = output.text
         observed.usage = output.usage ?? observed.usage
@@ -186,6 +195,10 @@ export class LeadService {
       return this.settle(turn, live, observed, failure)
     })().catch((error): LeadTurnResult => {
       this.failure = code(error)
+      // An unexpected failure must not leave a live attempt and lease that nothing drives: ask a person.
+      if (!['stale_lease', 'closed', 'writer_busy', 'run_not_found'].includes(code(error))) {
+        try { this.runs.inputRequired(attempt); this.notice({ kind: 'lead_failed', runId, wakeSeq: turn.wakeSeq, code: code(error) }) } catch { /* fenced out or finished */ }
+      }
       return { runId, wakeSeq: turn.wakeSeq, outcome: 'failed', code: code(error) }
     }).finally(() => { this.live.delete(runId) })
     live.done = result
@@ -205,7 +218,13 @@ export class LeadService {
       this.note(emit, { action: 'session', mode: info.mode, wakeSeq: turn.wakeSeq, loadSession: info.loadSession })
     })
   }
-  /** The first activity of the prompted turn is the observation R1 requires before it acknowledges. */
+  /** The first model-produced update, or the delegate call itself (which proves the model ran). */
+  private markActivity(turn: Turn): void {
+    const observed = turn.observed!
+    if (observed.activity) return
+    observed.activity = true
+    this.onActivity(turn)
+  }
   private onActivity(turn: Turn): void {
     this.fault('turn:before_ack')
     this.runs.modelStarted(turn.attempt, db => { this.store.setRetry(db, turn.attempt.run_id, 0, 0) })
@@ -228,6 +247,8 @@ export class LeadService {
     const deadline = this.now() + brief.deadlineMs
     if (!Number.isSafeInteger(deadline)) return refuse('invalid_brief: deadlineMs')
     const key = `lead:${turn.attempt.id}`
+    // The call proves the model ran even if the agent emitted no earlier update: acknowledge the wake now.
+    try { this.markActivity(turn) } catch (error) { return refuse(code(error)) }
     try {
       this.runs.mutate(turn.attempt, (db, emit) => {
         this.store.insertIntent(db, { lead_run_id: runId, key, brief: canonical(brief), deadline,
@@ -246,6 +267,7 @@ export class LeadService {
     const row = this.store.delegation(runId, key)
     leadInvariant(row && row.state === 'intent', 'delegation_not_pending')
     this.fault('delegate:turn_stopped')
+    this.ensureRetained(attempt)
     if (observed) this.recordUsage(attempt, observed)
     this.fault('delegate:cost_recorded')
     const promise = this.runs.delegate(attempt, { key, deadline: row.deadline,
@@ -258,6 +280,12 @@ export class LeadService {
     }
     await this.ensureChild(runId, key)
     return { runId, wakeSeq: attempt.wake_seq, outcome: 'hibernated', code: failureCode }
+  }
+  /** Idempotent: a kill between the start transaction and the first retain must not leave a sleeping lead unprotected. */
+  private ensureRetained(attempt: Attempt): void {
+    try { this.runs.retain(attempt, { key: `lead-scratch:${attempt.run_id}`, kind: 'scratch', retainUntil: this.now() + (this.o.retainMs ?? 7 * 86_400_000) }) } catch (error) {
+      if (code(error) !== 'idempotency_conflict') throw error
+    }
   }
   private composeHandoff(session: LeadSession, brief: LeadDelegateInput, narrative: string): string {
     return this.scrubber.scrub([
@@ -277,32 +305,40 @@ export class LeadService {
       this.store.setHandoff(db, runId, handoff)
     })
   }
+  /** A cost observation never strands the run: a failure is noted and the turn goes on. */
   private recordUsage(attempt: Attempt, observed: Observed): void {
+    try { this.recordUsageChecked(attempt, observed) } catch (error) {
+      try { this.runs.mutate(attempt, (_db, emit) => this.note(emit, { action: 'usage_failed', code: code(error) })) } catch { /* fenced out: the caller's next call reports it */ }
+    }
+  }
+  private recordUsageChecked(attempt: Attempt, observed: Observed): void {
     const { usage, acp } = observed
     const session = this.store.session(attempt.run_id)!
     if (!usage || usage.inputTokens === null || usage.outputTokens === null || !acp) {
       this.runs.mutate(attempt, (_db, emit) => this.note(emit, { action: 'usage_unobserved', attempt: attempt.ordinal }))
       return
     }
-    const same = session.usage_session_id === acp.acpSessionId
-    const base = same ? { input: session.usage_in, output: session.usage_out, cost: session.usage_cost_micro } : { input: 0, output: 0, cost: 0 }
-    // ACP reports cumulative session totals. A smaller number means the agent's counter restarted.
+    // ACP reports cumulative session totals. The baseline is what this ledger already holds for the SAME agent
+    // session, so there is no second record to keep in step with the cost entry: a kill cannot double-bill.
+    const suffix = `:${createHash('sha256').update(acp.acpSessionId).digest('hex').slice(0, 16)}`
+    const key = `lead-turn:${attempt.ordinal}${suffix}`
+    const micro = usage.cost && CURRENCIES.has(usage.cost.currency) ? Math.round(usage.cost.amount * 1_000_000) : null
+    const cost = micro !== null && Number.isSafeInteger(micro) ? micro : null
+    const currency = cost === null ? 'unknown' : usage.cost!.currency as 'USD' | 'EUR' | 'RUB'
+    const prior = this.runs.costEntries(attempt.run_id).filter(entry => entry.key.startsWith('lead-turn:') && entry.key.endsWith(suffix) && entry.key !== key)
+    const base = { input: 0, output: 0, cost: 0 }
+    for (const entry of prior) { base.input += entry.inputTokens; base.output += entry.outputTokens; if (entry.currency === currency) base.cost += entry.costMicrounits ?? 0 }
+    // A smaller number than the baseline means the agent's counter restarted.
     const delta = (now: number, before: number) => now >= before ? now - before : now
-    const cost = usage.cost && CURRENCIES.has(usage.cost.currency) ? Math.round(usage.cost.amount * 1_000_000) : null
-    this.runs.recordCost(attempt, { key: `lead-turn:${attempt.ordinal}`, inputTokens: delta(usage.inputTokens, base.input),
-      outputTokens: delta(usage.outputTokens, base.output), costMicrounits: cost === null ? null : delta(cost, base.cost),
-      currency: cost === null ? 'unknown' : usage.cost!.currency as 'USD' | 'EUR' | 'RUB' })
+    this.runs.recordCost(attempt, { key, inputTokens: delta(usage.inputTokens, base.input), outputTokens: delta(usage.outputTokens, base.output),
+      costMicrounits: cost === null ? null : delta(cost, base.cost), currency })
     this.fault('usage:recorded')
     let billing: unknown = null
     try {
       const binding = this.agents().resolve(session.owner_account_id, session.project_id, 'lead', this.rolesOf(session)).binding
       billing = this.o.billing?.(session.owner_account_id, binding.connectionId) ?? null
     } catch { billing = null }
-    this.runs.mutate(attempt, (db, emit) => {
-      this.store.setUsage(db, attempt.run_id, { sessionId: acp.acpSessionId, input: usage.inputTokens!, output: usage.outputTokens!,
-        costMicro: cost ?? base.cost })
-      this.note(emit, { action: 'cost', attempt: attempt.ordinal, billing })
-    })
+    this.runs.mutate(attempt, (_db, emit) => this.note(emit, { action: 'cost', attempt: attempt.ordinal, billing }))
   }
 
   // ---- child -------------------------------------------------------------------------------
@@ -359,6 +395,8 @@ export class LeadService {
     const runId = attempt.run_id
     const done = (outcome: LeadOutcome, why: string | null = null): LeadTurnResult => ({ runId, wakeSeq: turn.wakeSeq, outcome, code: why })
     const failureCode = failure === null ? null : code(failure)
+    // Shutdown aborted this turn: mutate nothing. Recovery completes a persisted intent or redelivers the wake.
+    if (this.closed && !live.userCancel) return done('failed', 'lead_closed')
     if (live.userCancel || TERMINAL_RUN_STATES.has(this.runs.get(runId).state)) return done('canceled')
     if (turn.delegating) {
       try { return await this.finishDelegation(runId, attempt, turn.delegating.key, observed, failureCode) } catch (error) {
@@ -452,14 +490,7 @@ export class LeadService {
     }
     this.fault('wake:packet_built')
     const text = renderWakePacket(JSON.parse(row!.packet) as LeadWakePacket)
-    let resume = this.loadable(session)
-    if (resume) {
-      // A changed role binding cannot load the old agent session.
-      try {
-        const digest = digestOf(this.agents().resolve(session.owner_account_id, session.project_id, 'lead', this.rolesOf(session)).binding)
-        if (digest !== session.binding_digest) resume = null
-      } catch { /* The turn reports the unresolved role as lead_unavailable. */ }
-    }
+    const resume = this.loadable(session)
     return this.runTurn({ attempt, kind: 'wake', wakeSeq, prompt: text, resume, seededPrompt: `${this.seedPrefix(session)}\n\n${text}` })
   }
   private packetInput(runId: string, wake: Wake) {
@@ -499,14 +530,14 @@ export class LeadService {
     this.spawn((async () => { try { await body() } catch (error) { this.failure = code(error) } finally { this.busy.delete(key) } })())
   }
   private scanDelegations(): void {
-    for (const d of this.store.delegations()) {
+    for (const d of this.store.openDelegations()) {
       if (d.state === 'intent' && !this.live.has(d.lead_run_id)) this.once(`intent:${d.lead_run_id}:${d.key}`, () => this.recoverIntent(d))
       else if (d.state === 'delegated') this.once(`scan:child:${d.lead_run_id}:${d.key}`, () => this.ensureChild(d.lead_run_id, d.key))
       else if (d.state === 'child_started' && d.child_run_id) {
         const state = this.runs.get(d.child_run_id).state
         if (state === 'canceled') this.once(`stop:${d.child_run_id}`, () => this.stopChild(d))
         // An executor lost to a restart before its first model call is started again, once per attempt.
-        else if (state === 'interrupted' && !this.children.has(d.child_run_id)) this.once(`scan:child:${d.lead_run_id}:${d.key}`, () => this.ensureChild(d.lead_run_id, d.key))
+        else if (state === 'interrupted') this.once(`scan:child:${d.lead_run_id}:${d.key}`, () => this.ensureChild(d.lead_run_id, d.key))
       }
     }
   }

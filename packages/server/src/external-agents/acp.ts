@@ -13,6 +13,7 @@ const toolUpdate = z.object({ sessionUpdate: z.literal('tool_call'), toolCallId:
   kind: z.enum(['read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'switch_mode', 'other']).optional(),
   status: z.enum(['pending', 'in_progress', 'completed', 'failed']).optional() })
 const selectedUpdate = z.union([textUpdate, planUpdate, toolUpdate])
+const MODEL_UPDATES = new Set(['agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan', 'usage_update'])
 export interface AcpEvents { update(value: SessionNotification): void }
 
 /** SDK wire types/constants, own quiet transport: SDK client errors can print raw thought frames. */
@@ -39,7 +40,8 @@ export class AcpClient {
             this.lead.onUsage({ ...this.usage })
           }
         }
-        this.lead.onActivity()
+        // Only updates that show the model working count; command or mode bookkeeping does not.
+        if (MODEL_UPDATES.has(String(raw.sessionUpdate))) this.lead.onActivity()
       }
       // Thought chunks and unknown extensions never reach handlers, including malformed ones.
       const update = selectedUpdate.safeParse(params.update)

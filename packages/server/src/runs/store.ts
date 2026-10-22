@@ -783,6 +783,11 @@ export class RunStore implements HomeAuthority {
       CASE WHEN COUNT(cost_microunits)=COUNT(*) THEN SUM(cost_microunits) ELSE NULL END AS costMicrounits
       FROM run_costs WHERE run_id=? GROUP BY currency`, runId)
   }
+  /** Read-only view of the idempotent cost observations, for consumers that derive a baseline from the ledger. */
+  costEntries(runId: string): { key: string; attemptId: string; inputTokens: number; outputTokens: number; costMicrounits: number | null; currency: string }[] {
+    return this.rows(`SELECT entry_key AS key, attempt_id AS attemptId, input_tokens AS inputTokens, output_tokens AS outputTokens,
+      cost_microunits AS costMicrounits, currency FROM run_costs WHERE run_id=? ORDER BY entry_key`, runId)
+  }
   close(): void {
     if (this.closed) return
     try {

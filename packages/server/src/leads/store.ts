@@ -13,7 +13,6 @@ CREATE TABLE lead_sessions (
   session_roles TEXT NOT NULL, fallback TEXT, binding_digest TEXT NOT NULL, fallback_used INTEGER NOT NULL DEFAULT 0,
   task TEXT NOT NULL, handoff TEXT NOT NULL DEFAULT '',
   acp_session_id TEXT, load_session INTEGER,
-  usage_session_id TEXT, usage_in INTEGER NOT NULL DEFAULT 0, usage_out INTEGER NOT NULL DEFAULT 0, usage_cost_micro INTEGER NOT NULL DEFAULT 0,
   failures INTEGER NOT NULL DEFAULT 0, retry_at INTEGER NOT NULL DEFAULT 0, turns INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE lead_delegations (
   lead_run_id TEXT NOT NULL REFERENCES lead_sessions(run_id), key TEXT NOT NULL, brief TEXT NOT NULL,
@@ -34,7 +33,6 @@ export interface LeadSession {
   run_id: string; owner_account_id: string; actor_account_id: string; project_id: string
   session_roles: string; fallback: string | null; binding_digest: string; fallback_used: number
   task: string; handoff: string; acp_session_id: string | null; load_session: number | null
-  usage_session_id: string | null; usage_in: number; usage_out: number; usage_cost_micro: number
   failures: number; retry_at: number; turns: number
 }
 export type DelegationState = 'intent' | 'delegated' | 'child_started' | 'child_stop_requested'
@@ -67,6 +65,15 @@ export class LeadStore {
     return (runId === undefined ? this.db.prepare('SELECT * FROM lead_delegations ORDER BY lead_run_id, key').all()
       : this.db.prepare('SELECT * FROM lead_delegations WHERE lead_run_id=? ORDER BY key').all(runId)) as unknown as LeadDelegation[]
   }
+  /** Delegations that still need the pump: an unfinished intent or child start of a live lead, a child that
+   * was canceled and still has an executor to stop, or one that lost its executor. Retired rows are never read again. */
+  openDelegations(): LeadDelegation[] {
+    return this.db.prepare(`SELECT d.* FROM lead_delegations d
+      JOIN durable_runs l ON l.id = d.lead_run_id LEFT JOIN durable_runs c ON c.id = d.child_run_id
+      WHERE (d.state IN ('intent','delegated') AND l.state NOT IN ('completed','failed','canceled','rejected'))
+         OR (d.state = 'child_started' AND c.state IN ('canceled','interrupted'))
+      ORDER BY d.lead_run_id, d.key`).all() as unknown as LeadDelegation[]
+  }
   delegationOfChild(childRunId: string): LeadDelegation | undefined {
     return this.db.prepare('SELECT * FROM lead_delegations WHERE child_run_id=?').get(childRunId) as unknown as LeadDelegation | undefined
   }
@@ -90,10 +97,6 @@ export class LeadStore {
   }
   setHandoff(db: Db, runId: string, handoff: string): void {
     db.prepare('UPDATE lead_sessions SET handoff=? WHERE run_id=?').run(handoff, runId)
-  }
-  setUsage(db: Db, runId: string, usage: { sessionId: string; input: number; output: number; costMicro: number }): void {
-    db.prepare('UPDATE lead_sessions SET usage_session_id=?, usage_in=?, usage_out=?, usage_cost_micro=? WHERE run_id=?')
-      .run(usage.sessionId, usage.input, usage.output, usage.costMicro, runId)
   }
   setRetry(db: Db, runId: string, failures: number, retryAt: number): void {
     db.prepare('UPDATE lead_sessions SET failures=?, retry_at=? WHERE run_id=?').run(failures, retryAt, runId)

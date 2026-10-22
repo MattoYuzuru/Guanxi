@@ -65,7 +65,7 @@ export class LeadToolServer {
     if (this.closed) return Promise.reject(new Error('lead_tools_closed'))
     this.starting ??= new Promise<string>((resolve, reject) => {
       const server = createServer((request, response) => { void this.handle(request, response) })
-      server.once('error', reject)
+      server.once('error', error => { this.starting = null; reject(error) })
       server.listen(0, '127.0.0.1', () => {
         server.off('error', reject)
         this.port = (server.address() as AddressInfo).port
@@ -74,6 +74,11 @@ export class LeadToolServer {
       })
     })
     return this.starting
+  }
+  /** The address the listener is actually bound to; null before first use. */
+  address(): { address: string; port: number } | null {
+    const bound = this.server?.address()
+    return bound && typeof bound === 'object' ? { address: bound.address, port: bound.port } : null
   }
   grant(context: ToolGrantContext, handler: ToolHandler): ToolGrant {
     const token = randomBytes(32).toString('base64url')
