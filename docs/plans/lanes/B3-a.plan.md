@@ -59,13 +59,16 @@ acceptance/plan digests equal the plan's; every ref resolves to evidence of the 
 bound to the same trial, attempt and cycle; evidence digests verify; attempt epochs strictly
 increase; times ordered (`start <= assigned <= assessed <= end`, forecast before completion,
 all `<= recordedAt <= analysisAsOf`); receipt, grading, sample, guard, seal and forecast records
-back exactly one observation each; a forecast for an unreached cycle rejects; hostile input
-(throwing getters, oversized arrays) yields a fixed `schema_invalid`.
+back exactly one observation each; a duplicate `(scope, field)` probe occasion within one cycle
+rejects; a forecast for an unreached cycle rejects; hostile input (throwing getters, oversized
+arrays at any fixed nesting level) yields a fixed `schema_invalid` before Zod walks the elements.
 
 ## Reported counts (descriptive, per arm and per cycle ordinal)
 
 Trial and cycle coverage (expected, observed, missing, unknown, not reached, outcomes,
-tainted, including infra taint recorded in a cycle or group slot); item tallies from rows (expected, passed, failed, unknown); probe tallies split by
+tainted, including infra taint recorded in a trial clock, cycle or group/row slot); attempts and
+trials with more than one attempt are reported separately from trial items; missing trials are
+counted as distinct missing tasks and as missing trial-cycle slots; item tallies from rows (expected, passed, failed, unknown); probe tallies split by
 scope, field key and first attempt versus after-retry, retry rescues; truncation samples and
 events, window mismatches; guarded and unguarded repeats; reported integrity agreement
 (`reported_match` / `reported_mismatch` / unknown, authenticated count always 0); selected-

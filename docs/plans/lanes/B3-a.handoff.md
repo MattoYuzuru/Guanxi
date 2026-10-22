@@ -57,9 +57,10 @@ input broke a gate, credit or echo rule. Findings and fixes (commit `410e92ac`):
 - Medium: known-only fractions were non-null with an unknown denominator. Fixed: `null`.
 - Low: empty or unsupported arms read `complete: true`; missing-trial cycles had no bucket;
   one evidence record could back many rows; a forecast for an unreached cycle was accepted;
-  a throwing getter leaked its message and 2M-element arrays were parsed fully. All fixed
-  (`complete` needs an observation, `coverage.cycles.missing`, single-use kinds, a
-  `forecast_cycle_not_reached` rule, try/catch and pre-parse bounds).
+  a throwing getter leaked its message and large top-level arrays (evidence and trials) were
+  parsed fully. All fixed (`complete` needs an observation, `coverage.cycles.missing`,
+  single-use kinds, a `forecast_cycle_not_reached` rule, try/catch and top-level pre-parse
+  bounds); nested array bounds were still missing and are fixed in the review-fix round below.
 - Unasserted rules the reviewer deleted without a red test (after-recorded, cycle versus trial
   span, forecast range, repeats, three manifest digests, calibration ref, foreign seed/arm,
   unreferenced evidence flag): each now has a failing assertion.
@@ -98,3 +99,35 @@ exclusion exists only in the paired comparison and tainted rows stay in raw tall
 - The wire format is a proposal; a later collector may need a new version.
 - Next: a fenced observer emitting bound fact receipts, then the preregistered statistical
   reducer (per the review). Neither is started.
+
+## Independent review fixes (Opus)
+
+**Scope:** second independent review of `7fd35758`; fixes on `codex/b3a-offline-evidence`.
+B3 stays proposed and this round evaluates no B3 gate. P2-2.1, P2-2.2 and P2-2.3 were already
+implemented: their commits add the missing failing assertions and named mutations, not
+production changes. Every other finding changes production or documentation.
+
+| Finding | Commit | Change |
+| --- | --- | --- |
+| P2-1 critical-field `complete` with no occasions | `1e5b023a` | `complete` requires `expected > 0` and no observed group missing a scope/field. Buckets report `groupsWithoutOccasion`; per-field missing groups add `critical_field_grades_partial`. Asserted for all-whole-answer and mixed cycle-2-whole-answer cases. |
+| P2-2.1 attempt binding unasserted | `85f8345d` | A cycle receipt backed by an `att-2` record rejects `reference_mismatch/ref_binding`; the mutation drops the attempt conjunct. |
+| P2-2.2 final unknown unasserted | `85625b4c` | A known first failure followed by an unknown retry gives `complete: false`; the mutation drops the `finalUnknown` conjunct. |
+| P2-2.3 row taint unasserted | `beeacb75` | Infra taint on an item-assessment row and on a probe-grade row each sets `trials.tainted` to 1 and excludes the task from pairing. Two mutations replace each row check with `false`. |
+| P3.1 assessment `head` unbound | `b3feb151` | Recorded deviation: evidence metadata carries no `head` field, so no binding is possible without a new evidence version. The plan and this hand-off name the limitation; no swapped-head rejection is claimed. |
+| P3.2 trial clock infra taint | `898b19bc` | Unknown `startedAtMs` or `finishedAtMs` with reason `infra_tainted` marks the trial tainted and excludes it from the paired comparison and the ETA row. |
+| P3.3 nested size limit | `3a7e0bc9` | A fixed-path length walk before Zod covers plan tasks/seeds/arms, attempts, cycles, forecasts, and item/probe/context/guard manifests and rows. A 300k shared-reference cycles array is refused on length alone; the test uses poison elements, so touching one would fail. |
+| P3.4 duplicate `(scope, field)` | `b5bce4ee` | A repeated scope/field occasion within one cycle rejects `duplicate_key/probe_field_repeat`; the valid 24/12 critical-field and head counts stay pinned. |
+| P3.5 missing-cycle name and attempts | `43571b00` | `cycles.trialsMissing` became `trialCyclesMissing` (the counted unit), and arms report `trials.attempts` plus `trials.multipleAttempts` separately from trial items. The `< 250 ms` timing assertion was replaced by a deterministic poison-element bounds assertion. |
+
+**Counts (WORKFLOW 4a):** 31 new / 137 unchanged regression envelope (bench total 168, up from
+165; 15 protocol and 16 reducer tests). Three new cases cover attempt totals, duplicate
+scope/field rejection and nested bounds; the rest extend existing cases.
+
+**Gates:** relay tests 31/31; full bench 168/168; `npx tsc --noEmit -p packages/bench` exit 0;
+`node packages/bench/tools/mutations.ts` 45/45 cases killed, including 20 `b3a-*` cases;
+markdownlint on this plan and hand-off 0 errors. No B3 gate, model, network or host was used.
+
+**Deviations:** assessment `head` stays reported but unbound because no evidence field carries
+it. The nested bounds walk covers the fixed schema paths; unknown-key subtrees are left to Zod's
+strict rejection, and the existing 50k evidence / 10k trial top-level limits are unchanged.
+P2-2.1–3 changed tests and mutations only because the production checks were already present.
