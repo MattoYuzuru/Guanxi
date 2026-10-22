@@ -446,7 +446,6 @@ from the all-eight post-merge main sequence below. No new test credit comes from
 | licenses 675/0 | `check-cya6mzu5` |
 | source lint | `check-adilfv2d` |
 
-
 Regression scope: core 1632 total/1631 pass/one Linux-only worker-priority skip; kernel 107,
 web 353, UI 43, UI gates 102, catalog 74, codemod 6, bench 137; mocked browser 96/96. The earlier
 exact Linux fixture result has its separate envelope. Receipts record unchanged clean source;
