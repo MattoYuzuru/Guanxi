@@ -49,12 +49,14 @@ A URL is clean only when all of these hold:
 - it has no query string and no fragment, including an empty `?` or `#`;
 - the pathname is percent-decoded first, including its leading `/`, and is at most 200 characters;
 - that decoded pathname is split on `/`, and every segment is at most 32 characters **or** is not
-  composed solely of `[A-Za-z0-9_+=-]`.
+  composed solely of `[A-Za-z0-9_+=-]`;
+- every lowercased/punycode hostname label is at most 32 characters **or** is not composed solely
+  of that alphabet, so a hostname cannot carry DNS-exfiltration data either.
 
-In other words, a path segment longer than 32 characters drawn only from that base64/hex-like
-alphabet is data-carrying. This is intentionally conservative: a 33-letter English word is
-refused. There is no query allowance at all; `?q=hello` is not a clean link. Malformed percent
-escapes are measured as literal text.
+In other words, a path segment or host label longer than 32 characters drawn only from that
+base64/hex-like alphabet is data-carrying. This is intentionally conservative: a 33-letter
+English word is refused. There is no query allowance at all; `?q=hello` is not a clean link.
+Malformed percent escapes are measured as literal text.
 
 ### Model-URL data heuristic (exact)
 

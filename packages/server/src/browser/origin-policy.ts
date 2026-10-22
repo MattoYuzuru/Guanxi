@@ -22,7 +22,9 @@
  * - it has no query string or fragment, including an empty `?` or `#`;
  * - its percent-decoded pathname, including the leading `/`, is at most 200 characters;
  * - every percent-decoded path segment is at most 32 characters, or is not composed solely of
- *   base64/hex-like characters `[A-Za-z0-9_+=-]`.
+ *   base64/hex-like characters `[A-Za-z0-9_+=-]`;
+ * - every hostname label is at most 32 characters, or is not composed solely of that alphabet,
+ *   so the host cannot carry DNS-exfiltration data.
  *
  * The last rule is deliberately conservative: any path segment longer than 32 characters drawn
  * from that alphabet is treated as data-carrying, even if it happens to be a long English word.
@@ -215,6 +217,10 @@ function isCleanLink(url: URL, raw: string): boolean {
   if (decodedPath.length > CLEAN_PATH_LIMIT) return false
   for (const segment of decodedPath.split('/')) {
     if (isHighEntropy(segment)) return false
+  }
+  // A long base64-like DNS label can exfiltrate data through the hostname itself.
+  for (const label of url.hostname.toLowerCase().split('.')) {
+    if (isHighEntropy(label)) return false
   }
   return true
 }

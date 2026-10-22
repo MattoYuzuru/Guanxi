@@ -137,6 +137,14 @@ test('clean links refuse queries, fragments, userinfo, long segments and long pa
   }
 })
 
+test('a clean link refuses host labels that look like data', () => {
+  const host = `${'a'.repeat(63)}.${'b'.repeat(63)}.example`
+  assert.deepEqual(decide(fullPolicy(), navigate(`https://${host}/about`, 'clean_link', READ)), {
+    allowed: false,
+    code: 'data_url_refused',
+  })
+})
+
 test('a clean link needs a readable fromOrigin', () => {
   assert.deepEqual(decide(fullPolicy(), navigate('https://new.example/a', 'clean_link')), {
     allowed: false,
