@@ -6,7 +6,7 @@
  * test temp directory; it never contains a credential or private completion.
  */
 import { spawn } from 'node:child_process'
-import { closeSync, fstatSync, readSync, writeFileSync, writeSync } from 'node:fs'
+import { fstatSync, readSync, writeFileSync, writeSync } from 'node:fs'
 import { PrivateFrameDecoder, encodePrivateFrame } from '../../src/private-channel.ts'
 
 const reportPath = process.env.BENCH_FIXTURE_REPORT
@@ -90,7 +90,7 @@ try {
     report.descendantPid = child.pid
   }
   writeReport()
-  const count = mode === 'two' ? 2 : 1
+  const count = mode === 'two' || mode === 'two-finalization' ? 2 : 1
   for (let id = 0; id < count; id++) {
     const frame = request(id)
     report.requests.push(frame)
@@ -108,7 +108,13 @@ try {
     writeReport()
     if (!response || response.status !== 'ok') break
   }
-  closeSync(4)
+  // Keep the request capability alive through final reporting. Its EOF authorizes
+  // host shutdown; a natural-exit fixture closes it only as process.exit(0) exits.
+  if (mode === 'two-finalization') {
+    // Widen the finalization scheduling window without changing host deadlines.
+    sleep(250)
+    report.finalizationFinished = true
+  }
   writeReport()
   process.exit(0)
 } catch (error) {
