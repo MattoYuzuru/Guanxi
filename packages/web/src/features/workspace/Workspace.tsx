@@ -20,7 +20,7 @@ import { workspaceFailure, workspaceStep, type WorkspaceFailure } from './failur
 import './workspace.css'
 
 type SaveAttempt = { document: LayoutDocument; geometry: LayoutGeometry; basedOn?: LayoutClock; result?: Awaited<ReturnType<typeof api.saveLayout>>; applied?: boolean }
-type ActivationAttempt = { remembered?: boolean; response?: Awaited<ReturnType<typeof api.saveLayout>>; next?: LayoutDocument }
+type ActivationAttempt = { remembered?: boolean; response?: Awaited<ReturnType<typeof api.saveLayout>>; next?: LayoutDocument; applied?: boolean }
 
 const zoneOrder: WorkspaceZone[] = ['left', 'right', 'top', 'bottom', 'center', 'floating', 'popout']
 function deviceId(): string {
@@ -188,9 +188,10 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       const response = attempt.response
       const next = attempt.next ?? await workspaceStep('resolve-layout', () => compatible(response?.document ?? candidate))
       attempt.next = next
-      if (response) {
+      if (response && !attempt.applied) {
         const scopeKey = layoutScopeKey(response.document.scope)
         setList(previous => ({ documents: [...previous.documents.filter(row => !(row.id === response.document.id && layoutScopeKey(row.scope) === scopeKey)), response.document, ...response.recovered], active: [...previous.active.filter(row => layoutScopeKey(row.scope) !== scopeKey), { scope: response.document.scope, layoutId: response.document.id }] }))
+        attempt.applied = true
       }
       const key = `${layoutScopeKey(next.scope)}#${next.id}`
       const local = geometryCache.current.get(key) ?? (await workspaceStep('activate-layout-geometry', () => api.layoutGeometry(next.scope, device, next.id))).geometry
