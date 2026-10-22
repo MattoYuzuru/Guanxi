@@ -195,16 +195,42 @@ test('grant and revoke reject a tuple that does not match the supplied resource'
 
 test('expiry purge removes grants at or before now and keeps live ones', (t) => {
   const f = fixture(t)
-  f.store.grant(owner, grantOn(project, 'viewer', 'user-a', NOW - 1), project)
-  f.store.grant(owner, grantOn(project, 'viewer', 'user-b', NOW), project)
+  f.store.grant(owner, grantOn(project, 'viewer', 'user-a', NOW + 1), project)
+  f.store.grant(owner, grantOn(project, 'viewer', 'user-b', NOW + 2), project)
   f.store.grant(owner, grantOn(project, 'viewer', 'user-c', null), project)
-  f.store.grant(owner, grantOn(session, 'viewer', 'user-a', NOW + 1), session)
+  f.store.grant(owner, grantOn(session, 'viewer', 'user-a', NOW + 3), session)
 
   assert.equal(f.store.forResource('project', 'project-1').length, 3)
-  assert.equal(f.store.purgeExpired(NOW), 2)
+  assert.equal(f.store.purgeExpired(NOW + 2), 2)
   assert.deepEqual(f.store.forResource('project', 'project-1').map(grant => grant.subjectId), ['user-c'])
   assert.equal(f.store.forResource('session', 'session-1').length, 1)
-  assert.equal(f.store.purgeExpired(NOW), 0)
+  assert.equal(f.store.purgeExpired(NOW + 2), 0)
+})
+
+test('grant expiry must be null or a safe integer after now', (t) => {
+  const f = fixture(t)
+  const invalid: Array<{ name: string; value: number }> = [
+    { name: 'NaN', value: Number.NaN },
+    { name: 'Infinity', value: Number.POSITIVE_INFINITY },
+    { name: 'negative Infinity', value: Number.NEGATIVE_INFINITY },
+    { name: 'fractional', value: 1.5 },
+    { name: 'past', value: -1 },
+    { name: 'now', value: NOW },
+    { name: 'unsafe integer', value: Number.MAX_SAFE_INTEGER + 2 },
+  ]
+
+  for (const { name, value } of invalid) {
+    assert.throws(
+      () => f.store.grant(owner, grantOn(project, 'viewer', `user-${name}`, value), project),
+      (error: unknown) => error instanceof GrantStoreError && error.code === 'invalid_expiry',
+      name,
+    )
+  }
+  assert.equal(f.store.forResource('project', 'project-1').length, 0)
+
+  const live = f.store.grant(owner, grantOn(project, 'viewer', 'user-live', NOW + 1), project)
+  assert.equal(live.expiresAt, NOW + 1)
+  assert.equal(f.store.forResource('project', 'project-1').length, 1)
 })
 
 test('queries span resources and provenance comes from the actor and clock', (t) => {

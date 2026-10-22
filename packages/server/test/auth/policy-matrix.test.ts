@@ -344,6 +344,24 @@ test('D-190: subscription connections are owner-only and connection.use needs a 
   assert.equal(can(user('user-project-editor'), 'connection.use', connectionWithParent, [projectEditor], NOW).allowed, false)
 })
 
+test('non-finite and fractional expiry values are treated as expired', () => {
+  const resources = buildResources()
+  const subject = 'user-invalid-expiry'
+  for (const expiresAt of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5]) {
+    const grant = makeGrant(resources.session, 'viewer', 'user', subject, expiresAt)
+    assert.equal(
+      can(user(subject), 'session.read', resources.session, [grant], NOW).allowed,
+      false,
+      String(expiresAt),
+    )
+  }
+
+  const live = makeGrant(resources.session, 'viewer', 'user', subject, NOW + 1)
+  assert.equal(can(user(subject), 'session.read', resources.session, [live], NOW).allowed, true)
+  const never = makeGrant(resources.session, 'viewer', 'user', subject, null)
+  assert.equal(can(user(subject), 'session.read', resources.session, [never], NOW).allowed, true)
+})
+
 test('a granted owner relation is editor-level and only a real owner pays', () => {
   const grantedOwner = user('user-granted-owner')
   const subscriptionSession: Resource = {

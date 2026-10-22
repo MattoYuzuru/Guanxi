@@ -79,7 +79,10 @@ function deny(reason: string): CanResult {
 }
 
 function expired(grant: Grant, now: number): boolean {
-  return grant.expiresAt !== null && grant.expiresAt <= now
+  if (grant.expiresAt === null) return false
+  // A malformed stored value must fail closed: only a finite integer can be compared to the clock.
+  if (!Number.isFinite(grant.expiresAt) || !Number.isInteger(grant.expiresAt)) return true
+  return grant.expiresAt <= now
 }
 
 function subjectMatches(grant: Grant, principal: Principal): boolean {

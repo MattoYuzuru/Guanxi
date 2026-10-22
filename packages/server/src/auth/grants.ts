@@ -22,6 +22,7 @@ export type GrantStoreErrorCode =
   | 'forbidden'
   | 'grant_exists'
   | 'resource_not_shareable'
+  | 'invalid_expiry'
   | 'write_failed'
 
 /** A typed grant-store failure. */
@@ -149,6 +150,9 @@ export class GrantStore {
       throw new GrantStoreError('owner_grant_forbidden', 'Ownership transfer is not supported in this slice')
     }
     const now = clockMillis(this.clock)
+    if (input.expiresAt !== null && (!Number.isSafeInteger(input.expiresAt) || input.expiresAt <= now)) {
+      throw new GrantStoreError('invalid_expiry', 'expiresAt must be null or a safe integer after now')
+    }
     const grant: Grant = { ...input, createdBy, createdAt: now }
 
     this.db.exec('BEGIN IMMEDIATE')
