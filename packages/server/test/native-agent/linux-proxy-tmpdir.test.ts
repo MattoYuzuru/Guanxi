@@ -45,7 +45,8 @@ describe('Linux native proxy paths', () => {
                 Buffer.byteLength(join(proxy, prefix + '0'.repeat(16) + '.sock')) <= 107),
               outsideScratch: proxy !== policy.scratch && !proxy.startsWith(policy.scratch + sep),
               matchingHome: args[2].env.HOME === proxy,
-              ownedStage: stage.startsWith(policy.runtimeBase + sep),
+              ownedStage: realpathSync(stage) === stage && dirname(stage) === policy.runtimeBase &&
+                stage !== policy.scratch && !stage.startsWith(policy.scratch + sep),
             });
           } catch {
             // The worker is already running: let its owner attach handlers and clean up.
