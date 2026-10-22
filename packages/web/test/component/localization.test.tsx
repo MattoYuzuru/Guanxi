@@ -274,6 +274,41 @@ describe('locale catalogs', () => {
   })
 })
 
+const LEGACY_GLOSSARY_KEYS = [
+  'chat',
+  'quick-run',
+  'project',
+  'recipe',
+  'agent-run',
+  'artifact',
+  'job',
+  'installed-model',
+  'loaded-model',
+  'model-weights',
+  'context-window',
+  'chat-history',
+  'kv-cache',
+  'reasoning',
+  'retention',
+  'skill',
+  'mcp-connection',
+] as const
+
+const TARGET_GLOSSARY_KEYS = [
+  'session',
+  'run',
+  'attempt',
+  'node',
+  'connection',
+  'workspace',
+  'block',
+  'developer-mode',
+  'visual-mode',
+  'layout',
+  'side-chat',
+  'lease',
+] as const
+
 describe('Settings language and glossary', () => {
   it('shows an initial Settings load failure and retries through the authoritative loader', async () => {
     const getSettings = vi.spyOn(api, 'getSettings')
@@ -412,25 +447,8 @@ describe('Settings language and glossary', () => {
 
   it('searches bounded localized term, definition and example copy', () => {
     const keys = glossaryEntries.map((entry) => entry.key)
-    expect(keys).toEqual([
-      'chat',
-      'quick-run',
-      'project',
-      'recipe',
-      'agent-run',
-      'artifact',
-      'job',
-      'installed-model',
-      'loaded-model',
-      'model-weights',
-      'context-window',
-      'chat-history',
-      'kv-cache',
-      'reasoning',
-      'retention',
-      'skill',
-      'mcp-connection',
-    ])
+    expect(keys.slice(0, LEGACY_GLOSSARY_KEYS.length)).toEqual([...LEGACY_GLOSSARY_KEYS])
+    expect(keys.slice(LEGACY_GLOSSARY_KEYS.length)).toEqual([...TARGET_GLOSSARY_KEYS])
     expect(new Set(keys).size).toBe(keys.length)
     for (const entry of glossaryEntries) {
       for (const locale of ['en', 'ru'] as const) {
@@ -439,13 +457,180 @@ describe('Settings language and glossary', () => {
         expect(entry[locale].example.trim(), `${entry.key}:${locale}:example`).not.toBe('')
       }
     }
+
+    const targetTerms = [
+      ['session', 'Session', 'Сессия'],
+      ['run', 'Run', 'Запуск'],
+      ['attempt', 'Attempt', 'Попытка'],
+      ['node', 'Node', 'Узел'],
+      ['connection', 'Connection', 'Подключение'],
+      ['workspace', 'Workspace', 'Рабочее пространство'],
+      ['block', 'Block', 'Блок'],
+      ['developer-mode', 'Developer mode', 'Режим разработчика'],
+      ['visual-mode', 'Visual mode', 'Визуальный режим'],
+      ['layout', 'Layout', 'Раскладка'],
+      ['side-chat', 'Side chat', 'Боковой чат'],
+      ['lease', 'Lease', 'Lease'],
+    ] as const
+    for (const [key, english, russian] of targetTerms) {
+      const entry = glossaryEntries.find((candidate) => candidate.key === key)
+      expect(entry, key).toBeDefined()
+      expect(entry?.en.term, key).toBe(english)
+      expect(entry?.ru.term, key).toBe(russian)
+    }
+
     expect(searchGlossary(glossaryEntries, 'CHAT', 'en').some((entry) => entry.key === 'chat')).toBe(true)
     expect(searchGlossary(glossaryEntries, 'ускоряет продолжение', 'ru').map((entry) => entry.key))
       .toContain('kv-cache')
     expect(searchGlossary(glossaryEntries, 'Диктовка ПРОМПТА', 'ru').map((entry) => entry.key))
       .toContain('recipe')
+    expect(searchGlossary(glossaryEntries, 'folder', 'en').map((entry) => entry.key))
+      .toContain('project')
+    expect(searchGlossary(glossaryEntries, 'папкой', 'ru').map((entry) => entry.key))
+      .toContain('project')
+
+    const keysFor = (query: string, locale: 'en' | 'ru') =>
+      searchGlossary(glossaryEntries, query, locale).map((entry) => entry.key)
+    expect(keysFor('lossless', 'en')).toContain('session')
+    expect(keysFor('durable', 'en')).toContain('run')
+    expect(keysFor('fencing token', 'en')).toContain('attempt')
+    expect(keysFor('fenced handover', 'en')).toContain('lease')
+    expect(keysFor('second holder', 'en')).toContain('lease')
+    expect(keysFor('Save to session log', 'en')).toContain('side-chat')
+    expect(keysFor('model-autonomy mode', 'en')).toContain('visual-mode')
+    expect(keysFor('does not require a filesystem folder', 'en')).toContain('workspace')
+    expect(keysFor('только дописываемой', 'ru')).toContain('session')
+    expect(keysFor('второго владельца', 'ru')).toContain('lease')
+    expect(keysFor('Сохранить в журнал сессии', 'ru')).toContain('side-chat')
+    expect(keysFor('автономии модели', 'ru')).toContain('visual-mode')
+    expect(keysFor('не требует папки', 'ru')).toContain('workspace')
+
     expect(searchGlossary(glossaryEntries, 'definitely absent', 'en')).toEqual([])
     expect(searchGlossary(glossaryEntries, '', 'en', 2)).toHaveLength(2)
     expect(searchGlossary([], '', 'en')).toEqual([])
+  })
+
+  it('keeps target term boundaries and owner decisions explicit', () => {
+    const entryFor = (key: string) => {
+      const entry = glossaryEntries.find((candidate) => candidate.key === key)
+      expect(entry, key).toBeDefined()
+      if (!entry) throw new Error(`missing glossary entry: ${key}`)
+      return entry
+    }
+
+    const session = entryFor('session')
+    expect(session.en.definition).toMatch(/lossless/u)
+    expect(session.en.definition).toMatch(/append-only/u)
+    expect(session.en.definition).toMatch(/not a Run and not a Chat/u)
+    expect(session.en.definition).toMatch(/retention policy/u)
+    expect(session.en.example).toMatch(/retention policy/u)
+    expect(session.ru.definition).toMatch(/полной/u)
+    expect(session.ru.definition).toMatch(/не является ни запуском, ни чатом/u)
+    expect(session.ru.definition).toMatch(/политик[аи] хранения/u)
+    expect(session.ru.example).toMatch(/политик[аи] хранения/u)
+
+    const run = entryFor('run')
+    expect(run.en.definition).toMatch(/durable/u)
+    expect(run.en.definition).toMatch(/new Attempts/u)
+    expect(run.en.definition).toMatch(/execution slot/u)
+    expect(run.en.definition).toMatch(/current fencing grant/u)
+    expect(run.ru.definition).toMatch(/слотом исполнения/u)
+    expect(run.ru.definition).toMatch(/текущим fencing-грантом/u)
+    expect(run.ru.definition).not.toMatch(/одним fencing-токеном/u)
+    const attempt = entryFor('attempt')
+    expect(attempt.en.definition).toMatch(/execution segment of a Run/u)
+    expect(attempt.en.definition).toMatch(/fencing token/u)
+    expect(attempt.en.definition)
+      .toMatch(/two Attempts of one Run never execute at the same time/u)
+    expect(attempt.ru.definition).toMatch(/две попытки одного запуска никогда не выполняются одновременно/u)
+    expect(attempt.en.example).toMatch(/granting Node has confirmed/u)
+    expect(attempt.en.example)
+      .toMatch(/expiry, release, fenced handover or an audited admin break/u)
+    expect(attempt.en.example).toMatch(/timeout alone never/u)
+    expect(attempt.ru.example).toMatch(/выдавший узел подтвердил/u)
+    expect(attempt.ru.example)
+      .toMatch(/истечением, освобождением, передачей с fencing или аудируемым административным разрывом/u)
+    expect(attempt.ru.example).toMatch(/таймаут никогда не/u)
+    expect(run.key).not.toBe(attempt.key)
+    expect(run.en.definition).not.toBe(attempt.en.definition)
+
+    const lease = entryFor('lease')
+    for (const transition of [
+      'transaction on the granting Node',
+      'grant',
+      'release',
+      'expiry',
+      'fenced handover',
+      'audited admin break',
+    ]) {
+      expect(lease.en.definition, transition).toContain(transition)
+    }
+    expect(lease.en.definition).toMatch(/timeout stops renewal.*never creates a second holder/iu)
+    expect(lease.ru.definition).toMatch(/транзакцией на выдавшем узле/u)
+    expect(lease.ru.definition).toMatch(/Таймаут прекращает продление и никогда не создаёт второго владельца/u)
+    expect(lease.en.example).toMatch(/granting Node/u)
+    expect(lease.en.example)
+      .toMatch(/confirming expiry, release, fenced handover or an audited admin break/u)
+    expect(lease.en.example).toMatch(/timeout alone never creates a second holder/u)
+    expect(lease.en.example).not.toMatch(/must expire before/u)
+    expect(lease.ru.example).toMatch(/выдавший узел/u)
+    expect(lease.ru.example)
+      .toMatch(/подтвердив истечение, освобождение, передачу с fencing или аудируемый административный разрыв/u)
+    expect(lease.ru.example).toMatch(/сам таймаут никогда не создаёт второго владельца/u)
+    expect(lease.ru.example).not.toMatch(/должна истечь, прежде чем/u)
+
+    const sideChat = entryFor('side-chat')
+    expect(sideChat.en.definition).toMatch(/reads a Session without writing to it/u)
+    expect(sideChat.en.definition).toMatch(/ephemeral by default/u)
+    expect(sideChat.en.definition).toContain('Save to session log')
+    expect(sideChat.en.definition).toContain('Send to main')
+    expect(sideChat.ru.definition).toMatch(/По умолчанию боковой чат временный/u)
+    expect(sideChat.ru.definition).toContain('Сохранить в журнал сессии')
+    expect(sideChat.ru.definition).toContain('Отправить в основной чат')
+
+    const visual = entryFor('visual-mode')
+    expect(visual.en.definition).toMatch(/not a model-autonomy mode/u)
+    expect(visual.en.definition)
+      .toMatch(/does not grant the model extra freedom, permissions or decisions/u)
+    expect(visual.ru.definition).toMatch(/не режим автономии модели/u)
+    expect(visual.ru.definition).toMatch(/не даёт модели дополнительной свободы, прав или решений/u)
+
+    const workspace = entryFor('workspace')
+    expect(workspace.en.definition).toMatch(/not a Project/u)
+    expect(workspace.en.definition).toMatch(/does not require a filesystem folder/u)
+    const project = entryFor('project')
+    expect(project.en.example).toMatch(/without making the Project itself a folder/u)
+    expect(project.ru.example).toMatch(/не обязан быть папкой/u)
+
+    for (const key of TARGET_GLOSSARY_KEYS) {
+      const copy = entryFor(key)
+      expect(copy.en.definition).not.toMatch(/\d|[$€₽]|\b(?:GB|VRAM|GPU|CPU|RAM)\b/u)
+      expect(copy.ru.definition).not.toMatch(/\d|[$€₽]|\b(?:GB|VRAM|GPU|CPU|RAM)\b/u)
+    }
+  })
+
+  it('interpolates the central product name into both Node definitions', async () => {
+    const { PRODUCT_NAME } = await import('../../src/lib/brand.ts')
+    const node = glossaryEntries.find((entry) => entry.key === 'node')
+    expect(node, 'node').toBeDefined()
+    expect(node?.en.definition).toContain(PRODUCT_NAME)
+    expect(node?.ru.definition).toContain(PRODUCT_NAME)
+
+    vi.resetModules()
+    vi.doMock('../../src/lib/brand.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/lib/brand.ts')>()
+      return { ...actual, PRODUCT_NAME: 'RenamedProduct' }
+    })
+    try {
+      const { glossaryEntries: renamedEntries } = await import('../../src/lib/glossary.ts')
+      const renamedNode = renamedEntries.find((entry) => entry.key === 'node')
+      expect(renamedNode?.en.definition).toContain('RenamedProduct')
+      expect(renamedNode?.ru.definition).toContain('RenamedProduct')
+      expect(renamedNode?.en.definition).not.toContain(PRODUCT_NAME)
+      expect(renamedNode?.ru.definition).not.toContain(PRODUCT_NAME)
+    } finally {
+      vi.doUnmock('../../src/lib/brand.ts')
+      vi.resetModules()
+    }
   })
 })
