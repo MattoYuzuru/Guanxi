@@ -108,30 +108,41 @@ export function scanComponentDependencies(uiRoot: string, ids: Iterable<string>)
     }
     for (const file of entryFiles(uiRoot, id)) push(file)
 
+    const reportUnresolved = (from: string, specifier: string): void => {
+      const file = relative(uiRoot, from).split(sep).join('/')
+      unresolved.set(`${file}\0${specifier}`, { file, specifier })
+    }
+
     const followModule = (from: string, specifier: string): void => {
       const clean = specifier.replace(/[?#].*$/, '')
       if (!specifier.startsWith('.') || NON_CODE.test(clean)) return
       const resolved = ts.resolveModuleName(specifier, from, COMPILER_OPTIONS, ts.sys).resolvedModule?.resolvedFileName
       if (!resolved) {
-        const file = relative(uiRoot, from).split(sep).join('/')
-        unresolved.set(`${file}\0${specifier}`, { file, specifier })
+        reportUnresolved(from, specifier)
         return
       }
       const target = resolve(resolved)
-      if (under(srcRoot, target) && isCodeFile(target)) push(target)
+      // A resolved local code file outside src is still a runtime edge: fail closed instead of
+      // silently treating it like an external package or traversing an arbitrary path.
+      if (!isCodeFile(target)) return
+      if (!under(srcRoot, target)) {
+        reportUnresolved(from, specifier)
+        return
+      }
+      push(target)
     }
 
-    const followBinding = (node: ts.Node): boolean => {
+    const followBinding = (node: ts.Node): 'value' | 'type-only' | 'unknown' => {
       const symbol = checker.getSymbolAtLocation(node)
-      if (!symbol) return false
+      if (!symbol) return 'unknown'
       const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol
       // A value import whose target is a type only does not depend on the target's runtime module.
-      if ((target.flags & ts.SymbolFlags.Value) === 0) return true
+      if ((target.flags & ts.SymbolFlags.Value) === 0) return 'type-only'
       const declaration = target.valueDeclaration ?? target.declarations?.[0]
-      if (!declaration) return false
+      if (!declaration) return 'unknown'
       const file = resolve(declaration.getSourceFile().fileName)
       if (under(srcRoot, file) && isCodeFile(file)) push(file)
-      return true
+      return 'value'
     }
 
     while (queue.length > 0) {
@@ -151,26 +162,33 @@ export function scanComponentDependencies(uiRoot: string, ids: Iterable<string>)
             continue
           }
           if (clause.isTypeOnly) continue
-          if (clause.name && !followBinding(clause.name)) followModule(file, specifier)
+          let runtime = false
+          if (clause.name && followBinding(clause.name) !== 'type-only') runtime = true
           const bindings = clause.namedBindings
           if (bindings && ts.isNamedImports(bindings)) {
             for (const element of bindings.elements) {
               if (element.isTypeOnly) continue
-              if (!followBinding(element.name)) followModule(file, specifier)
+              if (followBinding(element.name) !== 'type-only') runtime = true
             }
           } else if (bindings) {
             // Namespace imports cannot name their members; follow the whole module (fail closed).
-            followModule(file, specifier)
+            runtime = true
           }
+          // Even a successful alias resolution evaluates the imported module itself, including
+          // its side-effect imports and re-exports; never jump straight to the final declaration.
+          if (runtime) followModule(file, specifier)
         } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier) {
           const specifier = stringLiteral(statement.moduleSpecifier)
           if (!specifier || statement.isTypeOnly) continue
           const clause = statement.exportClause
           if (clause && ts.isNamedExports(clause)) {
+            let runtime = false
             for (const element of clause.elements) {
               if (element.isTypeOnly) continue
-              if (!followBinding(element.name)) followModule(file, specifier)
+              if (followBinding(element.name) !== 'type-only') runtime = true
             }
+            // The re-exported module is evaluated even when the named symbol resolves elsewhere.
+            if (runtime) followModule(file, specifier)
           } else {
             followModule(file, specifier)
           }
