@@ -10,10 +10,13 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
 }, testInfo) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
-  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await installChatApiFixture(page, 'completed')
 
   await page.goto('/chat')
+  await page.evaluate(() => {
+    document.documentElement.dataset.motion = 'full'
+  })
   await page.getByText('Показать сведения о runtime').click()
   await expect(
     page.getByRole('listitem').filter({ hasText: 'fixture:latest' }),
@@ -48,20 +51,42 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   await expect(page.getByText('думает', { exact: true })).toBeVisible()
   await expect(page.getByText('Live reasoning', { exact: true })).toBeVisible()
 
-  const liveMessage = page.locator('article.anim-fade-up')
+  const liveMessage = page.locator('article').filter({ hasText: 'Live reasoning' })
   await expect(liveMessage).toBeVisible()
   expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(
-    true,
+    false,
   )
-  const animationDurationMs = await liveMessage.evaluate((element) => {
-    const duration = getComputedStyle(element).animationDuration
-    return duration.endsWith('ms') ? Number.parseFloat(duration) : Number.parseFloat(duration) * 1000
-  })
-  expect(animationDurationMs).toBeLessThanOrEqual(0.011)
+  expect(await page.evaluate(() => document.documentElement.dataset.motion)).toBe('full')
 
   await advanceChatFixture(page, 'releaseNext')
   await expect(page.getByText('генерация', { exact: true })).toBeVisible()
   await expect(page.getByText('Live stream draft', { exact: true })).toBeVisible()
+
+  // The streaming timeline is static by requirement: the article, its pseudo-elements and
+  // the caret must not animate even while motion is explicitly full. The generated
+  // spinner/sheen utilities remain covered by the positive control in local-fonts.spec.ts.
+  const streamingMotion = await liveMessage.evaluate((article) => {
+    const caret = article.querySelector('.stream-caret')
+    if (!caret) throw new Error('the live stream caret is missing')
+    return {
+      article: getComputedStyle(article).animationName,
+      before: getComputedStyle(article, '::before').animationName,
+      after: getComputedStyle(article, '::after').animationName,
+      caret: getComputedStyle(caret, '::after').animationName,
+      caretBackground: getComputedStyle(caret, '::after').backgroundColor,
+      animations: article.getAnimations({ subtree: true }).map((animation) => {
+        const cssAnimation = animation as CSSAnimation
+        const cssTransition = animation as CSSTransition
+        return cssAnimation.animationName ?? cssTransition.transitionProperty ?? 'unknown'
+      }),
+    }
+  })
+  expect(streamingMotion.article).toBe('none')
+  expect(streamingMotion.before).toBe('none')
+  expect(streamingMotion.after).toBe('none')
+  expect(streamingMotion.caret).toBe('none')
+  expect(streamingMotion.caretBackground).not.toBe('rgba(0, 0, 0, 0)')
+  expect(streamingMotion.animations, JSON.stringify(streamingMotion)).toEqual([])
 
   await advanceChatFixture(page, 'releaseNext')
   await advanceChatFixture(page, 'releaseNext')

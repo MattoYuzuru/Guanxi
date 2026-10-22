@@ -410,6 +410,8 @@
 
 /* ─────────────────────────────── Прочее ───────────────────────────── */
 
+/* Generated animate-* utilities compose the accepted motion tokens for the current web
+   compatibility classes. Streaming text and its caret stay static. */
 @keyframes guanxi-spin {
   to {
     transform: rotate(360deg);
@@ -422,16 +424,6 @@
   }
   50% {
     opacity: 0.45;
-  }
-}
-@keyframes guanxi-caret {
-  0%,
-  49% {
-    opacity: 1;
-  }
-  50%,
-  100% {
-    opacity: 0;
   }
 }
 @keyframes guanxi-sheen {
@@ -454,13 +446,13 @@
 }
 
 .anim-spin {
-  animation: guanxi-spin var(--motion-duration-loop) var(--motion-easing-linear) infinite;
+  @apply animate-spinner;
 }
 .anim-pulse-soft {
-  animation: guanxi-pulse-soft var(--motion-duration-loop) var(--motion-easing-standard) infinite;
+  @apply animate-pulse-soft;
 }
 .anim-fade-up {
-  animation: guanxi-fade-up var(--motion-duration-moderate) var(--motion-easing-enter);
+  @apply animate-fade-up;
 }
 
 .stream-caret::after {
@@ -471,7 +463,6 @@
   margin-left: 1px;
   vertical-align: text-bottom;
   background: var(--color-background-accent);
-  animation: guanxi-caret var(--motion-duration-loop) step-end infinite;
 }
 
 .sheen {
@@ -484,7 +475,7 @@
   inset: 0;
   width: 33%;
   background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.14), transparent);
-  animation: guanxi-sheen var(--motion-duration-loop) var(--motion-easing-standard) infinite;
+  @apply animate-sheen;
 }
 
 .project-color-chip {

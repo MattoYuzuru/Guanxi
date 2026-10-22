@@ -230,6 +230,22 @@ test('M4: cleared Tailwind defaults disappear; semantic replacements compile', a
   assert.match(theme, /--default-font-family: var\(--font-family-sans\)/)
   assert.match(theme, /--default-mono-font-family: var\(--font-family-mono\)/)
 })
+test('M4: generated animation utilities compile to canonical theme properties', async () => {
+  const system = await designSystem(ctx)
+  for (const [utility, animation] of [
+    ['animate-fade-up', 'guanxi-fade-up var(--motion-duration-moderate) var(--motion-easing-enter)'],
+    ['animate-pulse-soft', 'guanxi-pulse-soft var(--motion-duration-loop) var(--motion-easing-standard) infinite'],
+    ['animate-sheen', 'guanxi-sheen var(--motion-duration-loop) var(--motion-easing-standard) infinite'],
+    ['animate-spinner', 'guanxi-spin var(--motion-duration-loop) var(--motion-easing-linear) infinite'],
+  ]) {
+    const compiled = system.candidatesToCss([utility])[0]
+    assert.ok(compiled, utility)
+    const values = []
+    postcss.parse(compiled).walkDecls('animation', declaration => values.push(declaration.value))
+    assert.deepEqual(values, [animation], utility)
+  }
+  assert.equal(system.candidatesToCss(['animate-pulse'])[0], null, 'the default animate-pulse namespace stays reset')
+})
 test('K1/DS1-c: actual web CSS imports the generated theme without a bridge or copied aliases', async () => {
   const file = 'packages/web/src/index.css'
   const source = await ctx.read(file)

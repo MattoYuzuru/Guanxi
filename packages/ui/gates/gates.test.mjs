@@ -57,6 +57,64 @@ test('G2 is byte deterministic and rejects a manual edit to every generated file
     assert.equal((await checks.G2(edited)).ok, false, name)
   }
 })
+test('animation manifest validation rejects unsafe, unknown, mistyped and duplicate compositions', async () => {
+  const path = 'packages/ui/tokens/motion-animations.json'
+  const base = await ctx.json(path)
+  const cases = [
+    [/must be an object/, data => { data.animations[0] = 'spinner' }],
+    [/unsafe utility name/, data => { data.animations[0].utility = 'Bad Name' }],
+    [/unsafe keyframe name/, data => { data.animations[0].keyframes = '../guanxi-spin' }],
+    [/unsupported field/, data => { data.animations[0].speed = 2 }],
+    [/unsupported field/, data => { data.extra = true }],
+    [/requires a non-empty string duration/, data => { data.animations[0].duration = { $value: 'motion.duration.loop' } }],
+    [/motion\.duration/, data => { data.animations[0].duration = 'motion.duration.unknown' }],
+    [/motion\.duration/, data => { data.animations[0].duration = 'primitive.duration.slow' }],
+    [/motion\.easing/, data => { data.animations[0].easing = 'motion.duration.loop' }],
+    [/motion\.easing/, data => { data.animations[0].easing = 'motion.easing.unknown' }],
+    [/Duplicate animation utility/, data => { data.animations[1].utility = data.animations[0].utility }],
+    [/Duplicate animation keyframes/, data => { data.animations[1].keyframes = data.animations[0].keyframes }],
+    [/iterations/, data => { data.animations[2].iterations = 0 }],
+    [/iterations/, data => { data.animations[2].iterations = -1 }],
+    [/iterations/, data => { data.animations[2].iterations = 1.5 }],
+    [/iterations/, data => { data.animations[2].iterations = '2' }],
+    [/iterations/, data => { data.animations[2].iterations = true }],
+    [/non-empty animations array/, data => { data.animations = [] }],
+  ]
+  for (const [message, change] of cases) {
+    const invalid = structuredClone(base)
+    change(invalid)
+    await assert.rejects(generate((await ctx.withFiles({ [path]: JSON.stringify(invalid) })).tokenOptions), message)
+  }
+})
+test('generator reads the animation manifest through the provided options.read', async () => {
+  const path = 'packages/ui/tokens/motion-animations.json'
+  const overridden = await ctx.json(path)
+  overridden.animations.find(animation => animation.utility === 'spinner').utility = 'spinner-read'
+  const output = await generate((await ctx.withFiles({ [path]: JSON.stringify(overridden) })).tokenOptions)
+  assert.match(output['theme.css'], /--animate-spinner-read:/)
+  assert.doesNotMatch(output['theme.css'], /--animate-spinner:/)
+})
+test('generator emits an accepted finite iteration count but keeps one omitted and infinite unchanged', async () => {
+  const path = 'packages/ui/tokens/motion-animations.json'
+  const overridden = await ctx.json(path)
+  overridden.animations.find(animation => animation.utility === 'fade-up').iterations = 2
+  const options = (await ctx.withFiles({ [path]: JSON.stringify(overridden) })).tokenOptions
+  const first = await generate(options), second = await generate(options)
+  assert.deepEqual(first, second, 'overridden generation must stay byte deterministic')
+  const theme = first['theme.css']
+  const declaration = (css, utility) => css.split('\n').find(line => line.startsWith(`  --animate-${utility}:`))
+  const fadeUp = declaration(theme, 'fade-up')
+  assert.ok(fadeUp, 'expected a generated --animate-fade-up declaration')
+  assert.ok(fadeUp.endsWith(' 2;'), `expected the accepted finite iteration count before the semicolon, got: ${fadeUp}`)
+  for (const utility of ['pulse-soft', 'sheen', 'spinner']) {
+    const line = declaration(theme, utility)
+    assert.ok(line, `expected a generated --animate-${utility} declaration`)
+    assert.ok(line.endsWith(' infinite;'), `${utility} must keep its infinite iteration count, got: ${line}`)
+  }
+  const canonicalFadeUp = declaration((await generate(ctx.tokenOptions))['theme.css'], 'fade-up')
+  assert.ok(canonicalFadeUp, 'expected the canonical --animate-fade-up declaration')
+  assert.doesNotMatch(canonicalFadeUp, / 1;$/, `the default iteration count of one must stay omitted, got: ${canonicalFadeUp}`)
+})
 test('G3 checks all 20 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
   assert.equal(report.ok, true, JSON.stringify(report.errors))
@@ -126,6 +184,19 @@ test('G7 rejects raw CSS and TS motion values and accepts semantic variables', a
   ]) assert.equal((await checks.G7(await ctx.withFiles(files))).ok, false)
   const valid = await ctx.withFiles({ 'packages/ui/src/fixture.css': '.fixture { transition-duration: var(--motion-duration-fast); transition-timing-function: var(--motion-easing-standard); }' })
   assert.equal((await checks.G7(valid)).ok, true)
+})
+test('G6/G7 reject a literal animation shorthand while generated utilities and @apply pass', async () => {
+  const shorthand = await ctx.withFiles({ 'packages/ui/src/fixture.css': '.fixture { animation: guanxi-spin 1s linear infinite; }' })
+  for (const check of [checks.G6, checks.G7]) {
+    const report = await check(shorthand)
+    assert.equal(report.ok, false)
+    assert.ok(report.errors.some(error => error.includes('packages/ui/src/fixture.css|animation:')), JSON.stringify(report.errors))
+  }
+  const utility = await ctx.withFiles({ 'packages/ui/src/fixture.css': '.fixture { @apply animate-spinner; }' })
+  for (const [id, check] of [['G5', checks.G5], ['G6', checks.G6], ['G7', checks.G7]]) {
+    const report = await check(utility)
+    assert.equal(report.ok, true, `${id}: ${JSON.stringify(report.errors)}`)
+  }
 })
 test('legacy freeze rejects new occurrences, invalid paths and unused allowances', async () => {
   const allowance = await ctx.json('packages/ui/gates/legacy-allowlist.json')

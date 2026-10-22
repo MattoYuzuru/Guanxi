@@ -73,5 +73,26 @@ Glass text and control tokens deliberately use primary text so they pass the eig
 backdrops; decorative seams are not control boundaries. Elevation-2 shadows use ink at the
 two specified opacity endpoints (8%, 10%); elevation-3 uses the specified 32% ink scrim.
 
+## Semantic animation manifest
+
+`motion-animations.json` is an authored, strict companion manifest, not a DTCG token set and
+not part of `guanxi.resolver.json`. Each entry has exactly `utility`, `keyframes`, `duration`,
+`easing` and `iterations`; identifiers use `/^[a-z][a-z0-9-]*$/`, utility and keyframe names are
+unique, durations must resolve to an existing `motion.duration.*` token of type `duration`,
+easings to an existing `motion.easing.*` token of type `cubicBezier`, and iterations is
+`infinite` or a positive integer. Unknown fields, aliases outside those namespaces, duplicate
+names and unsupported types fail the build closed. The manifest is read through the build's
+`options.read` when provided, so gate context overrides and negative fixtures are observed
+instead of bypassed by an absolute disk read.
+
+The build emits deterministic `--animate-*` entries into `generated/theme.css`:
+`--animate-fade-up`, `--animate-pulse-soft`, `--animate-sheen` and `--animate-spinner`. The
+declarations contain only the keyframe name plus `var(--motion-duration-*)` and
+`var(--motion-easing-*)`, with `infinite` only for the looping entries. Generated output is
+never hand-edited. In this slice the utilities are consumed by the legacy web compatibility
+classes, not by `@guanxi/ui` Spinner or StatusPill, which remain static; they are not yet a
+cross-host component animation API. The keyframes still live in `packages/web/src/index.css`,
+so future reuse must first verify keyframe ownership and reduced-motion loop removal.
+
 No persisted data schema changes. Rollback is a revert of this package and the legacy CSS
 import/mappings; the legacy palette and class names are otherwise preserved.

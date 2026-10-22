@@ -415,3 +415,239 @@ remains the authority for this spec.
 The test fix is `3d14692` on top of `e73936b`; this handoff update is the next documentation
 commit. No push, merge or rebase was performed. Final clean pin: the HEAD documentation commit
 containing this section, with `git status --porcelain` empty.
+
+## Review-fix: canonical motion utilities and ledger retirement (2026-10-22)
+
+**Finding.** The root full `npm test` at `/u1-completion` candidate `a4a42da` stopped in
+`ui:check`; fast G5/G6/G7 were red. Receipt:
+`/Users/yuzuru/.local/state/agent-dev/check-a6cxb2j3/result.json`, log:
+`.../output.log`. The migrated legacy declarations still used bare keyframe/timing names,
+the stream caret still used `step-end`, and the ledger had not been shrunk; `outline-offset:2px`
+was still `5 > 4`. Root reviewed and authorized plan `717cb62` with binding corrections; that
+authorization record is `241e962`.
+
+**Source pin.** `codex/u1c-css` at `241e962` before the fix; the bounded fix is `e6a3857`.
+
+### Delivered
+
+- `packages/ui/tokens/motion-animations.json`: authored four-entry manifest
+  (`fade-up`, `pulse-soft`, `sheen`, `spinner`). It is a strict, closed, non-DTCG companion
+  manifest: exact fields, safe identifiers, unique utility/keyframe names, `motion.duration.*`
+  type `duration`, `motion.easing.*` type `cubicBezier`, and `infinite`/positive-integer
+  iterations. It contains token names only, no new numeric motion values or aliases.
+- `packages/ui/tokens/build.mjs`: validates the manifest fail-closed and reads it through the
+  supplied `options.read` when present (falling back to the token root), so gate context
+  overrides/negative fixtures are observed. The public `generate()` API and deterministic
+  output keys are unchanged.
+- `packages/ui/generated/theme.css`: regenerated only by `npm run tokens:build`; adds the four
+  canonical `--animate-*` declarations in deterministic name order. No generated file was
+  hand-edited.
+- `packages/web/src/index.css`: the four compatibility classes now use
+  `@apply animate-spinner|animate-pulse-soft|animate-fade-up|animate-sheen`; the streaming
+  caret is a static accent block; `@keyframes guanxi-caret` is removed. The four existing
+  keyframes and the reduced-motion branches remain.
+- `packages/web/src/features/chat/ChatPage.tsx:1024`: removed `anim-fade-up` from the assistant
+  streaming timeline article. The class and its fade-up recipe remain for the legacy modal
+  (`packages/web/src/components/ui.tsx`), not for stream text.
+- `packages/ui/gates/legacy-allowlist.json`: removed exactly the 21 retired keys and reduced
+  `G6|packages/web/src/index.css|outline-offset:2px` from 5 to 4. No key was added or renamed,
+  no count increased, and no held `animation:` allowance remains. The static proof read
+  452 → 431 entries, 21 removals, 0 additions, the one 5 → 4 decrement, 0 increases and 0
+  `animation:` keys.
+- `eslint-suppressions.json`: the `packages/web/src/index.css`
+  `guanxi/no-literal-css` count is reduced 117 → 112. Five removed animation declarations had
+  been covered by that suppression, so leaving the count at 117 made G9 report an unused
+  suppression. This is a shrink only; no suppression was added or increased.
+
+The generated `animate-*` utilities are consumed by the current web compatibility classes.
+They are not a complete cross-host or public `@guanxi/ui` animation-component API. The package
+Spinner and StatusPill remain static; their keyframes still live in `packages/web/src/index.css`.
+Future component/host reuse must verify keyframe ownership and reduced-motion loop removal
+first. The full-web reduced-motion branches remove animation entirely; the token `0ms` alone
+does not stop an infinite loop.
+
+### Tests and red/green evidence
+
+Written before the production fix:
+
+- `packages/ui/gates/u1c-css.test.mjs` grew from 4 to 7 cases. The old motion case is replaced
+  and strengthened: each compatibility class must have exactly one canonical
+  `@apply animate-*`, the caret must have no animation, `@keyframes guanxi-caret` must be gone,
+  generated declarations must exactly trace the manifest and contain only `var(--motion-*)`,
+  no scanned animation shorthand may remain, the two reduced `animation: none` declarations
+  are the only CSS animation declarations, the legacy modal keeps `anim-fade-up`, ChatPage does
+  not, and the ledger retires every animation shorthand.
+- `packages/ui/gates/gates.test.mjs` adds three cases: invalid manifests fail closed (unsafe
+  names, extra/root fields, non-string/alias duration, unknown/mistyped tokens, duplicate
+  utility/keyframes, bad iterations, empty array), the generator observes `options.read`, and a
+  literal `animation: guanxi-spin 1s linear infinite` still fails G6/G7 while
+  `@apply animate-spinner` passes G5/G6/G7.
+- `packages/ui/gates/foundations.test.mjs` adds one compiled-theme case: the four
+  `animate-*` utilities compile to the canonical animation property with live token `var()`
+  references, and the default `animate-pulse` namespace stays reset.
+- `packages/web/test/browser/local-fonts.spec.ts` keeps all 12 light/dark × OS
+  no-preference/reduce × system/reduced/full cells. The caret is asserted static with a
+  non-transparent background in every cell; full cells assert `guanxi-spin`/`guanxi-sheen`,
+  both `1s`, and named running animations; reduced cells assert `none`, an empty
+  `getAnimations({ subtree: true })`, and `transitionProperty: none`. The explicit-full under
+  OS-reduce positive control remains.
+- `packages/web/test/browser/chat-first-stream.spec.ts` runs under full motion (OS
+  no-preference, `data-motion="full"`) and uses the actual Chat route fixture. It asserts the
+  actual streaming transcript article, its `::before`/`::after`, and the caret `::after` have
+  `animationName: none`, a non-transparent caret background, and an empty
+  `getAnimations({ subtree: true })`. The old vacuous 0.01 ms duration assertion is replaced,
+  not deleted.
+
+Red before production: `u1c-css.test.mjs` 3 pass / 4 fail (`.anim-spin` and the caret still
+declared literal shorthands; the ledger still held the retired keys); `gates.test.mjs` 14 pass /
+6 fail (the manifest did not exist and valid G5/G7 fixtures inherited the stale ledger errors);
+`foundations.test.mjs` 18 pass / 1 fail (`animate-fade-up` did not compile). Green after:
+46 pass / 0 fail across the three files.
+
+### Commands (this round)
+
+All commands ran in this standalone clone under `nice -n 10`.
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `npm run tokens:build --workspace @guanxi/ui` | ok; generated the five declared outputs; only `theme.css` differs from the pin |
+| `node --test packages/ui/gates/u1c-css.test.mjs packages/ui/gates/gates.test.mjs packages/ui/gates/foundations.test.mjs` | 46 pass, 0 fail |
+| `npm run ui:check` | exit 1 overall: G1–G9 pass. G5 frozen 898, G6 frozen 112 (117 − 5 shorthands), G7 frozen 10 (11 − caret `step-end`), G8/G9 pass. G10 stale catalog manifest and G12 no base branch fail (see residuals) |
+| `npx eslint <the 8 changed JS/TS/CSS files>` | exit 0 |
+| `npx stylelint packages/web/src/index.css` | exit 0 |
+| `npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+| `git diff --check` | exit 0 |
+
+`npm run ui:check`'s G9 report still lists `packages/web/src/index.css` at 112
+`guanxi/no-literal-css` suppressions and `u1ColourExitReady: false`.
+
+### New tests / regression envelope
+
+**New:** 7 focused Node cases: 3 in `u1c-css.test.mjs`, 3 in `gates.test.mjs`, 1 in
+`foundations.test.mjs`. The old motion case in `u1c-css.test.mjs` was replaced and
+strengthened; it is not counted as a new case.
+
+**Changed browser cases:** 2 existing cases (`local-fonts.spec.ts` 12-cell motion matrix and
+`chat-first-stream.spec.ts` static transcript assertion); **0 new browser cases**.
+
+**Regression envelope executed:** the 46 Node cases in those three gate files, full fast
+`ui:check` (G1–G9, G17), scoped ESLint/stylelint and web `tsc`. `packages/web/tsconfig.json`
+does not include `test/browser`, so the root Chromium gate remains the authority for the two
+changed browser specs. The actual-Chromium browser envelope remains root-run; this worker did
+not run Playwright, the browser/UI-browser gates, the app build or Storybook.
+
+### Residuals (this round)
+
+- Root must run the actual-Chromium browser gate, including the full-motion transcript
+  assertion and the 12-cell matrix; no browser, visual or performance pass is claimed here.
+- `ui:check` G10 reports the catalog manifest stale. The manifest was already not matching the
+  current tooltip props at this branch base, and the changed generated `theme.css` is a
+  package-wide source-hash input, so refreshing it would change every component's source hash.
+  Under the no catalog/hash/approval authorization this worker did not run `ui:manifest`.
+  Root must refresh the manifest at integration and rerun G10.
+- `ui:check` G12 cannot verify the trusted key set in this standalone clone because it has no
+  `refs/heads/main` or `refs/remotes/origin/main`; no approval key or record was changed.
+- The 117 literal-CSS suppressions at the pin are now 112 after retiring five animation
+  declarations; 112 remain and `u1ColourExitReady` is still false. This bounded fix does not
+  close all of U1, DS1 or owner UI approval.
+- The four keyframes are still owned by `packages/web/src/index.css`. The generated utilities
+  are not a cross-host/public `@guanxi/ui` animation API, and Spinner/StatusPill stay static.
+  Any future component reuse must verify keyframe ownership and reduced-motion loop none.
+- The prior OS-only `workspace-layout` reduced-motion residual, the intentional 3→6 px inline
+  focus radius and the historical 117/112 number are unchanged in meaning; no historical claim
+  above was rewritten.
+
+At handoff the fix commit is `e6a3857` on top of `241e962`; this handoff update is the next
+documentation commit. No push, merge, rebase, package/lock change, approval/status edit,
+`PHASE_STATUS` or `NEXT_AGENT_PROMPT` edit was performed. Final clean pin: the HEAD
+documentation commit containing this section, with `git status --porcelain` empty.
+
+## Review-fix: finite animation iteration emission (2026-10-22)
+
+**Finding.** `validateAnimations` accepts every positive integer iteration count, but `themeCSS`
+appended only `infinite` and silently omitted finite values greater than one. An existing
+manifest entry changed to `iterations: 2` therefore generated an `--animate-*` value without the
+count. Source pin `402cf81` on `codex/u1c-css`; fix commit `e2cc072`.
+
+### Change (scoped)
+
+- `packages/ui/tokens/build.mjs`: for a validated finite count above one, append a space plus
+  `${animation.iterations}`. A count of `1` stays omitted exactly as before, and `infinite`
+  still emits a space plus `infinite`. The closed manifest schema, default of one, token names, ordering
+  and deterministic output keys are unchanged. No new token value, alias or default cap was
+  introduced.
+- `packages/ui/gates/gates.test.mjs`: one new generator case reads the real manifest through
+  `options.read`, changes only the existing `fade-up` entry to `iterations: 2`, generates twice
+  and asserts byte determinism, then requires the generated `--animate-fade-up` line to end
+  with exactly a space plus `2;`. The same case requires the canonical `fade-up` line to omit
+  `1` and the three `infinite` entries to keep a trailing space plus `infinite`. The existing refusal case gained `-1` and `1.5`;
+  zero, string `"2"` and boolean `true` were already covered.
+- No generated file, manifest, CSS, catalog, approval, status file or U1 candidate source was
+  edited. The 21 ledger retirements, the `outline-offset:2px` allowance decrement from 5 to 4,
+  and the 112 `packages/web/src/index.css` CSS suppressions are unchanged.
+
+### Red and green evidence
+
+Before the production edit, the focused file was 20 pass / 1 fail. The new case failed with:
+
+```text
+expected the accepted finite iteration count before the semicolon, got:
+  --animate-fade-up: guanxi-fade-up var(--motion-duration-moderate) var(--motion-easing-enter);
+```
+
+That is the reported omission: the accepted `2` never reached the generated value. After the
+one-line emitter fix the same file is 21 pass / 0 fail. The existing G2 case in that file passed,
+which compares `generate(ctx.tokenOptions)` with every checked-in generated file; canonical
+manifest values stayed `1`/`infinite`, so no generated output changed and no regeneration or
+manual generated edit was needed.
+
+### New tests / regression envelope
+
+**New:** 1 focused Node case in `packages/ui/gates/gates.test.mjs`; the existing validation case
+was extended with two refusal inputs but is not a new case.
+
+**Regression envelope executed:** 28 cases, 0 fail: 21 in `packages/ui/gates/gates.test.mjs` and
+7 in `packages/ui/gates/u1c-css.test.mjs`. No browser, build, Storybook, `ui:check` or full npm
+suite was run by this worker.
+
+### Commands (this round)
+
+All commands ran in this standalone clone under `nice -n 10`.
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `nice -n 10 node --test packages/ui/gates/gates.test.mjs` before the fix | 20 pass, 1 fail; exact missing finite-count suffix above |
+| `nice -n 10 node --test packages/ui/gates/gates.test.mjs` after the fix | 21 pass, 0 fail |
+| `nice -n 10 node --test packages/ui/gates/u1c-css.test.mjs` | 7 pass, 0 fail |
+| `nice -n 10 npx eslint packages/ui/tokens/build.mjs packages/ui/gates/gates.test.mjs` | exit 0 |
+| `node --check packages/ui/tokens/build.mjs && node --check packages/ui/gates/gates.test.mjs` | `syntax_ok` |
+| `nice -n 10 npx markdownlint-cli2 docs/plans/lanes/U1c-css.handoff.md` | one pre-existing MD024 duplicate `## New tests / regression envelope` heading, also present at `402cf81`; no new Markdown finding |
+| `git diff --check` | exit 0 |
+| `git show --stat --oneline e2cc072` | 2 files, 24 insertions, 1 deletion; only the owned test and generator |
+| `git status --porcelain` before this handoff commit | empty after `e2cc072` |
+
+### Residuals (this round)
+
+- The finite-count proof is at generated-theme text level. No Tailwind compile or browser run
+  used an overridden finite-count manifest; the canonical compiled utilities remain covered by
+  the existing foundation and browser gates, which this worker did not run.
+- `packages/ui/gates/u1c-css.test.mjs` still models only the canonical `1`/`infinite`
+  declarations. The new finite `> 1` behavior is covered in `gates.test.mjs`; the U1c file was
+  deliberately left untouched under the one-test-file scope.
+- Scoped Markdown lint still reports the pre-existing duplicate `## New tests / regression
+  envelope` heading at line 157. It is present at the source pin and was not rewritten, so the
+  historical sections stay intact; no new Markdown finding remains.
+- `ui:check` was not run: G10 catalog staleness and G12 missing base ref are the known
+  root-owned integration repairs. The 112 CSS suppressions and `u1ColourExitReady: false` remain
+  unchanged.
+- Root must independently review this fix and run the combined integration gates. No browser,
+  visual, performance, full-suite or `ui:check` result is claimed here.
+- No U1 candidate checkout, source, approval record, `PHASE_STATUS` or `NEXT_AGENT_PROMPT` was
+  edited.
+
+At handoff the fix commit is `e2cc072` on top of `402cf81`; this handoff update is the next
+documentation commit. No push, merge, rebase, package/lock change or generated-file edit was
+performed. Final clean pin: the HEAD documentation commit containing this section on
+`codex/u1c-css`, with `git status --porcelain` empty.
