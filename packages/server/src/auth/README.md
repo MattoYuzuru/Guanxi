@@ -127,7 +127,8 @@ Methods:
   actor and clock, never trusted from `input`. An `owner` grant is rejected: ownership transfer
   is later work. A grant to a `link` subject is viewer-only. `expiresAt` must be `null` or a
   safe integer strictly after `now`; anything else fails with `invalid_expiry` before the
-  transaction starts.
+  transaction starts. Inside the transaction an expired row with the same tuple is deleted
+  before insertion, so an unpurged expired grant does not block re-granting.
 - `revoke(actor, key, resource)` — same permission check; returns whether a row was deleted.
 - `forResource(type, id)` and `forSubject(type, id)` — direct rows in insertion order, including
   expired grants. Callers apply `now` through `can`; `purgeExpired` removes them physically.

@@ -223,6 +223,24 @@ test('expiry purge removes grants at or before now and keeps live ones', (t) => 
   assert.equal(f.store.purgeExpired(NOW + 2), 0)
 })
 
+test('an expired unpurged grant does not block re-granting the same tuple', (t) => {
+  const f = fixture(t)
+  f.store.grant(owner, grantOn(project, 'viewer', 'user-a', NOW + 1), project)
+  f.setNow(NOW + 2)
+
+  const regranted = f.store.grant(owner, grantOn(project, 'viewer', 'user-a', NOW + 10), project)
+  assert.equal(regranted.createdAt, NOW + 2)
+  const rows = f.store.forResource('project', 'project-1')
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0]?.createdAt, NOW + 2)
+  assert.equal(rows[0]?.expiresAt, NOW + 10)
+
+  assert.throws(
+    () => f.store.grant(owner, grantOn(project, 'viewer', 'user-a', NOW + 20), project),
+    (error: unknown) => error instanceof GrantStoreError && error.code === 'grant_exists',
+  )
+})
+
 test('grant expiry must be null or a safe integer after now', (t) => {
   const f = fixture(t)
   const invalid: Array<{ name: string; value: number }> = [

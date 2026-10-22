@@ -162,6 +162,11 @@ export class GrantStore {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       this.assertCanShare(actor, resource, now)
+      // An expired row still holds the unique tuple; replace it inside the same transaction.
+      this.db.prepare(`DELETE FROM grants
+        WHERE resource_type=? AND resource_id=? AND relation=? AND subject_type=? AND subject_id=?
+          AND expires_at IS NOT NULL AND expires_at <= ?`)
+        .run(grant.resourceType, grant.resourceId, grant.relation, grant.subjectType, grant.subjectId, now)
       try {
         this.db.prepare(`INSERT INTO grants
           (resource_type, resource_id, relation, subject_type, subject_id, created_by, created_at, expires_at)
