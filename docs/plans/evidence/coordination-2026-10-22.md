@@ -513,3 +513,42 @@ A separate readiness audit names missing Menu/Tooltip interaction and regime ass
 bulk draft-to-review transition is justified yet. Real Menu/IconButton/Tooltip readiness
 will be tested and reviewed before any unsigned transition. Owner approval stays separate.
 No new U1 source is integrated or stage exit claimed by this checkpoint.
+
+### Fedora repair integrated; U1 and Q0 current continuation
+
+Newest authority is D-195. The old Fedora application is retired with SSH/VPN/private data
+preserved, and dedicated-user actual Linux checks are available. [Fedora evidence](Fedora-2026-10-22.md)
+retains setup/red/JUnit limits and initial X1/kernel62/62. The25/213 native/core failures were
+caused by110-byte proxy socket paths under long TMPDIR. Focused source a7df34d4 uses trusted
+short `/tmp` for Linux; no sandbox permission/timeout/dependency changes.
+
+The [focused handoff](../lanes/K4-linux-proxy-path.handoff.md) records actual one-case red,
+green, selected214 (1new/213inherited:208pass/6Darwin-onlyskip) at3e75852c, and strengthened
+samecase1/1 at28653d92 with unchanged production. Separate corrected lifecycle/policy control
+passes; original failed controls remain failures with their confirmed hidden-tmpfs premise
+error. Independent source/final-test/receipt review is closed, no remaining focused finding.
+
+Mac full npm check-jqapa65j passes at3e75852c; final45491863 types/build/Markdown/license/lint
+pass (fo_1sgj2,2f9913p3,d6e5mxce,_y5egedl,ccs7zg8j). Root fast-forwarded that exact tree into
+local main; no manual resolution and no push. Last all-eight main sequence remains1b6, not
+an invented repeat at454. External-skill symlink still prevents portable source certification.
+
+U1 three repair lanes are closed and assembled. Workspace-state candidate1776389c is now
+independently closed at a single unchanged pin:97 repository cases =55new/42inherited,
+web7 hlul0l22, UI25 poudrs0d, browser65 i9s7d5e5; outside held-Save-as1 q9epx5m8. The reviewer
+inspected current loading/error/forced-color images and all eight regime sheets. Its own
+initial JSX-import harness error occurred before product execution and is preserved. Root
+still owns exact12 pinned-Docker baselines, unsigned lifecycle transitions and full union/main
+gates. No owner key/signature/approved status or whole U1 closure.
+
+K4 queue-v3 Q0 author repairs plus separate root fixture fixes pass64 repository + unchanged
+outside5 at71dc6bb0. The new held-writer observer now awaits owned worker exits; exact16KiB
+FTS token has a delimiter and identical-token indexed positive. Subsequent14db1971 is docs-only
+and Markdownyee4gsv5 passes. Missing native/helper/CLI envelope79/79 passes (1new/78inherited),
+but inspector components23/24 fail one Russian accessible-name oracle. Root must repair that
+test and truthful v1/v3 preview/unit copy, then run inspector/browser and union gates. No Q0
+acceptance, Q1 consumption, Q2 producer or full queue claim yet. Earlier review failures and
+their distinct fixes remain in history. B3 offline-format independent planning review is active.
+
+MS1's real six-hour30B delegation, zero lead-token change, exactly one wake, accepted B3
+quality/calibration and every remaining item exit stay open; none is inferred from these gates.
