@@ -84,10 +84,14 @@ export function boundedPreview(text: string, maxBytes = INPUT_EXCERPT_BYTES): st
   if (bytes.byteLength <= maxBytes) return text
   let end = maxBytes
   while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--
-  let clipped = new TextDecoder().decode(bytes.subarray(0, end))
+  const clipped = new TextDecoder().decode(bytes.subarray(0, end))
+  // Only a real `⟦REDACTED …⟧` marker gets marker-safe backtracking. An
+  // ordinary decorative `⟦` is user text and must keep its maximal prefix.
   const open = clipped.lastIndexOf(REDACTION_MARKER_OPEN)
-  if (open >= 0 && clipped.indexOf(REDACTION_MARKER_CLOSE, open) < 0) clipped = clipped.slice(0, open)
-  return clipped
+  if (open < 0 || clipped.indexOf(REDACTION_MARKER_CLOSE, open) >= 0) return clipped
+  if (!text.startsWith(REDACTION_MARKER_PREFIX, open)) return clipped
+  if (text.indexOf(REDACTION_MARKER_CLOSE, open + REDACTION_MARKER_PREFIX.length) < 0) return clipped
+  return clipped.slice(0, open)
 }
 
 export type QueueRenderItem =
