@@ -13,7 +13,7 @@ The independent reviewer recheck is **UNRUN**; its earlier pin was `92637fb1`. D
   stopping at it), `f9fc6e06` (ledger installer also guards the global event/artifact table
   shapes), `cba7faf0` (portable inspector queue fixture byte counts)
 - Review-repair test commits: `cacd9ff1`, `731199e0`, `a8fc67b8`, `6553f6a6`, `d0bd96c7`,
-  `2fbc704e`
+  `2fbc704e`, `2e721d6b`
 - Review-repair production commits: `01541fbd`, `8b4e2d82`, `fa524c3f`
 - Docs/handoff commit: this commit (HEAD at handoff)
 - Scope authority: `docs/plans/lanes/K4-queue-v3.plan.md`, especially "Root Q0 authorization
@@ -31,7 +31,7 @@ outside controls must be rerun unchanged (SHA
 
 | Confirmed finding | Discriminating authored evidence | Fix commit | Red/green evidence |
 | --- | --- | --- | --- |
-| `installQueueSchema:false` let a future ledger 41 bypass mandatory 40 | outside control 3 fails at `92637fb1`; the historical global-31 test now seeds SQL locally and never constructs a current `SessionLog` | `a8fc67b8` (fixture), `8b4e2d82` (remove option) | authored fixture/red-green expectation; actual SQLite UNRUN here |
+| `installQueueSchema:false` let a future ledger 41 bypass mandatory 40 | outside control 3 fails at `92637fb1`; a new repository test passes the stale switch through a JavaScript cast and still requires `queue_schema_future`; the historical global-31 test seeds SQL locally | `a8fc67b8` (fixture), `8b4e2d82` (remove option), `2e721d6b` (constructor regression) | authored fixture/red-green expectation; actual SQLite UNRUN here |
 | legacy progress silently ignored v3 and retained older v1 queue | new `agent.test.ts` seeds v1 `[old-a,keep-b]`, then valid v3 `[keep-b]`, and requires content-free `agent_unavailable` | `731199e0` (test), `01541fbd` (fix) | authored red before fix, green expected after; actual native UNRUN here |
 | three ledger assertions compared null-prototype rows with plain objects | reviewer receipt `check-iada7ni5`; assertions now project exact `version` values and keep count/repeat/rollback points, including the previously unreached repeat-install check | `cacd9ff1` | authored oracle repair; actual SQLite UNRUN here |
 | external-content FTS rowid existence was treated as index membership | the test now keeps `search_text NULL`, asserts `MATCH` and `log.search` are zero for the queue sentinel, and proves a normal prompt is indexed (`MATCH` rowid + `log.search` count 1) | `cacd9ff1` | authored oracle repair; actual SQLite UNRUN here |
@@ -87,10 +87,11 @@ artifactization-complete claim.
   annotation, required because the widened `SessionAppendData` conditional lost contextual
   literal narrowing there. Shared edit; no runtime change.
 - New tests: `session-log-queue-v3-contract.test.ts` (9), `session-log-queue-v3-projection.test.ts`
-  (5), `session-log-queue-artifacts.test.ts` (19 seeded SQLite/helper/routes/privacy cases,
-  including the competing-initializer/held-writer case), `packages/web/test/component/inspector-queue-v3.test.tsx`
-  (5), one browser queue test in `inspector.spec.ts`, and one native-service refusal case in
-  `native-agent/agent.test.ts`. Total **40 new test cases** authored (Q0 37 plus 3 repair cases);
+  (5), `session-log-queue-artifacts.test.ts` (20 seeded SQLite/helper/routes/privacy cases,
+  including the competing-initializer/held-writer and stale-switch constructor cases),
+  `packages/web/test/component/inspector-queue-v3.test.tsx` (5), one browser queue test in
+  `inspector.spec.ts`, and one native-service refusal case in `native-agent/agent.test.ts`.
+  Total **41 new test cases** authored (Q0 37 plus 4 repair cases);
   **14 pure cases run and green** in this repair round, the rest UNRUN by this author.
 - Repair fixture: `packages/server/test/fixtures/queue-schema-installer-worker.ts` provides two
   independent SQLite connections in worker threads with explicit `SharedArrayBuffer`/`Atomics`
@@ -172,8 +173,9 @@ contract/server/web/cli `tsc`, scoped eslint, markdownlint and doc-link checks. 
 
 ## Checks UNRUN (must not be called green)
 
-- `session-log-queue-artifacts.test.ts` (all 19 seeded SQLite/helper/routes/privacy cases,
-  including the Q14 worker-thread held-writer/competing-initializer case),
+- `session-log-queue-artifacts.test.ts` (all 20 seeded SQLite/helper/routes/privacy cases,
+  including the Q14 worker-thread held-writer/competing-initializer case and the stale-switch
+  constructor case),
   `native-agent/agent.test.ts` (all cases, including the new v3 refusal),
   `native-agent/migration.test.ts` (the rewritten global-31 SQL seed),
   `session-log-version-negotiation.test.ts`, `session-log-routes.test.ts`,
