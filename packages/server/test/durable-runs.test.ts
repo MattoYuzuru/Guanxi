@@ -219,6 +219,75 @@ test('cost ledger deduplicates exact observations, rejects conflicts, keeps unkn
   ])
 })
 
+test('complete records a cost observation exactly once with the terminal transition', (t) => {
+  const f = runFixture(); t.after(f.close)
+  const run = f.store.create({ id: 'lead' }); const a = f.store.start(run.id)
+  const cost = { key: 'terminal', inputTokens: 11, outputTokens: 5, costMicrounits: null, currency: 'unknown' as const }
+  f.store.complete(a, 'completed', undefined, cost)
+  assert.equal(f.store.get(run.id).state, 'completed')
+  const row = f.db.prepare('SELECT * FROM run_costs').get() as { run_id: string; attempt_id: string; entry_key: string; input_tokens: number;
+    output_tokens: number; cost_microunits: number | null; currency: string }
+  assert.equal(row.run_id, run.id)
+  assert.equal(row.entry_key, 'terminal')
+  assert.equal(row.attempt_id, a.id)
+  assert.equal(row.input_tokens, 11)
+  assert.equal(row.output_tokens, 5)
+  assert.equal(row.cost_microunits, null)
+  assert.equal(row.currency, 'unknown')
+  assert.deepEqual(f.store.costs(run.id), [{ currency: 'unknown', inputTokens: 11, outputTokens: 5, costMicrounits: null }])
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs').get()!.n, 1)
+  assert.equal(count(f, 'cost'), 1)
+  assert.equal(count(f, 'terminal'), 1)
+})
+
+test('a throwing receipt callback rolls back completion and its cost observation', (t) => {
+  const f = runFixture(); t.after(f.close)
+  const run = f.store.create({ id: 'lead' }); const a = f.store.start(run.id)
+  const cost = { key: 'terminal', inputTokens: 11, outputTokens: 5, costMicrounits: null, currency: 'unknown' as const }
+  assert.throws(() => f.store.complete(a, 'completed', () => { throw new Error('fixture receipt') }, cost), /fixture receipt/)
+  assert.equal(f.store.get(run.id).state, 'working')
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs').get()!.n, 0)
+  assert.equal(count(f, 'cost'), 0)
+  assert.equal(count(f, 'terminal'), 0)
+  // The transaction rolled back completely, so the same fence can retry and commit once.
+  f.store.complete(a, 'completed', undefined, cost)
+  assert.equal(f.store.get(run.id).state, 'completed')
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs').get()!.n, 1)
+  assert.equal(count(f, 'cost'), 1)
+})
+
+test('complete reuses cost idempotency and a changed observation refuses the terminal transition', (t) => {
+  const f = runFixture(); t.after(f.close)
+  const run = f.store.create({ id: 'lead' }); const a = f.store.start(run.id)
+  const cost = { key: 'terminal', inputTokens: 11, outputTokens: 5, costMicrounits: null, currency: 'unknown' as const }
+  f.store.recordCost(a, cost)
+  f.store.complete(a, 'completed', undefined, cost)
+  assert.equal(f.store.get(run.id).state, 'completed')
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs').get()!.n, 1)
+  assert.equal(count(f, 'cost'), 1)
+
+  const g = runFixture(); t.after(g.close)
+  const other = g.store.create({ id: 'lead' }); const b = g.store.start(other.id)
+  g.store.recordCost(b, cost)
+  assert.throws(() => g.store.complete(b, 'completed', undefined, { ...cost, outputTokens: 6 }), code('idempotency_conflict'))
+  assert.equal(g.store.get(other.id).state, 'working')
+  assert.equal(g.db.prepare('SELECT COUNT(*) AS n FROM run_costs').get()!.n, 1)
+  assert.deepEqual(g.store.costs(other.id), [{ currency: 'unknown', inputTokens: 11, outputTokens: 5, costMicrounits: null }])
+  assert.equal(count(g, 'terminal'), 0)
+})
+
+test('complete validates a cost observation before opening its transaction', (t) => {
+  const begins: string[] = []
+  const f = runFixture(':memory:', { fault: (operation, point) => { if (point === 'before_begin') begins.push(operation) } })
+  t.after(f.close)
+  const run = f.store.create({ id: 'lead' }); const a = f.store.start(run.id)
+  begins.length = 0
+  assert.throws(() => f.store.complete(a, 'completed', undefined,
+    { key: 'bad', inputTokens: -1, outputTokens: 1, costMicrounits: null, currency: 'unknown' }), code('invalid_input'))
+  assert.deepEqual(begins, [])
+  assert.equal(f.store.get(run.id).state, 'working')
+})
+
 test('readiness and refused trace writes roll back the entire delegation; no secret reaches run tables', (t) => {
   const f = runFixture(); t.after(f.close)
   const lead = f.store.create({ id: 'lead' }); const a = f.store.start(lead.id)

@@ -3,7 +3,7 @@ import { localInferenceJobSchema, remoteAttemptReceiptSchema, signedDispatchGran
   type LocalInferenceJob, type RemoteAttemptOffer, type RemoteAttemptReceipt, type SignedDispatchGrant,
   type DispatchRef, type DispatchState, type SignedDispatchEvent, type DispatchEvent } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
-import type { RunStore } from '../runs/store.ts'
+import type { CostInput, RunStore } from '../runs/store.ts'
 import type { Attempt, HomeFence, Synchronous } from '../runs/types.ts'
 import type { Connections } from '../connections/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
@@ -153,7 +153,14 @@ export class AttemptDispatch {
     }
     this.actor(row, a => {
       if (e.event.kind === 'started') this.runs.modelStarted(a, record)
-      else this.runs.complete(a, e.event.outcome, record)
+      else {
+        const inputTokens = e.event.inputTokens, outputTokens = e.event.outputTokens
+        const cost: CostInput | undefined = inputTokens !== null && outputTokens !== null &&
+          Number.isSafeInteger(inputTokens) && Number.isSafeInteger(outputTokens)
+          ? { key: `remote-dispatch:${e.ref.id}`, inputTokens, outputTokens, costMicrounits: null, currency: 'unknown' }
+          : undefined
+        this.runs.complete(a, e.event.outcome, record, cost)
+      }
     })
   }
   private ref(grant: SignedDispatchGrant): DispatchRef { return { id: grant.grant.id, homeNodeId: grant.grant.offer.homeNodeId, executorNodeId: this.node } }
