@@ -73,6 +73,7 @@ const WORD_TOKEN = /[\p{L}\p{N}\p{M}]+(?:[-'][\p{L}\p{N}\p{M}]+)*/gu
 
 const CYRILLIC_SUFFIX = /^[\p{Script=Cyrillic}\p{M}]+$/u
 const CYRILLIC_LETTER = /\p{Script=Cyrillic}/u
+const LATIN_LETTER = /\p{Script=Latin}/u
 
 /**
  * Normalise text for word-error scoring.
@@ -210,6 +211,8 @@ function compileGlossaryTerms(glossaryTerms: string[]): CompiledTerm[] {
 
 function termTokenMatches(token: string, termToken: string): boolean {
   if (token === termToken) return true
+  // D-157 inflection applies to Latin canonicals only; a Cyrillic term stays an exact match.
+  if (!LATIN_LETTER.test(termToken) || CYRILLIC_LETTER.test(termToken)) return false
   const prefix = `${termToken}-`
   if (!token.startsWith(prefix)) return false
   const ending = token.slice(prefix.length)
@@ -424,4 +427,98 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
     origin,
     itemIds,
   }
+}
+
+export interface EvalComparison {
+  termF1DeltaPoints: number | null
+  uWerDeltaPoints: number | null
+  v1Gate: { evaluated: boolean; reason: string; met?: boolean }
+  v2Apply: { allowed: boolean; reason: string }
+}
+
+function pointsDelta(candidate: number | null, baseline: number | null): number | null {
+  if (candidate === null || baseline === null) return null
+  const delta = (candidate - baseline) * 100
+  if (!Number.isFinite(delta)) return null
+  // Rounding keeps inclusive boundary checks stable against binary floating-point noise.
+  const rounded = Math.round(delta * 1e9) / 1e9
+  return rounded === 0 ? 0 : rounded
+}
+
+function sameItemIds(baseline: readonly string[], candidate: readonly string[]): boolean {
+  if (!Array.isArray(baseline) || !Array.isArray(candidate)) return false
+  if (baseline.length !== candidate.length) return false
+  for (let index = 0; index < baseline.length; index += 1) {
+    if (baseline[index] !== candidate[index]) return false
+  }
+  return true
+}
+
+/**
+ * Gate evidence is evaluated only on a non-empty, matching set of owner recordings. Precedence:
+ * empty, item mismatch, mixed origin, synthetic origin. On evaluation, the reason is
+ * `owner_recordings`; refusal reasons are exactly `empty`, `item_mismatch`, `mixed_origin` and
+ * `synthetic_eval`.
+ */
+function evidenceReason(baseline: EvalScore, candidate: EvalScore): string | null {
+  const baselineIds = baseline.itemIds
+  const candidateIds = candidate.itemIds
+  if (
+    baseline.origin === 'empty' ||
+    candidate.origin === 'empty' ||
+    !Array.isArray(baselineIds) ||
+    !Array.isArray(candidateIds) ||
+    baselineIds.length === 0 ||
+    candidateIds.length === 0
+  ) {
+    return 'empty'
+  }
+  if (!sameItemIds(baselineIds, candidateIds)) return 'item_mismatch'
+  if (baseline.origin === 'mixed' || candidate.origin === 'mixed') return 'mixed_origin'
+  if (baseline.origin !== 'owner_recording' || candidate.origin !== 'owner_recording') {
+    return 'synthetic_eval'
+  }
+  return null
+}
+
+/**
+ * Compare a candidate configuration with a baseline on the same eval set.
+ *
+ * Deltas are percentage points. The V1 gate is met at term-F1 delta >= 10 and U-WER delta <= 1,
+ * both inclusive. The V2 pre-apply gate is weaker: term F1 may stay flat but not drop, and U-WER
+ * may rise by at most 1 point. Both gates require owner recordings with identical item ids;
+ * synthetic evidence can never authorise auto-apply.
+ */
+export function compareEval(baseline: EvalScore, candidate: EvalScore): EvalComparison {
+  const termF1DeltaPoints = pointsDelta(candidate.termF1, baseline.termF1)
+  const uWerDeltaPoints = pointsDelta(candidate.uWer, baseline.uWer)
+  const refusal = evidenceReason(baseline, candidate)
+
+  const v1Gate: EvalComparison['v1Gate'] =
+    refusal === null
+      ? {
+          evaluated: true,
+          reason: 'owner_recordings',
+          met:
+            termF1DeltaPoints !== null &&
+            uWerDeltaPoints !== null &&
+            termF1DeltaPoints >= 10 &&
+            uWerDeltaPoints <= 1,
+        }
+      : { evaluated: false, reason: refusal }
+
+  let v2Apply: EvalComparison['v2Apply']
+  if (refusal !== null) {
+    v2Apply = { allowed: false, reason: refusal }
+  } else if (termF1DeltaPoints === null || uWerDeltaPoints === null) {
+    v2Apply = { allowed: false, reason: 'missing_metrics' }
+  } else if (termF1DeltaPoints < 0) {
+    v2Apply = { allowed: false, reason: 'term_f1_drop' }
+  } else if (uWerDeltaPoints > 1) {
+    v2Apply = { allowed: false, reason: 'u_wer_rise' }
+  } else {
+    v2Apply = { allowed: true, reason: 'within_bounds' }
+  }
+
+  return { termF1DeltaPoints, uWerDeltaPoints, v1Gate, v2Apply }
 }
