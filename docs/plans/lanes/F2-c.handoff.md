@@ -1,55 +1,60 @@
 # F2-c — remote attempt cost ledger handoff
 
-**Status:** blocked on an R1 transaction-aware cost seam · **Updated:** 2026-10-22 ·
+**Status:** completed · **Updated:** 2026-10-22 ·
 **Branch:** `codex/f2c-remote-cost-ledger` · **Base:** `a64d7d1b` (main)
 
-## Finding
+## Result
 
-The requested atomic recording cannot be implemented inside `dispatch.ts` with the current R1
-API. `RunStore.recordCost()` opens its own transaction: `tx()` unconditionally executes
-`BEGIN IMMEDIATE` (`store.ts:174-204`) and `recordCost` calls `tx('cost')`
-(`store.ts:760-778`). The only point before `complete()` ends the fence is its receipt callback
-(`store.ts:518-531`: `fenced` → `syncCallback(receipt)` → `terminal`). Calling `recordCost`
-there throws SQLite `cannot start a transaction within a transaction` and rolls the ingest
-back. Calling it before `complete()` commits a separate transaction, so a failed completion
-leaves the cost row; calling it after `complete()` fails `fenced()` with `stale_lease` because
-`terminal()` has set the attempt to `completed`/`canceled` and released its lease
-(`store.ts:301-315`, `532-548`).
+Remote terminal token usage now lands in the child run's R1 cost ledger atomically with the
+terminal receipt and completion. The lead (parent) run's totals are unchanged.
 
-Temporary probes (run, then removed):
+R1 seam (`packages/server/src/runs/store.ts`, integrator-authorized shared edit; no schema or
+migration change):
 
-- `complete(a, 'completed', () => recordCost(a, …))` → nested-transaction error; run stayed
-  `working`, zero cost rows.
-- `recordCost` before `complete` → one cost row; after `complete` → `stale_lease`.
-- `recordCost`, then a completion that fails `stale_lease` → the cost row remains, proving the
-  separate-transaction result is not atomic.
+- `CostInput` is exported. Validation moved to `validateCostInput(input)`; the prior-row
+  idempotency check, `run_costs` insert and `cost` event moved to `insertCost(attempt, input)`,
+  which assumes an open transaction and an already checked fence.
+- `recordCost` is now `validateCostInput` → `tx('cost')` → `fenced` → `insertCost`; observable
+  behaviour is unchanged.
+- `complete(attempt, outcome, receipt?, cost?)` validates `cost` before `BEGIN IMMEDIATE`.
+  Inside the existing `tx('complete')`, after `fenced` and `syncCallback(receipt)`, it calls
+  `insertCost` and then `terminal`. Existing callers pass no cost.
 
-## Required R1 seam (not changed here)
+F2 use (`packages/server/src/remote-attempts/dispatch.ts`, `ingest()`): a `terminal` event with
+both token counts non-null integers passes a `remote-dispatch:<offer id>` observation with
+`costMicrounits: null` and currency `unknown` to `runs.complete`. Null usage passes no cost and
+still completes. Replay takes the existing `prior` path or R1's idempotency key; neither adds a
+second row.
 
-The task forbids a store change and R1-semantic change, so this lane stops. Recovery:
+## Round 1 blocker
 
-1. Add `recordCostWithin(db, attempt, input)` in R1 with today's validation, idempotency check,
-   `run_costs` insert and K2 `cost` event; `recordCost` wraps it in `tx('cost')`.
-2. In `ingest`, give `complete` a receipt callback that runs `record(db)` then
-   `recordCostWithin(db, a, { key: 'remote-dispatch:' + e.ref.id, inputTokens, outputTokens,
-   costMicrounits: null, currency: 'unknown' })` when both counts are non-null integers.
-3. Add R1 rollback/idempotency tests, then the five F2-c cases from the task.
-   Alternative (broader): make `tx` savepoint-aware with the same regression coverage.
+`recordCost` opened its own `BEGIN IMMEDIATE`, so calling it from `complete()`'s receipt
+callback raised "cannot start a transaction within a transaction"; before completion it left a
+cost row if completion failed, and after completion the released lease failed `fenced()` with
+`stale_lease`. The integrator authorized exactly the seam above; no store semantics changed for
+current callers.
 
-## Commands and results
+## Tests
 
-- `nice -n 10 node --test packages/server/test/remote-dispatch.test.ts
-  packages/server/test/remote-attempts.test.ts` → tests 48, pass 48, fail 0, skipped 0.
+New (9): `durable-runs.test.ts` adds complete-with-cost (exact one row, one event), throwing
+receipt rollback, idempotent replay vs changed-observation conflict, and validation before the
+transaction. New `remote-attempt-costs.test.ts` adds the five F2 cases: completed usage (child
+totals include it, parent totals exact-equal before/after), null usage, terminal replay with one
+row, cost-insert failure rolling back receipt + cost + completion, and canceled/failed usage.
+
+Commands:
+
+- `nice -n 10 node --test packages/server/test/durable-runs.test.ts packages/server/test/durable-run-review.test.ts packages/server/test/remote-attempt-costs.test.ts packages/server/test/remote-dispatch.test.ts packages/server/test/remote-attempts.test.ts` → tests 97, pass 97, fail 0, skipped 0.
 - `nice -n 10 npx tsc --noEmit -p packages/server` → exit 0.
 - `npx markdownlint-cli2 packages/server/src/remote-attempts/README.md
-  docs/plans/lanes/F2-c.handoff.md` → 0 errors.
+  packages/server/src/runs/README.md docs/plans/lanes/F2-c.handoff.md` → 0 errors.
 
-**New:** 0; tests 1–5 are blocked with the implementation. **Regression envelope:** the 48
-existing F2 dispatch/offer cases above, zero skips. No production or test behavior changed.
+**New:** 9. **Regression envelope:** 88 pre-existing cases in the command above, zero skips.
+`durable-run-crash.test.ts` was not run (it SIGKILLs child processes; the integrator runs it).
 
 ## Residuals
 
-Unchanged: monetary pricing for paid remotes (local compute stays `costMicrounits: null`,
-currency `unknown`, never zero); aggregation views across child runs and the MS1 assertion that
-the lead's counter does not change; toolful R2 transport. F2-b's “R1 cost-ledger aggregation”
-residual stays open until the seam above lands.
+Monetary pricing for paid remotes stays out of scope (local compute remains
+`costMicrounits: null`, currency `unknown`, never zero). Aggregation views across child runs,
+the MS1 assertion over a real wake, and toolful R2 transport remain open; F2-b's “R1
+cost-ledger aggregation” residual is closed for terminal usage.
