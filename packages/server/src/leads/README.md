@@ -72,9 +72,11 @@ through `RelayService.read` only.
 ## Cost and billing (D-142)
 
 The lead's usage comes from ACP `PromptResponse.usage` and `usage_update.cost`, which are cumulative per ACP
-session. The service records the delta per attempt under `lead-turn:<ordinal>:<hash of the ACP session id>`;
-the baseline is what the cost ledger already holds for that agent session, so there is no second record to
-fall out of step and a kill can neither bill a turn twice nor lose usage for good (the next turn catches up).
+session. The service records the delta per attempt under `lead-turn:<ordinal>:<hash of ACP session id and
+binding>:<cumulative values it saw>`; the baseline is the most recent entry of the same session in the cost
+ledger, so there is no second record to fall out of step. Within one agent session a kill can neither bill a
+turn twice nor lose usage for good (the next turn catches up), and a counter reset restarts the baseline.
+Usage a killed turn never recorded is unobserved if the next turn runs in a different agent session.
 Tokens the agent did not report are not invented: a `usage_unobserved` note is written instead. Money is
 recorded only for a known currency and a safe integer, otherwise `unknown`; a failing cost record is noted
 and never blocks the turn. Each record carries the lead connection's `billing` fact (subscription, extra
@@ -94,10 +96,13 @@ reports, including a turn the node itself lost to a crash, are unobserved.
 | resolution, wake delivered | R1 outbox | R1 redelivers; the stored packet is reused |
 | after the acknowledgement | lead `interrupted` | never replayed; `resume` is explicit |
 
-Shutting the service down mid-turn changes no run state: no fallback is started and no failure is recorded;
-the next start completes a persisted intent or redelivers the wake. The pump reads only delegations that
+Shutting the service down mid-turn changes no run state: no fallback is started and no failure is recorded.
+The attempt is left to R1's restart reconciliation: the next start completes a persisted intent and redelivers
+an unacknowledged wake; an acknowledged turn becomes `interrupted` and needs `resume`. A person's `resume`
+abandons any delegation intent the lead had only begun to request. The pump reads only delegations that
 still need it (an unfinished intent or child start of a live lead, a canceled child to stop, a child that lost
-its executor).
+its executor, with at most `childStartLimit` attempts before a first model call, and never beside a still-unwinding
+executor of this process).
 
 A killed node can leave K5's admission holder for that account occupied (K5 keeps it until an audited break
 exists) and an orphaned detached agent group; neither is hidden by this service. Child executor stop is

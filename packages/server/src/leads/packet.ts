@@ -62,6 +62,7 @@ export function buildWakePacket(input: PacketInput, scrubber: EgressScrubber, ma
     truncated,
   }
   if ((report?.openQuestions.length ?? 0) > 10) truncated.push(`openQuestions:+${report!.openQuestions.length - 10}`)
+  if (input.child.costs.length > 8) truncated.push(`costs:+${input.child.costs.length - 8}`)
   const fits = () => tokensOf(renderWakePacket(scrubber.scrub(draft))) <= maxTokens
   const steps: [string, () => void][] = [
     ['gates.output:120', () => { for (const gate of draft.gates) gate.output = clip(gate.output, 120) }],

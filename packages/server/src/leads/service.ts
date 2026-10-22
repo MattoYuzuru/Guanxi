@@ -31,6 +31,8 @@ export interface LeadServiceOptions {
   packetTokens?: number
   retainMs?: number
   retryMs?: (failures: number) => number
+  /** Attempts a child may take before its first model call; real work is never replayed regardless. */
+  childStartLimit?: number
   cancelGraceMs?: number
   /** Every durable boundary of the lead flow; crash tests kill the process at each. */
   fault?: (point: string) => void
@@ -141,11 +143,19 @@ export class LeadService {
     leadInvariant(session && !this.live.has(runId), 'lead_not_found')
     const state = this.runs.get(runId).state
     leadInvariant(state === 'input_required' || state === 'interrupted', 'invalid_transition')
+    // A person's decision supersedes any delegation the lead had only begun to request.
+    this.abandonIntents(runId)
     const attempt = state === 'input_required' ? this.runs.decide(runId) : this.runs.start(runId)
     return this.spawn(this.runTurn({ attempt, kind: 'decision', wakeSeq: null, prompt, resume: this.loadable(session),
       seededPrompt: `${this.seedPrefix(session)}\n\n${prompt}` }))
   }
   private agents() { return this.o.agents }
+  /** An intent that did not become a delegation must never be completed later without the lead asking again. */
+  private abandonIntents(runId: string): void {
+    const open = this.store.delegations(runId).filter(d => d.state === 'intent')
+    if (!open.length) return
+    this.runs.homeFence().transaction('lead.abandon', db => { for (const d of open) this.store.setDelegationState(db, runId, d.key, 'abandoned') })
+  }
   /** The saved ACP session, only while the agent advertised `loadSession` and the lead binding is unchanged. */
   private loadable(session: LeadSession): { acpSessionId: string } | null {
     if (!session.acp_session_id || session.load_session !== 1) return null
@@ -197,7 +207,7 @@ export class LeadService {
       this.failure = code(error)
       // An unexpected failure must not leave a live attempt and lease that nothing drives: ask a person.
       if (!['stale_lease', 'closed', 'writer_busy', 'run_not_found'].includes(code(error))) {
-        try { this.runs.inputRequired(attempt); this.notice({ kind: 'lead_failed', runId, wakeSeq: turn.wakeSeq, code: code(error) }) } catch { /* fenced out or finished */ }
+        try { this.abandonIntents(runId); this.runs.inputRequired(attempt); this.notice({ kind: 'lead_failed', runId, wakeSeq: turn.wakeSeq, code: code(error) }) } catch { /* fenced out or finished */ }
       }
       return { runId, wakeSeq: turn.wakeSeq, outcome: 'failed', code: code(error) }
     }).finally(() => { this.live.delete(runId) })
@@ -222,8 +232,9 @@ export class LeadService {
   private markActivity(turn: Turn): void {
     const observed = turn.observed!
     if (observed.activity) return
-    observed.activity = true
     this.onActivity(turn)
+    // Only after the acknowledgement committed: a failed one must be retried by `endTurn`, not skipped.
+    observed.activity = true
   }
   private onActivity(turn: Turn): void {
     this.fault('turn:before_ack')
@@ -249,6 +260,7 @@ export class LeadService {
     const key = `lead:${turn.attempt.id}`
     // The call proves the model ran even if the agent emitted no earlier update: acknowledge the wake now.
     try { this.markActivity(turn) } catch (error) { return refuse(code(error)) }
+    this.fault('delegate:acked')
     try {
       this.runs.mutate(turn.attempt, (db, emit) => {
         this.store.insertIntent(db, { lead_run_id: runId, key, brief: canonical(brief), deadline,
@@ -318,16 +330,21 @@ export class LeadService {
       this.runs.mutate(attempt, (_db, emit) => this.note(emit, { action: 'usage_unobserved', attempt: attempt.ordinal }))
       return
     }
-    // ACP reports cumulative session totals. The baseline is what this ledger already holds for the SAME agent
-    // session, so there is no second record to keep in step with the cost entry: a kill cannot double-bill.
-    const suffix = `:${createHash('sha256').update(acp.acpSessionId).digest('hex').slice(0, 16)}`
-    const key = `lead-turn:${attempt.ordinal}${suffix}`
+    // ACP reports cumulative session totals. The ledger entry key carries the cumulative values it observed, and
+    // the baseline is the most recent entry of the SAME agent session and binding, so there is no second record to
+    // fall out of step: a kill can neither bill a turn twice nor lose usage for good within a session, a counter
+    // reset restarts the baseline at the observed value, and a retry of the same attempt is idempotent.
+    const binding = digestOf(this.agents().resolve(session.owner_account_id, session.project_id, 'lead', this.rolesOf(session)).binding)
+    const scope = createHash('sha256').update(canonical([acp.acpSessionId, binding])).digest('hex').slice(0, 16)
     const micro = usage.cost && CURRENCIES.has(usage.cost.currency) ? Math.round(usage.cost.amount * 1_000_000) : null
     const cost = micro !== null && Number.isSafeInteger(micro) ? micro : null
     const currency = cost === null ? 'unknown' : usage.cost!.currency as 'USD' | 'EUR' | 'RUB'
-    const prior = this.runs.costEntries(attempt.run_id).filter(entry => entry.key.startsWith('lead-turn:') && entry.key.endsWith(suffix) && entry.key !== key)
-    const base = { input: 0, output: 0, cost: 0 }
-    for (const entry of prior) { base.input += entry.inputTokens; base.output += entry.outputTokens; if (entry.currency === currency) base.cost += entry.costMicrounits ?? 0 }
+    const key = `lead-turn:${attempt.ordinal}:${scope}:${usage.inputTokens}-${usage.outputTokens}-${cost ?? 'u'}-${currency}`
+    const previous = this.runs.costEntries(attempt.run_id)
+      .map(entry => ({ entry, parsed: /^lead-turn:(\d+):([0-9a-f]{16}):(\d+)-(\d+)-(\d+|u)-(USD|EUR|RUB|unknown)$/.exec(entry.key) }))
+      .filter(item => item.parsed && item.parsed[2] === scope && Number(item.parsed[1]) < attempt.ordinal)
+      .sort((a, b) => Number(b.parsed![1]) - Number(a.parsed![1]))[0]?.parsed
+    const base = previous ? { input: Number(previous[3]), output: Number(previous[4]), cost: previous[5] === 'u' || previous[6] !== currency ? 0 : Number(previous[5]) } : { input: 0, output: 0, cost: 0 }
     // A smaller number than the baseline means the agent's counter restarted.
     const delta = (now: number, before: number) => now >= before ? now - before : now
     this.runs.recordCost(attempt, { key, inputTokens: delta(usage.inputTokens, base.input), outputTokens: delta(usage.outputTokens, base.output),
@@ -359,7 +376,11 @@ export class LeadService {
     const previous = this.runs.attempts(childId)
     // R1 `start` is the exactly-once point. A child that began a model call is never replayed: it
     // stays `interrupted` and the lead is woken by the deadline, with a notice to the person.
-    const restartable = child.state === 'submitted' || (child.state === 'interrupted' && previous.every(a => a.first_model_at === null))
+    const limit = this.o.childStartLimit ?? 3
+    const restartable = child.state === 'submitted' || (child.state === 'interrupted' && previous.every(a => a.first_model_at === null) && previous.length < limit)
+    // An executor of this process that outlived its lease is still unwinding; its fenced calls fail and its
+    // handle settles. Starting another beside it would run the host's preparation twice.
+    if (restartable && child.state === 'interrupted' && this.children.has(childId)) return
     if (!restartable) {
       if (row.state === 'delegated') setState()
       if (child.state === 'interrupted' && !this.interruptedNoticed.has(childId)) {
@@ -530,7 +551,9 @@ export class LeadService {
     this.spawn((async () => { try { await body() } catch (error) { this.failure = code(error) } finally { this.busy.delete(key) } })())
   }
   private scanDelegations(): void {
-    for (const d of this.store.openDelegations()) {
+    const open = this.store.openDelegations()
+    for (const id of this.interruptedNoticed) if (!open.some(d => d.child_run_id === id)) this.interruptedNoticed.delete(id)
+    for (const d of open) {
       if (d.state === 'intent' && !this.live.has(d.lead_run_id)) this.once(`intent:${d.lead_run_id}:${d.key}`, () => this.recoverIntent(d))
       else if (d.state === 'delegated') this.once(`scan:child:${d.lead_run_id}:${d.key}`, () => this.ensureChild(d.lead_run_id, d.key))
       else if (d.state === 'child_started' && d.child_run_id) {

@@ -58,16 +58,18 @@ export class LeadToolServer {
   private closed = false
   private readonly grants = new Map<string, Grant>()
   private readonly maxBodyBytes: number
-  constructor(options: { maxBodyBytes?: number } = {}) { this.maxBodyBytes = options.maxBodyBytes ?? 1_048_576 }
+  private readonly wantedPort: number
+  constructor(options: { maxBodyBytes?: number; port?: number } = {}) { this.maxBodyBytes = options.maxBodyBytes ?? 1_048_576; this.wantedPort = options.port ?? 0 }
 
   /** Starts listening on first use and returns the endpoint URL. */
   url(): Promise<string> {
     if (this.closed) return Promise.reject(new Error('lead_tools_closed'))
     this.starting ??= new Promise<string>((resolve, reject) => {
       const server = createServer((request, response) => { void this.handle(request, response) })
-      server.once('error', error => { this.starting = null; reject(error) })
-      server.listen(0, '127.0.0.1', () => {
-        server.off('error', reject)
+      const failed = (error: Error) => { this.starting = null; reject(error) }
+      server.once('error', failed)
+      server.listen(this.wantedPort, '127.0.0.1', () => {
+        server.off('error', failed)
         this.port = (server.address() as AddressInfo).port
         this.server = server
         resolve(`http://127.0.0.1:${this.port}${ENDPOINT}`)

@@ -17,7 +17,7 @@ CREATE TABLE lead_sessions (
 CREATE TABLE lead_delegations (
   lead_run_id TEXT NOT NULL REFERENCES lead_sessions(run_id), key TEXT NOT NULL, brief TEXT NOT NULL,
   deadline INTEGER NOT NULL, on_deadline TEXT NOT NULL, on_cancel TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('intent','delegated','child_started','child_stop_requested')),
+  state TEXT NOT NULL CHECK (state IN ('intent','delegated','child_started','child_stop_requested','abandoned')),
   child_run_id TEXT REFERENCES durable_runs(id), PRIMARY KEY (lead_run_id, key));
 CREATE TABLE lead_wakes (
   run_id TEXT NOT NULL REFERENCES lead_sessions(run_id), wake_seq INTEGER NOT NULL, packet TEXT NOT NULL,
@@ -35,7 +35,7 @@ export interface LeadSession {
   task: string; handoff: string; acp_session_id: string | null; load_session: number | null
   failures: number; retry_at: number; turns: number
 }
-export type DelegationState = 'intent' | 'delegated' | 'child_started' | 'child_stop_requested'
+export type DelegationState = 'intent' | 'delegated' | 'child_started' | 'child_stop_requested' | 'abandoned'
 export interface LeadDelegation {
   lead_run_id: string; key: string; brief: string; deadline: number; on_deadline: 'wrap_up' | 'detach'
   on_cancel: 'cancel' | 'detach'; state: DelegationState; child_run_id: string | null
@@ -71,7 +71,7 @@ export class LeadStore {
     return this.db.prepare(`SELECT d.* FROM lead_delegations d
       JOIN durable_runs l ON l.id = d.lead_run_id LEFT JOIN durable_runs c ON c.id = d.child_run_id
       WHERE (d.state IN ('intent','delegated') AND l.state NOT IN ('completed','failed','canceled','rejected'))
-         OR (d.state = 'child_started' AND c.state IN ('canceled','interrupted'))
+         OR (d.state = 'child_started' AND (c.state = 'canceled' OR (c.state = 'interrupted' AND l.state NOT IN ('completed','failed','canceled','rejected'))))
       ORDER BY d.lead_run_id, d.key`).all() as unknown as LeadDelegation[]
   }
   delegationOfChild(childRunId: string): LeadDelegation | undefined {
