@@ -1,7 +1,7 @@
 # R2 trusted public start — partial hand-off
 
-**Status:** implemented partial candidate, awaiting independent verification and integration.
-**Date:** 2026-10-22. **Source:** `b3a1d9d`, base `6da2058`, branch
+**Status:** implemented partial candidate; initial independent findings fixed, re-review and
+integration pending. **Date:** 2026-10-22. **Initial source:** `b3a1d9d`, base `6da2058`, branch
 `codex/r2-trusted-start`, worktree `/Users/yuzuru/Projects/Guanxi-lanes/r2-trusted-start`.
 No main/status edits, pushes, remote hosts, live models, paid calls or owner workspaces were used.
 
@@ -41,7 +41,7 @@ POST. Existing B1 single-attempt and K4 quota/response/pending-abort code is ret
 compatible with the future F2 trusted authorization callback; F2 is not merged into this base.
 The optional R3 cascade remains a separate trusted integration seam and is never public JSON.
 
-## Validation and assertions
+## Initial validation and assertions
 
 All checks used local Node26. Actual K4 fixtures used the existing local Colima endpoint and
 cached execution image, checkout-local `.lane-data` synthetic git trees, and the shared
@@ -71,6 +71,32 @@ The agent-dev receipt cannot be reused as certified source evidence because the 
 direct local observation with an unchanged source fingerprint during execution. Commit and
 later integration checks require their own evidence. No full global/browser/Linux gate is claimed.
 
+## Independent findings and separate repair
+
+Independent review of `93ded9e` by GPT `ms1_dependencies` confirmed three P2 classes through
+four external reproductions, recorded outside checkout in
+`reviews/codex-r2-trusted-start-20261022.md`: R1 home/cancel revocation during version preflight
+could admit one POST, preparing stop swallowed a cleanup failure, and late secret registration
+could reach the original persisted policy. These are distinct from the separate client
+transport-settlement prerequisite below.
+
+Separate repair **`07dbc2e`** adds captured home/attempt guards before and after asynchronous
+runtime authorization and synchronously at final prepared validation after exact counting,
+before fetch. It preserves `failed/cleanup_unconfirmed` for a preparing cancellation whose
+owned allocation cannot acknowledge cleanup. Inside `createStarted`, fresh scrub equivalence
+of the entire immutable policy and runtime/meter evidence refuses withheld content before
+extension DDL, relay initialization or the mapping insert; the surrounding R1 transaction
+rolls back its earlier session/run/attempt writes.
+
+The four exact repository regressions first failed **0/4** at pre-fix source
+(`check-ndjipzna`), then passed **4/4** with the minimal repair (`check-imhojhoj`). Three more
+assertions cover both home/cancel revocation during the post-preflight authorization await and
+late withholding in runtime/meter evidence. The final scoped check passes **184/184**, zero
+fail/canceled/skipped, **33 new / 151 inherited**, `check-nvr1q08r`; source unchanged during
+that pre-commit check. Contract/server/CLI typechecks and diff-whitespace checks pass after
+the repair. Source-certificate limitations above still apply. The repair awaits separate
+independent re-review; neither initial review nor these author checks is recorded as closure.
+
 ## Integration prerequisites and remaining gates
 
 The independent R3 author confirmed an existing Ollama POST ownership gap: the observer's
@@ -82,7 +108,7 @@ preflight cancellation, and verify actual POST/body acknowledgement before gover
 This means transport cleanup acknowledgement only; it does not prove backend model computation
 stopped. Root coordinates the fix and independent review.
 
-Next: independent GPT review of the pinned partial bridge; fix findings in separate commits;
+Next: independent GPT re-review of the separate repaired pin;
 merge/review the separate client settlement repair and current main/R3/F2 seams; repeat targeted
 integration evidence under the shared lock; root owns full candidate gates and central status.
 Stock exact rendered tokenization, trusted production workspace allocation, operational quality/
