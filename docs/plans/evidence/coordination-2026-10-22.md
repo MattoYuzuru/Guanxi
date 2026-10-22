@@ -315,7 +315,6 @@ and phone browser QA (`check-138h8k13`); its original Claude publication is unch
 snapshot predates this last merge and keeps explicit source/candidate dates. MS1's real
 second-node six-hour delegation/hibernation observations remain unearned in local-only scope.
 
-
 ## Final privacy closure and refreshed candidate boundaries
 
 This is a documentation-only coordination slice on main after `a9b54e0`; executable main is
