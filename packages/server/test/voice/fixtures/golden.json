@@ -162,7 +162,7 @@
   {
     "input": "ворк три",
     "expected": "worktree",
-    "note": "two-token variant outranks the one-token work variant"
+    "note": "explicit two-token variant outranks the one-token work variant"
   },
   {
     "input": "дип сик помогает",
@@ -288,6 +288,21 @@
     "input": "прям сейчас",
     "expected": "прям сейчас",
     "note": "PR's folded Latin canonical is not a Cyrillic inflection stem"
+  },
+  {
+    "input": "Федор а он ушёл",
+    "expected": "Федор а он ушёл",
+    "note": "a one-word form does not span two tokens"
+  },
+  {
+    "input": "о лама сказал",
+    "expected": "о лама сказал",
+    "note": "a one-word form does not span two tokens"
+  },
+  {
+    "input": "со нет",
+    "expected": "со нет",
+    "note": "a one-word form does not span two tokens"
   },
   {
     "input": "хонO",

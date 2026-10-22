@@ -49,6 +49,7 @@ interface CompiledForm {
   readonly entryIndex: number
   readonly key: string
   readonly raw: string
+  readonly wordCount: number
   readonly caseSensitive: boolean
 }
 
@@ -247,6 +248,7 @@ export function compileGlossary(entries: GlossaryEntry[]): CompiledGlossary {
         entryIndex,
         key: form.key,
         raw: form.raw,
+        wordCount: form.raw.split(/\s+/u).length,
         caseSensitive,
       }
       const bucket = byKey.get(form.key)
@@ -319,10 +321,12 @@ function directMatch(
   matcher: CompiledMatcher,
   key: string,
   raw: string,
+  tokenCount: number,
 ): { entryIndex: number; replacement: string } | null {
   const forms = matcher.byKey.get(key)
   if (forms === undefined) return null
   for (const form of forms) {
+    if (form.wordCount !== tokenCount) continue
     if (form.caseSensitive && form.raw !== raw) continue
     const entry = matcher.entries[form.entryIndex]
     if (entry === undefined) continue
@@ -357,7 +361,8 @@ function inflectionMatch(
     key += foldKey(stem)
     const forms = matcher.inflectByKey.get(key)
     if (forms === undefined || forms.length === 0) continue
-    const form = forms[0]!
+    const form = forms.find((candidate) => candidate.wordCount === tokenCount)
+    if (form === undefined) continue
     const entry = matcher.entries[form.entryIndex]
     if (entry === undefined) continue
     const originalEnding = lastRaw.slice(lastRaw.length - ending.length)
@@ -385,7 +390,7 @@ function findMatch(
       key += tokens[index]!.key
     }
 
-    const direct = directMatch(matcher, key, raw)
+    const direct = directMatch(matcher, key, raw, tokenCount)
     if (direct !== null) return { ...direct, tokenCount }
 
     const inflected = inflectionMatch(matcher, tokens, from, tokenCount, text)

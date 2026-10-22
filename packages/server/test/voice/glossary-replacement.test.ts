@@ -25,7 +25,7 @@ const ENTRIES: GlossaryEntry[] = [
   {
     id: 'worktree',
     canonical: 'worktree',
-    variants: ['воркт три', 'вортри', 'ворктри'],
+    variants: ['воркт три', 'ворк три', 'вортри', 'ворктри'],
     language: 'en',
   },
   { id: 'deepseek', canonical: 'DeepSeek', variants: ['дипсик', 'дип сик'], language: 'en' },
