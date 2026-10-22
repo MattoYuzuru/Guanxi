@@ -293,3 +293,49 @@ test('readiness withdrawal between gateway return and retention yields no succes
     assert.equal(stored.n, 0)
   } finally { x.f.close() }
 })
+
+test('the K2 sink scrubs the full completion through the configured scrubber before its first append', async () => {
+  const x = fixture()
+  let scrubs = 0, appends = 0
+  const spy = {
+    register: (ref: Parameters<typeof x.f.scrubber.register>[0], value: string) => x.f.scrubber.register(ref, value),
+    unregister: (ref: Parameters<typeof x.f.scrubber.unregister>[0]) => x.f.scrubber.unregister(ref),
+    scrub: <T>(value: T): T => { scrubs++; return x.f.scrubber.scrub(value) },
+    expect: (source: string) => x.f.scrubber.expect(source),
+    ready: (source: string) => x.f.scrubber.ready(source),
+    isReady: () => x.f.scrubber.isReady(),
+    pendingSources: () => x.f.scrubber.pendingSources(),
+    whenReady: (signal?: AbortSignal) => x.f.scrubber.whenReady(signal),
+  }
+  const sink = createK2TrialRetention({ binding: x.binding, attempt: x.attempt!,
+    runs: { get: x.f.store.get.bind(x.f.store), renew: x.f.store.renew.bind(x.f.store),
+      append: (attempt, input, options) => { appends++; return x.f.store.append(attempt, input, options) } },
+    session: x.f.log, scrubber: spy, policy })
+  try {
+    await sink.retainAndProject('request-spy', result())
+    assert.equal(scrubs, 1)
+    assert.equal(appends, 5)
+  } finally { x.f.close() }
+})
+
+test('a bound is rechecked after K2 write-time scrubbing so a late secret cannot enlarge the retained public text', async () => {
+  const x = fixture()
+  const late = 'late-secret-value-abcdef'
+  const strict = { ...policy, maximumAssistantTextBytes: 30 }
+  let armed = false
+  const sink = createK2TrialRetention({ binding: x.binding, attempt: x.attempt!,
+    runs: { get: x.f.store.get.bind(x.f.store), renew: x.f.store.renew.bind(x.f.store),
+      append: (attempt, input, options) => {
+        if (!armed) { armed = true; x.f.scrubber.register('secret://fixture/late', late) }
+        return x.f.store.append(attempt, input, options)
+      } },
+    session: x.f.log, scrubber: x.f.scrubber, policy: strict })
+  try {
+    await assert.rejects(sink.retainAndProject('request-late', result({
+      content: [{ type: 'text', text: late }],
+    })), { code: 'retention_too_large' })
+    const events = retained(x.f, x.binding)
+    assert.equal(events.filter(event => event.type === 'assistant.message').length, 1)
+    assert.equal(JSON.stringify(events).includes(late), false)
+  } finally { x.f.close() }
+})

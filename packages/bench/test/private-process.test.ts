@@ -329,10 +329,10 @@ test('reaper refuses to kill or unlink a record whose live process identity does
       supervisorPid: process.pid, pgid, clientPid: null, clientExitCode: null,
       clientScript: x.policy.clientScript, startedAt: Date.now(),
     }), { mode: 0o600 })
+    const nearMiss = `${process.execPath} ${resolve('packages/bench/src/private-supervisor.mjs')}.bak ` +
+      `${x.policy.clientScript} ${recordPath} 150 ${trialBindingTag(x.binding)} ${nonceHash(x.binding)}`
     const result = await reapPrivateProcessRecord(x.binding, x.policy, {
-      observe: async pid => pid === process.pid
-        ? { pid, pgid, command: `${process.execPath} --test unrelated-fixture` }
-        : null,
+      observe: async pid => pid === process.pid ? { pid, pgid, command: nearMiss } : null,
     })
     assert.equal(result, 'cleanup_unconfirmed')
     assert.equal(existsSync(recordPath), true)
