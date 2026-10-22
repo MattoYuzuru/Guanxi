@@ -46,8 +46,8 @@ export const INSTALL_FAULT_POINTS = [
   'install:engine',
   'install:state-read',
   'install:peer',
-  'install:build-scripts',
   'install:trust',
+  'install:build-scripts',
   'install:expected-integrity',
   'install:staging-created',
   'install:copied',
@@ -1018,15 +1018,6 @@ export class PluginManager {
       }
       await this.fault('install:peer')
 
-      if (inspected.buildScripts.length > 0 && options.approveBuildScripts !== true) {
-        throw new PluginManagerError(
-          'build_scripts_unapproved',
-          `plugin "${manifest.id}" declares build scripts (${inspected.buildScripts.join(', ')}); approve them explicitly`,
-          { pluginId: manifest.id, buildScripts: inspected.buildScripts },
-        )
-      }
-      await this.fault('install:build-scripts')
-
       if (manifest.trust !== 'T1') {
         throw new PluginManagerError(
           'trust_tier_unsupported',
@@ -1035,6 +1026,15 @@ export class PluginManager {
         )
       }
       await this.fault('install:trust')
+
+      if (inspected.buildScripts.length > 0 && options.approveBuildScripts !== true) {
+        throw new PluginManagerError(
+          'build_scripts_unapproved',
+          `plugin "${manifest.id}" declares build scripts (${inspected.buildScripts.join(', ')}); approve them explicitly`,
+          { pluginId: manifest.id, buildScripts: inspected.buildScripts },
+        )
+      }
+      await this.fault('install:build-scripts')
 
       if (options.expectedIntegrity !== undefined && !sameIntegrity(options.expectedIntegrity, inspected.integrity)) {
         throw new PluginManagerError(

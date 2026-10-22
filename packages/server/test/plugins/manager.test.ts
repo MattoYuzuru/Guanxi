@@ -957,3 +957,15 @@ test('refuses to remove or replace a service an enabled plugin requires', async 
   await plugins.uninstall('guanxi.provider')
   assert.deepEqual(plugins.list().map(entry => entry.id), ['guanxi.consumer'])
 })
+
+test('checks trust before build-script approval', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'), {
+    trust: 'T0',
+    scripts: { postinstall: 'node build.js' },
+  })
+  const pluginsDir = join(base, 'plugins')
+  const error = await rejectsWithCode(manager(pluginsDir).install(source), 'trust_tier_unsupported')
+  assert.equal(error.details.pluginId, DEFAULT_ID)
+  assert.equal(await exists(pluginsDir), false)
+})
