@@ -108,11 +108,13 @@ export type PluginManagerErrorCode =
   | 'plugin_directory_exists'
   | 'version_exists'
   | 'plugins_busy'
+  | 'dependency_in_use'
   | 'invalid_arguments'
 
 export interface PluginManagerErrorDetails {
   readonly pluginId?: string
   readonly missing?: readonly string[]
+  readonly dependents?: readonly string[]
   readonly buildScripts?: readonly string[]
   readonly expected?: string
   readonly actual?: string
@@ -1060,6 +1062,12 @@ export class PluginManager {
         )
       }
 
+      if (previous) {
+        const previousProvides = await this.providesOf(previous)
+        const dropped = previousProvides.filter(name => !manifest.provides.includes(name))
+        this.assertDependencyInUse(state, manifest.id, dropped, `upgrade from ${previous.version}`)
+      }
+
       if (await pathExists(targetPath)) {
         throw new PluginManagerError(
           'plugin_directory_exists',
@@ -1183,6 +1191,7 @@ export class PluginManager {
       if (!entry) {
         throw new PluginManagerError('plugin_not_installed', `plugin "${id}" is not installed`, { pluginId: id })
       }
+      this.assertDependencyInUse(state, id, await this.providesOf(entry), 'uninstall')
       directory = join(this.pluginsDir, entry.directory)
       const nextPlugins = new Map(state.plugins)
       nextPlugins.delete(id)
@@ -1253,9 +1262,11 @@ export class PluginManager {
       const state = await this.readState()
       snapshot = state.snapshot
       await this.fault('set-enabled:state-read')
-      if (!state.plugins.has(id)) {
+      const entry = state.plugins.get(id)
+      if (!entry) {
         throw new PluginManagerError('plugin_not_installed', `plugin "${id}" is not installed`, { pluginId: id })
       }
+      if (!enabled) this.assertDependencyInUse(state, id, await this.providesOf(entry), 'disable')
       const next = new Set(state.enabled)
       if (enabled) next.add(id)
       else next.delete(id)
@@ -1392,6 +1403,38 @@ export class PluginManager {
       plugins: lock === null ? new Map() : parseLockFile(lock.toString('utf8'), this.lockPath),
       snapshot: { plugins, lock },
     }
+  }
+
+  /** The services an installed entry provides, reading its manifest for older locks. */
+  private async providesOf(entry: LockedPlugin): Promise<string[]> {
+    if (entry.providesKnown) return [...entry.provides]
+    try {
+      const path = join(this.pluginsDir, entry.directory, 'package.json')
+      const text = await readFile(path, 'utf8')
+      return [...readPackageManifest(parsePackageJson(text, path)).provides]
+    } catch {
+      return []
+    }
+  }
+
+  private assertDependencyInUse(
+    state: ManagerState,
+    providerId: string,
+    dropped: readonly string[],
+    action: string,
+  ): void {
+    if (dropped.length === 0) return
+    const names = new Set(dropped)
+    const dependents = [...state.plugins.entries()]
+      .filter(([id, entry]) => id !== providerId && state.enabled.has(id) && entry.requires.some(name => names.has(name)))
+      .map(([id]) => id)
+      .sort(compareIds)
+    if (dependents.length === 0) return
+    throw new PluginManagerError(
+      'dependency_in_use',
+      `plugin "${providerId}" cannot be changed by ${action}: enabled plugin(s) ${dependents.map(id => `"${id}"`).join(', ')} require ${dropped.map(name => `"${name}"`).join(', ')}`,
+      { pluginId: providerId, missing: dropped, dependents },
+    )
   }
 
   private async installedProvides(state: ManagerState, excludeId: string): Promise<Set<string>> {

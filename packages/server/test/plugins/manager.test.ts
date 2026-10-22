@@ -333,6 +333,9 @@ test('peer checks use loaded services and only enabled installed providers', asy
   await manager(pluginsDir, { loaded: () => ({ provides: ['test.loaded'] }) }).install(loadedConsumer)
   await manager(pluginsDir).install(provider)
   await manager(pluginsDir).install(consumer)
+  await rejectsWithCode(manager(pluginsDir).setEnabled('guanxi.provider', false), 'dependency_in_use')
+  assert.equal(manager(pluginsDir).list().find(entry => entry.id === 'guanxi.provider')?.enabled, true)
+  await manager(pluginsDir).setEnabled('guanxi.consumer', false)
   await manager(pluginsDir).setEnabled('guanxi.provider', false)
 
   await rejectsWithCode(manager(pluginsDir).install(laterConsumer), 'peer_missing')
@@ -913,4 +916,44 @@ test('a second manager cannot install while the first holds the exclusive lock',
   assert.equal(installed.version, '2.0.0')
   assert.equal(await exists(join(pluginsDir, '.lock')), false)
   assert.deepEqual(manager(pluginsDir).bootSet(), [installed.path])
+})
+
+test('refuses to remove or replace a service an enabled plugin requires', async t => {
+  const base = await tempBase(t)
+  const providerV1 = await writePlugin(join(base, 'provider-v1'), {
+    id: 'guanxi.provider',
+    version: '1.0.0',
+    provides: ['test.shared'],
+  })
+  const providerV2 = await writePlugin(join(base, 'provider-v2'), {
+    id: 'guanxi.provider',
+    version: '2.0.0',
+    provides: [],
+  })
+  const consumer = await writePlugin(join(base, 'consumer'), {
+    id: 'guanxi.consumer',
+    requires: ['test.shared'],
+  })
+  const pluginsDir = join(base, 'plugins')
+  const plugins = manager(pluginsDir)
+  await plugins.install(providerV1)
+  await plugins.install(consumer)
+  const before = await stateBytes(pluginsDir)
+  const providerPath = join(pluginsDir, 'guanxi.provider@1.0.0')
+
+  await rejectsWithCode(plugins.uninstall('guanxi.provider'), 'dependency_in_use')
+  assert.equal(await exists(providerPath), true)
+  await rejectsWithCode(plugins.setEnabled('guanxi.provider', false), 'dependency_in_use')
+  assert.deepEqual(await stateBytes(pluginsDir), before)
+  await rejectsWithCode(plugins.install(providerV2), 'dependency_in_use')
+  assert.deepEqual(await stateBytes(pluginsDir), before)
+  assert.equal(await exists(providerPath), true)
+  assert.equal(await exists(join(pluginsDir, 'guanxi.provider@2.0.0')), false)
+
+  await plugins.setEnabled('guanxi.consumer', false)
+  const upgraded = await plugins.install(providerV2)
+  assert.equal(upgraded.version, '2.0.0')
+  assert.equal(await exists(providerPath), false)
+  await plugins.uninstall('guanxi.provider')
+  assert.deepEqual(plugins.list().map(entry => entry.id), ['guanxi.consumer'])
 })
