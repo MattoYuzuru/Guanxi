@@ -232,6 +232,52 @@ test('GitHub swaps exactly one guanxi status label and refuses business writes',
   assert.equal(transport.requests.length, before + 1)
 })
 
+test('GitHub keeps user labels in the guanxi namespace out of the status swap', async () => {
+  const issue = fixture<{ labels: Array<{ name: string }> }>('github-issue-initial')
+  issue.labels = [
+    { name: 'bug' },
+    { name: 'guanxi:needs-triage' },
+    { name: 'guanxi:in_progress' },
+  ]
+  const transport = new ScriptedTransport(request => {
+    const path = pathOf(request)
+    if (request.method === 'GET' && /\/issues\/7$/.test(path)) return json(200, issue)
+    if (request.method === 'DELETE') {
+      const label = decodeURIComponent(path.split('/').at(-1) ?? '')
+      issue.labels = issue.labels.filter(entry => entry.name !== label)
+      return json(200, issue.labels)
+    }
+    if (request.method === 'POST' && /\/labels$/.test(path)) {
+      const body = JSON.parse(request.body ?? '{}') as { labels?: string[] }
+      for (const label of body.labels ?? []) issue.labels.push({ name: label })
+      return json(200, issue.labels)
+    }
+    throw new Error(`unexpected GitHub label request ${request.method} ${path}`)
+  })
+  const adapter = githubAdapter(transport)
+
+  const read = await adapter.read('example-org/example-repo#7')
+  assert.equal(read.notModified, false)
+  if (!read.notModified) {
+    assert.deepEqual(read.fields.labels, ['bug', 'guanxi:needs-triage'])
+  }
+
+  await adapter.mutate('example-org/example-repo#7', { kind: 'status-label', status: 'done' })
+  const deletions = transport.requests.filter(request => request.method === 'DELETE')
+  assert.deepEqual(
+    deletions.map(request => decodeURIComponent(new URL(request.url).pathname.split('/').at(-1) ?? '')),
+    ['guanxi:in_progress'],
+  )
+  assert.equal(
+    deletions.some(request => request.url.includes('needs-triage')),
+    false,
+  )
+  assert.deepEqual(
+    issue.labels.map(label => label.name).sort(),
+    ['bug', 'guanxi:done', 'guanxi:needs-triage'],
+  )
+})
+
 test('Jira maps statuses to transitions and leaves unmapped statuses comment-only', async () => {
   const applied: string[] = []
   const transport = new ScriptedTransport(request => {

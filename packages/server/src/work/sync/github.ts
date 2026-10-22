@@ -7,6 +7,7 @@
  * entry point refuses anything else with `business_field_write_refused`.
  */
 import {
+  COARSE_STATUSES,
   TrackerSyncError,
   TrackerTransportError,
   headerValue,
@@ -28,7 +29,10 @@ import type { SecretRef } from '../../egress/types.ts'
 
 const DEFAULT_API_BASE = 'https://api.github.com'
 const USER_AGENT = 'Guanxi-tracker-sync/0.1'
-const GUANXI_LABEL = /^guanxi:/i
+/** Guanxi owns exactly its coarse status labels; other `guanxi:*` labels are user intent. */
+const GUANXI_STATUS_LABELS: ReadonlySet<string> = new Set(
+  COARSE_STATUSES.map(status => `guanxi:${status}`),
+)
 
 export interface GitHubAdapterOptions {
   http: HttpTransport
@@ -200,8 +204,8 @@ export class GitHubAdapter implements TrackerAdapter {
       throw new TrackerSyncError('invalid_response', 'GitHub issue title must be a string')
     }
     const allLabels = labelNames(issue.labels)
-    // The guanxi:<status> label is Guanxi execution state, not tracker business intent.
-    const labels = allLabels.filter(label => !GUANXI_LABEL.test(label))
+    // A guanxi:<coarse status> label is Guanxi execution state, not tracker business intent.
+    const labels = allLabels.filter(label => !GUANXI_STATUS_LABELS.has(label))
     const fields: RemoteBusinessFields = {
       title: issue.title,
       description: typeof issue.body === 'string' ? issue.body : null,
@@ -301,7 +305,7 @@ export class GitHubAdapter implements TrackerAdapter {
     }
     const issue = object(parseJson(response.body, 'GitHub issue'), 'GitHub issue')
     const current = labelNames(issue.labels)
-    const stale = current.filter(label => GUANXI_LABEL.test(label) && label !== target)
+    const stale = current.filter(label => GUANXI_STATUS_LABELS.has(label) && label !== target)
     let last: HttpResponse | null = null
 
     for (const label of stale) {

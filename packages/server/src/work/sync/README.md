@@ -67,8 +67,10 @@ Tests inspect every recorded request, not just the adapter return value.
 
 GitHub has no native priority field. The adapter maps a `priority:<value>` or
 `priority/<value>` label into the priority display value and leaves the label itself in the
-business label list. Guanxi's own `guanxi:<status>` label is excluded from business labels:
-it is execution state, not tracker intent. That is a read mapping, never a write.
+business label list. Guanxi owns exactly the `guanxi:<coarse-status>` labels and excludes
+those from business labels: they are execution state, not tracker intent. Other labels in
+the `guanxi:` namespace, such as `guanxi:needs-triage`, are user intent and stay. That is a
+read mapping, never a write.
 
 ## Coarse outward writes
 
@@ -89,8 +91,9 @@ the POST and the local save safe: the retry reuses the sequence, finds the marke
 post twice. The sequence is not advanced on a deferred or failed transition, so a retry after
 a failed label or transition also reuses the same marker.
 
-GitHub keeps exactly one `guanxi:` status label: stale `guanxi:` labels are removed and the
-target is added. A transition to a status outside the coarse set does not touch the label.
+GitHub keeps exactly one `guanxi:<coarse-status>` label: stale labels from that exact set are
+removed and the target is added. Other `guanxi:*` labels are never deleted. A transition to a
+status outside the coarse set does not touch the label.
 Jira transitions are optional configuration. An unmapped status is comment-only.
 
 ## Polling

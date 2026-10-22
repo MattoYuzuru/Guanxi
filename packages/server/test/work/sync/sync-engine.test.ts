@@ -320,6 +320,31 @@ test('exactly one marked comment is posted per coarse transition', async () => {
   )
 })
 
+test('the label swap audits only Guanxi status labels and keeps guanxi:needs-triage', async () => {
+  const fake = new FakeGitHub()
+  fake.setRemote({
+    ...issueFromFixture('github-issue-initial'),
+    labels: ['bug', 'guanxi:needs-triage', 'guanxi:in_progress'],
+  })
+  const { engine } = githubEngine(fake)
+  const initial = link({ lastSyncedStatus: 'in_progress' })
+  const result = await engine.sync(initial, 'done', { now: START })
+  assert.equal(result.outcome, 'synced')
+
+  const deletions = fake.requests
+    .filter(request => request.method === 'DELETE')
+    .map(request => decodeURIComponent(new URL(request.url).pathname.split('/').at(-1) ?? ''))
+  assert.deepEqual(deletions, ['guanxi:in_progress'])
+  assert.equal(
+    fake.requests.some(request => request.url.includes('needs-triage')),
+    false,
+  )
+  assert.deepEqual(
+    fake.issue.labels.filter(label => label.startsWith('guanxi:')).sort(),
+    ['guanxi:done', 'guanxi:needs-triage'],
+  )
+})
+
 test('a crash between comment POST and local save does not double-post', async () => {
   const fake = new FakeGitHub()
   fake.failNextCommentAfterRecord = true
