@@ -255,6 +255,43 @@ test('stop during an input artifact write leaves no event after the terminal', {
   assert.equal(state?.type === 'agent.state' ? state.data.status : null, 'cancelled')
 })
 
+test('concurrent queue mutations preserve every accepted item exactly once and in FIFO order', { timeout: 30_000 }, async (t) => {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => { release = resolve })
+  const f = await fixture(t, async (call) => {
+    if (call === 1) await held
+    return [{ type: 'text', text: `answer ${call}` }]
+  })
+  const { sessionId } = await f.agents().create({ ...f.input, prompt: 'queue concurrently' })
+  while (f.requests.length === 0) await new Promise((resolve) => setTimeout(resolve, 5))
+  await Promise.all([
+    f.agents().queue(sessionId, 'first accepted'),
+    f.agents().queue(sessionId, 'second accepted'),
+  ])
+  const accepted = f.agents().progress(sessionId).queue
+  assert.deepEqual(accepted.map((item) => item.text), ['first accepted', 'second accepted'])
+  assert.equal(new Set(accepted.map((item) => item.id)).size, 2)
+  await Promise.all([
+    f.agents().queue(sessionId, 'third accepted'),
+    f.agents().removeQueued(sessionId, accepted[0]!.id),
+  ])
+  const remaining = f.agents().progress(sessionId).queue
+  assert.deepEqual(remaining.map((item) => item.text), ['second accepted', 'third accepted'])
+  assert.deepEqual(remaining.map((item) => item.id), [accepted[1]!.id, remaining[1]!.id])
+  assert.equal(new Set(remaining.map((item) => item.id)).size, 2)
+  const queueEvents = f.log.readAll(sessionId, 'person').filter((event) => event.type === 'agent.queue')
+  assert.deepEqual(queueEvents.map((event) => event.type === 'agent.queue' ? event.data.items.map((item) => item.text) : null), [
+    ['first accepted'],
+    ['first accepted', 'second accepted'],
+    ['first accepted', 'second accepted', 'third accepted'],
+    ['second accepted', 'third accepted'],
+  ])
+  const last = queueEvents.at(-1)
+  assert.equal(last?.type === 'agent.queue' ? JSON.stringify(last.data.items) : null, JSON.stringify(remaining))
+  release()
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+})
+
 test('keeps queued prompts inline in agent.queue and declares the v2 prompt residual honestly', { timeout: 30_000 }, async (t) => {
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })

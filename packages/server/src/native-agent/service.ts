@@ -247,13 +247,21 @@ export class NativeAgents {
     const active = this.active.get(id)
     if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
     if (userActivity) this.sessions.touch(id)
-    const queue = this.progress(id).queue
-    await active.queue.append({ type: 'agent.queue', data: { items: [...queue, { id: randomUUID(), text }] } })
+    const pending = active.queue
+    // Read and append the projection inside the same FIFO operation: a snapshot
+    // taken before enqueue is stale as soon as a concurrent queue() or
+    // removeQueued() commits, and would silently overwrite its accepted items.
+    await pending.enqueue(() => {
+      pending.appendNow({ type: 'agent.queue', data: { items: [...this.progress(id).queue, { id: randomUUID(), text }] } })
+    })
   }
   async removeQueued(id: string, item: string) {
     const active = this.active.get(id)
     if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
-    await active.queue.append({ type: 'agent.queue', data: { items: this.progress(id).queue.filter(i => i.id !== item) } })
+    const pending = active.queue
+    await pending.enqueue(() => {
+      pending.appendNow({ type: 'agent.queue', data: { items: this.progress(id).queue.filter(i => i.id !== item) } })
+    })
   }
   leaveSession(id: string) { this.ready(); this.runs.heartbeat(); return this.sessions.leave(id) }
   setRetention(id: string, mode: 'keep' | 'ttl' | 'session') { this.ready(); this.runs.heartbeat(); return this.sessions.setRetention(id, mode) }
