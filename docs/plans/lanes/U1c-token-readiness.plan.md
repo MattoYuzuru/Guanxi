@@ -1,6 +1,7 @@
 # U1c token readiness — canonical motion utilities and ledger retirement
 
-**Status:** proposed · plan-only; awaiting root authorization · **Date:** 2026-10-22
+**Status:** authorized implementation in progress; binding root corrections recorded below ·
+**Date:** 2026-10-22
 **Source pin:** `codex/u1c-css` at `7b49dbc` (clean). Candidate `/u1-completion` `a4a42da`
 remains the frozen failed integration and is not edited here.
 **Red receipt:** `/Users/yuzuru/.local/state/agent-dev/check-a6cxb2j3/output.log` — full
@@ -260,3 +261,62 @@ This round changes only this plan file. The implementation round starts only aft
 reviews this plan and authorizes: the manifest/build/generated/CSS/test/ledger edit, the
 `tokens:build` step and, if granted, scoped fast `ui:check`. Without that authorization the
 worker stops and reports the plan pin.
+
+## Root authorization and binding corrections (2026-10-22)
+
+Root reviewed and authorized the plan as committed at `717cb62` in this standalone clone
+(`codex/u1c-css`). The implementation starts from that pin; the frozen `/u1-completion`
+candidate `a4a42da` is not edited. This section records the authorization and the corrections
+that override the plan where they differ; the earlier plan text remains the historical
+proposal.
+
+### Binding corrections
+
+1. **Streaming is static by requirement.** The stream caret must be static and the entire
+   streaming transcript/timeline must not spatially animate (PRINCIPLES 13, FOUNDATIONS §5).
+   In addition to the caret change already planned, remove the existing `anim-fade-up` class
+   from the assistant timeline article at `packages/web/src/features/chat/ChatPage.tsx:1024`.
+   Keep the `.anim-fade-up` compatibility class and keyframe recipe for the legacy modal; do
+   not use it for stream text. Add a direct browser assertion that the actual transcript
+   article, its `::before`/`::after` pseudo-elements and the streaming caret have zero
+   `getAnimations()` under full motion, while the allowed spinner/sheen full-motion positive
+   control remains active. Keep all twelve normal/reduced/OS-full matrix cells and assert a
+   non-transparent, static caret background in every cell. The Chat route fixture is root-run
+   if this sandbox cannot execute Playwright; the assertion must still be meaningful.
+2. **The generated utilities are a web compatibility layer, not a component API.** The four
+   generated `animate-*` utilities are canonical compositions consumed by the current legacy
+   web compatibility classes. They are not complete cross-host or public `@guanxi/ui`
+   animation-component support. The existing `@guanxi/ui` Spinner and StatusPill remain
+   static; do not rewrite catalog documentation to claim those components animate or to
+   promise unscoped reuse. If a future component consumes the utilities, keyframe ownership
+   and reduced-motion loop-none behavior must be verified first. This slice adds no component
+   CSS and no catalog/hash approval change. The full-web reduced-motion rules already enforce
+   `animation: none` and empty animation counts; do not claim the token `0ms` alone removes
+   loops.
+3. **Tests fail first on the violating properties.** Add the focused red assertions before
+   production changes, supported by a meaningful negative fixture proving a literal
+   `animation` shorthand still fails G6 and G7, and by generator tests for invalid manifests.
+   The existing motion test case is strengthened with compiled and canonical-property
+   assertions, not deleted. Prove the ledger change is shrink-only and contains no held
+   animation allowance before running the actual fast `ui:check`; state new/envelope counts
+   honestly.
+
+### Authorized commands and scope
+
+In addition to the plan's scope, this worker may run `tokens:build` (token-code generation
+only), the three scoped UI gate Node files plus the related negative-fixture files, scoped web
+`tsc`/ESLint/stylelint, and the full fast `npm run ui:check` (author-authorized, roughly 30 s,
+no heavy browser). It must not run `npm test`, the browser/UI-browser gates, the app build,
+Storybook, Docker, `agent-dev`, a nested sandbox or any heavy check; the root owns the shared
+`/Users/yuzuru/.local/state/agent-dev` heavy resource and the merge into U1. No SSH, live
+model, owner data, paid service, owner key, push, merge, rebase, `PHASE_STATUS` or
+`NEXT_AGENT_PROMPT` edit is authorized. The remaining legacy colour/literal CSS debt (117
+literal findings at the source pin) stays explicit; this bounded fix does not close all of U1
+or DS1/owner UI approval.
+
+### Commit shape
+
+One documentation commit records this authorization/correction section before code. One
+coherent fix commit carries the production, generated theme, test and shrink-only ledger
+changes. A separate handoff-only documentation commit appends the evidence section to
+`U1c-css.handoff.md` after all scoped checks. No historical handoff claim is rewritten.
