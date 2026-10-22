@@ -142,7 +142,8 @@ returns the exact next-allowed epoch millisecond.
 
 ### GitHub Issues
 
-`owner/repo#123` keys. Reads `title`, `body`, labels, assignee and `updated_at`, with ETag
+`owner/repo#123` keys; empty and `.`/`..` segments are rejected. Reads `title`, `body`, labels,
+assignee and `updated_at`, with ETag
 conditionals. Comments carry `user.login` as their author and paginate through the `Link`
 header; a cross-origin next page is refused. `self()` reads and caches `GET /user`. Label
 writes read the issue first, remove stale coarse status labels, and add the target.

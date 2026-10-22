@@ -54,13 +54,15 @@ interface GitHubIssueRef {
 
 export function parseGitHubExternalKey(externalKey: string): GitHubIssueRef {
   const match = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$/.exec(externalKey)
-  if (match === null) {
+  const validSegment = (segment: string | undefined): segment is string =>
+    segment !== undefined && segment !== '' && segment !== '.' && segment !== '..'
+  if (match === null || !validSegment(match[1]) || !validSegment(match[2])) {
     throw new TrackerSyncError(
       'invalid_external_key',
-      'GitHub external key must be owner/repo#number',
+      'GitHub external key must be owner/repo#number with non-dot segments',
     )
   }
-  return { owner: match[1]!, repo: match[2]!, number: Number(match[3]!) }
+  return { owner: match[1], repo: match[2], number: Number(match[3]!) }
 }
 
 function object(value: unknown, what: string): Record<string, unknown> {

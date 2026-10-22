@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { GitHubAdapter } from '../../../src/work/sync/github.ts'
+import { GitHubAdapter, parseGitHubExternalKey } from '../../../src/work/sync/github.ts'
 import { JiraAdapter, adfToText } from '../../../src/work/sync/jira.ts'
 import {
   TrackerRetryableError,
@@ -278,6 +278,32 @@ test('GitHub keeps user labels in the guanxi namespace out of the status swap', 
     issue.labels.map(label => label.name).sort(),
     ['bug', 'guanxi:done', 'guanxi:needs-triage'],
   )
+})
+
+test('GitHub keys reject empty and dot owner/repo segments', () => {
+  for (const key of [
+    './example-repo#7',
+    '../example-repo#7',
+    'example-org/.#7',
+    'example-org/..#7',
+    '/example-repo#7',
+    'example-org/#7',
+  ]) {
+    assert.throws(
+      () => parseGitHubExternalKey(key),
+      (error: unknown) => {
+        assert.ok(error instanceof TrackerSyncError)
+        assert.equal(error.code, 'invalid_external_key')
+        return true
+      },
+      key,
+    )
+  }
+  assert.deepEqual(parseGitHubExternalKey('example-org/example.repo_2#7'), {
+    owner: 'example-org',
+    repo: 'example.repo_2',
+    number: 7,
+  })
 })
 
 test('adapters expose the authenticated identity and cache it', async () => {
