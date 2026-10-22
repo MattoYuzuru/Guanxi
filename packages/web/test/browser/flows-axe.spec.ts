@@ -122,11 +122,14 @@ test('G14 new-session flow has no serious or critical axe violation', async ({ p
   await expect(page).toHaveURL(/\/chat\/thread-p0-e-full$/)
   await expect(page.getByRole('textbox', { name: 'Сообщение' })).toBeVisible()
 
+  // Both responsive ContextPanels are in the DOM; only one is visible at a given viewport.
   // The fixture reports a cache miss, so the hit row is the inactive one. It used to dim its
   // label and duration with `opacity-45`; the semantic secondary text token replaced that, so
   // this fails against the old contrast implementation even before axe runs.
-  const inactive = page.getByText('Попадание', { exact: true }).locator('xpath=..')
-  const active = page.getByText('Промах', { exact: true }).locator('xpath=..')
+  const inactive = page.getByText('Попадание', { exact: true }).locator('xpath=..').filter({ visible: true })
+  const active = page.getByText('Промах', { exact: true }).locator('xpath=..').filter({ visible: true })
+  await expect(inactive, 'one visible inactive cache row').toHaveCount(1)
+  await expect(active, 'one visible active cache row').toHaveCount(1)
   await expect(inactive).toBeVisible()
   await expect(active).toBeVisible()
   await expect(inactive).toHaveCSS('opacity', '1')
