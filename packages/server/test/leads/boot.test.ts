@@ -26,6 +26,7 @@ test('the default server loads no lead service, no tool endpoint and never asser
 
 test('leads are opt-in, need the external-agent policy and carry the explicit always-on assertion', async t => {
   await assert.rejects(boot(t, { leads: { alwaysOn: true, child } }), /leads require externalAgents/)
+  await assert.rejects(boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true } as never }), /leads require a child executor/)
   const server = await boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, child, tickMs: 2_000_000_000 } })
   const lead = server.kernel.node.service<LeadHostService>(LEAD_SERVICE)!
   assert.deepEqual(lead.health(), { failure: null })
@@ -34,4 +35,10 @@ test('leads are opt-in, need the external-agent policy and carry the explicit al
   assert.equal(server.context.db.prepare('SELECT version FROM lead_migrations').get()!.version, 41)
   // Loading starts no inference and no listener: a lead exists only after startLead.
   assert.throws(() => lead.startLead({ ownerAccountId: 'o', actorAccountId: 'o', projectId: 'p', prompt: 'x' }), /role_unassigned/)
+})
+
+test('leads can run delegated plans through this node\'s own public relay start, with owner-chosen consent', async t => {
+  const server = await boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, relay: { consent: 'full-access', domains: [] }, tickMs: 2_000_000_000 } })
+  assert.ok(server.kernel.node.service<LeadHostService>(LEAD_SERVICE))
+  assert.equal(server.context.db.prepare('SELECT version FROM lead_migrations').get()!.version, 41)
 })
