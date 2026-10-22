@@ -413,3 +413,91 @@ test('a cancel-driven model stream keeps the caller lease until its cancel is ac
   assert.equal(releases, 1, 'the caller must release the lease exactly once')
   assert.equal(governor.snapshot().activeLease, null)
 })
+
+test('a cancel-driven non-stream model POST keeps the governor lease until its cancel is acknowledged', async (t) => {
+  const reading = deferred<void>()
+  const cancelGate = deferred<void>()
+  let source!: ReadableStreamDefaultController<Uint8Array>
+  let cancelRequested = false
+  let cancelCalls = 0
+  let pulls = 0
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      source = controller
+    },
+    pull() {
+      pulls += 1
+      if (pulls > 1) reading.resolve()
+    },
+    cancel() {
+      cancelRequested = true
+      cancelCalls += 1
+      return cancelGate.promise
+    },
+  })
+  const fetchImpl: typeof fetch = async (input) => {
+    if (new URL(String(input)).pathname === '/api/version') {
+      return Response.json({ version: 'fixture' })
+    }
+    return new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+  const f = connectionsFixture(fetchImpl)
+  t.after(async () => {
+    if (!cancelRequested) {
+      try {
+        source.enqueue(new TextEncoder().encode(JSON.stringify({
+          model: 'fixture',
+          created_at: '2026-08-02T12:00:00.000Z',
+          message: { role: 'assistant', content: '' },
+          done: true,
+        })))
+        source.close()
+      } catch {
+        // The fixture is already settled or cancelled.
+      }
+    }
+    cancelGate.resolve()
+    await f.close()
+  })
+
+  const controller = new AbortController()
+  const state = track(f.connections.localChat('owner', 'local', REQUEST, {
+    runId: 'run',
+    requestId: 'nonstream-cancel-lease',
+    background: true,
+    signal: controller.signal,
+  }))
+  await reading.promise
+  controller.abort('fixture explicit stop')
+  await tick()
+  try {
+    assert.equal(cancelCalls, 1, 'abort must request non-stream body cancel')
+    assert.equal(state.isSettled(), false, 'localChat must wait for the cancel acknowledgement')
+    assert.equal(body.locked, true, 'the reader lock stays owned while cancellation settles')
+    assert.notEqual(f.governor.snapshot().activeLease, null, 'the governor permit must remain held')
+    cancelGate.resolve()
+    await assert.rejects(
+      state.tracked,
+      (error) =>
+        error instanceof ConnectionError
+        && error.code === 'provider_failed'
+        && /cancelled/u.test(error.message),
+    )
+    assert.equal(cancelCalls, 1, 'cleanup must reuse the one cancellation request')
+    assert.equal(f.governor.snapshot().activeLease, null)
+  } finally {
+    if (!cancelRequested) {
+      try {
+        source.enqueue(new TextEncoder().encode(JSON.stringify({ done: true })))
+        source.close()
+      } catch {
+        // The fixture is already settled or cancelled.
+      }
+    }
+    cancelGate.resolve()
+    await state.tracked.catch(() => undefined)
+  }
+})
