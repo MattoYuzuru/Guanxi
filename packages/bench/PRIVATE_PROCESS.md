@@ -231,7 +231,7 @@ benchmark was used. D-194 remains in force and no B1 quality claim is made.
 
 Local fixture commands are in the
 [lane handoff](../../docs/plans/lanes/B1-trial-binding.handoff.md). The P2 review-fix continuation
-adds 18 new cases (6 process, 12 K2) to the scoped 95-case bench envelope. They cover fresh v2
+adds 19 new cases (6 process, 13 K2) to the scoped 96-case bench envelope. They cover fresh v2
 generation/token-hash records, live-mismatch/unknown/zombie quarantine, v1 group-gone cleanup,
 forced-supervisor-death ESRCH ordering, two sequential OS-executed requests, public-key
 exactness, fd isolation, ACK-gated pending ownership with late fulfilment/rejection, nested and

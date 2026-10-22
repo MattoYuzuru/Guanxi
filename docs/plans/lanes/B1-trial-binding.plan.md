@@ -1280,7 +1280,7 @@ or enable paid execution.
 - docs/handoff — `PRIVATE_PROCESS.md`, `PRIVATE_CHANNEL.md`, `README.md` and the appended lane
   handoff.
 
-Scoped evidence is **18 new / 77 bench regression-envelope cases + 38 server envelope cases**
-(133 executed), plus bench/server type checks. The worker did not execute `/bin/ps`; the
+Scoped evidence is **19 new / 77 bench regression-envelope cases + 38 server envelope cases**
+(134 executed), plus bench/server type checks. The worker did not execute `/bin/ps`; the
 unsandboxed real process-table probe and parent-death probe remain independent root/GPT checks.
 No full gate, browser, build, live execution, provider call or B1 quality claim is included.

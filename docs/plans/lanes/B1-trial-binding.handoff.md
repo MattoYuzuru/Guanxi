@@ -237,9 +237,9 @@ Root reviewed the plan at `1bbd034` and authorized code after the separate corre
 
 ### Tests and exact commands
 
-New tests in this P2 slice: **18** (`private-process`: 6; `k2-retention`: 12). Bench regression
-envelope: **95** cases across the eleven scoped files, of which 77 are inherited/earlier-slice
-cases. Server K2/R1 envelope: **38** cases. Total: **133** executed cases (18 new / 115
+New tests in this P2 slice: **19** (`private-process`: 6; `k2-retention`: 13). Bench regression
+envelope: **96** cases across the eleven scoped files, of which 77 are inherited/earlier-slice
+cases. Server K2/R1 envelope: **38** cases. Total: **134** executed cases (19 new / 115
 regression-envelope), not one inflated headline.
 
 ```bash
@@ -253,7 +253,7 @@ nice -n 10 node --test packages/bench/test/k2-retention.test.ts \
   packages/bench/test/private-stream.test.ts packages/bench/test/k3-gateway.test.ts \
   packages/bench/test/request-admission.test.ts packages/bench/test/budget.test.ts \
   packages/bench/test/plugin.test.ts packages/bench/test/k3-admission.test.ts
-# 95/95 pass, 0 fail, 0 skipped
+# 96/96 pass, 0 fail, 0 skipped
 
 nice -n 10 node --test packages/server/test/session-log.test.ts \
   packages/server/test/durable-run-followup.test.ts packages/server/test/session-log-readiness.test.ts
