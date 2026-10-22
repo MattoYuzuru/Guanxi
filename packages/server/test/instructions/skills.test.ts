@@ -303,6 +303,30 @@ test('loadSkill reports outside_root when a discovered path is later redirected'
   assert.deepEqual(await loadSkill(index, id, { maxBodyBytes: 1024 }), { id, error: 'outside_root' })
 })
 
+test('loadSkill requires the original index and refuses cloned or hand-built indexes', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeSkill(projectRoot, '.agents/skills/guarded', 'name: guarded\ndescription: guarded', 'SAFE_BODY')
+  const secret = await writeSkill(base, 'secret', 'name: secret\ndescription: secret', 'TOP SECRET')
+  await writeFile(join(secret, 'id_rsa'), 'private key')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'guarded').id
+  const original = await loadSkill(index, id, { maxBodyBytes: 1024 })
+  assert.ok(!('error' in original))
+  assert.equal(original.body, 'SAFE_BODY')
+
+  const cloned = structuredClone(index)
+  cloned.skills[0]!.dir = secret
+  assert.deepEqual(await loadSkill(cloned, id, { maxBodyBytes: 1024 }), { id, error: 'outside_root' })
+
+  const forged: SkillIndex = {
+    skills: [{ id, name: 'guarded', description: 'forged', source: 'project', dir: secret, bytes: 1 }],
+    warnings: [],
+  }
+  assert.deepEqual(await loadSkill(forged, id, { maxBodyBytes: 1024 }), { id, error: 'outside_root' })
+})
+
 test('skillContext counts omitted skills even when the notice itself cannot fit', () => {
   const firstLine = `- a: ${'a'.repeat(40)}`
   const secondLine = `- b: ${'b'.repeat(40)}`

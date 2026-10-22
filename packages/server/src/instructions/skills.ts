@@ -379,7 +379,8 @@ export async function loadSkill(
   } catch {
     return { id, error: 'not_found' }
   }
-  const boundary = boundaries.get(index)?.get(id) ?? dir
+  const boundary = boundaries.get(index)?.get(id)
+  if (!boundary) return { id, error: 'outside_root' }
   if (!inside(boundary, dir) || !inside(boundary, file)) return { id, error: 'outside_root' }
   let head: FrontMatterFile | null
   try { head = await readFrontMatter(file) } catch { head = null }
