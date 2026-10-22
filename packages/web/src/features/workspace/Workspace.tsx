@@ -110,7 +110,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     const controller = new AbortController()
     loadController.current = controller
     setLoading(true)
-    setLoadError(null)
     void workspaceStep('kernel-ready', () => webKernelReady).then(async () => {
       if (controller.signal.aborted) return
       const ownedAccount = account ?? (await workspaceStep('layout-context', () => api.layoutContext(controller.signal))).account
@@ -133,6 +132,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setGeometry(local.geometry)
       setName(current.name)
       setGeneration(value => value + 1)
+      setLoadError(null)
       setLoading(false)
     }).catch(error => { if (!controller.signal.aborted) { setLoadError(workspaceFailure(error, 'load-workspace')); setLoading(false) } })
     return () => loadController.current?.abort()
@@ -215,7 +215,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     if (!previousAttempt) setSaveError(null)
     retryOperation.current = () => { void save(asNew, previousAttempt) }
     try {
-      const attempt = previousAttempt ?? await workspaceStep('snapshot-layout', () => {
+      const attempt: SaveAttempt = previousAttempt ?? await workspaceStep('snapshot-layout', () => {
         const current = snapshot()
         const local = engine.current?.snapshot().geometry ?? geometry
         const scope = layoutScopeForSave(query(mode), saveScopes[mode] ?? layoutSaveScope(current.scope))
@@ -441,7 +441,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspaceLayout.popoutRestore')}</p>}
     <div className="workspace-content" inert={loading || saving || switching || undefined}>
       {visible.length === 0 ? (
-        <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={hiddenToShow ? { label: translate('workspaceLayout.showBlock', { block: title(hiddenToShow) }), onClick: () => show(hiddenToShow) } : { label: translate('workspaceLayout.addChat'), onClick: () => addBlock('guanxi.core/chat'), disabled: !coreChatReady }} />
+        !hiddenToShow && !coreChatReady ? <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} loading />
+          : <WorkspaceChrome kind="state" title={translate('workspaceLayout.noVisibleBlocks')} action={hiddenToShow ? { label: translate('workspaceLayout.showBlock', { block: title(hiddenToShow) }), onClick: () => show(hiddenToShow) } : { label: translate('workspaceLayout.addChat'), onClick: () => addBlock('guanxi.core/chat') }} />
       ) : phone ? <>
         <WorkspaceChrome kind="phone" label={translate('workspaceLayout.phone')} selected={selectedId} blocks={visible.map(id => ({ id, label: title(id) }))} onSelect={setSelected} />
         {visible.map(id => <div key={id} id={`phone-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} hidden={id !== selectedId} ref={element => { const host = paneHosts.current.get(id); if (element && host) { if (host.parentElement !== element) element.append(host); focusPendingPane(id) } }} />)}

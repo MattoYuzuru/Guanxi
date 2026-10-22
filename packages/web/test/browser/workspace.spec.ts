@@ -280,7 +280,7 @@ for (const [path, mode, source] of [
   await expect(error.locator('.gx-error-state-source')).toHaveText(source!)
   await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
   await expect(error).toContainText('Observed')
-  await expect(page.getByRole('alert').filter({ has: error.locator('.gx-error-state-title') })).toHaveCount(1)
+  await expect(page.getByRole('alert').filter({ has: page.locator('.gx-error-state-title') })).toHaveCount(1)
   await page.clock.setFixedTime(new Date('2026-10-22T13:00:00.000Z'))
   await error.locator('summary').click()
   const details = await error.locator('pre').textContent()
