@@ -290,6 +290,13 @@ for (const [path, mode, source] of [
   await expect(error.getByRole('status')).toHaveText('Details copied')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(details)
   await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
+  if (path === '/api/layouts/context') {
+    await page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.setLocale('ru'))
+    await expect(error).toContainText('Наблюдение')
+    await expect(error.locator('time')).toHaveAttribute('datetime', '2026-10-22T12:00:00.000Z')
+    await page.evaluate(() => (window as any).__GUANXI_WORKSPACE__.setLocale('en'))
+    await expect(error).toContainText('Observed')
+  }
   await error.getByRole('button', { name: 'Retry', exact: true }).click()
   await expect(page.locator('.dv-tab')).toHaveCount(11)
   await expect(error).toHaveCount(0)
@@ -311,7 +318,27 @@ test('workspace state loading reserves known geometry without actionable or empt
   await expect(page.locator('.dv-tab')).toHaveCount(11)
   const after = await page.locator('.workspace').boundingBox()
   expect(after!.width).toBeCloseTo(before!.width, 0)
+  expect(after!.height).toBeCloseTo(before!.height, 0)
   await expect(geometry).toHaveCount(0)
+})
+
+test('workspace state recovered-winner geometry failure retains the acknowledged layout result', async ({ page }) => {
+  const winner = builtInLayout({ account: 'local', device: 'device-a', deviceClass: 'desktop', mode: 'developer' })
+  winner.rev = 900
+  winner.updatedBy = { device: 'device-z' }
+  await setup(page, undefined, false, { winner })
+  await stateFault(page, { path: '/api/layouts/geometry', remaining: 0 })
+  await page.goto('/workspace')
+  await expect(page.locator('.dv-tab')).toHaveCount(11)
+  await page.evaluate(() => { (window as any).__STATE_FAULT__.remaining = 1 })
+  await page.getByRole('button', { name: 'Save layout', exact: true }).click()
+  const error = page.locator('[data-slot="error-state"]')
+  await expect(error).toHaveCount(1)
+  await expect(error.locator('.gx-error-state-source')).toHaveText('recover-layout-geometry: GET /api/layouts/geometry')
+  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error).toHaveCount(0)
+  expect(await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').length)).toBe(1)
+  expect((await state(page)).rev).toBe(900)
 })
 
 test('workspace state known-successful Save-as geometry failure retries only geometry', async ({ page }) => {

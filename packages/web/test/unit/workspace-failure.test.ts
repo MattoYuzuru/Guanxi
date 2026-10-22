@@ -4,7 +4,7 @@ import { workspaceFailure, workspaceStep } from '../../src/features/workspace/fa
 
 describe('workspace observed failures', () => {
   it('keeps only safe typed facts and fixes observation time before later rendering', async () => {
-    vi.useFakeTimers()
+    vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-22T12:00:00.000Z'))
     try {
       let failure: unknown

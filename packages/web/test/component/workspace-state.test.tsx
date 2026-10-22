@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useImperativeHandle } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../../src/features/workspace/Workspace.tsx'
 import type { WorkspaceLayoutHandle } from '../../src/features/workspace/WorkspaceLayout/index.tsx'
 import type { LayoutDocument } from '@guanxi/contract'
@@ -36,6 +36,7 @@ beforeEach(() => {
   vi.mocked(api.layoutGeometry).mockReset().mockResolvedValue({ geometry: {} })
   vi.mocked(api.saveLayout).mockReset()
 })
+afterEach(() => { vi.useRealTimers() })
 
 describe('Workspace actual failure boundaries with a controlled docking adapter', () => {
   it('captures a rejected actual snapshot locally without issuing a layout PUT or exposing its message', async () => {
@@ -65,6 +66,8 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
   })
 
   it('retains one busy Retry during a pending load and replaces its observed record only on a new failure', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-22T12:00:00.000Z'))
     let rejectRetry!: (error: Error) => void
     vi.mocked(api.layoutContext).mockRejectedValueOnce(new Error('private-first-sentinel'))
       .mockImplementationOnce(() => new Promise((_, reject) => { rejectRetry = reject }))
@@ -77,9 +80,11 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     fireEvent.click(busy)
     expect(api.layoutContext).toHaveBeenCalledTimes(2)
     expect(error.querySelector('time')!.getAttribute('datetime')).toBe(first)
+    vi.setSystemTime(new Date('2026-10-22T13:00:00.000Z'))
     await act(async () => { rejectRetry(new Error('private-second-sentinel')); await Promise.resolve() })
     await screen.findByRole('button', { name: 'Retry', exact: true })
     expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(error.querySelector('time')!.getAttribute('datetime')).toBe('2026-10-22T13:00:00.000Z')
     expect(error.textContent).not.toContain('private-')
   })
 })
