@@ -1,0 +1,370 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { discoverSkills, skillContext, loadSkill } from '../../src/instructions/skills.ts'
+import type { SkillIndex, SkillSummary } from '../../src/instructions/skills.ts'
+import { estimateTokens } from '../../src/context/usage.ts'
+
+async function baseDir(t: { after(callback: () => unknown): void }): Promise<string> {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'p1a-skills-')))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  return dir
+}
+
+async function writeSkill(root: string, relative: string, frontMatter: string, body = ''): Promise<string> {
+  const dir = join(root, relative)
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, 'SKILL.md'), `---\n${frontMatter}\n---\n${body}`)
+  return dir
+}
+
+function summary(index: SkillIndex, name: string): SkillSummary {
+  const found = index.skills.find(skill => skill.name === name)
+  assert.ok(found, `missing skill ${name}`)
+  return found
+}
+
+async function link(target: string, path: string, type: 'dir' | 'file'): Promise<boolean> {
+  try {
+    await symlink(target, path, type)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') return false
+    throw error
+  }
+}
+
+test('discovers project and user skills from both project roots with summary-only fields', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const userRoot = join(base, 'user-skills')
+  await mkdir(join(projectRoot, '.agents/skills'), { recursive: true })
+  await mkdir(join(projectRoot, '.claude/skills'), { recursive: true })
+  await mkdir(userRoot, { recursive: true })
+  await writeSkill(projectRoot, '.agents/skills/alpha', 'name: alpha\ndescription: Project alpha', 'BODY_MARKER_ALPHA')
+  await writeSkill(projectRoot, '.claude/skills/beta', 'name: beta\ndescription: "Project beta"', 'BODY_MARKER_BETA')
+  await writeSkill(userRoot, 'gamma', "name: 'gamma'\ndescription: User gamma", 'BODY_MARKER_GAMMA')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [userRoot] })
+  assert.deepEqual(index.skills.map(skill => skill.name).sort(), ['alpha', 'beta', 'gamma'])
+  assert.deepEqual(index.warnings, [])
+  const alpha = summary(index, 'alpha')
+  assert.equal(alpha.id, 'project:alpha')
+  assert.equal(alpha.source, 'project')
+  assert.equal(alpha.description, 'Project alpha')
+  assert.equal(alpha.dir, await realpath(join(projectRoot, '.agents/skills/alpha')))
+  assert.equal(alpha.bytes, (await stat(join(alpha.dir, 'SKILL.md'))).size)
+  assert.equal(summary(index, 'beta').description, 'Project beta')
+  assert.equal(summary(index, 'gamma').id, 'user:gamma')
+  assert.equal(summary(index, 'gamma').source, 'user')
+  assert.doesNotMatch(JSON.stringify(index), /BODY_MARKER/)
+})
+
+test('project skills shadow user skills by name and report shadowed', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const userRoot = join(base, 'user-skills')
+  await writeSkill(projectRoot, '.agents/skills/shared', 'name: same\ndescription: project copy')
+  await writeSkill(userRoot, 'shared', 'name: same\ndescription: user copy')
+  await writeSkill(userRoot, 'extra', 'name: extra\ndescription: user only')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [userRoot] })
+  assert.deepEqual(index.skills.map(skill => skill.name).sort(), ['extra', 'same'])
+  assert.equal(summary(index, 'same').description, 'project copy')
+  assert.equal(index.warnings.length, 1)
+  assert.equal(index.warnings[0]!.code, 'shadowed')
+  assert.equal(index.warnings[0]!.path, join(await realpath(userRoot), 'shared', 'SKILL.md'))
+})
+
+test('duplicate names keep the first path and report duplicate within each source', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const userA = join(base, 'user-a')
+  const userB = join(base, 'user-b')
+  await writeSkill(projectRoot, '.agents/skills/zeta', 'name: shared\ndescription: agents copy')
+  await writeSkill(projectRoot, '.claude/skills/alpha', 'name: shared\ndescription: claude copy')
+  await writeSkill(userA, 'dup', 'name: user-dup\ndescription: user a')
+  await writeSkill(userB, 'dup', 'name: user-dup\ndescription: user b')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [userB, userA] })
+  assert.deepEqual(index.skills.map(skill => skill.name), ['shared', 'user-dup'])
+  assert.equal(summary(index, 'shared').dir, await realpath(join(projectRoot, '.agents/skills/zeta')))
+  assert.equal(summary(index, 'user-dup').dir, await realpath(join(userA, 'dup')))
+  const realUserB = await realpath(userB)
+  const duplicates = index.warnings.filter(warning => warning.code === 'duplicate')
+  assert.equal(duplicates.length, 2)
+  assert.ok(duplicates.some(warning => warning.path.endsWith(join('.claude/skills/alpha', 'SKILL.md'))))
+  assert.ok(duplicates.some(warning => warning.path === join(realUserB, 'dup', 'SKILL.md')))
+})
+
+test('invalid front matter is skipped with a warning', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeSkill(projectRoot, '.agents/skills/a-missing-name', 'description: no name')
+  await writeSkill(projectRoot, '.agents/skills/b-missing-description', 'name: no-description')
+  await writeSkill(projectRoot, '.agents/skills/c-empty-description', 'name: empty\ndescription:')
+  const noFrontMatter = join(projectRoot, '.agents/skills/d-no-front-matter')
+  await mkdir(noFrontMatter, { recursive: true })
+  await writeFile(join(noFrontMatter, 'SKILL.md'), 'name: plain\ndescription: plain\n')
+  const unterminated = join(projectRoot, '.agents/skills/e-unterminated')
+  await mkdir(unterminated, { recursive: true })
+  await writeFile(join(unterminated, 'SKILL.md'), '---\nname: open\ndescription: never closed\n')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.deepEqual(index.skills, [])
+  assert.equal(index.warnings.length, 5)
+  assert.ok(index.warnings.every(warning => warning.code === 'invalid_front_matter'))
+  assert.deepEqual(index.warnings.map(warning => warning.path).sort(), [
+    join(noFrontMatter, 'SKILL.md'),
+    join(unterminated, 'SKILL.md'),
+    join(projectRoot, '.agents/skills/a-missing-name', 'SKILL.md'),
+    join(projectRoot, '.agents/skills/b-missing-description', 'SKILL.md'),
+    join(projectRoot, '.agents/skills/c-empty-description', 'SKILL.md'),
+  ].sort())
+})
+
+test('a symlink inside the project root is allowed and deduplicated by real path', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const real = await writeSkill(projectRoot, '.agents/skills/real-skill', 'name: guanxi-ui\ndescription: inside symlink')
+  await mkdir(join(projectRoot, '.claude/skills'), { recursive: true })
+  if (!await link(real, join(projectRoot, '.claude/skills/linked-skill'), 'dir')) {
+    t.skip('symlinks are unavailable')
+    return
+  }
+  const shared = join(projectRoot, 'shared')
+  await mkdir(shared, { recursive: true })
+  await writeFile(join(shared, 'SKILL.md'), '---\nname: file-link\ndescription: file symlink\n---\n')
+  const fileLink = join(projectRoot, '.agents/skills/file-link')
+  await mkdir(fileLink, { recursive: true })
+  assert.ok(await link(join(shared, 'SKILL.md'), join(fileLink, 'SKILL.md'), 'file'))
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.deepEqual(index.skills.map(skill => skill.name).sort(), ['file-link', 'guanxi-ui'])
+  assert.deepEqual(index.warnings, [])
+  assert.equal(summary(index, 'guanxi-ui').dir, real)
+  assert.equal(summary(index, 'file-link').dir, fileLink)
+})
+
+test('symlinks resolving outside the boundary are skipped and reported', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const userRoot = join(base, 'user-skills')
+  const outside = join(base, 'outside-skills')
+  const outsideSkill = await writeSkill(outside, 'escape', 'name: escape\ndescription: outside')
+  await mkdir(join(projectRoot, '.agents/skills'), { recursive: true })
+  await mkdir(userRoot, { recursive: true })
+  if (!await link(outsideSkill, join(projectRoot, '.agents/skills/escape'), 'dir')) {
+    t.skip('symlinks are unavailable')
+    return
+  }
+  const outsideFile = join(outside, 'standalone.md')
+  await writeFile(outsideFile, '---\nname: file-escape\ndescription: outside file\n---\n')
+  const fileEscape = join(projectRoot, '.agents/skills/file-escape')
+  await mkdir(fileEscape, { recursive: true })
+  assert.ok(await link(outsideFile, join(fileEscape, 'SKILL.md'), 'file'))
+  assert.ok(await link(outsideSkill, join(userRoot, 'escape'), 'dir'))
+  await writeSkill(projectRoot, '.agents/skills/kept', 'name: kept\ndescription: valid')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [userRoot] })
+  assert.deepEqual(index.skills.map(skill => skill.name), ['kept'])
+  const outsideWarnings = index.warnings.filter(warning => warning.code === 'outside_root')
+  assert.equal(outsideWarnings.length, 3)
+  assert.ok(outsideWarnings.some(warning => warning.path === join(projectRoot, '.agents/skills/escape')))
+  assert.ok(outsideWarnings.some(warning => warning.path === join(fileEscape, 'SKILL.md')))
+  assert.ok(outsideWarnings.some(warning => warning.path === join(userRoot, 'escape')))
+})
+
+test('a 50 KiB body never enters discovery or the context token count', async t => {
+  const base = await baseDir(t)
+  const emptyRoot = join(base, 'empty-project')
+  const hugeRoot = join(base, 'huge-project')
+  await writeSkill(emptyRoot, '.agents/skills/same', 'name: same\ndescription: Same description')
+  const hugeBody = `BODY_MARKER_50K\n---\nname: injected\ndescription: injected\n---\n${'x'.repeat(50 * 1024)}`
+  await writeSkill(hugeRoot, '.agents/skills/same', 'name: same\ndescription: Same description', hugeBody)
+
+  const empty = await discoverSkills({ projectRoot: emptyRoot, userSkillDirs: [] })
+  const huge = await discoverSkills({ projectRoot: hugeRoot, userSkillDirs: [] })
+  assert.equal(empty.warnings.length, 0)
+  assert.equal(huge.warnings.length, 0)
+  assert.equal(summary(huge, 'same').name, 'same')
+  assert.ok(summary(huge, 'same').bytes > 50 * 1024)
+  assert.doesNotMatch(JSON.stringify(huge), /BODY_MARKER_50K|injected/)
+
+  const emptyContext = skillContext(empty, estimateTokens, 10_000)
+  const hugeContext = skillContext(huge, estimateTokens, 10_000)
+  assert.equal(hugeContext.text, emptyContext.text)
+  assert.equal(estimateTokens(hugeContext.text), estimateTokens(emptyContext.text))
+})
+
+test('folded, literal, quoted and plain descriptions parse without a YAML dependency', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeSkill(projectRoot, '.agents/skills/folded', 'name: folded\ndescription: >\n  first line\n  second line\n\n  second paragraph')
+  await writeSkill(projectRoot, '.agents/skills/literal', 'name: literal\ndescription: |\n  first line\n  second line')
+  await writeSkill(projectRoot, '.agents/skills/quoted', 'name: quoted\ndescription: "hello: world"')
+  await writeSkill(projectRoot, '.agents/skills/single', "name: single\ndescription: 'it''s fine'")
+  await writeSkill(projectRoot, '.agents/skills/plain', 'name: plain\ndescription: Use when: testing')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.equal(summary(index, 'folded').description, 'first line second line\nsecond paragraph')
+  assert.equal(summary(index, 'literal').description, 'first line\nsecond line')
+  assert.equal(summary(index, 'quoted').description, 'hello: world')
+  assert.equal(summary(index, 'single').description, "it's fine")
+  assert.equal(summary(index, 'plain').description, 'Use when: testing')
+})
+
+test('maxDescriptionChars truncates with an ellipsis and maxSkills reports dropped entries', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  for (const name of ['a', 'b', 'c']) {
+    await writeSkill(projectRoot, `.agents/skills/${name}`, `name: ${name}\ndescription: ${'long description '.repeat(3)}`)
+  }
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [], maxDescriptionChars: 8, maxSkills: 2 })
+  assert.deepEqual(index.skills.map(skill => skill.name), ['a', 'b'])
+  for (const skill of index.skills) {
+    assert.equal([...skill.description].length, 8)
+    assert.ok(skill.description.endsWith('…'))
+  }
+  const limited = index.warnings.filter(warning => warning.code === 'max_skills')
+  assert.equal(limited.length, 1)
+  assert.ok(limited[0]!.path.endsWith(join('.agents/skills/c', 'SKILL.md')))
+})
+
+test('loadSkill returns the exact body and lists only files inside the skill dir', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const dir = await writeSkill(projectRoot, '.agents/skills/loader', 'name: loader\ndescription: loader', '# Loader\nBody text\n')
+  await writeFile(join(dir, 'notes.md'), 'notes')
+  await mkdir(join(dir, 'scripts'), { recursive: true })
+  await writeFile(join(dir, 'scripts/run.mjs'), 'console.log(1)')
+  await writeFile(join(dir, 'inside.md'), 'inside')
+  const outsideFile = join(base, 'secret.txt')
+  await writeFile(outsideFile, 'secret')
+  const outsideDir = join(base, 'secret-dir')
+  await mkdir(outsideDir)
+  await writeFile(join(outsideDir, 'inner.txt'), 'secret')
+  if (await link(outsideFile, join(dir, 'leak.txt'), 'file')) await link(outsideDir, join(dir, 'leak-dir'), 'dir')
+  const insideLink = await link(join(dir, 'inside.md'), join(dir, 'inside-link.md'), 'file')
+
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'loader').id
+  const loaded = await loadSkill(index, id, { maxBodyBytes: 1024 })
+  assert.ok(!('error' in loaded))
+  assert.equal(loaded.id, id)
+  assert.equal(loaded.body, '# Loader\nBody text\n')
+  assert.equal(loaded.truncated, false)
+  const expected = ['inside.md', 'notes.md', 'scripts/run.mjs']
+  if (insideLink) expected.push('inside-link.md')
+  expected.sort()
+  assert.deepEqual(loaded.files, expected)
+  assert.ok(loaded.files.every(file => !file.startsWith('/') && !file.includes('..') && file !== 'SKILL.md'))
+  assert.deepEqual(await loadSkill(index, 'project:missing', { maxBodyBytes: 1024 }), { id: 'project:missing', error: 'not_found' })
+})
+
+test('a closing delimiter split across read chunks does not shift the body', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const description = 'a'.repeat(477)
+  await writeSkill(projectRoot, '.agents/skills/chunked', `name: chunked\ndescription: ${description}`, 'BODY\n')
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.equal(summary(index, 'chunked').description, description)
+  const loaded = await loadSkill(index, 'project:chunked', { maxBodyBytes: 1024 })
+  assert.ok(!('error' in loaded))
+  assert.equal(loaded.body, 'BODY\n')
+})
+
+test('loadSkill refuses an oversized body instead of truncating it', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  await writeSkill(projectRoot, '.agents/skills/sized', 'name: sized\ndescription: sized', 'x'.repeat(100))
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'sized').id
+  assert.deepEqual(await loadSkill(index, id, { maxBodyBytes: 99 }), { id, error: 'too_large' })
+  const exact = await loadSkill(index, id, { maxBodyBytes: 100 })
+  assert.ok(!('error' in exact))
+  assert.equal(exact.body, 'x'.repeat(100))
+})
+
+test('loadSkill reports outside_root when a discovered path is later redirected', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const dir = await writeSkill(projectRoot, '.agents/skills/swap', 'name: swap\ndescription: swap', 'original')
+  const outside = await writeSkill(base, 'outside/swap', 'name: swap\ndescription: outside', 'outside')
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  const id = summary(index, 'swap').id
+  await rm(dir, { recursive: true, force: true })
+  if (!await link(outside, dir, 'dir')) {
+    t.skip('symlinks are unavailable')
+    return
+  }
+  assert.deepEqual(await loadSkill(index, id, { maxBodyBytes: 1024 }), { id, error: 'outside_root' })
+})
+
+test('skillContext counts omitted skills even when the notice itself cannot fit', () => {
+  const firstLine = `- a: ${'a'.repeat(40)}`
+  const secondLine = `- b: ${'b'.repeat(40)}`
+  const index: SkillIndex = {
+    skills: [
+      { id: 'project:a', name: 'a', description: 'a'.repeat(40), source: 'project', dir: '/tmp/a', bytes: 1 },
+      { id: 'project:b', name: 'b', description: 'b'.repeat(40), source: 'project', dir: '/tmp/b', bytes: 1 },
+    ],
+    warnings: [],
+  }
+  const count = (text: string): number => text.length
+  const notice = '- 1 more skill omitted (context budget)'
+  const partial = skillContext(index, count, firstLine.length + notice.length + 1)
+  assert.deepEqual(partial, { text: `${firstLine}\n${notice}`, included: 1, omitted: 1 })
+  assert.ok(firstLine.length + notice.length + 1 < `${firstLine}\n${secondLine}`.length)
+  assert.deepEqual(skillContext(index, count, notice.length - 1), { text: '', included: 0, omitted: 2 })
+  assert.deepEqual(skillContext({ skills: [], warnings: [] }, count, 0), { text: '', included: 0, omitted: 0 })
+})
+
+function mulberry32(seed: number): () => number {
+  return () => {
+    seed |= 0
+    seed = (seed + 0x6d2b79f5) | 0
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+test('skillContext stays inside the budget and reports omissions for 250 seeded random sets', () => {
+  const random = mulberry32(0x51da)
+  for (let round = 0; round < 250; round++) {
+    const size = Math.floor(random() * 21)
+    const skills: SkillSummary[] = []
+    for (let index = 0; index < size; index++) {
+      const name = `skill-${String(index).padStart(2, '0')}`
+      const description = 'word '.repeat(1 + Math.floor(random() * 30)).trim()
+      skills.push({ id: `project:${name}`, name, description, source: 'project', dir: `/tmp/${name}`, bytes: description.length })
+    }
+    for (let index = skills.length - 1; index > 0; index--) {
+      const swap = Math.floor(random() * (index + 1))
+      const value = skills[index]!
+      skills[index] = skills[swap]!
+      skills[swap] = value
+    }
+    const budget = Math.floor(random() * 1200)
+    const skillIndex: SkillIndex = { skills, warnings: [] }
+    const result = skillContext(skillIndex, estimateTokens, budget)
+    assert.ok(estimateTokens(result.text) <= budget, `round ${round}: ${estimateTokens(result.text)} > ${budget}`)
+    assert.equal(result.included + result.omitted, skills.length, `round ${round}: count mismatch`)
+    assert.deepEqual(skillContext(skillIndex, estimateTokens, budget), result)
+    const lines = result.text === '' ? [] : result.text.split('\n')
+    if (result.omitted === 0) {
+      assert.equal(lines.length, result.included)
+      assert.ok(!result.text.includes('omitted'))
+    } else if (lines.length > 0) {
+      assert.match(lines[lines.length - 1]!, new RegExp(`^- ${result.omitted} more skills? omitted`))
+      assert.equal(lines.length, result.included + 1)
+      const names = lines.slice(0, -1).map(line => line.slice(2).split(':')[0]!)
+      assert.deepEqual(names, [...names].sort())
+    } else {
+      assert.equal(result.included, 0)
+    }
+  }
+})
