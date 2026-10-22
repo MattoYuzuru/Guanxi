@@ -590,4 +590,29 @@ describe('Settings language and glossary', () => {
       expect(copy.ru.definition).not.toMatch(/\d|[$€₽]|\b(?:GB|VRAM|GPU|CPU|RAM)\b/u)
     }
   })
+
+  it('interpolates the central product name into both Node definitions', async () => {
+    const { PRODUCT_NAME } = await import('../../src/lib/brand.ts')
+    const node = glossaryEntries.find((entry) => entry.key === 'node')
+    expect(node, 'node').toBeDefined()
+    expect(node?.en.definition).toContain(PRODUCT_NAME)
+    expect(node?.ru.definition).toContain(PRODUCT_NAME)
+
+    vi.resetModules()
+    vi.doMock('../../src/lib/brand.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/lib/brand.ts')>()
+      return { ...actual, PRODUCT_NAME: 'RenamedProduct' }
+    })
+    try {
+      const { glossaryEntries: renamedEntries } = await import('../../src/lib/glossary.ts')
+      const renamedNode = renamedEntries.find((entry) => entry.key === 'node')
+      expect(renamedNode?.en.definition).toContain('RenamedProduct')
+      expect(renamedNode?.ru.definition).toContain('RenamedProduct')
+      expect(renamedNode?.en.definition).not.toContain(PRODUCT_NAME)
+      expect(renamedNode?.ru.definition).not.toContain(PRODUCT_NAME)
+    } finally {
+      vi.doUnmock('../../src/lib/brand.ts')
+      vi.resetModules()
+    }
+  })
 })

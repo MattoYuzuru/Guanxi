@@ -1,4 +1,5 @@
 import type { UiLocale } from '@guanxi/contract'
+import { PRODUCT_NAME } from './brand.ts'
 
 type GlossaryCopy = {
   term: string
@@ -115,8 +116,8 @@ export const glossaryEntries: readonly GlossaryEntry[] = [
   },
   {
     key: 'node',
-    en: { term: 'Node', definition: 'One machine running the Guanxi service. A Node owns the resources and Leases on that machine; it is not a Connection and not a model.', example: 'The same Session can be open on one Node while its Run executes on another.' },
-    ru: { term: 'Узел', definition: 'Одна машина, на которой работает служба Guanxi. Узел владеет ресурсами и арендами этой машины; это не подключение и не модель.', example: 'Одна и та же сессия может быть открыта на одном узле, пока её запуск выполняется на другом.' },
+    en: { term: 'Node', definition: `One machine running the ${PRODUCT_NAME} service. A Node owns the resources and Leases on that machine; it is not a Connection and not a model.`, example: 'The same Session can be open on one Node while its Run executes on another.' },
+    ru: { term: 'Узел', definition: `Одна машина, на которой работает служба ${PRODUCT_NAME}. Узел владеет ресурсами и арендами этой машины; это не подключение и не модель.`, example: 'Одна и та же сессия может быть открыта на одном узле, пока её запуск выполняется на другом.' },
   },
   {
     key: 'connection',
