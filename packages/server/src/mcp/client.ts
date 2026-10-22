@@ -1,0 +1,378 @@
+/**
+ * MCP client core: stdio transport, JSON-RPC handshake and manager policy.
+ *
+ * SECURITY: this slice is not sandboxed. The default spawn port runs a server
+ * as the current user with an explicit minimal environment and an absolute
+ * command path, but with no filesystem or network confinement. Do not enable
+ * an untrusted MCP server until the K4 sandbox wrapper is wired here. The
+ * manager is off unless project policy explicitly sets `mcp.enabled: true`.
+ */
+import { spawn } from 'node:child_process'
+import { isAbsolute } from 'node:path'
+import { PRODUCT_NAME } from '@guanxi/contract'
+import { JsonRpcConnection } from './jsonrpc.ts'
+import {
+  DEFAULT_MCP_MAX_MESSAGE_BYTES,
+  DEFAULT_MCP_REQUEST_TIMEOUT_MS,
+  MCP_CLIENT_VERSION,
+  MCP_PROTOCOL_VERSION,
+  McpError,
+  type McpInitializeResult,
+  type McpProcessExit,
+  type McpProjectPolicy,
+  type McpServerConfig,
+  type McpSpawn,
+  type McpTransport,
+  type McpTransportSpec,
+} from './types.ts'
+
+/** Explicit allowlist; the whole parent environment is never inherited. */
+const BASE_ENVIRONMENT: Readonly<Record<string, string>> = {
+  PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin',
+  LANG: 'en_US.UTF-8',
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Validates the port contract before a spawn implementation sees it. */
+export function validateTransportSpec(spec: McpTransportSpec): void {
+  if (typeof spec.command !== 'string' || !isAbsolute(spec.command)) {
+    throw new McpError('mcp_config', 'MCP command must be an absolute path')
+  }
+  if (typeof spec.cwd !== 'string' || !isAbsolute(spec.cwd)) {
+    throw new McpError('mcp_config', 'MCP working directory must be an absolute path')
+  }
+  if (!Array.isArray(spec.args) || spec.args.some(arg => typeof arg !== 'string')) {
+    throw new McpError('mcp_config', 'MCP arguments must be strings')
+  }
+  if (!isRecord(spec.env)) {
+    throw new McpError('mcp_config', 'MCP environment must be an explicit string map')
+  }
+  for (const [name, value] of Object.entries(spec.env)) {
+    if (name.length === 0 || typeof value !== 'string') {
+      throw new McpError('mcp_config', 'MCP environment must contain string names and values')
+    }
+  }
+}
+
+/**
+ * Default transport port. Starts an absolute executable without a shell and
+ * discards stderr, which may contain credentials. This is not a sandbox.
+ */
+export function spawnMcpProcess(spec: McpTransportSpec): McpTransport {
+  validateTransportSpec(spec)
+  let child: ReturnType<typeof spawn>
+  try {
+    child = spawn(spec.command, spec.args, {
+      cwd: spec.cwd,
+      env: { ...spec.env },
+      shell: false,
+      stdio: ['pipe', 'pipe', 'ignore'],
+      windowsHide: true,
+    })
+  } catch {
+    throw new McpError('mcp_config', 'MCP server could not be started')
+  }
+  if (child.stdin === null || child.stdout === null) {
+    child.kill('SIGKILL')
+    throw new McpError('mcp_config', 'MCP transport did not expose stdin and stdout')
+  }
+
+  const exited = new Promise<McpProcessExit>((resolve) => {
+    let settled = false
+    const settle = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (settled) return
+      settled = true
+      resolve({ code, signal })
+    }
+    child.once('close', settle)
+    // A spawn error may not be followed by `close` on every platform.
+    child.once('error', () => settle(null, null))
+  })
+
+  return {
+    stdin: child.stdin,
+    stdout: child.stdout,
+    kill(signal: NodeJS.Signals = 'SIGKILL') {
+      try {
+        child.kill(signal)
+      } catch {
+        // Already exited or reaped elsewhere.
+      }
+    },
+    exited,
+  }
+}
+
+export interface McpClientOptions {
+  server: McpServerConfig
+  spawn?: McpSpawn
+  requestTimeoutMs?: number
+  maxMessageBytes?: number
+  /** Protocol versions accepted in addition to the pinned version. */
+  allowedProtocolVersions?: readonly string[]
+}
+
+function parseInitializeResult(value: unknown): McpInitializeResult {
+  if (!isRecord(value)) throw new McpError('mcp_protocol', 'MCP initialize result is not an object')
+  if (typeof value.protocolVersion !== 'string' || value.protocolVersion.length === 0) {
+    throw new McpError('mcp_protocol', 'MCP initialize result has no protocolVersion')
+  }
+  const capabilities = value.capabilities === undefined ? {} : value.capabilities
+  if (!isRecord(capabilities)) throw new McpError('mcp_protocol', 'MCP initialize capabilities are not an object')
+  const result: McpInitializeResult = {
+    protocolVersion: value.protocolVersion,
+    capabilities: { ...capabilities },
+  }
+  if (isRecord(value.serverInfo)) {
+    const serverInfo: { name?: string; version?: string } = {}
+    if (typeof value.serverInfo.name === 'string') serverInfo.name = value.serverInfo.name
+    if (typeof value.serverInfo.version === 'string') serverInfo.version = value.serverInfo.version
+    result.serverInfo = serverInfo
+  }
+  if (typeof value.instructions === 'string') result.instructions = value.instructions
+  return result
+}
+
+/**
+ * One MCP server connection. The client is single-use: a failed handshake
+ * kills the transport and leaves subsequent calls with `mcp_closed`.
+ */
+export class McpClient {
+  private readonly server: McpServerConfig
+  private readonly spawnPort: McpSpawn
+  private readonly requestTimeoutMs: number
+  private readonly maxMessageBytes: number
+  private readonly allowedProtocolVersions: readonly string[]
+
+  private transport: McpTransport | undefined
+  private rpc: JsonRpcConnection | undefined
+  private initializeResult: McpInitializeResult | undefined
+  private connecting: Promise<McpInitializeResult> | undefined
+  private closing: Promise<void> | undefined
+  private closed = false
+
+  constructor(options: McpClientOptions) {
+    this.server = options.server
+    this.spawnPort = options.spawn ?? spawnMcpProcess
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_MCP_REQUEST_TIMEOUT_MS
+    this.maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MCP_MAX_MESSAGE_BYTES
+    this.allowedProtocolVersions = options.allowedProtocolVersions ?? []
+  }
+
+  get serverId(): string {
+    return this.server.id
+  }
+
+  get negotiated(): McpInitializeResult | undefined {
+    return this.initializeResult
+  }
+
+  async connect(): Promise<McpInitializeResult> {
+    if (this.initializeResult !== undefined) return this.initializeResult
+    if (this.closed) throw new McpError('mcp_closed', 'MCP client is closed')
+    if (this.connecting !== undefined) return this.connecting
+    this.connecting = this.start()
+    try {
+      return await this.connecting
+    } finally {
+      this.connecting = undefined
+    }
+  }
+
+  /** Kills the child and resolves only after the port's `exited` settles. */
+  close(): Promise<void> {
+    if (this.closing !== undefined) return this.closing
+    const rpc = this.rpc
+    const transport = this.transport
+    this.closed = true
+    this.rpc = undefined
+    this.transport = undefined
+    this.initializeResult = undefined
+    this.closing = (async () => {
+      rpc?.close()
+      if (transport === undefined) return
+      try {
+        transport.kill('SIGKILL')
+      } catch {
+        // The wrapper may already report exit.
+      }
+      try {
+        await transport.exited
+      } catch {
+        // Cleanup must not surface a transport-specific error.
+      }
+    })()
+    return this.closing
+  }
+
+  private buildTransportSpec(): McpTransportSpec {
+    const server = this.server
+    if (typeof server.id !== 'string' || server.id.length === 0) {
+      throw new McpError('mcp_config', 'MCP server id must be a non-empty string')
+    }
+    return {
+      command: server.command,
+      args: [...(server.args ?? [])],
+      cwd: server.cwd,
+      env: { ...BASE_ENVIRONMENT, ...(server.env ?? {}) },
+    }
+  }
+
+  private async start(): Promise<McpInitializeResult> {
+    let transport: McpTransport
+    try {
+      transport = this.spawnPort(this.buildTransportSpec())
+    } catch (error) {
+      throw error instanceof McpError
+        ? error
+        : new McpError('mcp_config', 'MCP server could not be started')
+    }
+    this.transport = transport
+    const rpc = new JsonRpcConnection({
+      stdin: transport.stdin,
+      stdout: transport.stdout,
+      maxMessageBytes: this.maxMessageBytes,
+      requestTimeoutMs: this.requestTimeoutMs,
+      kill: () => transport.kill('SIGKILL'),
+    })
+    this.rpc = rpc
+    void transport.exited.then((status) => {
+      const detail = status.signal !== null
+        ? `signal ${status.signal}`
+        : status.code !== null
+          ? `code ${status.code}`
+          : 'unknown status'
+      rpc.transportClosed(`MCP server exited (${detail})`)
+    }, () => {
+      rpc.transportClosed('MCP server exit could not be observed')
+    })
+
+    try {
+      const raw = await rpc.request('initialize', {
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: PRODUCT_NAME, version: MCP_CLIENT_VERSION },
+      })
+      const result = parseInitializeResult(raw)
+      if (result.protocolVersion !== MCP_PROTOCOL_VERSION &&
+          !this.allowedProtocolVersions.includes(result.protocolVersion)) {
+        throw new McpError(
+          'mcp_version_mismatch',
+          `MCP server negotiated ${result.protocolVersion}; expected ${MCP_PROTOCOL_VERSION}`,
+        )
+      }
+      rpc.notify('notifications/initialized')
+      this.initializeResult = result
+      return result
+    } catch (error) {
+      await this.close()
+      throw error
+    }
+  }
+}
+
+export interface McpClientManagerOptions {
+  projectPolicy: McpProjectPolicy
+  spawn?: McpSpawn
+  requestTimeoutMs?: number
+  maxMessageBytes?: number
+  allowedProtocolVersions?: readonly string[]
+}
+
+/**
+ * Project-scoped MCP manager. `start()` is a no-op when the policy is off;
+ * every tool operation then rejects with `mcp_disabled` before a spawn.
+ */
+export class McpClientManager {
+  private readonly policyEnabled: boolean
+  private readonly configs: readonly McpServerConfig[]
+  private readonly spawnPort: McpSpawn
+  private readonly requestTimeoutMs: number | undefined
+  private readonly maxMessageBytes: number | undefined
+  private readonly allowedProtocolVersions: readonly string[] | undefined
+  private readonly clients = new Map<string, McpClient>()
+
+  private started = false
+  private closed = false
+  private startTask: Promise<void> | undefined
+
+  constructor(options: McpClientManagerOptions) {
+    const mcp = options.projectPolicy.mcp
+    this.policyEnabled = mcp?.enabled === true
+    this.configs = [...(mcp?.servers ?? [])]
+    this.spawnPort = options.spawn ?? spawnMcpProcess
+    this.requestTimeoutMs = options.requestTimeoutMs
+    this.maxMessageBytes = options.maxMessageBytes
+    this.allowedProtocolVersions = options.allowedProtocolVersions
+  }
+
+  get enabled(): boolean {
+    return this.policyEnabled
+  }
+
+  async start(): Promise<void> {
+    if (!this.policyEnabled) return
+    if (this.closed) throw new McpError('mcp_closed', 'MCP manager is closed')
+    if (this.started) return
+    if (this.startTask !== undefined) return this.startTask
+    this.startTask = this.startEnabled()
+    try {
+      await this.startTask
+    } finally {
+      this.startTask = undefined
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true
+    const starting = this.startTask
+    if (starting !== undefined) {
+      try {
+        await starting
+      } catch {
+        // A failed start already closed its clients.
+      }
+    }
+    const clients = [...this.clients.values()]
+    this.clients.clear()
+    this.started = false
+    await Promise.allSettled(clients.map(client => client.close()))
+  }
+
+  private async startEnabled(): Promise<void> {
+    const seen = new Set<string>()
+    const started: McpClient[] = []
+    try {
+      for (const config of this.configs) {
+        if (config.enabled === false) continue
+        if (this.closed) throw new McpError('mcp_closed', 'MCP manager is closed')
+        if (typeof config.id !== 'string' || config.id.length === 0) {
+          throw new McpError('mcp_config', 'MCP server id must be a non-empty string')
+        }
+        if (seen.has(config.id)) throw new McpError('mcp_config', `Duplicate MCP server id: ${config.id}`)
+        seen.add(config.id)
+        const client = new McpClient({
+          server: config,
+          spawn: this.spawnPort,
+          requestTimeoutMs: this.requestTimeoutMs,
+          maxMessageBytes: this.maxMessageBytes,
+          allowedProtocolVersions: this.allowedProtocolVersions,
+        })
+        this.clients.set(config.id, client)
+        started.push(client)
+        await client.connect()
+      }
+      this.started = true
+    } catch (error) {
+      for (const client of started) {
+        this.clients.delete(client.serverId)
+        await client.close()
+      }
+      throw error
+    }
+  }
+}
