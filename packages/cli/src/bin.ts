@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DEFAULT_PORT, start } from '@guanxi/server'
 import { probeExistingGuanxi } from './existing.ts'
 import { agentExec, agentExecExitCode } from './agent-exec.ts'
+import { relayExec, relayExecExitCode } from './relay-exec.ts'
 
 const VERSION = '0.1.0'
 const here = dirname(fileURLToPath(import.meta.url))
@@ -95,6 +96,13 @@ function requestedUrl(options: CliOptions): { url: string; port: number } {
 }
 
 const args = process.argv.slice(2)
+if (args[0] === 'relay' && args[1] === 'exec') {
+  const abort = new AbortController()
+  process.once('SIGINT', () => abort.abort())
+  const result = await relayExec(args.slice(2), fetch, abort.signal)
+  console.log(args.includes('--json') ? JSON.stringify(result) : result.error || result.status)
+  process.exit(relayExecExitCode(result))
+}
 if (args[0] === 'agent' && args[1] === 'exec') {
   const abort = new AbortController()
   process.once('SIGINT', () => abort.abort())

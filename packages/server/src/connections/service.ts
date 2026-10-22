@@ -25,7 +25,7 @@ export interface ModelCall {
   onResponseObserved?: () => void
   /** Trusted validation of the final scrubbed request, immediately before dispatch. */
   onPrepared?: (request: Context | OllamaChatRequest) => void
-  /** T0 local-dispatch authorization, after governor and adapter preflight, before final preparation. */
+  /** T0 local authorization after governor and adapter preflight, before final preparation. */
   authorizeDispatch?: () => Promise<void>
   /** Adapter parameters, not arbitrary transport/auth headers. */
   options?: Pick<SimpleStreamOptions, 'temperature' | 'maxTokens' | 'reasoning'>
@@ -215,6 +215,7 @@ export class Connections {
             this.assertOpen()
             const current = this.store.get(accountId, id)
             if (current.kind !== 'local_runtime' || call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Local runtime admission changed')
+            if (call.authorizeDispatch && new URL(normalizeHost(this.localHost())).href !== host.href) throw new ConnectionError('policy_denied', 'Local runtime admission changed')
           },
           prepare: () => {
             signal.throwIfAborted()
