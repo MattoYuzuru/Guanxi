@@ -4,7 +4,7 @@ import {
   UiLocaleProvider, useUiText,
   type UiLocale,
 } from '@guanxi/ui'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '../../../src/index.css'
 
@@ -87,6 +87,38 @@ function DescriptionFixture() {
   </main>
 }
 
+function RenderDescriptionFixture() {
+  const t = useUiText()
+  const triggerRef = useRef<HTMLElement>(null)
+  const [wrapperActions, setWrapperActions] = useState(0)
+  const [renderActions, setRenderActions] = useState(0)
+  const [refMatches, setRefMatches] = useState(false)
+  const renderDescription = 'render-existing-description shared-description'
+  return <main className="p-4">
+    {['existing-description', 'render-existing-description', 'shared-description'].map(id =>
+      <p key={id} id={id}>{t('story.tooltip.content')}</p>)}
+    <Tooltip defaultOpen>
+      <TooltipTrigger ref={triggerRef} aria-describedby="existing-description shared-description"
+        data-testid="render-description-trigger" onClick={event => {
+          setWrapperActions(n => n + 1)
+          setRefMatches(triggerRef.current === event.currentTarget)
+        }}
+        render={params.get('association') === 'render-function'
+          ? triggerProps => <Button {...triggerProps} aria-describedby={renderDescription}
+            onClick={event => { triggerProps.onClick?.(event); setRenderActions(n => n + 1) }} />
+          : <Button aria-describedby={renderDescription} onClick={() => setRenderActions(n => n + 1)}
+            ref={node => { if (node) node.dataset.renderRef = 'attached' }} />}>
+        {t('story.tooltip.trigger')}
+      </TooltipTrigger>
+      <TooltipContent id="custom-description">{t('story.tooltip.content')}</TooltipContent>
+    </Tooltip>
+    <output data-testid="wrapper-actions">{wrapperActions}</output>
+    <output data-testid="render-actions">{renderActions}</output>
+    <output data-testid="ref-matches">{String(refMatches)}</output>
+  </main>
+}
+
 createRoot(document.getElementById('root')!).render(<UiLocaleProvider locale={locale}>
-  {params.has('association') ? <DescriptionFixture /> : <Fixture />}
+  {params.get('association')?.startsWith('render-') ? <RenderDescriptionFixture />
+    : params.has('association') ? <DescriptionFixture /> : <Fixture />}
 </UiLocaleProvider>)

@@ -228,6 +228,31 @@ test('Tooltip consumer cancellation keeps a closed popup unassociated', async ({
   await expect(trigger).toHaveAttribute('aria-describedby', 'existing-description')
 })
 
+for (const association of ['render-element', 'render-function']) {
+  test(`Tooltip ${association} merges consumer and wrapper descriptions without losing events or refs`, async ({ page }) => {
+    await page.goto(`${fixture}?association=${association}`)
+    const trigger = page.getByTestId('render-description-trigger')
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(page.getByRole('tooltip')).toHaveAttribute('id', 'custom-description')
+    const descriptions = async () => (await trigger.getAttribute('aria-describedby') ?? '').split(/\s+/).sort()
+    await expect.poll(descriptions).toEqual([
+      'custom-description', 'existing-description', 'render-existing-description', 'shared-description',
+    ])
+    await expect(trigger).toHaveAccessibleName('Context')
+    if (association === 'render-element') await expect(trigger).toHaveAttribute('data-render-ref', 'attached')
+    await trigger.focus()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('tooltip')).toHaveCount(0)
+    await expect.poll(descriptions).toEqual(['existing-description', 'render-existing-description', 'shared-description'])
+    await expect(trigger).toHaveAccessibleName('Context')
+    await expect(trigger).toBeFocused()
+    await trigger.click()
+    await expect(page.getByTestId('wrapper-actions')).toHaveText('1')
+    await expect(page.getByTestId('render-actions')).toHaveText('1')
+    await expect(page.getByTestId('ref-matches')).toHaveText('true')
+  })
+}
+
 test('forced colors preserves visible trigger focus, highlighted command contrast and Tooltip boundary', async ({ page }, testInfo) => {
   await page.emulateMedia({ forcedColors: 'active' })
   await open(page)
