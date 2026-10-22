@@ -7,6 +7,7 @@
  * checks idempotency markers.
  */
 import {
+  TrackerRetryableError,
   TrackerSyncError,
   TrackerTransportError,
   headerValue,
@@ -22,6 +23,8 @@ import {
   type RemoteReadResult,
   type TrackerAdapter,
   type TrackerMutation,
+  type TrackerReadObservation,
+  type TrackerReadObserver,
   type TrackerWriteResult,
 } from './types.ts'
 import type { SecretRef } from '../../egress/types.ts'
@@ -109,6 +112,7 @@ function isRetryable(response: HttpResponse): boolean {
   if (response.status === 429 || response.status >= 500) return true
   if (response.status !== 403) return false
   if (headerValue(response.headers, 'retry-after') !== undefined) return true
+  if (headerValue(response.headers, 'x-ratelimit-remaining') === '0') return true
   return /rate limit|abuse/i.test(response.body)
 }
 
@@ -129,6 +133,7 @@ export class JiraAdapter implements TrackerAdapter {
   private readonly apiVersion: 2 | 3
   private readonly transitions: Partial<Record<CoarseStatus, string>>
   private readonly userAgent: string
+  private readObserver: TrackerReadObserver | null = null
 
   constructor(options: JiraAdapterOptions) {
     if (options.apiVersion !== 2 && options.apiVersion !== 3) {
@@ -152,6 +157,10 @@ export class JiraAdapter implements TrackerAdapter {
     this.userAgent = options.userAgent ?? USER_AGENT
   }
 
+  observeReads(observer: TrackerReadObserver): void {
+    this.readObserver = observer
+  }
+
   statusMapping(status: CoarseStatus): 'transition' | 'none' {
     const mapped = this.transitions[status]
     return mapped === undefined || mapped === '' ? 'none' : 'transition'
@@ -168,9 +177,18 @@ export class JiraAdapter implements TrackerAdapter {
       if (Number.isFinite(at)) headers['if-modified-since'] = new Date(at).toUTCString()
     }
 
-    const response = await this.send('GET', `${this.apiBase()}/issue/${issueKey}`, undefined, headers)
+    const response = await this.send(
+      'GET',
+      `${this.apiBase()}/issue/${issueKey}`,
+      undefined,
+      headers,
+      externalKey,
+    )
     if (response.status === 304) return { notModified: true }
     if (response.status !== 200) {
+      if (isRetryable(response)) {
+        throw new TrackerRetryableError(response.status, response.headers)
+      }
       throw new TrackerSyncError(
         'remote_rejected',
         `Jira issue read rejected with status ${response.status}`,
@@ -223,8 +241,17 @@ export class JiraAdapter implements TrackerAdapter {
     let startAt = 0
     for (;;) {
       const url = `${this.apiBase()}/issue/${issueKey}/comment?startAt=${startAt}&maxResults=${COMMENT_PAGE_SIZE}`
-      const response = await this.send('GET', url, undefined, { accept: 'application/json' })
+      const response = await this.send(
+        'GET',
+        url,
+        undefined,
+        { accept: 'application/json' },
+        externalKey,
+      )
       if (response.status !== 200) {
+        if (isRetryable(response)) {
+          throw new TrackerRetryableError(response.status, response.headers)
+        }
         throw new TrackerSyncError(
           'remote_rejected',
           `Jira comment list rejected with status ${response.status}`,
@@ -297,10 +324,12 @@ export class JiraAdapter implements TrackerAdapter {
       `${this.apiBase()}/issue/${issueKey}/transitions`,
       undefined,
       { accept: 'application/json' },
+      issueKey,
     )
     if (response.status !== 200) {
-      const result = retryableResult(response)
-      if (result.retryable) return result
+      if (isRetryable(response)) {
+        throw new TrackerRetryableError(response.status, response.headers)
+      }
       throw new TrackerSyncError(
         'remote_rejected',
         `Jira transition list rejected with status ${response.status}`,
@@ -349,6 +378,7 @@ export class JiraAdapter implements TrackerAdapter {
     url: string,
     body: string | undefined,
     headers: HttpHeaders,
+    readKey: string | null = null,
   ): Promise<HttpResponse> {
     const outgoingHeaders: HttpHeaders = { 'user-agent': this.userAgent, ...headers }
     if (body !== undefined) outgoingHeaders['content-type'] = 'application/json'
@@ -375,6 +405,16 @@ export class JiraAdapter implements TrackerAdapter {
         || response.headers === null || typeof response.headers !== 'object'
       ) {
         throw new TrackerSyncError('invalid_response', 'Jira transport returned a malformed response')
+      }
+      if (readKey !== null && this.readObserver !== null) {
+        const observation: TrackerReadObservation = {
+          tracker: this.tracker,
+          key: readKey,
+          status: response.status,
+          headers: response.headers,
+          retryable: isRetryable(response),
+        }
+        this.readObserver(observation)
       }
       return response
     } catch (error) {

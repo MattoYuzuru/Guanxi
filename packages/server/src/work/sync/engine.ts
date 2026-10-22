@@ -10,8 +10,10 @@
 import { DERIVED_STATUSES, type DerivedStatus } from '../types.ts'
 import { RateLimitGovernor, type RateLimitDecision } from './rate-limit.ts'
 import {
+  TrackerRetryableError,
   TrackerSyncError,
   TrackerTransportError,
+  headerValue,
   isCoarseStatus,
   isSuccessStatus,
   transitionMarker,
@@ -21,6 +23,7 @@ import {
   type ItemDisplayMetadata,
   type PollResult,
   type RemoteBusinessFields,
+  type SyncDeferral,
   type SyncResult,
   type SyncWrite,
   type TrackerAdapter,
@@ -134,6 +137,9 @@ export class TrackerSyncEngine {
     this.adapter = options.adapter
     this.clock = options.now ?? (() => Date.now())
     this.governor = options.governor ?? new RateLimitGovernor({ now: this.clock })
+    this.adapter.observeReads?.(observation => {
+      this.governor.observeRead(observation)
+    })
   }
 
   registerLink(link: TrackerLink): TrackerLink {
@@ -159,10 +165,26 @@ export class TrackerSyncEngine {
    */
   async poll(link: TrackerLink, now = this.clock()): Promise<PollResult> {
     this.assertLink(link)
-    const read = await this.adapter.read(link.externalKey, {
-      etag: link.lastRemoteEtag,
-      updatedAt: link.lastRemoteUpdatedAt,
-    })
+    let read
+    try {
+      read = await this.adapter.read(link.externalKey, {
+        etag: link.lastRemoteEtag,
+        updatedAt: link.lastRemoteUpdatedAt,
+      })
+    } catch (error) {
+      if (error instanceof TrackerRetryableError) {
+        const metadata = this.metadataByItem.get(link.itemId) ?? null
+        return {
+          link: cloneLink(link),
+          notModified: false,
+          changed: false,
+          changes: [],
+          metadata: metadata === null ? null : cloneMetadata(metadata),
+          deferred: this.readDeferral(link, error, now),
+        }
+      }
+      throw error
+    }
     if (read.notModified) {
       const metadata = this.metadataByItem.get(link.itemId) ?? null
       return {
@@ -238,6 +260,9 @@ export class TrackerSyncEngine {
           now,
         })
         return deferred(link, observation)
+      }
+      if (error instanceof TrackerRetryableError) {
+        return deferred(link, this.readDeferral(link, error, now))
       }
       throw error
     }
@@ -331,6 +356,9 @@ export class TrackerSyncEngine {
           })
           return deferred(link, observation, writes)
         }
+        if (error instanceof TrackerRetryableError) {
+          return deferred(link, this.readDeferral(link, error, now), writes)
+        }
         throw error
       }
 
@@ -364,6 +392,29 @@ export class TrackerSyncEngine {
       writes,
       commentPosted,
     }
+  }
+
+  /**
+   * The adapter already reported the retryable read; read the exact scheduled time back
+   * from the governor instead of observing the same response twice.
+   */
+  private readDeferral(
+    link: TrackerLink,
+    error: TrackerRetryableError,
+    now: number,
+  ): SyncDeferral {
+    const nextAllowedAt = this.governor.nextAllowedAt({
+      tracker: link.tracker,
+      key: link.externalKey,
+      contentCreation: false,
+      now,
+    })
+    const reason: DeferReason = headerValue(error.headers, 'retry-after') !== undefined
+      ? 'retry_after'
+      : error.status === 403
+        ? 'secondary_limit'
+        : 'server_backoff'
+    return { reason, nextAllowedAt: Math.max(now, nextAllowedAt) }
   }
 
   private assertLink(link: TrackerLink): void {

@@ -265,6 +265,15 @@ export class RateLimitGovernor {
     return { allowed: true, nextAllowedAt: now }
   }
 
+  /**
+   * Records one read response. Reads share the server-backoff state with writes but never
+   * consume the content-creation buckets. `304` is a successful conditional read.
+   */
+  observeRead(input: Omit<RateLimitObservation, 'contentCreation'>): RateLimitObservationResult {
+    const normalized = input.status === 304 ? { ...input, status: 200 } : input
+    return this.observeWrite({ ...normalized, contentCreation: false })
+  }
+
   observeWrite(input: RateLimitObservation): RateLimitObservationResult {
     const now = input.now ?? this.clock()
     const retryAfter = parseRetryAfter(headerValue(input.headers, 'retry-after'), now)

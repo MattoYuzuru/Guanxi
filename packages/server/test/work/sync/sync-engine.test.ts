@@ -73,6 +73,9 @@ class FakeGitHub {
   readonly comments: Array<{ id: number; body: string }> = fixture('github-comments-empty')
   issue = issueFromFixture('github-issue-initial')
   etag = 'W/"issue-1"'
+  issueHeaders: Record<string, string> = {}
+  readResponse: HttpResponse | null = null
+  commentListResponse: HttpResponse | null = null
   failNextCommentAfterRecord = false
   failNextLabelPost = false
   private nextCommentId = 9000
@@ -92,12 +95,14 @@ class FakeGitHub {
     this.requests.push(structuredClone(request))
     const path = new URL(request.url).pathname
     if (request.method === 'GET' && /\/issues\/7$/.test(path)) {
+      if (this.readResponse !== null) return this.readResponse
       if (request.headers['if-none-match'] === this.etag) {
         return { status: 304, headers: {}, body: '' }
       }
-      return json(200, this.issuePayload(), { etag: this.etag })
+      return json(200, this.issuePayload(), { etag: this.etag, ...this.issueHeaders })
     }
     if (request.method === 'GET' && /\/issues\/7\/comments$/.test(path)) {
+      if (this.commentListResponse !== null) return this.commentListResponse
       return json(200, this.comments)
     }
     if (request.method === 'POST' && /\/issues\/7\/comments$/.test(path)) {
@@ -460,6 +465,54 @@ test('Jira comments every coarse transition and only transitions mapped statuses
   for (const comment of fake.comments) {
     assert.match(adfToText(comment.body), /guanxi:transition:wg2-a:/)
   }
+})
+
+test('a retryable comment-list read defers the transition at retry-after', async () => {
+  const fake = new FakeGitHub()
+  fake.commentListResponse = json(429, { message: 'rate limited' }, { 'retry-after': '30' })
+  const { engine } = githubEngine(fake)
+
+  const result = await engine.sync(link(), 'in_progress', { now: START })
+  assert.equal(result.outcome, 'deferred')
+  assert.equal(result.deferred?.reason, 'retry_after')
+  assert.equal(result.deferred?.nextAllowedAt, START + 30_000)
+  assert.equal(fake.commentPosts().length, 0)
+  assert.equal(fake.comments.length, 0)
+})
+
+test('a retryable poll read is a deferral with the server time, not a throw', async () => {
+  const fake = new FakeGitHub()
+  fake.readResponse = json(429, { message: 'rate limited' }, { 'retry-after': '12' })
+  const { engine } = githubEngine(fake)
+
+  const polled = await engine.poll(link(), START)
+  assert.equal(polled.notModified, false)
+  assert.equal(polled.changed, false)
+  assert.deepEqual(polled.changes, [])
+  assert.equal(polled.metadata, null)
+  assert.equal(polled.deferred?.reason, 'retry_after')
+  assert.equal(polled.deferred?.nextAllowedAt, START + 12_000)
+})
+
+test('a read reporting remaining=0 defers the next write until reset', async () => {
+  const fake = new FakeGitHub()
+  const reset = START + 5_000
+  fake.issueHeaders = {
+    'x-ratelimit-remaining': '0',
+    'x-ratelimit-reset': String(reset / 1_000),
+  }
+  const { engine } = githubEngine(fake)
+
+  const polled = await engine.poll(link(), START)
+  assert.equal(polled.deferred, undefined)
+  assert.equal(polled.changed, true)
+
+  const deferred = await engine.sync(polled.link, 'in_progress', { now: START + 1_000 })
+  assert.equal(deferred.outcome, 'deferred')
+  assert.equal(deferred.deferred?.reason, 'server_backoff')
+  assert.equal(deferred.deferred?.nextAllowedAt, reset)
+  assert.equal(fake.commentPosts().length, 0)
+  assert.equal(fake.comments.length, 0)
 })
 
 test('conditional polling returns 304 without touching metadata', async () => {

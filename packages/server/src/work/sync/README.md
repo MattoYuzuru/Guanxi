@@ -100,8 +100,10 @@ Jira transitions are optional configuration. An unmapped status is comment-only.
 
 `engine.poll(link, now)` sends ETag / If-Modified-Since where the tracker supports it. `304`
 returns `notModified: true`, no changes, the same link and unchanged display metadata. A `200`
-returns a field diff and updates `lastRemoteEtag` / `lastRemoteUpdatedAt`. Scheduling is the
-caller's job; D-175 expects every ten minutes. This core starts no timer and opens no socket.
+returns a field diff and updates `lastRemoteEtag` / `lastRemoteUpdatedAt`. A retryable read
+(429, secondary-limit 403, 5xx) returns `deferred` with the exact retry time instead of
+throwing. Scheduling is the caller's job; D-175 expects every ten minutes. This core starts
+no timer and opens no socket.
 
 ## Rate limits
 
@@ -111,6 +113,12 @@ returns the exact next-allowed epoch millisecond.
 - GitHub content creation (comments) uses token buckets of 80 per minute and 500 per hour.
   Each bucket refills at `capacity / window`: the 81st immediate comment is allowed at
   `now + 750 ms`, and an isolated hourly bucket refills one token every 7,200 ms.
+- Every read response is observed by the engine: `x-ratelimit-remaining` and
+  `x-ratelimit-reset` on a read update the same server-backoff state as writes. A read that
+  reports `remaining: 0` defers the next write to the reset time.
+- A retryable read response becomes `TrackerRetryableError`; `poll()` and `sync()` translate
+  it into a deferral at the exact `retry-after` / reset / backoff time. `304` counts as a
+  successful read for observation.
 - GitHub label writes skip the content-creation buckets but still honour server backoff.
 - `x-ratelimit-remaining: 0` defers until `x-ratelimit-reset`; `retry-after` accepts delta
   seconds or an HTTP date and wins over local timing.

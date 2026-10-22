@@ -131,6 +131,8 @@ export interface TrackerAdapter {
   readonly tracker: TrackerKind
   /** Non-secret audit reference; the token is supplied only by `authorize`. */
   readonly credential: SecretRef
+  /** Optional: the engine subscribes here to observe every read response. */
+  observeReads?(observer: TrackerReadObserver): void
   /** Whether a status maps to a label, a Jira transition, or a comment only. */
   statusMapping(status: CoarseStatus): 'label' | 'transition' | 'none'
   read(externalKey: string, conditional?: ConditionalRead): Promise<RemoteReadResult>
@@ -153,6 +155,8 @@ export interface PollResult {
   changed: boolean
   changes: BusinessFieldChange[]
   metadata: ItemDisplayMetadata | null
+  /** Set when the tracker read was retryable; the caller retries at the exact time. */
+  deferred?: SyncDeferral
 }
 
 export interface TransitionEvidence {
@@ -198,6 +202,7 @@ export type TrackerSyncErrorCode =
   | 'authorization_failed'
   | 'remote_rejected'
   | 'rate_limited'
+  | 'retryable_response'
   | 'transition_not_found'
   | 'tracker_mismatch'
   | 'invalid_status'
@@ -219,6 +224,33 @@ export class TrackerTransportError extends TrackerSyncError {
     this.name = 'TrackerTransportError'
   }
 }
+
+/**
+ * A read response the caller may retry (429, secondary-limit 403, 5xx). It carries only
+ * status and response headers; the engine turns it into a deferral at the exact server time.
+ */
+export class TrackerRetryableError extends TrackerSyncError {
+  readonly status: number
+  readonly headers: HttpHeaders
+
+  constructor(status: number, headers: HttpHeaders) {
+    super('retryable_response', `tracker read is retryable with status ${status}`)
+    this.name = 'TrackerRetryableError'
+    this.status = status
+    this.headers = { ...headers }
+  }
+}
+
+/** One read response reported to the engine's rate-limit governor. */
+export interface TrackerReadObservation {
+  tracker: TrackerKind
+  key: string
+  status: number
+  headers: HttpHeaders
+  retryable: boolean
+}
+
+export type TrackerReadObserver = (observation: TrackerReadObservation) => void
 
 /** Exact marker checked against existing comments before posting. */
 export function transitionMarker(itemId: string, status: CoarseStatus, seq: number): string {

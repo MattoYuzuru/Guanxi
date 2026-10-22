@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { GitHubAdapter } from '../../../src/work/sync/github.ts'
 import { JiraAdapter, adfToText } from '../../../src/work/sync/jira.ts'
 import {
+  TrackerRetryableError,
   TrackerSyncError,
   type HttpHeaders,
   type HttpRequest,
@@ -275,6 +276,32 @@ test('GitHub keeps user labels in the guanxi namespace out of the status swap', 
   assert.deepEqual(
     issue.labels.map(label => label.name).sort(),
     ['bug', 'guanxi:done', 'guanxi:needs-triage'],
+  )
+})
+
+test('retryable read responses surface as a typed retryable error', async () => {
+  const github = new ScriptedTransport(() => json(429, { message: 'rate limited' }, {
+    'retry-after': '30',
+  }))
+  await assert.rejects(
+    githubAdapter(github).listComments('example-org/example-repo#7'),
+    (error: unknown) => {
+      assert.ok(error instanceof TrackerRetryableError)
+      assert.equal(error.code, 'retryable_response')
+      assert.equal(error.status, 429)
+      assert.equal(error.headers['retry-after'], '30')
+      return true
+    },
+  )
+
+  const jira = new ScriptedTransport(() => json(503, { message: 'maintenance' }))
+  await assert.rejects(
+    jiraAdapter(jira, 3).read('PROJ-12'),
+    (error: unknown) => {
+      assert.ok(error instanceof TrackerRetryableError)
+      assert.equal(error.status, 503)
+      return true
+    },
   )
 })
 

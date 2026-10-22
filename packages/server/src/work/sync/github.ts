@@ -8,6 +8,7 @@
  */
 import {
   COARSE_STATUSES,
+  TrackerRetryableError,
   TrackerSyncError,
   TrackerTransportError,
   headerValue,
@@ -23,6 +24,8 @@ import {
   type RemoteReadResult,
   type TrackerAdapter,
   type TrackerMutation,
+  type TrackerReadObservation,
+  type TrackerReadObserver,
   type TrackerWriteResult,
 } from './types.ts'
 import type { SecretRef } from '../../egress/types.ts'
@@ -153,6 +156,7 @@ export class GitHubAdapter implements TrackerAdapter {
   private readonly apiBase: string
   private readonly origin: string
   private readonly userAgent: string
+  private readObserver: TrackerReadObserver | null = null
 
   constructor(options: GitHubAdapterOptions) {
     const base = options.apiBase ?? DEFAULT_API_BASE
@@ -173,6 +177,10 @@ export class GitHubAdapter implements TrackerAdapter {
     this.userAgent = options.userAgent ?? USER_AGENT
   }
 
+  observeReads(observer: TrackerReadObserver): void {
+    this.readObserver = observer
+  }
+
   statusMapping(_status: CoarseStatus): 'label' {
     return 'label'
   }
@@ -191,9 +199,12 @@ export class GitHubAdapter implements TrackerAdapter {
       if (Number.isFinite(at)) headers['if-modified-since'] = new Date(at).toUTCString()
     }
 
-    const response = await this.send('GET', this.issueUrl(ref), undefined, headers)
+    const response = await this.send('GET', this.issueUrl(ref), undefined, headers, externalKey)
     if (response.status === 304) return { notModified: true }
     if (response.status !== 200) {
+      if (isRetryable(response)) {
+        throw new TrackerRetryableError(response.status, response.headers)
+      }
       throw new TrackerSyncError(
         'remote_rejected',
         `GitHub issue read rejected with status ${response.status}`,
@@ -234,8 +245,11 @@ export class GitHubAdapter implements TrackerAdapter {
       const response = await this.send('GET', url, undefined, {
         accept: 'application/vnd.github+json',
         'x-github-api-version': '2022-11-28',
-      })
+      }, externalKey)
       if (response.status !== 200) {
+        if (isRetryable(response)) {
+          throw new TrackerRetryableError(response.status, response.headers)
+        }
         throw new TrackerSyncError(
           'remote_rejected',
           `GitHub comment list rejected with status ${response.status}`,
@@ -277,7 +291,7 @@ export class GitHubAdapter implements TrackerAdapter {
         return result
       }
       case 'status-label':
-        return this.setStatusLabel(ref, mutation.status)
+        return this.setStatusLabel(ref, mutation.status, externalKey)
       default:
         throw new TrackerSyncError(
           'business_field_write_refused',
@@ -289,15 +303,17 @@ export class GitHubAdapter implements TrackerAdapter {
   private async setStatusLabel(
     ref: GitHubIssueRef,
     status: CoarseStatus,
+    externalKey: string,
   ): Promise<TrackerWriteResult> {
     const target = `guanxi:${status}`
     const response = await this.send('GET', this.issueUrl(ref), undefined, {
       accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
-    })
+    }, externalKey)
     if (response.status !== 200) {
-      const result = this.result(response)
-      if (result.retryable) return result
+      if (isRetryable(response)) {
+        throw new TrackerRetryableError(response.status, response.headers)
+      }
       throw new TrackerSyncError(
         'remote_rejected',
         `GitHub label read rejected with status ${response.status}`,
@@ -367,6 +383,7 @@ export class GitHubAdapter implements TrackerAdapter {
     url: string,
     body: string | undefined,
     headers: HttpHeaders,
+    readKey: string | null = null,
   ): Promise<HttpResponse> {
     const outgoingHeaders: HttpHeaders = { 'user-agent': this.userAgent, ...headers }
     if (body !== undefined) outgoingHeaders['content-type'] = 'application/json'
@@ -393,6 +410,16 @@ export class GitHubAdapter implements TrackerAdapter {
         || response.headers === null || typeof response.headers !== 'object'
       ) {
         throw new TrackerSyncError('invalid_response', 'GitHub transport returned a malformed response')
+      }
+      if (readKey !== null && this.readObserver !== null) {
+        const observation: TrackerReadObservation = {
+          tracker: this.tracker,
+          key: readKey,
+          status: response.status,
+          headers: response.headers,
+          retryable: isRetryable(response),
+        }
+        this.readObserver(observation)
       }
       return response
     } catch (error) {
