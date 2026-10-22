@@ -30,6 +30,20 @@ test('linux sandbox passes the pinned root as inherited descriptor 4', () => {
   assert.deepEqual(spawn.stdio.slice(0, 3), ['ignore', 'ignore', 'ignore'])
 })
 
+test('linux sandbox does not reintroduce absent optional system-library paths', () => {
+  const root = '/fixture/repo'
+  // Mirrors an arm64 runtime's validated sources: /lib exists, /lib64 does not.
+  const existing = ['/usr', '/bin', '/sbin', '/lib', '/etc', root, '/fixture/data/runtime']
+  const spec = linuxSandboxSpawn(existing, root, 21, '/fixture/data/knowledge-index', root, '/usr/bin/node', '/fixture/data/runtime/worker.js')
+  const mounted = spec.args.flatMap((value, index) => value === '--ro-bind' || value === '--ro-bind-fd'
+    ? [spec.args[index + 2]!]
+    : [])
+  assert.deepEqual(mounted, [...existing].sort((a, b) => a.length - b.length))
+  assert.equal(spec.args.includes('/lib64'), false)
+  assert.equal(spec.args.includes('/lib'), true)
+  assert.equal(spec.stdio[4], 21, 'root containment still uses its inherited pinned descriptor')
+})
+
 test('background priority wraps the sandbox and keeps its argument order', () => {
   const sandbox = ['-p', '(version 1)', '/usr/bin/node', '/runtime/worker.js']
   assert.deepEqual(backgroundPriority('/usr/bin/sandbox-exec', sandbox, 'darwin', false), {

@@ -20,7 +20,7 @@ export interface SandboxSpawn { command: string; args: string[]; stdio: ('ignore
  * namespace, so the pinned root is inherited as descriptor 4. IPC stays at 3. */
 export function linuxSandboxSpawn(paths: readonly string[], root: string, rootFd: number, databaseDir: string, cwd: string, executable: string, entry: string): SandboxSpawn {
   const args = ['--die-with-parent', '--unshare-all', '--new-session', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp']
-  for (const path of [...new Set(['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths, root])].sort((a, b) => a.length - b.length)) {
+  for (const path of [...new Set([...paths, root])].sort((a, b) => a.length - b.length)) {
     if (path === root) args.push('--ro-bind-fd', '4', root)
     else args.push('--ro-bind', path, path)
   }
@@ -57,7 +57,11 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     try { if (await realpath(`/proc/self/fd/${rootHandle.fd}`) !== root) throw new Error('index_root_changed') }
     catch (error) { await rootHandle.close(); throw error }
     const existing: string[] = []
-    for (const path of paths) { try { await realpath(path); existing.push(path) } catch { /* absent system path */ } }
+    // Optional system-library locations vary by architecture (for example, arm64
+    // may have no /lib64). Pass only validated mount sources to the builder.
+    for (const path of ['/usr', '/bin', '/sbin', '/lib', '/lib64', '/etc', ...paths]) {
+      try { await realpath(path); existing.push(path) } catch { /* absent system path */ }
+    }
     const spec = linuxSandboxSpawn(existing, root, rootHandle.fd, databaseDir, cwd, executable, entry)
     command = spec.command; args = spec.args; stdio = spec.stdio
   } else throw new Error('index_sandbox_unavailable')
