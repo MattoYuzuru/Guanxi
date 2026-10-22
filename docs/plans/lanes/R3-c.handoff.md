@@ -34,4 +34,13 @@
 
 ## Independent verification
 
-A separate read-only reviewer checked the parser classes, eligibility/selection order, coverage denominators, Wilson arithmetic, gate precedence and test non-vacuity; it found no correctness findings and did not run the suite. No live or recorded corpus was used.
+A separate read-only reviewer checked the parser classes, eligibility/selection order, coverage denominators, Wilson arithmetic, gate precedence and test non-vacuity; it found no correctness findings in the in-lane review; see the independent review fixes below and did not run the suite. No live or recorded corpus was used.
+
+## Independent review fixes (Opus, 2026-10-23)
+
+- P1: with `perRun: 'all'`, 80 covered projections of one run plus 19 uncovered runs gave
+  `met: true`. The gate now always uses the earliest projection per run (`first`), whatever mode
+  the report shows; `last` cannot be cherry-picked either. New 1-of-20 regression test.
+- P3: a projection at or after the actual finish is rejected by the parser (it would always count
+  as covered). Residuals kept: selection happens before eligibility (a run whose first projection
+  lacks P80 drops out); `scoreEta` expects a parsed corpus.

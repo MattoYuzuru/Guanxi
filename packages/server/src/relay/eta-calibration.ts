@@ -177,6 +177,10 @@ function parseSample(value: unknown, path: string): EtaSample {
   if (record.actualFinishAt !== null && !isSafeTime(record.actualFinishAt)) {
     fail(`${path}.actualFinishAt`, 'expected null or non-negative safe integer')
   }
+  // A projection made at or after the actual finish is not a forecast; it would always count as covered.
+  if (record.actualFinishAt !== null && (record.actualFinishAt as number) <= projectedAt) {
+    fail(`${path}.actualFinishAt`, 'expected the actual finish after projectedAt')
+  }
   return record as unknown as EtaSample
 }
 
@@ -326,6 +330,13 @@ function evaluateGate(
  * the latest and `all` every projection. Coverage is computed over selected projections;
  * ineligible selected projections are counted by reason. Pure and deterministic: the input is
  * never mutated. */
+function gateFor(samples: readonly EtaSample[]): EtaGate {
+  const selected = selectSamples(samples, 'first')
+  const eligible = selected.filter(isEligibleSample)
+  const coverage = coverageOf(selected, eligible)
+  return evaluateGate(samples, coverage, coverage.runs)
+}
+
 export function scoreEta(corpus: EtaCorpus, opts?: { perRun?: EtaPerRun }): EtaScore {
   const perRun = resolvePerRun(opts)
   const selected = selectSamples(corpus.samples, perRun)
@@ -363,6 +374,8 @@ export function scoreEta(corpus: EtaCorpus, opts?: { perRun?: EtaPerRun }): EtaS
     reasons,
     overall,
     cohorts,
-    gate: evaluateGate(corpus.samples, overall, overall.runs),
+    // The gate always uses one projection per run (the earliest), whatever `perRun` reports:
+    // `all` would let one run with many projections dominate, and `last` sits next to the finish.
+    gate: gateFor(corpus.samples),
   }
 }

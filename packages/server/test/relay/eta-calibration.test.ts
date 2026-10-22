@@ -401,3 +401,19 @@ test('scoreEta is pure, deterministic and does not mutate its input', () => {
   assert.equal(first.selected, 21)
   assert.equal(first.overall.p80Coverage, 17 / 21)
 })
+
+test('the gate uses one projection per run, so many projections from one run cannot pass it', () => {
+  const samples: EtaSample[] = []
+  for (let i = 1; i < 20; i++) samples.push(sample(`r${i}`, { actualFinishAt: T + 500 }))
+  for (let j = 0; j < 80; j++) samples.push(sample('r0', { projectedAt: T + j, p50FinishAt: T + 300, p80FinishAt: T + 400, actualFinishAt: T + 350 }))
+  const all = scoreEta(corpus(samples), { perRun: 'all' })
+  assert.ok((all.overall.p80Coverage ?? 0) > 0.8, 'per-projection coverage alone would pass')
+  assert.equal(all.gate.evaluated, true)
+  assert.equal(all.gate.met, false, 'the gate uses the earliest projection of each run')
+  assert.equal(scoreEta(corpus(samples), { perRun: 'last' }).gate.met, false)
+})
+
+test('a projection made at or after the actual finish is rejected', () => {
+  rejects(mutate(value => { value.actualFinishAt = value.projectedAt }), 'corpus.samples[0].actualFinishAt')
+  rejects(mutate(value => { value.actualFinishAt = value.projectedAt - 1 }), 'corpus.samples[0].actualFinishAt')
+})
