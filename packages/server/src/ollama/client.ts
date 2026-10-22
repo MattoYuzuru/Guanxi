@@ -113,6 +113,62 @@ async function disposeResponseBody(response: Response): Promise<void> {
   }
 }
 
+interface OwnedResponseText {
+  readonly text: Promise<string>
+  cancel(): Promise<void>
+  release(): void
+}
+
+/**
+ * Consume a non-stream response body while owning its reader. This mirrors
+ * `Response.text()` UTF-8/BOM semantics but exposes one memoized consumer
+ * cancellation, so abort or a deadline can unblock a pending read before the
+ * call awaits it. No body-size ceiling is introduced.
+ */
+function ownResponseText(response: Response): OwnedResponseText {
+  if (!response.body) {
+    return {
+      text: Promise.resolve(''),
+      cancel: () => Promise.resolve(),
+      release: () => undefined,
+    }
+  }
+  const reader = response.body.getReader()
+  let cancelled: Promise<void> | undefined
+  const cancel = (): Promise<void> => {
+    if (!cancelled) {
+      try {
+        cancelled = reader.cancel().then(() => undefined, () => undefined)
+      } catch {
+        cancelled = Promise.resolve()
+      }
+    }
+    return cancelled
+  }
+  const text = (async (): Promise<string> => {
+    const decoder = new TextDecoder()
+    const parts: string[] = []
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value?.byteLength) parts.push(decoder.decode(value, { stream: true }))
+    }
+    parts.push(decoder.decode())
+    return parts.join('')
+  })()
+  const release = (): void => {
+    // Only call this after the read settled; a control outcome also waits for
+    // the provider cancel acknowledgement here before the lock is released.
+    try {
+      reader.releaseLock()
+    } catch {
+      // An errored or still-pending read keeps its lock; the caller already
+      // observed the corresponding body/control failure.
+    }
+  }
+  return { text, cancel, release }
+}
+
 export interface OllamaStreamTimeoutPolicy {
   connectTimeoutMs: number
   loadTimeoutMs: number
@@ -421,19 +477,33 @@ export class OllamaClient {
     }
 
     let text: string
+    let bodyReader: OwnedResponseText | undefined
     try {
       text = await this.withinDeadline(
         responseTimeout.phase,
         responseTimeout.timeoutMs,
         controller,
         externalSignal,
-        () => response.text(),
+        () => {
+          if (awaitTransportSettlement) {
+            bodyReader = ownResponseText(response)
+            return bodyReader.text
+          }
+          return response.text()
+        },
         responseTimeout.timeoutMs,
-        { awaitSettlement: awaitTransportSettlement },
+        {
+          awaitSettlement: awaitTransportSettlement,
+          ...(awaitTransportSettlement
+            ? { initiateCleanup: () => bodyReader?.cancel() }
+            : {}),
+        },
       )
     } catch (error) {
       if (externalSignal?.aborted || error instanceof OllamaTimeoutError) throw error
       throw new OllamaError(`Ollama response body failed on ${path}`, response.status, error)
+    } finally {
+      bodyReader?.release()
     }
 
     try {
