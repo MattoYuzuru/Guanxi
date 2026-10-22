@@ -1,0 +1,19 @@
+{
+  "name": "@guanxi/bench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "./src/index.ts",
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node src/cli.ts fixture",
+    "test:mutations": "node tools/mutations.ts"
+  },
+  "dependencies": {
+    "@guanxi/contract": "*",
+    "@guanxi/kernel": "*",
+    "zod": "^3.25.76"
+  }
+}
