@@ -161,10 +161,38 @@ describe('inspector queue v3', () => {
     expect(rows.map((row) => row.id)).toEqual(['legacy-one', 'legacy-two'])
     expect(rows[0]!.text.length).toBeLessThanOrEqual(INPUT_EXCERPT_BYTES)
     expect(rows[0]!.text).not.toContain('LEGACY-TAIL')
-    expect(boundedPreview(`${'x'.repeat(INPUT_EXCERPT_BYTES - 10)}⟦REDACTED secret://demo`)).not.toContain('⟦')
+    expect(boundedPreview(`${'x'.repeat(INPUT_EXCERPT_BYTES - 10)}⟦REDACTED secret://demo⟧tail`)).not.toContain('⟦')
     const queue = queueEvent()
     if (queue.type !== 'agent.queue' || queue.version !== SESSION_EVENT_VERSION_3) throw new Error('expected v3 queue')
     expect(queueRenderItems(queue).map((row) => row.kind)).toEqual(['inline', 'artifact'])
+  })
+
+  it('bounds ordinary brackets and genuine marker cuts without discarding legitimate text', () => {
+    setActiveLocale('en')
+    const max = INPUT_EXCERPT_BYTES
+    const bytes = (value: string) => new TextEncoder().encode(value)
+    const exactPrefix = (value: string) => new TextDecoder().decode(bytes(value).subarray(0, max))
+
+    const ordinary = `prefix ⟦ ordinary ${'x'.repeat(9000)}`
+    const ordinaryPreview = boundedPreview(ordinary)
+    expect(ordinaryPreview).toBe(exactPrefix(ordinary))
+    expect(bytes(ordinaryPreview).byteLength).toBe(max)
+
+    // The clip cuts inside the visible genuine prefix: only the partial marker goes.
+    const cutInsidePrefix = `${'x'.repeat(max - 4)}⟦REDACTED secret://demo⟧tail`
+    expect(boundedPreview(cutInsidePrefix)).toBe('x'.repeat(max - 4))
+
+    // The clip cuts inside the marker body after the full prefix.
+    const cutInsideMarker = `${'x'.repeat(max - 12)}⟦REDACTED secret://demo⟧tail`
+    expect(boundedPreview(cutInsideMarker)).toBe('x'.repeat(max - 12))
+
+    // A complete marker well inside the bound is preserved as text.
+    const complete = 'before ⟦REDACTED secret://demo⟧ after'
+    expect(boundedPreview(complete)).toBe(complete)
+
+    // A bare prefix without a closing marker is not genuine marker syntax.
+    const unclosed = `${'x'.repeat(max - 10)}⟦REDACTED but no close`
+    expect(boundedPreview(unclosed)).toBe(exactPrefix(unclosed))
   })
 
   it('keeps the event row count exact when a queue snapshot is present', async () => {
