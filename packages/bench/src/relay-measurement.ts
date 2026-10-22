@@ -138,6 +138,7 @@ const infra = (x: { state: string; reason?: string }) => x.state !== 'observed' 
 /** Infrastructure taint anywhere in a trial, not only in its supplied terminal outcome. */
 function trialTainted(t: RelayObservedTrial): boolean {
   if (t.outcome === 'infra_error' || t.outcome === 'infra_tainted') return true
+  if (infra(t.startedAtMs) || infra(t.finishedAtMs)) return true
   return t.cycles.some(c => c.state !== 'observed' ? infra(c)
     : [c.items, c.probes, c.context, c.guards, c.integrity].some(infra) || (c.items.state === 'observed' && c.items.assessments.some(infra))
       || (c.probes.state === 'observed' && c.probes.grades.some(infra)) || (c.context.state === 'observed' && c.context.samples.some(infra))

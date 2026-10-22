@@ -282,6 +282,14 @@ test('infrastructure taint inside a cycle slot excludes the whole task from the 
   assert.equal(arm(pr, 'arm-relay').trials.tainted, 1)
   assert.ok(pr.pairedRelayVsNaive.state === 'descriptive')
   if (pr.pairedRelayVsNaive.state === 'descriptive') assert.deepEqual(pr.pairedRelayVsNaive.excluded, [{ task: 'task-a', reason: 'infra' }])
+  for (const clock of ['startedAtMs', 'finishedAtMs'] as const) {
+    const rawClock = build()
+    trialOf(rawClock, 'task-a', 'arm-relay', 1)[clock] = { state: 'unknown', reason: 'infra_tainted' }
+    const cr = reduce(resign(rawClock))
+    assert.equal(arm(cr, 'arm-relay').trials.tainted, 1, clock)
+    assert.ok(cr.pairedRelayVsNaive.state === 'descriptive')
+    if (cr.pairedRelayVsNaive.state === 'descriptive') assert.deepEqual(cr.pairedRelayVsNaive.excluded, [{ task: 'task-a', reason: 'infra' }], clock)
+  }
 })
 
 test('empty or unsupported arms never read as complete; missing trials get their own cycle bucket; unreferenced evidence is flagged', () => {
