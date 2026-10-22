@@ -11,10 +11,12 @@ server. Harbor and mini-swe-agent run in a separately installed Python process, 
 node bundle. No shared wire contract, server route or migration changes.
 
 The continuation adds a [trial-bound K3 admission gateway](REQUEST_ADMISSION.md) and
-[task-content staging](STAGING.md), plus a [private channel protocol](PRIVATE_CHANNEL.md).
-These have synthetic assertions and independent review;
-they do not supply a real provider meter/price adapter, task image, public corpus or measured
-five-seed experiment. Stock real/paid execution still refuses.
+[task-content staging](STAGING.md), a [private channel protocol](PRIVATE_CHANNEL.md), a
+[private stream adapter](PRIVATE_STREAM.md), a real fenced K2 retention sink, and an
+owned [private process binding](PRIVATE_PROCESS.md). These have synthetic/OS-fixture
+assertions and author-focused checks; independent review is pending for this slice. They do
+not supply a real provider meter/price adapter, task image, public corpus, container boundary
+or measured five-seed experiment. Stock real/paid execution still refuses.
 
 ## Commands
 
@@ -33,8 +35,9 @@ The Mac smoke uses in-memory fake arm results, no SSH, container engine, network
 It writes a private JSON receipt and standalone HTML under `.lane-data/bench/`. Its control
 label is a fixture, not a measured mini-swe-agent score. The actual control integration is
 exercised by the host smoke. Reports use English source text and no app UI, remote fonts,
-scripts or network resources. `htmlReport(plan, trials, true)` removes task identifiers for
-aggregate publication; the default private report lists flipped and excluded task IDs.
+scripts or network resources. The private process fixture is a local Node child with anonymous
+inherited FDs; it proves ownership/cleanup mechanics, not task execution or isolation.
+`htmlReport(plan, trials, true)` removes task identifiers for aggregate publication; the default private report lists flipped and excluded task IDs.
 Reports identify the protocol, model/provider and arm versions and label synthetic fixture
 outcomes. New CLI receipts carry `recordedAt` in UTC; older receipts show an unrecorded time.
 Public mode also omits the experiment identifier.
@@ -94,6 +97,45 @@ container** whose node/project/connection already target that container's `/app`
 K4's versioned stdout and does not export the response text. A completed agent never passes a
 task by itself. The hidden verifier is the only pass gate. Stock task images do not contain
 such a node; the adapter requires this explicit image preparation.
+
+## Private trial binding and process ownership
+
+[PRIVATE_PROCESS.md](PRIVATE_PROCESS.md) describes the bounded T0 slice: an immutable binding
+with a host-generated nonce, a pre-dispatch R1 attempt fence, a real `RunStore.append`/K2
+retention sink, the authoritative scrubbed public projection used by both K2 and the task
+frame, and one supervised local process reached only through anonymous inherited fds 3/4.
+The task cannot select account, connection, model, trial, output policy, cleanup or billing
+facts. The nonce is host correlation, not authentication.
+
+The K2 sink writes a bounded two-phase receipt inside the existing reasoning class for every
+completion, including an empty one. Begin and done receipts carry only ordered spec hashes, a
+public digest and the scrubbed public stop reason; the returned projection is derived from the
+acknowledged stored content. A new completion gets a stable opaque correlation span derived
+from the binding nonce and request id, so a shared session/request id cannot conflate bindings.
+Legacy raw-span traces are refused by a fenced metadata existence read of the stored event
+rows: same session, old raw span and this binding/request key prefix, with no payload read and
+no `LIKE`/`GLOB`. A tool id redacted after its append therefore stays authoritative, while
+another binding's raw-span rows never match. Changed reason/removed/reordered specs,
+partial-prefix gaps, purged receipts and a recreated sink are reconciled or fail closed as
+documented.
+
+The supervisor is a trusted source-run asset. It generates a fresh 256-bit cleanup generation,
+writes only its hash to a `0600` version-2 record under a `0700` directory, and passes the token
+only in the launcher/client argv. The token grants nothing and is not in the record, environment
+or private frames. The supervisor terminates its process group on lifetime EOF and never
+unlinks the record. Only a live parent or the next reaper removes it, after exact process
+identity validation and actual process-group ESRCH. A live mismatched supervisor, unknown
+observation, wrong client token or legacy v1 group is quarantined rather than killed through a
+shared PID/argv. A missing supervisor/launcher asset fails closed; there is no direct-spawn
+fallback. A future bundle must include both `.mjs` assets. Same-UID cleanup is best-effort, not
+an isolation boundary; a `setsid` descendant is outside the process-group proof.
+
+There is no acknowledgement timeout. Abort or child death may start process-group shutdown
+immediately, but the owning promise and active binding remain owned until the real gateway and
+K2 retention settle. Timers bound process startup/output/shutdown only. A pending retention can
+therefore keep the run promise pending by design. No automatic redispatch/retry is added.
+Per-event fenced K2 appends can leave an idempotent private partial trace; no task response is
+written until the done receipt acknowledges.
 
 ## Corpus and protocol
 

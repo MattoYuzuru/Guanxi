@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { BenchGatewayError, type createTrialGateway } from './k3-gateway.ts'
+import { publicAssistantMessage, type PublicAssistantMessage } from './public-projection.ts'
 
 export class BenchChannelError extends Error {
   constructor(code: string) { super(code); this.name = 'BenchChannelError' }
@@ -89,6 +90,8 @@ export interface PrivateChannelHost {
   model: { api: string; provider: string; id: string }
   /** Private K2 sink. The module never writes a log/trajectory or returns reasoning. */
   retain(requestId: string, result: Completion['result']): Promise<void>
+  /** Trusted production sink: scrub, durably retain and return the exact public projection. */
+  retainAndProject?(requestId: string, result: Completion['result']): Promise<PublicAssistantMessage>
 }
 const emptyUsage = () => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } })
@@ -129,7 +132,8 @@ export class PrivateTrialChannel {
     if (!Number.isSafeInteger(policy.maximumRequests) || policy.maximumRequests <= 0 ||
       !Number.isSafeInteger(policy.requestTimeoutMs) || policy.requestTimeoutMs <= 0 || policy.requestTimeoutMs > 0x7fffffff)
       fail('channel_policy_invalid')
-    this.host = { gateway: host.gateway, model: Object.freeze({ ...host.model }), retain: host.retain.bind(host) }
+    this.host = { gateway: host.gateway, model: Object.freeze({ ...host.model }), retain: host.retain.bind(host),
+      ...(host.retainAndProject ? { retainAndProject: host.retainAndProject.bind(host) } : {}) }
     this.policy = Object.freeze({ ...policy })
   }
   close(): void { this.closed = true; this.lifetime.abort() }
@@ -151,12 +155,22 @@ export class PrivateTrialChannel {
       try {
         const { requestId, result } = await this.host.gateway.complete(contextOf(request.context, this.host.model), signal)
         signal.throwIfAborted()
-        await this.host.retain(requestId, result)
+        let message: PublicAssistantMessage
+        if (this.host.retainAndProject) {
+          message = await this.host.retainAndProject(requestId, result)
+        } else {
+          await this.host.retain(requestId, result)
+          message = publicAssistantMessage(result)
+        }
         signal.throwIfAborted()
-        const message = { text: result.content.filter(block => block.type === 'text').map(block => block.text).join(''),
-          toolCalls: result.content.filter(block => block.type === 'toolCall').map(block => ({ id: block.id, name: block.name, arguments: block.arguments })),
-          stopReason: result.stopReason }
-        return encodePrivateFrame({ version: 1, id: request.id, status: 'ok', requestId, message }, this.policy.maximumPayloadBytes)
+        // Rebuild the frame object explicitly: a host cannot add private keys or
+        // replace the public projection with the unscrubbed caller's result.
+        const publicMessage = {
+          text: message.text,
+          toolCalls: message.toolCalls.map(call => ({ id: call.id, name: call.name, arguments: call.arguments })),
+          stopReason: message.stopReason,
+        }
+        return encodePrivateFrame({ version: 1, id: request.id, status: 'ok', requestId, message: publicMessage }, this.policy.maximumPayloadBytes)
       } catch (error) {
         this.close()
         const code = error instanceof BenchGatewayError && gatewayCodes.has(error.code) ? error.code : 'channel_failed'

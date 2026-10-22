@@ -13,7 +13,7 @@ function setup() {
     maxTrialMicrousd: 20, maxTrialTokens: 20, maxSteps: 2, armCapMicrousd: 20, dailyTokenCap: 40,
     connection: 'secret://fixture/connection' }))
   let calls = 0, connectionProvider = 'fixture'
-  const optionsSeen: { maxTokens: number | undefined; singleAttempt: boolean | undefined }[] = []
+  const optionsSeen: { maxTokens: number | undefined; singleAttempt: boolean | undefined; runId: string }[] = []
   const result = { role: 'assistant' as const, api: 'openai-completions' as const, provider: 'fixture', model: 'fixture-metered',
     content: [{ type: 'text' as const, text: 'fixture reply' }], stopReason: 'stop' as const, timestamp: now.getTime(),
     usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
@@ -22,8 +22,8 @@ function setup() {
     snapshot: () => ({ connections: [{ id: 'connection', kind: 'model_api', auth: 'api_key', provider: connectionProvider }] }) as ReturnType<TrialGatewayConfig['k3']['snapshot']>,
     async complete(account, connection, prepared, call) {
       assert.equal(account, 'owner'); assert.equal(connection, 'connection')
-      assert.equal(call.model, 'fixture-metered'); assert.equal(call.runId, 'test')
-      optionsSeen.push({ maxTokens: call.options?.maxTokens, singleAttempt: call.singleAttempt })
+      assert.equal(call.model, 'fixture-metered')
+      optionsSeen.push({ maxTokens: call.options?.maxTokens, singleAttempt: call.singleAttempt, runId: call.runId })
       call.onPrepared!(prepared)
       assert.equal(budget.requestRows().find(row => row.request_id === call.requestId)!.state, 'reserved')
       calls++
@@ -40,7 +40,7 @@ function setup() {
     },
     usage: () => ({ tokens: 2, costMicrousd: 2, source: 'fixture:verified-usage-v1', confidence: 'verified', observedAt: now.toISOString() }),
   }
-  const config = { budget, k3, accountId: 'owner', connectionId: 'connection', provider: 'fixture', model: 'fixture-metered',
+  const config: TrialGatewayConfig = { budget, k3, accountId: 'owner', connectionId: 'connection', provider: 'fixture', model: 'fixture-metered',
     outputTokenLimit: 5, trial: { runId: 'test', task: 'task-0', arm: 'control', seed: 0 }, billing }
   return { budget, config, result, optionsSeen, calls: () => calls, changeProvider: () => { connectionProvider = 'changed' } }
 }
@@ -56,6 +56,7 @@ test('both immutable trial gateways pin K3 dispatch parameters and settle indepe
       await assert.rejects(gateway.complete(context), /request_budget_exceeded/)
     }
     assert.equal(ids.size, 4); assert.equal(f.calls(), 4)
+    assert.equal(f.optionsSeen.every(options => options.runId === 'test'), true)
     assert.equal(f.optionsSeen.length, 6)
     assert.equal(f.optionsSeen.every(options => options.maxTokens === 5 && options.singleAttempt === true), true)
     assert.deepEqual(f.budget.requestRows().map(row => row.state), ['settled', 'settled', 'settled', 'settled'])
@@ -146,6 +147,36 @@ test('a mismatched response or missing prepared hook never returns an accepted c
       await assert.rejects(createTrialGateway(f.config).complete(context), /gateway_model_failed|gateway_prepared_hook_missing/)
       if (kind === 'response') assert.equal(f.budget.requestRows()[0]!.state, 'unknown')
       else assert.equal(f.budget.requestRows().length, 0)
+    } finally { f.budget.close() }
+  }
+})
+
+
+test('pre-dispatch attempt fence uses the R1 run id while the budget keeps the experiment id', async () => {
+  const f = setup()
+  try {
+    const fences: string[] = []
+    f.config.k3RunId = 'r1-run'
+    f.config.attemptFence = { assert: () => { fences.push('assert') } }
+    const gateway = createTrialGateway(f.config)
+    await gateway.complete(context)
+    assert.equal(f.calls(), 1)
+    assert.deepEqual(fences, ['assert', 'assert'])
+    assert.equal(f.optionsSeen[0]!.runId, 'r1-run')
+    assert.equal(f.budget.requestRows()[0]!.run_id, 'test')
+    assert.equal(f.budget.requestRows()[0]!.state, 'settled')
+  } finally { f.budget.close() }
+})
+
+test('a stale attempt fence refuses before provider dispatch and again inside the prepared hook', async () => {
+  for (const failAt of [1, 2]) {
+    const f = setup()
+    try {
+      let fences = 0
+      f.config.attemptFence = { assert: () => { fences++; if (fences === failAt) throw new Error('fixture-private-stale-lease') } }
+      await assert.rejects(createTrialGateway(f.config).complete(context), { message: 'gateway_attempt_fenced' })
+      assert.equal(f.calls(), 0)
+      assert.equal(f.budget.requestRows().length, 0)
     } finally { f.budget.close() }
   }
 })
