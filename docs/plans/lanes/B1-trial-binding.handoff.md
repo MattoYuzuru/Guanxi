@@ -3,8 +3,9 @@
 **Status:** implementation and author-focused checks complete; independent root/GPT review and
 full integration gates pending. **Date:** 2026-10-22. **Branch:** `codex/b1-trial-binding`.
 **Base:** `6da2058` (`docs: record reviewed B1 merge and next integration checks`).
-**Implementation pin:** `28a1369` plus the docs/handoff commit; the final clean branch HEAD is
-reported by the worker after the last commit.
+**Implementation pin:** `28a1369` (acceptance-test hardening) and `5a211ca` (cleanup); the
+docs/handoff commit follows them. The final clean branch HEAD is reported by the worker after
+the last commit.
 
 This bounded slice implements the corrected private trial binding from
 [B1-trial-binding.plan.md](B1-trial-binding.plan.md). Historical claims in
@@ -47,6 +48,7 @@ remote service, GPU, public corpus or real task was used.
 | `e294a9b` | K2 sink, gateway fence/run identity, binding, authoritative projection and tests |
 | `b61c7f8` | owned process/supervisor/launcher, fd transport, record/reaper, ACK lifecycle and tests |
 | `28a1369` | scrub-before-append, post-append bound and exact reaper identity tests |
+| `5a211ca` | remove unused process module surface |
 | docs/handoff | this handoff, plan status, `PRIVATE_PROCESS.md` and README/contract updates |
 
 ## Tests and exact commands
