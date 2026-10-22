@@ -73,3 +73,26 @@ and NEXT. No push or merge to main from this lane.
 
 No migration/dependency/license copy is needed. Rollback removes the host composition and
 keeps existing preferences readable. Shared source outside owned paths needs root review.
+
+## Root-authorized independent-review repair round
+
+At `6c8aa1f2` independent review passed 8 new component and 9 new browser cases, but the
+adapted legacy subset failed 7/18. Its outside report is codex-u1-product-shell-20261022.md.
+This round owns the incorrect new session-page fixtures and explicit intended-success
+assertions. Use the actual `/api/sessions/list/page` contract (SESSION_ROUTES.page); do not
+relax forbidden-effect, alert, request-count or lifecycle assertions. Demonstrate the old
+mock cannot pass the new empty/no-sidebar-error assertion, then fix separately.
+
+Root additionally authorizes one minimal shared production edit in
+`packages/web/src/features/context/ContextPanel.tsx`: remove CacheBar's inactive-text opacity
+debt using an existing semantic text token. Preserve inactive/active meaning, labels and
+duration. Strengthen flows-axe.spec.ts to zero serious/critical diagnostics for the complete
+new-session flow and remove the old two-node exception, retaining both seeded unnamed-button
+controls. Do not broaden the selector exception, hide content or update the viewport. Add
+proportional evidence that fails against the old text contrast. This closes the already
+documented U1-owned debt; no new token, allowance or approval is authorized.
+
+Transitive G11 enforcement and IconButton/Menu/Tooltip readiness are separate lanes. Do not
+edit their source/status/gate or promote them in this repair. Actual browsers remain root/
+reviewer-owned after author tsc/static checks. Fixes are separate commits; append exact new/
+envelope and unrun evidence to the handoff. No full U1 or main integration is claimed yet.
