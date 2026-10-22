@@ -76,8 +76,10 @@ content when `visibility` is `rail`.
 
 `sidebarLabel`, `labels.show`, `labels.collapse`, `labels.expand`, `labels.hide`,
 `labels.moveLeft`, `labels.moveRight` and `labels.palette` are required translated strings
-supplied by the localized host. The component renders no product copy of its own. Stories use
-synthetic English or existing story message keys and do not claim host usage or owner approval.
+supplied by the localized host. The component renders no product copy of its own. The stories
+resolve all seven control labels through `story.appShell.*` message keys and the sidebar name
+through the existing `story.workspace.blocks` key, in English, curated Russian and the
+pseudo-locale; they do not claim host usage or owner approval.
 
 ## Motion
 

@@ -82,13 +82,13 @@ function StoryShell({ width, children }: { width: 'desktop' | 'phone'; children:
 }
 
 const labels: AppShellChromeProps['labels'] = {
-  show: 'Show sidebar',
-  collapse: 'Collapse to rail',
-  expand: 'Expand sidebar',
-  hide: 'Hide sidebar',
-  moveLeft: 'Move sidebar left',
-  moveRight: 'Move sidebar right',
-  palette: 'Command palette',
+  show: msg('story.appShell.show'),
+  collapse: msg('story.appShell.collapse'),
+  expand: msg('story.appShell.expand'),
+  hide: msg('story.appShell.hide'),
+  moveLeft: msg('story.appShell.moveLeft'),
+  moveRight: msg('story.appShell.moveRight'),
+  palette: msg('story.appShell.palette'),
 }
 
 const args = {
