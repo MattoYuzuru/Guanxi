@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { INPUT_EXCERPT_BYTES, INPUT_INLINE_BYTES, type SessionEvent } from '@guanxi/contract'
+import { INPUT_EXCERPT_BYTES, INPUT_INLINE_BYTES, SESSION_EVENT_VERSION, type SessionEvent } from '@guanxi/contract'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { nativeTools } from '../../src/native-agent/tools.ts'
 import { NativeTraceError } from '../../src/native-agent/append-queue.ts'
@@ -309,7 +309,7 @@ test('concurrent queue mutations preserve every accepted item exactly once and i
   assert.deepEqual(remaining.map((item) => item.id), [accepted[1]!.id, remaining[1]!.id])
   assert.equal(new Set(remaining.map((item) => item.id)).size, 2)
   const queueEvents = f.log.readAll(sessionId, 'person').filter((event) => event.type === 'agent.queue')
-  assert.deepEqual(queueEvents.map((event) => event.type === 'agent.queue' ? event.data.items.map((item) => item.text) : null), [
+  assert.deepEqual(queueEvents.map((event) => event.type === 'agent.queue' && event.version === SESSION_EVENT_VERSION ? event.data.items.map((item) => item.text) : null), [
     ['first accepted'],
     ['first accepted', 'second accepted'],
     ['first accepted', 'second accepted', 'third accepted'],
@@ -336,7 +336,7 @@ test('keeps queued prompts inline in agent.queue and declares the v2 prompt resi
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   const events = f.log.readAll(sessionId, 'person')
   const queue = events.find((event) => event.type === 'agent.queue')
-  assert.equal(queue?.type === 'agent.queue' ? queue.data.items[0]?.text : null, queued)
+  assert.equal(queue?.type === 'agent.queue' && queue.version === SESSION_EVENT_VERSION ? queue.data.items[0]?.text : null, queued)
   const prompts = events.filter((event): event is Extract<SessionEvent, { type: 'prompt' }> => event.type === 'prompt')
   assert.equal(prompts.length, 2)
   assert.equal(prompts[0]!.version, 1)

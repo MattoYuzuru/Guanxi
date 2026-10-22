@@ -1,4 +1,10 @@
 import { expect, test, type Page } from '@playwright/test'
+import {
+  INPUT_EXCERPT_BYTES,
+  INPUT_INLINE_BYTES,
+  SESSION_EVENT_VERSION_3,
+  sessionEventSchema,
+} from '@guanxi/contract'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { REASONING_TEXT, SESSION_ID, sessionSummary, sessionTrace } from '../fixtures/session-events.ts'
 
@@ -111,4 +117,95 @@ test('reload replays the live inspector state exactly, on desktop and phone', as
     await expect(page.getByText(REASONING_TEXT)).toBeVisible()
   }
   expect(streamAfter[0]).toBe(String(sessionTrace().length))
+})
+
+test('renders v3 queue items once and bounded on a phone with reduced motion', async ({ page }) => {
+  const inlineTail = 'PHONE-INLINE-TAIL'
+  const fullTail = 'PHONE-FULL-ARTIFACT-TAIL'
+  const queueEvent = sessionEventSchema.parse({
+    sessionId: SESSION_ID,
+    seq: sessionTrace().length + 1,
+    id: '00000000-0000-4000-8000-0000000000aa',
+    version: SESSION_EVENT_VERSION_3,
+    type: 'agent.queue',
+    class: 'standard',
+    spanId: null,
+    parentSpanId: null,
+    jobId: null,
+    writerEpoch: 1,
+    redactions: 0,
+    createdAt: '2026-10-20T10:06:00.000Z',
+    data: {
+      items: [
+        { id: 'phone-inline', kind: 'inline', text: `${'i'.repeat(INPUT_EXCERPT_BYTES + 20)}${inlineTail}` },
+        {
+          id: 'phone-artifact',
+          kind: 'artifact',
+          artifact: {
+            artifactId: '99999999-9999-4999-8999-999999999999',
+            checksum: `sha256:${'d'.repeat(64)}`,
+            byteSize: INPUT_INLINE_BYTES + fullTail.length,
+            mediaType: 'text/plain; charset=utf-8',
+            excerpt: 'PHONE-ARTIFACT-EXCERPT',
+            excerptBytes: Buffer.byteLength('PHONE-ARTIFACT-EXCERPT', 'utf8'),
+          },
+        },
+      ],
+    },
+  })
+  const events = [...sessionTrace(), queueEvent]
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/health') return route.fulfill(json(health))
+    if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings({ locale: 'en' })))
+    if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === `/api/sessions/${SESSION_ID}`) return route.fulfill(json(sessionSummary(events)))
+    if (url.pathname === `/api/sessions/${SESSION_ID}/events`) {
+      const after = Number(url.searchParams.get('after') ?? 0)
+      const page = events.filter((event) => event.seq > after)
+      return route.fulfill(json({
+        sessionId: SESSION_ID,
+        events: page,
+        nextAfter: page.at(-1)?.seq ?? after,
+        lastSeq: events.length,
+        hasMore: false,
+      }))
+    }
+    if (url.pathname === `/api/sessions/${SESSION_ID}/stream`) {
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' })
+    }
+    if (url.pathname === `/api/sessions/${SESSION_ID}/spans`) {
+      return route.fulfill(json({ sessionId: SESSION_ID, spans: [] }))
+    }
+    if (url.pathname === '/api/sessions/search') {
+      return route.fulfill(json({ query: url.searchParams.get('q') ?? '', hits: [] }))
+    }
+    if (url.pathname === '/api/sessions') {
+      return route.fulfill(json({ sessions: [], withheld: 0, catchingUp: 0, catchUpFailed: 0 }))
+    }
+    return route.fulfill(json({ code: 'internal_error', message: `unexpected ${url.pathname}`, details: null }, 500))
+  })
+
+  await page.goto(`/inspector/${SESSION_ID}`)
+  const queue = page.getByRole('list', { name: 'Queued items' })
+  await expect(queue).toBeVisible()
+  const items = queue.locator('[data-testid="inspector-queue-item"]')
+  await expect(items).toHaveCount(2)
+  const ids = await items.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-queue-item-id')))
+  expect(ids).toEqual(['phone-inline', 'phone-artifact'])
+  await expect(queue.getByText('Inline')).toHaveCount(1)
+  await expect(queue.getByText('Bounded input')).toHaveCount(1)
+  await expect(queue.getByText('PHONE-ARTIFACT-EXCERPT')).toHaveCount(1)
+  await expect(page.locator('body')).not.toContainText(inlineTail)
+  await expect(page.locator('body')).not.toContainText(fullTail)
+  await expect(page.locator('body')).not.toContainText('99999999-9999-4999-8999-999999999999')
+  expect(await items.first().evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
+  const overflow = await page.evaluate(() => {
+    const main = document.querySelector('main')!
+    const rows = [...document.querySelectorAll('[data-testid="inspector-queue-item"]')]
+    return [main.scrollWidth - main.clientWidth, ...rows.map((row) => row.scrollWidth - row.clientWidth)]
+  })
+  expect(Math.max(...overflow)).toBeLessThanOrEqual(0)
 })

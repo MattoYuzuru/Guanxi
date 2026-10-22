@@ -18,7 +18,9 @@ test('migration 32 adopts native sessions with an atomic Thread owner; failure r
   for (const sql of MIGRATIONS.slice(0,31)) seed.exec(sql)
   seed.exec('PRAGMA user_version=31')
   let now = new Date('2026-10-01T00:00:00.000Z')
-  const scrubber = new SecretScrubber(), log = new SessionLog({ db: seed, scrubber, clock: () => now })
+  // This fixture intentionally starts at global 31, before the artifact table
+  // and v33 trigger that the independent queue ledger 40 verifies.
+  const scrubber = new SecretScrubber(), log = new SessionLog({ db: seed, scrubber, clock: () => now, installQueueSchema: false })
   const handle = log.open('old-native', { kind: 'agent' })
   handle.append({ type: 'agent.policy', data: { projectId: 'fixture-project', connectionId: 'fixture-connection', model: 'fixture-model',
     retention: 'ttl', mode: 'read-only', roots: [], scratch: '/synthetic', attachments: [], domains: [], protectedPaths: [], attachmentIds: [] } as never })
