@@ -189,10 +189,10 @@ encoding before validation; the deferred part is the transport iterator. Byte in
 existing snapshot copy.
 
 `utf8Excerpt()` scans only the requested UTF-8 prefix. It returns the original string when the
-whole value fits, preserving complete lone surrogates, and drops a partially included redaction
-marker whole instead of splitting it. A zero bound is valid; a malformed or negative bound fails
-with a content-free `invalid_input` error. The requested bound is a representation request, not
-a total input limit.
+whole value fits, preserving complete lone surrogates, and drops a partially included known
+redaction marker whole instead of splitting it; ordinary decorative or unmatched `⟦` text stays
+in the prefix. A zero bound is valid; a malformed or negative bound fails with a content-free
+`invalid_input` error. The requested bound is a representation request, not a total input limit.
 
 Reads, replay, base64 helper transport, scrubbing, provider history, byte-input copies and queue
 events remain whole-buffer. The 64 KiB value is a transport chunk, not a total input or process

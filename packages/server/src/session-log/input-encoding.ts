@@ -15,7 +15,11 @@
  * transport, byte-input snapshot copies or queue events.
  */
 import { createHash } from 'node:crypto'
-import { REDACTION_MARKER_CLOSE, REDACTION_MARKER_OPEN } from '@guanxi/contract'
+import {
+  REDACTION_MARKER_CLOSE,
+  REDACTION_MARKER_OPEN,
+  REDACTION_MARKER_PREFIX,
+} from '@guanxi/contract'
 
 /** The pinned helper's transport chunk bound, mirrored here without changing it. */
 export const TRANSPORT_CHUNK_BYTES = 64 * 1024
@@ -152,6 +156,29 @@ export function boundedUtf8Excerpt(text: string, maxBytes: number): string {
   return text
 }
 
+/**
+ * Start of a known redaction marker that the bound cuts inside, or -1.
+ *
+ * The clipped prefix can end after only `⟦` or part of `REDACTED `, where the
+ * prefix alone cannot distinguish a marker from ordinary decorative text. The
+ * immutable original supplies a constant-length prefix lookahead; a complete
+ * prefix already inside the bound needs no lookahead. Only the known marker
+ * prefix qualifies, and the close search stays inside the bounded prefix.
+ */
+function unclosedMarkerStart(text: string, clipped: string): number {
+  let start = clipped.lastIndexOf(REDACTION_MARKER_PREFIX)
+  const open = clipped.lastIndexOf(REDACTION_MARKER_OPEN)
+  if (
+    open >= 0
+    && open + REDACTION_MARKER_PREFIX.length > clipped.length
+    && text.startsWith(REDACTION_MARKER_PREFIX, open)
+  ) {
+    start = Math.max(start, open)
+  }
+  if (start >= 0 && clipped.indexOf(REDACTION_MARKER_CLOSE, start) < 0) return start
+  return -1
+}
+
 function truncatedPrefix(text: string, maxBytes: number): string {
   const parts: string[] = []
   let bytes = 0
@@ -165,9 +192,6 @@ function truncatedPrefix(text: string, maxBytes: number): string {
     index += point.units
   }
   const clipped = parts.join('')
-  const open = clipped.lastIndexOf(REDACTION_MARKER_OPEN)
-  if (open >= 0 && clipped.indexOf(REDACTION_MARKER_CLOSE, open) < 0) {
-    return clipped.slice(0, open)
-  }
-  return clipped
+  const markerStart = unclosedMarkerStart(text, clipped)
+  return markerStart >= 0 ? clipped.slice(0, markerStart) : clipped
 }
