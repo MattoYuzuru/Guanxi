@@ -1,8 +1,11 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { translateUi, type UiLocale } from '@guanxi/ui'
 
 const fixture = '/test/browser/fixtures/primitive-readiness.html'
+const localizedLabels = [
+  { locale: 'ru', menu: 'Действия с сессией', icon: 'Открыть настройки' },
+  { locale: 'pseudo', menu: '⟦Šéššíóñ áçţíóñš····⟧', icon: '⟦Óþéñ šéţţíñĝš····⟧' },
+] as const
 
 async function open(page: Page, params: Record<string, string> = {}) {
   await page.goto(`${fixture}?${new URLSearchParams(params)}`)
@@ -206,10 +209,10 @@ test('forced colors preserves visible trigger focus, highlighted command contras
 for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfortable']) for (const glass of ['glass', 'tinted', 'solid']) {
   test(`localized phone popups and focused targets fit ${theme}/${density}/${glass}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 320, height: 640 })
-    for (const locale of ['ru', 'pseudo'] as UiLocale[]) {
+    for (const { locale, menu: menuLabel, icon: iconLabel } of localizedLabels) {
       await open(page, { theme, density, glass, locale })
       const trigger = page.getByTestId('menu-trigger')
-      await expect(trigger).toHaveText(translateUi(locale, 'story.menu.trigger'))
+      await expect(trigger).toHaveText(menuLabel)
       await trigger.focus()
       await page.keyboard.press('ArrowDown')
       const menu = page.getByRole('menu')
@@ -224,7 +227,7 @@ for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfor
       const icon = page.getByTestId('icon')
       await target24(icon)
       await icon.focus()
-      const tooltip = await tooltipFor(page, icon, translateUi(locale, 'story.iconButton.settings'))
+      const tooltip = await tooltipFor(page, icon, iconLabel)
       await settled(page)
       await fitsViewport(tooltip)
       await testInfo.attach(`${locale}-tooltip`, { body: await page.screenshot(), contentType: 'image/png' })
