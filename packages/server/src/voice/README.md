@@ -112,7 +112,47 @@ and is not stored on the origin, so a spread or `structuredClone` of the origin 
 block. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is independent of
 input order.
 
-Limits: this slice does not add plugin wiring, an HTTP route, a contract type, a web glossary
-editor, an STT adapter, backend biasing mapping, the `voice.flag_term` tool or V2 candidate
-learning. The V1 exit gate still needs the owner's evaluation recordings and is not measurable
-here.
+Limits: this slice does not add a web glossary editor, an STT adapter, backend biasing mapping,
+the `voice.flag_term` tool or V2 candidate learning. (The plugin, REST routes and contract type
+landed in MS2, below.) The V1 exit gate still needs the owner's evaluation recordings and is not
+measurable here.
+
+## MS2: plugin, REST routes and wire contract
+
+**Status:** implemented, locally validated · **Updated:** 2026-10-23 · **Scope:** MS2 backend wiring
+
+`plugin.ts` provides `guanxi.voice` (T0, service `voice.glossary` = `{ store, service }`). It opens
+`<dataDir>/voice.sqlite` on load and registers close effects for the store and the service's cache
+subscription; it starts no timer and no audio or STT path. `routes.ts` mounts at
+`/api/voice/glossary`; `wire.ts` maps to `packages/contract/src/voice.ts` and drops the account id.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/voice/glossary?projectId=&includeInactive=` | Without `projectId`, every entry the account owns; with it, account entries plus that project's. |
+| `POST /api/voice/glossary` | `{ id?, scope, projectId?, entry }`. The node assigns `gl_<uuid>` when `id` is absent. 201. |
+| `PUT /api/voice/glossary/:id` | `{ entry }`; the id comes from the path and the body may not carry one. |
+| `POST /api/voice/glossary/:id/deactivate`, `/reactivate`, `/revert` | Body `{}`. |
+| `GET /api/voice/glossary/:id/history` | Revisions in ascending order. |
+| `POST /api/voice/glossary/apply-preview` | `{ text, projectId? }` returns the replaced text, replacements and `glossaryRevision`. Stores nothing. |
+
+Rules pinned by tests:
+
+- Revisions written over HTTP always have source `user`; a body that names a `source` is refused.
+  `import` and `candidate` belong to later adapters.
+- `glossaryRevision` in the preview is `glossaryRevisionHash` over the effective entry ids and
+  revisions, the value the voice marker records; an edit changes it.
+- A bad term or a key collision answers `422 glossary_invalid` with no term in the body, and the
+  transaction rolls back (no entry, no revision row). The compiler's `TypeError`s quote the user's
+  terms, so they are converted only inside store mutations (`mutating`); a stray `TypeError`
+  elsewhere is `500 internal_error`.
+- Another account's entry id is `404 entry_not_found`; two accounts may use one id and one spoken
+  form. A preview body is bounded at 250 000 characters and every body at 2 MiB (transport
+  budgets, not dictation limits).
+- Guard, error body shape and the fixed local account follow the notifications section: loopback
+  peer, same-origin or dev origin, JSON on mutations, `{ code }` only.
+
+Evidence: `ms2-glossary-routes.test.ts` (14 tests), the voice parts of `ms2-plugins.test.ts` and
+`ms2-contract.test.ts`.
+
+Still later: the glossary editor UI, STT adapters and backend biasing, `voice.flag_term` and V2
+candidate learning.

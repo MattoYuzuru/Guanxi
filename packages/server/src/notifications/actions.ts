@@ -274,7 +274,7 @@ export async function executeAction(
   ports: ActionPorts,
   input: ExecuteActionInput,
 ): Promise<ActionExecution> {
-  const scope = `${store.path}\0${input.idempotencyKey}\0${input.notificationId}\0${input.action}`
+  const scope = `${store.path}\0${input.accountId}\0${input.idempotencyKey}\0${input.notificationId}\0${input.action}`
   const active = activeExecutions.get(scope)
   if (active !== undefined) return active
 

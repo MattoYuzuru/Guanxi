@@ -196,9 +196,16 @@ export class GlossaryStore {
     const memory = path === ':memory:'
     if (!memory) mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     this.db = new DatabaseSync(path)
-    if (!memory) chmodSync(path, 0o600)
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
-      CREATE TABLE IF NOT EXISTS v1_migrations(version INTEGER PRIMARY KEY);`)
+    try {
+      if (!memory) chmodSync(path, 0o600)
+      this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+        CREATE TABLE IF NOT EXISTS v1_migrations(version INTEGER PRIMARY KEY);`)
+    } catch (error) {
+      // A file that is not a database fails here; do not leak the handle.
+      try { this.db.close() } catch { /* Preserve the open failure. */ }
+      this.closed = true
+      throw error
+    }
     this.db.exec('BEGIN IMMEDIATE')
     try {
       if (!this.db.prepare('SELECT version FROM v1_migrations WHERE version=1').get()) {
