@@ -24,6 +24,10 @@ export const en = {
   'story.appShell.moveLeft': 'Move sidebar left',
   'story.appShell.moveRight': 'Move sidebar right',
   'story.appShell.palette': 'Command palette',
+  'story.appShell.hostLoading': 'Loading',
+  'story.appShell.hostLoadingBody': 'Loading content from the node.',
+  'story.appShell.hostOffline': 'Not connected',
+  'story.appShell.hostOfflineBody': 'Not connected to the node. No live data is available.',
 
   'ui.button.loading': 'Working…',
   'ui.dialog.close': 'Close dialog',
@@ -244,6 +248,10 @@ export const ru: UiMessages = {
   'story.appShell.moveLeft': 'Переместить панель влево',
   'story.appShell.moveRight': 'Переместить панель вправо',
   'story.appShell.palette': 'Палитра команд',
+  'story.appShell.hostLoading': 'Загрузка',
+  'story.appShell.hostLoadingBody': 'Загружается содержимое узла.',
+  'story.appShell.hostOffline': 'Нет подключения',
+  'story.appShell.hostOfflineBody': 'Нет подключения к узлу. Актуальные данные недоступны.',
 
   'ui.button.loading': 'Выполняется…',
   'ui.dialog.close': 'Закрыть диалог',

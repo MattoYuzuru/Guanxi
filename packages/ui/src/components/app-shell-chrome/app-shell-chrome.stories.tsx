@@ -43,21 +43,22 @@ function StorySidebar({ compact = false }: { compact?: boolean }) {
 
 function StoryStatus({ state = 'default' }: { state?: HostState }) {
   const t = useUiText()
-  if (state === 'loading') {
-    return (
-      <>
-        <StatusPill status="running" />
-        <span>{t('story.tabs.chatPanel')}</span>
-      </>
-    )
-  }
+  if (state === 'loading') return <span role="status">{t('story.appShell.hostLoading')}</span>
   if (state === 'error') return <StatusPill status="error" />
-  if (state === 'offline' || state === 'unknown') return <StatusPill status="unknown" />
+  if (state === 'offline') return <span>{t('story.appShell.hostOffline')}</span>
+  if (state === 'unknown') return <StatusPill status="unknown" />
   return <span>{t('story.workspace.blocks')}</span>
 }
 
 function StoryMain({ state = 'default' }: { state?: HostState }) {
   const t = useUiText()
+  if (state === 'loading') {
+    return (
+      <div aria-busy="true">
+        <p>{t('story.appShell.hostLoadingBody')}</p>
+      </div>
+    )
+  }
   if (state === 'error') {
     return (
       <ErrorState
@@ -67,10 +68,10 @@ function StoryMain({ state = 'default' }: { state?: HostState }) {
       />
     )
   }
-  if (state === 'offline') return <EmptyState title={t('story.workspace.placeholder')} />
+  if (state === 'offline') return <EmptyState title={t('story.appShell.hostOfflineBody')} />
   if (state === 'unknown') return <EmptyState title={t('story.workspace.empty')} />
   return (
-    <div aria-busy={state === 'loading' || undefined}>
+    <div>
       <p>{t('story.tabs.chatPanel')}</p>
     </div>
   )

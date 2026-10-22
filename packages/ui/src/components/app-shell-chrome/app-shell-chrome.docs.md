@@ -52,9 +52,13 @@ content when `visibility` is `rail`.
   DOM/focus order (a right sidebar follows main) and removes the fixed column widths; the phone
   story renders a narrow, tokenised frame. Host content remains responsible for staying within
   its own width.
-- `loading`, `error`, `offline`, `unknown` — host content states shown in the status and main
-  areas. They are stories of truthful host content, not internal component states and not
-  invented runtime facts.
+- `loading` — the status strip announces loading and the main surface is `aria-busy`; the
+  fixture declares no run status and renders no transcript.
+- `offline` — a visible not-connected status and one sentence about unavailable live data; it
+  offers no plugin-enable or retry advice because the fixture observed no such recovery.
+- `error`, `unknown` — an explicit error and the generic unknown state; unknown stays unknown
+  and is distinct from the connection-loss story. These are stories of truthful host content,
+  not internal component states and not invented runtime facts.
 
 ## Accessibility
 
@@ -79,7 +83,10 @@ content when `visibility` is `rail`.
 supplied by the localized host. The component renders no product copy of its own. The stories
 resolve all seven control labels through `story.appShell.*` message keys and the sidebar name
 through the existing `story.workspace.blocks` key, in English, curated Russian and the
-pseudo-locale; they do not claim host usage or owner approval.
+pseudo-locale; they do not claim host usage or owner approval. The loading and offline fixture
+copy resolves through `story.appShell.hostLoading`, `hostLoadingBody`, `hostOffline` and
+`hostOfflineBody`. Those stories claim no run status, transcript, plugin enablement, retry
+action or provider provenance.
 
 ## Motion
 
