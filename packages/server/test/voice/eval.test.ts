@@ -437,6 +437,14 @@ describe('scoreEval B-WER and U-WER', () => {
     assert.equal(score.termF1, null)
   })
 
+  it('does not treat a Latin suffix as a D-157 inflection', () => {
+    const score = scoreEval([item('x', 'pull-request here', 'pull-request here')], ['pull'])
+    assert.equal(score.counts.biasedRefWords, 0)
+    assert.equal(score.counts.termRefOccurrences, 0)
+    assert.equal(score.counts.termHypOccurrences, 0)
+    assert.equal(score.termF1, null)
+  })
+
   it('returns null U-WER when every reference word is biased', () => {
     const score = scoreEval([item('one', 'Hono Codex', 'Hono Codex')], ['Hono', 'Codex'])
     assert.equal(score.bWer, 0)
