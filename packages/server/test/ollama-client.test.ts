@@ -538,6 +538,35 @@ describe('Ollama client timeout and protocol boundaries', () => {
     }
   })
 
+  it('disposes a late GET response body after abort without delaying the observer', async () => {
+    const entered = deferred<void>()
+    const release = deferred<void>()
+    const cancelGate = deferred<void>()
+    let cancelStarted = false
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelStarted = true
+        return cancelGate.promise
+      },
+    })
+    const client = await clientWith(async () => {
+      entered.resolve()
+      await release.promise
+      return new Response(body, { status: 200 })
+    })
+    const controller = new AbortController()
+    const version = client.version(controller.signal)
+    await entered.promise
+    controller.abort('fixture stop')
+    await assert.rejects(version, abortError)
+
+    release.resolve()
+    await tick()
+    await tick()
+    assert.equal(cancelStarted, true, 'the late GET response body is disposed')
+    cancelGate.resolve()
+  })
+
   it('keeps transport ownership when a synchronous dispatch observer throws', async () => {
     const entered = deferred<void>()
     const release = deferred<void>()
