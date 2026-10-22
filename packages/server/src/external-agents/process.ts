@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdir, lstat, realpath } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join } from 'node:path'
@@ -10,6 +10,47 @@ import { ExternalAgentError, type AgentInstallation } from './types.ts'
  * SIGTERM grace before forcing the process group. */
 const CANCEL_GRACE_MS = 2_000
 const TERM_GRACE_MS = 3_000
+/** Cleanup-verification bound, not a reservation TTL. A timeout retains occupancy. */
+export const GROUP_ACK_MS = 3_000
+const GROUP_PROBE_MS = 25
+
+export type ProcessCleanup =
+  | { confirmed: true; reason: 'group_empty' | 'no_child' | 'spawn_failed' }
+  | { confirmed: false; reason: 'group_timeout' | 'permission_denied' | 'close_error' | 'unsupported_platform' }
+
+type Bounded<T> = { status: 'ok'; value: T } | { status: 'error'; error: unknown } | { status: 'timeout' }
+function bounded<T>(promise: Promise<T>, ms: number): Promise<Bounded<T>> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve({ status: 'timeout' }), Math.max(0, ms))
+    promise.then(value => { clearTimeout(timer); resolve({ status: 'ok', value }) },
+      error => { clearTimeout(timer); resolve({ status: 'error', error }) })
+  })
+}
+
+/** The only confirmed boundary is the POSIX process group captured from an in-memory child.
+ * `process.kill(-pgid, 0)` proves emptiness; no PID is persisted or read back from SQLite. */
+export async function awaitOwnedGroupEmpty(pgid: number | undefined, closed: Promise<void>, deadlineMs = GROUP_ACK_MS): Promise<ProcessCleanup> {
+  const deadline = Math.max(0, deadlineMs)
+  const start = Date.now()
+  const closeResult = await bounded(closed, deadline)
+  if (closeResult.status === 'timeout') return { confirmed: false, reason: 'group_timeout' }
+  if (closeResult.status === 'error') return { confirmed: false, reason: 'close_error' }
+  if (!pgid) return { confirmed: true, reason: 'no_child' }
+  if (process.platform === 'win32') return { confirmed: false, reason: 'unsupported_platform' }
+  let denied = false
+  for (;;) {
+    try { process.kill(-pgid, 0); denied = false } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ESRCH') return { confirmed: true, reason: 'group_empty' }
+      if (code === 'EPERM') denied = true
+      else return { confirmed: false, reason: 'close_error' }
+    }
+    const remaining = deadline - (Date.now() - start)
+    if (remaining <= 0) return { confirmed: false, reason: denied ? 'permission_denied' : 'group_timeout' }
+    // A just-killed group can briefly report EPERM on macOS. Probe only; never resend signals.
+    await new Promise(resolve => setTimeout(resolve, Math.min(GROUP_PROBE_MS, remaining)))
+  }
+}
 
 export async function isolatedEnvironment(root: string, install: AgentInstallation) {
   const key = createHash('sha256').update(JSON.stringify([install.nodeId, install.ownerAccountId, install.connectionId])).digest('hex')
@@ -54,6 +95,7 @@ export class AgentProcess {
   private readonly scrubber: EgressScrubber
   private aborting: Promise<void> | null = null
   private cancelHandler: (() => void | Promise<void>) | null = null
+  private closing: Promise<ProcessCleanup> | null = null
   constructor(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, cwd: string,
     scrubber: EgressScrubber, signal: AbortSignal, frameBytes: number) {
     this.scrubber = scrubber
@@ -91,13 +133,15 @@ export class AgentProcess {
     this.child.stdin.on('error', () => { if (!this.stop) fail() })
     this.child.on('error', fail)
     this.closed = new Promise(resolve => this.child.once('close', () => {
-      signal.removeEventListener('abort', abort)
-      if (!ended) {
-        ended = true
-        if (pending.length && !this.stop) controller.error(new ExternalAgentError('truncated_protocol'))
-        else controller.close()
-      }
-      resolve()
+      // A throwing stream callback must never strand the physical close observation.
+      try {
+        signal.removeEventListener('abort', abort)
+        if (!ended) {
+          ended = true
+          if (pending.length && !this.stop) controller.error(new ExternalAgentError('truncated_protocol'))
+          else controller.close()
+        }
+      } finally { resolve() }
     }))
     const abort = () => {
       if (ended) return
@@ -131,62 +175,115 @@ export class AgentProcess {
     })
   }
   private async cancelAndTerminate() {
-    try { await this.cancelHandler?.() } catch { /* The bounded termination below still applies. */ }
+    try { await bounded(Promise.resolve(this.cancelHandler?.()), CANCEL_GRACE_MS) } catch { /* The bounded termination below still applies. */ }
     if (await this.waitClosed(CANCEL_GRACE_MS)) return
     this.terminate('SIGTERM')
     if (await this.waitClosed(TERM_GRACE_MS)) return
     this.terminate('SIGKILL')
   }
-  async close() {
-    this.stop = true
-    this.child.stdin.end()
-    if (this.aborting) {
-      await this.aborting
-      await this.closed
-      // The adapter may exit on stdin EOF before the grace signal, leaving same-group children.
-      this.terminate('SIGKILL')
-      return
-    }
-    this.terminate('SIGTERM')
-    if (!await this.waitClosed(TERM_GRACE_MS)) this.terminate('SIGKILL')
-    await this.closed
-    // SIGTERM targets the group too, but a descendant may ignore it while the adapter exits.
-    this.terminate('SIGKILL')
+  /** Idempotent: the cached acknowledgement is the only cleanup result for this child. */
+  close(): Promise<ProcessCleanup> {
+    this.closing ??= this.closeOnce()
+    return this.closing
+  }
+  private async closeOnce(): Promise<ProcessCleanup> {
+    const pgid = this.child.pid
+    try {
+      this.stop = true
+      try { this.child.stdin.end() } catch { /* Already ended or destroyed. */ }
+      if (this.aborting) {
+        await this.aborting
+        // The adapter may exit on stdin EOF before the grace signal, leaving same-group children.
+        this.terminate('SIGKILL')
+      } else {
+        this.terminate('SIGTERM')
+        await this.waitClosed(TERM_GRACE_MS)
+        // SIGTERM targets the group too, but a descendant may ignore it while the adapter exits.
+        this.terminate('SIGKILL')
+      }
+    } catch { return { confirmed: false, reason: 'close_error' } }
+    return awaitOwnedGroupEmpty(pgid, this.closed, GROUP_ACK_MS)
   }
 }
 
+export interface ClaudeAuthStatus { loggedIn: boolean; authMethod: string | null }
+export type ClaudeAuthStatusResult =
+  | { ok: true; status: ClaudeAuthStatus }
+  | { ok: false; error: 'auth_status_unavailable' | 'cancelled' }
+export interface ClaudeAuthProbe {
+  /** Discriminated union: an auth failure never loses the cleanup outcome. */
+  result: Promise<ClaudeAuthStatusResult>
+  close(): Promise<ProcessCleanup>
+}
+
 /** Official CLI status command, not a model call and never a credential-file read. */
-export async function claudeAuthStatus(executable: string, env: NodeJS.ProcessEnv, cwd: string, signal: AbortSignal, maxBytes: number) {
-  signal.throwIfAborted()
-  return new Promise<{ loggedIn: boolean; authMethod: string | null }>((resolve, reject) => {
-    const child = spawn(executable, ['auth', 'status'], { env, cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
-    let data = Buffer.alloc(0)
-    let invalid = false
-    const terminate = () => {
-      try {
-        if (process.platform === 'win32') child.kill('SIGKILL')
-        else if (child.pid) process.kill(-child.pid, 'SIGKILL')
-      } catch { /* This status probe's process group already exited. */ }
-    }
-    const abort = () => { invalid = true; terminate() }
-    child.stdout.on('data', (chunk: Buffer) => {
-      if (data.length + chunk.length > maxBytes) { abort(); return }
-      data = Buffer.concat([data, chunk])
-    })
-    child.stderr.resume()
-    signal.addEventListener('abort', abort, { once: true })
-    if (signal.aborted) abort()
-    child.on('error', () => { invalid = true })
-    child.once('exit', terminate)
-    child.once('close', code => {
-      signal.removeEventListener('abort', abort)
-      try {
-        if (invalid || (code !== 0 && code !== 1)) throw new Error()
-        const status = JSON.parse(data.toString('utf8'))
-        // Drop emails, organization names and all unexpected fields immediately.
-        resolve({ loggedIn: status.loggedIn === true, authMethod: ['none', 'claude.ai', 'oauth_token', 'api_key', 'api_key_helper', 'third_party'].includes(status.authMethod) ? status.authMethod : null })
-      } catch { reject(new ExternalAgentError('auth_status_unavailable')) }
-      finally { data.fill(0) }
-    })
+export function startClaudeAuthStatus(executable: string, env: NodeJS.ProcessEnv, cwd: string, signal: AbortSignal, maxBytes: number): ClaudeAuthProbe {
+  let child: ChildProcess | undefined
+  try {
+    signal.throwIfAborted()
+    child = spawn(executable, ['auth', 'status'], { env, cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+  } catch {
+    const error = signal.aborted ? 'cancelled' : 'auth_status_unavailable'
+    return { result: Promise.resolve({ ok: false, error }), close: async () => ({ confirmed: true, reason: 'spawn_failed' }) }
+  }
+  const spawned = child
+  let data = Buffer.alloc(0)
+  let invalid = false
+  let settled = false
+  let closed = false
+  let resolveResult!: (value: ClaudeAuthStatusResult) => void
+  const result = new Promise<ClaudeAuthStatusResult>(resolve => { resolveResult = resolve })
+  const settle = (value: ClaudeAuthStatusResult) => {
+    if (settled) return
+    settled = true
+    data.fill(0)
+    resolveResult(value)
+  }
+  const cleanup: { closing: Promise<ProcessCleanup> | null } = { closing: null }
+  const terminate = () => {
+    try {
+      if (process.platform === 'win32') spawned.kill('SIGKILL')
+      else if (spawned.pid) process.kill(-spawned.pid, 'SIGKILL')
+    } catch { /* This status probe's process group already exited. */ }
+  }
+  const closedPromise = new Promise<void>(resolve => spawned.once('close', () => { closed = true; resolve() }))
+  const abort = () => { invalid = true; terminate() }
+  signal.addEventListener('abort', abort, { once: true })
+  if (signal.aborted) abort()
+  spawned.stdout!.on('data', (chunk: Buffer) => {
+    if (data.length + chunk.length > maxBytes) { invalid = true; terminate(); return }
+    data = Buffer.concat([data, chunk])
   })
+  spawned.stderr!.resume()
+  spawned.on('error', () => { invalid = true })
+  spawned.once('exit', terminate)
+  spawned.once('close', code => {
+    signal.removeEventListener('abort', abort)
+    try {
+      if (invalid || (code !== 0 && code !== 1)) throw new Error()
+      const status = JSON.parse(data.toString('utf8'))
+      // Drop emails, organization names and all unexpected fields immediately.
+      settle({ ok: true, status: { loggedIn: status.loggedIn === true,
+        authMethod: ['none', 'claude.ai', 'oauth_token', 'api_key', 'api_key_helper', 'third_party'].includes(status.authMethod) ? status.authMethod : null } })
+    } catch {
+      settle({ ok: false, error: signal.aborted ? 'cancelled' : 'auth_status_unavailable' })
+    }
+  })
+  return {
+    result,
+    close() {
+      if (cleanup.closing) return cleanup.closing
+      cleanup.closing = (async () => {
+        if (!settled) {
+          invalid = true
+          terminate()
+          settle({ ok: false, error: signal.aborted ? 'cancelled' : 'auth_status_unavailable' })
+        }
+        signal.removeEventListener('abort', abort)
+        if (!closed) terminate()
+        return awaitOwnedGroupEmpty(spawned.pid, closedPromise, GROUP_ACK_MS)
+      })()
+      return cleanup.closing
+    },
+  }
 }

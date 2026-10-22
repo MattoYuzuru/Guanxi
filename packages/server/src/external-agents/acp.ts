@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type InitializeRequest, type NewSessionRequest, type PromptRequest, type SessionNotification } from '@agentclientprotocol/sdk'
 import { PRODUCT_FILE_PREFIX } from '@guanxi/contract'
 import { z } from 'zod'
-import type { AgentProcess } from './process.ts'
+import type { AgentProcess, ProcessCleanup } from './process.ts'
 import { JsonRpcClient } from './rpc.ts'
 import { protocolObject as object } from './quota.ts'
 import { ExternalAgentError, type AdapterId, type AgentOutput } from './types.ts'
@@ -72,7 +72,7 @@ export class AcpClient {
   text(notification: SessionNotification) {
     if (notification.update.sessionUpdate === 'agent_message_chunk' && notification.update.content.type === 'text') this.onText(notification.update.content.text)
   }
-  async close() { await this.client.close() }
+  async close(): Promise<ProcessCleanup> { return this.client.close() }
 }
 function optionValues(value: unknown): string[] {
   if (!Array.isArray(value)) return []
