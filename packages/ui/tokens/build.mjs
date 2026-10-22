@@ -69,7 +69,7 @@ function themeCSS(flat, animations) {
   for (const t of flat.filter(t => t.path[0] === 'border-radius')) lines.push(`  --radius-${t.path[1]}: ${t.$type === 'number' ? `calc(var(${cssName(t)}) * 100%)` : `var(${cssName(t)})`};`)
   for (const t of flat.filter(t => t.name.startsWith('motion.easing.'))) lines.push(`  --ease-${t.path[2]}: var(${cssName(t)});`)
   for (const animation of animations) {
-    const iterations = animation.iterations === 'infinite' ? ' infinite' : ''
+    const iterations = animation.iterations === 'infinite' ? ' infinite' : animation.iterations > 1 ? ` ${animation.iterations}` : ''
     lines.push(`  --animate-${animation.utility}: ${animation.keyframes} var(--${animation.duration.replaceAll('.', '-')}) var(--${animation.easing.replaceAll('.', '-')})${iterations};`)
   }
   lines.push('  --shadow-popover: var(--elevation-2-shadow);', '  --blur-glass: var(--material-glass-blur);', '  --blur-tinted: var(--material-tinted-blur);', '  --leading-ui: var(--font-line-height-ui);', '  --leading-prose: var(--font-line-height-prose);')

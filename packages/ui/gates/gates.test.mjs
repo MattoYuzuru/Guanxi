@@ -74,6 +74,8 @@ test('animation manifest validation rejects unsafe, unknown, mistyped and duplic
     [/Duplicate animation utility/, data => { data.animations[1].utility = data.animations[0].utility }],
     [/Duplicate animation keyframes/, data => { data.animations[1].keyframes = data.animations[0].keyframes }],
     [/iterations/, data => { data.animations[2].iterations = 0 }],
+    [/iterations/, data => { data.animations[2].iterations = -1 }],
+    [/iterations/, data => { data.animations[2].iterations = 1.5 }],
     [/iterations/, data => { data.animations[2].iterations = '2' }],
     [/iterations/, data => { data.animations[2].iterations = true }],
     [/non-empty animations array/, data => { data.animations = [] }],
@@ -91,6 +93,27 @@ test('generator reads the animation manifest through the provided options.read',
   const output = await generate((await ctx.withFiles({ [path]: JSON.stringify(overridden) })).tokenOptions)
   assert.match(output['theme.css'], /--animate-spinner-read:/)
   assert.doesNotMatch(output['theme.css'], /--animate-spinner:/)
+})
+test('generator emits an accepted finite iteration count but keeps one omitted and infinite unchanged', async () => {
+  const path = 'packages/ui/tokens/motion-animations.json'
+  const overridden = await ctx.json(path)
+  overridden.animations.find(animation => animation.utility === 'fade-up').iterations = 2
+  const options = (await ctx.withFiles({ [path]: JSON.stringify(overridden) })).tokenOptions
+  const first = await generate(options), second = await generate(options)
+  assert.deepEqual(first, second, 'overridden generation must stay byte deterministic')
+  const theme = first['theme.css']
+  const declaration = (css, utility) => css.split('\n').find(line => line.startsWith(`  --animate-${utility}:`))
+  const fadeUp = declaration(theme, 'fade-up')
+  assert.ok(fadeUp, 'expected a generated --animate-fade-up declaration')
+  assert.ok(fadeUp.endsWith(' 2;'), `expected the accepted finite iteration count before the semicolon, got: ${fadeUp}`)
+  for (const utility of ['pulse-soft', 'sheen', 'spinner']) {
+    const line = declaration(theme, utility)
+    assert.ok(line, `expected a generated --animate-${utility} declaration`)
+    assert.ok(line.endsWith(' infinite;'), `${utility} must keep its infinite iteration count, got: ${line}`)
+  }
+  const canonicalFadeUp = declaration((await generate(ctx.tokenOptions))['theme.css'], 'fade-up')
+  assert.ok(canonicalFadeUp, 'expected the canonical --animate-fade-up declaration')
+  assert.doesNotMatch(canonicalFadeUp, / 1;$/, `the default iteration count of one must stay omitted, got: ${canonicalFadeUp}`)
 })
 test('G3 checks all 20 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
