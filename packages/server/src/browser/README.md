@@ -107,14 +107,16 @@ return field for cookie values, passwords or tokens. Every input is scanned recu
 - `grantsFor(accountId, projectId, role, now)` — active grants only: not revoked and
   `expires_at` null or strictly after `now`. A run context therefore sees only its project and
   role.
-- `openContext(contextId, grantId, accountId?)` — host-authorized. Refuses an unknown grant, a
-  grant owned by another account when `accountId` is supplied, a revoked or expired grant, a
-  context id bound to another grant, and a previously closed context id. Reopening the same open
-  context is idempotent. The host should pass `accountId` and only ids selected by `grantsFor`.
+- `openContext(contextId, grantId, accountId, projectId, role)` — host-authorized and scoped by
+  all of account, project and role. An unknown grant is `grant_not_found`; a grant that exists
+  in another scope is `context_foreign`; revoked and expired grants are refused. A context id
+  bound to another grant and a previously closed context id are refused as well. Reopening the
+  same open context is idempotent.
 - `closeContext(contextId, now?)` — closes an open context; returns false when absent or
   already closed. It is keyed by context id only and is an internal host operation.
-- `touch(grantId, now, accountId?)` — records `last_used_at` for an active grant; revoked or
-  expired grants return false. A mismatching optional account is refused.
+- `touch(grantId, now, accountId, projectId, role)` — records `last_used_at` for an active grant
+  in the same required scope; an unknown grant is `grant_not_found`, a grant in another scope is
+  `context_foreign`, and revoked or expired grants return false.
 
 ### Domain normalization
 
@@ -146,7 +148,7 @@ The two test files cover normalization and each origin rule, clean-link and mode
 the explicit Read-only form-submission block, full-mode writable checks, refused schemes,
 missing/unknown `via` and `mode` fail-closed paths, determinism, migration reopen and file
 modes, the agent-channel and wildcard refusals, project/role/account scoping, expiry,
-revocation context lists, context lifecycle including the optional account guard,
+revocation context lists, context lifecycle including the required account/project/role guard,
 secret-field rejection and `touch`.
 
 ## Residuals

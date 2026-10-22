@@ -94,7 +94,7 @@ test('migration v1 is idempotent on reopen, enables WAL/FKs and preserves grants
   ])
 
   const grant = create(f.store)
-  f.store.openContext('context-1', grant.id)
+  f.store.openContext('context-1', grant.id, 'user-alice', 'project-1', 'editor')
   f.store.close()
 
   const reopened = f.open()
@@ -238,17 +238,17 @@ test('revoke returns exactly the open contexts using the grant and refuses later
   const first = create(f.store, { domain: 'first.example' })
   const second = create(f.store, { domain: 'second.example' })
   f.setNow(NOW + 1)
-  f.store.openContext('context-a1', first.id)
+  f.store.openContext('context-a1', first.id, 'user-alice', 'project-1', 'editor')
   f.setNow(NOW + 2)
-  f.store.openContext('context-a2', first.id)
+  f.store.openContext('context-a2', first.id, 'user-alice', 'project-1', 'editor')
   f.setNow(NOW + 3)
-  f.store.openContext('context-b1', second.id)
+  f.store.openContext('context-b1', second.id, 'user-alice', 'project-1', 'editor')
   assert.equal(f.store.closeContext('context-a1', NOW + 4), true)
 
   assert.deepEqual(f.store.revoke(alice, first.id, NOW + 5), ['context-a2'])
   const revoked = f.store.db.prepare('SELECT revoked_at FROM site_grants WHERE id=?').get(first.id) as { revoked_at: number }
   assert.equal(revoked.revoked_at, NOW + 5)
-  assert.throws(() => f.store.openContext('context-a3', first.id), fails('grant_revoked'))
+  assert.throws(() => f.store.openContext('context-a3', first.id, 'user-alice', 'project-1', 'editor'), fails('grant_revoked'))
 
   // Idempotent: the first revocation timestamp and still-open contexts are preserved.
   assert.deepEqual(f.store.revoke(alice, first.id, NOW + 6), ['context-a2'])
@@ -268,54 +268,61 @@ test('openContext refuses unknown grants, contexts bound to another grant and cl
   const first = create(f.store, { domain: 'first.example' })
   const second = create(f.store, { domain: 'second.example' })
 
-  const context = f.store.openContext('context-1', first.id)
+  const context = f.store.openContext('context-1', first.id, 'user-alice', 'project-1', 'editor')
   assert.deepEqual(context, { contextId: 'context-1', grantId: first.id, openedAt: NOW, closedAt: null })
-  assert.deepEqual(f.store.openContext('context-1', first.id), context)
-  assert.throws(() => f.store.openContext('context-1', second.id), fails('context_foreign'))
-  assert.throws(() => f.store.openContext('context-2', 'missing-grant'), fails('grant_not_found'))
+  assert.deepEqual(f.store.openContext('context-1', first.id, 'user-alice', 'project-1', 'editor'), context)
+  assert.throws(() => f.store.openContext('context-1', second.id, 'user-alice', 'project-1', 'editor'), fails('context_foreign'))
+  assert.throws(() => f.store.openContext('context-2', 'missing-grant', 'user-alice', 'project-1', 'editor'), fails('grant_not_found'))
 
   assert.equal(f.store.closeContext('missing-context', NOW), false)
   assert.equal(f.store.closeContext('context-1', NOW + 1), true)
   assert.equal(f.store.closeContext('context-1', NOW + 2), false)
-  assert.throws(() => f.store.openContext('context-1', first.id), fails('context_closed'))
-  assert.throws(() => f.store.openContext('context-3', 'missing-grant'), fails('grant_not_found'))
+  assert.throws(() => f.store.openContext('context-1', first.id, 'user-alice', 'project-1', 'editor'), fails('context_closed'))
+  assert.throws(() => f.store.openContext('context-3', 'missing-grant', 'user-alice', 'project-1', 'editor'), fails('grant_not_found'))
 })
 
-test('openContext and touch enforce an optional account guard', (t) => {
+test('openContext and touch require the full account, project and role scope', (t) => {
   const f = fixture(t)
-  const grant = create(f.store, {}, alice)
-  assert.throws(() => f.store.openContext('context-1', grant.id, 'user-bob'), fails('grant_not_found'))
-  const context = f.store.openContext('context-1', grant.id, 'user-alice')
+  const grant = create(f.store, { projectId: 'pA', role: 'researcher' }, alice)
+  const foreignScopes: Array<[string, [string, string, string]]> = [
+    ['another project', ['user-alice', 'pB', 'researcher']],
+    ['another role', ['user-alice', 'pA', 'viewer']],
+    ['another account', ['user-bob', 'pA', 'researcher']],
+  ]
+  for (const [name, [account, project, role]] of foreignScopes) {
+    assert.throws(() => f.store.openContext('context-1', grant.id, account, project, role), fails('context_foreign'), name)
+    assert.throws(() => f.store.touch(grant.id, NOW + 1, account, project, role), fails('context_foreign'), name)
+  }
+  const context = f.store.openContext('context-1', grant.id, 'user-alice', 'pA', 'researcher')
   assert.equal(context.grantId, grant.id)
-  assert.throws(() => f.store.touch(grant.id, NOW + 1, 'user-bob'), fails('grant_not_found'))
-  assert.equal(f.store.touch(grant.id, NOW + 1, 'user-alice'), true)
+  assert.equal(f.store.touch(grant.id, NOW + 1, 'user-alice', 'pA', 'researcher'), true)
 })
 
 test('an expired grant cannot open a context and disappears from grantsFor', (t) => {
   const f = fixture(t)
   const grant = create(f.store, { expiresAt: NOW + 10 })
   f.setNow(NOW + 10)
-  assert.throws(() => f.store.openContext('context-1', grant.id), fails('grant_expired'))
-  assert.equal(f.store.touch(grant.id, NOW + 10), false)
+  assert.throws(() => f.store.openContext('context-1', grant.id, 'user-alice', 'project-1', 'editor'), fails('grant_expired'))
+  assert.equal(f.store.touch(grant.id, NOW + 10, 'user-alice', 'project-1', 'editor'), false)
   assert.deepEqual(f.store.grantsFor('user-alice', 'project-1', 'editor', NOW + 10), [])
 })
 
 test('touch records last use for active grants only', (t) => {
   const f = fixture(t)
   const grant = create(f.store)
-  assert.equal(f.store.touch(grant.id, NOW + 5), true)
+  assert.equal(f.store.touch(grant.id, NOW + 5, 'user-alice', 'project-1', 'editor'), true)
   assert.equal(
     (f.store.db.prepare('SELECT last_used_at FROM site_grants WHERE id=?').get(grant.id) as { last_used_at: number }).last_used_at,
     NOW + 5,
   )
-  assert.throws(() => f.store.touch('missing-grant', NOW + 6), fails('grant_not_found'))
+  assert.throws(() => f.store.touch('missing-grant', NOW + 6, 'user-alice', 'project-1', 'editor'), fails('grant_not_found'))
   f.store.revoke(alice, grant.id, NOW + 7)
-  assert.equal(f.store.touch(grant.id, NOW + 8), false)
+  assert.equal(f.store.touch(grant.id, NOW + 8, 'user-alice', 'project-1', 'editor'), false)
   assert.equal(
     (f.store.db.prepare('SELECT last_used_at FROM site_grants WHERE id=?').get(grant.id) as { last_used_at: number }).last_used_at,
     NOW + 5,
   )
-  assert.equal(f.store.touch(grant.id, NOW + 9), false)
+  assert.equal(f.store.touch(grant.id, NOW + 9, 'user-alice', 'project-1', 'editor'), false)
 })
 
 test('secret-shaped field names are rejected before any row is written', (t) => {

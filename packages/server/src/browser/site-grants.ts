@@ -327,23 +327,29 @@ export class SiteGrantStore {
   }
 
   /**
-   * Open a context id against a grant. Unknown grants, revoked grants and expired grants are
-   * refused; a context id already bound to another grant is refused as well. When `accountId`
-   * is supplied, a grant owned by another account is refused. The method is host-authorized:
-   * the host must pass only grant ids selected by `grantsFor` (and should pass `accountId`).
-   * Re-opening an already-open context for the same grant returns the existing record.
+   * Open a context id against a grant in the caller's account/project/role scope. The lookup is
+   * scoped by all three: an unknown grant is `grant_not_found`, while a grant that exists in
+   * another scope is `context_foreign`. Revoked and expired grants are refused; a context id
+   * already bound to another grant is refused as well. Re-opening an already-open context for
+   * the same grant returns the existing record.
    */
-  openContext(contextId: string, grantId: string, accountId?: string): SiteContext {
+  openContext(contextId: string, grantId: string, accountId: string, projectId: string, role: string): SiteContext {
     const id = requireName(contextId, 'contextId')
     const grantKey = requireName(grantId, 'grantId')
-    const account = accountId === undefined ? null : requireName(accountId, 'accountId')
+    const account = requireName(accountId, 'accountId')
+    const project = requireName(projectId, 'projectId')
+    const projectRole = requireName(role, 'role')
     const now = this.now()
     return this.transaction(() => {
-      const grant = this.db.prepare('SELECT account_id, expires_at, revoked_at FROM site_grants WHERE id=?')
-        .get(grantKey) as { account_id: string; expires_at: number | null; revoked_at: number | null } | undefined
-      if (!grant) throw new SiteGrantStoreError('grant_not_found', 'Site grant not found')
-      if (account !== null && grant.account_id !== account) {
-        throw new SiteGrantStoreError('grant_not_found', 'Site grant not found for this account')
+      const grant = this.db.prepare(`SELECT expires_at, revoked_at FROM site_grants
+        WHERE id=? AND account_id=? AND project_id=? AND role=?`)
+        .get(grantKey, account, project, projectRole) as
+        { expires_at: number | null; revoked_at: number | null } | undefined
+      if (!grant) {
+        if (!this.db.prepare('SELECT 1 FROM site_grants WHERE id=?').get(grantKey)) {
+          throw new SiteGrantStoreError('grant_not_found', 'Site grant not found')
+        }
+        throw new SiteGrantStoreError('context_foreign', 'Site grant belongs to another account, project or role')
       }
       if (grant.revoked_at !== null) throw new SiteGrantStoreError('grant_revoked', 'Site grant is revoked')
       if (grant.expires_at !== null && grant.expires_at <= now) {
@@ -377,19 +383,26 @@ export class SiteGrantStore {
   }
 
   /**
-   * Record use of an active grant. Revoked or expired grants are not touched. When `accountId`
-   * is supplied, a grant owned by another account is refused.
+   * Record use of an active grant in the caller's account/project/role scope. An unknown grant
+   * is `grant_not_found`; a grant in another scope is `context_foreign`. Revoked or expired
+   * grants are not touched.
    */
-  touch(grantId: string, now: number, accountId?: string): boolean {
+  touch(grantId: string, now: number, accountId: string, projectId: string, role: string): boolean {
     const id = requireName(grantId, 'grantId')
     const at = requireTimestamp(now, 'now')
-    const account = accountId === undefined ? null : requireName(accountId, 'accountId')
+    const account = requireName(accountId, 'accountId')
+    const project = requireName(projectId, 'projectId')
+    const projectRole = requireName(role, 'role')
     return this.transaction(() => {
-      const grant = this.db.prepare('SELECT account_id, expires_at, revoked_at FROM site_grants WHERE id=?')
-        .get(id) as { account_id: string; expires_at: number | null; revoked_at: number | null } | undefined
-      if (!grant) throw new SiteGrantStoreError('grant_not_found', 'Site grant not found')
-      if (account !== null && grant.account_id !== account) {
-        throw new SiteGrantStoreError('grant_not_found', 'Site grant not found for this account')
+      const grant = this.db.prepare(`SELECT expires_at, revoked_at FROM site_grants
+        WHERE id=? AND account_id=? AND project_id=? AND role=?`)
+        .get(id, account, project, projectRole) as
+        { expires_at: number | null; revoked_at: number | null } | undefined
+      if (!grant) {
+        if (!this.db.prepare('SELECT 1 FROM site_grants WHERE id=?').get(id)) {
+          throw new SiteGrantStoreError('grant_not_found', 'Site grant not found')
+        }
+        throw new SiteGrantStoreError('context_foreign', 'Site grant belongs to another account, project or role')
       }
       if (grant.revoked_at !== null) return false
       if (grant.expires_at !== null && grant.expires_at <= at) return false
