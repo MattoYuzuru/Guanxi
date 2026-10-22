@@ -1,4 +1,5 @@
 export { canonicalJson } from './canonical.ts'
+export { KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE } from './constants.ts'
 export {
   APPROVAL_SCHEMA,
   COMPONENT_ID_PATTERN,

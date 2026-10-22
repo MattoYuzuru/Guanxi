@@ -55,7 +55,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     const path = join(root, 'guanxi.db')
 
     const first = openDb(path)
-    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 31 })
+    assert.deepEqual({ ...first.prepare('PRAGMA user_version').get() }, { user_version: 33 })
     assert.deepEqual(
       schemaObjects(first, [
         'jobs',
@@ -81,7 +81,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     first.close()
 
     const reopened = openDb(path)
-    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 31 })
+    assert.deepEqual({ ...reopened.prepare('PRAGMA user_version').get() }, { user_version: 33 })
     assert.equal(
       schemaObjects(reopened, ['jobs', 'job_events']).filter((row) => row.type === 'table').length,
       2,
@@ -134,7 +134,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     fixture.close()
 
     const upgraded = openDb(path)
-    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 31 })
+    assert.deepEqual({ ...upgraded.prepare('PRAGMA user_version').get() }, { user_version: 33 })
     assert.deepEqual(
       {
         ...upgraded.prepare('SELECT id, title, mode, model FROM threads WHERE id = ?').get('thread-v3'),
@@ -196,7 +196,7 @@ describe('SQLite durable Chat Job migration 5', () => {
     repair.close()
 
     const recovered = openDb(path)
-    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 31 })
+    assert.deepEqual({ ...recovered.prepare('PRAGMA user_version').get() }, { user_version: 33 })
     assert.equal(schemaObjects(recovered, ['jobs', 'job_events', 'chat_job_inputs']).length, 3)
     recovered.close()
   })

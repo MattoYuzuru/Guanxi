@@ -8,6 +8,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DURABLE_RUNS_MIGRATION, DURABLE_RUN_HOME_BOUND_MIGRATION } from '../runs/schema.ts'
+import { NATIVE_LIFECYCLE_MIGRATION } from '../native-agent/schema.ts'
+import { SESSION_INPUT_ARTIFACTS_MIGRATION } from '../session-log/schema.ts'
 import { SESSION_LOG_MIGRATION } from '../session-log/schema.ts'
 
 export type Db = DatabaseSync
@@ -1497,6 +1499,10 @@ export const MIGRATIONS: readonly string[] = [
   DURABLE_RUNS_MIGRATION,
   // 31 — persist the granting home's safety bound across configuration changes.
   DURABLE_RUN_HOME_BOUND_MIGRATION,
+  // 32 — native Thread ownership, retention/deletion and R1 execution accounting.
+  NATIVE_LIFECYCLE_MIGRATION,
+  // 33 — session-owned, content-addressed input artifacts for native typed prompts and tool calls.
+  SESSION_INPUT_ARTIFACTS_MIGRATION,
 ]
 
 export function openDb(path: string): Db {

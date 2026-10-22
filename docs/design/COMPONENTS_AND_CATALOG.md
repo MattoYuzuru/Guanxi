@@ -58,10 +58,11 @@ draft ──(stories + docs complete)──► review ──(owner approves)─�
 - `stale` is derived from hashes, never stored, so nobody can forget to set it.
 - **Approving:** the owner clicks Approve or Request changes in the in-app catalog. The app writes
   the component's `review.json` (status, date, source hash, snapshot hashes, comment) and signs
-  the record with an owner approval key kept in the OS keychain; the public key is committed in
-  the repository. Agents can create and update `draft` and `review` records but cannot produce a
-  valid approval signature. Approvals are written only when the app runs from a source checkout;
-  release builds show the catalog read-only.
+  the record through the installed Secure Enclave signing helper (D-184), which requires the
+  owner's presence for every signature; the public key is committed in the repository. Agents can
+  create and update `draft` and `review` records but cannot produce a valid approval signature.
+  Approvals are written only when the app runs from a source checkout; release builds show the
+  catalog read-only.
 - **Requests for changes** become work items for agents through the work ledger (ADR-0032).
 - **What blocks what:**
 
@@ -89,13 +90,15 @@ and `parseReviewRecord` (unknown fields are rejected), written by the node in on
 | `deprecated` | agents | `{ at, replacement, note }`; the approval stays, so the chain stays intact |
 | `requests` | agents, node | change requests `{ id, at, text, state: open \| resolved }` |
 
-Signed payloads (Ed25519 over canonical JSON: keys sorted by UTF-16 code unit, no whitespace,
-UTF-8):
+Signed payloads (ECDSA P-256 (SHA-256, IEEE P1363) over canonical JSON: keys sorted by UTF-16
+code unit, no whitespace, UTF-8; signatures are 64-byte r‖s values, base64 encoded):
 
-- approval: `{ schema: "guanxi.ui-approval/2", id, status: "approved", at, sourceHash,
+- approval: `{ schema: "guanxi.ui-approval/3", id, status: "approved", at, sourceHash,
   snapshotHashes, comment, keyId, previous }`;
-- revocation: `{ schema: "guanxi.ui-revocation/2", id, decision: "request_changes", at, keyId,
+- revocation: `{ schema: "guanxi.ui-revocation/3", id, decision: "request_changes", at, keyId,
   previous }`.
+
+The `/2` (Ed25519) schema was never used and is removed.
 
 **Hash chain.** `previous` is the digest of the signed decision the new one supersedes, or
 `null` for the first: `sha256:` + hex SHA-256 of the canonical JSON of that decision's payload
@@ -193,17 +196,19 @@ lane hand-off for evidence.
   query (`?component=button&theme=dark-hc&density=comfortable&glass=solid`).
 - Approvals (§4) go through the node, not a Vite middleware: `GET/POST
   /api/ui-catalog/components/<id>/review` writes `<id>.review.json` only from a source checkout and
-  never in a release build. The approval is an Ed25519 signature inside the record, made with the
-  owner key read from the macOS keychain per approval (D-138); Git commit signing is not used.
-  Public keys are in `packages/ui/catalog/approval-keys.json`; the owner creates the key with
+  never in a release build. The approval is an ECDSA P-256 signature inside the record, produced
+  by the installed Secure Enclave signing helper (D-184) after Touch ID or the owner's password;
+  the node never receives the private key. Public keys are in
+  `packages/ui/catalog/approval-keys.json`; the owner installs the helper with
+  `node packages/server/scripts/install-approval-signer.ts` and creates the key with
   `node packages/ui/catalog/scripts/approval-key.ts init`.
-- **What the signature does and does not prove.** It proves that whoever produced it held the
-  owner key, which only leaves the keychain after a macOS prompt that trusts no application. It
-  does not stop a coding agent that edits the node's own code (or starts it with extra
-  `NODE_OPTIONS`) from capturing the key the next time the owner allows the prompt, and any local
-  process can ask the node to sign (the prompt does not show which component). Never choose
-  "Always Allow". The fix — a signing helper outside the checkout with a per-use user-presence
-  check — is a follow-up; see the DS1-b hand-off.
+- **What the signature does and does not prove.** It proves that the helper used the owner's
+  Secure Enclave key after the owner passed the presence check, and that the signed payload names
+  the component and its source hash. A process that obtains the wrapped blob and the owner's touch
+  can still ask for a signature while showing a misleading reason; every signature still requires
+  that touch. Ad-hoc signing changes the helper's code identity on every rebuild, so its keychain
+  access list must be re-granted by re-running `init` with a new key. Never choose "Always Allow"
+  for the keychain item.
 - G10–G16 are registered with DS1-a's runner (`packages/ui/gates/extensions/catalog.gate.ts`):
   `npm run ui:check` runs them with G1–G7 and G17 (fast: G10, G11, G12, G15 literals), and
   `npm run ui:check:browser` runs the browser ones and their G17 seeds (G13 in the pinned

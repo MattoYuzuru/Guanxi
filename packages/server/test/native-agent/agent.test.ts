@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile, realpath, symlink, readFile } from 'node
 import { join } from 'node:path'
 import { createKernel } from '@guanxi/kernel'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
+import { promptTextOf } from '@guanxi/contract'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
 import { egressScrubberPlugin } from '../../src/egress/plugin.ts'
@@ -18,45 +19,11 @@ import { openDb } from '../../src/store/db.ts'
 import { ProjectStore } from '../../src/store/projects.ts'
 import { ProjectService } from '../../src/projects/service.ts'
 import { WorkspaceStore } from '../../src/store/workspaces.ts'
+import { RunStore } from '../../src/runs/store.ts'
 import { NativeAgents } from '../../src/native-agent/service.ts'
 import { emptyUsage } from '../../src/native-agent/model.ts'
 
-async function fixture(t: { after(fn: () => unknown): void }, respond?: (call: number, context: string, signal?: AbortSignal) => Promise<AssistantMessage['content']>, localFetch?: typeof fetch, nodePorts?: () => number[], commandRunner?: typeof import('../../src/native-agent/sandbox.ts').sandboxCommand) {
-  await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
-  const dir = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'k4-agent-')))
-  const data = join(dir, 'data'); await mkdir(data)
-  const db = openDb(join(data, 'test.sqlite'))
-  const kernel = createKernel()
-  await kernel.plugin(resourceGovernorPlugin)
-  await kernel.plugin(ollamaAdapterPlugin, { fetch: localFetch ?? (async () => { throw new Error('No external network in K4 tests') }) })
-  await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
-  await kernel.plugin(createSessionLogPlugin({ db }))
-  const requests: string[] = []
-  const model = piModels('deepseek')[0]!
-  let calls = 0
-  await kernel.plugin(connectionsPlugin, { databasePath: join(data, 'connections.sqlite'), localHost: () => '127.0.0.1:11434',
-    keychain: async () => ({ key: () => randomBytes(32) }),
-    pi: { async complete(_model, context, options) {
-      const serialized = JSON.stringify(context); requests.push(serialized)
-      const content = respond ? await respond(++calls, serialized, options.signal) : [{ type: 'text' as const, text: 'fixture answer' }]
-      return { role: 'assistant', api: model.api, provider: model.provider, model: model.id, content, usage: emptyUsage(),
-        stopReason: content.some(c => c.type === 'toolCall') ? 'toolUse' : 'stop', timestamp: Date.now() }
-    } } })
-  const connections = kernel.service<Connections>('connections.registry')!
-  const connection = connections.create('local', { name: 'Fixture', provider: 'deepseek', kind: 'model_api', auth: 'api_key' })
-  await connections.unlockVault('local')
-  const secret = 'test_' + randomBytes(24).toString('hex')
-  connections.saveSecret('local', connection.id, secret)
-  const projects = new ProjectService(new ProjectStore(db)), workspaces = new WorkspaceStore(db)
-  const project = projects.create('Fixture project')
-  const log = kernel.service<SessionLog>('session.log')!, scrubber = kernel.service<EgressScrubber>('egress.scrubber')!
-  const host = { projects, workspaces, artifactTransfers: { download: async () => { throw new Error('No attachment') } } } as unknown as ConstructorParameters<typeof NativeAgents>[0]
-  let agents = new NativeAgents(host, log, connections, scrubber, data, nodePorts, commandRunner)
-  t.after(async () => { await agents.close(); await kernel.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) })
-  return { dir, data, connections, agents: () => agents, log, scrubber, secret, requests, projects, workspaces,
-    input: { projectId: project.id, connectionId: connection.id, model: model.id, prompt: 'fixture prompt' },
-    async restart(dataDirectory = data) { await agents.close(); agents = new NativeAgents(host, log, connections, scrubber, dataDirectory, nodePorts, commandRunner) } }
-}
+import { fixture } from './fixture.ts'
 test('native pi loop uses K3 and K2; tool-printed secrets scrub before next request, reasoning stays in its class', { timeout: 30000 }, async t => {
   let secret = '', root = ''
   const f = await fixture(t, async (call): Promise<AssistantMessage['content']> => call === 1 ? [
@@ -86,7 +53,7 @@ test('native pi loop uses K3 and K2; tool-printed secrets scrub before next requ
   assert.equal(JSON.stringify(result).includes(secret), false)
   await f.restart()
   assert.equal(f.agents().progress(sessionId).status, 'completed')
-  f.agents().prompt(sessionId, 'continue')
+  await f.agents().prompt(sessionId, 'continue')
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.equal(f.requests.length, 3)
   assert.match(f.requests[2]!, /file_read/)
@@ -118,16 +85,16 @@ test('queued prompts are visible/removable, are consumed once, and cancel aborts
     return [{ type: 'text', text: `answer ${call}` }]
   })
   const { sessionId } = await f.agents().create(f.input)
-  f.agents().queue(sessionId, 'keep')
-  f.agents().queue(sessionId, 'remove')
+  await f.agents().queue(sessionId, 'keep')
+  await f.agents().queue(sessionId, 'remove')
   const queue = f.agents().progress(sessionId).queue
   assert.equal(queue.length, 2)
-  f.agents().removeQueued(sessionId, queue[1]!.id)
+  await f.agents().removeQueued(sessionId, queue[1]!.id)
   release()
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.equal(f.requests.length, 2)
-  assert.equal(f.log.readAll(sessionId, 'person').filter(e => e.type === 'prompt' && e.data.text === 'keep').length, 1)
-  f.agents().prompt(sessionId, 'cancel me')
+  assert.equal(f.log.readAll(sessionId, 'person').filter(e => e.type === 'prompt' && promptTextOf(e) === 'keep').length, 1)
+  await f.agents().prompt(sessionId, 'cancel me')
   while (f.requests.length < 3) await new Promise(r => setTimeout(r, 5))
   f.agents().stop(sessionId)
   assert.equal((await f.agents().wait(sessionId)).status, 'cancelled')
@@ -308,14 +275,15 @@ test('a stored running session projects interrupted after restart and never disp
   const f = await fixture(t)
   const { sessionId } = await f.agents().create(f.input)
   await f.agents().wait(sessionId)
+  const run = f.runs.create({ sessionId }); f.runs.start(run.id)
   const writer = f.log.open(sessionId, { kind: 'agent' })
   writer.append({ type: 'agent.state', data: { status: 'running', error: null } }); writer.close()
-  await f.restart()
-  assert.equal(f.agents().progress(sessionId).status, 'interrupted')
+  await f.restart(f.data, true)
+  assert.equal(f.agents().progress(sessionId).status, 'input_required')
   assert.equal(f.agents().progress(sessionId).error, 'process_restarted')
   await new Promise(r => setTimeout(r, 30))
   assert.equal(f.requests.length, 1)
-  f.agents().prompt(sessionId, 'explicit continuation')
+  await f.agents().prompt(sessionId, 'explicit continuation')
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   assert.equal(f.requests.length, 2)
 })
@@ -382,7 +350,7 @@ test('cleanup quarantine keeps roots blocked across service reload and explicit 
   await writeFile(join(f.data, 'native-cleanup', 'owner.json'), JSON.stringify([root]))
   await f.restart()
   await assert.rejects(f.agents().create({ ...f.input, mode: 'full-access' }), /cleanup_unconfirmed/)
-  assert.throws(() => f.agents().prompt(sessionId, 'continue'), /cleanup_unconfirmed/)
+  await assert.rejects(f.agents().prompt(sessionId, 'continue'), /cleanup_unconfirmed/)
 })
 
 
@@ -414,7 +382,7 @@ test('policies capture the bound node ports and refresh them on continuation aft
   const event = f.log.readAll(sessionId, 'person').find(e => e.type === 'agent.policy')!
   assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189])
   await f.restart(); port = 4390
-  f.agents().prompt(sessionId, 'continue')
+  await f.agents().prompt(sessionId, 'continue')
   await f.agents().wait(sessionId)
   assert.deepEqual(event.type === 'agent.policy' && event.data.nodePorts, [4389, 5189], 'the stored policy remains immutable')
   assert.deepEqual(observed, [[4389, 5189], [4390, 5189]], 'continued tools must protect the currently bound ports')
@@ -436,7 +404,7 @@ test('unload records cleanup_unconfirmed consistently, blocks roots and never di
   f.agents().setRoots(f.input.projectId, [f.workspaces.create(root).id])
   const { sessionId } = await f.agents().create({ ...f.input, mode: 'full-access' })
   await started
-  f.agents().queue(sessionId, 'must not dispatch')
+  await f.agents().queue(sessionId, 'must not dispatch')
   const closeStarted = Date.now()
   await f.restart()
   assert.ok(Date.now() - closeStarted < 1000)

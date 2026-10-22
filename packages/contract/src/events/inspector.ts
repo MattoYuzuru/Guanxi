@@ -6,6 +6,7 @@
 import { z } from 'zod'
 import { contextStateSchema } from '../schemas.ts'
 import {
+  SESSION_EVENT_VERSION,
   sessionAudienceSchema,
   sessionEventClassSchema,
   sessionEventSchema,
@@ -15,6 +16,9 @@ import {
 } from './session-events.ts'
 
 export const SESSION_EXPORT_VERSION = 1
+/** The first export body that may contain a v2 input-artifact reference. */
+export const SESSION_EXPORT_VERSION_2 = 2
+export const SESSION_EXPORT_MAX_VERSION = 2
 
 /** URL- and header-safe: session ids appear in paths and in the export's file name. */
 const sessionId = z.string().regex(/^[A-Za-z0-9._:-]{1,200}$/u)
@@ -79,6 +83,8 @@ export const sessionEventsQuery = z
   .object({
     after: z.coerce.number().int().min(0).default(0),
     limit: z.coerce.number().int().min(1).max(500).default(200),
+    /** The highest event envelope the client can parse; omitting it means v1. */
+    eventVersion: z.coerce.number().int().min(1).max(2).default(1),
   })
   .strict()
 export type SessionEventsQuery = z.infer<typeof sessionEventsQuery>
@@ -154,20 +160,42 @@ export const sessionSearchResponse = z
   .strict()
 export type SessionSearchResponse = z.infer<typeof sessionSearchResponse>
 
-/** Exports never contain reasoning (ADR-0023 §3) and are scrubbed again on the way out. */
-export const sessionExportSchema = z
+export const sessionExportQuery = z
   .object({
-    exportVersion: z.literal(SESSION_EXPORT_VERSION),
-    sessionId,
-    exportedAt: z.string().datetime(),
-    lastSeq: z.number().int().nonnegative(),
-    excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
-    events: z.array(sessionEventSchema),
+    /** The highest export body the client can parse; omitting it means v1. */
+    exportVersion: z.coerce.number().int().min(1).max(2).default(1),
   })
   .strict()
-  .refine((value) => value.events.every((event) => event.class !== 'reasoning'), {
-    message: 'Exports never contain reasoning',
-  })
+export type SessionExportQuery = z.infer<typeof sessionExportQuery>
+
+/** Exports never contain reasoning (ADR-0023 §3) and are scrubbed again on the way out. */
+export const sessionExportSchema = z.union([
+  z
+    .object({
+      exportVersion: z.literal(SESSION_EXPORT_VERSION),
+      sessionId,
+      exportedAt: z.string().datetime(),
+      lastSeq: z.number().int().nonnegative(),
+      excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
+      events: z.array(sessionEventSchema).refine(
+        (events) => events.every((event) => event.version === SESSION_EVENT_VERSION),
+        { message: 'A v1 export contains only v1 events' },
+      ),
+    })
+    .strict(),
+  z
+    .object({
+      exportVersion: z.literal(SESSION_EXPORT_VERSION_2),
+      sessionId,
+      exportedAt: z.string().datetime(),
+      lastSeq: z.number().int().nonnegative(),
+      excluded: z.object({ reasoning: z.number().int().nonnegative() }).strict(),
+      events: z.array(sessionEventSchema),
+    })
+    .strict(),
+]).refine((value) => value.events.every((event) => event.class !== 'reasoning'), {
+  message: 'Exports never contain reasoning',
+})
 export type SessionExport = z.infer<typeof sessionExportSchema>
 
 export const SESSION_QUERY_TOOL_NAME = 'session_log_query'

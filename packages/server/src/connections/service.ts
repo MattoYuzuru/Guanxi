@@ -16,9 +16,13 @@ import { modelsDevFacts } from './metadata.ts'
 
 export interface ModelCall {
   model: string; runId: string; requestId: string; background?: boolean
+  /** Trusted billing boundary: one K3-visible HTTP attempt, never a provider retry. */
+  singleAttempt?: true
   signal?: AbortSignal
   /** Trusted executor observation after dispatch starts; never supplied by HTTP/model input. */
   onStarted?: () => void
+  /** API response/chunk observation for native inference acknowledgment. */
+  onResponseObserved?: () => void
   /** Trusted validation of the final scrubbed request, immediately before dispatch. */
   onPrepared?: (request: Context | OllamaChatRequest) => void
   /** Adapter parameters, not arbitrary transport/auth headers. */
@@ -120,6 +124,11 @@ export class Connections {
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const model = piModels(connection.provider).find(item => item.id === call.model)
       if (!model) throw new ConnectionError('connection_not_found', 'Model not found in the provider catalog')
+      if (call.singleAttempt && !['anthropic-messages', 'openai-responses', 'openai-completions'].includes(model.api))
+        throw new ConnectionError('policy_denied', 'Single-attempt transport is unavailable for this wire protocol')
+      // Per logical call, including any adapter fallback. Never share this counter
+      // between concurrent requests, or trust SDK retry settings as the only guard.
+      let httpAttempts = 0
       const dispatchAbort = new AbortController()
       const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
       try {
@@ -131,17 +140,35 @@ export class Connections {
           // before pi-ai turns it into a provider-specific request.
           const clean = this.scrubber.scrub(context)
           call.onPrepared?.(clean)
-          const dispatched = this.pi.complete(model, clean, {
+          let quota = false
+          const observeResponse = () => {
+            try { call.onResponseObserved?.() } catch (error) { dispatchAbort.abort(); throw error }
+          }
+          const pending = this.pi.complete(model, clean, {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
-            reasoning: call.options?.reasoning, apiKey: key, signal,
+            reasoning: call.options?.reasoning, apiKey: key, signal, maxRetries: 0,
+            onResponse: observeResponse,
+            // pi-ai's Google adapter has no response hook; a provider chunk is
+            // an observation of a started request, not preparation.
+            onProviderStreamEvent: model.api === 'google-generative-ai' ? observeResponse : undefined,
             // Redirects must not forward the credential to a different host.
             ...(model.api === 'google-generative-ai' ? {} : {
-              fetch: (url: Parameters<typeof fetch>[0], init?: RequestInit) => this.transport(url, { ...init, redirect: 'error', signal }),
+              fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                if (call.singleAttempt && ++httpAttempts > 1) throw new Error('single_attempt_exhausted')
+                const response = await this.transport(url, { ...init, redirect: 'error', signal })
+                quota ||= response.status === 429
+                return response
+              },
             }),
           })
-          signal.throwIfAborted()
-          try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); void dispatched.catch(() => undefined); throw error }
-          const result = await dispatched
+          try { signal.throwIfAborted(); call.onStarted?.() } catch (error) { dispatchAbort.abort(); void pending.catch(() => undefined); throw error }
+          const result = await pending
+          if (model.api === 'google-generative-ai' && result.stopReason === 'error') {
+            // The SDK serializes its API error JSON into ApiError.message; pi-ai
+            // retains that string. Accept only the structured numeric code.
+            try { quota ||= JSON.parse(result.errorMessage ?? '').error?.code === 429 } catch { /* An unstructured error remains provider_failed. */ }
+          }
+          if (quota) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
           signal.throwIfAborted()
           if (result.stopReason === 'error' || result.stopReason === 'aborted') throw new Error('Model request failed')
           this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
@@ -152,6 +179,7 @@ export class Connections {
         })
       } catch (error) {
         if (error instanceof ConnectionError) throw error
+        if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Model request cancelled' : 'Model request failed')
       }
     })
@@ -188,6 +216,7 @@ export class Connections {
         return this.scrubber.scrub(result)
       } catch (error) {
         if (error instanceof ConnectionError) throw error
+        if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed')
       }
       finally { lease.release() }

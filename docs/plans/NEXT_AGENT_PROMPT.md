@@ -1,44 +1,77 @@
-# Next agent prompt — finish review fixes and integrate one lane
+# Next agent prompt — finish active work, then pursue MS1
 
-**Status:** ready · **Updated:** 2026-10-21
+**Status:** active continuation · **Updated:** 2026-10-22
 
-Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md)
-and [PHASE_STATUS](PHASE_STATUS.md). The [coordination audit](evidence/coordination-2026-10-21.md)
-pins the inspected commits and separates implementation, verification and merge state.
+Read [AGENTS](../../AGENTS.md), [WORKFLOW](WORKFLOW.md), [lanes/README](lanes/README.md),
+[PHASE_STATUS](PHASE_STATUS.md) and the [continuation audit](evidence/coordination-2026-10-22.md).
+The owner authorizes autonomous completion of in-progress work and MS1 where feasible. Inspect
+live workers, exact HEAD, dirty state and latest handoffs before reopening a lane. Root owns
+central status; workers use isolated branches and handoffs.
 
-Do not restart old prompts merely because a lane file says “running”. Check live processes,
-HEAD, dirty state and the latest handoff first. Heavy checks share the `agent-dev` resource
-`heavy`; runtime target is this Mac. Use Node 26 and each checkout's own dependencies/ports.
+Work is **local only**: no SSH/Fedora or other remote execution host. Local synthetic Colima
+fixtures are allowed; D-194 excludes real benchmark execution on this Mac. No real model,
+paid call, owner workspace or owner key belongs in ordinary tests. Original Claude publication
+is unchanged; the refreshed local HTML snapshot distinguishes estimates from accepted exits.
 
-Current bounded recovery queue:
+Current executable main is `53b1e76`: K4 retention/R1, DS2, positive HTTPS, B1 bounded
+foundation/private stream, R3 ETA/signals and reviewed K4 input artifacts are integrated.
+All eight individual main checks pass; the coordinator wrapper failed afterwards due to its
+own running-script edit. Exact receipts and that limitation are recorded in the audit.
+Do not call the whole K4/B1/DS2/MS1 gate complete.
 
-1. **K4 follow-up 2:** `codex/k4f2-review-fixes` in `Guanxi-lanes/coord-k4f2` fixes the
-   independently reproduced handover-during-delete race. The old home must leave durable
-   deletion intent and R1 rows for the successor. Re-review the fix and its negative control,
-   then arrange the lane's cross-family review and integrator gates before merging.
-2. **DS2:** `codex/ds2-review-fixes` in `Guanxi-lanes/coord-ds2` contains current main and
-   fixes unsupported-platform reporting plus test coverage of the production access-control
-   and authentication-context builders. Re-review and run full gates. Keep real owner-present
-   hardware signing unverified until its explicit local integration check; do not approve a
-   component or run real key migration/bootstrap during ordinary tests.
-3. **X1:** `codex/x1-parent-read-boundary` in `Guanxi-lanes/coord-x1` is intended to close the server-side
-   unsandboxed fingerprint policy-read path. A post-read containment rejection is insufficient.
-   Require an actual read-denial regression and independent review, including Linux/Mac worker
-   boundaries in their authorized environments, before integration.
-4. **U1-a:** candidate `0523f9b` has local layout/mode behavior and a handoff. Review the
-   whole candidate; record cross-node layout replication as absent. U1-b shell and U1-c
-   zero-suppression migration remain separate unfinished slices.
-5. **B1:** candidate `298a93a` is a partial fixture foundation. Next define and implement the
-   per-request K3 billing reservation boundary, immutable 50+30 corpus staging and actual
-   Guanxi task executor. No paid/model noise-floor run is authorized by the fixture handoff;
-   ADR-0025 is not yet an operational evolution gate.
+1. **First unfinished privacy slice:** independent U1 review reproduced a late long-secret
+   prefix leak in K4's truncated excerpt/title. Original outside probe
+   `u1-v2-metadata-integration-probe-20261022.ts` has one expected failure (`check-821298cf`).
+   A GPT author owns the isolated `codex/k4-input-artifacts` follow-up: protect known right
+   truncation with current registry forms before title/search/frame projection, preserve sync
+   APIs and immutable rows, no full artifact reads or arbitrary fragment minimum. The original
+   reviewer must verify it independently, then root runs candidate/main gates. Keep current
+   prompt on this repair until the original probe and all affected output boundaries pass.
+2. U1 combined candidate `985dfed` joins reviewed layout/replication, shell preparation/search,
+   unsigned AppShell/Dialog/Input readiness and canonical CSS fixes. Types pass; npm test
+   fails locale inventory (351/352 web). Separate DSH repair in `codex/u1-search` must keep
+   brand interpolation central and internal discriminator IDs stable, without scanner
+   exceptions. Earlier union `387453b` passed eight gates and 87 browser cases; that is not
+   certification of the later union. Merge the privacy/inventory fixes, rerun full gates, and
+   integrate only after independent review. Product mounting, new-session/finished-unseen,
+   true ephemeral D-135 side chat, 112 CSS suppressions and owner-signed approval remain.
+3. R2 admission `c4dbaff` is independently closed. Current combined candidate `d21661b`
+   includes main K4 and K3 nonstream body-cancel source `3439a7f` / handoff `19664d3`.
+   Independent reviewer is rerunning the original body/stream probes; preserve fourth-argument
+   async authorization and final synchronous prepare before POST, then actual read/cancel ACK
+   before release. Missing stock exact counter/owned-checkout authority must refuse; no byte
+   count/catalog context or fake local placement fallback. Full candidate/main gates follow.
+4. R3 cascade production `9e62da8`, handoff `f0733b2`, has independent window/facts repair
+   closure. Author relay scope is 29 new / 92 inherited plus original window probe. Integrate
+   after K3/R2 seams, then broader gates. Real grading, calibration, night wake and B3 remain.
+5. X1 repaired-source Linux `c7773d4`, handoff `7a471d0`, passes 62 local Linux cases without
+   skips and separate source/two-case review. Merge current main, review census/conflicts,
+   run all candidate/main gates; do not substitute old Fedora evidence or call nested-Colima
+   permissions rootless production validation. Preserve exact image/source bindings.
+6. B1 process/K2 source `96ebde6` repairs three reproduced P2s, with 19 new / 115 inherited
+   author cases. Its late-redacted legacy tool-key residual is being fixed through existing
+   trusted fenced metadata access; it must not be waived. Independent real `/bin/ps`, parent/
+   supervisor death, original K2 probes and full gates follow. Stock paid executor stays off;
+   real corpus/images, verified billing, actual arm execution and five seeds remain open.
+7. K5 has a proposed durable same-node account-admission plan in `codex/k5-durable-admission`.
+   Review actual child/group cleanup acknowledgement before code authorization: no timeout
+   frees an occupied account, SQL errors surface, orphans remain blocked. Same-node is not
+   distributed admission; help/auth fixtures do not prove effective bare or real compatibility.
+8. Integrate reviewed F2-a `5c66e27` after U1, then F2-b `ffa9d1a`; preserve its separate
+   abort/grant review repairs. Offers alone have dispatchAuthorized:false. Cost/toolful
+   transport, physical two-host power and six-hour observations remain open.
+9. DS2 helper is installed; production build/code-sign checks pass (`check-jgk64o2l`). Actual
+   owner-present Secure Enclave signing remains unverified. Unsigned draft to review is
+   allowed after readiness; only the owner's valid signature permits approved and stage exit.
 
-DS1-a/b/c and F1 are merged. K4/K5/R2 bounded implementations are merged with explicit
-residuals; do not reopen their original whole-lane prompts or claim full product readiness.
-R3 and F2 are available roadmap successors once their dependency contracts are satisfied.
-No phone relay has been deployed (U4, D-187, ADR-0038).
+Use each checkout's own Node26 dependencies/ports and shared heavy lock under
+`/Users/yuzuru/.local/state/agent-dev`. Freeze source and the coordinator script throughout
+checks. Stop command sequences on failure. The external skill symlink prevents reusable
+attestation: inspect actual receipts and report clean HEAD/real scope. Keep new and regression
+counts separate, fix independent findings in separate commits, then update status and this
+prompt. Do not push during the local-only continuation.
 
-Workers write lane handoffs, never the central status files. The integrator updates this
-prompt and PHASE_STATUS after each bounded outcome, retains separate review-fix commits,
-and publishes main only after its required gates pass. If a fix/gate remains unresolved,
-leave this prompt on that item with the exact blocker and recovery command.
+MS1 still requires its accepted K5/R3/F2/B3 dependencies and real delegation to a 30B-class
+model on another node for at least six hours, zero lead tokens during hibernation, exactly one
+wake and every item exit green. Advance local code and prepare concrete owner-required steps;
+never replace these operational gates with synthetic fixtures or rewrite milestone scope.

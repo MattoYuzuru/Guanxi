@@ -1,0 +1,322 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { mkdir, writeFile, rm, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fixture } from './fixture.ts'
+import { emptyUsage } from '../../src/native-agent/model.ts'
+import { piModels, piTransport } from '../../src/connections/pi.ts'
+
+type Fixture = Awaited<ReturnType<typeof fixture>>
+async function assertDeletionSettled(f: Fixture, sessionId: string, dirs: string[]) {
+  for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+  for (const [table, key] of [['threads','id'], ['sessions','id'], ['session_writers','session_id'], ['session_events','session_id'], ['native_sessions','session_id'], ['durable_runs','session_id']] as const) {
+    assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${key}=?`).get(sessionId)!.n, 0, table)
+  }
+  for (const table of ['run_costs','run_attempts','run_execution','run_resources']) assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n, 0, table)
+  assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), [])
+  f.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
+  // The settled intent cannot start a second destructive pass.
+  await assert.rejects(f.agents().sessions.remove(sessionId), { code: 'session_not_found' })
+}
+
+for (const cap of ['maxTokens','maxCostMicrounits'] as const) test(`nonzero ${cap} consumes actual K3 usage in R1 before stopping`, async t => {
+  const usage = { ...emptyUsage(), input: 10, output: 7, cacheRead: 2, cacheWrite: 3, totalTokens: 22, cost: { input: 0.1, output: 0.025, cacheRead: 0, cacheWrite: 0, total: 0.125 } }
+  const f = await fixture(t, undefined, undefined, undefined, undefined, { usage })
+  const { sessionId } = await f.agents().create({ ...f.input, budget: { [cap]: cap === 'maxTokens' ? 22 : 125000 } })
+  const result = await f.agents().wait(sessionId)
+  assert.equal(result.status, 'cancelled'); assert.equal(result.error, 'budget_exhausted')
+  assert.equal(f.requests.length, 1)
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  assert.deepEqual(f.runs.costs(runId), [{ currency: 'USD', inputTokens: 15, outputTokens: 7, costMicrounits: 125000 }])
+})
+
+for (const reporting of [false,true]) test(`${reporting ? 'report' : 'run'} duration cap aborts a pending provider through R1`, { timeout: 5000 }, async t => {
+  let now = Date.now(), aborted = false
+  const f = await fixture(t, async (_call, _context, signal) => {
+    signal!.addEventListener('abort', () => { aborted = true }, { once: true })
+    return await new Promise(() => {})
+  }, undefined, undefined, undefined, { clock: () => now })
+  const { sessionId } = await f.agents().create({ ...f.input, budget: reporting ? { reportMaxDurationMs: 10 } : { maxDurationMs: 10 } })
+  while (f.requests.length === 0) await new Promise(r => setImmediate(r))
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  if (reporting) { const attempt = f.runs.attempts(runId)[0]!; f.runs.wrappingUp(attempt); f.runs.checkExecution(attempt) }
+  now += 11
+  const result = await f.agents().wait(sessionId)
+  assert.equal(result.status, 'cancelled')
+  assert.equal(result.error, reporting ? 'report_budget_exhausted' : 'budget_exhausted')
+  assert.equal(aborted, true); assert.equal(f.requests.length, 1)
+})
+
+test('Session leave finishes current work, blocks queued turns and starts recovery grace only when idle', async t => {
+  let release!: () => void
+  const block = new Promise<void>(r => { release = r })
+  const f = await fixture(t, async () => { await block; return [{ type: 'text', text: 'done' }] })
+  const { sessionId } = await f.agents().create({ ...f.input, retention: 'session' })
+  await f.agents().queue(sessionId, 'must not start after leave')
+  f.agents().leaveSession(sessionId)
+  const late = new Date(Date.now() + 8 * 3600000)
+  await f.agents().sessions.maintain(new Set([sessionId]), late)
+  assert.equal(f.agents().sessions.retention(sessionId).recoveryDeadline, null)
+  release(); await f.agents().wait(sessionId)
+  assert.equal(f.requests.length, 1)
+  await f.agents().sessions.maintain(new Set(), late)
+  const deadline = f.agents().sessions.retention(sessionId).recoveryDeadline!
+  assert.equal(Date.parse(deadline), late.getTime() + 24 * 3600000)
+  await f.agents().sessions.maintain(new Set(), new Date(Date.parse(deadline) - 1))
+  assert.notEqual(f.log.session(sessionId), null)
+})
+
+test('partial cleanup persists intent, blocks continuation and retries all resources after restart', async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  const dirs = f.agents().sessions.paths(sessionId)
+  await writeFile(join(f.data, 'native-output'), 'blocks the output parent directory')
+  await assert.rejects(f.agents().deleteSession(sessionId), /deletion_failed/)
+  await assert.rejects(readdir(dirs[0]!), { code: 'ENOENT' })
+  assert.equal(f.agents().sessions.retention(sessionId).state, 'deleting')
+  await assert.rejects(f.agents().prompt(sessionId, 'must not resume'), /session_expired/)
+  assert.notEqual(f.log.session(sessionId), null)
+  await rm(join(f.data, 'native-output'))
+  await f.restart()
+  // Exercise the actual startup owner; close waits for its maintenance promise.
+  await f.agents().close()
+  assert.equal(f.log.session(sessionId), null)
+  for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(sessionId)!.n, 0)
+})
+
+test('maintenance rechecks policy after an earlier cleanup await', async t => {
+  const f = await fixture(t)
+  const a = await f.agents().create(f.input); await f.agents().wait(a.sessionId)
+  const b = await f.agents().create(f.input); await f.agents().wait(b.sessionId)
+  f.db.prepare('UPDATE native_sessions SET deletion_requested=1 WHERE session_id=?').run(a.sessionId)
+  f.db.prepare('UPDATE threads SET last_user_activity_at=? WHERE id=?').run(new Date(Date.now() - 8 * 86400000).toISOString(), b.sessionId)
+  let release!: () => void, entered!: () => void
+  const block = new Promise<void>(r => { release = r }), ready = new Promise<void>(r => { entered = r })
+  const sessions = f.agents().sessions, remove = sessions.remove.bind(sessions)
+  sessions.remove = async id => { if (id === a.sessionId) { entered(); await block } return remove(id) }
+  const pending = sessions.maintain(new Set())
+  await ready
+  f.agents().setRetention(b.sessionId, 'keep')
+  release(); await pending
+  assert.equal(sessions.retention(b.sessionId).mode, 'keep')
+  assert.equal(sessions.retention(b.sessionId).state, 'active')
+})
+
+test('maintenance stops the whole pass when its home is deposed during a deletion', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const { NativeSessions } = await import('../../src/native-agent/sessions.ts')
+  let successor: InstanceType<typeof RunStore> | undefined
+  let current: Fixture | undefined
+  let later: string | undefined
+  const f = await fixture(t, undefined, undefined, undefined, undefined, {
+    // The first eligible removal yields after its durable intent commits. The old home
+    // closes and a successor claims the durable-runs home before the first rm.
+    fault: (operation, point) => {
+      if (operation !== 'native_delete_intent' || point !== 'committed' || successor || !current || !later) return
+      current.db.prepare("UPDATE threads SET last_user_activity_at='2020-01-01T00:00:00.000Z' WHERE id=?").run(later)
+      current.runs.close()
+      successor = new RunStore({ db: current.db, log: current.log, scrubber: current.scrubber })
+      successor.heartbeat(); successor.reconcile()
+    },
+  })
+  current = f
+  const first = await f.agents().create(f.input); await f.agents().wait(first.sessionId)
+  const second = await f.agents().create(f.input); await f.agents().wait(second.sessionId)
+  later = second.sessionId
+  const firstRun = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(first.sessionId)!.id)
+  f.db.prepare('UPDATE native_sessions SET deletion_requested=1 WHERE session_id=?').run(first.sessionId)
+  const dirs = f.agents().sessions.paths(first.sessionId)
+  // The old pass must refuse the whole pass instead of swallowing the lost authority
+  // and timestamping a session that became eligible later in the same pass.
+  await assert.rejects(f.agents().sessions.maintain(new Set()), { code: 'closed' })
+  assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(first.sessionId)!.deletion_requested, 1)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 1)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM durable_runs WHERE session_id=?').get(first.sessionId)!.n, 1)
+  assert.notEqual(f.log.session(first.sessionId), null)
+  assert.equal(f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at, null)
+  assert.equal(successor!.get(firstRun).state, 'completed', 'the successor sees the settled run')
+  const successorSessions = new NativeSessions(f.db, f.log, f.data, successor!)
+  try {
+    // The successor performs the retained deletion and the later TTL transition once.
+    await successorSessions.maintain(new Set())
+    for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+    for (const [table, key] of [['threads','id'], ['sessions','id'], ['session_writers','session_id'], ['session_events','session_id'], ['native_sessions','session_id'], ['durable_runs','session_id']] as const) {
+      assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${key}=?`).get(first.sessionId)!.n, 0, table)
+    }
+    for (const table of ['run_costs','run_attempts','run_execution','run_resources']) {
+      assert.equal(f.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE run_id=?`).get(firstRun)!.n, 0, table)
+    }
+    const trashed = f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at
+    assert.notEqual(trashed, null)
+    await assert.rejects(successorSessions.remove(first.sessionId), { code: 'session_not_found' })
+    assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), [])
+    f.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
+    // A second successor pass is an idempotent no-op for the already-trashed session.
+    await successorSessions.maintain(new Set())
+    assert.equal(f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at, trashed)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 0)
+  } finally { successor!.close() }
+})
+
+test('maintenance keeps a recoverable quarantine failure local to its session', async t => {
+  const f = await fixture(t)
+  const first = await f.agents().create(f.input); await f.agents().wait(first.sessionId)
+  const second = await f.agents().create(f.input); await f.agents().wait(second.sessionId)
+  f.db.prepare('UPDATE native_sessions SET deletion_requested=1 WHERE session_id=?').run(first.sessionId)
+  f.db.prepare("UPDATE threads SET last_user_activity_at='2020-01-01T00:00:00.000Z' WHERE id=?").run(second.sessionId)
+  const quarantine = join(f.data, 'native-cleanup'), record = join(quarantine, 'fixture.json')
+  await mkdir(quarantine, { recursive: true })
+  await writeFile(record, JSON.stringify([f.agents().sessions.paths(first.sessionId)[0]]))
+  try {
+    // Quarantine refuses the first deletion; the later TTL transition must still run.
+    await f.agents().sessions.maintain(new Set())
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(first.sessionId)!.deletion_requested, 1)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 1)
+    assert.notEqual(f.log.session(first.sessionId), null)
+    assert.notEqual(f.db.prepare('SELECT trashed_at FROM native_sessions WHERE session_id=?').get(second.sessionId)!.trashed_at, null)
+    // Once quarantine clears, the next pass retries the same durable intent.
+    await rm(record)
+    await f.agents().sessions.maintain(new Set())
+    assert.equal(f.log.session(first.sessionId), null)
+    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM native_sessions WHERE session_id=?').get(first.sessionId)!.n, 0)
+    assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), [])
+    f.db.exec("INSERT INTO session_events_fts(session_events_fts) VALUES('integrity-check')")
+  } finally { await rm(quarantine, { recursive: true, force: true }) }
+})
+
+for (const quota of [false,true]) test(`actual Google pi transport ${quota ? 'quota' : 'start'} observation reaches native R1`, async t => {
+  const original = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls++
+    return quota ? new Response(JSON.stringify({ error: { code: 429, message: 'fixture quota', status: 'RESOURCE_EXHAUSTED' } }), { status: 429, headers: { 'content-type': 'application/json' } })
+      : new Response('data: ' + JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'fixture' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 1, totalTokenCount: 4 } }) + '\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }
+  t.after(() => { globalThis.fetch = original })
+  const f = await fixture(t)
+  const connection = f.connections.create('local', { name: 'Google fixture', provider: 'google', auth: 'api_key', kind: 'model_api' })
+  f.connections.saveSecret('local', connection.id, f.secret)
+  Reflect.set(f.connections, 'pi', piTransport)
+  const { sessionId } = await f.agents().create({ ...f.input, connectionId: connection.id, model: piModels('google')[0]!.id })
+  const result = await f.agents().wait(sessionId)
+  assert.equal(result.status, quota ? 'cancelled' : 'completed')
+  assert.equal(result.error, quota ? 'quota_exhausted' : null)
+  assert.equal(calls, 1)
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  const attempt = f.runs.attempts(runId)[0]!
+  assert.equal(attempt.first_model_at !== null, !quota)
+})
+
+test('clean home handover reconciles a native attempt before its execution lease expires', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const f = await fixture(t, async () => await new Promise(() => {}))
+  const { sessionId } = await f.agents().create(f.input)
+  while (f.requests.length === 0) await new Promise(r => setImmediate(r))
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  const attempt = f.runs.attempts(runId)[0]!
+  f.runs.close()
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber })
+  try {
+  successor.heartbeat(); successor.reconcile()
+  assert.equal(successor.attempts(runId)[0]!.state, 'lost')
+  assert.equal(successor.get(runId).state, 'input_required')
+  assert.throws(() => successor.complete(attempt, 'completed'), /stale_lease/)
+  assert.equal(f.requests.length, 1)
+  } finally { successor.close() }
+})
+
+test('a deposed native home cannot delete a settled session or its resources', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  f.runs.close()
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber })
+  try {
+    successor.heartbeat(); successor.reconcile()
+    await assert.rejects(f.agents().deleteSession(sessionId), /closed/)
+    assert.notEqual(f.log.session(sessionId), null)
+    await readdir(f.agents().sessions.paths(sessionId)[0]!)
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 0)
+  } finally { successor.close() }
+})
+
+test('home handover during deletion stops later destructive steps and leaves the intent to the successor', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  assert.equal(f.runs.get(runId).state, 'completed')
+  const dirs = f.agents().sessions.paths(sessionId)
+  for (const dir of dirs) await mkdir(dir, { recursive: true })
+  const pending = f.agents().deleteSession(sessionId)
+  // The durable intent commits before the first awaited filesystem step.
+  assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 1)
+  f.runs.close()
+  const successor = new RunStore({ db: f.db, log: f.log, scrubber: f.scrubber })
+  try {
+    successor.heartbeat(); successor.reconcile()
+    assert.equal(successor.get(runId).state, 'completed', 'the successor sees the settled run')
+    await assert.rejects(pending, /deletion_failed/)
+    // The deposed home refuses before the next filesystem step and commits no metadata.
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 1)
+    assert.equal(successor.get(runId).state, 'completed')
+    assert.notEqual(f.log.session(sessionId), null)
+    // The rm already issued completed; the next two steps were never issued.
+    await assert.rejects(readdir(dirs[0]!), { code: 'ENOENT' })
+    await readdir(dirs[1]!)
+    await readdir(dirs[2]!)
+  } finally { successor.close() }
+  // The successor's maintenance retry finishes the same durable intent.
+  await f.restart(f.data, true)
+  await f.agents().close()
+  await assertDeletionSettled(f, sessionId, dirs)
+})
+
+test('home handover before the final deletion transaction refuses the metadata commit', async t => {
+  const { RunStore } = await import('../../src/runs/store.ts')
+  let successor: InstanceType<typeof RunStore> | undefined
+  let current: Fixture | undefined
+  const f = await fixture(t, undefined, undefined, undefined, undefined, {
+    // A synchronous store boundary lets the successor take the home after every rm
+    // but before native deletion opens its final metadata transaction.
+    fault: (operation, point) => {
+      if (operation !== 'native_delete' || point !== 'before_begin' || successor || !current) return
+      current.runs.close()
+      successor = new RunStore({ db: current.db, log: current.log, scrubber: current.scrubber })
+      successor.heartbeat(); successor.reconcile()
+    },
+  })
+  current = f
+  const { sessionId } = await f.agents().create(f.input); await f.agents().wait(sessionId)
+  const runId = String(f.db.prepare('SELECT id FROM durable_runs WHERE session_id=?').get(sessionId)!.id)
+  const dirs = f.agents().sessions.paths(sessionId)
+  for (const dir of dirs) await mkdir(dir, { recursive: true })
+  try {
+    await assert.rejects(f.agents().deleteSession(sessionId), /deletion_failed/)
+    assert.equal(f.db.prepare('SELECT deletion_requested FROM native_sessions WHERE session_id=?').get(sessionId)!.deletion_requested, 1)
+    assert.equal(successor!.get(runId).state, 'completed', 'the successor keeps the visible run')
+    assert.notEqual(f.log.session(sessionId), null)
+    for (const dir of dirs) await assert.rejects(readdir(dir), { code: 'ENOENT' })
+  } finally { successor?.close() }
+  await f.restart(f.data, true)
+  await f.agents().close()
+  await assertDeletionSettled(f, sessionId, dirs)
+})
+
+
+test('synchronous API cancellation cannot acknowledge dispatch or leak a pending rejection', async t => {
+  const f = await fixture(t)
+  const controller = new AbortController()
+  let started = 0
+  Reflect.set(f.connections, 'pi', { complete: async () => {
+    controller.abort()
+    throw new Error('fixture dispatch canceled')
+  } })
+  await assert.rejects(f.connections.complete('local', f.input.connectionId, { messages: [] }, {
+    model: f.input.model, runId: 'fixture', requestId: 'fixture-cancel', signal: controller.signal,
+    onStarted: () => { started++ },
+  }))
+  assert.equal(started, 0, 'cancellation wins before dispatch acknowledgment')
+  await new Promise(r => setImmediate(r))
+})

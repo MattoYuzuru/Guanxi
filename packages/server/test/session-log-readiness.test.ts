@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { Hono } from 'hono'
-import { apiErrorSchema, type ChatJobOutput } from '@guanxi/contract'
+import { apiErrorSchema, promptTextOf, type ChatJobOutput } from '@guanxi/contract'
 import { SecretScrubber } from '../src/egress/scrubber.ts'
 import { redactionMarker } from '../src/egress/types.ts'
 import { ChatSessionMirror } from '../src/session-log/chat-mirror.ts'
@@ -235,7 +235,7 @@ describe('session log while the egress scrubber is not ready', () => {
     await tick()
     assert.deepEqual(counts(log, threadId), { 'session.created': 1, 'writer.acquired': 1, prompt: 1, 'job.lifecycle': 2 })
     assert.equal(sessionRows(db).includes(SECRET), false)
-    assert.ok(log.readAll(threadId, 'person').some((event) => event.type === 'prompt' && event.data.text.includes(redactionMarker(REF))))
+    assert.ok(log.readAll(threadId, 'person').some((event) => event.type === 'prompt' && promptTextOf(event).includes(redactionMarker(REF))))
 
     const jobs = new JobStore(db, { sessionMirror: mirror })
     jobs.transition({ jobId, expectedStatus: 'reserving', status: 'loading' })

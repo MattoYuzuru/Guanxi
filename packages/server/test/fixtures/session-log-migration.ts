@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite'
 export function downgradeSessionLogToV28(db: DatabaseSync): void {
   downgradeDurableRunsToV29(db)
   db.exec(`
+    DROP TABLE IF EXISTS session_input_artifacts;
     DROP INDEX idx_session_mirror_backlog_order;
     DROP TABLE session_mirror_backlog;
     DROP TRIGGER session_events_fts_delete;
@@ -33,6 +34,9 @@ export function downgradeSessionLogToV28(db: DatabaseSync): void {
 /** Reverse only R1 in test databases; production migrations never run down. */
 export function downgradeDurableRunsToV29(db: DatabaseSync): void {
   db.exec(`
+    DROP TRIGGER IF EXISTS native_thread_delete_guard;
+    DROP TABLE IF EXISTS native_sessions;
+    DROP TABLE IF EXISTS run_execution;
     DROP INDEX idx_session_mirror_backlog_thread;
     DROP TABLE run_costs;
     DROP TABLE run_resources;
@@ -51,6 +55,7 @@ export const DURABLE_RUN_TABLES = ['durable_runs', 'run_attempts', 'leases', 'pr
 /** Tables added since v28; older snapshot fixtures exclude these, including FTS shadows. */
 export const SESSION_LOG_TABLES = [
   ...DURABLE_RUN_TABLES,
+  'native_sessions', 'run_execution',
   'sessions',
   'session_writers',
   'session_events',
@@ -60,4 +65,5 @@ export const SESSION_LOG_TABLES = [
   'session_events_fts_docsize',
   'session_events_fts_idx',
   'session_mirror_backlog',
+  'session_input_artifacts',
 ] as const

@@ -260,6 +260,40 @@ describe('session log: single writer (D-116)', () => {
     assert.equal(open.n, 0)
     assert.equal(code(() => log.open('s-c', { kind: 'agent' })), 'closed')
   })
+
+  it('closes an open handle without throwing after the database is closed', () => {
+    const db = openDb(':memory:')
+    const log = logFor(db)
+    const handle = log.open('s-closed-db', { kind: 'agent' })
+    db.close()
+    assert.doesNotThrow(() => handle.close())
+    assert.equal(handle.closed, true, 'the handle is closed even though its row cannot be updated')
+    assert.doesNotThrow(() => handle.close(), 'closing the same handle twice stays harmless')
+    assert.doesNotThrow(() => log.close())
+  })
+
+  it('propagates an open-database writer-release failure and keeps the writer held', () => {
+    const db = openDb(':memory:')
+    const log = logFor(db)
+    const other = logFor(db)
+    const handle = log.open('s-release-failure', { kind: 'agent' })
+    db.exec(
+      `CREATE TRIGGER reject_fixture_release BEFORE UPDATE OF released_at ON session_writers
+       WHEN NEW.released_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'fixture_release_failed'); END;`,
+    )
+    try {
+      assert.throws(() => handle.close(), /fixture_release_failed/, 'an open-database release error must surface')
+      const row = db
+        .prepare('SELECT released_at FROM session_writers WHERE session_id = ?')
+        .get('s-release-failure') as { released_at: string | null }
+      assert.equal(row.released_at, null, 'a failed update leaves the durable writer row unreleased')
+      assert.equal(code(() => other.open('s-release-failure', { kind: 'agent' })), 'writer_busy')
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS reject_fixture_release')
+      other.close()
+      log.close()
+    }
+  })
 })
 
 describe('session log: append-only schema', () => {
@@ -460,7 +494,7 @@ describe('session log: search', () => {
 describe('session log: migration 29 is append-only', () => {
   it('leaves migrations 1-28 byte-identical to the K1 base (4588ce6)', () => {
     const digest = createHash('sha256').update(JSON.stringify(MIGRATIONS.slice(0, 28))).digest('hex')
-    assert.equal(MIGRATIONS.length, 31)
+    assert.equal(MIGRATIONS.length, 33)
     assert.equal(digest, 'd561955e4784a2d97b96c6f772b4f91993114a557d452d8f8f87283bac28da82')
   })
 
@@ -493,7 +527,7 @@ describe('session log: migration 29 is append-only', () => {
     rolledBack.close()
 
     const upgraded = openDb(path)
-    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 31)
+    assert.equal((upgraded.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, 33)
     assert.equal(snapshot(upgraded), v28, 'every earlier table is unchanged')
     assert.equal((upgraded.prepare('SELECT COUNT(*) AS n FROM session_events').get() as { n: number }).n, 0)
     upgraded.close()

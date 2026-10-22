@@ -151,7 +151,7 @@ describe('inspector page', () => {
     expect(tokens.parentElement!.textContent).toContain('40 → 12')
     expect(tokens.textContent).toMatch(/As of/)
     expect(screen.getByText('52 / 4,096 (1%)')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Export JSON without reasoning' }).getAttribute('href')).toBe(`/api/sessions/${SESSION_ID}/export`)
+    expect(screen.getByRole('link', { name: 'Export JSON without reasoning' }).getAttribute('href')).toBe(`/api/sessions/${SESSION_ID}/export?exportVersion=2`)
   })
 
   it('renders durable run events once across persisted/live overlap and reload', async () => {

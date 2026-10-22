@@ -7,6 +7,7 @@ export type ReadOnlyReason =
   | 'platform_unsupported'
   | 'signing_key_missing'
   | 'signing_key_untrusted'
+  | 'signer_helper_missing'
 
 export interface ReviewCapability {
   writable: boolean

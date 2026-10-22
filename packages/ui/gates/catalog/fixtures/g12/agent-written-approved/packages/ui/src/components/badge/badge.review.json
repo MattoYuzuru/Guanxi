@@ -7,7 +7,7 @@
     "sourceHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     "snapshotHashes": {},
     "comment": "Approved by the owner.",
-    "keyId": "ed25519:00000000000000000000000000000000",
+    "keyId": "p256:00000000000000000000000000000000",
     "previous": null,
     "signature": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw=="
   },

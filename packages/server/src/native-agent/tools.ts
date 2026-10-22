@@ -1,6 +1,7 @@
 import { Type } from 'typebox'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { SessionHandle, SessionLog } from '../session-log/log.ts'
+import type { AppendOptions, AppendResult, SessionEventInput, SessionHandle, SessionLog } from '../session-log/log.ts'
+import type { SessionEventType } from '@guanxi/contract'
 import { querySessionLog } from '../session-log/query-tool.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
@@ -21,7 +22,14 @@ export interface NativeToolContext {
   handle: SessionHandle
   scrubber: EgressScrubber
   executeCommand?: typeof sandboxCommand
-  queue(text: string): void
+  guard?(): void
+  queue(text: string): void | Promise<void>
+  /** Enqueue one native trace append through the attempt FIFO. */
+  append?<T extends SessionEventType>(input: SessionEventInput<T>, options?: AppendOptions): Promise<AppendResult>
+  /** Wait for the exact tool.call durable commit before any tool body effect. */
+  awaitToolCall?(toolCallId: string, signal?: AbortSignal): Promise<void>
+  /** Abort the turn after a missing/rejected durable acknowledgment. */
+  abortTurn?(): void
 }
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const { policy, handle, scrubber } = ctx
@@ -68,12 +76,20 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     name, label: name, description, parameters: Type.Object(properties),
     async execute(_id, raw, signal) {
       try {
+        await ctx.awaitToolCall?.(_id, signal)
+        ctx.guard?.()
+        signal?.throwIfAborted()
         // Whole results are scrubbed before the model, trace, or next tool sees them.
         const content = await execute(scrubber.scrub(raw as Record<string, string>), signal)
+        ctx.guard?.()
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots']
+        const safeCodes = ['cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
         const code = error instanceof Error && (safeCodes.includes(error.message) || /^index_[a-z_]+$/.test(error.message)) ? error.message : 'tool_denied_or_failed'
+        if (code === 'input_artifact_storage_failed' || code === 'tool_call_trace_missing') {
+          ctx.abortTurn?.()
+          return { content: [{ type: 'text', text: 'input_artifact_storage_failed' }], details: { code: 'input_artifact_storage_failed' }, isError: true }
+        }
         return { content: [{ type: 'text', text: code === 'cleanup_unconfirmed' ? code : signal?.aborted ? 'cancelled' : code }], details: { code }, isError: true }
       }
     },
@@ -101,11 +117,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     tool('attachments', 'List the selected, read-only attachments. Use file_read for text; unsupported binary formats need a converter.', {}, async () => JSON.stringify(policy.attachmentMetadata ?? policy.attachments)),
     tool('plan', 'Replace the light session plan (off-ledger). Completed agent items request verification; they do not prove completion. items is a JSON array.', { items: Type.String() }, async a => {
       const items = JSON.parse(a.items!)
-      const result = handle.append({ type: 'agent.plan', data: { items } })
-      return JSON.stringify(result.event.data)
+      const result = await ctx.append?.({ type: 'agent.plan', data: { items } })
+      return JSON.stringify(result?.event.data ?? { items })
     }),
-    tool('queue', 'Queue a follow-up prompt after the current turn. The person can remove pending prompts.', { text: Type.String() }, async a => { ctx.queue(a.text!); return 'queued' }),
-    tool('note_add', 'Save a session note.', { text: Type.String() }, async a => { handle.append({ type: 'agent.note', data: { text: a.text! } }); return 'saved' }),
+    tool('queue', 'Queue a follow-up prompt after the current turn. The person can remove pending prompts.', { text: Type.String() }, async a => { await ctx.queue(a.text!); return 'queued' }),
+    tool('note_add', 'Save a session note.', { text: Type.String() }, async a => { await ctx.append?.({ type: 'agent.note', data: { text: a.text! } }); return 'saved' }),
     tool('session_log_query', 'Read only this session log. Reasoning is excluded for every model by this conservative binding.', { query: Type.String() }, async a => JSON.stringify(querySessionLog(ctx.log, handle.sessionId, 'remote_agent', JSON.parse(a.query!)))),
   ]
 }
