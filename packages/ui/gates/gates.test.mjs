@@ -76,6 +76,7 @@ test('animation manifest validation rejects unsafe, unknown, mistyped and duplic
     [/iterations/, data => { data.animations[2].iterations = 0 }],
     [/iterations/, data => { data.animations[2].iterations = -1 }],
     [/iterations/, data => { data.animations[2].iterations = 1.5 }],
+    [/iterations/, data => { data.animations[2].iterations = null }],
     [/iterations/, data => { data.animations[2].iterations = '2' }],
     [/iterations/, data => { data.animations[2].iterations = true }],
     [/non-empty animations array/, data => { data.animations = [] }],
@@ -114,6 +115,20 @@ test('generator emits an accepted finite iteration count but keeps one omitted a
   const canonicalFadeUp = declaration((await generate(ctx.tokenOptions))['theme.css'], 'fade-up')
   assert.ok(canonicalFadeUp, 'expected the canonical --animate-fade-up declaration')
   assert.doesNotMatch(canonicalFadeUp, / 1;$/, `the default iteration count of one must stay omitted, got: ${canonicalFadeUp}`)
+})
+test('generator refuses an explicit null iteration override but keeps an omitted count at one', async () => {
+  const path = 'packages/ui/tokens/motion-animations.json'
+  const base = await ctx.json(path)
+  const fadeUp = data => data.animations.find(animation => animation.utility === 'fade-up')
+  const omitted = structuredClone(base)
+  delete fadeUp(omitted).iterations
+  const omittedOutput = await generate((await ctx.withFiles({ [path]: JSON.stringify(omitted) })).tokenOptions)
+  const omittedLine = omittedOutput['theme.css'].split('\n').find(line => line.startsWith('  --animate-fade-up:'))
+  assert.ok(omittedLine, 'expected a generated --animate-fade-up declaration')
+  assert.ok(omittedLine.endsWith(');'), `an omitted iteration count must default to one and stay omitted, got: ${omittedLine}`)
+  const explicitNull = structuredClone(base)
+  fadeUp(explicitNull).iterations = null
+  await assert.rejects(generate((await ctx.withFiles({ [path]: JSON.stringify(explicitNull) })).tokenOptions), /iterations.*null/)
 })
 test('G3 checks all 20 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
