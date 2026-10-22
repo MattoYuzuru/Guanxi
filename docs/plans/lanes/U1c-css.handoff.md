@@ -651,3 +651,90 @@ At handoff the fix commit is `e2cc072` on top of `402cf81`; this handoff update 
 documentation commit. No push, merge, rebase, package/lock change or generated-file edit was
 performed. Final clean pin: the HEAD documentation commit containing this section on
 `codex/u1c-css`, with `git status --porcelain` empty.
+
+## Review-fix: explicit null animation iteration rejection (2026-10-22)
+
+**Finding.** Independent GPT review at integrated candidate `387453b` reported P2: in
+`packages/ui/tokens/build.mjs`, `animation.iterations ?? 1` treated an explicit JSON `null` as
+an absent value and defaulted it to one, although the strict manifest contract accepts only
+`infinite` or a positive integer. The external read-only probe
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/u1-css-null-iterations-probe-20261022.mjs` and its
+receipt `check-jkfqwm35` reproduced the missing rejection. The probe was read and was not
+edited.
+
+**Source pin.** `codex/u1c-css` at clean `4c51efc`; the bounded fix is `7ca072e`.
+
+### Change (scoped)
+
+- `packages/ui/tokens/build.mjs`: `const iterations = animation.iterations === undefined ? 1 :
+  animation.iterations`. An omitted property still defaults to one; an explicit `null` now
+  reaches the existing validation and fails closed with `iterations must be "infinite" or a
+  positive integer: null`. The `infinite` branch, finite positive counts, the omission of `1`
+  from generated values and the emitter are unchanged.
+- `packages/ui/gates/gates.test.mjs`: the existing invalid-type table gained `iterations =
+  null`. A new case uses the real manifest through the generator's `options.read` override
+  (`ctx.withFiles(...).tokenOptions`), first removes `iterations` from `fade-up` and asserts the
+  generated declaration still omits the default count, then sets it to `null` and requires
+  rejection matching `/iterations.*null/`.
+- `packages/ui/tokens/README.md`: clarified that the five fields are allowed but only four are
+  required, that omission of `iterations` defaults to `1`, and that an explicit `null` is not
+  accepted. The README does not newly require all five fields.
+- No generated file, manifest, CSS, catalog, approval, ledger, suppression, scanner, ratchet or
+  gate definition was changed. No allowance was added or weakened.
+
+### Red and green evidence
+
+Before the production edit, `gates.test.mjs` was 22 tests: 20 pass / 2 fail. Both failures were
+`AssertionError: Missing expected rejection`: the existing invalid-type case at the added
+`iterations = null` row, and the new `options.read` null-override case. That is the reported
+defect: null was accepted as the default.
+
+After the one-line source fix, the combined focused run was 29 pass / 0 fail: 22 cases in
+`gates.test.mjs` and 7 in `u1c-css.test.mjs`. The `G2` case inside `gates.test.mjs` regenerates
+in memory and compares every checked-in generated file byte-for-byte; it passed, so
+`generated/theme.css` and the other four outputs stayed byte-identical. The canonical manifest
+was unchanged and no regeneration or generated-file edit was needed.
+
+### New tests / regression envelope
+
+**New:** 1 focused Node case (`gates.test.mjs` 21 → 22) plus one added row in the existing
+invalid-type case, which is not counted as a new case. **Cumulative focused:** 29 cases in the
+two owned gate files.
+
+**Regression envelope executed here:** 29 cases, 0 fail (22 generator/gate cases + 7 U1c CSS
+cases). No browser, build, Storybook, `ui:check`, Chromium or full npm suite was run.
+
+### Commands (this round)
+
+All checks ran in this standalone clone; the Node test and lint invocations used
+`nice -n 10`.
+
+| Command | Result |
+| --- | --- |
+| `node -e "console.log(require.resolve('@guanxi/contract'))"` | this clone's `packages/contract/src/index.ts` |
+| `node --test packages/ui/gates/gates.test.mjs` before the fix | 20 pass, 2 fail; both `Missing expected rejection` |
+| `node --test packages/ui/gates/gates.test.mjs packages/ui/gates/u1c-css.test.mjs` after the fix | 29 pass, 0 fail |
+| `npx eslint packages/ui/tokens/build.mjs packages/ui/gates/gates.test.mjs` | exit 0 |
+| `node --check packages/ui/tokens/build.mjs && node --check packages/ui/gates/gates.test.mjs` | `syntax_ok` |
+| `npx markdownlint-cli2 packages/ui/tokens/README.md docs/plans/lanes/U1c-css.handoff.md` | README 0 errors; handoff still reports only the pre-existing MD024 at line 157 (`## New tests / regression envelope`), present at `4c51efc` |
+| `git diff --check` | exit 0 |
+| `git show --stat --oneline 7ca072e` | 2 files, 16 insertions, 1 deletion; only the owned generator and regression test |
+
+### Residuals (this round)
+
+- Root must independently review this fix and run the combined integration gates. No browser,
+  Chromium, build, Storybook, `ui:check`, visual, performance or full-suite result is claimed
+  here.
+- The prior `ui:check` G10 catalog-staleness and G12 missing-base-ref residuals, the 112
+  `packages/web/src/index.css` CSS suppressions, the keyframe ownership note and the OS-only
+  `workspace-layout` reduced-motion residual are unchanged.
+- The added test targets `iterations` on the existing `fade-up` entry and does not add a new
+  fixture or a new manifest field. The finite `2`, explicit `1`, `infinite` and all prior
+  invalid-type cases remain covered.
+- No U1 candidate checkout, generated artifact, approval record, `PHASE_STATUS` or
+  `NEXT_AGENT_PROMPT` was edited.
+
+At handoff the fix commit is `7ca072e` on top of `4c51efc`; this handoff update and the README
+clarification are the next documentation commit. No push, merge, rebase, package/lock change or
+generated-file edit was performed. Final clean pin: the HEAD documentation commit containing
+this section on `codex/u1c-css`, with `git status --porcelain` empty.
