@@ -1,5 +1,6 @@
-import { open, readdir, realpath, stat } from 'node:fs/promises'
+import { readdir, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
+import { openRegularFile, readFailureCode, readToEnd } from './safe-read.ts'
 
 export interface SkillSource { kind: 'project' | 'user'; root: string }
 export interface SkillSummary { id: string; name: string; description: string; source: 'project' | 'user'; dir: string; bytes: number }
@@ -61,7 +62,7 @@ function findFrontMatter(buffer: Buffer, complete: boolean): { text: string; bod
  * a whole body.
  */
 export async function readSkillHead(path: string, maxBytes: number): Promise<SkillHead | null> {
-  const handle = await open(path, 'r')
+  const handle = await openRegularFile(path)
   try {
     const info = await handle.stat()
     const chunks: Buffer[] = []
@@ -77,22 +78,6 @@ export async function readSkillHead(path: string, maxBytes: number): Promise<Ski
       if (found) return { ...found, size: info.size, bytesRead: total }
     }
     return null
-  } finally {
-    await handle.close()
-  }
-}
-
-async function readBytes(path: string, offset: number, length: number): Promise<Buffer | null> {
-  const handle = await open(path, 'r')
-  try {
-    const buffer = Buffer.alloc(length)
-    let read = 0
-    while (read < length) {
-      const { bytesRead } = await handle.read(buffer, read, length - read, offset + read)
-      if (bytesRead === 0) return null
-      read += bytesRead
-    }
-    return buffer
   } finally {
     await handle.close()
   }
@@ -309,7 +294,11 @@ export async function discoverSkills(input: {
         continue
       }
       const info = await stat(realFile).catch(() => null)
-      if (!info?.isFile()) continue
+      if (!info) continue
+      if (!info.isFile()) {
+        warnings.push({ path: file, code: 'not_regular_file' })
+        continue
+      }
       const candidate: Candidate = { source, dir: realDir, file: realFile }
       if (source.kind === 'project') projectCandidates.push(candidate)
       else userCandidates.push(candidate)
@@ -324,7 +313,12 @@ export async function discoverSkills(input: {
     if (realFiles.has(candidate.file)) continue
     realFiles.add(candidate.file)
     let head: FrontMatterFile | null
-    try { head = await readHead(candidate.file, FRONT_MATTER_LIMIT) } catch { head = null }
+    try {
+      head = await readHead(candidate.file, FRONT_MATTER_LIMIT)
+    } catch (error) {
+      warnings.push({ path: candidate.file, code: readFailureCode(error) ?? 'invalid_front_matter' })
+      continue
+    }
     const values = head ? parseSkillFrontMatter(head.text) : null
     const name = (values?.name ?? '').trim()
     const description = (values?.description ?? '').trim()
@@ -391,7 +385,7 @@ export async function loadSkill(
   opts: { maxBodyBytes: number },
 ): Promise<
   { id: string; body: string; files: string[]; truncated: false } |
-  { id: string; error: 'not_found' | 'too_large' | 'outside_root' }
+  { id: string; error: 'not_found' | 'too_large' | 'outside_root' | 'unreadable' | 'not_regular_file' }
 > {
   const summary = index.skills.find(skill => skill.id === id)
   if (!summary) return { id, error: 'not_found' }
@@ -412,8 +406,18 @@ export async function loadSkill(
   const bodyBytes = head.size - head.bodyOffset
   if (bodyBytes < 0) return { id, error: 'not_found' }
   if (bodyBytes > opts.maxBodyBytes) return { id, error: 'too_large' }
-  let body: Buffer | null
-  try { body = await readBytes(file, head.bodyOffset, bodyBytes) } catch { body = null }
-  if (!body) return { id, error: 'not_found' }
+  let body: Buffer
+  try {
+    const handle = await openRegularFile(file)
+    try {
+      const read = await readToEnd(handle, head.bodyOffset, opts.maxBodyBytes)
+      if (read.overflow) return { id, error: 'too_large' }
+      body = read.bytes
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    return { id, error: readFailureCode(error) ?? 'not_found' }
+  }
   return { id, body: body.toString('utf8'), files: await listFiles(dir), truncated: false }
 }

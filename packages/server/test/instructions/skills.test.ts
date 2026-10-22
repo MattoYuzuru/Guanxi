@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkills, skillContext, loadSkill, readSkillHead, parseSkillFrontMatter } from '../../src/instructions/skills.ts'
 import type { SkillIndex, SkillSummary } from '../../src/instructions/skills.ts'
+import { openRegularFile, readToEnd, ReadFailureError } from '../../src/instructions/safe-read.ts'
 import { estimateTokens } from '../../src/context/usage.ts'
 
 async function baseDir(t: { after(callback: () => unknown): void }): Promise<string> {
@@ -318,6 +320,47 @@ test('maxDescriptionChars truncates with an ellipsis and maxSkills reports dropp
   const limited = index.warnings.filter(warning => warning.code === 'max_skills')
   assert.equal(limited.length, 1)
   assert.ok(limited[0]!.path.endsWith(join('.agents/skills/c', 'SKILL.md')))
+})
+
+test('a FIFO SKILL.md is refused without blocking', { timeout: 5000 }, async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const dir = join(projectRoot, '.agents/skills/fifo')
+  await mkdir(dir, { recursive: true })
+  const fifo = join(dir, 'SKILL.md')
+  try {
+    execFileSync('mkfifo', [fifo], { stdio: 'ignore' })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      t.skip('mkfifo is unavailable')
+      return
+    }
+    throw error
+  }
+
+  await assert.rejects(
+    readSkillHead(fifo, 8 * 1024),
+    error => error instanceof ReadFailureError && error.code === 'not_regular_file',
+  )
+  const index = await discoverSkills({ projectRoot, userSkillDirs: [] })
+  assert.deepEqual(index.skills, [])
+  assert.deepEqual(index.warnings, [{ path: fifo, code: 'not_regular_file' }])
+})
+
+test('a capped read detects growth instead of silently truncating', async t => {
+  const base = await baseDir(t)
+  const path = join(base, 'body.txt')
+  await writeFile(path, '0123456789')
+  const handle = await openRegularFile(path)
+  t.after(() => handle.close())
+
+  const exact = await readToEnd(handle, 0, 10)
+  assert.equal(exact.overflow, false)
+  assert.equal(exact.bytes.toString('utf8'), '0123456789')
+
+  const capped = await readToEnd(handle, 0, 9)
+  assert.equal(capped.overflow, true)
+  assert.equal(capped.bytes.toString('utf8'), '0123456789')
 })
 
 test('loadSkill returns the exact body and lists only files inside the skill dir', async t => {

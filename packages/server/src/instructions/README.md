@@ -40,7 +40,11 @@ budgets. A 50 KiB body cannot change the count because no body byte reaches this
 for a discovered id, `truncated: false`, and sorted relative sibling paths. Bodies over the
 limit return `too_large` (never a partial body); unknown ids return `not_found`; redirected
 paths outside the captured boundary return `outside_root`. File listing is recursive and
-skips anything whose real path leaves the skill directory.
+skips anything whose real path leaves the skill directory. Instruction files are opened
+read-only, non-blocking and without following symlinks; handles are `fstat`ed and non-regular
+files (FIFOs, devices) are refused with `not_regular_file`. A body larger than `maxBodyBytes`
+is detected with a `cap + 1` read and returns `too_large`, so growth after `stat` is never
+silently truncated. Discovery reports a non-regular `SKILL.md` as `not_regular_file`.
 
 ## AGENTS.md
 
