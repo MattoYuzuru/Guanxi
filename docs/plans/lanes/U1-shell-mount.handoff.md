@@ -268,3 +268,116 @@ push/merge to `main`. The existing warnings stay explicit: `AppShellChrome`, `Bu
 and `Input` are unsigned `review`; `IconButton`, `Menu` and `Tooltip` remain `draft` inside the
 shell with approval null, so a stage/release exit is still blocked. Root owns the actual browser/
 axe recheck, final gate decision and status fold-in. Draft warning/blocker status is unchanged.
+
+## Second independent-review repair (2026-10-22)
+
+**Scope:** the remaining P2 in `check-d4xbupdt` and the stale G5 App.tsx ledger entries reported
+by `check-ui8q056f`. The previous endpoint repair and the `ContextPanel.tsx` contrast production
+change are unchanged. No full U1/MS1, actual-browser, fastUI or owner-approval claim follows.
+
+### Commits and exact changes
+
+- `ae186e20` `test(web): scope cache rows to the visible context panel` — the G14 new-session
+  case in `flows-axe.spec.ts` now filters each cache-row locator by actual visibility and asserts
+  exactly one visible inactive row and one visible active row before the existing
+  `opacity: 1` and differing-colour checks. Both responsive `ContextPanel` copies remain in the
+  DOM; the hidden copy is no longer an ambiguous strict-mode match. The whole-page zero
+  serious/critical axe assertion, both seeded unnamed-button controls and every existing
+  alert/focus/request/forbidden-effect guard are unchanged. The changed selection uses no
+  `first()`, hidden content, viewport change, sleep, skip or ignore.
+- `dbf6fd01` `chore(ui): shrink stale App class allowances` — `legacy-allowlist.json` only. Five
+  zero-use App.tsx keys are deleted: `backdrop-blur-md`, `font-medium`, `font-semibold`,
+  `rounded-md` and `tracking-tight`. The sixth reported line, `text-xs`, is **not** a zero-use
+  key: `check-ui8q056f` reports `text-xs (3 > 1)`, and `App.tsx:90` still carries one `text-xs`
+  in the not-found link. Deleting that key would create one new G5 violation; removing the source
+  class is U1-c migration outside this round. The key is therefore reduced from 3 to its actual
+  count 1. All six G5 error lines are resolved (five deletions plus one count correction), with
+  zero additions.
+- This handoff commit appends this section.
+
+**Delta note:** the request described six "unused" allowances; the independent receipt proves
+only five have zero use. The literal six-key deletion was not performed because it would fail G5
+with `G5|packages/web/src/App.tsx|text-xs: 1 new violation` and would require either a new
+exception or a U1-c source migration, both outside this authorization. The observed ledger delta
+is 5 removed, 0 added, 1 count corrected 3→1. This is the smallest change that removes every
+reported G5 error line without weakening the gate.
+
+### Structural allowance audit
+
+Against `3b2f624f`, with `legacy-ratchet-policy.json` byte-identical:
+
+| Property | Observed |
+| --- | --- |
+| ledger keys | 431 → 426 |
+| allowance occurrences | 1020 → 1013 |
+| removed keys | exactly five App.tsx G5 keys, each count 1 |
+| added keys | 0 |
+| changed key | App.tsx `text-xs` 3 → 1 only |
+| other keys | 425 unchanged |
+| `auditRatchet(...)` | `[]` |
+| policy | unchanged; correction history is immutable (`ratchet.mjs:19`) |
+
+The check also asserted no non-App key changed, no removed key had a count other than 1, and no
+policy bytes changed. No new correction, threshold, exception or gate semantics were added.
+
+### Checks run (sandbox, Node 26.9.0, `nice -n 10`)
+
+| Check | Result |
+| --- | --- |
+| `node --test --test-name-pattern N4 packages/ui/gates/scanner-review.test.mjs` before the ledger shrink | **1 failed / 1 passed**: actual `text-xs: 1` against the stale ledger, which also still listed the five zero-use keys. Red evidence. |
+| Same N4 command after `dbf6fd01` | **2/2 passed**; `counts(scanLiterals())` deep-equals the new ledger. |
+| Structural delta plus `auditRatchet` script | 5 removed, 0 added, `text-xs` 3 → 1, 425 other entries unchanged, policy unchanged, ratchet `[]`. |
+| `npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+| Focused `tsc` of the changed visibility-filter locator and `toHaveCount` API with Playwright types | exit 0 |
+| `npx eslint packages/web/test/browser/flows-axe.spec.ts` | exit 0 |
+| `npx playwright test test/browser/flows-axe.spec.ts test/browser/shell-mount.spec.ts --list` | 13 tests in 2 files (4 flows-axe + 9 shell-mount); no execution |
+| `git diff --check` | clean |
+
+A full ad-hoc `tsc` of `flows-axe.spec.ts` including its imports still reports three pre-existing
+`URL | Request` union errors in the unchanged `test/browser/fixtures/chat-api.ts:567/571/638`
+under TypeScript 5.9.3. The project web `tsconfig` excludes browser tests and passes; the focused
+changed-API typecheck passes. This repair did not touch that fixture.
+
+### Explicitly not run
+
+No actual Chromium/axe execution, no `flows-axe`, `shell-mount` or adapted legacy browser run, no
+`npm test`, no full `npm run test:web:browser`, no `npm run ui:check` or `ui:check:browser`, no
+build, Storybook, visual snapshot, `agent-dev`/shared lock or nested sandbox. The visibility
+filter, explicit visible counts and final whole-page scan are authored assertions, not observed
+browser evidence. Root/Sol must run the affected `flows-axe` G14 case, the nine `shell-mount`
+cases and the 18-case adapted legacy subset at a new quiet pin. FastUI/G5 must be re-run by root.
+
+### Original failures and addressed scope
+
+`check-d4xbupdt` observed 39/39 component and 26/27 browser: all nine new mounted cases and 17/18
+adapted legacy cases passed; the remaining failure was the G14 new-session strict-locator
+ambiguity at `flows-axe.spec.ts:128-129`, before the final composer axe scan at line 136. Both
+responsive ContextPanels exist; only one is visible. This round fixes the selection only. The
+contrast production change in `ContextPanel.tsx` and the endpoint fixture repair are unchanged.
+`check-ui8q056f` reported the six G5 error lines above; the receipt's own counts are `(1 > 0)`
+for five keys and `(3 > 1)` for `text-xs`.
+
+### New vs inherited
+
+Repository case identities added/removed/skipped: **0 / 0 / 0**. `flows-axe` G14 is inherited
+regression scope; the nine `shell-mount` browser cases and the eight `mounted-shell`/sidebar
+component cases remain the original slice's new cases. The ledger shrink changes no test identity
+and no production source in this round. The adapted legacy 18 remain inherited envelope.
+
+### Boundaries
+
+No server, contract, wire, DB, migration, dependency, license, privacy, owner data, secret,
+signing key, approval, review record, status, signature, primitive source, catalog manifest,
+snapshot, G11/tooling or central status change. `legacy-ratchet-policy.json` is byte-identical to
+`3b2f624f`; no policy correction was rewritten or added. No push, merge, rebase, `PHASE_STATUS`
+or `NEXT_AGENT_PROMPT` edit. The four `review` and three `draft` component warnings remain.
+Actual browser/axe, fastUI and full gates remain root/reviewer-owned.
+
+### Residual risk
+
+The corrected locator has not been executed in Chromium here. If the visible-filtered row count is
+not exactly one at the default desktop viewport, the test will fail rather than scan the wrong
+panel; that is the intended guard. `text-xs` remains a one-count legacy allowance in
+`App.tsx:90` until U1-c migrates the not-found link; it is not removed or waived. Responsive
+layout, axe results and the adapted legacy suite remain unobserved in this sandbox. Root owns the
+actual browser/fastUI recheck and final gate decision; independent Sol review follows.
