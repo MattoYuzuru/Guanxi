@@ -1,5 +1,14 @@
 import type { Db } from '../../src/store/db.ts'
 
+/** The exact cost observation committed by the resolve crash stage's complete(). */
+export const CRASH_COMPLETE_COST = {
+  key: 'remote-dispatch:crash-resolve',
+  inputTokens: 7,
+  outputTokens: 3,
+  costMicrounits: null,
+  currency: 'unknown',
+} as const
+
 /** Stable domain projection across independent processes with fresh UUIDs. */
 export function runStateSnapshot(db: Db): unknown {
   const runs = db.prepare('SELECT * FROM durable_runs').all() as unknown as { id: string; parent_id: string | null }[]
