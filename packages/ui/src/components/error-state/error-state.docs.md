@@ -35,6 +35,9 @@ default, with-details and retrying (the action is loading).
 - `role="alert"` so the failure is announced once when it appears.
 - Status is carried by the title and icon, not the border colour alone.
 - Copy result is announced through a status region; failure to copy says what to do.
+- `timeMeaning="observed"` explicitly labels a client observation time. The default remains
+  an occurrence time; callers must supply a real timestamp, never a render-time estimate.
+- Copy feedback belongs to the current details and clears when the supplied details change.
 
 ## Content and i18n
 

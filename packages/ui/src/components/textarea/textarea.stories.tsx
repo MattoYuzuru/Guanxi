@@ -1,5 +1,7 @@
 import { msg, type Story, type StoryMeta } from '../../story-kit/index.tsx'
 import { Textarea, type TextareaProps } from './textarea.tsx'
+import { useId } from 'react'
+import { useUiText } from '../../i18n/context.tsx'
 
 const meta = {
   title: 'Primitives/Textarea',
@@ -26,7 +28,16 @@ export const FocusVisible: Story<TextareaProps> = {
 
 export const Invalid: Story<TextareaProps> = {
   name: 'invalid',
-  args: { invalid: true, defaultValue: msg('story.textarea.value') },
+  render: () => <InvalidTextareaStory />,
+}
+
+function InvalidTextareaStory() {
+  const id = useId(), t = useUiText()
+  return <div>
+    <label htmlFor={id}>{t('story.textarea.label')}</label>
+    <Textarea id={id} invalid defaultValue={t('story.textarea.value')} aria-describedby={`${id}-error`} />
+    <p id={`${id}-error`} role="alert" className="text-12 text-danger">{t('story.textarea.error')}</p>
+  </div>
 }
 
 export const Disabled: Story<TextareaProps> = {

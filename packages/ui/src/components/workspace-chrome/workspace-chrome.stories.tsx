@@ -6,9 +6,11 @@ const meta = { title: 'Patterns/WorkspaceChrome', component: WorkspaceChrome,
 } satisfies StoryMeta<WorkspaceChromeProps>
 export default meta
 export const Default: Story<WorkspaceChromeProps> = { name: 'default' }
-export const Empty: Story<WorkspaceChromeProps> = { name: 'empty', args: { description: msg('story.workspace.empty') } }
+export const Empty: Story<WorkspaceChromeProps> = { name: 'empty', args: { kind: 'state', title: msg('story.workspace.noBlocks'), action: { label: msg('story.workspace.addChat'), onClick() {} } } }
 export const Placeholder: Story<WorkspaceChromeProps> = { name: 'placeholder', args: { description: msg('story.workspace.placeholder') } }
-export const Error: Story<WorkspaceChromeProps> = { name: 'error', args: { kind: 'state', title: msg('story.workspace.error'), error: true } }
+export const Error: Story<WorkspaceChromeProps> = { name: 'error', args: { kind: 'state', title: msg('story.workspace.error'), error: true,
+  failure: { source: 'GET /api/layouts', observedAt: '2026-10-22T12:00:00.000Z', details: 'operation=load-layouts\nmethod=GET\npath=/api/layouts\nstatus=503' }, action: { label: msg('story.error.retry'), onClick() {} } } }
+export const Loading: Story<WorkspaceChromeProps> = { name: 'loading', args: { kind: 'state', title: msg('story.workspace.loading'), loading: true } }
 export const Phone: Story<WorkspaceChromeProps> = { name: 'phone', args: { kind: 'phone', label: msg('story.workspace.blocks'), blocks: [{ id: 'chat', label: msg('story.workspace.title') }], selected: 'chat', onSelect() {} }, render: args => <><WorkspaceChrome {...args} /><div id="phone-chat" role="tabpanel" aria-labelledby="tab-chat" /></> }
 
 export const Draft: Story<WorkspaceChromeProps> = { name: 'draft', args: { draft: { label: msg('story.workspace.draft'), value: '', onChange() {} } } }
