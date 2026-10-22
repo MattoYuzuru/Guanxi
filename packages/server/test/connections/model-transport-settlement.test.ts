@@ -50,6 +50,10 @@ function track<T>(promise: Promise<T>): { tracked: Promise<T>; isSettled(): bool
   return { tracked, isSettled: () => settled }
 }
 
+function abortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 function admission(requestId: string) {
   return {
     owner: { kind: 'operation' as const, operationId: requestId },
@@ -357,4 +361,55 @@ test('a late model POST rejection after abort produces no unhandled rejection', 
   } finally {
     process.removeListener('unhandledRejection', onUnhandled)
   }
+})
+
+test('a cancel-driven model stream keeps the caller lease until its cancel is acknowledged', async (t) => {
+  const reading = deferred<void>()
+  const cancelStarted = deferred<void>()
+  const cancelGate = deferred<void>()
+  let cancelCalls = 0
+  const body = new ReadableStream<Uint8Array>({
+    pull() {
+      reading.resolve()
+    },
+    cancel() {
+      cancelCalls += 1
+      cancelStarted.resolve()
+      return cancelGate.promise
+    },
+  })
+  const client = new OllamaClient({
+    host: 'http://127.0.0.1:11434',
+    fetch: async () => new Response(body, { status: 200 }),
+    connectTimeoutMs: 500,
+    loadTimeoutMs: 500,
+  })
+  const governor = new ResourceGovernor()
+  t.after(async () => {
+    cancelGate.resolve()
+    await governor.close()
+  })
+  const lease = await governor.acquire(governor.enqueue(admission('stream-cancel-lease')))
+  let releases = 0
+  const controller = new AbortController()
+  const state = track((async () => {
+    try {
+      return await client.chatStream(REQUEST, controller.signal).next()
+    } finally {
+      releases += 1
+      lease.release()
+    }
+  })())
+  await reading.promise
+  controller.abort('fixture stop')
+  await cancelStarted.promise
+
+  assert.equal(cancelCalls, 1)
+  assert.equal(state.isSettled(), false, 'the call must stay owned until cancel acknowledgement')
+  assert.notEqual(governor.snapshot().activeLease, null, 'the caller lease must remain held')
+
+  cancelGate.resolve()
+  await assert.rejects(state.tracked, abortError)
+  assert.equal(releases, 1, 'the caller must release the lease exactly once')
+  assert.equal(governor.snapshot().activeLease, null)
 })

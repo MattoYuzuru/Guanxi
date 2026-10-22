@@ -665,6 +665,117 @@ describe('Ollama client timeout and protocol boundaries', () => {
     await assert.rejects(state.tracked, abortError)
   })
 
+  it('requests reader cancel before awaiting a cancel-driven pending read', async () => {
+    const reading = deferred<void>()
+    const cancelGate = deferred<void>()
+    let cancelCalls = 0
+    let cancelAcknowledged = false
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        reading.resolve()
+      },
+      cancel() {
+        cancelCalls += 1
+        return cancelGate.promise.then(() => {
+          cancelAcknowledged = true
+        })
+      },
+    })
+    const client = await clientWith(async () => new Response(body, { status: 200 }))
+    const controller = new AbortController()
+    const state = track(client.chatStream(REQUEST, controller.signal).next())
+    await reading.promise
+    await tick()
+    assert.equal(body.locked, true, 'the client owns the reader while the read is pending')
+
+    controller.abort('fixture stop')
+    await tick()
+    assert.equal(cancelCalls, 1, 'abort must request reader cancel before awaiting the read')
+    assert.equal(state.isSettled(), false, 'the call must wait for the actual cancel acknowledgment')
+    assert.equal(body.locked, true, 'the reader lock stays owned while cancellation settles')
+
+    cancelGate.resolve()
+    await assert.rejects(state.tracked, abortError)
+    assert.equal(cancelAcknowledged, true)
+    assert.equal(cancelCalls, 1, 'cleanup must reuse the one cancellation request')
+  })
+
+  it('requests reader cancel before awaiting a cancel-driven read on a stream deadline', async () => {
+    const reading = deferred<void>()
+    const cancelStarted = deferred<void>()
+    const cancelGate = deferred<void>()
+    let cancelCalls = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        reading.resolve()
+      },
+      cancel() {
+        cancelCalls += 1
+        cancelStarted.resolve()
+        return cancelGate.promise
+      },
+    })
+    const client = await clientWith(async () => new Response(body, { status: 200 }))
+    const state = track(client.chatStream(REQUEST, undefined, {
+      connectTimeoutMs: 100,
+      loadTimeoutMs: 20,
+      streamIdleTimeoutMs: 20,
+    }).next())
+    await reading.promise
+    await cancelStarted.promise
+
+    assert.equal(cancelCalls, 1, 'the deadline must request reader cancel before awaiting the read')
+    assert.equal(state.isSettled(), false, 'the deadline must await the cancel acknowledgment')
+    assert.equal(body.locked, true, 'the reader lock stays owned while cancellation settles')
+
+    cancelGate.resolve()
+    await assert.rejects(
+      state.tracked,
+      (error) => error instanceof OllamaTimeoutError && error.phase === 'load',
+    )
+    assert.equal(cancelCalls, 1)
+  })
+
+  it('consumes a rejected late reader cancel and preserves the abort outcome', async () => {
+    const reading = deferred<void>()
+    const cancelStarted = deferred<void>()
+    const cancelGate = deferred<void>()
+    let cancelCalls = 0
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const body = new ReadableStream<Uint8Array>({
+        pull() {
+          reading.resolve()
+        },
+        cancel() {
+          cancelCalls += 1
+          cancelStarted.resolve()
+          return cancelGate.promise
+        },
+      })
+      const client = await clientWith(async () => new Response(body, { status: 200 }))
+      const controller = new AbortController()
+      const state = track(client.chatStream(REQUEST, controller.signal).next())
+      await reading.promise
+      controller.abort('fixture stop')
+      await cancelStarted.promise
+      assert.equal(state.isSettled(), false)
+
+      cancelGate.reject(new Error('fixture late cancel failure'))
+      await assert.rejects(state.tracked, abortError)
+      await tick()
+      await tick()
+      assert.equal(cancelCalls, 1)
+      assert.deepEqual(unhandled, [])
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled)
+    }
+  })
+
   it('rejects malformed version and ps responses as protocol failures', async () => {
     const client = await clientWith(async () =>
       new Response(JSON.stringify({ unexpected: true }), {

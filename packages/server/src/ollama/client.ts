@@ -95,6 +95,12 @@ type RequestOptions = RequestInit & {
 interface TransportSettlement<T> {
   /** Block until the actual operation and its cleanup settle. */
   awaitSettlement: boolean
+  /**
+   * Start cleanup that can unblock the pending operation once abort or deadline
+   * wins. Called before the operation is awaited, so a cancel-driven reader
+   * receives its cancellation request instead of waiting for the later finally.
+   */
+  initiateCleanup?: () => Promise<unknown> | void
   /** Dispose a response that arrives after a control outcome already won. */
   disposeLate?: (value: T) => Promise<void>
 }
@@ -314,8 +320,22 @@ export class OllamaClient {
           : error
       if (timer) clearTimeout(timer)
       removeExternalAbortListener?.()
-      if (settlement?.awaitSettlement) await settleOperation()
-      else void settleOperation()
+      if (settlement?.awaitSettlement) {
+        // A cancel-driven operation cannot settle until its cancellation is
+        // requested. Start that cleanup first, then await both settlements;
+        // either one still pending keeps ownership with this call.
+        let cleanup: Promise<unknown> = Promise.resolve()
+        if (settlement.initiateCleanup) {
+          try {
+            cleanup = Promise.resolve(settlement.initiateCleanup()).catch(() => undefined)
+          } catch {
+            // Cleanup failure is consumed; the control outcome stays authoritative.
+          }
+        }
+        await Promise.all([settleOperation(), cleanup])
+      } else {
+        void settleOperation()
+      }
       throw controlError
     } finally {
       if (timer) clearTimeout(timer)
@@ -470,6 +490,20 @@ export class OllamaClient {
     }
 
     const reader = response.body.getReader()
+    let readerCancel: Promise<void> | undefined
+    // The control path and the finally share one cancellation request. This is
+    // what lets a read that only settles on consumer cancel make progress while
+    // still proving the provider's cancellation acknowledgement before release.
+    const cancelReader = (): Promise<void> => {
+      if (!readerCancel) {
+        try {
+          readerCancel = reader.cancel().then(() => undefined, () => undefined)
+        } catch {
+          readerCancel = Promise.resolve()
+        }
+      }
+      return readerCancel
+    }
     const decoder = new TextDecoder()
     let buffer = ''
     let observedProgress = false
@@ -495,7 +529,10 @@ export class OllamaClient {
           externalSignal,
           () => reader.read(),
           policyTimeoutMs,
-          { awaitSettlement: awaitTransportSettlement },
+          {
+            awaitSettlement: awaitTransportSettlement,
+            ...(awaitTransportSettlement ? { initiateCleanup: cancelReader } : {}),
+          },
         )
         if (done) break
         if (!value || value.byteLength === 0) continue
@@ -549,7 +586,7 @@ export class OllamaClient {
       throw new OllamaError('Ollama response stream failed', response.status, error)
     } finally {
       if (!controller.signal.aborted) controller.abort('guanxi:ollama-stream-cleanup')
-      const cancelled = reader.cancel().catch(() => undefined)
+      const cancelled = cancelReader()
       if (awaitTransportSettlement) await cancelled
       else void cancelled
     }
