@@ -24,7 +24,8 @@ function fixture(write?: (chunk: Buffer, callback: (error?: Error | null) => voi
     gateway: { async complete() { calls++; return { requestId: 'host-request', result } } },
     async retain() { retained++ } }
   return { input, output, frames, abort, host, result, calls: () => calls, retained: () => retained,
-    start: (p = policy) => servePrivateTrialStreams(input, output, host, p, abort.signal) }
+    start: (p = policy, hooks: { onTerminal?(): void } = {}) =>
+      servePrivateTrialStreams(input, output, host, p, abort.signal, hooks) }
 }
 
 test('stream adapter handles split UTF-8 requests sequentially and emits framed public replies only after retention', async () => {
@@ -71,6 +72,21 @@ test('EOF during private retention waits for its acknowledgement and suppresses 
   assert.equal(settled, false); assert.equal(f.frames.length, 0)
   ack.resolve(); assert.equal((await running).responsesDelivered, 0)
   assert.equal(f.frames.length, 0)
+})
+
+test('onTerminal fires once at the first terminal reason while blocked retention still owns settlement', async () => {
+  const f = fixture(), entered = deferred(), ack = deferred()
+  let settled = false, terminals = 0
+  f.host.retain = async () => { entered.resolve(); await ack.promise }
+  const running = f.start(policy, { onTerminal: () => { terminals++ } })
+    .then(value => { settled = true; return value })
+  f.input.write(frame()); await entered.promise
+  f.abort.abort(); await turn()
+  assert.equal(terminals, 1)
+  assert.equal(settled, false, 'a host terminal hook must not release pending retention')
+  ack.resolve()
+  assert.equal((await running).reason, 'channel_aborted')
+  assert.equal(terminals, 1)
 })
 
 test('coalesced concurrent requests close the capability without a queued second dispatch', async () => {
