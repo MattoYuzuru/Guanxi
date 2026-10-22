@@ -1,10 +1,12 @@
 # U1 mounted product shell — handoff
 
-**Status:** bounded host composition implemented; focused sandbox checks passed; actual browser,
-axe, responsive and full gates remain root/reviewer-owned. This is not a full U1, MS1 or production
-claim.
+**Status:** bounded host composition implemented; independent-review endpoint and contrast P2
+repairs implemented; focused sandbox checks passed; actual browser, axe, responsive and full
+gates remain root/reviewer-owned. This is not a full U1, MS1 or production claim.
 **Date:** 2026-10-22 · **Branch:** `codex/u1-shell-mount` · **Base:** `b1046a30` · **Commits:**
-`9a1aaa26` implementation, `761f01e3` tests, this handoff commit. No push, merge, rebase,
+`9a1aaa26` implementation, `761f01e3` tests, `20f0331f` original handoff, `bfef83cd` root
+repair authorization, `a4aaa6f6` endpoint red test, `dd22feb6` endpoint fix, `ed60bc3f`
+contrast red test, `304bfa28` contrast fix, this handoff commit. No push, merge, rebase,
 `PHASE_STATUS` or `NEXT_AGENT_PROMPT` edit.
 
 ## Delivered behavior
@@ -169,3 +171,100 @@ This handoff commit changes only `docs/plans/lanes/U1-shell-mount.handoff.md`.
 - Full new-session design, finished-unseen, ephemeral side chat, remaining literal CSS/U1-c
   migration, signed approvals and the U1/MS1 stage exits remain separate work. Root owns main,
   central statuses and all final gates.
+
+## Independent-review repair round (2026-10-22)
+
+**Scope:** the two independent P2 findings in
+`reviews/codex-u1-product-shell-20261022.md` that the root plan authorized as endpoint-fixture
+and contrast repairs. The review's draft-primitive/G11 finding (`IconButton`, `Menu`, `Tooltip`
+closure) is not touched: no primitive source, review record, status, signature, snapshot or gate
+policy changed. No full U1/MS1 conclusion follows.
+
+### Commits and exact changes
+
+- `a4aaa6f6` `test(web): require empty shell sessions in mounted cases` — red test first.
+  `shell-mount.spec.ts` now names the intended empty session text and requires zero session
+  alerts in all nine mounted browser cases, including the EN/RU 320 px cases and after reload.
+  `mounted-shell.test.tsx` does the same in its real-App chat case. With the old wrong mock this
+  failed (observed below), so the wrong route can no longer pass on unrelated assertions.
+- `dd22feb6` `fix(web): mock the canonical session page route` — replaced every added fixture
+  branch for `/api/sessions/page` with the contract value `SESSION_ROUTES.page()`
+  (`/api/sessions/list/page`): `fixtures/chat-api.ts`, `shell-mount.spec.ts`,
+  `mounted-shell.test.tsx`, and the adapted `chat-terminal-reload`, `flows-axe`, `localization`,
+  `resource-conflict`, `runtime-bar` and `runtime-health` files. Init-script callbacks receive
+  the constant as a serialized argument because they cannot import in the browser context; the
+  Node-side route handlers import it directly. No forbidden-effect, alert, request-count,
+  lifecycle or runtime assertion was relaxed.
+- `ed60bc3f` `test(web): require zero new-session contrast diagnostics` — removed the
+  `KNOWN_CACHE_BAR` two-node exception from `flows-axe.spec.ts`. The complete new-session flow
+  (empty chat screen plus created dialog/composer) now requires zero serious/critical axe
+  findings. Added a proportional discriminator: the inactive hit row must have computed
+  `opacity: 1` and a different computed text colour from the active miss row. Both seeded
+  unnamed-button controls (Settings and new-session) are retained unchanged.
+- `304bfa28` `fix(web): use secondary text for inactive cache rows` — one production line in
+  `ContextPanel.tsx`: `!active && 'opacity-45'` became `!active && 'text-secondary'` (the
+  existing semantic text token). Active rows keep primary text and the arrow; labels, durations
+  and active/inactive meaning are unchanged. No new token, raw colour/duration, ignore,
+  suppression, viewport workaround or hidden node.
+
+**Shared edits, explicitly recorded:** `packages/web/src/features/context/ContextPanel.tsx` is a
+shared production file and `packages/web/test/browser/flows-axe.spec.ts` is the shared G14 flow
+gate; both were changed only under the root-authorized repair section. No other shared path
+changed.
+
+### New vs inherited
+
+- Repository case identities added/removed/skipped by this repair: **0 / 0 / 0**. The nine
+  `shell-mount` browser cases and seven `mounted-shell` component cases remain the original
+  slice's new cases with strengthened assertions; the eighth new component case is in
+  `shell-sidebar.test.tsx`, untouched. `flows-axe` is inherited regression scope.
+- Focused component result: **11/11 passed, zero skips** — 7 new `mounted-shell` cases plus 4
+  inherited `context-checkpoint` cases.
+- Browser cases discovered but not executed: 9 new `shell-mount` + 4 inherited `flows-axe`.
+  The adapted legacy subset is inherited envelope, not additional new credit.
+
+### Checks run (sandbox, Node 26.9.0, `nice -n 10`)
+
+| Check | Result |
+| --- | --- |
+| `npx vitest run test/component/mounted-shell.test.tsx` before the mock fix | **1 failed / 6 passed**: the sidebar rendered `Sessions could not be refreshed. Try again.` instead of the empty text. This is the red evidence for `a4aaa6f6`. |
+| Same component file after `dd22feb6` | **7/7 passed**, zero skips |
+| `npx vitest run test/component/mounted-shell.test.tsx test/component/context-checkpoint.test.tsx` after the contrast fix | **11/11 passed**, zero skips |
+| `npx tsc --noEmit -p packages/web/tsconfig.json` | exit 0 |
+| Scoped `tsc` over `mounted-shell.test.tsx` and `shell-mount.spec.ts` with DOM, bundler resolution, `vite/client` and Node types | exit 0 |
+| `npx eslint` over the changed source, fixture and test files (10 files) | exit 0 |
+| `npx playwright test test/browser/shell-mount.spec.ts test/browser/flows-axe.spec.ts --list` | 13 tests in 2 files (9 + 4), no execution |
+| `git diff --check` | clean |
+
+### Explicitly not run
+
+No actual Chromium execution, no axe scan, no `npm test`, no full
+`npm run test:web:browser`, no `npm run build`, no full workspace typecheck, no `ui:check` or
+`ui:check:browser`, no Storybook/visual snapshot, and no shared-lock/`agent-dev` command. The
+new empty-session assertions, the zero-diagnostic flow result and the computed-style contrast
+discriminator are therefore **authored tests, not observed browser evidence**; root/independent
+Sol must run the actual affected/new browser subset, including the seven adapted legacy files
+from the review (`kernel-slot`, `runtime-bar`, `runtime-health`, `resource-conflict`,
+`localization`, `chat-terminal-reload`, `flows-axe`). No screen-reader, real-device, live model,
+provider, network, container or production validity is claimed.
+
+### Original review failures addressed
+
+The reviewer observed the adapted 18-case legacy subset at 11 pass / 7 fail. This repair targets
+the path-mismatch failures: duplicate/extra session alerts in `chat-terminal-reload` and
+`localization`, `kernel-slot` expecting the empty list but receiving the refresh error, and the
+`localization` forbidden-effect count seeing two `GET /api/sessions/list/page`; the seventh,
+`flows-axe` G14, was the two-node cache-bar contrast matcher. The earlier 8/8 component and 9/9
+browser new-case results were not re-labelled as this round's evidence. The review's remaining
+draft-primitive/G11 finding and its external counterexample are untouched and remain separate
+work.
+
+### Boundaries unchanged
+
+No server, contract, wire, DB, migration, dependency, license, privacy, owner-data, secret,
+signing-key, approval, review-record, snapshot, catalog-manifest, G11/tooling or central status
+change. No source status was promoted, no `approved` record written, no owner key used, and no
+push/merge to `main`. The existing warnings stay explicit: `AppShellChrome`, `Button`, `Dialog`
+and `Input` are unsigned `review`; `IconButton`, `Menu` and `Tooltip` remain `draft` inside the
+shell with approval null, so a stage/release exit is still blocked. Root owns the actual browser/
+axe recheck, final gate decision and status fold-in. Draft warning/blocker status is unchanged.
