@@ -21,6 +21,22 @@ function capacityInteger(name: string, value: unknown): number {
   return value
 }
 
+function reviewQueues(value: unknown): Record<string, number> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new CapacityError('capacity.reviewQueueByPerson must be a plain object of non-negative integers')
+  }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new CapacityError('capacity.reviewQueueByPerson must be a plain object of non-negative integers')
+  }
+  for (const [person, queue] of Object.entries(value)) {
+    if (typeof queue !== 'number' || !Number.isInteger(queue) || queue < 0) {
+      throw new CapacityError(`capacity.reviewQueueByPerson[${person}] must be a non-negative integer`)
+    }
+  }
+  return value as Record<string, number>
+}
+
 interface Decision {
   decision: 'accepted' | 'rejected'
   index: number
@@ -269,12 +285,10 @@ export function nextReady(
   const permits = capacityInteger('governorPermits', capacity.governorPermits)
   const inProgress = capacityInteger('inProgress', capacity.inProgress)
   const free = Math.max(0, Math.min(leases, permits) - inProgress)
+  const queues = reviewQueues(capacity.reviewQueueByPerson)
   let reviewSlots = 0
-  for (const value of Object.values(capacity.reviewQueueByPerson)) {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new CapacityError('reviewQueueByPerson values must be finite numbers')
-    }
-    reviewSlots += Math.max(0, 3 - Math.max(0, Math.floor(value)))
+  for (const value of Object.values(queues)) {
+    reviewSlots += Math.max(0, 3 - value)
   }
   const graph = (statuses as Partial<DerivedStatuses>).items ?? plan.items
   const result: ItemSpec[] = []

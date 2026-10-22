@@ -336,6 +336,33 @@ test('capacity counts must be non-negative integers', () => {
   }
 })
 
+test('review queues are a plain object of non-negative integers', () => {
+  const p = plan([item('a'), item('r', { ownerRole: 'reviewer' })])
+  const statuses = deriveStatuses(p, [])
+  const capacity = { freeWorktreeLeases: 5, governorPermits: 5, inProgress: 0, reviewQueueByPerson: {} }
+  assert.deepEqual(nextReady(statuses, p, capacity).map(entry => entry.id), ['a'])
+  assert.deepEqual(
+    nextReady(statuses, p, { ...capacity, reviewQueueByPerson: { alice: 0 } }).map(entry => entry.id),
+    ['a', 'r'],
+  )
+  for (const value of [1.5, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(
+      () => nextReady(statuses, p, { ...capacity, reviewQueueByPerson: { alice: value } }),
+      (error: unknown) => {
+        assert.ok(error instanceof TypeError)
+        assert.match(error.message, /invalid_capacity/)
+        return true
+      },
+    )
+  }
+  for (const value of [[], null, new Date()] as unknown[]) {
+    assert.throws(
+      () => nextReady(statuses, p, { ...capacity, reviewQueueByPerson: value as never }),
+      TypeError,
+    )
+  }
+})
+
 test('nextReady includes accepted proposals after plan items', () => {
   const p = plan([item('a')])
   const d = item('d', { title: 'Proposal D' })

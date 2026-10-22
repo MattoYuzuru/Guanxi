@@ -64,7 +64,8 @@ Rules, in precedence order:
    evidence for this revision: changing or removing `acceptance` in a later revision reopens
    automatic proof, so old acceptance evidence no longer closes the item. An item with
    `acceptance === null` can only be completed by (b). A bare `verification_requested` stays
-   `verification_requested`.
+   `verification_requested`. A human `done` overrides later failing acceptance until a `reopen`
+   or `cancel`.
 2. `failed` when the latest matching acceptance failed after a claim, or the judge reported
    `fail`, and no later passing evidence exists. A later clean, matching passing acceptance or a
    judge `pass` clears the failure; a dirty pass or another claim does not.
@@ -125,7 +126,10 @@ items additionally consume review capacity.
 The item model has no assignee, so reviewer capacity is the aggregate remaining capacity of the
 named queues: `sum(max(0, 3 - reviewQueueByPerson[person]))` (D-176). Each reviewer item
 consumes one slot. This is the only non-arbitrary per-person interpretation available without
-inventing an assignment; an empty queue map therefore exposes no reviewer slots.
+inventing an assignment; an empty queue map therefore exposes no reviewer slots, so
+reviewer-owned items are not pulled while `reviewQueueByPerson` is empty. `reviewQueueByPerson`
+must be a plain object whose values are non-negative integers; a fractional, negative,
+non-numeric or non-plain value throws `TypeError` with code `invalid_capacity`.
 
 ## Strip
 
