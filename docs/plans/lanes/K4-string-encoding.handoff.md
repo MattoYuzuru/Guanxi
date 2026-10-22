@@ -1,14 +1,17 @@
 # K4 bounded string encoding — handoff
 
-**Status:** bounded implementation locally validated for the pure encoding envelope only. The
-real helper/filesystem/native envelope and all full gates remain root-owned and unrun here.
-Independent GPT review follows the clean source pin. This is not K4, stage-closure or MS1
-completion, and it does not claim total bounded memory or an RSS ceiling.
+**Status:** bounded implementation locally validated for the pure encoding envelope only,
+including the standalone marker-only repair. The real helper/filesystem/native envelope and all
+full gates remain root-owned and unrun here. Independent GPT review follows the clean source
+pin. This is not K4, stage-closure or MS1 completion, and it does not claim total bounded memory
+or an RSS ceiling.
 
 **Date:** 2026-10-22
 **Branch:** `codex/k4-string-encoding`
 **Base:** `0d19c1c5fe3bfe80f6766abbbb2f962d05039410` (authorized clean launch HEAD)
-**Source pin:** `68eacdfdf5ee0e5c66584c67f747bc0db1b03d08` (last executable commit)
+**Source pin:** `f770c765bd39873cf31488e96d48615928dd6455` (marker repair; prior executable
+source `68eacdfdf5ee0e5c66584c67f747bc0db1b03d08`)
+**Repair base:** `281f1fcddc6d27ec3144f534d9c4d87c997e7865` (clean independent-review pin)
 **Handoff pin:** the docs commit containing this file. The exact `git rev-parse HEAD` and an
 empty `git status --porcelain` are reported after that commit; no source edit follows it.
 
@@ -224,3 +227,105 @@ identity; abort settlement and digest survival; exact Unicode/oracle identity; m
 whole clipping; byte-input snapshot and read/replay residuals; and that the new tests do not
 merely mirror the implementation. No self-certification, approval, merge, rebase or push is
 claimed.
+
+## Marker repair — 2026-10-22
+
+Independent review
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-k4-string-encoding-20261022.md` confirmed one
+P2 at `input-encoding.ts:168-170`: every unmatched `⟦` in a truncated prefix was treated as a
+redaction marker, so ordinary decorative text was dropped. The repair is isolated to the excerpt
+boundary classifier.
+
+**Repair commits:**
+
+| Commit | Scope |
+| --- | --- |
+| `d0f877d69abfc02c0686e465210b7774858f5f06` | red-first tests: plain-bracket oracle cases, explicit known-marker boundaries, complete values |
+| `f770c765bd39873cf31488e96d48615928dd6455` | known-marker-only clipping and README clarification |
+
+### Behavior
+
+- An unmatched `⟦` whose immutable original does not continue with the shared `⟦REDACTED`
+  keyword plus one space is ordinary text and keeps the prior whole-buffer UTF-8 safe prefix.
+- A cut after only `⟦` or part of the `REDACTED` keyword plus its space is recognized with a
+  constant `REDACTION_MARKER_PREFIX.length` lookahead into the immutable original, so the whole known
+  marker is still dropped. The close search stays inside the bounded excerpt; no full input is
+  encoded and no unbounded tail is scanned.
+- Complete values, complete markers, lone surrogates, zero/malformed bounds and chunk/hash
+  allocation behavior are unchanged.
+- The old `excerptOracle` repeated the production broad-delimiter rule; it is now
+  `wholeBufferUtf8Prefix`, a TEST-ONLY whole-buffer UTF-8 safe prefix with no marker rule.
+  Known-marker positives use explicit bound/expected-value cases instead of that predicate.
+
+### Red at `281f1fc`
+
+Unchanged outside probe
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/k4-encoding-marker-regression-probe-20261022.ts`
+(sha256 `f43379b875576dabde5061742745692151d579036d6ace334e655d2c27e208b0`, not edited):
+3 tests, 2 pass / 1 fail, receipt `check-kjtgw29y`; the failure is `'A' !== 'A⟦ord'` for
+`utf8Excerpt('A⟦ordinary decoration and more', 7)`.
+
+With only the red-first test commit applied to unfixed production:
+
+```bash
+env PATH=/opt/homebrew/opt/node@26/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+  nice -n 10 node --test packages/server/test/session-log-input-encoding.test.ts
+# tests 14 / pass 12 / fail 2 / skipped 0
+```
+
+Both failures are semantic ordinary-prefix failures (`'A'` vs `'A⟦'`, `'x'` vs `'x⟦'`);
+known-marker positives and complete-value controls passed at the unfixed source.
+
+### Green at `f770c76`
+
+Same explicit Node 26.9.0 PATH under `nice -n 10`:
+
+```bash
+node --test packages/server/test/session-log-input-encoding.test.ts
+# tests 14 / pass 14 / fail 0 / skipped 0
+
+node --test /Users/yuzuru/Projects/Guanxi-lanes/reviews/k4-encoding-marker-regression-probe-20261022.ts
+# tests 3 / pass 3 / fail 0 / skipped 0
+
+./node_modules/.bin/tsc --noEmit -p packages/server/tsconfig.json
+# exit 0, no output
+
+./node_modules/.bin/eslint \
+  packages/server/src/session-log/input-encoding.ts \
+  packages/server/test/session-log-input-encoding.test.ts
+# exit 0, no output
+
+./node_modules/.bin/markdownlint-cli2 packages/server/src/session-log/README.md
+# 1 file, 0 errors
+
+git diff --check
+# exit 0
+```
+
+Counts: this repair adds **3 pure tests**; the pure file now has **14** (11 prior slice + 3
+repair). The prior slice's **16 new** (11 pure + 4 real-helper + 1 native) and **51 inherited**
+(19 store + 13 native + 19 privacy) are unchanged. The 4 helper + 1 native additions and the
+19 privacy assertions were not rerun here. If root reruns the full selected envelope after this
+source change, the expected new count is 19 and the envelope 70; this handoff does not claim
+that run.
+
+### Evidence scope
+
+Changed files: `packages/server/src/session-log/input-encoding.ts`,
+`packages/server/test/session-log-input-encoding.test.ts`,
+`packages/server/src/session-log/README.md`, and this handoff. No shared
+egress/private-projection/store/protocol/transport/hash/byte-input-snapshot/fence/native/UI/
+schema/dependency file changed; the 19 privacy assertions and the outside ownership probe
+(`check-djqqmkc8`, 2/2) are untouched. The reviewer's observed envelope `check-_9_j6_zi`
+(67/67 at `281f1fc`: 16 new / 51 inherited) remains the reviewer's evidence at that pin, not a
+certificate for this commit.
+
+DSH ran only the pure encoding tests and the unchanged pure outside probe. No helper,
+filesystem, native, process, browser, build, install, container, nested-sandbox, model,
+provider, network, SSH, owner-workspace or owner-data command ran. The original outside probe
+is unchanged for independent recheck. No total bounded-memory, RSS, whole-K4 or MS1 claim is
+made.
+
+The repair diff to review is `281f1fc..f770c76`; the complete slice diff is
+`0d19c1c5..f770c76`. No approval, merge, rebase, reset, push or main/PHASE/NEXT/roadmap change
+is made.
