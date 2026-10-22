@@ -17,6 +17,9 @@ interface FrontMatterFile { text: string; bodyOffset: number; size: number }
 export interface SkillHead extends FrontMatterFile { bytesRead: number }
 /** Discovery read seam: production reads the filesystem; tests can observe bounds. */
 export type SkillHeadReader = (path: string, maxBytes: number) => Promise<SkillHead | null>
+export interface SkillDirectoryEntry { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }
+/** Discovery directory seam; entries are sorted by name before processing. */
+export type SkillDirectoryReader = (path: string) => Promise<SkillDirectoryEntry[]>
 
 interface ScanSource extends SkillSource { boundary: string; scan: string }
 interface Candidate { source: ScanSource; dir: string; file: string }
@@ -248,9 +251,13 @@ export async function discoverSkills(input: {
   maxDescriptionChars?: number
   /** Test seam; defaults to the bounded filesystem reader. */
   readHead?: SkillHeadReader
+  /** Test seam; defaults to `readdir` with file types. */
+  readDirectory?: SkillDirectoryReader
 }): Promise<SkillIndex> {
   const projectRoot = await realpath(input.projectRoot)
   const readHead = input.readHead ?? readSkillHead
+  const readDirectory: SkillDirectoryReader = input.readDirectory
+    ?? (async path => readdir(path, { withFileTypes: true }))
   const maxSkills = input.maxSkills === undefined
     ? undefined
     : Math.floor(assertBudget(input.maxSkills, 'max_skills_invalid'))
@@ -280,7 +287,8 @@ export async function discoverSkills(input: {
       continue
     }
     let entries
-    try { entries = await readdir(scan, { withFileTypes: true }) } catch { continue }
+    try { entries = await readDirectory(scan) } catch { continue }
+    entries.sort((left, right) => compareText(left.name, right.name))
     for (const entry of entries) {
       if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
       const dir = join(scan, entry.name)

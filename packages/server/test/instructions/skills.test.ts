@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat, chmod } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, symlink, realpath, stat, chmod, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkills, skillContext, loadSkill, readSkillHead, parseSkillFrontMatter } from '../../src/instructions/skills.ts'
@@ -195,6 +195,34 @@ test('symlinks resolving outside the boundary are skipped and reported', async t
   assert.ok(outsideWarnings.some(warning => warning.path === join(projectRoot, '.agents/skills/escape')))
   assert.ok(outsideWarnings.some(warning => warning.path === join(fileEscape, 'SKILL.md')))
   assert.ok(outsideWarnings.some(warning => warning.path === join(userRoot, 'escape')))
+})
+
+test('directory entries are processed in name order for deterministic warnings', async t => {
+  const base = await baseDir(t)
+  const projectRoot = join(base, 'project')
+  const scan = join(projectRoot, '.agents/skills')
+  const outside = join(base, 'outside')
+  await mkdir(scan, { recursive: true })
+  await mkdir(outside, { recursive: true })
+  if (!await link(outside, join(scan, 'z-escape'), 'dir')) {
+    t.skip('symlinks are unavailable')
+    return
+  }
+  if (!await link(outside, join(scan, 'a-escape'), 'dir')) {
+    t.skip('symlinks are unavailable')
+    return
+  }
+
+  const index = await discoverSkills({
+    projectRoot,
+    userSkillDirs: [],
+    readDirectory: async path => [...await readdir(path, { withFileTypes: true })].reverse(),
+  })
+  assert.deepEqual(index.skills, [])
+  assert.deepEqual(index.warnings, [
+    { path: join(scan, 'a-escape'), code: 'outside_root' },
+    { path: join(scan, 'z-escape'), code: 'outside_root' },
+  ])
 })
 
 test('a 50 KiB body never enters discovery or the context token count', async t => {

@@ -15,6 +15,9 @@ throw `TypeError` before any comparison.
 - `<projectRoot>/.claude/skills/*/SKILL.md`
 - every directory in `userSkillDirs`, one level deep (`<dir>/<skill>/SKILL.md`)
 
+Directory entries are sorted by name before processing, so warning order does not depend on
+filesystem enumeration order.
+
 Only YAML front matter is read, in a bounded window of at most 8 KiB; discovery never asks the
 reader for more. The minimal parser accepts `key: value` scalars (quoted or plain) and folded
 `>` / literal `|` description blocks; it adds no dependency and stores keys in a null-prototype
