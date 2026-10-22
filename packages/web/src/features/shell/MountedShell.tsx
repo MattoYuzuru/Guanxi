@@ -55,6 +55,7 @@ export function MountedShell({
             rail={shell.preferences.visibility === 'rail'}
             location={shell.location}
             sessions={shell.sessions.sessions}
+            unseen={shell.unseen}
             pinned={shell.preferences.pinned}
             loading={shell.sessions.loading}
             loadingMore={shell.sessions.loadingMore}
