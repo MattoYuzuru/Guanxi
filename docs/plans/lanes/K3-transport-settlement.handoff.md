@@ -124,3 +124,79 @@ cleanup was touched.
 - The pre-existing mapping of an HTTP error response after its body-cancel ACK is preserved even
   if the caller signal aborts during that cleanup.
 - Root owns full gates, merge/rebase/push, `PHASE_STATUS` and `NEXT_AGENT_PROMPT`.
+
+## Review-fix section 2 (2026-10-22) — P2 cancel-driven reader liveness
+
+**Finding:** the settlement policy awaited a pending `/api/chat` `reader.read()` on abort/deadline,
+but `reader.cancel()` still ran only in the later `finally`. A real `ReadableStream` whose read
+resolves only when its consumer requests cancel therefore deadlocked: read waited for cancel and
+cancel waited for the read. The independent read-only probe
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/k3-cancel-driven-reader-probe-20261022.ts` reproduced
+it unchanged against `c65c629`:
+
+```json
+{"cancelRequested":false,"settled":false,"bodyLocked":true}
+```
+
+The pre-existing pending-read test supplied a chunk before expecting cancel and could not falsify
+this case. The probe was not edited.
+
+**Behaviour fix (`39189e2`)** — `fix(ollama): cancel a stream reader before awaiting its pending read`:
+
+- `withinDeadline`'s private settlement policy can now start path-owned cleanup synchronously when
+  abort/deadline wins, before the pending operation is awaited.
+- `/api/chat` streaming passes a memoized `reader.cancel()` starter. The control path requests
+  cancellation immediately and then awaits **both** the pending read settlement and the actual
+  cancel acknowledgement before surfacing the existing abort/timeout mapping. The outer `finally`
+  reuses the same promise, so there is exactly one cancel request and no double cancel.
+- Cancel rejection is consumed (it cannot replace the control outcome); the reader lock is never
+  released while a read is pending; no late chunk is yielded after abort; no timer, retry, second
+  body read or early fake ACK was added.
+- Non-chat stream paths, GET observation liveness, normal stream completion, abort/error priority,
+  R2 dispatch seams and `connections/service.ts` are unchanged.
+
+**New review-fix tests (4):**
+
+- `packages/server/test/ollama-client.test.ts` — 3: cancel-driven pending read on external abort
+  (`cancelRequested`, cancel ACK holds the call, reader stays locked, exactly one cancel); the same
+  on an internal load deadline without an external signal; a rejected late cancel is consumed with
+  no unhandled rejection while the abort outcome is preserved.
+- `packages/server/test/connections/model-transport-settlement.test.ts` — 1: a real
+  `ResourceGovernor` lease around `chatStream(...).next()` stays held while the cancel ACK is
+  withheld, then is released exactly once after the fixed abort outcome.
+
+Total candidate evidence is now **19 new / 99 regression = 118 scoped**, without weakening the
+15 earlier new tests or the 99 regression cases.
+
+**Exact commands and results at `39189e2`:**
+
+```text
+nice -n 10 node --test --test-timeout=30000 \
+  packages/server/test/ollama-client.test.ts \
+  packages/server/test/connections/model-transport-settlement.test.ts \
+  packages/server/test/connections/model-access.test.ts \
+  packages/server/test/relay/review.test.ts \
+  packages/server/test/inference-concurrency.test.ts \
+  packages/server/test/model-service.test.ts
+# tests 118, pass 118, fail 0
+
+nice -n 10 npx tsc --noEmit -p packages/server/tsconfig.json
+# exit 0, no output
+
+nice -n 10 node --test --test-timeout=5000 \
+  /Users/yuzuru/Projects/Guanxi-lanes/reviews/k3-cancel-driven-reader-probe-20261022.ts
+# {"cancelRequested":true,"settled":false,"bodyLocked":true}
+# tests 1, pass 1, fail 0
+```
+
+Red evidence before the production edit: the unmodified probe failed with
+`cancelRequested=false`; the new abort test failed `0 !== 1` for cancel requests; the new
+deadline, late-cancel-reject and governor tests timed out at a 2000 ms test timeout because the
+read never settled. No `npm test`, browser, build, Storybook, container, nested sandbox,
+`agent-dev`, live server/model, network, SSH or owner-data operation was run. `@guanxi/contract`
+resolved to this clone and `require.resolve` was confirmed.
+
+**Residuals:** a provider that requests neither abort nor cancel acknowledgement still leaves the
+owning promise/permit pending honestly; this proves local client/permit ownership, not backend
+inference termination. The R2 fourth-argument seam still needs the separately owned reconciliation,
+and root owns full gates, merge/rebase/push and status files.
