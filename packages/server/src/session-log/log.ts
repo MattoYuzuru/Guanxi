@@ -145,12 +145,6 @@ export interface SessionLogOptions {
   isProcessAlive?: (pid: number) => boolean
   /** Fault injection for crash tests; it may throw or kill the process. */
   fault?: (point: SessionAppendPoint, detail: { sessionId: string; type: SessionEventType }) => void
-  /**
-   * Installs the independent queue ledger 40 in this log's construction.
-   * Only legacy migration fixtures that intentionally open a pre-33 database
-   * may disable it; production always leaves it at the default.
-   */
-  installQueueSchema?: boolean
 }
 
 /**
@@ -418,9 +412,9 @@ export class SessionLog {
     this.reasoningRetentionMs = options.reasoningRetentionMs ?? DEFAULT_REASONING_RETENTION_MS
     this.isProcessAlive = options.isProcessAlive ?? defaultProcessAlive
     this.fault = options.fault
-    // Independent ledger 40: after openDb applied global 33, before this log
-    // provides its service. It never runs inside an append transaction.
-    if (options.installQueueSchema !== false) installSessionQueueSchema(this.db)
+    // Independent ledger 40 is mandatory: after openDb applied global 33 and
+    // before this log provides its service. There is no fixture opt-out.
+    installSessionQueueSchema(this.db)
     LIVE_WRITER_IDS.add(this.writer.id)
   }
 
