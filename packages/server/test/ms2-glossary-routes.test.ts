@@ -226,3 +226,14 @@ test('every library failure maps to a documented wire code', () => {
   assert.deepEqual(glossaryFailure(new TypeError('a bug outside a mutation')), { code: 'internal_error', status: 500 })
   assert.deepEqual(glossaryFailure(new Error('x')), { code: 'internal_error', status: 500 })
 })
+
+test('an oversized or oddly named entry written by a kernel caller never breaks the read routes', async (t) => {
+  const f = await ms2Fixture(t)
+  f.glossary()!.store.create('local', 'account', null, { id: 'imported entry/1', canonical: 'C'.repeat(300), variants: ['v'.repeat(300)], language: 'en' }, 'import')
+  const list = await call(f.app, BASE)
+  assert.equal(list.status, 200, list.text)
+  assert.equal(listGlossaryResponseSchema.parse(list.json).entries[0]!.entry.canonical.length, 300)
+  assert.equal((await call(f.app, `${BASE}/apply-preview`, { json: { text: 'x' } })).status, 200)
+  assertError(await call(f.app, `${BASE}/imported%20entry%2F1/history`), 400, 'validation_failed')
+  assertError(await create(f, { scope: 'account', entry: { canonical: 'C'.repeat(201), variants: [], language: 'en' } }), 400, 'validation_failed')
+})

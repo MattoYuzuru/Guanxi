@@ -261,3 +261,19 @@ test('the ledger fixes provenance itself, whatever a caller passes in', async (t
   assert.throws(() => f.ledger()!.appendHumanEvent('local', 'p1', { type: 'judge_verdict', itemId: 'b', verdict: 'pass' } as never), { code: 'invalid_source' }, 'a non-human event cannot be written as a user')
   assert.throws(() => f.ledger()!.appendHumanEvent('local', 'p1', { type: 'acceptance_result', itemId: 'b', passed: true, commit: 'c', cleanCheckout: true, command: 'x' } as never), { code: 'invalid_source' })
 })
+
+test('an oversized or oddly named row written by a kernel caller never breaks the read routes', async (t) => {
+  const f = await ms2Fixture(t)
+  f.ledger()!.store.addRevision({
+    projectId: 'p1', author: 'lead',
+    items: [{ id: 'planner item/with spaces', title: 'T'.repeat(600), acceptance: 'A'.repeat(5000), dependsOn: [], estimateMinutes: null, ownerRole: null, protectedPaths: ['/abs/path'] }],
+  })
+  const revision = await call(f.app, `${P}/revision`)
+  assert.equal(revision.status, 200, revision.text)
+  const items = await call(f.app, `${P}/items`)
+  assert.equal(items.status, 200, items.text)
+  assert.equal(workItemsPageSchema.parse(items.json).items[0]!.title.length, 600)
+  assert.equal((await call(f.app, `${P}/export`)).status, 200)
+  // The same row is refused when it arrives over HTTP.
+  assertError(await call(f.app, `${P}/revisions`, { json: { items: [{ id: 'a', title: 'T'.repeat(501) }] } }), 400, 'validation_failed')
+})

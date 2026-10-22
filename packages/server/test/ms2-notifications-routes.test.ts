@@ -13,6 +13,7 @@ import { NotificationActionError, type ActionPorts } from '../src/notifications/
 import { NotificationStoreError } from '../src/notifications/store.ts'
 import { notificationFailure } from '../src/notifications/wire.ts'
 import { InboxError } from '../src/notifications/inbox.ts'
+import { DatabaseSync } from 'node:sqlite'
 import { REMOTE_PEER, T0, call, ms2Fixture, quotaFact, type Ms2Options } from './ms2-fixture.ts'
 
 const KEY = 'key-aaaaaaaa-0001'
@@ -384,4 +385,34 @@ test('the inbox itself refuses the three library-only actions even when a host p
     )
   }
   assert.deepEqual(calls, [])
+})
+
+test('replaying a finished snooze answers duplicate even after its time has passed', async (t) => {
+  const f = await withNotifications(t)
+  const id = f.ids[0]!
+  const body = { action: 'snooze', args: { untilMs: T0 + 60_000 } }
+  assert.equal((await call(f.app, `/api/notifications/${id}/actions`, { json: body, headers: actionHeaders(KEY) })).status, 200)
+  f.clock.now = T0 + 120_000
+  const replay = await call(f.app, `/api/notifications/${id}/actions`, { json: body, headers: actionHeaders(KEY) })
+  assert.equal(replay.status, 200, replay.text)
+  assert.equal(notificationActionResponseSchema.parse(replay.json).duplicate, true)
+  assertError(await call(f.app, `/api/notifications/${id}/actions`, { json: body, headers: actionHeaders('key-fresh-0002') }), 422, 'invalid_snooze_time')
+})
+
+test('reads take no write lock while nothing is due', async (t) => {
+  const f = await withNotifications(t)
+  const id = f.ids[0]!
+  const other = new DatabaseSync(f.paths.notifications)
+  t.after(() => other.close())
+  other.exec('PRAGMA busy_timeout=0; BEGIN IMMEDIATE')
+  try {
+    const started = Date.now()
+    for (const path of ['/api/notifications', `/api/notifications/${id}`, '/api/notifications/actions']) {
+      const response = await call(f.app, path)
+      assert.equal(response.status, 200, `${path}: ${response.text}`)
+    }
+    assert.ok(Date.now() - started < 1000, 'a reader must not wait for the busy timeout')
+  } finally {
+    other.exec('ROLLBACK')
+  }
 })

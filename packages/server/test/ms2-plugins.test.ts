@@ -112,6 +112,20 @@ test('a failed open leaves no plugin, service or handle behind', async (t) => {
   assert.equal(kernel.service(NOTIFICATIONS_SERVICE), undefined)
 })
 
+test('a sidecar that is not a database fails the load cleanly', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'guanxi-ms2-garbage-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const kernel = createKernel()
+  t.after(() => kernel.dispose())
+  for (const [plugin, name] of [[notificationsPlugin, 'notifications'], [voicePlugin, 'voice'], [workPlugin, 'work']] as const) {
+    const path = join(dir, `${name}.sqlite`)
+    await writeFile(path, 'this is not a sqlite database, '.repeat(200))
+    await assert.rejects(kernel.plugin(plugin as never, { databasePath: path } as never), (error: unknown) => error instanceof Error, name)
+  }
+  const counters = kernel.counters()
+  assert.deepEqual([counters.fibers, counters.effects, counters.failed, counters.pending, counters.services], [0, 0, 0, 0, 1], 'only the kernel slots service remains')
+})
+
 test('after a crash, an unprobed host effect is never replayed; a built-in is', async (t) => {
   const calls: string[] = []
   const f = await ms2Fixture(t, { ports: { wakeLeads: async () => { calls.push('wake'); return { woken: 1 } } } })
