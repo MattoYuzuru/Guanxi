@@ -538,16 +538,12 @@ export class SessionLog {
     if (held?.handle !== handle) return
     this.writers.delete(handle.sessionId)
     if (!this.dbOpen()) return
-    try {
-      this.db
-        .prepare(
-          `UPDATE session_writers SET released_at = ?
-           WHERE session_id = ? AND writer_id = ? AND epoch = ? AND released_at IS NULL`,
-        )
-        .run(this.clock().toISOString(), handle.sessionId, this.writer.id, handle.epoch)
-    } catch {
-      // Closing must not throw; the row then expires like a crashed writer's.
-    }
+    this.db
+      .prepare(
+        `UPDATE session_writers SET released_at = ?
+         WHERE session_id = ? AND writer_id = ? AND epoch = ? AND released_at IS NULL`,
+      )
+      .run(this.clock().toISOString(), handle.sessionId, this.writer.id, handle.epoch)
   }
 
   /** Wakes subscribers of sessions whose appends have committed. */

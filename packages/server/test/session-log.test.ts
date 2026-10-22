@@ -267,7 +267,32 @@ describe('session log: single writer (D-116)', () => {
     const handle = log.open('s-closed-db', { kind: 'agent' })
     db.close()
     assert.doesNotThrow(() => handle.close())
+    assert.equal(handle.closed, true, 'the handle is closed even though its row cannot be updated')
+    assert.doesNotThrow(() => handle.close(), 'closing the same handle twice stays harmless')
     assert.doesNotThrow(() => log.close())
+  })
+
+  it('propagates an open-database writer-release failure and keeps the writer held', () => {
+    const db = openDb(':memory:')
+    const log = logFor(db)
+    const other = logFor(db)
+    const handle = log.open('s-release-failure', { kind: 'agent' })
+    db.exec(
+      `CREATE TRIGGER reject_fixture_release BEFORE UPDATE OF released_at ON session_writers
+       WHEN NEW.released_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'fixture_release_failed'); END;`,
+    )
+    try {
+      assert.throws(() => handle.close(), /fixture_release_failed/, 'an open-database release error must surface')
+      const row = db
+        .prepare('SELECT released_at FROM session_writers WHERE session_id = ?')
+        .get('s-release-failure') as { released_at: string | null }
+      assert.equal(row.released_at, null, 'a failed update leaves the durable writer row unreleased')
+      assert.equal(code(() => other.open('s-release-failure', { kind: 'agent' })), 'writer_busy')
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS reject_fixture_release')
+      other.close()
+      log.close()
+    }
   })
 })
 
