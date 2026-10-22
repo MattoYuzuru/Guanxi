@@ -85,3 +85,21 @@ must use real public wrappers, not duplicated implementations or mocked interact
 No data or public API migration is needed. Roll back this slice by reverting its focused test
 and docs commits; keep statuses/approvals and existing snapshots intact. A newly discovered
 source defect outside the three primitive folders is reported to root before expansion.
+
+## Root-authorized independent-review repair
+
+At clean `34a9ea2b`, the independent ten-case author envelope passes (`check-4mx3hpwe`).
+Outside real-browser consumer controls (`check-3xb0x6co`) pass controlled refused-close and
+cancelled-close, but reproduce one P2: a consumer's `render={<Button aria-describedby=.../>}`
+overrides TooltipTrigger's added tooltip ID during Base UI's render-element prop merge.
+The visible popup has role=tooltip/id=independent-tip while the trigger references only the
+consumer description. This loses the actual tooltip relationship for a supported render API.
+
+Root authorizes a minimal Tooltip-folder fix preserving both render-element and wrapper
+description IDs, attaching the live tooltip only while open, without changing the accessible
+name, event/ref behavior or Base UI controlled/cancelled semantics. Cover render-element and
+render-function consumer forms if both are supported by the actual public prop type; retain
+existing custom-ID/description controls. Commit a discriminating red case before source fix,
+rerun identical cases afterward and refresh only affected generated sourceHash values.
+Do not change statuses, approvals, snapshots, Menu/host/G11 ownership or independent probe.
+The reviewer reuses unchanged original controls after a clean final handoff.
