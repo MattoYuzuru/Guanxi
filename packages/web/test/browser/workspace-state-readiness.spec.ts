@@ -165,7 +165,7 @@ for (const theme of ['light', 'dark', 'light-hc', 'dark-hc']) for (const density
       for (const node of [empty, empty.locator('p'), error, error.locator('pre'), error.locator('summary')]) await fits(node)
       for (const action of [empty.getByRole('button'), error.getByRole('button').nth(0), error.getByRole('button').nth(1)]) await target(action)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      expect(await page.getByTestId('controlled').evaluate(node => getComputedStyle(node).fontSize)).toBe(density === 'compact' ? '12px' : '14px')
+      expect(await page.getByTestId('controlled').evaluate(node => getComputedStyle(node).fontSize)).toBe(density === 'compact' ? '13px' : '14px')
       for (const node of [empty, error]) expect(await node.evaluate(element => getComputedStyle(element).backdropFilter)).toBe('none')
       expect(await page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)).toBe(0)
       const violations = (await new AxeBuilder({ page }).include('main').analyze()).violations.filter(item => item.impact === 'serious' || item.impact === 'critical')
