@@ -125,8 +125,12 @@ function supervisorCommand(x: ReturnType<typeof setup>, recordPath: string): str
 test('owned grouped fixture cleanup runs when setup throws before caller finally', { timeout: 10_000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'b1-group-failure-'))
   const fixture = fileURLToPath(new URL('./fixtures/private-group-setup-failure.mjs', import.meta.url))
+  const env = { ...process.env }
+  // Run an independent test process rather than Node's inherited nested runner context.
+  delete env.NODE_TEST_CONTEXT
+  env.BENCH_GROUP_FAILURE_ROOT = root
   const child = spawn(process.execPath, ['--test', fixture], {
-    cwd, env: { ...process.env, BENCH_GROUP_FAILURE_ROOT: root }, stdio: 'pipe', signal: t.signal,
+    cwd, env, stdio: 'pipe', signal: t.signal,
   })
   let output = ''
   child.stdout.on('data', chunk => { output += chunk })
@@ -137,9 +141,9 @@ test('owned grouped fixture cleanup runs when setup throws before caller finally
       child.once('error', reject)
       child.once('close', resolvePromise)
     })
-    report = readJson(join(root, 'failure-report.json'))
     assert.equal(exit, 1, output)
     assert.match(output, /intentional owned fixture setup failure/)
+    report = readJson(join(root, 'failure-report.json'))
     assert.equal(alive(report!.supervisorPid), false)
     assert.equal(alive(report!.clientPid), false)
     assert.throws(() => process.kill(-report!.supervisorPid, 0), { code: 'ESRCH' })
