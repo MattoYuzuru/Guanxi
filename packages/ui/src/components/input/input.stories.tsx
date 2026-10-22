@@ -1,4 +1,6 @@
 import { msg, type Story, type StoryMeta } from '../../story-kit/index.tsx'
+import { useId } from 'react'
+import { useUiText } from '../../i18n/context.tsx'
 import { Input, type InputProps } from './input.tsx'
 
 const meta = {
@@ -28,7 +30,16 @@ export const FocusVisible: Story<InputProps> = {
 
 export const Invalid: Story<InputProps> = {
   name: 'invalid',
-  args: { invalid: true, defaultValue: msg('story.input.value') },
+  render: () => <InvalidInputStory />,
+}
+
+function InvalidInputStory() {
+  const id = useId(), t = useUiText()
+  return <div>
+    <label htmlFor={id}>{t('story.input.label')}</label>
+    <Input id={id} invalid defaultValue={t('story.input.value')} aria-describedby={`${id}-error`} />
+    <p id={`${id}-error`} role="alert" className="text-12 text-danger">{t('story.input.error')}</p>
+  </div>
 }
 
 export const Disabled: Story<InputProps> = {
