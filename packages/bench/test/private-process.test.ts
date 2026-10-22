@@ -5,10 +5,11 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { test, type TestContext } from 'node:test'
+import { test } from 'node:test'
 import type { Connections } from '../../server/src/connections/service.ts'
 import { privateProcessRecordPath, reapPrivateProcessRecord, runPrivateTrial,
   type PrivateProcessPolicy, type PrivateTrialHost, type PrivateTrialResult } from '../src/private-process.ts'
+import { alive, groupedHolder, waitFor, waitGone } from './private-process-fixtures.ts'
 import type { PublicAssistantMessage } from '../src/public-projection.ts'
 import { createTrialBinding, nonceHash, trialBindingTag, type TrialBinding } from '../src/trial-binding.ts'
 
@@ -89,59 +90,12 @@ function hostFixture(options: { blockRetention?: boolean } = {}) {
   }
 }
 
-function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  return new Promise((resolvePromise, reject) => {
-    const tick = () => {
-      try {
-        if (predicate()) return resolvePromise()
-        if (Date.now() >= deadline) return reject(new Error('fixture timeout'))
-        setTimeout(tick, 20)
-      } catch (error) { reject(error) }
-    }
-    tick()
-  })
-}
-function alive(pid: number | null): boolean {
-  if (!pid || pid <= 1) return false
-  try { process.kill(pid, 0); return true } catch { return false }
-}
-async function waitGone(pid: number): Promise<void> {
-  await waitFor(() => !alive(pid), 5_000)
-}
 function readJson(path: string): any { return JSON.parse(readFileSync(path, 'utf8')) }
 function cleanup(root: string, pids: (number | null | undefined)[] = []): void {
   for (const pid of pids) {
     if (pid && pid > 1) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
   }
   rmSync(root, { recursive: true, force: true })
-}
-async function groupedHolder(t: TestContext, root: string, suffix = '') {
-  const groupFile = join(root, `group${suffix}.json`)
-  const holderScript = `const {spawn}=require('node:child_process');` +
-    `const fs=require('node:fs');` +
-    `const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});` +
-    `fs.writeFileSync(process.argv[1],JSON.stringify({client:child.pid}));` +
-    `setInterval(()=>{},1000)`
-  const supervisor = spawn(process.execPath, ['-e', holderScript, groupFile], { detached: true, stdio: 'ignore' })
-  let clientPid: number | undefined
-  let cleaned = false
-  const cleanupGroup = async () => {
-    if (cleaned) return
-    cleaned = true
-    if (supervisor.pid) {
-      try { process.kill(-supervisor.pid, 'SIGKILL') } catch { /* already gone */ }
-      try { process.kill(supervisor.pid, 'SIGKILL') } catch { /* already gone */ }
-    }
-    if (clientPid) { try { process.kill(clientPid, 'SIGKILL') } catch { /* already gone */ } }
-    if (supervisor.pid) await waitGone(supervisor.pid).catch(() => undefined)
-    if (clientPid) await waitGone(clientPid).catch(() => undefined)
-  }
-  // Register ownership before setup/record validation can throw.
-  t.after(cleanupGroup)
-  await waitFor(() => typeof supervisor.pid === 'number' && existsSync(groupFile))
-  clientPid = readJson(groupFile).client as number
-  return { supervisor, clientPid, cleanup: cleanupGroup }
 }
 function v2Record(x: ReturnType<typeof setup>, supervisorPid: number, clientPid: number, token: string): string {
   const recordPath = privateProcessRecordPath(x.binding, x.policy)
@@ -167,6 +121,37 @@ function supervisorCommand(x: ReturnType<typeof setup>, recordPath: string): str
     x.policy.clientScript, recordPath, String(x.policy.killGraceMs),
     trialBindingTag(x.binding), nonceHash(x.binding)].join(' ')
 }
+
+test('owned grouped fixture cleanup runs when setup throws before caller finally', { timeout: 10_000 }, async t => {
+  const root = mkdtempSync(join(tmpdir(), 'b1-group-failure-'))
+  const fixture = fileURLToPath(new URL('./fixtures/private-group-setup-failure.mjs', import.meta.url))
+  const child = spawn(process.execPath, ['--test', fixture], {
+    cwd, env: { ...process.env, BENCH_GROUP_FAILURE_ROOT: root }, stdio: 'pipe', signal: t.signal,
+  })
+  let output = ''
+  child.stdout.on('data', chunk => { output += chunk })
+  child.stderr.on('data', chunk => { output += chunk })
+  let report: { supervisorPid: number; clientPid: number } | undefined
+  try {
+    const exit = await new Promise<number | null>((resolvePromise, reject) => {
+      child.once('error', reject)
+      child.once('close', resolvePromise)
+    })
+    report = readJson(join(root, 'failure-report.json'))
+    assert.equal(exit, 1, output)
+    assert.match(output, /intentional owned fixture setup failure/)
+    assert.equal(alive(report!.supervisorPid), false)
+    assert.equal(alive(report!.clientPid), false)
+    assert.throws(() => process.kill(-report!.supervisorPid, 0), { code: 'ESRCH' })
+  } finally {
+    if (!report && existsSync(join(root, 'failure-report.json'))) report = readJson(join(root, 'failure-report.json'))
+    if (report) {
+      try { process.kill(-report.supervisorPid, 'SIGKILL') } catch { /* already gone */ }
+      cleanup(root, [report.supervisorPid, report.clientPid])
+    } else cleanup(root)
+    if (child.exitCode === null) child.kill('SIGKILL')
+  }
+})
 
 test('actual OS fixture uses fds 3/4 for two sequential public completions with no private identity in argv, env or frames', { timeout: 20_000 }, async () => {
   const x = setup()
