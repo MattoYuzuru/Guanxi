@@ -180,6 +180,22 @@ test('owner grants are rejected without touching the table', (t) => {
   assert.equal(f.store.forResource('session', 'session-1').length, 0)
 })
 
+test('link grants are viewer-only', (t) => {
+  const f = fixture(t)
+  assert.throws(
+    () => f.store.grant(owner, grantOn(project, 'editor', 'link-1', null, 'link'), project),
+    (error: unknown) => error instanceof GrantStoreError && error.code === 'link_grant_forbidden',
+  )
+  assert.throws(
+    () => f.store.grant(owner, grantOn(project, 'owner', 'link-1', null, 'link'), project),
+    (error: unknown) => error instanceof GrantStoreError && error.code === 'owner_grant_forbidden',
+  )
+  assert.equal(f.store.forResource('project', 'project-1').length, 0)
+
+  f.store.grant(owner, grantOn(project, 'viewer', 'link-1', null, 'link'), project)
+  assert.equal(f.store.forResource('project', 'project-1').length, 1)
+})
+
 test('grant and revoke reject a tuple that does not match the supplied resource', (t) => {
   const f = fixture(t)
   assert.throws(

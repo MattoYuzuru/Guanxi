@@ -106,14 +106,17 @@ function grantReaches(grant: Grant, resource: Resource): boolean {
   return false
 }
 
-/** Strongest unexpired relation. Only `ownerUserId` confers ownership; grants cap at `editor`. */
+/**
+ * Strongest unexpired relation. Ownership comes only from `ownerUserId`; user and group grants
+ * cap at `editor`, and link grants cap at `viewer` (ADR-0027 decision 4).
+ */
 function effectiveRelation(principal: Principal, resource: Resource, grants: Grant[], now: number): Relation | null {
   let strength = 0
   if (principal.kind === 'user' && principal.userId === resource.ownerUserId) strength = RELATION_STRENGTH.owner
+  const grantCap = principal.kind === 'link' ? RELATION_STRENGTH.viewer : RELATION_STRENGTH.editor
   for (const grant of grants) {
     if (expired(grant, now) || !subjectMatches(grant, principal) || !grantReaches(grant, resource)) continue
-    const granted = Math.min(RELATION_STRENGTH[grant.relation], RELATION_STRENGTH.editor)
-    strength = Math.max(strength, granted)
+    strength = Math.max(strength, Math.min(RELATION_STRENGTH[grant.relation], grantCap))
   }
   if (strength >= RELATION_STRENGTH.owner) return 'owner'
   if (strength >= RELATION_STRENGTH.editor) return 'editor'

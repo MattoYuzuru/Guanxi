@@ -134,10 +134,10 @@ function buildCases(resources: Record<ResourceType, Resource>): MatrixCase[] {
       expected: NONE_EXPECTED,
     },
     {
-      name: 'link with grant',
+      name: 'link with editor grant capped at viewer',
       principal: { kind: 'link', linkId: 'link-1' },
       grants: grantsForEveryResource(resources, 'editor', 'link', 'link-1'),
-      expected: EDITOR_EXPECTED,
+      expected: VIEWER_EXPECTED,
     },
     { name: 'link without grant', principal: { kind: 'link', linkId: 'link-2' }, grants: [], expected: NONE_EXPECTED },
     { name: 'admin non-owner', principal: user('user-admin', 'admin'), grants: [], expected: ADMIN_EXPECTED },
@@ -374,6 +374,34 @@ test('grants are scoped to their resource type even when ids collide', () => {
 
   const directGrant = makeGrant(connectionCollision, 'editor', 'user', subject)
   assert.equal(hasDirectConnectionGrant(user(subject), connectionCollision, [directGrant], NOW), true)
+})
+
+test('link grants are capped at viewer regardless of the stored relation', () => {
+  const resources = buildResources()
+  const link = { kind: 'link', linkId: 'link-cap' } as const
+  for (const relation of ['editor', 'owner'] as const) {
+    const projectGrant = makeGrant(resources.project, relation, 'link', 'link-cap')
+    assert.equal(can(link, 'project.read', resources.project, [projectGrant], NOW).allowed, true, relation)
+    assert.equal(can(link, 'project.write', resources.project, [projectGrant], NOW).allowed, false, relation)
+    assert.equal(can(link, 'project.share', resources.project, [projectGrant], NOW).allowed, false, relation)
+    assert.equal(can(link, 'project.delete', resources.project, [projectGrant], NOW).allowed, false, relation)
+
+    const sessionGrant = makeGrant(resources.session, relation, 'link', 'link-cap')
+    assert.equal(can(link, 'session.read', resources.session, [sessionGrant], NOW).allowed, true, relation)
+    assert.equal(can(link, 'session.prompt', resources.session, [sessionGrant], NOW).allowed, false, relation)
+    assert.equal(can(link, 'session.stop', resources.session, [sessionGrant], NOW).allowed, false, relation)
+    assert.equal(can(link, 'session.share', resources.session, [sessionGrant], NOW).allowed, false, relation)
+    assert.equal(can(link, 'session.delete', resources.session, [sessionGrant], NOW).allowed, false, relation)
+
+    const connectionGrant = makeGrant(resources.connection, relation, 'link', 'link-cap')
+    assert.equal(can(link, 'connection.read', resources.connection, [connectionGrant], NOW).allowed, true, relation)
+    assert.equal(can(link, 'connection.use', resources.connection, [connectionGrant], NOW).allowed, false, relation)
+    assert.equal(can(link, 'connection.manage', resources.connection, [connectionGrant], NOW).allowed, false, relation)
+
+    const runGrant = makeGrant(resources.run, relation, 'link', 'link-cap')
+    assert.equal(can(link, 'run.read', resources.run, [runGrant], NOW).allowed, true, relation)
+    assert.equal(can(link, 'run.cancel', resources.run, [runGrant], NOW).allowed, false, relation)
+  }
 })
 
 test('non-finite and fractional expiry values are treated as expired', () => {

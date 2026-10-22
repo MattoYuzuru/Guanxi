@@ -67,7 +67,8 @@ resource projection and the grants for it; the policy trusts `ownerUserId`, ids,
   expires. A non-finite or non-integer stored value (for example a legacy `NaN`) is treated as
   expired rather than permanent.
 - **Subjects.** A user grant matches `userId`; a group grant matches one of `groups`; a link
-  grant matches `linkId`. A link grant is explicit: there is no public-link default.
+  grant matches `linkId`. A link grant is explicit: there is no public-link default, and link
+  grants are capped at `viewer`; a link can never prompt, spend or manage.
 - **Inheritance.** A project grant reaches its sessions and runs through `parent`. Session and
   run grants never leak upward, to siblings, or to connections.
 - **Admin limits (D-155).** The `admin` role receives `node.admin` on any node, plus the global
@@ -124,8 +125,9 @@ Methods:
 - `grant(actor, input, resource)` — requires `project.share`, `session.share` or
   `connection.manage` on the supplied resource. `createdBy` and `createdAt` are taken from the
   actor and clock, never trusted from `input`. An `owner` grant is rejected: ownership transfer
-  is later work. `expiresAt` must be `null` or a safe integer strictly after `now`; anything
-  else fails with `invalid_expiry` before the transaction starts.
+  is later work. A grant to a `link` subject is viewer-only. `expiresAt` must be `null` or a
+  safe integer strictly after `now`; anything else fails with `invalid_expiry` before the
+  transaction starts.
 - `revoke(actor, key, resource)` — same permission check; returns whether a row was deleted.
 - `forResource(type, id)` and `forSubject(type, id)` — direct rows in insertion order, including
   expired grants. Callers apply `now` through `can`; `purgeExpired` removes them physically.
@@ -135,9 +137,9 @@ Methods:
 All mutations use `BEGIN IMMEDIATE` and roll back on failure. Grants on `run` and `node` are not
 shareable in this slice: runs inherit project grants, and node administration belongs to the
 server. A duplicate tuple fails with `grant_exists`; other stable codes are `invalid_actor`,
-`resource_mismatch`, `owner_grant_forbidden`, `forbidden`, `resource_not_shareable`,
-`invalid_expiry` and `write_failed`. Foreign keys are enabled even though accounts live in
-another database and no cross-database reference is possible.
+`resource_mismatch`, `owner_grant_forbidden`, `link_grant_forbidden`, `forbidden`,
+`resource_not_shareable`, `invalid_expiry` and `write_failed`. Foreign keys are enabled even
+though accounts live in another database and no cross-database reference is possible.
 
 ## Remote-bind guard
 

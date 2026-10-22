@@ -19,6 +19,7 @@ export type GrantStoreErrorCode =
   | 'invalid_actor'
   | 'resource_mismatch'
   | 'owner_grant_forbidden'
+  | 'link_grant_forbidden'
   | 'forbidden'
   | 'grant_exists'
   | 'resource_not_shareable'
@@ -148,6 +149,9 @@ export class GrantStore {
     }
     if (input.relation === 'owner') {
       throw new GrantStoreError('owner_grant_forbidden', 'Ownership transfer is not supported in this slice')
+    }
+    if (input.subjectType === 'link' && input.relation !== 'viewer') {
+      throw new GrantStoreError('link_grant_forbidden', 'Link grants are viewer-only')
     }
     const now = clockMillis(this.clock)
     if (input.expiresAt !== null && (!Number.isSafeInteger(input.expiresAt) || input.expiresAt <= now)) {
