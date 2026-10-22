@@ -258,6 +258,25 @@ export class RunStore implements HomeAuthority {
   private release(runId: string): void {
     this.write('UPDATE leases SET released=1 WHERE key=?', `run:${runId}/exec`)
   }
+  private syncResult(result: unknown): void {
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      // Reject the async boundary and observe late rejection; external effects cannot be undone.
+      void Promise.resolve(result).catch(() => undefined)
+      throw new RunError('invalid_input')
+    }
+  }
+  private syncCallback<T>(body: ((db: Db) => Synchronous<T>) | undefined): void { this.syncResult(body?.(this.db)) }
+  private remoteActor: { attemptId: string; executor: string } | undefined
+  /** T0-only synchronous actor scope; the caller must derive executor from authenticated identity. */
+  asRemoteExecutor<T>(attempt: Attempt, executor: string, body: () => Synchronous<T>): T {
+    const previous = this.remoteActor
+    this.remoteActor = { attemptId: attempt.id, executor }
+    try {
+      const result = body()
+      this.syncResult(result)
+      return result
+    } finally { this.remoteActor = previous }
+  }
   private fenced(attempt: Attempt): Attempt {
     const stored = this.row<Attempt>('SELECT * FROM run_attempts WHERE id=?', attempt.id)
     const lease = this.row<Lease>('SELECT * FROM leases WHERE key=?', `run:${attempt.run_id}/exec`)
@@ -265,6 +284,11 @@ export class RunStore implements HomeAuthority {
       !['delivered', 'started'].includes(stored.state) || !lease || lease.holder !== attempt.id ||
       lease.epoch !== attempt.epoch || lease.token !== attempt.token || lease.released || lease.expires_at <= this.leaseNow()) {
       throw new RunError('stale_lease')
+    }
+    // Optional dispatch metadata must remain effective even if the feature is disabled later.
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='run_remote_bindings'").get()) {
+      const binding = this.db.prepare('SELECT executor FROM run_remote_bindings WHERE attempt_id=?').get(attempt.id)
+      if (binding && (this.remoteActor?.attemptId !== attempt.id || this.remoteActor.executor !== binding.executor)) throw new RunError('stale_lease')
     }
     return stored
   }
@@ -301,18 +325,35 @@ export class RunStore implements HomeAuthority {
       return this.newAttempt(runId, null)
     })
   }
-  renew(attempt: Attempt, ttl = this.maxTtl): void {
+  /** Fresh remote attempts are bound in the same transaction before their fence is exposed. */
+  startRemote<T>(runId: string, executor: string, initialize: (attempt: Attempt, db: Db) => Synchronous<T>): T {
+    return this.tx('start_remote', () => {
+      if (!this.options.alwaysOn) throw new RunError('no_always_on_home')
+      const run = this.get(runId)
+      if (!executor || !['submitted', 'interrupted', 'wrapping_up'].includes(run.state)) throw new RunError('invalid_transition')
+      const attempt = this.newAttempt(runId, null)
+      this.db.prepare('INSERT INTO run_remote_bindings VALUES (?,?,?)').run(runId, attempt.id, executor)
+      const result = initialize(attempt, this.db)
+      this.syncResult(result)
+      return result
+    })
+  }
+  renew<T>(attempt: Attempt, ttl = this.maxTtl, validate?: (db: Db) => Synchronous<T>): { ttlMs: number; expiresAt: number } {
     this.integer(ttl, 1)
     if (ttl > this.maxTtl) throw new RunError('invalid_input')
-    this.tx('renew', () => {
+    return this.tx('renew', () => {
       this.fenced(attempt)
-      this.write('UPDATE leases SET expires_at=? WHERE key=?', this.leaseNow() + ttl, `run:${attempt.run_id}/exec`)
+      this.syncCallback(validate)
+      const expiresAt = this.leaseNow() + ttl
+      this.write('UPDATE leases SET expires_at=? WHERE key=?', expiresAt, `run:${attempt.run_id}/exec`)
+      return { ttlMs: ttl, expiresAt }
     })
   }
   /** Called by an executor only after observing its first model call start. */
-  modelStarted(attempt: Attempt): void {
+  modelStarted<T>(attempt: Attempt, receipt?: (db: Db) => Synchronous<T>): void {
     this.tx('model_started', () => {
       const current = this.fenced(attempt)
+      this.syncCallback(receipt)
       if (current.first_model_at !== null) return
       this.write("UPDATE run_attempts SET state='started',first_model_at=? WHERE id=?", this.now(), attempt.id)
       this.event(this.get(attempt.run_id), 'model_started', attempt.id, current.wake_seq)
@@ -453,7 +494,7 @@ export class RunStore implements HomeAuthority {
     this.wake(promise.parent_id, 'resolution', promise.id)
     return true
   }
-  complete(attempt: Attempt, outcome: TerminalRunState): void {
+  complete<T>(attempt: Attempt, outcome: TerminalRunState, receipt?: (db: Db) => Synchronous<T>): void {
     if (!TERMINAL_RUN_STATES.has(outcome)) throw new RunError('invalid_input')
     this.tx('complete', () => {
       this.fenced(attempt)
@@ -463,6 +504,7 @@ export class RunStore implements HomeAuthority {
       const deadline = this.row<PromiseRecord>("SELECT * FROM promises WHERE child_id=? AND outcome='deadline' AND deadline_policy='cancel_wrap_up'", attempt.run_id)
       const reporting = deadline || this.get(attempt.run_id).state === 'wrapping_up'
       if (reporting) this.write("UPDATE run_execution SET terminal_reason=COALESCE(terminal_reason,'wrap_up_requested') WHERE run_id=?", attempt.run_id)
+      this.syncCallback(receipt)
       this.terminal(attempt.run_id, reporting ? 'canceled' : outcome)
     })
   }

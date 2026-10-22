@@ -2,6 +2,8 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { FEDERATION_VERSION, federationVersionSchema, replicaEntrySchema, signedConfigOperationSchema,
+  ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, dispatchRenewalSchema, dispatchStateSchema, dispatchCancelSchema,
+  type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptReceiptSchema,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
 import { canonical, FederationError, requestProof, signValue } from './crypto.ts'
@@ -96,4 +98,43 @@ export class FederationChannel {
     if (receipt.offerId !== input.offerId || receipt.homeNodeId !== input.homeNodeId || receipt.executorNodeId !== input.executorNodeId) throw new FederationError('offer_receipt_mismatch')
     return receipt
   }
+  private async dispatchReady(ref: DispatchRef, toHome: boolean, ownerCancel = false): Promise<void> {
+    if ((toHome ? ref.homeNodeId : ref.executorNodeId) !== this.#options.peer.id ||
+      !ownerCancel && (toHome ? ref.executorNodeId : ref.homeNodeId) !== this.#options.local.id) throw new FederationError('dispatch_binding')
+    const negotiated = await this.negotiate()
+    if (negotiated.readOnly || negotiated.minor < ATTEMPT_DISPATCH_MINOR || !negotiated.capabilities.includes(ATTEMPT_DISPATCH_CAPABILITY)) throw new FederationError('contract_feature_unavailable', 426)
+  }
+  async dispatch(signed: SignedDispatchGrant) {
+    const g = signed.grant, ref = { id: g.id, homeNodeId: g.offer.homeNodeId, executorNodeId: g.offer.executorNodeId }
+    await this.dispatchReady(ref, false)
+    const state = dispatchStateSchema.parse(await this.request('POST', '/attempts/dispatch', signed))
+    if (state.id !== ref.id) throw new FederationError('dispatch_binding')
+    return state
+  }
+  async renewDispatch(ref: DispatchRef) {
+    await this.dispatchReady(ref, true)
+    const result = dispatchRenewalSchema.parse(await this.request('POST', '/attempts/renew', ref))
+    if (result.id !== ref.id) throw new FederationError('dispatch_binding')
+    return result
+  }
+  async dispatchEvent(signed: SignedDispatchEvent): Promise<void> {
+    await this.dispatchReady(signed.entry.ref, true)
+    z.object({ applied: z.literal(true) }).strict().parse(await this.request('POST', '/attempts/events', signed))
+  }
+  async dispatchState(ref: DispatchRef, cancel = false) {
+    if (cancel) return this.cancelDispatch({ ...ref, expiresAt: (this.#options.clock ?? Date.now)() + 60_000 })
+    await this.dispatchReady(ref, false)
+    const state = dispatchStateSchema.parse(await this.request('POST', '/attempts/state', ref))
+    if (state.id !== ref.id) throw new FederationError('dispatch_binding')
+    return state
+  }
+
+  async cancelDispatch(raw: DispatchCancel) {
+    const input = dispatchCancelSchema.parse(raw)
+    await this.dispatchReady(input, false, true)
+    const state = dispatchStateSchema.parse(await this.request('POST', '/attempts/dispatch-cancel', input))
+    if (state.id !== input.id) throw new FederationError('dispatch_binding')
+    return state
+  }
+
 }

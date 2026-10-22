@@ -25,6 +25,8 @@ export interface ModelCall {
   onResponseObserved?: () => void
   /** Trusted validation of the final scrubbed request, immediately before dispatch. */
   onPrepared?: (request: Context | OllamaChatRequest) => void
+  /** T0 local-dispatch authorization, after governor and adapter preflight, before final preparation. */
+  authorizeDispatch?: () => Promise<void>
   /** Adapter parameters, not arbitrary transport/auth headers. */
   options?: Pick<SimpleStreamOptions, 'temperature' | 'maxTokens' | 'reasoning'>
 }
@@ -203,10 +205,24 @@ export class Connections {
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
-        const clean = this.scrubber.scrub(request)
-        call.onPrepared?.(clean)
-        const dispatched = this.ollama.client(host.href).chat(clean, signal, () => {
+        const dispatched = this.ollama.client(host.href).chat(request, signal, () => {
           try { call.onStarted?.() } catch (error) { dispatchAbort.abort(); throw error }
+        }, {
+          authorizeDispatch: async () => {
+            signal.throwIfAborted()
+            await call.authorizeDispatch?.()
+            signal.throwIfAborted()
+            this.assertOpen()
+            const current = this.store.get(accountId, id)
+            if (current.kind !== 'local_runtime' || call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Local runtime admission changed')
+          },
+          prepare: () => {
+            signal.throwIfAborted()
+            const clean = this.scrubber.scrub(request)
+            call.onPrepared?.(clean)
+            signal.throwIfAborted()
+            return clean
+          },
         })
         const result = await dispatched
         signal.throwIfAborted()

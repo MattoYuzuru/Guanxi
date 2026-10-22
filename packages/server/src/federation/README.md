@@ -224,3 +224,12 @@ contract/route/store/kernel tests. The lane handoff maps exit gates to direct as
 records the full regression envelope. The handoff records macOS and Fedora Linux fixture runs with pinned code and runtimes,
 using temporary SQLite databases. They do not validate a VPN, live fleet delivery, real
 provider execution or a deployed service.
+
+### Optional local inference dispatch
+
+The [owned-node attempt protocol](../remote-attempts/README.md) documents optional F2-a
+reservations (minor2) and bounded text-only inference dispatch (minor3). Both features are off
+by default and need their distinct advertised capability. Dispatch adds a fresh executor-bound
+R1 attempt, signed grants/renewals, strict holder self-fencing and durable result ingestion; it
+uses K3's local-runtime governor/consent path. It does not implement toolful relay execution,
+detached mode, home handover or OS power assertions, and local fake-adapter tests are not MS1.
