@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { PRODUCT_NAME } from '@guanxi/contract'
 import { describe, expect, it, vi } from 'vitest'
 import { ShellStatus } from '../../src/features/shell/ShellStatus.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
@@ -8,6 +9,17 @@ import { runtimeSnapshotFixture } from '../fixtures/runtime.ts'
 const workspace = { ready: false, busy: false, phone: false, mode: null, blocks: [] }
 
 describe('shell status provenance', () => {
+  it('renders the centralized product brand through English and Russian locale lookup', () => {
+    setActiveLocale('en')
+    const english = render(<ShellStatus breadcrumb="Projects" workspace={workspace} runtime={null} stale={false} />)
+    expect(screen.getByRole('link', { name: PRODUCT_NAME })).toBeTruthy()
+    english.unmount()
+
+    setActiveLocale('ru')
+    render(<ShellStatus breadcrumb="Проекты" workspace={workspace} runtime={null} stale={false} />)
+    expect(screen.getByRole('link', { name: PRODUCT_NAME })).toBeTruthy()
+    setActiveLocale('en')
+  })
   it('leaves unavailable machine/quota/power/inbox data unknown and explains unavailable mode actions', () => {
     setActiveLocale('en')
     const { container } = render(<ShellStatus breadcrumb="Projects" workspace={workspace} runtime={null} stale={false} />)
