@@ -60,16 +60,23 @@ escapes are measured as literal text.
 A `via: 'model'` navigate URL is data-carrying when any of these hold:
 
 - it has a username or password;
+- it has a non-empty fragment;
+- its percent-decoded pathname plus percent-decoded query is longer than 200 characters;
+- it has more than 8 query parameters;
 - any query parameter **name or value** is longer than 64 characters;
 - any query parameter name or value is longer than 32 characters and composed solely of
   `[A-Za-z0-9_+=-]`;
 - the pathname is percent-decoded first and split on `/`; any resulting segment is longer than
   64 characters;
-- any resulting segment is longer than 32 characters and composed solely of the same alphabet.
+- any resulting segment is longer than 32 characters and composed solely of the same alphabet,
+  or any part of it split on `.`, `-` or `_` is.
 
 The query is split on `&` and the first `=`; `+` stays a literal base64 character rather than
-becoming a space. Fragments are ignored here and only forbidden by the clean-link rule. The
-query-name checks are stricter than the minimum in the decision text, on purpose.
+becoming a space. The decoded path and query share one 200-character budget, and more than eight
+query parameters are refused, so data cannot be spread across many short segments or parameters.
+A non-empty fragment is refused outright. Splitting a path segment on `.`, `-` and `_` keeps a
+separator from hiding one long data run inside an otherwise mixed segment. The query-name checks
+are stricter than the minimum in the decision text, on purpose.
 
 ## Site grants
 
@@ -151,7 +158,5 @@ secret-field rejection and `touch`.
 - Cookie scrubber rules, encrypted session bundles in the account vault and the
   planted-cookie/injection-page validation from ADR-0035.
 - Routes, contract types and the MCP-shaped agent tool surface.
-- The per-segment entropy rule has no aggregate budget: data split across many short segments
-  is not detected.
 - `via` and `fromOrigin` remain host assertions; route/tool validation must enforce them.
 - A complete Public Suffix List instead of the documented approximation.

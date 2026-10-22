@@ -33,16 +33,21 @@
  * A navigate action sent `via: 'model'` is refused as data-carrying when any of these hold:
  *
  * - it carries userinfo;
+ * - it has a non-empty fragment;
+ * - its percent-decoded pathname plus percent-decoded query is longer than 200 characters;
+ * - it has more than 8 query parameters;
  * - any query parameter name or value is longer than 64 characters;
  * - any query parameter name or value is longer than 32 characters and composed solely of the
  *   base64/hex alphabet above;
  * - any percent-decoded path segment is longer than 64 characters;
  * - any percent-decoded path segment is longer than 32 characters and composed solely of that
- *   alphabet.
+ *   alphabet, or any part of it split on `.`, `-` or `_` is.
  *
  * Query values are split on `&` and the first `=`; `+` is treated literally rather than as a
- * space, because it is a base64 character. Fragments are ignored here; they are only forbidden
- * by the clean-link rule.
+ * space, because it is a base64 character. The decoded path and query share one 200-character
+ * budget so data cannot be spread across many short segments or parameters. Splitting a path
+ * segment on `.`, `-` and `_` keeps a separator from hiding one long data run inside a segment
+ * that is otherwise not composed solely of the alphabet.
  */
 import type {
   BrowserAction,
@@ -56,6 +61,8 @@ export type { BrowserAction, BrowserDecision, BrowserDecisionCode, BrowserMode, 
 const HTTP_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:'])
 const BASE64_HEX = /^[A-Za-z0-9_+=-]+$/
 const CLEAN_PATH_LIMIT = 200
+const MODEL_TOTAL_LIMIT = 200
+const MODEL_QUERY_PARAMETER_LIMIT = 8
 const SEGMENT_ENTROPY_LIMIT = 32
 const VALUE_DATA_LIMIT = 64
 
@@ -188,6 +195,15 @@ function isDataValue(value: string): boolean {
   return value.length > VALUE_DATA_LIMIT || isHighEntropy(value)
 }
 
+function isDataSegment(segment: string): boolean {
+  if (isDataValue(segment)) return true
+  return segment.split(/[._-]/).some(part => isDataValue(part))
+}
+
+function decodedQuery(search: string): string {
+  return decodeComponent(search.startsWith('?') ? search.slice(1) : search)
+}
+
 function isCleanLink(url: URL, raw: string): boolean {
   if (url.username !== '' || url.password !== '') return false
   if (url.search !== '' || url.hash !== '' || raw.includes('?') || raw.includes('#')) return false
@@ -201,12 +217,16 @@ function isCleanLink(url: URL, raw: string): boolean {
 
 function hasModelData(url: URL): boolean {
   if (url.username !== '' || url.password !== '') return true
-  for (const [name, value] of rawQueryPairs(url.search)) {
+  if (url.hash !== '') return true
+  if (decodeComponent(url.pathname).length + decodedQuery(url.search).length > MODEL_TOTAL_LIMIT) return true
+  const query = rawQueryPairs(url.search)
+  if (query.length > MODEL_QUERY_PARAMETER_LIMIT) return true
+  for (const [name, value] of query) {
     if (isDataValue(decodeComponent(name)) || isDataValue(decodeComponent(value))) return true
   }
   // Decode before splitting so an encoded separator cannot hide one long data segment.
   for (const segment of decodeComponent(url.pathname).split('/')) {
-    if (isDataValue(segment)) return true
+    if (isDataSegment(segment)) return true
   }
   return false
 }

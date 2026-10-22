@@ -55,7 +55,7 @@ test('normalizeOrigin throws TypeError for every non-http(s) or unparseable valu
 
 test('navigate to an already-readable origin is allowed regardless of how it was produced', () => {
   assert.equal(decide(fullPolicy(), navigate(`${READ}/page?q=1#x`, 'policy')).allowed, true)
-  assert.deepEqual(decide(fullPolicy(), navigate(`${READ}/page?q=1#x`, 'model')), {
+  assert.deepEqual(decide(fullPolicy(), navigate(`${READ}/page?q=1`, 'model')), {
     allowed: true,
     code: 'allowed',
   })
@@ -183,6 +183,29 @@ test('model navigation refuses data on a readable origin', () => {
       code: 'data_url_refused',
     }, name)
   }
+})
+
+test('model navigation refuses cumulative, repeated and separator-hidden data', () => {
+  const cases: Array<[string, string]> = [
+    ['50 segments of 32 base64 characters', `${READ}/${Array.from({ length: 50 }, () => 'A'.repeat(32)).join('/')}`],
+    ['50 repeated query parameters', `${READ}/?${Array.from({ length: 50 }, () => `a=${'A'.repeat(32)}`).join('&')}`],
+    ['dot-separated data segment', `${READ}/ab.${'A'.repeat(60)}`],
+    ['5000-character fragment', `${READ}/page#${'a'.repeat(5000)}`],
+  ]
+  for (const [name, url] of cases) {
+    assert.deepEqual(decide(fullPolicy(), navigate(url, 'model')), {
+      allowed: false,
+      code: 'data_url_refused',
+    }, name)
+  }
+})
+
+test('model navigation still allows an ordinary documentation URL', () => {
+  const policy = fullPolicy({ readable: ['https://docs.example.com'] })
+  assert.deepEqual(decide(policy, navigate('https://docs.example.com/guide/install', 'model')), {
+    allowed: true,
+    code: 'allowed',
+  })
 })
 
 test('model navigation to a non-readable origin is refused before its data shape matters', () => {
