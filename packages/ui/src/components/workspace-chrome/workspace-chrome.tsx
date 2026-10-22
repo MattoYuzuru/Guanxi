@@ -53,7 +53,7 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
     if (block) { props.onSelect(block.id); (tabs.current?.querySelectorAll('[role=tab]')[next] as HTMLElement)?.focus() }
   }}>{props.blocks.map(block => <Button key={block.id} role="tab" id={`tab-${block.id}`} aria-controls={`phone-${block.id}`} aria-selected={block.id === props.selected} tabIndex={block.id === props.selected ? 0 : -1} onClick={() => props.onSelect(block.id)}>{block.label}</Button>)}</div>
   if (props.loading) return <div className="gx-workspace-loading" aria-busy="true">
-    <span role="status" className="gx-sr-only">{props.title}</span>
+    <span role="status" aria-label={props.title} className="gx-sr-only">{props.title}</span>
     <div data-slot="workspace-loading-geometry" aria-hidden="true" className="gx-workspace-loading-geometry">
       <div className="gx-workspace-toolbar">{Array.from({ length: 8 }, (_, index) => <span key={index} className="gx-workspace-loading-control" />)}</div>
       <div className="gx-workspace-loading-content" />
