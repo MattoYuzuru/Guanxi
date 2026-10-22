@@ -246,12 +246,16 @@ test('forced colors preserves visible trigger focus, highlighted command contras
   const highlighted = page.getByRole('menuitem').first()
   await expect(highlighted).toBeFocused()
   await expect(highlighted).toHaveAttribute('data-highlighted')
-  const colors = await highlighted.evaluate(node => ({ fg: getComputedStyle(node).color, bg: getComputedStyle(node).backgroundColor }))
+  const colors = await highlighted.evaluate(node => ({ fg: getComputedStyle(node).color, bg: getComputedStyle(node).backgroundColor,
+    adjustment: getComputedStyle(node).forcedColorAdjust }))
   expect(colors.fg).not.toBe(colors.bg)
   expect(colors.bg).not.toBe('rgba(0, 0, 0, 0)')
   expect(contrast(colors.fg, colors.bg)).toBeGreaterThanOrEqual(4.5)
   await settled(page)
   await page.screenshot({ path: testInfo.outputPath('forced-menu.png') })
+  // System Highlight/HighlightText already honor user colors. UA text backplates must not
+  // repaint the label's background to Canvas while leaving its foreground HighlightText.
+  expect(colors.adjustment).toBe('none')
   await page.keyboard.press('Escape')
   await page.getByTestId('icon').focus()
   const tooltip = await tooltipFor(page, page.getByTestId('icon'), 'Open settings')
