@@ -187,12 +187,21 @@ export class NotificationInbox {
     if (!notification.actions.includes(action)) throw new InboxError('action_not_offered')
     // A refusal writes nothing: no reservation row, so the notification stays actionable.
     if (!this.configured.has(action)) throw new InboxError('not_configured')
-    if (action === 'snooze') this.assertFuture(args.untilMs)
+    // A replay of a finished snooze must answer `duplicate`, not fail because its time has passed.
+    if (action === 'snooze' && this.store.actionRecord(accountId, idempotencyKey) === null) this.assertFuture(args.untilMs)
     return executeAction(this.store, this.ports, { accountId, notificationId, action, args, idempotencyKey })
   }
 
+  /**
+   * Reads must not take the write lock when nothing is due, so look first and only then enter the
+   * store's `BEGIN IMMEDIATE` transaction.
+   */
   private expire(): void {
-    this.store.expireSnoozed(this.options.now())
+    const now = this.options.now()
+    const due = this.store.db.prepare(
+      "SELECT 1 AS due FROM notifications WHERE state='snoozed' AND snoozed_until IS NOT NULL AND snoozed_until <= ? LIMIT 1",
+    ).get(now)
+    if (due !== undefined) this.store.expireSnoozed(now)
   }
 
   private assertFuture(untilMs: unknown): void {

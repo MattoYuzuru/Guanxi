@@ -29,7 +29,18 @@ export const glossaryEntryBodySchema = z.object({
 }).strict()
 export type GlossaryEntryBody = z.infer<typeof glossaryEntryBodySchema>
 
-export const glossaryEntrySchema = glossaryEntryBodySchema.extend({ id: glossaryEntryIdSchema }).strict()
+/**
+ * Read shape of an entry, without the request's id pattern or length caps: an entry written by a
+ * kernel caller (an importer, a candidate adapter) must never turn the list route into a 500.
+ */
+export const glossaryEntrySchema = z.object({
+  id: z.string().min(1),
+  canonical: z.string().min(1),
+  variants: z.array(z.string()),
+  language: glossaryLanguageSchema,
+  caseSensitive: z.boolean().optional(),
+  inflect: z.boolean().optional(),
+}).strict()
 export type GlossaryEntryWire = z.infer<typeof glossaryEntrySchema>
 
 export const createGlossaryEntryBodySchema = z.object({
@@ -49,7 +60,7 @@ export type UpdateGlossaryEntryBody = z.infer<typeof updateGlossaryEntryBodySche
 
 const millis = z.number().int().nonnegative().safe()
 export const storedGlossaryEntrySchema = z.object({
-  id: glossaryEntryIdSchema,
+  id: z.string().min(1),
   scope: glossaryScopeSchema,
   projectId: z.string().nullable(),
   entry: glossaryEntrySchema,
@@ -71,7 +82,7 @@ export const listGlossaryResponseSchema = z.object({ entries: z.array(storedGlos
 export type ListGlossaryResponse = z.infer<typeof listGlossaryResponseSchema>
 
 export const glossaryRevisionSchema = z.object({
-  entryId: glossaryEntryIdSchema,
+  entryId: z.string().min(1),
   revision: z.number().int().positive().safe(),
   op: z.enum(GLOSSARY_REVISION_OPS),
   entry: glossaryEntrySchema.nullable(),
@@ -97,7 +108,7 @@ export const glossaryPreviewResponseSchema = z.object({
     end: z.number().int().nonnegative(),
     original: z.string(),
     replacement: z.string(),
-    entryId: glossaryEntryIdSchema,
+    entryId: z.string().min(1),
   }).strict()),
   /** SHA-256 over the effective entry ids and revisions; the voice marker records the same value. */
   glossaryRevision: z.string().regex(/^[0-9a-f]{64}$/),

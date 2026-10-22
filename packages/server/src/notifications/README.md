@@ -184,8 +184,10 @@ Boundary rules, each pinned by a test in `packages/server/test/ms2-*.test.ts`:
   port exists.
 - **Honest ports.** `open` and `snooze` are built in: their only effect is the inbox state the
   store commits. Every other action answers `501 not_configured` before any reservation row is
-  written, so the notification stays actionable and nothing is faked. A host may pass
-  `ports` to the plugin; those actions then become `available`.
+  written, so the notification stays actionable and nothing is faked. Kernel-level embedders may
+  pass `ports` to the plugin and those actions then become `available`; `start()` exposes none,
+  so in the shipped node every action except `open` and `snooze` answers 501 until a later slice
+  supplies its port.
 - **`wake_leads` is not wired.** R1 `RunStore.signal(attempt, key, 'quota')` needs a fenced child
   `Attempt` and wakes that child's parent. The run store keeps no index from a connection to the
   runs that depend on it, so no exact, safe seam exists for ADR-0033's "wake the leads that depend
@@ -195,7 +197,8 @@ Boundary rules, each pinned by a test in `packages/server/test/ms2-*.test.ts`:
   replayed. Any other action needs the host's `hasCompleted` probe; without one the answer is
   `409 action_outcome_unknown` and nothing is replayed.
 - **Snooze without a timer.** `list`, `get`, `read` and `actions` first move snoozed rows whose
-  deadline passed back to `unread`.
+  deadline passed back to `unread`. A read takes the write lock only when a row is actually due.
+  Replaying a finished `snooze` key answers `duplicate` even after its time has passed.
 - **Results are flat.** A port result reaches the wire as flat scalars only (strings cut at 200
   characters); nested values are dropped.
 
@@ -205,13 +208,14 @@ Every failure is `{ "code": ... }` only: `validation_failed` 400, `json_required
 `notification_acted`, `action_in_progress`, `idempotency_conflict` and `action_outcome_unknown`
 409, `invalid_snooze_time` 422, `port_failed` 502, `not_configured` 501,
 `notifications_unavailable` 503, `internal_error` 500. No message, id or argument is echoed.
-The shared guard (`http/local-guard.ts`) requires a loopback peer, a same-origin or configured dev
+These routes never emit another body shape; the catch-all for unknown `/api/*` paths in `start()`
+keeps its older `{ code, message, details }` shape. The shared guard (`http/local-guard.ts`) requires a loopback peer, a same-origin or configured dev
 `Origin`, `application/json` on mutations and a 2 MiB body budget.
 
 `accountId` is the fixed local owner (`'local'`) and is passed explicitly to every store call, so
 a U3 `can()` check is one call per handler. U3 is not wired.
 
-Evidence: `ms2-notifications-routes.test.ts` (22 tests), the notification parts of
+Evidence: `ms2-notifications-routes.test.ts` (24 tests), the notification parts of
 `ms2-plugins.test.ts`, `ms2-contract.test.ts` and `ms2-guard.test.ts`.
 
 Still later: the notification center UI, OS and push delivery, quota producers calling `ingest`,

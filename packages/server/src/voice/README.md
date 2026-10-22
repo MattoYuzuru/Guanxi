@@ -151,7 +151,7 @@ Rules pinned by tests:
 - Guard, error body shape and the fixed local account follow the notifications section: loopback
   peer, same-origin or dev origin, JSON on mutations, `{ code }` only.
 
-Evidence: `ms2-glossary-routes.test.ts` (13 tests), the voice parts of `ms2-plugins.test.ts` and
+Evidence: `ms2-glossary-routes.test.ts` (14 tests), the voice parts of `ms2-plugins.test.ts` and
 `ms2-contract.test.ts`.
 
 Still later: the glossary editor UI, STT adapters and backend biasing, `voice.flag_term` and V2

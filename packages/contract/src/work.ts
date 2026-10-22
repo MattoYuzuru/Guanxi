@@ -29,24 +29,37 @@ export const workOwnerRoleSchema = z.enum(WORK_OWNER_ROLES)
 export const workStatusSchema = z.enum(WORK_DERIVED_STATUSES)
 const itemId = z.string().min(1).max(200)
 
+/**
+ * Read shape of an item. It carries no length caps: a row written by a kernel caller (a planner
+ * lead, an importer) must never turn a read route into a 500. The caps live on the request below.
+ */
 export const workItemSpecSchema = z.object({
-  id: itemId,
-  title: z.string().min(1).max(500),
+  id: z.string().min(1),
+  title: z.string().min(1),
   /** Executable definition of done, or `null` when only a human decision can close the item. */
-  acceptance: z.string().max(4000).nullable().default(null),
-  dependsOn: z.array(itemId).default([]),
+  acceptance: z.string().nullable().default(null),
+  dependsOn: z.array(z.string()).default([]),
   estimateMinutes: z.number().finite().nonnegative().nullable().default(null),
   ownerRole: workOwnerRoleSchema.nullable().default(null),
-  protectedPaths: z.array(relayRelativePathSchema).default([]),
+  protectedPaths: z.array(z.string()).default([]),
 }).strict()
 export type WorkItemSpecWire = z.output<typeof workItemSpecSchema>
-export type WorkItemSpecInput = z.input<typeof workItemSpecSchema>
 
-export const addWorkRevisionBodySchema = z.object({ items: z.array(workItemSpecSchema) }).strict()
+/** Request shape of an item: the same fields with transport caps and safe relative paths. */
+export const workItemSpecInputSchema = workItemSpecSchema.extend({
+  id: itemId,
+  title: z.string().min(1).max(500),
+  acceptance: z.string().max(4000).nullable().default(null),
+  dependsOn: z.array(itemId).default([]),
+  protectedPaths: z.array(relayRelativePathSchema).default([]),
+}).strict()
+export type WorkItemSpecInput = z.input<typeof workItemSpecInputSchema>
+
+export const addWorkRevisionBodySchema = z.object({ items: z.array(workItemSpecInputSchema) }).strict()
 export type AddWorkRevisionBody = z.input<typeof addWorkRevisionBodySchema>
 
 export const workPlanRevisionSchema = z.object({
-  projectId: workProjectIdSchema,
+  projectId: z.string().min(1),
   revision: z.number().int().positive().safe(),
   createdAt: z.string().min(1),
   author: z.enum(['user', 'lead']),
@@ -57,7 +70,7 @@ export type WorkPlanRevisionWire = z.infer<typeof workPlanRevisionSchema>
 export const latestWorkRevisionResponseSchema = z.object({ revision: workPlanRevisionSchema.nullable() }).strict()
 
 const at = z.union([z.string().min(1), z.number().finite()])
-const base = { itemId: itemId, at, source: z.string().min(1), seq: z.number().int().positive().safe().optional() }
+const base = { itemId: z.string().min(1), at, source: z.string().min(1), seq: z.number().int().positive().safe().optional() }
 /** Every evidence type, as stored. Only the human subset is writable. */
 export const workEvidenceEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('proposed'), ...base, item: workItemSpecSchema }).strict(),
@@ -121,7 +134,7 @@ export const workItemsPageSchema = z.object({
 export type WorkItemsPage = z.infer<typeof workItemsPageSchema>
 
 export const workModeSnapshotSchema = z.object({
-  projectId: workProjectIdSchema, mode: workModeSchema, reason: z.string(),
+  projectId: z.string().min(1), mode: workModeSchema, reason: z.string(),
 }).strict()
 export type WorkModeSnapshot = z.infer<typeof workModeSnapshotSchema>
 export const setWorkModeBodySchema = z.object({
@@ -130,7 +143,7 @@ export const setWorkModeBodySchema = z.object({
 export type SetWorkModeBody = z.infer<typeof setWorkModeBodySchema>
 
 export const workExportResponseSchema = z.object({
-  projectId: workProjectIdSchema,
+  projectId: z.string().min(1),
   revision: z.number().int().positive().safe(),
   markdown: z.string(),
 }).strict()

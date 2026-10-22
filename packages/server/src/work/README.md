@@ -215,19 +215,25 @@ Rules pinned by tests:
   sets `source` to `user:<account>` and stamps `at` from the node clock, so HTTP cannot forge
   `harness:` acceptance results, judge verdicts or `agent:` claims (ADR-0032, D-172). `ledger`
   also checks that the item exists in the derived graph and that accept and reject target a
-  pending proposal, so a typo or replay cannot leave unattributable evidence in an append-only
-  table. Harness and agent evidence enter through kernel callers of `ledger.store.appendEvent`.
+  pending proposal, so a typo cannot leave unattributable evidence in an append-only table.
+  Harness and agent evidence enter through kernel callers of `ledger.store.appendEvent`.
 - **Codes only.** `WorkError` messages quote item ids, cycle paths and commands; responses carry
   `duplicate_item`, `missing_dependency`, `dependency_cycle`, `invalid_proposal` (422),
   `revision_not_found`, `item_not_found` (404), `item_canceled` (409), `invalid_cursor`,
   `cursor_mismatch`, `validation_failed` (400) and the shared guard codes.
 - **Acceptance text is data.** `acceptance` is stored as text the harness may later run. The
   harness must apply the project's own execution policy before running it; this slice never runs it.
+- **Writes are not idempotent.** `POST /revisions` always creates revision N+1 and has no base
+  revision, and a repeated `human_decision` appends another row. A stale tab or a double submit
+  therefore supersedes or duplicates. An optional `baseRevision` and an idempotency key are later work.
+- **Read shapes carry no caps.** Request items are capped (title 500, acceptance 4000, ids 200
+  characters, safe relative protected paths); responses are not, so a row a kernel caller wrote
+  can never turn a read route into a 500.
 - **Account isolation is a residual.** The WG1-a store is keyed by project id and has no account
   column. The fixed local account only attributes evidence; per-project authorization is a U3
   concern (`project.read` and `project.write`), one call per handler.
 
-Evidence: `ms2-work-routes.test.ts` (15 tests), the work parts of `ms2-plugins.test.ts` and
+Evidence: `ms2-work-routes.test.ts` (16 tests), the work parts of `ms2-plugins.test.ts` and
 `ms2-contract.test.ts`.
 
 Still later: the board UI, the `work.query` tool, sharing the run-mode relay ledger, WL-series
