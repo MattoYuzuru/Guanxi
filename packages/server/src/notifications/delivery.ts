@@ -42,6 +42,7 @@ export interface DeliveryNotification {
 const CHANNELS: readonly Channel[] = ['in_app', 'os', 'push']
 const CHANNEL_SET: ReadonlySet<string> = new Set(CHANNELS)
 const CLOCK = /^(?:[01]\d|2[0-3]):[0-5]\d$/
+const MAX_QUIET_END_ATTEMPTS = 8
 
 interface ClockParts {
   year: number
@@ -319,14 +320,19 @@ function nextQuietEnd(
   }
 
   let instant = resolveWallTime(formatter, target, now)
-  for (let attempt = 0; attempt < 3 && instant <= now; attempt += 1) {
+  for (let attempt = 0; ; attempt += 1) {
+    // A gap can resolve the end to the transition instant, which may itself be quiet again
+    // (or another skipped day), so advance until the candidate is a real non-quiet instant.
+    if (instant > now && !inQuietHours(localParts(formatter, instant), quietHours)) return instant
+    if (attempt === MAX_QUIET_END_ATTEMPTS) {
+      throw new Error(`quiet hours end was still quiet after ${MAX_QUIET_END_ATTEMPTS + 1} attempts`)
+    }
     const nextDate = new Date(Date.UTC(target.year, target.month - 1, target.day + 1))
     target.year = nextDate.getUTCFullYear()
     target.month = nextDate.getUTCMonth() + 1
     target.day = nextDate.getUTCDate()
     instant = resolveWallTime(formatter, target, now)
   }
-  return instant
 }
 
 /**

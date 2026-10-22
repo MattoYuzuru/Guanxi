@@ -75,6 +75,35 @@ function nextLocalEnd(now: number, timeZone: string, end: string): number {
   throw new Error(`no local ${end} found within two days`)
 }
 
+/**
+ * Independent quiet-hours predicate over Intl's local clock. Used to assert that a deferred
+ * instant is not quiet, without reusing the production `inQuietHours`.
+ */
+function isQuiet(instant: number, timeZone: string, quietHours: { start: string; end: string }): boolean {
+  const parts = localParts(instant, timeZone)
+  const minutes = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3, 5))
+  const start = minutes(quietHours.start)
+  const end = minutes(quietHours.end)
+  if (start === end) return false
+  const current = parts.hour * 60 + parts.minute
+  return start < end ? current >= start && current < end : current >= start || current < end
+}
+
+/** Scan forward minute by minute for the first local instant outside quiet hours. */
+function firstNonQuiet(
+  now: number,
+  timeZone: string,
+  quietHours: { start: string; end: string },
+): number {
+  let cursor = Math.ceil(now / 60_000) * 60_000
+  if (cursor <= now) cursor += 60_000
+  for (let step = 0; step < 4 * 24 * 60; step += 1) {
+    if (!isQuiet(cursor, timeZone, quietHours)) return cursor
+    cursor += 60_000
+  }
+  throw new Error('no non-quiet instant found within four days')
+}
+
 function settings(overrides: Partial<DeliverySettings> = {}): DeliverySettings {
   return {
     timeZone: MOSCOW,
@@ -318,6 +347,38 @@ test('an overlapped local end resolves to its next occurrence, not the past one'
   assert.equal(localStamp(first.deliverAt, NEW_YORK), '2026-11-01 01:30:00')
   assert.equal(localStamp(second.deliverAt, NEW_YORK), '2026-11-01 01:30:00')
   assert.ok(first.deliverAt < second.deliverAt)
+})
+
+test('a London quiet end in the spring gap does not land back inside quiet hours', () => {
+  const timeZone = 'Europe/London'
+  const quietHours = { start: '02:00', end: '01:30' } // 23.5-hour window
+  const now = at('2026-03-28T12:00:00.000Z')
+  const deferred = planAt(now, { timeZone, quietHours })
+    .find(decision => decision.channel === 'os')
+  assert.ok(deferred)
+
+  // 01:30 on 2026-03-29 never exists; the transition lands on 02:00 BST, the quiet start.
+  assert.equal(localStamp(now, timeZone), '2026-03-28 12:00:00')
+  assert.equal(deferred.deliverAt, at('2026-03-30T00:30:00.000Z'))
+  assert.equal(localStamp(deferred.deliverAt, timeZone), '2026-03-30 01:30:00')
+  assert.equal(isQuiet(deferred.deliverAt, timeZone, quietHours), false)
+  assert.equal(deferred.deliverAt, firstNonQuiet(now, timeZone, quietHours))
+})
+
+test('a skipped Apia day does not defer into quiet hours again', () => {
+  const timeZone = 'Pacific/Apia'
+  const quietHours = { start: '22:00', end: '07:00' }
+  const now = at('2011-12-30T09:30:00.000Z') // 2011-12-29 23:30, before the skipped day
+  const deferred = planAt(now, { timeZone, quietHours })
+    .find(decision => decision.channel === 'os')
+  assert.ok(deferred)
+
+  // 2011-12-30 does not exist locally; 07:00 on it resolves to 2011-12-31 00:00, still quiet.
+  assert.equal(localStamp(now, timeZone), '2011-12-29 23:30:00')
+  assert.equal(deferred.deliverAt, at('2011-12-30T17:00:00.000Z'))
+  assert.equal(localStamp(deferred.deliverAt, timeZone), '2011-12-31 07:00:00')
+  assert.equal(isQuiet(deferred.deliverAt, timeZone, quietHours), false)
+  assert.equal(deferred.deliverAt, firstNonQuiet(now, timeZone, quietHours))
 })
 
 test('critical bypasses quiet hours only when the user allows it', () => {
