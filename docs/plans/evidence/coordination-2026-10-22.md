@@ -314,3 +314,58 @@ No push or remote execution occurred. The local HTML roadmap was refreshed and p
 and phone browser QA (`check-138h8k13`); its original Claude publication is unchanged. That
 snapshot predates this last merge and keeps explicit source/candidate dates. MS1's real
 second-node six-hour delegation/hibernation observations remain unearned in local-only scope.
+
+
+## Final privacy closure and refreshed candidate boundaries
+
+This is a documentation-only coordination slice on main after `a9b54e0`; executable main is
+still `53b1e76`. No candidate below has been merged by this update.
+
+- K4 privacy initial source `4818b92` fixed the original long late-secret prefix. Independent
+  review then reproduced append-time marker expansion erasing truncation evidence for a valid
+  short descriptor. Separate `c2ae12f` protects that ambiguous boundary conservatively.
+  Author final `check-02wk2z86` passes **19 new / 148 prior repository + 3 outside = 170**;
+  independent `check-p106mvgt` passes **19 privacy + 20 compatibility + unchanged original
+  expansion probe = 40**, no bounded blocker. No artifact reads, stored-row writes or schema
+  changes; ordinary unambiguous complete text remains useful. Final author docs `13bb0e2`.
+- U1 prior clean `0753630` passes all eight commands: types `check-lm2tek8f`, npm test
+  `check-6uve_ot1`, browser `check-p2rivokw`, catalog browser `check-axxx_5mx`, build
+  `check-hew7hgat`, Markdown `check-azrpr3f7`, licenses `check-4_kop2c3`, lint
+  `check-z671wn2j`. Regression counts: core 1383, kernel 107, web 353, UI gates 102,
+  codemod 6, catalog 74, UI 43, bench 82; zero failures/skips. Browser **96/96**.
+  These are envelope counts; new tests stay in individual handoffs.
+- Final U1 union `aa87859` integrates the separate K4 follow-up. Production merged
+  automatically; only the renamed evidence document conflicted, preserving main history and
+  the author's entire follow-up. Independent final source comparison finds privacy files
+  byte-identical to reviewed `c2ae12f`, with web/contract/UI/manifest/approval unchanged from
+  `0753630`. The unchanged original U1-page probe passes **2/2**, `check-dor07a4s`.
+  Full final-union gates are running. Product mounting and whole U1 remain open.
+- R2/K3 `d21661b` is independently closed: **119 selected + 2 unchanged original probes**.
+  Combined R3/K3/R2 `6a3e644` is independently closed at `check-mvg3c21u`: **151/151**,
+  **148 repository + original window probe + 2 new outside integration cases**. Actual judge
+  request/version expiry sends zero POSTs; actual body-cancel ACK retains the K3 permit.
+  No new repository tests belong to this coordinator review. Wider stage gates remain.
+- X1 current-main merge `d861b58` has separate source-conflict review closure plus **116
+  targeted Mac passes / 1 Linux-only skip** (`check-nptpb5tu`). Candidate full gates run on
+  the frozen merge; earlier exact Linux `c7773d4` 62/62 proof keeps its narrower scope.
+- B1 original repairs at `87e6d64` independently pass **138 repository + 6 original outside
+  process/K2 cases**. Additional actual default-ps cleanup fails because macOS `Ss` state is
+  rejected. Separate `057ffc3` / final docs `0d7302f` adds **2 new / 16 prior process tests**
+  with 26 state rows; author 18/18, exact classifier probe 2/2. Final actual-process review
+  remains pending. No full B1/paid-executor claim is made.
+- K5 complete same-node admission plan was root-reviewed against current call sites and
+  accepted in `eb5be75`. An isolated DSH implementation is active; no source completion is
+  claimed. Original K3 authorization snapshot/order remains, with abort rechecks before
+  spawns; the slice does not add a mid-flight grant-revocation guarantee.
+
+The local HTML now names main `a9b54e0` / executable `53b1e76` and the latest candidate
+boundaries. Initial browser observation passed but visual inspection exposed phone-wide
+clipping. A three-declaration grid containment fix is independently source-reviewed; actual
+1440/390-px browser QA `check-c6cwv0eg` asserts **no page overflow at 390**, 52 graph nodes,
+46 stages, 11 audited rows, K4 interaction and no JS errors, with all HTTP blocked. It passes.
+The outside artifact is not a Git-source certification and original Claude URL is unchanged.
+
+All checks use synthetic fixtures/local Mac Node26 with the shared heavy lock where needed.
+No remote host, live/paid model, owner workspace, owner key or push was used. The inherited
+external skill symlink still prevents reusable attestation. Full K4/K5/R2/B1/U1/DS2 and MS1
+exit gates remain unearned where their named residuals apply.
