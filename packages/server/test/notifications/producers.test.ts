@@ -163,7 +163,7 @@ test('a balance with a positive initial amount yields a clamped percentage', () 
       remainingPercent: 25,
       remainingAbsolute: 12.5,
       resetsAt: null,
-      source: 'https://api.deepseek.com/user/balance',
+      source: 'https://api.deepseek.com/user/balance#account_balance#USD',
       observedAt: at(0),
       confidence: 'observed',
     }],
@@ -187,21 +187,26 @@ test('a balance without a usable initial amount keeps an unknown percentage', ()
   }
 })
 
-test('a key allowance is marked in the source suffix and an account balance is not', () => {
+test('scope and currency are carried in the source suffix', () => {
   const allowance = factFromBalance(balance({
     scope: 'key_allowance',
     source: 'https://openrouter.ai/api/v1/key',
   }), 'conn-openrouter', { initialAmount: 10 })
-  assert.equal(allowance.facts[0]?.source, 'https://openrouter.ai/api/v1/key#key_allowance')
+  assert.equal(allowance.facts[0]?.source, 'https://openrouter.ai/api/v1/key#key_allowance#USD')
 
   const alreadyMarked = factFromBalance(balance({
     scope: 'key_allowance',
     source: 'https://openrouter.ai/api/v1/key#key_allowance',
   }), 'conn-openrouter')
-  assert.equal(alreadyMarked.facts[0]?.source, 'https://openrouter.ai/api/v1/key#key_allowance')
+  assert.equal(alreadyMarked.facts[0]?.source, 'https://openrouter.ai/api/v1/key#key_allowance#USD', 'no doubled suffix')
 
   const account = factFromBalance(balance(), 'conn-deepseek')
-  assert.equal(account.facts[0]?.source, 'https://api.deepseek.com/user/balance')
+  assert.equal(account.facts[0]?.source, 'https://api.deepseek.com/user/balance#account_balance#USD')
+
+  const cny = factFromBalance(balance({ currency: 'CNY' }), 'conn-deepseek')
+  assert.equal(cny.facts[0]?.source, 'https://api.deepseek.com/user/balance#account_balance#CNY', 'currency is never dropped')
+  const legacy = factFromBalance(balance({ scope: undefined, currency: null }), 'conn-legacy')
+  assert.equal(legacy.facts[0]?.source, 'https://api.deepseek.com/user/balance#scope_unknown#currency_unknown')
 })
 
 test('a balance without an observation time or with unknown confidence is not a fact', () => {

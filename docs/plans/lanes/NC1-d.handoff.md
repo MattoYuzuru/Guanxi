@@ -44,3 +44,10 @@ skipped by an object-literal lookup. The map lookup now uses `Map.get`; `__proto
 - Carry Codex `windowDurationMins` through K5 as evidence, then map `primary`/`secondary`.
 - Local metering marked `estimated` where no quota API exists.
 - An automatic Claude producer (owner-installed statusline path), not just ingestion.
+
+## Independent review fixes (Opus, 2026-10-23)
+
+No P1/P2. Integrator fixed P3s: `remainingAbsolute` comment now says balances keep the provider's
+decimal amount; scope and currency travel in `source` (`#account_balance#USD`,
+`#key_allowance#USD`, `#scope_unknown#currency_unknown` for legacy rows), so a CNY balance is
+never shown as USD. Tests updated and extended.

@@ -111,9 +111,12 @@ export function factFromBalance(
     Number.isFinite(initialAmount) && initialAmount > 0
     ? clampPercent((amount / initialAmount) * 100)
     : null
-  const source = balance.scope === 'key_allowance' && !balance.source.endsWith('#key_allowance')
-    ? `${balance.source}#key_allowance`
-    : balance.source
+  // Scope and currency travel in `source`: an allowance is not an account balance, and an
+  // absolute amount is meaningless without its currency.
+  const scope = balance.scope ?? 'scope_unknown'
+  const currency = balance.currency ?? 'currency_unknown'
+  const base = balance.source.replace(/#(key_allowance|account_balance|scope_unknown)?(#[A-Za-z_]+)?$/, '')
+  const source = `${base}#${scope}#${currency}`
 
   return {
     facts: [{

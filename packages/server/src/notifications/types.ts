@@ -15,7 +15,7 @@ export interface QuotaFact {
   window: QuotaWindowKind
   /** 0..100; `null` means unknown. */
   remainingPercent: number | null
-  /** Money in microunits or tokens; `null` means unknown. */
+  /** Balances: the provider's decimal amount as reported (currency in `source`); windows: tokens; `null` means unknown. */
   remainingAbsolute: number | null
   /** ISO-8601; `null` means no reset (a balance) or unknown. */
   resetsAt: string | null
