@@ -1,5 +1,5 @@
 import { relayRuntimeFactSchema, relayMeterFactSchema, type RelayRuntimeFact, type RelayMeterFact } from '@guanxi/contract'
-import type { Connections } from '../connections/service.ts'
+import type { Connections, LocalChatTransport } from '../connections/service.ts'
 import type { ModelService } from '../models/service.ts'
 import type { OllamaChatRequest } from '../ollama/types.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
@@ -17,9 +17,22 @@ export interface RelayExactCounter {
   confidence: 'high'
   count(request: Readonly<OllamaChatRequest>): number
 }
+/** One loaded-model observation from a non-Ollama runtime (R2-op: llama-server). The observer, the
+ * counter and the transport are one trusted host unit: the process that renders and counts the
+ * request is the process that is dispatched to. */
+export interface RelayRuntimeObservation { model: string; digest: string; contextTokens: number; runtimeVersion: string; source: string; observedAt: number }
+export interface RelayRuntimeObserver {
+  /** Loopback origin of the runtime. */
+  readonly host: string
+  readonly transport: LocalChatTransport
+  observe(reference: string, signal: AbortSignal): Promise<RelayRuntimeObservation>
+}
 export interface RelayRuntimePolicy {
   maximumAgeMs: number
   counter?: (fact: Readonly<RelayRuntimeFact>, signal: AbortSignal) => Promise<RelayExactCounter>
+  /** Replaces Ollama `/api/ps`, `/api/tags` and `/api/version` as the loaded-model source and
+   * routes dispatch through the observer's transport. Absent for stock Ollama. */
+  observer?: RelayRuntimeObserver
 }
 export type RelayRuntimeModels = Pick<ModelService, 'ps' | 'installedArtifacts' | 'runtimeVersion' | 'runtimeHost'>
 export interface PreparedRelayRuntime { fact: RelayRuntimeFact; meterFact: RelayMeterFact; meter: RuntimeMeter; validate(): void }
@@ -40,6 +53,7 @@ export async function abortableRead<T>(pending: Promise<T>, signal: AbortSignal)
 export class RelayRuntimeSource {
   private readonly maximumAge: number
   private readonly counter: RelayRuntimePolicy['counter']
+  private readonly observer: RelayRuntimePolicy['observer']
   private readonly connections: Connections
   private readonly models: () => RelayRuntimeModels
   private readonly clock: () => number
@@ -47,7 +61,7 @@ export class RelayRuntimeSource {
     policy: RelayRuntimePolicy, clock = Date.now) {
     this.connections = connections; this.models = models; this.clock = clock
     invariant(Number.isSafeInteger(policy.maximumAgeMs) && policy.maximumAgeMs > 0, 'runtime_policy_invalid')
-    this.maximumAge = policy.maximumAgeMs; this.counter = policy.counter
+    this.maximumAge = policy.maximumAgeMs; this.counter = policy.counter; this.observer = policy.observer
   }
   private fresh(observedAt: number): void {
     const now = this.clock()
@@ -62,13 +76,25 @@ export class RelayRuntimeSource {
     this.connection(connectionId)
     const reference = normalizeOllamaModelReference(model)
     invariant(reference && !/:cloud$/i.test(model), 'relay_local_model_required')
-    const admittedHost = this.models().runtimeHost
+    const observer = this.observer
+    const runtimeHost = () => observer ? observer.host : this.models().runtimeHost
+    const admittedHost = runtimeHost()
     const sample = async (activeSignal = signal): Promise<RelayRuntimeFact> => {
       activeSignal.throwIfAborted(); this.connection(connectionId)
-      const source = this.models(), host = new URL(source.runtimeHost)
-      invariant(source.runtimeHost === admittedHost, 'runtime_identity_changed')
+      const host = new URL(runtimeHost())
+      invariant(runtimeHost() === admittedHost, 'runtime_identity_changed')
       invariant(['http:', 'https:'].includes(host.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(host.hostname) &&
         !host.username && !host.password && !host.search && !host.hash, 'relay_local_connection_required')
+      if (observer) {
+        const seen = await abortableRead(observer.observe(reference, activeSignal), activeSignal)
+        activeSignal.throwIfAborted(); this.connection(connectionId)
+        invariant(runtimeHost() === admittedHost, 'runtime_identity_changed')
+        invariant(seen.model === reference && seen.digest && seen.source, 'runtime_identity_unknown')
+        this.fresh(seen.observedAt)
+        return relayRuntimeFactSchema.parse({ model: reference, digest: seen.digest, contextTokens: seen.contextTokens,
+          runtimeVersion: seen.runtimeVersion, source: seen.source, observedAt: seen.observedAt, confidence: 'high' })
+      }
+      const source = this.models()
       const [running, installed, version] = await abortableRead(Promise.all([
         source.ps(activeSignal), source.installedArtifacts(activeSignal), source.runtimeVersion(activeSignal),
       ]), activeSignal)
@@ -99,13 +125,13 @@ export class RelayRuntimeSource {
     const meterFact = Object.freeze(relayMeterFactSchema.parse({ source: counterSource, observedAt: counterTime, confidence: 'high',
       measurement: 'exact_rendered_request', framing: 'included', computeCost: 'host_local_compute_policy' }))
     const validate = () => { signal.throwIfAborted(); this.connection(connectionId)
-      invariant(this.models().runtimeHost === admittedHost, 'runtime_identity_changed')
+      invariant(runtimeHost() === admittedHost, 'runtime_identity_changed')
       this.fresh(current.observedAt); this.fresh(counterTime) }
     validate()
     const render = (prompt: string): OllamaChatRequest => ({ model, stream: false, think: false,
       messages: [{ role: 'user', content: prompt }], options: { num_ctx: fact.contextTokens, num_predict: turn } })
     const meter: RuntimeMeter = {
-      countIsExact: true, localOnly: true,
+      countIsExact: true, localOnly: true, ...(observer ? { transport: observer.transport } : {}),
       count(prompt) { validate(); const n = count(render(prompt)); invariant(Number.isSafeInteger(n) && n >= 0, 'runtime_count_invalid'); return n },
       async observe(callSignal) { const activeSignal = callSignal ? AbortSignal.any([signal, callSignal]) : signal
         activeSignal.throwIfAborted(); const next = await sample(activeSignal); invariant(next.digest === fact.digest && next.contextTokens === fact.contextTokens &&

@@ -1,4 +1,4 @@
-import type { Connections } from '../connections/service.ts'
+import type { Connections, LocalChatTransport } from '../connections/service.ts'
 import type { WindowObservation } from './types.ts'
 import { invariant } from './types.ts'
 
@@ -8,6 +8,8 @@ export interface Reply { text: string; inputTokens: number; outputTokens: number
 export interface RuntimeMeter {
   readonly countIsExact?: boolean
   readonly localOnly?: boolean
+  /** T0 wire transport of a non-Ollama local runtime; K3 keeps every admission and scrubbing check. */
+  readonly transport?: LocalChatTransport
   authorizeDispatch?(signal?: AbortSignal): Promise<void>
   validatePrepared?(request: import('../ollama/types.ts').OllamaChatRequest): void
   observe(signal?: AbortSignal): Promise<WindowObservation>
@@ -45,7 +47,8 @@ export class ConnectionRelayModel implements RelayModel {
       } }
     if (connection.kind === 'local_runtime') {
       const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false, ...(this.meter.localOnly ? { think: false } : {}),
-        messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } }, call)
+        messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } },
+      { ...call, ...(this.meter.transport ? { transport: this.meter.transport } : {}) })
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
       const inputTokens = r.prompt_eval_count!
       return { text: r.message?.content ?? '', inputTokens, outputTokens: r.eval_count!, moneyMicros: this.model.endsWith(':cloud') ? null : 0,
