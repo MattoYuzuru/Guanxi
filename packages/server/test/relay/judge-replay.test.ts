@@ -165,6 +165,17 @@ test('replay parser rejects malformed documents with a TypeError naming the path
 
   for (const [value, path] of invalid) rejects(value, path)
   assert.deepEqual(parseReplayCorpus(validCorpus()), validCorpus())
+  assert.deepEqual(parseReplayCorpus({ version: 1, runs: [] }), { version: 1, runs: [] })
+  const nullable = corpus([run('nullable', [
+    stepAt(1_000_000, {
+      heartbeatAt: null,
+      lease: null,
+      deadlineAt: null,
+      disk: null,
+      tokenBudgetForItem: null,
+    }, true, null),
+  ])])
+  assert.deepEqual(parseReplayCorpus(nullable), nullable)
 })
 
 test('run-level confusion matrix, precision, recall and latency are exact', () => {
@@ -206,6 +217,9 @@ test('run-level confusion matrix, precision, recall and latency are exact', () =
   assert.equal(result.labelledRuns, 3)
   assert.equal(result.origins.synthetic.runs, 4)
   assert.equal(result.origins.recorded.runs, 0)
+  assert.deepEqual(result.origins.synthetic.micro, result.micro)
+  assert.equal(result.origins.synthetic.classes.loop.tp, 2)
+  assert.equal(result.origins.recorded.micro.tn, 0)
   assert.equal(result.gate.evaluated, false)
   assert.equal(result.gate.reason, 'synthetic_corpus')
   assert.equal(result.gate.rule, R3_GATE_RULE)
@@ -224,6 +238,20 @@ test('a firing before firstStep counts as a false positive while a later firing 
   assert.equal(result.classes.loop.precision, 0.5)
   assert.equal(result.classes.loop.recall, 1)
   assert.deepEqual(result.classes.loop.latency, { median: 1, max: 1 })
+})
+
+test('an early-only labelled firing is both a false positive and a false negative', () => {
+  const replay = corpus([run('early-only', [0, 1, 2].map(index =>
+    step(index, index === 1 ? { noProgressCycles: 3 } : {})),
+  [{ fault: 'loop', firstStep: 2 }])])
+  const result = score(replay)
+  assert.deepEqual(
+    { tp: result.classes.loop.tp, fp: result.classes.loop.fp, fn: result.classes.loop.fn, tn: result.classes.loop.tn },
+    { tp: 0, fp: 1, fn: 1, tn: 0 },
+  )
+  assert.equal(result.classes.loop.precision, 0)
+  assert.equal(result.classes.loop.recall, 0)
+  assert.deepEqual(result.classes.loop.latency, { median: null, max: null })
 })
 
 test('premature done uses explicit failing acceptance and reports unknown separately', () => {
@@ -264,6 +292,8 @@ test('seeded synthetic corpus is deterministic, complete and never evaluated as 
   assert.ok(first.classes.loop.tp > 0)
   assert.ok(first.classes.protected_path_edit.tp > 0)
   assert.ok(first.classes.premature_done.tp > 0)
+  assert.ok(first.classes.out_of_scope_edit.tp > 0)
+  assert.ok(first.classes.stall.tp > 0)
 })
 
 test('recorded corpus with all required classes can evaluate the gate; missing class cannot', () => {
@@ -284,6 +314,9 @@ test('recorded corpus with all required classes can evaluate the gate; missing c
   assert.equal(complete.gate.rule, R3_GATE_RULE)
   assert.equal(complete.origins.recorded.runs, 3)
   assert.equal(complete.origins.synthetic.runs, 0)
+  assert.equal(complete.origins.recorded.classes.loop.tp, 1)
+  assert.equal(complete.origins.recorded.micro.tp, 3)
+  assert.equal(complete.origins.recorded.micro.fp, 0)
 
   const missing = record()
   missing.runs = missing.runs.filter(value => value.id !== 'recorded-premature')
@@ -320,6 +353,12 @@ test('recorded corpus with all required classes can evaluate the gate; missing c
   const mixedScore = score(mixed)
   assert.equal(mixedScore.gate.evaluated, false)
   assert.equal(mixedScore.gate.reason, 'not_all_runs_recorded')
+
+  const unlabelledMixed = record()
+  unlabelledMixed.runs.push(run('synthetic-healthy', [step(0), step(1)]))
+  const unlabelledMixedScore = score(unlabelledMixed)
+  assert.equal(unlabelledMixedScore.gate.evaluated, false)
+  assert.equal(unlabelledMixedScore.gate.reason, 'not_all_runs_recorded')
 })
 
 test('a custom detector replaces the default for exactly one class', () => {

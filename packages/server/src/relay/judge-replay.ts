@@ -381,6 +381,12 @@ function runOutcome(run: ReplayRun, fault: FaultClass, detector: Detector): Outc
   const onsetFirings = firedSteps.filter(step => step >= label.firstStep)
   const early = firedSteps.some(step => step < label.firstStep)
   const tp = onsetFirings.length > 0
+  let latency: number | null = null
+  if (tp) {
+    let firstOnset = onsetFirings[0]!
+    for (const step of onsetFirings) if (step < firstOnset) firstOnset = step
+    latency = firstOnset - label.firstStep
+  }
   // A firing before onset is a run-level false positive even when a later firing detects the
   // fault. If no firing lands at/after onset the run is also a false negative.
   return {
@@ -388,7 +394,7 @@ function runOutcome(run: ReplayRun, fault: FaultClass, detector: Detector): Outc
     fp: early,
     fn: !tp,
     tn: false,
-    latency: tp ? Math.min(...onsetFirings) - label.firstStep : null,
+    latency,
     unknown: unknownSteps.length,
   }
 }

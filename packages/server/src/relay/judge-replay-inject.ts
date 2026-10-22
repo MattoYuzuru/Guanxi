@@ -163,7 +163,7 @@ export function generateCorpus(options: GenerateCorpusOptions): ReplayCorpus {
   }
   const { seed, runs, faultRate, policy } = options
   if (!Number.isSafeInteger(seed)) throw new TypeError('options.seed: expected safe integer')
-  if (!Number.isSafeInteger(runs) || runs < 0) throw new TypeError('options.runs: expected non-negative safe integer')
+  if (!Number.isSafeInteger(runs) || runs <= 0) throw new TypeError('options.runs: expected positive safe integer')
   if (typeof faultRate !== 'number' || !Number.isFinite(faultRate) || faultRate < 0 || faultRate > 1) {
     throw new TypeError('options.faultRate: expected finite number between 0 and 1')
   }

@@ -39,7 +39,7 @@
 
 ## Commands and result lines
 
-- `nice -n 10 node --test packages/server/test/relay/judge-replay.test.ts` — **8/8 pass,
+- `nice -n 10 node --test packages/server/test/relay/judge-replay.test.ts` — **9/9 pass,
   0 fail, 0 skip**, duration about 0.1 s.
 - `nice -n 10 npx tsc --noEmit -p packages/server` — **exit 0**, no diagnostics.
 - `npx eslint` on the three new TypeScript files — **exit 0**, no findings.
@@ -48,7 +48,7 @@
 
 ## New / regression envelope
 
-**New:** the 8 focused tests above and two source modules. **Regression:** none claimed:
+**New:** the 9 focused tests above and two source modules. **Regression:** none claimed:
 no existing relay file, test, dependency, migration or wire contract was edited; only the
 targeted file and server typecheck were run, not `npm test` or a full relay suite.
 
@@ -62,11 +62,16 @@ targeted file and server typecheck were run, not `npm test` or a full relay suit
   runs) remain unmeasured. R3 stays in progress; no synthetic result closes it.
 - The early-firing overlap and median convention are deliberate and documented in source;
   they need confirmation when the first recorded corpus arrives.
+- The synthetic timeline uses a fixed safe epoch: heartbeat thresholds beyond it are outside
+  generator range, and a manually empty corpus reports `empty_corpus` rather than a synthetic
+  reason because origin is stored per run only.
 - Next: build the relay-run recorder, collect and label real corpora, then add J2/J3
   verdicts and night/ETA evidence to the same scorer.
 
 ## Independent verification
 
 A separate review pass checked format fields, parser classes, detection mapping, gate
-conditions, generator patterns and test non-vacuity. Findings and fixes are recorded in the
-commit history; no live or recorded corpus was used.
+conditions, generator patterns and test non-vacuity. It found no blocking correctness
+findings. Review-driven hardening (bounded latency selection, positive run-count validation,
+origin/generator/early-only/mixed-origin assertions) is recorded in the review-fix commit.
+No live or recorded corpus was used.
