@@ -48,6 +48,8 @@ export interface WindowState {
   /** Reserved for hysteresis bookkeeping; preserved within an instance. */
   armedBelow: number[]
   lastPercent: number | null
+  /** Last non-null percent in this instance; carried across unknown readings for reset detection. */
+  lastKnownPercent?: number | null
   lastObservedAt: string | null
   forecastFired: boolean
   exhaustedFired: boolean

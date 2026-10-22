@@ -233,14 +233,16 @@ test('forecast fires only before a reset or dependent ETA and once per instance'
   result = step(first.state, 30, 60, {
     dependentRuns: [{ runId: 'run-early', etaP80: at(120) }, { runId: 'run-late', etaP80: at(240) }],
   })
-  assert.equal(result.alerts.length, 0, 'the earliest dependent ETA decides before projected exhaustion')
+  assert.equal(result.alerts.length, 1, 'a later dependent run that outlives the window must forecast')
+  assert.deepEqual(result.alerts[0]?.forecast, { exhaustsAt: at(150), before: 'dependent_run_eta', runId: 'run-late' })
 
   first = step(null, 30, 0, { resetsAt: reset3h })
   assert.equal(first.alerts.length, 0, 'the first observation cannot forecast')
   first = step(null, 50, 0, { resetsAt: reset3h })
   assert.equal(step(first.state, 50, 60, { resetsAt: reset3h }).alerts.length, 0, 'flat values cannot forecast')
   assert.equal(step(first.state, 60, 60, { resetsAt: reset3h }).alerts.length, 0, 'rising values cannot forecast')
-  assert.equal(step(first.state, 30, 60).alerts.length, 0, 'no reset and no dependent run cannot forecast')
+  const noReset = step(null, 50, 0)
+  assert.equal(step(noReset.state, 30, 60).alerts.length, 0, 'no reset and no dependent run cannot forecast')
 })
 
 test('an out-of-order observation returns the previous state unchanged', () => {
@@ -394,4 +396,21 @@ test('a custom threshold list works with zero hysteresis and generalised severit
   const single = step(null, 30, 0, { config: { thresholds: [40], hysteresisPoints: 0 } })
   assert.equal(single.alerts.length, 1)
   assert.equal(single.alerts[0]?.severity, 'warning', 'a single threshold is a warning')
+})
+
+test('a provider reset hidden behind an unknown reading still re-arms', () => {
+  let result = step(null, 10, 0)
+  assert.deepEqual(result.alerts.map(alert => alert.threshold), [20, 10])
+  result = step(result.state, null, 1)
+  assert.equal(result.state.lastKnownPercent, 10)
+  result = step(result.state, 100, 2)
+  assert.notEqual(result.state.instanceKey, 'no-reset', 'a +90 rise against the last known value is a new instance')
+  result = step(result.state, 15, 3)
+  assert.deepEqual(result.alerts.map(alert => alert.threshold), [20])
+})
+
+test('dependent ETAs and connection ids are validated', () => {
+  const first = step(null, 50, 0)
+  assert.throws(() => step(first.state, 30, 60, { dependentRuns: [{ runId: 'r', etaP80: 'not-a-time' }] }), TypeError)
+  assert.throws(() => step(null, 50, 0, { connectionId: 'a|b' }), TypeError)
 })
