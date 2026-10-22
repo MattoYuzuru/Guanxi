@@ -171,6 +171,16 @@ test('removing the acceptance command in a later revision reopens automatic proo
   assert.equal(deriveStatuses(p, [...events, human('a', 'done')]).get('a')!.status, 'done')
 })
 
+test('a dirty passing acceptance does not clear a failure', () => {
+  const p = plan([item('a')])
+  const failedThenDirty = [claimed('a'), acceptance('a', false), acceptance('a', true, false)]
+  const statuses = deriveStatuses(p, failedThenDirty)
+  assert.equal(statuses.get('a')!.status, 'failed')
+  assert.equal(statuses.get('a')!.reason, 'acceptance_failed')
+  assert.equal(deriveStatuses(p, [...failedThenDirty, commitAccepted('a')]).get('a')!.status, 'failed')
+  assert.equal(deriveStatuses(p, [...failedThenDirty, acceptance('a', true)]).get('a')!.status, 'in_progress')
+})
+
 test('a later judge failure prevents done; a later claim does not clear a failure', () => {
   const p = plan([item('a')])
   const done = [claimed('a'), verification('a'), acceptance('a', true), commitAccepted('a')]

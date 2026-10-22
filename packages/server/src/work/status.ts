@@ -89,7 +89,8 @@ function apply(
       if (acceptanceCommand === null || event.command !== acceptanceCommand) return
       state.acceptance = { event, index }
       if (event.passed) {
-        state.lastPassIndex = index
+        // Only a clean pass is completion evidence; a dirty pass must not clear a failure.
+        if (event.cleanCheckout) state.lastPassIndex = index
       } else if (state.lastClaimIndex !== null && state.lastClaimIndex < index) {
         state.lastFailureIndex = index
         state.lastFailureKind = 'acceptance'

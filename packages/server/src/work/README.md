@@ -66,8 +66,8 @@ Rules, in precedence order:
    `acceptance === null` can only be completed by (b). A bare `verification_requested` stays
    `verification_requested`.
 2. `failed` when the latest matching acceptance failed after a claim, or the judge reported
-   `fail`, and no later passing evidence exists. A later passing acceptance or a judge `pass`
-   clears the failure; another claim does not.
+   `fail`, and no later passing evidence exists. A later clean, matching passing acceptance or a
+   judge `pass` clears the failure; a dirty pass or another claim does not.
 3. `canceled` when the latest human decision is `cancel`. `reopen` is a barrier: it clears
    terminal status, the claim and prior acceptance, commit-acceptance and judge evidence,
    returning the item to the dependency-based state. After `cancel`, only `reopen` is accepted
