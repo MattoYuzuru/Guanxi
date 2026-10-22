@@ -12,7 +12,8 @@ The independent reviewer recheck is **UNRUN**; its earlier pin was `92637fb1`. D
 - Earlier author fix commits: `3f6b7129` (readAll refuses an unsupported boundary instead of silently
   stopping at it), `f9fc6e06` (ledger installer also guards the global event/artifact table
   shapes), `cba7faf0` (portable inspector queue fixture byte counts)
-- Review-repair test commits: `cacd9ff1`, `731199e0`, `a8fc67b8`, `6553f6a6`, `d0bd96c7`
+- Review-repair test commits: `cacd9ff1`, `731199e0`, `a8fc67b8`, `6553f6a6`, `d0bd96c7`,
+  `2fbc704e`
 - Review-repair production commits: `01541fbd`, `8b4e2d82`, `fa524c3f`
 - Docs/handoff commit: this commit (HEAD at handoff)
 - Scope authority: `docs/plans/lanes/K4-queue-v3.plan.md`, especially "Root Q0 authorization
@@ -34,7 +35,7 @@ outside controls must be rerun unchanged (SHA
 | legacy progress silently ignored v3 and retained older v1 queue | new `agent.test.ts` seeds v1 `[old-a,keep-b]`, then valid v3 `[keep-b]`, and requires content-free `agent_unavailable` | `731199e0` (test), `01541fbd` (fix) | authored red before fix, green expected after; actual native UNRUN here |
 | three ledger assertions compared null-prototype rows with plain objects | reviewer receipt `check-iada7ni5`; assertions now project exact `version` values and keep count/repeat/rollback points, including the previously unreached repeat-install check | `cacd9ff1` | authored oracle repair; actual SQLite UNRUN here |
 | external-content FTS rowid existence was treated as index membership | the test now keeps `search_text NULL`, asserts `MATCH` and `log.search` are zero for the queue sentinel, and proves a normal prompt is indexed (`MATCH` rowid + `log.search` count 1) | `cacd9ff1` | authored oracle repair; actual SQLite UNRUN here |
-| `boundedPreview` mistook an ordinary `⟦` for a redaction marker | new ordinary, cut-inside-prefix, cut-inside-marker, complete-marker and unclosed-prefix controls | `d0bd96c7` (tests), `fa524c3f` (fix) | authored red against `92637fb1`; actual pure function check 5/5 green here |
+| `boundedPreview` mistook an ordinary `⟦` for a redaction marker | new ordinary, cut-inside-prefix, cut-inside-marker, complete-marker, unclosed-prefix and multibyte-boundary controls | `d0bd96c7` (tests), `2fbc704e` (UTF-8 control), `fa524c3f` (fix) | authored red against `92637fb1`; actual pure function check 6/6 green here |
 | Q14 had no competing-initializer/held-writer assertion | new worker-thread test with independent SQLite connections and `SharedArrayBuffer`/`Atomics` coordination: holder pauses at `after_trigger`, observer sees global-33 trigger/no ledger, competitor constructor gets `SQLITE_BUSY`, holder commits, competitor constructor re-reads one ledger 40; final `user_version` 33, exact trigger, sentinel ledgers 34–39 unchanged, repeat install one row | `6553f6a6` | authored; actual SQLite/worker execution UNRUN here |
 
 Every earlier reviewer check remains terminal. This round does not claim Q1/Q2, native v3
@@ -155,10 +156,11 @@ This repair round, on the frozen source, with `nice -n 10`:
 - `npx tsc --noEmit -p packages/server/tsconfig.json` → exit 0 (source and tests).
 - `npx tsc --noEmit -p packages/web/tsconfig.json` → exit 0.
 - `npx eslint` over every changed TS/TSX file in the repair → exit 0.
-- A pure ad hoc check of `boundedPreview` → 5/5 cases: ordinary decorative bracket keeps the
+- A pure ad hoc check of `boundedPreview` → 6/6 cases: ordinary decorative bracket keeps the
   exact 8192-byte prefix; a cut inside a genuine prefix returns 8188 bytes; a cut inside a
   genuine marker returns 8180 bytes; a complete marker is preserved; an unclosed prefix is
-  ordinary text. This is a function check, not the component/browser gate.
+  ordinary text; a multibyte character cut by the bound is removed whole (8190 bytes, no
+  replacement character). This is a function check, not the component/browser gate.
 - `npx markdownlint-cli2 docs/plans/lanes/K4-queue-v3-Q0.handoff.md
   packages/server/src/session-log/README.md packages/server/src/native-agent/README.md` →
   3 files, 0 errors.
