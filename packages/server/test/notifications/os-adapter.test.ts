@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { mock, test } from 'node:test'
 import {
   createDefaultCommandRunner,
   createOsNotifier,
@@ -172,6 +172,17 @@ test('Linux refuses a missing, empty or relative notify-send without running any
     assert.deepEqual(value, { unavailable: code }, `binary ${JSON.stringify(binary)}`)
     assert.equal(calls.length, 0)
   }
+
+  const throwing = recordingRunner()
+  assert.deepEqual(createOsNotifier({
+    platform: 'linux',
+    runner: throwing.runner,
+    appName: APP_NAME,
+    resolveBinary: () => {
+      throw new Error('lookup failed')
+    },
+  }), { unavailable: 'notify_send_missing' })
+  assert.equal(throwing.calls.length, 0)
 })
 
 test('an invalid app name is unavailable before any resolution or run', () => {
@@ -232,6 +243,7 @@ test('payload validation refuses extra keys, long titles and control characters'
     { title: 'Quota\n10% left', tag: 'quota' },
     { title: 'Quota\u000010% left', tag: 'quota' },
     { title: 'Quota\u007f10% left', tag: 'quota' },
+    { title: 'Quota\u008510% left', tag: 'quota' },
     { title: 'Quota\u202810% left', tag: 'quota' },
     { title: 'Quota\u202910% left', tag: 'quota' },
     { title: 'Quota 10% left', tag: 'quota\nfive_hour' },
@@ -272,6 +284,7 @@ test('titles are trimmed, 120 characters after trimming is accepted, and tags st
 test('runner non-zero exits, signals and timeouts map to os_notify_failed', async () => {
   const failures: RunnerResult[] = [
     { code: 1, signal: null },
+    { code: 0, signal: 'SIGTERM' },
     { code: null, signal: 'SIGTERM' },
     { code: null, signal: null },
   ]
@@ -302,6 +315,59 @@ test('a throwing runner maps to os_notify_failed without leaking its message', a
   const result = await notifier.notify({ title: 'Quota 10% left', tag: TAG })
   assert.deepEqual(result, { delivered: false, code: 'os_notify_failed' })
   assert.equal(JSON.stringify(result).includes('SECRET'), false)
+})
+
+test('inherited extra properties are ignored and never reach the runner', async () => {
+  const { notifier, calls } = linuxNotifier()
+  const secret = 'sk-live-SECRET-looking-value-42'
+  let inheritedRead = false
+  const prototype = {
+    get body() {
+      inheritedRead = true
+      return secret
+    },
+  }
+  const payload = Object.create(prototype) as { title: string; tag: string }
+  payload.title = 'Quota 10% left'
+  payload.tag = TAG
+
+  assert.deepEqual(await notifier.notify(payload), { delivered: true, code: 'delivered' })
+  assert.deepEqual(calls[0]!.args, ['--app-name', APP_NAME, '--', 'Quota 10% left'])
+  assert.equal(inheritedRead, false)
+  assert.equal(JSON.stringify(calls).includes(secret), false)
+})
+
+test('invalid payloads and runner failures never log payload text', async () => {
+  const secret = 'sk-live-SECRET-looking-value-42'
+  const { notifier } = linuxNotifier()
+  const throwingNotifier = expectNotifier(createOsNotifier({
+    platform: 'linux',
+    runner: {
+      async run() {
+        throw new Error(`spawn failed for ${secret}`)
+      },
+    },
+    appName: APP_NAME,
+    resolveBinary: () => '/usr/bin/notify-send',
+  }))
+
+  const log = mock.method(console, 'log')
+  const error = mock.method(console, 'error')
+  const warn = mock.method(console, 'warn')
+  try {
+    await notifier.notify({
+      title: 'Quota 10% left',
+      tag: TAG,
+      body: secret,
+    } as { title: string; tag: string })
+    await throwingNotifier.notify({ title: 'Quota 10% left', tag: TAG })
+  } finally {
+    mock.restoreAll()
+  }
+
+  assert.equal(log.mock.callCount(), 0)
+  assert.equal(error.mock.callCount(), 0)
+  assert.equal(warn.mock.callCount(), 0)
 })
 
 test('darwin smoke: the default runner executes an absolute binary via execFile', async t => {

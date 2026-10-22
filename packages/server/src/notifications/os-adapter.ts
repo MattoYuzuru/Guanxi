@@ -66,6 +66,9 @@ export function createDefaultCommandRunner(): CommandRunner {
           [...args],
           {
             timeout: opts.timeoutMs,
+            // A child that ignores SIGTERM can outlive `timeout` and later exit 0, which
+            // would be reported as delivered. SIGKILL is not catchable.
+            killSignal: 'SIGKILL',
             maxBuffer: 64 * 1024,
             shell: false as const,
             windowsHide: true,
@@ -139,7 +142,13 @@ export function createOsNotifier(opts: OsNotifierOptions): OsNotifier | Unavaila
       args: title => [...MACOS_SCRIPT_ARGS, '--', title, appName],
     }
   } else {
-    const binary = opts.resolveBinary('notify-send')
+    let binary: string | null
+    try {
+      binary = opts.resolveBinary('notify-send')
+    } catch {
+      // A failing host lookup must not break notification ingestion; treat it as missing.
+      return { unavailable: 'notify_send_missing' }
+    }
     if (binary === null || binary.length === 0) return { unavailable: 'notify_send_missing' }
     if (!isAbsolute(binary) || binary.includes('\u0000')) {
       return { unavailable: 'notify_send_path_invalid' }
@@ -166,7 +175,7 @@ export function createOsNotifier(opts: OsNotifierOptions): OsNotifier | Unavaila
           command.args(title),
           { timeoutMs: OS_NOTIFY_TIMEOUT_MS },
         )
-        return outcome.code === 0
+        return outcome.code === 0 && outcome.signal === null
           ? osResult(true, 'delivered')
           : osResult(false, 'os_notify_failed')
       } catch {
