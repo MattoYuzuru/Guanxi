@@ -178,6 +178,13 @@ describe('inspector queue v3', () => {
     expect(ordinaryPreview).toBe(exactPrefix(ordinary))
     expect(bytes(ordinaryPreview).byteLength).toBe(max)
 
+    // A multibyte character cut by the byte bound is removed whole, never replaced.
+    const unicodeCut = `${'x'.repeat(max - 2)}🙂tail`
+    const unicodePreview = boundedPreview(unicodeCut)
+    expect(unicodePreview).toBe('x'.repeat(max - 2))
+    expect(unicodePreview).not.toContain('\uFFFD')
+    expect(bytes(unicodePreview).byteLength).toBe(max - 2)
+
     // The clip cuts inside the visible genuine prefix: only the partial marker goes.
     const cutInsidePrefix = `${'x'.repeat(max - 4)}⟦REDACTED secret://demo⟧tail`
     expect(boundedPreview(cutInsidePrefix)).toBe('x'.repeat(max - 4))
