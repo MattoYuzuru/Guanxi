@@ -46,7 +46,6 @@ Source stays frozen while checks run. The external guanxi-ui skill symlink preve
 source certification: results are local observations with explicit clean HEAD and real scope.
 Root owns main integration and central status.
 
-
 ## Combined eight-gate result and final privacy follow-up
 
 Combined clean pin `0753630bbb72ff609b09177942837a57b0421316` integrates the independent
