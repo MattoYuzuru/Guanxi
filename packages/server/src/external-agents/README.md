@@ -151,6 +151,17 @@ node-owned kernel calls; no HTTP subscriber owns them.
 There is no automatic resume, durable inference continuation or retry. K2 holds the transcript;
 R1/R2 integration is a later consumer, not a second run state machine.
 
+## Lead turns (LW)
+
+`RolePrompt.lead` lets the trusted [external lead service](../leads/README.md) run an ACP turn that
+exposes a node-owned loopback HTTP MCP tool, loads a saved session when the agent advertised
+`loadSession` (replayed history is ignored), reports first activity and cumulative usage, and can be
+hibernated cooperatively: `session/cancel`, a bounded wait for the cancelled response, then the usual
+process-group cleanup before the admission holder is released. Without `lead` every path above is
+unchanged. An agent without `mcpCapabilities.http` fails `mcp_http_unsupported` and Codex fails
+`lead_adapter_unsupported`. Set `runDeadlineMs` above the longest expected lead turn. A node killed
+mid-turn leaves the holder occupied and may leave an orphan agent group (see the admission section).
+
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a
 subscription launch and records why. The existing `bare` fact is launch-policy metadata only:

@@ -14,7 +14,7 @@ import { ADAPTERS, API_ENV } from './profiles.ts'
 import { admissionPolicyDigest } from './admission.ts'
 import { claudeRateLimits, codexRateLimits } from './quota.ts'
 import { ExternalAgentError, resolveRole, bindingSchema, rolesSchema, type ExternalPolicy, type AgentInstallation,
-  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId, type AdmissionHolder, type AdmissionKind } from './types.ts'
+  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId, type AdmissionHolder, type AdmissionKind, type LeadTurn } from './types.ts'
 
 /** API-key adapters that can run host tools. The deny configuration below is not a sandbox and
  * its runtime enforcement is the vendor's; a non-owner prompt is refused before process launch.
@@ -42,6 +42,8 @@ export interface RolePrompt {
   prompt: string
   signal?: AbortSignal
   background?: boolean
+  /** LW: expose a node-owned MCP tool, resume a saved session and allow cooperative hibernation. */
+  lead?: LeadTurn
 }
 export class ExternalAgents {
   private readonly connections: Connections
@@ -258,6 +260,7 @@ export class ExternalAgents {
     const install = this.installation(input.ownerAccountId, binding.connectionId, binding.backend)
     if (input.actorAccountId !== input.ownerAccountId && HOST_TOOL_ADAPTERS.has(install.adapter)) throw new ExternalAgentError('host_tools_owner_only')
     if (typeof input.prompt !== 'string' || !input.prompt.trim()) throw new ExternalAgentError('empty_prompt')
+    if (input.lead && (install.adapter === 'codex' || ADAPTERS[install.adapter].protocol !== 'acp-v1')) throw new ExternalAgentError('lead_adapter_unsupported')
     if (binding.params.temperature !== undefined || binding.params.maxTokens !== undefined ||
       (install.adapter !== 'codex' && binding.params.reasoning !== undefined)) throw new ExternalAgentError('unsupported_parameter')
     const runDeadlineMs = this.policy.runDeadlineMs ?? 300_000
@@ -347,7 +350,8 @@ export class ExternalAgents {
           const output = client instanceof CodexClient
             ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning, plan => handle!.append({ type: 'agent.plan', data: { items: plan.map(item => ({ text: item.step,
               status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
-            : await client.prompt(binding.model, prompt, config.cwd)
+            : await client.prompt(binding.model, prompt, config.cwd, input.lead && { ...input.lead,
+              ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) })
           dispatchSignal.throwIfAborted()
           const safe = this.scrubber.scrub(output)
           handle.append({ type: 'assistant.message', data: { messageId, step: 0, text: safe.text } })

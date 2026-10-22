@@ -40,6 +40,7 @@ import { projectIndexPlugin } from './indexing/plugin.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 import { externalAgentPlugin } from './external-agents/plugin.ts'
+import { createLeadPlugin, type LeadPluginConfig } from './leads/plugin.ts'
 import type { ExternalPolicy } from './external-agents/types.ts'
 
 export { RELEASE_BUILD } from './release.ts'
@@ -140,9 +141,14 @@ export interface StartOptions {
   externalAgents?: ExternalPolicy
   /** T0-only proved runtime counter and owned-checkout adapter; neither comes from HTTP. */
   relay?: { runtime: RelayRuntimePolicy; reserves: Reserves; allocate?: RelayStartHost['allocate'] }
+  /** Trusted opt-in for external-lead delegation and hibernation (LW). Needs `externalAgents` and a child
+   * executor. `alwaysOn: true` is the host's explicit assertion that this node stays awake while leads
+   * sleep (ADR-0019 decision 5); nothing here proves or arranges power. Not reachable over HTTP. */
+  leads?: Omit<LeadPluginConfig, 'db'> & { alwaysOn: true }
 }
 
 export async function start(options: StartOptions = {}) {
+  if (options.leads && !options.externalAgents) throw new Error('leads require externalAgents')
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
@@ -155,7 +161,7 @@ export async function start(options: StartOptions = {}) {
   const db = openDb(dbPath)
   let kernel: Awaited<ReturnType<typeof bootServerKernel>>
   try {
-    kernel = await bootServerKernel(undefined, { db, federation: options.federation })
+    kernel = await bootServerKernel(undefined, { db, federation: options.federation, ...(options.leads ? { runs: { alwaysOn: true } } : {}) })
   } catch (error) {
     db.close()
     throw error
@@ -210,6 +216,10 @@ export async function start(options: StartOptions = {}) {
       },
     } })
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
+    if (options.leads) {
+      const { alwaysOn: _assertion, ...lead } = options.leads
+      await kernel.node.plugin(createLeadPlugin({ ...lead, db }))
+    }
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)

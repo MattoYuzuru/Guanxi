@@ -76,6 +76,8 @@ export class RunStore implements HomeAuthority {
     }
   }
   private readonly options: RunStoreOptions
+  /** The host's explicit always-on assertion; `delegate` refuses `no_always_on_home` without it. */
+  get alwaysOnHome(): boolean { return this.options.alwaysOn === true }
 
   constructor(options: RunStoreOptions) {
     this.options = options
