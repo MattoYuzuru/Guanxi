@@ -382,3 +382,101 @@ Envelope: **4 new / 96 inherited bench cases (100 in the eleven files) + 38 serv
 cases**, not one inflated headline. No old assertion was weakened. Real `/bin/ps` and
 parent-death probes remain pending root/GPT checks; no full gate, browser, build, live model,
 paid/provider call, container, SSH or B1 quality claim is included.
+
+## New P2 process-state follow-up (2026-10-22, append-only)
+
+**Status:** source fix and focused author checks complete; independent re-review at a clean pin
+remains required. This does not close B1, ADR-0025, MS1 or any full gate. **Starting pin:**
+`87e6d647ac1d9f713aab9b0fa4c5df649a6db800`, clean. **Fix pin:** `057ffc3`.
+
+The final section of `reviews/codex-b1-trial-binding-20261022.md` reproduced a new P2:
+`packages/bench/src/private-process.ts` classified supervisor state with
+`/^[A-Za-z][+<>]*$/`, so the actual macOS exact-live-supervisor state `Ss` (and documented
+`SN`) became `unknown`; the default `/bin/ps` reaper returned `cleanup_unconfirmed` instead of
+removing a validated live group/record. The same regex treated any single letter as live,
+including Linux dead `X`, obsolete paging `W` and unknown `Q`.
+
+`057ffc3` replaces the regex with a self-contained documented grammar: live primaries macOS/BSD
+`I R S T U` and Linux `D I R S T t`, plus documented modifiers
+`+ < > A E L N S s V W X l`, each at most once. `Z` with valid modifiers remains a zombie;
+dead/obsolete primaries (`X`, `W`), unknown primaries, duplicate modifiers and malformed strings
+remain `unknown` and quarantine. The legacy injected `undefined`-state seam still returns
+`live`. No identity, generation/token-hash, live-mismatch, signal-ownership or
+ESRCH-before-unlink logic changed.
+
+### Tests and exact commands
+
+New: **2** focused reaper cases in `packages/bench/test/private-process.test.ts` with 26 state
+rows: 11 documented live combinations plus the legacy undefined seam (12 rows), and 14
+zombie/dead/obsolete/malformed negatives. The live rows assert `removed`, record absent and
+actual holder/group death after the SIGTERM/grace/SIGKILL path; the negative rows assert
+`cleanup_unconfirmed`, record preserved, and holder plus client still alive (no signal). The
+private-process file is **18/18 pass, 0 fail, 0 skipped** (2 new / 16 inherited). The wider
+prior 138-case envelope (100 bench + 38 server) was **not rerun by this worker**; independent
+review owns the full rerun at the new clean pin.
+
+All commands from this clone, `nice -n 10`, `/opt/homebrew/bin/node` v26.9.0, contract resolving
+inside the checkout:
+
+```bash
+export GUANXI_WEB_PORT=5212 GUANXI_API_PORT=4412 GUANXI_DATA_DIR="$PWD/.lane-data"
+node -e "console.log(require.resolve('@guanxi/contract'))"
+# /Users/yuzuru/Projects/Guanxi-lanes/b1-trial-binding/packages/contract/src/index.ts
+
+nice -n 10 /opt/homebrew/bin/node --test packages/bench/test/private-process.test.ts
+# 18/18 pass, 0 fail, 0 skipped
+
+nice -n 10 /opt/homebrew/bin/node node_modules/typescript/bin/tsc --noEmit -p packages/bench/tsconfig.json
+# exit 0
+
+nice -n 10 /opt/homebrew/bin/node node_modules/eslint/bin/eslint.js \
+  packages/bench/src/private-process.ts packages/bench/test/private-process.test.ts
+# exit 0
+
+git diff --check
+# exit 0
+```
+
+### Red/green evidence
+
+Semantic red against exact `87e6d64`, using the existing reaper observation seam and no
+duplicated classifier:
+
+- live table: `Ss` (`macOS session leader`) returned `cleanup_unconfirmed` instead of `removed`;
+- negative table: `X` (`Linux dead primary`) returned `removed` instead of
+  `cleanup_unconfirmed`, because the old regex accepted any single letter as live.
+- the reviewer's read-only exact-classifier companion
+  `/Users/yuzuru/Projects/Guanxi-lanes/reviews/b1-process-state-review.test.mjs` executed the
+  production `processState` via Node type stripping: **1 pass / 1 fail** at `87e6d64` (`Ss`
+  actual `unknown`, expected `live`). The review probes were not modified.
+
+After `057ffc3`:
+
+- the two focused cases pass (18/18 in the file);
+- the same exact-classifier companion is **2/2 pass**, including `Ss`, `SN`, `S<s`, `RWNA`,
+  `Z`/`Zs` and malformed negatives;
+- bench `tsc`, scoped ESLint and `git diff --check` are clean.
+
+The companion was run by the author as a read-only check; it is not independent review and does
+not replace the reviewer's real process-table run.
+
+### Unsupported checks and residuals
+
+- This DSH host cannot execute `/bin/ps`; the real `exact-live-supervisor` external probe, the
+  original six external process cases and the real parent-death probe were **not rerun here**.
+  Seam results are not real process-table proof. Independent review must rerun them outside the
+  sandbox at the new clean pin under the shared heavy lock.
+- The wider prior 138-case envelope was not run by this worker; only the private-process file
+  and bench type/lint checks were.
+- Linux `ps` state grammar is from the primary
+  [procps `ps(1)`](https://man7.org/linux/man-pages/man1/ps.1.html) documentation; no Linux host
+  was run. Windows state behavior is outside the proof. macOS grammar is from the installed
+  primary `man ps`.
+- Same-UID process cleanup remains best-effort, not isolation; group signals do not cover a
+  `setsid` descendant, and the cleanup token is not authentication. Stock paid execution
+  remains OFF; no provider/live model, container, SSH, remote host, Harbor or real B1 task was
+  used.
+- Existing B1 residuals remain: real provider meter/price adapter, task image, public corpus,
+  five-seed execution, operational executor, full MS1 quality and full integration gates are
+  open. This handoff stops at the clean fix/docs pin for independent review and does not
+  declare B1 or MS1 closed.

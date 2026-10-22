@@ -109,8 +109,12 @@ zombie, a missing observer row or a timeout as proof of death:
 | v1 record, no exact supervisor | no client fallback; unlink only when the group is already `ESRCH` |
 
 `ps -ww -p PID -o pid=,pgid=,state=,command=` is invoked through `execFile` with no shell, a
-fixed timeout and bounded output. The state parser distinguishes a live state, a `Z` zombie and
-an unknown/failed observation. A missing PID is first checked with a same-UID `kill(pid, 0)`; a
+fixed timeout and bounded output. The state parser accepts only the documented live primary
+states (macOS/BSD `I R S T U`, Linux `D I R S T t`) followed by documented modifiers
+(`+ < > A E L N S s V W X l`), each at most once. `Z` with documented modifiers is a zombie;
+dead/obsolete primaries (`X`, `W`), unknown primaries, duplicate modifiers and malformed strings
+are `unknown` and quarantine. An injected legacy observation with no state remains `live` for
+the test seam. A missing PID is first checked with a same-UID `kill(pid, 0)`; a
 failed or ambiguous query is `unknown`, not dead. The client proof is exactly
 `[node, launcher, client-script, client-token]` plus the recorded `pgid`, followed by
 `sha256(token) === clientTokenHash`; there is no substring, `ps -ax` or numeric-group-only
@@ -241,6 +245,10 @@ exactness, fd isolation, ACK-gated pending ownership with late fulfilment/reject
 escaped descendants, startup/policy refusal, empty two-phase receipts, canceled/deposed
 `retention_fenced`, changed reason/manifest/private specs, cross-binding same-session/request-id
 separation, legacy refusal, partial-prefix sink recreation, TTL purge, readiness and late scrub.
+A later process-state follow-up adds two focused reaper cases in the same file: 11 documented
+live state combinations plus the legacy undefined seam (12 rows), and 14 zombie/dead/obsolete/
+malformed negatives. It reran that file only; the wider benchmark envelope and the unsandboxed
+`/bin/ps` probe remain reviewer-owned.
 The server K2/R1 envelope is run separately. The worker did not execute `/bin/ps`; the real
 process-table probe, full `npm test`, browser, build, Storybook, container and remote gates are
 not claimed by this slice.
