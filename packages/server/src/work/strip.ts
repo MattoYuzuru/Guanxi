@@ -83,8 +83,9 @@ function emergencyCut(text: string, count: (value: string) => number, budget: nu
  * Format: `work: <id> <status>`, current title, acceptance command, next ready item and one
  * `blocked:` line per blocking issue. Truncation priority, least important first:
  * 1. blocking entries from the end;
- * 2. next-ready title (id stays), then the next line;
- * 3. current title (id/status stay);
+ * 2. next-ready title, then the next line; the id-only line is retained when it fits alongside
+ *    a truncated current title;
+ * 3. current title (id/status stay, shortened to keep the next id when possible);
  * 4. acceptance command (definition of done is more important than a title);
  * 5. the `work:` header, which is returned truncated if even it does not fit.
  *
@@ -118,6 +119,7 @@ export function buildStrip(
   }
 
   // 2. Next-ready title, then the whole next line.
+  let droppedNext: StripWorkItem | null = null
   if (state.next !== null && state.nextTitle !== null) {
     const fitted = longestFitting(
       state.next.title,
@@ -129,14 +131,30 @@ export function buildStrip(
       state.nextTitle = fitted
       return render(state)
     }
+    droppedNext = state.next
     state.next = null
     state.nextTitle = null
     text = render(state)
     if (count(text) <= limit) return text
   }
 
-  // 3. Current title. The id and status header remain.
+  // 3. Current title. The id and status header remain. If the next title was dropped,
+  // shorten the current title enough to keep the next id instead of losing the line too.
   if (state.currentTitle !== null) {
+    if (droppedNext !== null) {
+      const fittedWithNext = longestFitting(
+        state.currentTitle,
+        candidate => render({ ...state, currentTitle: candidate, next: droppedNext, nextTitle: null }),
+        count,
+        limit,
+      )
+      if (fittedWithNext !== null) {
+        state.currentTitle = fittedWithNext
+        state.next = droppedNext
+        state.nextTitle = null
+        return render(state)
+      }
+    }
     const fitted = longestFitting(
       state.currentTitle,
       candidate => render({ ...state, currentTitle: candidate }),

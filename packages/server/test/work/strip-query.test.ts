@@ -88,6 +88,19 @@ test('strip drops blocking entries before touching next or current fields', () =
   assert.ok(trimmed.includes('next: b Next'))
 })
 
+test('strip keeps the next id when a huge current title is truncated', () => {
+  const view: StripView = {
+    current: stripItem('a', 'X'.repeat(400), 'in_progress', null),
+    next: stripItem('b', 'Next title', 'ready'),
+    blocking: [],
+  }
+  const strip = buildStrip(view, utf8ByteCounter, 60)
+  assert.ok(utf8ByteCounter(strip) <= 60)
+  assert.match(strip, /^current: X+…$/m)
+  assert.match(strip, /^next: b$/m)
+  assert.doesNotMatch(strip, /Next title/)
+})
+
 test('strip property: 500 seeded plans/views stay within both counters', () => {
   const random = mulberry32(0x5eed1234)
   const chars = ['a', 'B', '0', ' ', '-', '_', 'é', 'Ж', '中', '🙂', '🧪', '\n']

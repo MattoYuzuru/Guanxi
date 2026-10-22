@@ -150,8 +150,9 @@ unmet dependencies.
 Truncation priority, least important first:
 
 1. blocking entries, dropped from the end;
-2. next-ready title, then the next line;
-3. current title (the id/status header stays);
+2. next-ready title, then the next line; the id-only line is retained when it fits alongside a
+   truncated current title;
+3. current title (the id/status header stays, shortened to keep the next id when possible);
 4. acceptance command (the definition of done outranks a display title);
 5. the `work:` header itself, which is truncated to fit.
 
