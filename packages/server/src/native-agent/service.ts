@@ -99,6 +99,9 @@ export class NativeAgents {
         isLive: id => this.preparing.has(id) || this.active.has(id),
         liveSessionIds: [...this.preparing, ...this.active.keys()],
         assertHome: () => this.runs.heartbeat(),
+        // The final fresh membership check and rename share the R1 home
+        // generation and SQLite transaction that serializes session creation.
+        criticalSection: (operation, body) => this.runs.homeFence().transaction(operation, () => body()),
       })
     }).catch(() => { /* Readiness/home contention or cleanup failures retry next pass. */ })
       .finally(() => { this.maintaining = false })

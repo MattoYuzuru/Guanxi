@@ -13,7 +13,8 @@
  * a published digest is never unlinked by a failing writer.
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { lstat, mkdir, opendir, realpath, rename, rm, unlink } from 'node:fs/promises'
+import { renameSync } from 'node:fs'
+import { lstat, mkdir, opendir, realpath, rm, unlink } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import {
   INPUT_EXCERPT_BYTES,
@@ -66,6 +67,8 @@ export interface SessionInputStoreOptions {
   now?: () => number
 }
 
+export type SessionInputReapDecision = 'kept' | 'renamed' | 'unavailable'
+
 export interface SessionInputReapOptions {
   /** Session ids with a live writer or pre-admission owner in this process. */
   isLive(sessionId: string): boolean
@@ -73,6 +76,13 @@ export interface SessionInputReapOptions {
   liveSessionIds?: readonly string[]
   /** Re-checks the R1 home fence before a destructive filesystem step. */
   assertHome(): void
+  /**
+   * Runs the fresh-membership recheck and the local rename in one synchronous
+   * home-fenced transaction. Production supplies an R1 home transaction; the
+   * fallback asserts the home and runs the body without an await, so no
+   * creation can interleave between the final check and the rename.
+   */
+  criticalSection?(operation: string, body: () => SessionInputReapDecision): SessionInputReapDecision
   now?: () => number
   tempGraceMs?: number
   /** Test seam: runs after the quarantine rename and before the remove re-check. */
@@ -344,12 +354,35 @@ export class SessionInputStore {
     }
   }
 
+  /** Current session, unreleased-writer, reference and pre-admission membership. */
+  private freshMemberHashes(options: SessionInputReapOptions): Set<string> {
+    const hashes = new Set<string>()
+    for (const row of this.db.prepare('SELECT id FROM sessions').iterate() as Iterable<{ id: string }>) {
+      hashes.add(sessionInputDirectoryName(row.id))
+    }
+    for (const row of this.db.prepare(
+      'SELECT session_id FROM session_writers WHERE released_at IS NULL',
+    ).iterate() as Iterable<{ session_id: string }>) {
+      hashes.add(sessionInputDirectoryName(row.session_id))
+    }
+    for (const row of this.db.prepare(
+      'SELECT DISTINCT session_id FROM session_input_artifacts',
+    ).iterate() as Iterable<{ session_id: string }>) {
+      hashes.add(sessionInputDirectoryName(row.session_id))
+    }
+    for (const id of options.liveSessionIds ?? []) hashes.add(sessionInputDirectoryName(id))
+    return hashes
+  }
+
   /**
    * Removes a session-artifacts directory with no `sessions` row and no live
-   * owner. The directory is first renamed to a random quarantine name; a
-   * session row or live owner appearing before removal keeps the quarantined
-   * bytes instead of merging them into the new session. Stale temporary files
-   * of known sessions are removed only when no live writer owns the session.
+   * owner. The final fresh membership check and the local namespace rename run
+   * synchronously inside the caller's home-fenced critical section, so a
+   * session or reference committed before the rename is observed and keeps its
+   * canonical directory. A session row appearing after the rename keeps the
+   * quarantined bytes instead of merging them into the new session. Stale
+   * temporary files of known sessions are removed only when no live writer owns
+   * the session.
    */
   async reap(options: SessionInputReapOptions): Promise<SessionInputReapResult> {
     const root = await this.ensureRoot()
@@ -375,21 +408,32 @@ export class SessionInputStore {
       if (DIGEST.test(name)) {
         const known = liveHashes.has(name)
         if (!known) {
-          options.assertHome()
           const quarantine = join(root, `.orphan-${randomUUID()}`)
+          let decision: SessionInputReapDecision
           try {
-            await rename(join(root, name), quarantine)
+            decision = (options.criticalSection ?? ((_operation, body) => {
+              options.assertHome()
+              return body()
+            }))('session_input_reap_orphan', () => {
+              // No await is allowed between this fresh membership check and the
+              // rename: a session/reference committed here must keep the
+              // canonical directory that its event already references.
+              if (this.freshMemberHashes(options).has(name)) return 'kept'
+              try {
+                renameSync(join(root, name), quarantine)
+                return 'renamed'
+              } catch {
+                return 'unavailable'
+              }
+            })
           } catch {
+            // A lost home fence or busy writer retains canonical bytes for the next pass.
             continue
           }
+          if (decision !== 'renamed') continue
           await options.beforeQuarantineRemove?.()
           options.assertHome()
-          const recheck = new Set<string>(liveHashes)
-          for (const row of this.db.prepare('SELECT id FROM sessions').iterate() as Iterable<{ id: string }>) {
-            recheck.add(sessionInputDirectoryName(row.id))
-          }
-          for (const id of options.liveSessionIds ?? []) recheck.add(sessionInputDirectoryName(id))
-          if (recheck.has(name)) {
+          if (this.freshMemberHashes(options).has(name)) {
             quarantinedKept += 1
             continue
           }

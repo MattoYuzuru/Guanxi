@@ -492,6 +492,57 @@ describe('session input artifacts: orphan reaping', () => {
     assert.ok(homeChecks > 0)
   })
 
+  it('keeps canonical bytes when a live session and v2 reference commit before the final quarantine fence', async (test) => {
+    const f = await fixture(test)
+    const raceId = 'race-session'
+    const text = `fixture input ${'x'.repeat(INPUT_INLINE_BYTES + 1000)}`
+    const written = await f.store.write(raceId, text, MEDIA_TEXT)
+    let raceHandle: SessionHandle | null = null
+    test.after(() => { try { raceHandle?.close() } catch { /* already closed */ } })
+    const result = await f.store.reap({
+      isLive: () => false,
+      assertHome: () => {
+        if (raceHandle !== null) return
+        raceHandle = f.log.open(raceId, { kind: 'agent' })
+        raceHandle.append(
+          { type: 'prompt', data: { origin: 'typed', messageId: 'race', attachmentCount: 0 } } as never,
+          { eventVersion: 2, inputArtifact: { ...written, mediaType: MEDIA_TEXT, excerpt: utf8Excerpt(text) } },
+        )
+      },
+    })
+    assert.equal(result.removedDirectories, 0)
+    assert.equal(result.quarantinedKept, 0)
+    assert.deepEqual(await readdir(join(f.dataDir, 'session-artifacts')), [sessionIdHash(raceId)])
+    const event = f.log.readAll(raceId, 'person').find((candidate) => candidate.type === 'prompt')
+    assert.ok(event?.type === 'prompt' && event.version === 2)
+    const bytes = await f.store.read(raceId, event.data.artifact)
+    assert.equal(Buffer.from(bytes).toString('utf8'), text)
+    raceHandle!.close()
+    raceHandle = null
+
+    const preparing = 'preparing-session'
+    await f.store.write(preparing, 'created before admission', MEDIA_TEXT)
+    const live = await f.store.reap({
+      isLive: (id) => id === preparing,
+      liveSessionIds: [preparing],
+      assertHome: () => undefined,
+    })
+    assert.equal(live.removedDirectories, 0)
+    assert.equal(live.quarantinedKept, 0)
+    assert.deepEqual((await readdir(join(f.dataDir, 'session-artifacts'))).sort(), [sessionIdHash(preparing), sessionIdHash(raceId)].sort())
+
+    const fencedId = 'fenced-orphan'
+    await f.store.write(fencedId, 'fenced bytes', MEDIA_TEXT)
+    const fenced = await f.store.reap({
+      isLive: () => false,
+      assertHome: () => undefined,
+      criticalSection: () => { throw new Error('stale_lease') },
+    })
+    assert.equal(fenced.removedDirectories, 0)
+    assert.equal(fenced.quarantinedKept, 0)
+    assert.deepEqual(await readdir(join(f.dataDir, 'session-artifacts')), [sessionIdHash(fencedId), sessionIdHash(preparing), sessionIdHash(raceId)].sort())
+  })
+
   it('keeps a quarantined directory if a session row appears before removal', async (test) => {
     const f = await fixture(test)
     const root = join(f.dataDir, 'session-artifacts')
