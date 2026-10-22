@@ -205,3 +205,97 @@ geometry no longer overflows. The component remains a draft with no product host
 
 **Commit:** the `fix(ui)` commit that carries this section; no push, merge, rebase or status-file
 edit.
+
+## Review fix — P2 app-shell story labels bypass localization
+
+**Status:** fix and focused locale regressions ready; root G15/G13 comparison and the full browser
+envelope remain pending. This section is appended evidence; it does not change the original
+slice's claims above.
+
+**Finding (root relay of the GPT design review, P2 #1; binding).**
+`packages/ui/src/components/app-shell-chrome/app-shell-chrome.stories.tsx` hardcoded seven English
+strings in the nested `labels` object. G15 passed only because the Russian and pseudo regimes
+rendered the same English text, so real localized clipping was never exercised.
+
+**Fix.** Added seven `story.appShell.*` message keys to `packages/ui/src/i18n/messages.ts`:
+English source wording is byte-for-byte the previous control copy, with curated Russian:
+
+| Field | English (source) | Russian |
+| --- | --- | --- |
+| `show` | Show sidebar | Показать боковую панель |
+| `collapse` | Collapse to rail | Свернуть в панель значков |
+| `expand` | Expand sidebar | Развернуть боковую панель |
+| `hide` | Hide sidebar | Скрыть боковую панель |
+| `moveLeft` | Move sidebar left | Переместить панель влево |
+| `moveRight` | Move sidebar right | Переместить панель вправо |
+| `palette` | Command palette | Палитра команд |
+
+The story `labels` object now uses `msg(...)` for all seven fields; `resolveMessages` recurses
+through the nested plain object in both the in-app catalog interpreter and Storybook's default
+render. No portable-story type or helper change was needed because `msg()` already returns the
+`string` the `AppShellLabels` props require. The component docs exception that allowed synthetic
+English control copy was replaced with the actual `story.appShell.*` contract.
+
+No product component behavior, public props, CSS, layout, callbacks, approval record, snapshot or
+dependency changed. The generated manifest was rebuilt with `npm run ui:manifest`; only the
+component `sourceHash` moved. All 18 `snapshotHashes` remain byte-for-byte unchanged, the review
+record is still `draft` with `approval: null`, and signature/status remain `absent`/`draft`.
+
+**New coverage.** One new file, `packages/ui/test/app-shell-story-locales.test.tsx`, with 4 `it`
+declarations and 10 runtime cases after the locale/state loops:
+
+- exact English source wording for all seven fields (the negative control against silent copy
+  edits that would move the 18 English PNGs);
+- RU differs from EN for every field; pseudo is at least +40% longer by the real `pseudoLocalize`
+  rule and is recognisably bracketed;
+- the actual story module's merged args are rendered through `StoryView` in RU and pseudo for
+  `default`, `rail`, `right` and `hidden`; Show/Palette and the menu Move, Collapse/Expand and
+  Hide controls are queried by their translated visible/accessible names, not by a key
+  dictionary;
+- the keyboard path opens the menu from the named trigger, focuses the first item and asserts the
+  actual menuitem accessible names and count;
+- every raw English label is absent as text and as button/menuitem accessible names in RU and
+  pseudo (explicit zero counts), while the translated labels are present in the same tree;
+- the hidden story proves Show and Palette remain available while the sidebar is `hidden`/`inert`;
+- sensitivity check: restoring only the `hide` literal temporarily produced **7 failed / 3 passed**
+  with the English-name assertion; the file was restored before the green run.
+
+**Regression envelope.** The existing `packages/ui/test/app-shell-chrome.test.tsx` (6 runtime
+cases) and `packages/ui/test/input-readiness.test.tsx` (1 declaration, EN/RU = 2 runtime cases)
+were run unchanged. Combined focused result: **18 passed / 3 files** (10 new + 8 existing). No
+Vitest implementation mirror of the story behavior was added; interaction behavior still belongs
+to the existing component test.
+
+| Command | Result |
+| --- | --- |
+| `nice -n 10 npx vitest run test/app-shell-story-locales.test.tsx` in `packages/ui`, before the production edit | RED: 9 failed / 1 passed. The sole pass was the exact-English control; RU/pseudo failed because the literals did not differ. |
+| Same file after adding keys and `msg()` refs | PASS: 10 passed / 1 file. |
+| `nice -n 10 npx vitest run test/app-shell-story-locales.test.tsx test/app-shell-chrome.test.tsx test/input-readiness.test.tsx` in `packages/ui` | PASS: 18 passed / 3 files. |
+| `nice -n 10 npx tsc --noEmit -p packages/ui/tsconfig.json` from the clone root | PASS, exit 0, no diagnostics. |
+| `nice -n 10 npx eslint packages/ui/src/components/app-shell-chrome/app-shell-chrome.stories.tsx packages/ui/src/i18n/messages.ts packages/ui/test/app-shell-story-locales.test.tsx` | PASS, exit 0. |
+| `nice -n 10 npx markdownlint-cli2 packages/ui/src/components/app-shell-chrome/app-shell-chrome.docs.md docs/plans/lanes/U1-shell-chrome.handoff.md` | PASS, 0 errors. |
+| `nice -n 10 npm run ui:manifest` | Wrote the generated manifest. |
+| `nice -n 10 node packages/ui/catalog/scripts/build-manifest.ts --check` | `catalog/manifest.json is fresh`, exit 0. |
+| `git diff --check` | Clean, exit 0. |
+
+**Not run here / residual risk.** This sandbox did not run `npm run ui:check`,
+`npm run ui:check:browser`, G13, G14, G15 browser clipping, G16, `npm test`, `npm run build` or
+Storybook. The English images are expected to stay unchanged because the seven source strings are
+identical and no CSS/component markup moved, but the root must confirm all 18 G13 PNGs and run
+G15 with the now-expanded RU/pseudo labels in a real browser. The pseudo/RU menu labels are
+rendered and named in jsdom only; actual menu width, overflow and clipping remain browser proof.
+The component is still a `draft` with `approval: null`; no signature, snapshot, status or product
+usage was fabricated. P2 #2 (loading/offline semantics) is not part of this fix and remains for a
+separate root-owned round.
+
+**Ownership.** The four coordinator-listed paths changed: the story file, `messages.ts`, the new
+focused test and the generated manifest. One additional minimal doc line changed in
+`packages/ui/src/components/app-shell-chrome/app-shell-chrome.docs.md` because the binding finding
+explicitly required removing the "synthetic English" story exception and the file otherwise
+belongs to this component folder. No other checkout, PHASE/NEXT/status file, approval record,
+snapshot, PNG or lockfile was touched.
+
+**Commits.** `8e79db64b7e064c9f8718315dbadef9ce577874f` is the single coherent fix commit for
+this finding; the handoff section is the follow-up docs commit on top of it. The branch is clean
+at the handoff commit; root review runs from
+`63aa885194676d43a42cc8e4f25f304d1e995626..HEAD`.
