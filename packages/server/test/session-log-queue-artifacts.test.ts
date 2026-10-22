@@ -477,7 +477,9 @@ describe('queue v3 append and read', () => {
     const tail = `QUEUE-TAIL-${randomBytes(8).toString('hex')}`
     const full = `${'q'.repeat(INPUT_INLINE_BYTES)}${tail}`
     const input = await descriptor(f.store, f.sessionId, full)
-    const exact = `${'q'.repeat(INPUT_INLINE_BYTES - 16)}queueftssentinel`
+    const sentinel = 'queueftssentinel'
+    const exact = `${'q'.repeat(INPUT_INLINE_BYTES - Buffer.byteLength(sentinel) - 1)} ${sentinel}`
+    assert.equal(Buffer.byteLength(exact), INPUT_INLINE_BYTES)
     const appended = appendV3(f, [
       { id: 'inline-item', kind: 'inline', text: exact },
       { id: 'artifact-item', kind: 'artifact', input },
@@ -514,17 +516,17 @@ describe('queue v3 append and read', () => {
     // the negative queue assertion above cannot pass because indexing is disabled.
     const positive = f.handle.append({
       type: 'prompt',
-      data: { origin: 'typed', messageId: 'fts-positive', text: 'queueftspositivesentinel', attachmentCount: 0 },
+      data: { origin: 'typed', messageId: 'fts-positive', text: sentinel, attachmentCount: 0 },
     }).event
     const positiveRow = f.db.prepare(
       'SELECT row_id, search_text FROM session_events WHERE seq = ?',
     ).get(positive.seq) as { row_id: number; search_text: string | null }
-    assert.equal(positiveRow.search_text, 'queueftspositivesentinel')
+    assert.equal(positiveRow.search_text, sentinel)
     const positiveMatches = f.db.prepare(
-      "SELECT rowid FROM session_events_fts WHERE session_events_fts MATCH 'queueftspositivesentinel'",
+      "SELECT rowid FROM session_events_fts WHERE session_events_fts MATCH 'queueftssentinel'",
     ).all() as unknown as { rowid: number }[]
     assert.deepEqual(positiveMatches.map((row) => Number(row.rowid)), [positiveRow.row_id])
-    assert.equal(f.log.search('queueftspositivesentinel', { audience: 'person' }).length, 1)
+    assert.equal(f.log.search(sentinel, { audience: 'person' }).length, 1)
   })
 
   test('resolves several descriptors atomically and keeps distinct ids for equal text', async (t) => {
