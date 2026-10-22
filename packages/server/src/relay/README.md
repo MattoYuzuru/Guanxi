@@ -6,7 +6,45 @@
 `guanxi.relay` provides `agent.relay`, loaded after K3 in the default server. Loading it
 starts no inference. A trusted execution host initializes an R1 attempt with an immutable
 plan and delegation caps, then supplies `RelayInput`: a K3 connection/model, a runtime
-meter, reserves, optional execution limits and a workspace. There is no HTTP or UI entry point in this slice.
+meter, reserves, optional execution limits and a workspace. The additive public bridge below
+has HTTP and CLI entry points; there is no relay UI.
+
+## Partial trusted public bridge
+
+`POST /api/relay` accepts an explicit owner plan/caps, project, connection, model, start key,
+Full-access consent and allowed domains. The strict wire schema accepts no loaded window,
+placement, tokenizer or source/confidence claims. Server project/workspace bindings supply roots;
+the immutable run policy captures those roots and owner choices. The default server refuses
+`runtime_meter_unavailable` before creating a run, attempt or start mapping. A configured runtime
+without an owned-workspace allocator refuses `relay_workspace_unavailable` instead. This is a
+partial R2 bridge, not an operational stock-Ollama executor or a full R2/MS1 gate.
+
+The trusted `StartOptions.relay` port must supply an exact rendered-request counter bound to
+installed digest/runtime identity and an owned isolated checkout allocator. There is no byte-count,
+catalog-context or unsandboxed allocation fallback. Loaded W comes from current Ollama `/api/ps`,
+matched to an installed artifact. The counter and loaded observation have explicit sources,
+timestamps, high-confidence attestations and a host-selected maximum age. Status retains the
+admission observations and their age; it does not claim the runtime is still live. Local zero-cost
+accounting is an explicit trusted host-compute policy, not an observed provider bill. The counter
+port remains responsible for proving local placement and renderer correctness; a loopback address
+alone proves neither. Stock Ollama does not supply this port here.
+
+`GET /api/relay/starts/:key` and `/result` return metadata-only status; `POST .../stop` cancels
+preparation or its committed run and waits for resource cleanup acknowledgement. Run-id aliases
+are available after admission. Identical start-key retries return the same run, changed choices
+conflict, and restart reports interrupted work without dispatching inference. Events use the
+existing `/api/sessions/:sessionId/stream`; disconnecting that observer does not cancel execution.
+All routes require a loopback peer and mutation routes enforce JSON/origin checks. Stop cannot
+force a noncooperative allocator to acknowledge cleanup; a known K4 quarantine is retained and
+reported as `cleanup_unconfirmed`. Transport settlement is a separate prerequisite for treating
+a canceled model call as released; this slice makes no backend-compute cessation claim.
+
+Public start migration **39** uses `relay_start_migrations` and `relay_public_starts`, created
+atomically with R1 attempt, K2 session and relay initialization. A failed transaction creates none
+of them. Losing the home generation prevents publishing settled state. Rollback disables new
+admission and retains additive history; no inference is resumed automatically.
+
+See the [slice plan](../../../../docs/plans/lanes/R2-trusted-start.plan.md) for the bounded scope.
 
 ## Runtime and context
 

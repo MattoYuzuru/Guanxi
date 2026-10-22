@@ -73,14 +73,16 @@ export class RelayStore {
   emit(a: Attempt, event: SessionEventInput): void { this.runs.mutate(a, (_db, emit) => emit(event)) }
   init(a: Attempt, rawPlan: Plan, rawCaps: Caps): void {
     const plan = planSchema.parse(this.scrubber.scrub(rawPlan)), caps = capsSchema.parse(rawCaps)
-    this.runs.mutate(a, (db, emit) => {
+    this.runs.mutate(a, (db, emit) => this.initWithin(a, plan, caps, db, emit))
+  }
+  /** Only for an already-fenced synchronous R1 start/mutation transaction. */
+  initWithin(a: Attempt, plan: Plan, caps: Caps, db: Db, emit: (e: SessionEventInput) => void): void {
       invariant(!db.prepare('SELECT run_id FROM relay_runs WHERE run_id=?').get(a.run_id), 'already_initialized')
       const l: Ledger = { plan, caps, cycle: 0, state: 'boot', startedAt: this.clock(), items: Object.fromEntries(plan.items.map(i => [i.id, 'open'])),
         head: plan.base, files: [], diffstat: '', evidence: [], noProgress: 0, tokens: 0, moneyMicros: 0, unknownCosts: 0,
         errors: 0, proposals: [], eta: null, baseline: { statuses: '', gates: '', head: plan.base }, pendingCall: null }
       db.prepare('INSERT INTO relay_runs VALUES (?,?)').run(a.run_id, canonical(l))
       this.event(emit, 'initialized', { revision: plan.revision, hash: hash(l) })
-    })
   }
   transition(a: Attempt, state: CycleState): void {
     this.change(a, 'transition', l => {

@@ -12,9 +12,10 @@ import { ConnectionRelayModel } from './model.ts'
 import { RelayExecutor } from './executor.ts'
 import { RelayStore } from './store.ts'
 import { invariant } from './types.ts'
+import { RelayStarts, type RelayStartHost } from './start.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
-export interface RelayConfig { db: Db; limits?: Partial<RelayLimits> }
+export interface RelayConfig { db: Db; limits?: Partial<RelayLimits>; startHost?: RelayStartHost }
 export interface RelayInput {
   connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves; limits?: Partial<RelayLimits>
 }
@@ -28,9 +29,12 @@ export const relayPlugin = definePlugin<RelayConfig>({
     const connections = ctx.service<Connections>('connections.registry')
     const scrubber = ctx.service<EgressScrubber>('egress.scrubber')
     const store = new RelayStore(config.db, runs.store, scrubber)
+    const publicStarts = new RelayStarts(config.db, runs.store, ctx.service<SessionLog>('session.log'), connections, scrubber, store,
+      config.startHost ?? { project: async () => { throw new Error('relay_project_unavailable') }, nodePorts: () => [] })
     const active = new Map<string, { executor: RelayExecutor; promise: Promise<unknown> }>()
     let closed = false
     ctx.provide(RELAY_SERVICE, Object.freeze({
+      publicStarts,
       init: (a: Attempt, plan: Plan, caps: Caps) => { invariant(!closed, 'relay_closed'); store.init(a, plan, caps) },
       read: (id: string) => store.read(id),
       async execute(a: Attempt, input: RelayInput) {
@@ -44,10 +48,11 @@ export const relayPlugin = definePlugin<RelayConfig>({
       stop: (id: string) => active.get(id)?.executor.stop(),
       recover: (a: Attempt) => { invariant(!closed && !active.has(a.run_id), 'relay_busy'); store.recover(a) },
     }))
-    ctx.effect(() => async () => { closed = true; for (const a of active.values()) a.executor.stop(); await Promise.allSettled([...active.values()].map(a => a.promise)) }, 'relay.stop')
+    ctx.effect(() => async () => { closed = true; for (const a of active.values()) a.executor.stop(); await publicStarts.close(); await Promise.allSettled([...active.values()].map(a => a.promise)) }, 'relay.stop')
   },
 })
 export interface RelayService {
+  readonly publicStarts: RelayStarts
   init(a: Attempt, plan: Plan, caps: Caps): void
   read(id: string): import('./types.ts').Ledger
   execute(a: Attempt, input: RelayInput): Promise<import('./types.ts').Ledger>
