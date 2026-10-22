@@ -66,44 +66,67 @@ fixture test cleans that escaped PID explicitly and never claims full-tree clean
 
 ## Supervisor record and reaper
 
-The supervisor writes a private record under a `0700` directory with mode `0600`:
+The supervisor writes a private record under a `0700` directory with mode `0600`. New spawns
+write version 2; a version-1 record is legacy and remains readable:
 
 ```json
-{ "version": 1, "bindingTag": "<sha256>", "nonceHash": "<sha256>",
+{ "version": 2, "bindingTag": "<sha256>", "nonceHash": "<sha256>",
   "supervisorPid": 123, "pgid": 123, "clientPid": 124, "clientExitCode": 0,
+  "clientTokenHash": "<sha256 of the fresh cleanup generation>",
   "clientScript": "/absolute/path", "startedAt": 0 }
 ```
 
-It never contains task text, prompts, tool results, reasoning, signatures, credentials,
-account/model IDs or the nonce itself. The record directory must not be a symlink and is
-re-read with an explicit size bound and shape validation.
+The supervisor generates a fresh 256-bit `clientToken` before spawning the launcher, writes only
+`clientTokenHash` to the record **before** the `ready` control line, and passes the token as the
+launcher/client's fourth argv element. The token is not derived from the binding, nonce, task,
+arm, run, attempt, account, connection, model, provider or trial. It is not in the record,
+environment or private frames, is never logged, and grants no authentication or capability. It
+is a cleanup generation, not an identity or secret. The record never contains task text,
+prompts, tool results, reasoning, signatures, credentials, account/model IDs or the nonce
+itself. The record directory must not be a symlink and is re-read with an explicit size bound,
+mode check and version-specific shape validation.
 
 The supervisor **never unlinks the record**. It cannot verify `ESRCH` for its own group after
 signalling `SIGKILL` to that group, because the signal also kills the supervisor. On lifetime
 EOF it terminates the group and leaves the record. Only the live parent or the next reaper may
-remove the record, and only after:
+remove the record, and only after the recorded identity is validated and the recorded group is
+actually `ESRCH`; removal is last. If the parent dies, the record persists for the next reaper.
 
-- the parent observes supervisor close and the group is ESRCH; or
-- the reaper validates the exact recorded identity, signals the group, observes ESRCH, and
-  only then unlinks.
+The reaper never scans all processes and never treats a numeric group, shared launcher argv, a
+zombie, a missing observer row or a timeout as proof of death:
 
-If the parent dies, the record persists for the next reaper. A reaper never unlinks on a merely
-issued signal, a timeout, an unvalidated PID or an identity mismatch; it returns
-`cleanup_unconfirmed` and preserves the record/quarantine. A crash between record removal and a
-kill therefore cannot leave an untracked process: removal is last.
+| Observation | Action |
+| --- | --- |
+| record absent | `absent` |
+| invalid record, tag/hash/client-script mismatch | `cleanup_unconfirmed`; preserve |
+| group is actually `ESRCH` | unlink the validated record only; no signal |
+| group status or process state is unknown | `cleanup_unconfirmed`; preserve |
+| live supervisor with exact tokenised argv | SIGTERM `-pgid`, grace, SIGKILL, verify `ESRCH`, unlink |
+| live supervisor with mismatched argv | `cleanup_unconfirmed`; never inspect or signal the client |
+| zombie/absent supervisor, v2 `clientPid` with exact four-token launcher argv and matching token hash in the recorded group | SIGKILL `-pgid`, verify `ESRCH`, unlink |
+| zombie/absent supervisor, v2 client absent/mismatched/wrong token | `cleanup_unconfirmed` if the group is alive |
+| v1 record, exact live supervisor | existing supervisor cleanup path |
+| v1 record, no exact supervisor | no client fallback; unlink only when the group is already `ESRCH` |
 
-Identity is compared as exact tokenised argv for the expected supervisor or launcher
-invocation plus the recorded PID/process-group relation, never a substring. The test includes a
-near-miss supervisor path (`private-supervisor.mjs.bak`) and asserts that the reaper refuses to
-signal/unlink. `/bin/ps` is invoked through `execFile` with no shell, a fixed timeout and a
-bounded buffer. The reaper accepts an explicit process-table observation seam for tests because
-the worker sandbox blocks `/bin/ps`; production defaults to `/bin/ps`. The exact `/bin/ps`
-invocation itself is therefore **not exercised in this harness** (residual).
+`ps -ww -p PID -o pid=,pgid=,state=,command=` is invoked through `execFile` with no shell, a
+fixed timeout and bounded output. The state parser distinguishes a live state, a `Z` zombie and
+an unknown/failed observation. A missing PID is first checked with a same-UID `kill(pid, 0)`; a
+failed or ambiguous query is `unknown`, not dead. The client proof is exactly
+`[node, launcher, client-script, client-token]` plus the recorded `pgid`, followed by
+`sha256(token) === clientTokenHash`; there is no substring, `ps -ax` or numeric-group-only
+fallback. The test injection seam still exists because this worker sandbox blocks `/bin/ps`;
+seam observations are not real process-table proof and root/reviewer owns the unsandboxed run.
 
 Same-UID cleanup is best-effort fixture foundation only. The child can signal/read same-UID
-processes and can tamper with a same-UID record; this is not a security boundary. Rootless
-Podman/Linux cgroups remain the separate untrusted-compute boundary and are not implemented
-here.
+processes and can tamper with a same-UID record; this is not a security boundary. A descendant
+that calls `setsid` leaves the group and is outside the proof; the fixture cleans that explicit
+PID and never claims full-tree cleanup. Rootless Podman/Linux cgroups remain the separate
+untrusted-compute boundary and are not implemented here.
+
+A version-1 record has no generation token, so its client fallback is intentionally disabled.
+An unconfirmed v1 group is left in quarantine for root/reviewer reconciliation; there is no file
+migration and no automatic deletion. A new spawn writes v2. Old code sees a v2 record as invalid
+and fails closed without signalling.
 
 ## K2 retention and the public projection
 
@@ -111,37 +134,78 @@ here.
 `SessionLog`. It imports only types from the server package; the coordinator wires the actual
 instances. `createBoundTrialHost` checks the R1 run's session, uses the actual R1 run id for K3,
 keeps the experiment id in the budget ledger, and supplies `attemptFence.assert =
-runs.renew(attempt)`.
+runs.renew(attempt)`. The session type now includes the existing `readAll` method; no server
+code changed.
+
+Every completion, including an empty one, is retained inside the existing `reasoning` class as
+a bounded versioned two-phase receipt. No new event type, wire field, schema, migration,
+dependency or `turn.done` is added. New receipts and content events use one opaque correlation
+span:
+
+```text
+span = sha256("guanxi.bench.completion-span/v1\n" + binding.nonce + "\n" + requestId)
+```
+
+The receipt stores bounded `bindingHash`/`requestHash` values, never the nonce, and the span is
+used consistently for reconciliation. Another binding in the same session with the same raw
+request id therefore cannot collide with or be rejected by this completion. The per-content
+idempotency keys stay `bench:<nonce>:<requestId>:<spec-key>`; public message ids are unchanged.
 
 `retainAndProject(requestId, result)`:
 
 1. checks the immutable binding, attempt/run identity and session;
 2. refuses while the egress scrubber is not ready;
-3. scrubs the full completion, validates explicit bounds, and rejects unsupported content,
-   invalid/long tool IDs and duplicate tool IDs before the first append;
-4. writes each existing canonical event (`reasoning`, `assistant.message`, `tool.call`) in its
-   own fenced, idempotent transaction with an explicit `expectedSeq`;
-5. rechecks the stored event after K2 write-time scrubbing and derives the public projection
-   from the **stored scrubbed** assistant/tool events;
-6. returns exactly that projection, which the channel writes to the task.
+3. scrubs the full completion, builds the complete ordered specification manifest, validates the
+   explicit content/receipt bounds and rejects unsupported content, invalid/long tool IDs and
+   duplicate tool IDs **before** the first append;
+4. reads the person-audience session events once. Pre-fix raw-span rows are refused only when the
+   existing fenced append idempotency lookup proves that this binding's own key exists; probes use
+   `expectedSeq` at the current head, so a refused probe writes no event. A genuinely new binding
+   is not rejected by another binding's raw-span rows;
+5. appends the begin receipt (`receipt:begin`) through `runs.append`; this is the first durable
+   R1-fenced acknowledgement. A duplicate begin is the authoritative check for a same-key changed
+   receipt payload;
+6. appends each missing canonical content event (`reasoning`, the versioned signature envelope,
+   joined assistant text, tool calls in content order) with its deterministic key and
+   `expectedSeq`. Each stored event is digest-checked against the ordered manifest; a late scrub
+   or stored-data change fails closed with an allowed partial trace;
+7. appends the done receipt (`receipt:done`) only after the full stored content matches the
+   manifest and public digest. The done receipt records `beginSeq`, ordered `contentSeqs`,
+   `specCount`, `manifestSha256`, `publicSha256` and the stored public stop reason. Only after
+   this final acknowledgement does the channel write a task frame;
+8. derives the public projection from the **stored scrubbed** assistant/tool events and the
+   stored begin `stopReason`; the caller's full result is not mutated. Reasoning, signature,
+   usage, provider error text, tool arguments and transcripts never enter a receipt or the
+   public frame.
 
-The caller's full result is not mutated. Reasoning and signature text, usage, provider error
-text and request transcript never enter the public frame. A fake value registered between
-gateway return and retention is scrubbed in both K2 and the frame; the retained public event
-equals the frame. Readiness withdrawal yields an error frame, not a successful task completion,
-and no K2 event. A late secret that enlarges stored text is caught by the post-append bound.
+The begin receipt is bounded by `maximumReasoningTextBytes` and the planned content-plus-begin
+bytes by `maximumRetainedBytes` before the first write. The done receipt is bounded before its
+append and the cumulative retained bytes are rechecked. An oversized receipt fails
+`retention_too_large` before its append. A canceled/deposed attempt throws `stale_lease` on the
+begin append and maps to `retention_fenced`; no receipt/content row and no success frame are
+produced.
+
+An empty completion has `specCount: 0` and still writes both begin and done receipts; its
+projection is `{ text: "", toolCalls: [], stopReason: <stored> }`. A partial begin/content
+prefix is reconciled by a recreated sink, which appends only the missing suffix and the done
+receipt. A done receipt makes a retry idempotent with no duplicate rows. A changed stop reason,
+text, tool argument, removed/added/reordered tool or private reasoning/signature specification
+conflicts at the begin receipt before content or success. A pre-fix no-receipt trace fails
+`retention_idempotency_conflict` and preserves its rows; after the reasoning TTL purges receipt
+data, a same-key retry also fails closed rather than reconstructing `stopReason` or a projection
+from fresh evidence. No in-memory receipt cache is used.
 
 A thinking signature is stored inside the existing `reasoning` class as the versioned text
-envelope `guanxi.bench.thinking-signature/v1\n{...}`. No wire contract or schema migration is
-added. Actual `SessionLog` `remote_agent` reads and the export route omit both reasoning and
-the signature envelope; tests exercise both.
+envelope `guanxi.bench.thinking-signature/v1\n{...}`. Actual `SessionLog` `remote_agent` reads and
+the export route omit both reasoning and the signature/receipt envelopes; tests exercise both.
+Receipts are reasoning-TTL metadata: they carry hashes, counts and the already-public stop
+reason, never rationale, private content, signature text or tool-argument plaintext.
 
 A multi-event completion is not atomic. A failure after an earlier append can leave an
-idempotent partial private trace, but no task response is emitted until every append has
-acknowledged. Retrying the same payload under a live attempt resumes/deduplicates; a same-key
-changed payload refuses with `retention_idempotency_conflict`; a stale attempt is fenced.
-There is no automatic redispatch or retry. Atomic all-or-nothing retention would need a new R1
-batch API and is not claimed.
+idempotent partial private trace, but no task response is emitted until the done append
+acknowledges. There is no automatic redispatch or retry. Atomic all-or-nothing retention would
+need a new R1 batch API and is not claimed. Rolling back to old code with live v2 process records
+or receipt rows is not safe without root reconciliation; forward-fix is preferred.
 
 ## Policy and trust boundary
 
@@ -166,10 +230,14 @@ benchmark was used. D-194 remains in force and no B1 quality claim is made.
 ## Verification scope
 
 Local fixture commands are in the
-[lane handoff](../../docs/plans/lanes/B1-trial-binding.handoff.md). New tests cover the real K2
-sink and projection, the fenced gateway, two sequential OS-executed requests, public-key
-exactness, fd isolation, ACK-gated pending ownership with late fulfilment/rejection, forced
-supervisor death and reaper identity/ESRCH ordering, nested and escaped descendants, startup
-failure, malformed/selector input, binding concurrency, symlinked/permissive policy and
-environment refusal. The server K2/R1 envelope is run separately. No browser, build, full
-`npm test`, Storybook, mutation tool, container or remote gate is claimed by this slice.
+[lane handoff](../../docs/plans/lanes/B1-trial-binding.handoff.md). The P2 review-fix continuation
+adds 18 new cases (6 process, 12 K2) to the scoped 95-case bench envelope. They cover fresh v2
+generation/token-hash records, live-mismatch/unknown/zombie quarantine, v1 group-gone cleanup,
+forced-supervisor-death ESRCH ordering, two sequential OS-executed requests, public-key
+exactness, fd isolation, ACK-gated pending ownership with late fulfilment/rejection, nested and
+escaped descendants, startup/policy refusal, empty two-phase receipts, canceled/deposed
+`retention_fenced`, changed reason/manifest/private specs, cross-binding same-session/request-id
+separation, legacy refusal, partial-prefix sink recreation, TTL purge, readiness and late scrub.
+The server K2/R1 envelope is run separately. The worker did not execute `/bin/ps`; the real
+process-table probe, full `npm test`, browser, build, Storybook, container and remote gates are
+not claimed by this slice.

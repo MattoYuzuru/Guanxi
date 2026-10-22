@@ -107,10 +107,23 @@ frame, and one supervised local process reached only through anonymous inherited
 The task cannot select account, connection, model, trial, output policy, cleanup or billing
 facts. The nonce is host correlation, not authentication.
 
-The supervisor is a trusted source-run asset. It writes a `0600` record under a `0700`
-directory, terminates its process group on lifetime EOF, and never unlinks the record. Only a
-live parent or the next reaper removes it, after exact process identity validation and actual
-process-group ESRCH. A missing supervisor/launcher asset fails closed; there is no direct-spawn
+The K2 sink writes a bounded two-phase receipt inside the existing reasoning class for every
+completion, including an empty one. Begin and done receipts carry only ordered spec hashes, a
+public digest and the scrubbed public stop reason; the returned projection is derived from the
+acknowledged stored content. A new completion gets a stable opaque correlation span derived
+from the binding nonce and request id, so a shared session/request id cannot conflate bindings.
+Legacy raw-span traces are refused only with same-binding idempotency evidence; changed
+reason/removed/reordered specs, partial-prefix gaps, purged receipts and a recreated sink are
+reconciled or fail closed as documented.
+
+The supervisor is a trusted source-run asset. It generates a fresh 256-bit cleanup generation,
+writes only its hash to a `0600` version-2 record under a `0700` directory, and passes the token
+only in the launcher/client argv. The token grants nothing and is not in the record, environment
+or private frames. The supervisor terminates its process group on lifetime EOF and never
+unlinks the record. Only a live parent or the next reaper removes it, after exact process
+identity validation and actual process-group ESRCH. A live mismatched supervisor, unknown
+observation, wrong client token or legacy v1 group is quarantined rather than killed through a
+shared PID/argv. A missing supervisor/launcher asset fails closed; there is no direct-spawn
 fallback. A future bundle must include both `.mjs` assets. Same-UID cleanup is best-effort, not
 an isolation boundary; a `setsid` descendant is outside the process-group proof.
 
@@ -119,7 +132,7 @@ immediately, but the owning promise and active binding remain owned until the re
 K2 retention settle. Timers bound process startup/output/shutdown only. A pending retention can
 therefore keep the run promise pending by design. No automatic redispatch/retry is added.
 Per-event fenced K2 appends can leave an idempotent private partial trace; no task response is
-written until every append acknowledges.
+written until the done receipt acknowledges.
 
 ## Corpus and protocol
 

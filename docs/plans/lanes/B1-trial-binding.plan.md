@@ -1265,3 +1265,22 @@ assertions except explained receipt-count/span/version updates, and runs only th
 files, the three server K2/R1 files, bench/server type checks and scoped lint/markdown/diff
 checks. No shared server, contract, UI, CLI, migration, dependency, status-file, main, merge,
 push, rebase, full gate or live execution is included.
+
+### 14.11 Implementation status (2026-10-22)
+
+**Status:** the three reproduced P2s are implemented and locally fixture-checked; independent
+re-review and full integration gates remain pending. This does not close B1, activate ADR-0025
+or enable paid execution.
+
+- `40fab84` — plan correction recording §14.10 before code.
+- `65d96c1` — fresh v2 cleanup generation, fail-closed live-mismatch/unknown/zombie handling and
+  v1 compatibility.
+- `ef51113` — bounded two-phase K2 receipts, opaque completion span, ordered manifest/public
+  digest, stored stop reason, empty/canceled/fenced/legacy reconciliation.
+- docs/handoff — `PRIVATE_PROCESS.md`, `PRIVATE_CHANNEL.md`, `README.md` and the appended lane
+  handoff.
+
+Scoped evidence is **18 new / 77 bench regression-envelope cases + 38 server envelope cases**
+(133 executed), plus bench/server type checks. The worker did not execute `/bin/ps`; the
+unsandboxed real process-table probe and parent-death probe remain independent root/GPT checks.
+No full gate, browser, build, live execution, provider call or B1 quality claim is included.
