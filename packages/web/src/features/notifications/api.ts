@@ -30,9 +30,14 @@ export interface ListNotificationsParams {
 
 const id = (value: string) => encodeURIComponent(notificationIdSchema.parse(value))
 
-/** A fresh key for one user intent; reuse it only to retry that same intent. */
+/**
+ * A fresh key for one user intent; reuse it only to retry that same intent. It uses
+ * `getRandomValues`, which exists outside secure contexts too (a LAN address over plain HTTP has
+ * no `randomUUID`).
+ */
 export function newIdempotencyKey(): string {
-  return notificationIdempotencyKeySchema.parse(globalThis.crypto.randomUUID())
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
+  return notificationIdempotencyKeySchema.parse(Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(''))
 }
 
 export const notificationsApi = {

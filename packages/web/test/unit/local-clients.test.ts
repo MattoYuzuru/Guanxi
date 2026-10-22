@@ -131,8 +131,11 @@ describe('notificationsApi', () => {
     expect(table.actions.map((row) => row.availability)).toEqual(['not_configured', 'not_exposed'])
   })
 
-  it('creates a distinct valid key per intent', () => {
+  it('creates a distinct valid key per intent, without crypto.randomUUID', () => {
     expect(newIdempotencyKey()).not.toBe(newIdempotencyKey())
+    const real = globalThis.crypto
+    vi.stubGlobal('crypto', { getRandomValues: real.getRandomValues.bind(real) })
+    expect(newIdempotencyKey()).toMatch(/^[0-9a-f]{32}$/)
   })
 })
 
