@@ -164,7 +164,9 @@ R1 migration 30 also adds `idx_session_mirror_backlog_thread` on
 `excerpt.ts` protects prompt/tool-call input excerpts using the stored original byteSize,
 excerptBytes and UTF-8 length before any replacement. A known right-truncated excerpt uses
 the scrubber's private prefix capability, including a one-character boundary fragment.
-List/summary titles derive from that protected excerpt before their title cut. Event reads,
+If an excerpt already contains a stored marker, append-time expansion may have erased byte
+proof of an earlier cut; its boundary is conservatively protected as ambiguous too. This
+can redact an otherwise ordinary matching suffix in that affected excerpt. List/summary titles derive from that protected excerpt before their title cut. Event reads,
 export and each outward SSE frame apply the same current-registry projection; an earlier
 read does not pin an obsolete redaction registry. Search may use FTS to nominate candidates,
 but rebuilds v2 searchable text from the safe event before matching surviving terms or
@@ -173,6 +175,6 @@ cutting a snippet. Complete v1 messages retain their exact-match behavior.
 Projection recomputes excerptBytes, respects the existing 8-KiB UTF-8 bound and drops an
 expanding marker whole if it cannot fit. It never reads full artifacts or writes payloads,
 hashes, FTS rows, event IDs, versions or sequence numbers. With an older scrubber port missing
-the optional capability, only known-truncated excerpts become empty; ordinary complete
+the optional capability, only known-truncated or marker-ambiguous excerpts become empty; ordinary complete
 excerpts and other session metadata remain available. Stored forensic erasure and arbitrary
 unknown message cuts are not provided by this read-only projection.
