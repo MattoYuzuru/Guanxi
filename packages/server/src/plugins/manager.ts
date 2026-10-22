@@ -555,7 +555,7 @@ async function copyRegularFile(source: string, destination: string, mode: number
   let to: Awaited<ReturnType<typeof open>> | undefined
   try {
     try {
-      from = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+      from = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
         throw new SourceIntegrityError('source_symlink', source, 'symbolic links are not allowed in a plugin source')
@@ -605,10 +605,10 @@ async function copyPluginEntries(source: string, destination: string, root: stri
     if (stat.isDirectory()) {
       await mkdir(to, { mode: stat.mode & 0o777 })
       await copyPluginEntries(from, to, root)
-    } else if (stat.isFile()) {
-      await copyRegularFile(from, to, stat.mode)
     } else {
-      throw new SourceIntegrityError('source_not_regular', from, 'only regular files and directories can be installed')
+      // The opened handle decides: O_NONBLOCK avoids hanging on a FIFO and
+      // fstat refuses anything that is not a regular file.
+      await copyRegularFile(from, to, stat.mode)
     }
   }
 }

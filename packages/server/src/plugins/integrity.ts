@@ -78,7 +78,7 @@ function isInside(root: string, candidate: string): boolean {
 async function hashFile(path: string): Promise<string> {
   let handle: Awaited<ReturnType<typeof open>> | undefined
   try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     const stat = await handle.stat()
     if (!stat.isFile()) {
       throw new SourceIntegrityError('source_not_regular', path, 'only regular files can be installed')
@@ -152,13 +152,13 @@ export async function listSourceFiles(sourceDir: string): Promise<IntegrityEntry
       }
       if (stat.isDirectory()) {
         await walk(absolute, path)
-      } else if (stat.isFile()) {
-        if (stat.nlink > 1) {
+      } else {
+        if (stat.isFile() && stat.nlink > 1) {
           throw new SourceIntegrityError('source_hardlink', absolute, 'hard-linked files are not allowed in a plugin source')
         }
+        // Opening with O_NONBLOCK and checking the handle refuses FIFOs,
+        // sockets and devices without ever blocking on them.
         entries.push({ path, sha256: await hashFile(absolute) })
-      } else {
-        throw new SourceIntegrityError('source_not_regular', absolute, 'only regular files and directories can be installed')
       }
     }
   }
@@ -202,7 +202,7 @@ function readStatSync(path: string): Stats {
 function hashFileSync(path: string): string {
   let descriptor: number | undefined
   try {
-    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     const stat = fstatSync(descriptor)
     if (!stat.isFile()) {
       throw new SourceIntegrityError('source_not_regular', path, 'only regular files can be installed')
@@ -268,13 +268,11 @@ export function listSourceFilesSync(sourceDir: string): IntegrityEntry[] {
       }
       if (stat.isDirectory()) {
         walk(absolute, path)
-      } else if (stat.isFile()) {
-        if (stat.nlink > 1) {
+      } else {
+        if (stat.isFile() && stat.nlink > 1) {
           throw new SourceIntegrityError('source_hardlink', absolute, 'hard-linked files are not allowed in a plugin source')
         }
         entries.push({ path, sha256: hashFileSync(absolute) })
-      } else {
-        throw new SourceIntegrityError('source_not_regular', absolute, 'only regular files and directories can be installed')
       }
     }
   }

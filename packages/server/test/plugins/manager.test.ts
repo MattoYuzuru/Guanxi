@@ -5,6 +5,7 @@
  * Every test uses a fresh temporary directory. No build script is ever run.
  */
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import {
   link,
   lstat,
@@ -38,6 +39,7 @@ import {
 
 interface TestContext {
   after(callback: () => unknown): void
+  skip(message?: string): void
 }
 
 interface PluginFixture {
@@ -821,6 +823,33 @@ test('refuses hardlinked source files', async t => {
   await assert.rejects(manager(pluginsDir).install(source), (error: unknown) => {
     assert.ok(error instanceof SourceIntegrityError)
     assert.equal(error.code, 'source_hardlink')
+    return true
+  })
+  assert.equal(await exists(pluginsDir), false)
+})
+
+test('refuses a FIFO source entry without blocking', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'))
+  try {
+    execFileSync('mkfifo', [join(source, 'pipe')])
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      t.skip('mkfifo is unavailable on this host')
+      return
+    }
+    throw error
+  }
+  const pluginsDir = join(base, 'plugins')
+  await assert.rejects(manager(pluginsDir).inspect(source), (error: unknown) => {
+    assert.ok(error instanceof SourceIntegrityError)
+    assert.equal(error.code, 'source_not_regular')
+    return true
+  })
+  await assert.rejects(manager(pluginsDir).install(source), (error: unknown) => {
+    assert.ok(error instanceof SourceIntegrityError)
+    assert.equal(error.code, 'source_not_regular')
     return true
   })
   assert.equal(await exists(pluginsDir), false)
