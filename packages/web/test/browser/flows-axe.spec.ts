@@ -11,6 +11,7 @@
  * present, so the entry has to be removed once the screen is fixed.
  */
 import AxeBuilder from '@axe-core/playwright'
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { installChatApiFixture } from './fixtures/chat-api.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
@@ -54,7 +55,7 @@ async function mockSettingsApi(page: Page): Promise<void> {
     if (url.pathname === '/api/health') return route.fulfill(json(health))
     if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings({ locale: 'en', theme: 'light' })))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
-    if (url.pathname === '/api/sessions/page') {
+    if (url.pathname === SESSION_ROUTES.page()) {
       return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
     }
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))

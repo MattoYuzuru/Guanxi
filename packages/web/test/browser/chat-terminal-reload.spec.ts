@@ -1,3 +1,4 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
@@ -8,7 +9,7 @@ test('failed partial response and stop reason remain truthful after reload', asy
   page.on('pageerror', (error) => pageErrors.push(error.message))
   await page.emulateMedia({ reducedMotion: 'reduce' })
 
-  await page.addInitScript(({ runtimeSnapshot, settings }) => {
+  await page.addInitScript(({ runtimeSnapshot, settings, sessionPageRoute }) => {
     const observedAt = '2026-08-02T12:00:00.000Z'
     const thread = {
       id: 'thread-p0-b',
@@ -106,7 +107,7 @@ test('failed partial response and stop reason remain truthful after reload', asy
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
-      if (url.pathname === '/api/sessions/page') {
+      if (url.pathname === sessionPageRoute) {
         return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
       }
       if (url.pathname === '/api/threads' && method === 'GET') {
@@ -124,7 +125,7 @@ test('failed partial response and stop reason remain truthful after reload', asy
         headers: { 'Content-Type': 'application/json' },
       })
     }
-  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings() })
+  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings(), sessionPageRoute: SESSION_ROUTES.page() })
 
   await page.goto('/chat/thread-p0-b')
   await expect(page.getByText('Partial answer survives')).toBeVisible()
@@ -160,7 +161,7 @@ test('live partial output remains visible when terminal history cannot be reload
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
-  await page.addInitScript(({ runtimeSnapshot, settings }) => {
+  await page.addInitScript(({ runtimeSnapshot, settings, sessionPageRoute }) => {
     const encoder = new TextEncoder()
     const observedAt = '2026-08-02T12:00:00.000Z'
     let turnSent = false
@@ -228,7 +229,7 @@ test('live partial output remains visible when terminal history cannot be reload
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
-      if (url.pathname === '/api/sessions/page') {
+      if (url.pathname === sessionPageRoute) {
         return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
       }
       if (url.pathname === '/api/threads' && method === 'GET') {
@@ -302,7 +303,7 @@ test('live partial output remains visible when terminal history cannot be reload
 
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
-  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings() })
+  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings(), sessionPageRoute: SESSION_ROUTES.page() })
 
   await page.goto('/chat/thread-p0-b-live')
   const composer = page.getByRole('textbox', { name: 'Сообщение' })
@@ -323,7 +324,7 @@ test('explicit Stop reloads the persisted cancelled partial outcome', async ({ p
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
-  await page.addInitScript(({ runtimeSnapshot, settings }) => {
+  await page.addInitScript(({ runtimeSnapshot, settings, sessionPageRoute }) => {
     const encoder = new TextEncoder()
     const observedAt = '2026-08-02T12:00:00.000Z'
     let stopped = sessionStorage.getItem('p0bStopped') === '1'
@@ -421,7 +422,7 @@ test('explicit Stop reloads the persisted cancelled partial outcome', async ({ p
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
-      if (url.pathname === '/api/sessions/page') {
+      if (url.pathname === sessionPageRoute) {
         return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
       }
       if (url.pathname === '/api/threads' && method === 'GET') {
@@ -473,7 +474,7 @@ test('explicit Stop reloads the persisted cancelled partial outcome', async ({ p
 
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
-  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings() })
+  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings(), sessionPageRoute: SESSION_ROUTES.page() })
 
   await page.goto('/chat/thread-p0-b-stop')
   const composer = page.getByRole('textbox', { name: 'Сообщение' })

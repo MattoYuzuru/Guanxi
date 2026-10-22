@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
@@ -77,7 +78,7 @@ function installApi(locale: 'en' | 'ru' = 'en') {
     if (path === '/api/threads') {
       return json({ ownershipVersion: 1, scope: 'projectless', chats: [] })
     }
-    if (path === '/api/sessions/page') {
+    if (path === SESSION_ROUTES.page()) {
       return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
     }
     if (path === '/api/projects') return json({ projects: [] })
@@ -299,7 +300,7 @@ describe('mounted product shell', () => {
       }
       if (path === '/api/runtime') return json(runtimeBrowserSnapshot())
       if (path === '/api/settings') return json(browserSettings({ locale: 'en' }))
-      if (path === '/api/sessions/page') {
+      if (path === SESSION_ROUTES.page()) {
         return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
       }
       return json({ code: 'internal_error', message: path, details: null }, 500)

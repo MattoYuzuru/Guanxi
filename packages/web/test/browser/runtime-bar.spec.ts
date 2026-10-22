@@ -1,3 +1,4 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test } from '@playwright/test'
 import {
   activeRuntimeBrowserSnapshot,
@@ -64,7 +65,7 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
       resourceActions.push(`${request.method()} ${url.pathname}`)
     }
     if (url.pathname === '/api/health') return route.fulfill(json(health))
-    if (url.pathname === '/api/sessions/page') {
+    if (url.pathname === SESSION_ROUTES.page()) {
       return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
     }
     if (url.pathname === '/api/runtime') {
@@ -182,7 +183,7 @@ test('Runtime Bar truthfully groups Linux NVIDIA devices and preserves a stale s
     const url = new URL(request.url())
     if (request.method() !== 'GET') resourceActions.push(`${request.method()} ${url.pathname}`)
     if (url.pathname === '/api/health') return route.fulfill(json(health))
-    if (url.pathname === '/api/sessions/page') {
+    if (url.pathname === SESSION_ROUTES.page()) {
       return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
     }
     if (url.pathname === '/api/runtime') {

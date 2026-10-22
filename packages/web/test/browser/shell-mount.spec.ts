@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { PROJECT_PRESENTATION_VERSION } from '@guanxi/contract'
+import { PROJECT_PRESENTATION_VERSION, SESSION_ROUTES } from '@guanxi/contract'
 import { SHELL_PREFERENCES_KEY } from '../../src/features/shell/preferences.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
@@ -69,7 +69,7 @@ async function installShellApi(page: Page, fixture: Fixture): Promise<void> {
       return finish(route, browserSettings({ locale: fixture.locale, localeSource: 'user_setting' }))
     }
     if (url.pathname === '/api/runtime') return finish(route, runtimeBrowserSnapshot())
-    if (url.pathname === '/api/sessions/page') {
+    if (url.pathname === SESSION_ROUTES.page()) {
       return finish(route, { sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
     }
     if (url.pathname === '/api/models') return finish(route, { models: [] })

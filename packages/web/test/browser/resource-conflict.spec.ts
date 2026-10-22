@@ -1,3 +1,4 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { activeRuntimeBrowserSnapshot, browserSettings } from './fixtures/runtime-snapshot.ts'
 import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
@@ -39,7 +40,7 @@ async function installFixture(
     const method = request.method()
 
     if (url.pathname === '/api/health') return fulfillJson(route, health())
-    if (url.pathname === '/api/sessions/page') {
+    if (url.pathname === SESSION_ROUTES.page()) {
       return fulfillJson(route, { sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
     }
     if (url.pathname === '/api/runtime') {
