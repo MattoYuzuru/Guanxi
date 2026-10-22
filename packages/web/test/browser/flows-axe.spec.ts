@@ -54,6 +54,9 @@ async function mockSettingsApi(page: Page): Promise<void> {
     if (url.pathname === '/api/health') return route.fulfill(json(health))
     if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings({ locale: 'en', theme: 'light' })))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === '/api/sessions/page') {
+      return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
+    }
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })

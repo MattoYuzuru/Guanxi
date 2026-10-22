@@ -572,6 +572,9 @@ export async function installChatApiFixture(
 
         if (url.pathname === '/api/health') return json(health)
         if (url.pathname === '/api/runtime') return json(runtimeState)
+        if (url.pathname === '/api/sessions/page') {
+          return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+        }
         if (url.pathname === '/api/models') return json({ models: [model] })
         if (url.pathname === '/api/workspaces') return json({ workspaces: [] })
         if (url.pathname === '/api/settings') {

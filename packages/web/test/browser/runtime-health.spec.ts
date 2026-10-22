@@ -91,6 +91,9 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       const rawUrl = typeof input === 'string' ? input : input.url
       const url = new URL(rawUrl, window.location.origin)
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === '/api/sessions/page') {
+        return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+      }
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(degradedRuntime)
       if (url.pathname === '/api/models') {
@@ -138,7 +141,10 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
 
   await page.goto('/')
 
-  await expect(page.getByRole('link', { name: 'Чат' })).toBeVisible()
+  const navigation = page.getByRole('navigation', { name: 'Главная навигация' })
+  await expect(navigation).toBeVisible()
+  await expect(navigation.getByRole('link')).toHaveCount(4)
+  await expect(page.getByRole('link', { name: 'Новая сессия' })).toBeVisible()
   await expect(page.getByText('Ollama вернула несовместимый ответ')).toBeVisible()
   const runtime = page.getByRole('region', { name: 'Runtime и ресурсы' })
   await expect(runtime).toContainText('Источник Ollama несовместим')

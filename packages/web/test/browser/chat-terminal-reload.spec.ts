@@ -106,6 +106,9 @@ test('failed partial response and stop reason remain truthful after reload', asy
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
+      if (url.pathname === '/api/sessions/page') {
+        return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+      }
       if (url.pathname === '/api/threads' && method === 'GET') {
         return json({ ownershipVersion: 1, scope: 'projectless', chats: [{ ...thread, ownershipVersion: 1, projectId: null }] })
       }
@@ -225,6 +228,9 @@ test('live partial output remains visible when terminal history cannot be reload
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
+      if (url.pathname === '/api/sessions/page') {
+        return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+      }
       if (url.pathname === '/api/threads' && method === 'GET') {
         return json({ ownershipVersion: 1, scope: 'projectless', chats: [{ ...thread, ownershipVersion: 1, projectId: null }] })
       }
@@ -415,6 +421,9 @@ test('explicit Stop reloads the persisted cancelled partial outcome', async ({ p
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(runtimeSnapshot)
+      if (url.pathname === '/api/sessions/page') {
+        return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+      }
       if (url.pathname === '/api/threads' && method === 'GET') {
         return json({ ownershipVersion: 1, scope: 'projectless', chats: [{ ...thread, ownershipVersion: 1, projectId: null }] })
       }

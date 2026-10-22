@@ -80,6 +80,9 @@ for (const deferNetworkStart of [false, true]) {
         routeReads.runtime += 1
         return route.fulfill(json(runtimeBrowserSnapshot()))
       }
+      if (url.pathname === '/api/sessions/page' && method === 'GET') {
+        return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
+      }
       if (url.pathname === '/api/models' && method === 'GET') {
         routeReads.models += 1
         return route.fulfill(json({ models: [] }))
@@ -269,6 +272,9 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
     if (url.pathname === '/api/runtime' && method === 'GET') {
       routeReads.runtime += 1
       return route.fulfill(json(runtimeBrowserSnapshot()))
+    }
+    if (url.pathname === '/api/sessions/page' && method === 'GET') {
+      return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
     }
     if (url.pathname === '/api/settings' && method === 'GET') {
       settingsReads += 1
