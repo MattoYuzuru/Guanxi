@@ -299,3 +299,111 @@ snapshot, PNG or lockfile was touched.
 this finding; the handoff section is the follow-up docs commit on top of it. The branch is clean
 at the handoff commit; root review runs from
 `63aa885194676d43a42cc8e4f25f304d1e995626..HEAD`.
+
+## Review fix — P2 app-shell loading and offline stories misstate runtime state
+
+**Status:** source fix and focused state regressions ready; the four intentional PNG changes and
+the G13/G14/G15/G16 browser envelope remain pending root execution. This section is appended
+evidence; it does not change the original slice's claims above. P2 #2 is closed at source/test
+level only, not visually or in a browser.
+
+**Finding (root relay of the GPT design review, P2 #2; confirmed).**
+`packages/ui/src/components/app-shell-chrome/app-shell-chrome.stories.tsx` mapped the `loading`
+story to `StatusPill status="running"` plus the normal transcript sentence, and rendered the
+`offline` story with the workspace placeholder "This block is unavailable. Enable its plugin to
+restore it." Loading data does not establish an executing Run, and a disconnected host is not a
+disabled plugin. The two examples are the declared state coverage and were therefore asserting
+runtime facts the fixture never observed.
+
+**Fix.** The loading fixture now renders a `role="status"` status label and an `aria-busy` main
+sentence, both localized; it renders no status pill, no "Running" claim and no transcript. The
+offline fixture now renders a visible "Not connected" status and one localized sentence naming
+the unavailable node data; it renders no status pill, no plugin-enable advice, no retry action and
+no invented source/time. The `unknown` story is unchanged (StatusPill `unknown` plus the generic
+unknown sentence), and the `error` story is unchanged. Four `story.appShell.host*` keys were
+added; the seven `story.appShell.*` control labels from P2 #1 remain on `msg(...)` unchanged:
+
+| Key | English (source) | Russian |
+| --- | --- | --- |
+| `story.appShell.hostLoading` | Loading | Загрузка |
+| `story.appShell.hostLoadingBody` | Loading content from the node. | Загружается содержимое узла. |
+| `story.appShell.hostOffline` | Not connected | Нет подключения |
+| `story.appShell.hostOfflineBody` | Not connected to the node. No live data is available. | Нет подключения к узлу. Актуальные данные недоступны. |
+
+No primitive, component behavior, CSS, public prop, visibility/mount logic, `App.tsx`, approval
+record, snapshot or dependency changed. The component docs now describe the loading and offline
+fixture semantics instead of the previous shared "truthful host content" exception.
+
+**New coverage.** One new file, `packages/ui/test/app-shell-story-states.test.tsx`, with eight
+runtime cases. It renders the actual story module through `StoryView` in EN, RU and pseudo and
+asserts: loading exposes a live `role="status"` with the exact localized loading text and an
+`aria-busy` main; loading has no status pill, no Running/Выполняется text, no data-status
+`running` and no transcript; offline exposes the exact localized not-connected status and body,
+has no status pill, no data-status `unknown`, no plugin-enable advice in either language and no
+retry button; the pseudo cases assert visible expanded text and no raw English; and EN/RU
+compare the offline main text with the generic `unknown` story so the two states cannot collapse
+into one. The test hardcodes only its expected EN/RU strings; production story copy resolves
+through message keys.
+
+The pre-fix red run proves the assertions are live: **6 failed / 2 passed** against the old
+stories. The old loading story lacked the status role and still rendered Running plus the
+transcript; the old offline story lacked the not-connected copy and still rendered the
+plugin-enable placeholder. The two passing cases are the unknown-distinct checks, which do not
+depend on the new offline copy. No literal was restored temporarily because the unchanged old
+production file already supplied the negative control.
+
+**Regression envelope.** The prior P2 #1 file, `packages/ui/test/app-shell-story-locales.test.tsx`,
+was not edited: its seven label checks and **10 runtime cases** all still pass. The existing
+`packages/ui/test/app-shell-chrome.test.tsx` (6 runtime cases) and
+`packages/ui/test/input-readiness.test.tsx` (2 runtime cases) also passed unchanged. Combined
+focused result: **26 passed / 4 files** (8 new + 18 existing). No component-behavior mirror was
+added to the new state file.
+
+| Command (from the clone root unless noted) | Result |
+| --- | --- |
+| `nice -n 10 npx vitest run test/app-shell-story-states.test.tsx` in `packages/ui`, before the production edit | RED: 6 failed / 2 passed; the old stories lacked the loading status role and not-connected copy and still showed Running/transcript and plugin advice. |
+| Same focused command after the story/catalog edit | PASS: 8 passed / 1 file. |
+| `nice -n 10 npx vitest run test/app-shell-story-states.test.tsx test/app-shell-story-locales.test.tsx test/app-shell-chrome.test.tsx test/input-readiness.test.tsx` in `packages/ui` | PASS: 26 passed / 4 files. |
+| `nice -n 10 npx tsc --noEmit -p packages/ui/tsconfig.json` | PASS, exit 0, no diagnostics. |
+| `nice -n 10 npx tsc --noEmit --target ES2022 --lib ES2023,DOM,DOM.Iterable --module ESNext --moduleResolution bundler --jsx react-jsx --strict --noUncheckedIndexedAccess --noUnusedLocals --noUnusedParameters --noFallthroughCasesInSwitch --allowImportingTsExtensions --verbatimModuleSyntax --isolatedModules --resolveJsonModule --skipLibCheck --types vite/client,node packages/ui/test/app-shell-story-states.test.tsx` (test files are outside `packages/ui/tsconfig.json`) | PASS, exit 0. This run caught an unused `describe` import before the green result. |
+| `nice -n 10 npx eslint packages/ui/src/components/app-shell-chrome/app-shell-chrome.stories.tsx packages/ui/src/i18n/messages.ts packages/ui/test/app-shell-story-states.test.tsx` | PASS, exit 0. |
+| `nice -n 10 npx markdownlint-cli2 packages/ui/src/components/app-shell-chrome/app-shell-chrome.docs.md` | PASS, 0 errors. |
+| `nice -n 10 npm run ui:manifest` then `nice -n 10 node packages/ui/catalog/scripts/build-manifest.ts --check` | Wrote the manifest; `catalog/manifest.json is fresh`, exit 0. |
+| `git diff --check` | Clean, exit 0. |
+
+All commands ran under Node v26.9.0. No full `npm test`, `npm run ui:check`, browser gate,
+Storybook, build, G13/G14/G15/G16 or snapshot command was run in this sandbox.
+
+**Generated manifest and pending visuals.** The rebuild changed only the `app-shell-chrome`
+`sourceHash`, now `sha256:8ef0beb8ccd25339142e6ff03c26ef9e4912fa153d0e2f8fe380bb9bac6c11db`. All
+**18** `snapshotHashes` are byte-for-byte the pre-fix values; they remain deliberately stale for
+the four images whose visible English copy changed:
+
+| Pending snapshot | Current (pre-fix) hash |
+| --- | --- |
+| `loading-light` | `sha256:ec048b565025ce16ae2855c0f514c4438d68012fbd3fd91ef6381d981ecb4922` |
+| `loading-dark` | `sha256:fb813f51279ca72df8ee69cd16fdc059fbe0df31f3d86cea5847aa1e48b6fe31` |
+| `offline-light` | `sha256:690e8df26a7ac8bc701a87428496acf34b162226814c0e5291c39a150d0b8bc0` |
+| `offline-dark` | `sha256:8ea95148023dc4bc101ca6cbb479b5604cd2b487aa28befdd590ef98d1e972ac` |
+
+These four are marked pending, not passed. The root must generate them in the pinned Docker
+producer, confirm the other 14 AppShell PNGs are unchanged, rerun `npm run ui:manifest` to refresh
+only those four hashes, and then run G13/G14/G15/G16. The review record is byte-identical
+(`sha256:9712305bddefcd444f5359caca5ccabf9878bfa5b4d3a60d08b98210d329e836`), still `draft` with
+`approval: null` and no requests; manifest `storedStatus`/`status` are `draft`, `signature` is
+`absent` and usage is 0. No approval, signature, promotion or stage claim is made.
+
+**Not run here / residual risk.** No PNG or snapshot was written; the four fresh visuals are
+unverified and the old loading/offline hashes above are expected to be replaced by the root. G15
+browser clipping with the new Russian and pseudo state copy was not measured; the copy is short
+but actual status-strip/main geometry remains browser proof. G14 axe, G16 reduced motion, the
+full browser gate, Storybook, build and the full repository test suite were not run. The offline
+fixture is a synthetic catalog state: it does not supply last-known data or its age, so a real
+product offline projection still owes that provenance. The component remains a `draft` pattern
+with no product host usage.
+
+**Commits.** `06ba5f55a7dbf34d74bca4339a5efd90021214cd` is the single coherent fix commit for
+this finding; this handoff section is the follow-up docs commit on top of it. The branch is clean
+at the handoff commit; root review runs from
+`63aa885194676d43a42cc8e4f25f304d1e995626..HEAD`. No push, merge, rebase, PHASE_STATUS or
+NEXT_AGENT_PROMPT edit.
