@@ -5,6 +5,7 @@ import { Textarea } from '../textarea/textarea.tsx'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../menu/menu.tsx'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../dialog/dialog.tsx'
 import { EmptyState } from '../empty-state/empty-state.tsx'
+import { ErrorState } from '../error-state/error-state.tsx'
 import { PortalContainerProvider } from '../../lib/portal.tsx'
 import './workspace-chrome.css'
 
@@ -15,7 +16,8 @@ export type WorkspaceChromeProps = Base & (
   | { kind: 'toolbar'; busy?: boolean; label: string; fields: { label: string; value: string; choices: Choice[]; onChange: (id: string) => void }[]; name: { label: string; value: string; onChange: (name: string) => void }; actions: { label: string; onClick: () => void; disabled?: boolean }[] }
   | { kind: 'mover'; modal?: boolean; open: boolean; title: string; description: string; blockLabel: string; zoneLabel: string; cancelLabel: string; moveLabel: string; blocks: Choice[]; zones: Choice[]; block: string; zone: string; onBlock: (id: string) => void; onZone: (id: string) => void; onClose: () => void; onMove: () => void }
   | { kind: 'phone'; label: string; blocks: Choice[]; selected: string; onSelect: (id: string) => void }
-  | { kind: 'state'; title: string; action?: { label: string; onClick: () => void }; error?: boolean }
+  | { kind: 'state'; title: string; loading: boolean; action?: never; error?: never; failure?: never }
+  | { kind: 'state'; title: string; loading?: false; action?: { label: string; onClick: () => void; busy?: boolean; disabled?: boolean; loadingLabel?: string }; error?: boolean; failure?: { source: string; observedAt: string; details: string } }
 )
 function ChoiceMenu({ label, value, choices, onChange, disabled }: { disabled?: boolean; label: string; value: string; choices: Choice[]; onChange: (id: string) => void }) {
   const trigger = useRef<HTMLButtonElement>(null)
@@ -29,7 +31,7 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
   const [dialogContainer, setDialogContainer] = useState<HTMLDivElement | null>(null)
   if (props.kind === 'pane') return <section className="gx-workspace-pane" data-block={props.id} aria-label={props.title} tabIndex={-1}>
     <header className="gx-workspace-pane-header"><h2>{props.title}</h2><Menu><MenuTrigger render={<Button variant="ghost" />} aria-label={`${props.moveLabel} ${props.title}`}>{props.moveLabel}</MenuTrigger><MenuContent><MenuItem disabled={props.canMove === false} onClick={props.onMove}>{props.moveLabel}</MenuItem><MenuItem onClick={props.onHide}>{props.hideLabel}</MenuItem></MenuContent></Menu></header>
-    <div className="gx-workspace-pane-body">{props.description && <EmptyState title={props.description} />}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea aria-label={props.draft.label} value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
+    <div className="gx-workspace-pane-body">{props.description && <p className="gx-workspace-description">{props.description}</p>}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea aria-label={props.draft.label} value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
   </section>
   if (props.kind === 'toolbar') return <div className="gx-workspace-toolbar" role="group" aria-label={props.label}>
     {props.fields.map(field => <ChoiceMenu key={field.label} {...field} disabled={props.busy} />)}
@@ -50,5 +52,22 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
     const block = props.blocks[next]
     if (block) { props.onSelect(block.id); (tabs.current?.querySelectorAll('[role=tab]')[next] as HTMLElement)?.focus() }
   }}>{props.blocks.map(block => <Button key={block.id} role="tab" id={`tab-${block.id}`} aria-controls={`phone-${block.id}`} aria-selected={block.id === props.selected} tabIndex={block.id === props.selected ? 0 : -1} onClick={() => props.onSelect(block.id)}>{block.label}</Button>)}</div>
-  return <div className="gx-workspace-state" role={props.error ? 'alert' : undefined}><EmptyState title={props.title} action={props.action && <Button onClick={props.action.onClick}>{props.action.label}</Button>} /></div>
+  if (props.loading) return <div className="gx-workspace-loading" aria-busy="true">
+    <span role="status" aria-label={props.title} className="gx-sr-only">{props.title}</span>
+    <div data-slot="workspace-loading-geometry" aria-hidden="true" className="gx-workspace-loading-geometry">
+      <div className="gx-workspace-toolbar">{Array.from({ length: 11 }, (_, index) => index === 6
+        ? <div key={index} className="gx-workspace-field"><span className="gx-workspace-loading-label">{'\u00a0'}</span><span className="gx-workspace-loading-control" /></div>
+        : <span key={index} className="gx-workspace-loading-control" />)}</div>
+      <div className="gx-workspace-loading-content" />
+    </div>
+  </div>
+  const action = props.action && <Button onClick={props.action.onClick} loading={props.action.busy}
+    disabled={props.action.disabled} loadingLabel={props.action.loadingLabel}>{props.action.label}</Button>
+  return <div className="gx-workspace-state">
+    {props.error && props.failure
+      ? <ErrorState title={props.title} source={props.failure.source} occurredAt={props.failure.observedAt}
+        timeMeaning="observed" details={props.failure.details} action={action} />
+      : props.error ? <div role="alert"><p>{props.title}</p>{action}</div>
+        : action ? <EmptyState title={props.title} action={action} /> : <p className="gx-workspace-description">{props.title}</p>}
+  </div>
 }

@@ -41,7 +41,13 @@ test('Connections handles timestamp-free balances, keyboard creation, reload and
   expect(inputs).toHaveLength(1)
   expect(inputs[0]).not.toHaveProperty('unattended')
   await page.setViewportSize({ width: 390, height: 844 })
+  // The phone shell stacks navigation above the route, so a user scrolls the section back into view.
+  await section.scrollIntoViewIfNeeded()
   await expect(section).toBeInViewport()
+  const box = await section.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390)
   expect(await section.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   await page.reload()
   await page.getByRole('button', { name: 'Подключения', exact: true }).click()

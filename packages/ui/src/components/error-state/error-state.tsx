@@ -16,6 +16,8 @@ export interface ErrorStateProps extends Omit<ComponentProps<'div'>, 'className'
   source: string
   /** ISO time of the failure. */
   occurredAt: string
+  /** Whether this is the failure time or the time the client observed it. */
+  timeMeaning?: 'occurred' | 'observed'
   /** The next action, usually a Button (Retry, Open settings). */
   action?: ReactNode
   /** Copyable technical details; shown in a disclosure. */
@@ -29,6 +31,7 @@ export function ErrorState({
   title,
   source,
   occurredAt,
+  timeMeaning = 'occurred',
   action,
   details,
   detailsOpen = false,
@@ -37,7 +40,8 @@ export function ErrorState({
 }: ErrorStateProps) {
   const t = useUiText()
   const locale = intlLocale(useUiLocale())
-  const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [copyResult, setCopyResult] = useState<{ details: string | undefined; status: 'copied' | 'failed' } | null>(null)
+  const copy = copyResult?.details === details ? copyResult?.status : undefined
   const time = new Date(occurredAt)
   const timeLabel = Number.isNaN(time.getTime())
     ? occurredAt
@@ -46,9 +50,9 @@ export function ErrorState({
   const copyDetails = async () => {
     try {
       await navigator.clipboard.writeText(details ?? '')
-      setCopy('copied')
+      setCopyResult({ details, status: 'copied' })
     } catch {
-      setCopy('failed')
+      setCopyResult({ details, status: 'failed' })
     }
   }
 
@@ -62,6 +66,7 @@ export function ErrorState({
         <span>{t('ui.error.source', { source: '' })}</span>
         <span className="gx-error-state-source">{source}</span>
         <span aria-hidden="true"> · </span>
+        {timeMeaning === 'observed' ? <span>{t('ui.error.observed')}</span> : null}
         <time dateTime={Number.isNaN(time.getTime()) ? undefined : time.toISOString()}>{timeLabel}</time>
       </p>
       {details ? (

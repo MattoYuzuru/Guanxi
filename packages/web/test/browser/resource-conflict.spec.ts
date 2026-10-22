@@ -1,5 +1,7 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { activeRuntimeBrowserSnapshot, browserSettings } from './fixtures/runtime-snapshot.ts'
+import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
 
 type OwnerMode = 'job' | 'operation' | 'unknown'
 
@@ -38,6 +40,9 @@ async function installFixture(
     const method = request.method()
 
     if (url.pathname === '/api/health') return fulfillJson(route, health())
+    if (url.pathname === SESSION_ROUTES.page()) {
+      return fulfillJson(route, { sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+    }
     if (url.pathname === '/api/runtime') {
       control.runtimeCalls += 1
       return fulfillJson(route, runtimeSnapshot(control))
@@ -171,7 +176,7 @@ test('literal Queue flow is one command and remains keyboard/responsive safe', a
 
   await page.getByRole('link', { name: 'Настройки' }).click()
   await expect(page).toHaveURL(/\/settings$/u)
-  await page.getByRole('link', { name: 'Чат' }).click()
+  await choosePaletteCommand(page, 'Чат')
   await expect(page).toHaveURL(/\/chat$/u)
   expect(control.cancelCalls).toBe(0)
 

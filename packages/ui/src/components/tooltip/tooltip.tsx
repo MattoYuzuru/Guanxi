@@ -4,7 +4,7 @@
  * Modified by Guanxi contributors: portal container, semantic-token CSS, no arrow.
  */
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
-import type { ComponentProps } from 'react'
+import { cloneElement, createContext, useContext, useId, useLayoutEffect, useState, type AriaAttributes, type ComponentProps, type ReactElement } from 'react'
 import { cx } from '../../lib/cx.ts'
 import { usePortalContainer } from '../../lib/portal.tsx'
 import './tooltip.css'
@@ -21,16 +21,51 @@ export interface TooltipContentProps
   className?: string
 }
 
+// Base UI owns interaction/dismissal; this wrapper supplies the tooltip semantics.
+const TooltipDescriptionContext = createContext<{
+  open: boolean
+  contentId: string
+  setContentId(id: string): void
+} | null>(null)
+
 export function TooltipProvider(props: TooltipProviderProps) {
   return <TooltipPrimitive.Provider {...props} />
 }
 
-export function Tooltip(props: TooltipProps) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+export function Tooltip({ open, defaultOpen = false, disabled, onOpenChange, ...props }: TooltipProps) {
+  const generatedId = useId()
+  const [contentId, setContentId] = useState(generatedId)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
+  return (
+    <TooltipDescriptionContext.Provider value={{ open: !disabled && (open ?? uncontrolledOpen), contentId, setContentId }}>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} open={open} defaultOpen={defaultOpen}
+        disabled={disabled} onOpenChange={(next, details) => {
+          onOpenChange?.(next, details)
+          if (!details.isCanceled) setUncontrolledOpen(next)
+        }} />
+    </TooltipDescriptionContext.Provider>
+  )
 }
 
-export function TooltipTrigger(props: TooltipTriggerProps) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+function descriptionIds(...values: (string | undefined)[]) {
+  return [...new Set(values.filter(Boolean).join(' ').split(/\s+/).filter(Boolean))].join(' ') || undefined
+}
+
+function describeRenderElement(element: ReactElement, ids: string | undefined) {
+  const describedElement = element as ReactElement<Pick<AriaAttributes, 'aria-describedby'>>
+  return cloneElement(describedElement, {
+    'aria-describedby': descriptionIds(describedElement.props['aria-describedby'], ids),
+  })
+}
+
+export function TooltipTrigger({ 'aria-describedby': describedBy, render, ...props }: TooltipTriggerProps) {
+  const description = useContext(TooltipDescriptionContext)
+  const ids = descriptionIds(describedBy, description?.open ? description.contentId : undefined)
+  // Base UI merges render-element props last; reconcile descriptions at that same boundary.
+  const describedRender: TooltipTriggerProps['render'] = typeof render === 'function'
+    ? (renderProps, state) => describeRenderElement(render(renderProps, state), descriptionIds(renderProps['aria-describedby'], ids))
+    : render ? describeRenderElement(render, ids) : undefined
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} render={describedRender} aria-describedby={ids} />
 }
 
 export function TooltipContent({
@@ -38,9 +73,15 @@ export function TooltipContent({
   align = 'center',
   sideOffset = 6,
   className,
+  id,
   ...props
 }: TooltipContentProps) {
   const container = usePortalContainer()
+  const description = useContext(TooltipDescriptionContext)
+  const fallbackId = useId()
+  const contentId = id ?? fallbackId
+  const setContentId = description?.setContentId
+  useLayoutEffect(() => { setContentId?.(contentId) }, [contentId, setContentId])
   return (
     <TooltipPrimitive.Portal container={container}>
       <TooltipPrimitive.Positioner
@@ -51,6 +92,8 @@ export function TooltipContent({
       >
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"
+          role="tooltip"
+          id={contentId}
           className={cx('gx-tooltip gx-pop', className)}
           {...props}
         />
