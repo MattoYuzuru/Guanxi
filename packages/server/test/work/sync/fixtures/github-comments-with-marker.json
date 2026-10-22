@@ -1,0 +1,7 @@
+[
+  {
+    "id": 9001,
+    "user": { "login": "tracker-bot" },
+    "body": "Guanxi item `wg2-a` is now **in_progress**.\n\n<!-- guanxi:transition:wg2-a:in_progress:1 -->"
+  }
+]

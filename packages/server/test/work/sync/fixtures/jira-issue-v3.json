@@ -1,0 +1,21 @@
+{
+  "id": "10001",
+  "key": "PROJ-12",
+  "fields": {
+    "summary": "Add tracker sync",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [{ "type": "text", "text": "Initial description from Jira Cloud." }]
+        }
+      ]
+    },
+    "priority": { "name": "High" },
+    "assignee": { "displayName": "Tracker User" },
+    "labels": ["backend"],
+    "updated": "2026-10-20T12:00:00.000+0000"
+  }
+}

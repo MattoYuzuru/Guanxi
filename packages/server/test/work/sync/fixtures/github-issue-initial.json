@@ -1,0 +1,14 @@
+{
+  "id": 1007,
+  "number": 7,
+  "title": "Add tracker sync",
+  "body": "Initial description from the tracker.",
+  "state": "open",
+  "labels": [
+    { "id": 11, "name": "bug" },
+    { "id": 12, "name": "priority:high" }
+  ],
+  "assignee": { "login": "tracker-user" },
+  "assignees": [{ "login": "tracker-user" }],
+  "updated_at": "2026-10-20T12:00:00Z"
+}
