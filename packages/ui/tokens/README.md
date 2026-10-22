@@ -76,14 +76,16 @@ two specified opacity endpoints (8%, 10%); elevation-3 uses the specified 32% in
 ## Semantic animation manifest
 
 `motion-animations.json` is an authored, strict companion manifest, not a DTCG token set and
-not part of `guanxi.resolver.json`. Each entry has exactly `utility`, `keyframes`, `duration`,
-`easing` and `iterations`; identifiers use `/^[a-z][a-z0-9-]*$/`, utility and keyframe names are
-unique, durations must resolve to an existing `motion.duration.*` token of type `duration`,
-easings to an existing `motion.easing.*` token of type `cubicBezier`, and iterations is
-`infinite` or a positive integer. Unknown fields, aliases outside those namespaces, duplicate
-names and unsupported types fail the build closed. The manifest is read through the build's
-`options.read` when provided, so gate context overrides and negative fixtures are observed
-instead of bypassed by an absolute disk read.
+not part of `guanxi.resolver.json`. Each entry allows exactly `utility`, `keyframes`, `duration`,
+`easing` and `iterations`; `utility`, `keyframes`, `duration` and `easing` are required, while
+`iterations` may be omitted and then defaults to `1`. Identifiers use
+`/^[a-z][a-z0-9-]*$/`, utility and keyframe names are unique, durations must resolve to an
+existing `motion.duration.*` token of type `duration`, easings to an existing
+`motion.easing.*` token of type `cubicBezier`, and a present `iterations` value is `infinite` or
+a positive integer. An explicit `null` is not accepted and does not default. Unknown fields,
+aliases outside those namespaces, duplicate names and unsupported types fail the build closed.
+The manifest is read through the build's `options.read` when provided, so gate context
+overrides and negative fixtures are observed instead of bypassed by an absolute disk read.
 
 The build emits deterministic `--animate-*` entries into `generated/theme.css`:
 `--animate-fade-up`, `--animate-pulse-soft`, `--animate-sheen` and `--animate-spinner`. The

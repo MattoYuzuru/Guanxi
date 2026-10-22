@@ -45,7 +45,7 @@ function validateAnimations(manifest, flat) {
     if (!animation.duration.startsWith('motion.duration.') || duration?.$type !== 'duration') throw Error(`Animation ${animation.utility} duration must reference an existing motion.duration.* duration token: ${animation.duration}`)
     const easing = tokens.get(animation.easing)
     if (!animation.easing.startsWith('motion.easing.') || easing?.$type !== 'cubicBezier') throw Error(`Animation ${animation.utility} easing must reference an existing motion.easing.* cubic-bezier token: ${animation.easing}`)
-    const iterations = animation.iterations ?? 1
+    const iterations = animation.iterations === undefined ? 1 : animation.iterations
     if (iterations !== 'infinite' && !(Number.isInteger(iterations) && iterations > 0)) throw Error(`Animation ${animation.utility} iterations must be "infinite" or a positive integer: ${iterations}`)
     utilities.add(animation.utility)
     keyframes.add(animation.keyframes)
