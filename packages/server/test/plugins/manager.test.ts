@@ -753,3 +753,54 @@ test('same-version installs leave state untouched at every fault point', async t
 
   assert.deepEqual(manager(pluginsDir).bootSet(), [join(pluginsDir, 'guanxi.test-plugin@1.0.0')])
 })
+
+test('rollback failures are attached to the thrown error as a cause chain', async t => {
+  const base = await tempBase(t)
+  const first = await writePlugin(join(base, 'v1'), { version: '1.0.0' })
+  const second = await writePlugin(join(base, 'v2'), { version: '2.0.0' })
+
+  const installDir = join(base, 'install')
+  await manager(installDir).install(first)
+  const installHooks: PluginManagerHooks = {
+    point: async name => {
+      if (name !== 'install:plugin-renamed') return
+      const statePath = join(installDir, 'plugins.json')
+      await rm(statePath)
+      await mkdir(statePath)
+      throw new Error('commit fault')
+    },
+  }
+  let installError: unknown
+  try {
+    await manager(installDir, { hooks: installHooks }).install(second)
+  } catch (error) {
+    installError = error
+  }
+  assert.ok(installError instanceof Error)
+  assert.match(installError.message, /commit fault/)
+  assert.ok(installError.cause instanceof AggregateError, 'install rollback failure is attached')
+  assert.ok(installError.cause.errors.length >= 1)
+  assert.match(String(installError.cause.errors[0]), /plugins\.json/)
+
+  const uninstallDir = join(base, 'uninstall')
+  await manager(uninstallDir).install(first)
+  const uninstallHooks: PluginManagerHooks = {
+    point: async name => {
+      if (name !== 'uninstall:lock-renamed') return
+      const statePath = join(uninstallDir, 'plugins.json')
+      await rm(statePath)
+      await mkdir(statePath)
+      throw new Error('uninstall fault')
+    },
+  }
+  let uninstallError: unknown
+  try {
+    await manager(uninstallDir, { hooks: uninstallHooks }).uninstall(DEFAULT_ID)
+  } catch (error) {
+    uninstallError = error
+  }
+  assert.ok(uninstallError instanceof Error)
+  assert.match(uninstallError.message, /uninstall fault/)
+  assert.ok(uninstallError.cause instanceof AggregateError, 'uninstall rollback failure is attached')
+  assert.ok(uninstallError.cause.errors.length >= 1)
+})

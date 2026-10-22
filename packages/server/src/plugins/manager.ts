@@ -264,6 +264,26 @@ function isSimulatedCrash(error: unknown): error is SimulatedCrash {
   return error instanceof SimulatedCrash || (isRecord(error) && error['simulatedCrash'] === true)
 }
 
+function rollbackFailure(step: string, error: unknown): Error {
+  return new Error(`rollback step "${step}" failed: ${error instanceof Error ? error.message : String(error)}`, {
+    cause: error,
+  })
+}
+
+/** Attach rollback failures instead of swallowing them; the original error stays primary. */
+function attachRollbackFailures(error: unknown, failures: readonly unknown[]): unknown {
+  if (failures.length === 0) return error
+  const aggregate = new AggregateError(failures, `plugin rollback failed with ${failures.length} error(s)`)
+  if (error instanceof Error) {
+    try {
+      error.cause = aggregate
+    } catch {
+      // A frozen or otherwise non-extensible error keeps its original shape.
+    }
+  }
+  return error
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
@@ -1027,7 +1047,7 @@ export class PluginManager {
       return this.publicEntry(nextEntry, enabled.has(manifest.id))
     } catch (error) {
       if (isSimulatedCrash(error)) throw error
-      await this.rollbackInstall({
+      const failures = await this.rollbackInstall({
         snapshot,
         stagingDir,
         target,
@@ -1035,7 +1055,7 @@ export class PluginManager {
         pluginsDirCreated,
         stagingRootCreated,
       })
-      throw error
+      throw attachRollbackFailures(error, failures)
     }
   }
 
@@ -1095,13 +1115,22 @@ export class PluginManager {
       }
       if (stagingRootCreated) await this.removeEmptyDirectory(stagingRoot)
     } catch (error) {
+      const failures: unknown[] = []
       if (backupMoved && backupDir !== null && directory !== null) {
-        await rm(directory, { recursive: true, force: true }).catch(() => undefined)
-        await rename(backupDir, directory).catch(() => undefined)
+        const backup = backupDir
+        const original = directory
+        await this.rollbackStep(failures, 'remove replaced plugin directory', () =>
+          rm(original, { recursive: true, force: true }))
+        await this.rollbackStep(failures, 'restore removed plugin directory', () => rename(backup, original))
       }
-      if (snapshot !== undefined) await this.restoreSnapshot(snapshot).catch(() => undefined)
-      if (stagingRootCreated) await this.removeEmptyDirectory(stagingRoot)
-      throw error
+      if (snapshot !== undefined) {
+        const state = snapshot
+        await this.rollbackStep(failures, 'restore state files', () => this.restoreSnapshot(state))
+      }
+      if (stagingRootCreated) {
+        await this.rollbackStep(failures, 'remove staging root', () => this.removeEmptyDirectory(stagingRoot))
+      }
+      throw attachRollbackFailures(error, failures)
     }
   }
 
@@ -1134,32 +1163,52 @@ export class PluginManager {
       )
       await this.fault('set-enabled:committed')
     } catch (error) {
+      const failures: unknown[] = []
       if (wrote && snapshot !== undefined) {
-        await this.restoreFile(this.pluginsPath, snapshot.plugins).catch(() => undefined)
+        const state = snapshot
+        await this.rollbackStep(failures, 'restore plugins.json', () => this.restoreFile(this.pluginsPath, state.plugins))
       }
-      throw error
+      throw attachRollbackFailures(error, failures)
     }
   }
 
-  private async rollbackInstall(context: InstallRollbackContext): Promise<void> {
+  private async rollbackInstall(context: InstallRollbackContext): Promise<unknown[]> {
+    const failures: unknown[] = []
     if (context.targetCreated && context.target !== null) {
-      await rm(context.target, { recursive: true, force: true }).catch(() => undefined)
+      await this.rollbackStep(failures, 'remove partial plugin directory', () =>
+        rm(context.target!, { recursive: true, force: true }))
     }
     if (context.stagingDir !== null) {
-      await rm(context.stagingDir, { recursive: true, force: true }).catch(() => undefined)
+      await this.rollbackStep(failures, 'remove staging directory', () =>
+        rm(context.stagingDir!, { recursive: true, force: true }))
     }
     if (context.snapshot !== undefined) {
-      await this.restoreSnapshot(context.snapshot).catch(() => undefined)
+      await this.rollbackStep(failures, 'restore state files', () => this.restoreSnapshot(context.snapshot!))
     }
     if (context.stagingRootCreated) {
-      await this.removeEmptyDirectory(join(this.pluginsDir, '.staging'))
+      await this.rollbackStep(failures, 'remove staging root', () =>
+        this.removeEmptyDirectory(join(this.pluginsDir, '.staging')))
     }
-    if (context.pluginsDirCreated) await this.removeEmptyDirectory(this.pluginsDir)
+    if (context.pluginsDirCreated) {
+      await this.rollbackStep(failures, 'remove plugins directory', () => this.removeEmptyDirectory(this.pluginsDir))
+    }
+    return failures
+  }
+
+  private async rollbackStep(failures: unknown[], step: string, action: () => Promise<void>): Promise<void> {
+    try {
+      await action()
+    } catch (error) {
+      failures.push(rollbackFailure(step, error))
+    }
   }
 
   private async restoreSnapshot(snapshot: StateSnapshot): Promise<void> {
-    await this.restoreFile(this.pluginsPath, snapshot.plugins)
-    await this.restoreFile(this.lockPath, snapshot.lock)
+    const failures: unknown[] = []
+    await this.rollbackStep(failures, 'restore plugins.json', () => this.restoreFile(this.pluginsPath, snapshot.plugins))
+    await this.rollbackStep(failures, 'restore plugins.lock.json', () => this.restoreFile(this.lockPath, snapshot.lock))
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'cannot restore plugin state files')
   }
 
   private async restoreFile(path: string, bytes: Buffer | null): Promise<void> {
