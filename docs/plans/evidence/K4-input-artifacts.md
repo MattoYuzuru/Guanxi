@@ -1,8 +1,8 @@
 # K4 input artifacts — implementation handoff
 
 **Status:** bounded source independently reviewed and merged locally as `53b1e76`; all eight
-individual candidate and main checks pass. A later independent truncated-excerpt privacy P2
-remains open; **this does not close `K4-INPUT-ARTIFACTS` or whole K4**. Historical author
+individual candidate and main checks pass. Separate truncated-excerpt privacy repairs
+`4818b92` / `c2ae12f` are independently closed; combined integration gates remain pending; **this does not close `K4-INPUT-ARTIFACTS` or whole K4**. Historical author
 evidence below retains its original scope; current results follow at the end.
 **Branch:** `codex/k4-input-artifacts` · **Implementation base:** `b08805c`
 **Updated:** 2026-10-22
@@ -419,7 +419,7 @@ nice -n 10 npx eslint \
 **Handoff pin:** fix commits `05861ab` and `43728c8` precede this docs commit on
 `codex/k4-input-artifacts`; no production edit follows it.
 
-## Local integration and newly reproduced privacy boundary
+## Local integration and originally reproduced privacy boundary
 
 Candidate `622addc` passes all eight root commands: types `check-cz4o39o2`, npm test
 `check-4g1tzbja`, browser `check-q7eyyc4f`, catalog browser `check-bjkys25i`, build
@@ -445,6 +445,92 @@ also affects the old list projection, not only the new U1 metadata page. No owne
 The follow-up must protect known truncation boundaries using the current registered forms
 before titles, visible search text/snippets and output frames are derived, while preserving
 sync APIs, exact version negotiation, immutable stored rows and no full artifact reads.
-It is a separate active GPT implementation in the original isolated K4 clone, followed by
-independent re-review. Full gates above do not establish this untested property or authorize
-a stage exit. Inline queued text, full buffering and broader K4/platform evidence remain open.
+That separate GPT implementation and independent re-review are now complete in the original
+isolated K4 clone; the following section records the fixes and exact evidence. The earlier
+full gates do not establish these later changes or authorize a stage exit. Inline queued text, full buffering and broader K4/platform evidence remain open.
+## Truncated-excerpt privacy repair (2026-10-22)
+
+**Base:** `622addc`. **Initial fix:** `4818b92`. **Independent-review follow-up:** `c2ae12f`.
+This is a bounded local repair, not closure of all K4 scope. The coordinator owns current-main
+integration, the moved evidence path and all final combined gates.
+
+### Behavior and boundaries
+
+A value registered after a v2 input append could be longer than its stored 8-KiB excerpt.
+Exact matching could not see the complete value, so its visible prefix survived into titles,
+reads, exports and search. The new long-title regression failed on the original base before
+implementation. The original outside U1-page probe remains unchanged; this older checkout
+has no page endpoint, so a separately named copy adapts only imports, old list route/schema
+and its pagination-only assertion. Both its ordinary and long-secret assertions pass here.
+The exact new-page probe still belongs to root's combined integration.
+
+The optional synchronous `egress.scrubber.scrubTruncatedPrefix` capability uses private cached
+KMP prefix tables for the actual registered raw, JSON-escaped and URI-encoded forms. It
+protects complete matches and every nonempty terminal proper prefix, including one character,
+using the existing overlap/marker renderer. It exposes no registry and leaves ordinary exact
+`scrub` semantics unchanged. The existing facade test was expanded in place for the new
+method and closed-instance refusal; no fake production implementation needed an update.
+
+`session-log/excerpt.ts` centralizes v2 projection before title cuts, UTF-8 clipping or search
+snippets. It establishes truncation from stored byte metadata before new redaction and
+recomputes excerptBytes within the existing 8-KiB bound without splitting an expanding marker.
+Old list/summary, direct events, export and each current-registry outward SSE reread share it.
+FTS only nominates candidates; v2 surviving terms/snippets are rebuilt from the safe event.
+No full artifact is rehydrated. Stored payload/hash/FTS/ID/version/sequence remain unchanged;
+explicit `total_changes()` assertions also prove zero writes during the read envelope.
+
+Independent review found a second valid case: append-time redaction of an early value can
+expand a short descriptor's stored excerpt past the full artifact byteSize. That erases the
+byte comparison's proof of an original cut. Two new prompt/tool regressions failed first at
+`4818b92`. Separate fix `c2ae12f` conservatively protects a boundary when an existing stored
+marker makes its original completeness ambiguous. It adds no wire/DB field, API rejection
+or artifact IO. This can redact an otherwise ordinary matching suffix in that affected
+excerpt; the module docs name this tradeoff. Complete v1 and complete v2 text without that
+ambiguity retain ordinary exact matching. Missing optional capability withholds only the
+affected truncated/ambiguous excerpt, retaining other useful session metadata.
+
+### New / regression evidence
+
+**19 new repository tests:** 6 in `egress-truncated-prefix.test.ts` and 13 in
+`session-log-truncated-egress.test.ts`. They assert raw/JSON/URI prefix lengths, one-character
+and overlapping matches, repetitive forms/cache rotation, UTF-8 and whole markers, protection
+before titles, direct read/export, zero protected search hits with useful ordinary controls,
+current-registry resumed/live SSE after an earlier page read, exact event identity, unchanged
+DB/FTS, zero artifact reads/writes, optional-capability refusal and append-time expansion.
+The existing egress facade test is modified in place, not counted as new.
+
+- Author final selected envelope at clean `c2ae12f`: **170/170, zero failures/skips**,
+  `check-02wk2z86`, source unchanged, 10.74 seconds. This is **167 repository tests
+  (19 new / 148 prior selected)** plus **3 external probes**; external cases are not counted
+  as repository additions. Selected files: both egress tests, all `session-log*.test.ts`,
+  `native-agent/input-artifacts.test.ts`, the adapted outside metadata probe (2) and the
+  reviewer's unchanged append-expansion probe (1).
+- Earlier selected `check-bi5gnz1s` passed 167 at `4818b92` before independent review found
+  the short-descriptor gap; it does not validate that follow-up. The reviewer's original
+  append-expansion probe failed at `4818b92` (`check-nkub4xkx`) and passed after the fix.
+- Final independent recheck **CLOSED** at clean `c2ae12f`: **40/40, zero skips**,
+  `check-p106mvgt`, source unchanged: 19 new privacy + 20 compatibility + the unchanged
+  original external append-expansion probe. It read the complete follow-up diff and found
+  no remaining bounded source finding. Report outside Git:
+  `Guanxi-lanes/reviews/codex-k4-truncated-egress-20261022.md`.
+- Local Node 26.9.0 resolves `@guanxi/contract` inside this clone. Server TypeScript, scoped
+  ESLint, touched module/plan Markdown and diff whitespace checks passed at the source pins.
+  Final handoff is docs-only; no additional full checks are claimed for it.
+
+Heavy selected checks used shared `~/.local/state/agent-dev` resource `heavy`, ports 5210/4410
+and this clone's `.lane-data`. The inherited external skill symlink prevents reusable source
+attestation; these are observed results at the named clean Git pins. No lock was bypassed.
+
+### Scope and residuals
+
+Owned edits are egress types/scrubber/README, session-log log/new excerpt helper/README, the
+existing facade assertion, the two new test files and this lane's plan/handoff. No contract,
+REST schema, migration, dependency, UI, central status, owner data, live model/provider,
+container or remote host was changed or used. No new secret fields or plaintext logs exist.
+
+The protection covers registered raw/JSON/URI forms and known or marker-ambiguous excerpt
+boundaries. Unregistered secrets, other encodings, arbitrary unknown message cuts and forensic
+erasure of the original stored excerpt are not claimed. Root still must integrate the new
+U1 page consumer, rerun its original probe and final combined candidate/main gates, preserving
+its current metadata/cursor behavior and the additive egress facade from other lanes. Other
+K4 input/native lifecycle residuals recorded above remain open.

@@ -55,6 +55,7 @@ for (const kind of ['raw', 'JSON', 'URI'] as const) test(`late ${kind} form is p
   const form = kind === 'raw' ? secret : kind === 'JSON' ? JSON.stringify(secret).slice(1, -1) : encodeURIComponent(secret)
   const prefix = 'ordinary-visible-token '
   const appended = f.append(`form-${kind}`, prefix + form)
+  const changesBefore = f.db.prepare('SELECT total_changes() AS n').get()!.n
   const before = JSON.stringify({ events: f.db.prepare('SELECT * FROM session_events ORDER BY row_id').all(),
     fts: f.db.prepare('SELECT rowid, * FROM session_events_fts').all() })
   const previouslyRead = f.log.readAll(`form-${kind}`, 'person').find(e => e.seq === appended.event.seq)!
@@ -79,6 +80,7 @@ for (const kind of ['raw', 'JSON', 'URI'] as const) test(`late ${kind} form is p
     fts: f.db.prepare('SELECT rowid, * FROM session_events_fts').all() })
   assert.equal(after, before, 'all reads preserve payload/hash/FTS/id/version/sequence byte-for-byte')
   assert.equal(artifactReads, 0, 'no full artifact is rehydrated on any projection')
+  assert.equal(f.db.prepare('SELECT total_changes() AS n').get()!.n, changesBefore, 'read paths execute zero durable writes')
 })
 
 test('one-character boundary fragments are protected while complete unrelated v2 text and v1 stay useful', t => {
@@ -203,4 +205,31 @@ test('complete v1 and v2 late-secret controls retain ordinary exact-match behavi
     assert.match(f.log.session(id)!.title!, /REDACTED/)
     assert.equal(event.id, original.id); assert.equal(event.version, original.version)
   }
+})
+
+for (const type of ['prompt', 'tool.call'] as const) test(`append-time marker expansion cannot hide an originally truncated short ${type} descriptor`, t => {
+  const f = fixture(t), early = 'EARLY_SYNTHETIC', late = 'XY_LATE_SYNTHETIC'
+  f.scrubber.register('secret://fixture/e', early)
+  const full = early + late, excerpt = early + late.slice(0, 2)
+  const id = `append-expansion-${type}`, handle = f.log.open(id, { kind: 'agent' })
+  const input = type === 'prompt'
+    ? { type, data: { origin: 'typed' as const, messageId: 'm', attachmentCount: 0 } }
+    : { type, data: { toolCallId: 't', name: 'ordinarytool', source: 'builtin' as const, parsedFrom: 'native' as const, diffPath: null } }
+  const appended = handle.append(input, { eventVersion: 2, inputArtifact: {
+    checksum: `sha256:${createHash('sha256').update(full).digest('hex')}`, byteSize: Buffer.byteLength(full),
+    mediaType: type === 'prompt' ? 'text/plain; charset=utf-8' : 'application/json', excerpt,
+  } }).event
+  const stored = f.db.prepare('SELECT payload FROM session_events WHERE id=?').get(appended.id)!.payload as string
+  const original = JSON.parse(stored).artifact as { excerpt: string; excerptBytes: number; byteSize: number }
+  assert.ok(original.excerptBytes > original.byteSize, 'append-time marker expansion has erased the byte comparison proof')
+  assert.ok(original.excerpt.endsWith('XY'), 'valid source still contains an unregistered boundary fragment')
+  f.scrubber.register('secret://fixture/late', late)
+  const current = f.log.readAll(id, 'person').find(e => e.seq === appended.seq)!
+  const output = (current.data as { artifact: { excerpt: string } }).artifact.excerpt
+  assert.equal(output.endsWith('XY'), false)
+  assert.match(output, /secret:\/\/fixture\/late/)
+  assert.equal(f.log.search('XY', { audience: 'person', sessionId: id }).length, 0)
+  if (type === 'prompt') assert.equal(f.log.session(id)!.title?.endsWith('XY'), false)
+  else assert.equal(f.log.search('ordinarytool', { audience: 'person', sessionId: id }).length, 1)
+  assert.equal(f.db.prepare('SELECT payload FROM session_events WHERE id=?').get(appended.id)!.payload, stored)
 })

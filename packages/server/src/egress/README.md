@@ -158,7 +158,8 @@ This is a conservative operation for a known truncation boundary, not the meanin
 Readiness and stale-facade closure rules are unchanged.
 
 Session-log v2 input excerpts establish original truncation from stored byte metadata before
-applying this capability. A consumer of an older port without the capability must withhold
+applying this capability. Stored markers can make that original boundary ambiguous after
+append-time expansion; the excerpt consumer conservatively protects that boundary too. A consumer of an older port without the capability must withhold
 the affected truncated text. It cannot pass that text through or reconstruct full artifacts
 to obtain the missing redaction guarantee. Arbitrarily interrupted messages without a known
 truncation boundary remain outside this additional guarantee.
