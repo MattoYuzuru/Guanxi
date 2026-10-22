@@ -199,6 +199,10 @@ test('transport dispatches exactly the counted rendered string and reports llama
   assert.equal(f.runtime.transport.id, 'llama-server'); assert.equal(f.runtime.transport.host, f.fake.url)
   await f.fake.configure({ stopType: 'limit' })
   assert.equal((await f.runtime.transport.chat(prepared, signal(), () => {}, dispatchFor(prepared).dispatch)).done_reason, 'length')
+  for (const stopType of ['none', 'unexpected']) {
+    await f.fake.configure({ stopType })
+    await assert.rejects(f.runtime.transport.chat(prepared, signal(), () => {}, dispatchFor(prepared).dispatch), code('truncation_protocol'), stopType)
+  }
 })
 
 test('a count that disagrees with the synchronous measure, a truncated prompt or a window overrun never reaches the model as accepted work', async t => {

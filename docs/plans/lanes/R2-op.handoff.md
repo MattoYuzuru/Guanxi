@@ -93,3 +93,22 @@ spy, unmarked-directory leak. Open as residual: P3 orphaned child after a hard c
 
 Real-binary smoke on the Mac with a tiny GGUF (owner-supplied) and then on Fedora; CLI/config surface for
 `operationalRelay`; governor provider vocabulary; boot-time reaper for marker-owned orphans.
+
+## Independent review (Opus, 2026-10-23) and integrator fixes
+
+- **P1 fixed:** without an explicit `port`, `createOperationalRelay` read `host.runtime` before the
+  asynchronous port choice, so the relay was never wired while the child loaded the model. The
+  relay now binds to the host: observer and counter resolve the served runtime at call time and
+  refuse `runtime_meter_unavailable` until it exists and is ready. New boot test without `port`
+  (red before, green after).
+- **P3 fixed:** a `/completion` reply whose `stop_type` is not `limit`, `eos` or `word` (e.g. `none`)
+  is refused as `truncation_protocol`; test added.
+- **P2 residual (recorded, not fixed):** a spawned llama-server keeps its weights resident for
+  the node's lifetime, but the governor only takes a per-call permit and the hardware view does
+  not see the residency. Ollama can load alongside it. Any MS1 host run must account for this
+  memory explicitly (one resident runtime per node) until a residency lease exists.
+- **Other P3 residuals:** no `slots === 1` / template-hash check in attach mode; tunnelled attach
+  hashes a remote path locally (refuse or document); `checkout.ts` release chmods hardlinked
+  files; the child has no `--api-key`, so any local process can call it; `JudgeModel` dispatches
+  without the meter transport; transport refusal codes surface as `model_failed`; after one
+  bridge timeout the count could fail fast. None admits a request without an exact count.

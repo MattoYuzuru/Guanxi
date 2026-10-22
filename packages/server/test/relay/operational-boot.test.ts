@@ -84,3 +84,14 @@ test('while the owned child is still loading the model, admission is the stock m
   await server.close(); closed = true
   assert.equal(alive(props.__pid), false)
 })
+
+test('without an explicit port the spawned child still wires the relay once it is healthy', async t => {
+  const w = await workspace(t)
+  const server = await start({ port: 0, host: '127.0.0.1', dataDir: join(w.dir, 'data'), webDir: w.dir, devOrigins: [], connectionsPolicy: { ownerDevice: true, nodeKeyOptIn: true },
+    operationalRelay: { llamaServer: { kind: 'spawn', binary: w.binary, modelPath: w.modelPath, model: 'fixture', contextTokens: 8192 }, reserves } })
+  t.after(() => server.close())
+  const connection = server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.create('local', { name: 'Local', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true })
+  // The regression: with a port chosen asynchronously the relay stayed unwired and refused forever.
+  await until(async () => (await post(server.url, connection.id)).code === 'relay_project_unavailable')
+  assert.equal(server.context.db.prepare('SELECT COUNT(*) n FROM durable_runs').get()!.n, 0)
+})

@@ -171,6 +171,8 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
     const done = await this.client.complete(rendered, limit!, signal, onDispatched).catch((error: unknown) => this.unavailable(error, signal))
     // A truncated prompt is never accepted as the prompt that was counted.
     invariant(!done.truncated, 'truncation_protocol')
+    // Only a finished generation is a reply: `none` (still running) or an unknown stop type is refused.
+    invariant(done.stopType === 'limit' || done.stopType === 'eos' || done.stopType === 'word', 'truncation_protocol')
     return { model: request.model, created_at: new Date(this.clock()).toISOString(), done: true, done_reason: done.stopType === 'limit' ? 'length' : 'stop',
       message: { role: 'assistant', content: done.content }, prompt_eval_count: done.promptTokens, eval_count: done.completionTokens }
   }

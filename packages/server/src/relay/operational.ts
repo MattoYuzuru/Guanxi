@@ -1,9 +1,10 @@
 import { join } from 'node:path'
 import { LlamaServerHost, type LlamaServerBoot, type LlamaServerState } from '../runtime/llama-server/process.ts'
+import type { LlamaServerRuntime } from '../runtime/llama-server/runtime.ts'
 import { OwnedCheckoutAllocator } from './checkout.ts'
-import type { RelayRuntimePolicy } from './runtime.ts'
+import type { RelayRuntimeObserver, RelayRuntimePolicy } from './runtime.ts'
 import type { RelayStartHost } from './start.ts'
-import { invariant, type Reserves } from './types.ts'
+import { invariant, RelayError, type Reserves } from './types.ts'
 
 /** Explicit, immutable opt-in for an operational local relay (R2-op). It is a boot option of the
  * trusted host process, never an HTTP setting. Without it the stock refusals remain:
@@ -31,9 +32,22 @@ export function createOperationalRelay(raw: OperationalRelayOptions, dataDir: st
   const maximumAgeMs = options.maximumAgeMs ?? 60_000
   invariant(Number.isSafeInteger(maximumAgeMs) && maximumAgeMs > 0, 'relay_policy_invalid')
   const host = LlamaServerHost.create(options.llamaServer)
-  const runtime = host.runtime
   const allocator = new OwnedCheckoutAllocator({ root: options.checkoutRoot ?? join(dataDir, 'relay-checkouts') })
-  const relay = runtime ? Object.freeze({ reserves: Object.freeze({ ...options.reserves }),
-    runtime: Object.freeze({ maximumAgeMs, observer: runtime, counter: runtime.counter }), allocate: allocator.allocate }) : undefined
+  // A spawned child picks its port asynchronously, so the runtime may not exist yet at boot. The
+  // relay binds to the host, not to a runtime snapshot: until the child is served (and `ready`),
+  // every observation and count refuses with the stock meter refusal.
+  const served = (): LlamaServerRuntime => {
+    const runtime = host.runtime
+    if (!runtime) throw new RelayError('runtime_meter_unavailable')
+    return runtime
+  }
+  const observer: RelayRuntimeObserver = Object.freeze({
+    get host() { return served().host },
+    get transport() { return served().transport },
+    observe: (reference: string, signal: AbortSignal) => served().observe(reference, signal),
+  })
+  const counter: NonNullable<RelayRuntimePolicy['counter']> = (fact, signal) => served().counter(fact, signal)
+  const relay = host.state().state !== 'unavailable' ? Object.freeze({ reserves: Object.freeze({ ...options.reserves }),
+    runtime: Object.freeze({ maximumAgeMs, observer, counter }), allocate: allocator.allocate }) : undefined
   return { relay, state: () => host.state(), settled: () => host.settled(), close: () => host.close() }
 }
