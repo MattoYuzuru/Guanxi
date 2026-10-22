@@ -2,7 +2,7 @@ import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { accessSync, constants, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import type { Readable, Writable } from 'node:stream'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PrivateChannelHost } from './private-channel.ts'
 import { servePrivateTrialStreams, type PrivateStreamPolicy, type PrivateStreamReason } from './private-stream.ts'
@@ -221,7 +221,7 @@ export interface PrivateProcessInspection {
   /** Test/deployment seam for the local process-table query; production defaults to /bin/ps. */
   observe?(pid: number): Promise<ObservedProcess | null>
 }
-interface Observed extends ObservedProcess {}
+type Observed = ObservedProcess
 function parseObserved(output: string): Observed | null {
   const line = output.trim().split('\n')[0]
   if (!line) return null
