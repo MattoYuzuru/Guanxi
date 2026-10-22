@@ -14,6 +14,8 @@ import {
   type SessionInputArtifactRef,
   type SessionEventDataV2,
   nativeRunBudgetSchema,
+  sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema, encodeSideChatSavedNote,
+  type SideChatRespondResponse, type SideChatSaveResponse, type SideChatSendResponse,
 } from '@guanxi/contract'
 import { RunStore } from '../runs/store.ts'
 import type { Attempt } from '../runs/types.ts'
@@ -27,6 +29,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { Connections } from '../connections/service.ts'
 import { assertRootsClean } from './cleanup.ts'
 import { selectedModel, connectionStream, emptyUsage } from './model.ts'
+import { runSideChat, SideChatError, sideChatMessageId } from './side-chat.ts'
 import { orientation } from './orientation.ts'
 import type { ProjectIndexService } from '../indexing/plugin.ts'
 import { nativeTools } from './tools.ts'
@@ -266,7 +269,7 @@ export class NativeAgents {
     }
     active.abort.abort()
   }
-  async queue(id: string, text: string, userActivity = true) {
+  async queue(id: string, text: string, userActivity = true, itemId?: string): Promise<'queued' | 'duplicate'> {
     this.ready()
     if (!text.trim()) throw new NativeAgentError('validation_failed')
     const active = this.active.get(id)
@@ -276,9 +279,17 @@ export class NativeAgents {
     // Read and append the projection inside the same FIFO operation: a snapshot
     // taken before enqueue is stale as soon as a concurrent queue() or
     // removeQueued() commits, and would silently overwrite its accepted items.
-    await pending.enqueue(() => {
-      pending.appendNow({ type: 'agent.queue', data: { items: [...this.progress(id).queue, { id: randomUUID(), text }] } })
+    // A caller-chosen item id (side-chat Send) makes the operation idempotent: an id that is
+    // already pending or already consumed as a prompt is never queued a second time.
+    return pending.enqueue(() => {
+      const current = this.progress(id)
+      if (itemId !== undefined && (current.queue.some(item => item.id === itemId) || this.hasPrompt(id, itemId))) return 'duplicate' as const
+      pending.appendNow({ type: 'agent.queue', data: { items: [...current.queue, { id: itemId ?? randomUUID(), text }] } })
+      return 'queued' as const
     })
+  }
+  private hasPrompt(id: string, messageId: string): boolean {
+    return this.log.readAll(id, 'remote_agent').some(event => event.type === 'prompt' && event.data.messageId === messageId)
   }
   async removeQueued(id: string, item: string) {
     const active = this.active.get(id)
@@ -287,6 +298,81 @@ export class NativeAgents {
     await pending.enqueue(() => {
       pending.appendNow({ type: 'agent.queue', data: { items: this.progress(id).queue.filter(i => i.id !== item) } })
     })
+  }
+  /* ── Ephemeral side chat (D-135): see side-chat.ts. Reads and answers write nothing. ── */
+  private sideChatSession(id: string) {
+    try {
+      this.ready()
+      this.sessions.assertAvailable(id)
+      const events = this.events(id)
+      const policy = events.find(event => event.type === 'agent.policy')
+      if (policy?.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
+      const input = nativeAgentInputSchema.parse({ projectId: policy.data.projectId, connectionId: policy.data.connectionId, model: policy.data.model,
+        mode: policy.data.mode, domains: policy.data.domains, protectedPaths: policy.data.protectedPaths, attachmentIds: policy.data.attachmentIds,
+        contextTokens: policy.data.contextTokens, budget: policy.data.budget, retention: policy.data.retention, prompt: 'side chat' })
+      return { events, input }
+    } catch (error) { throw this.sideChatFailure(error) }
+  }
+  private sideChatFailure(error: unknown): SideChatError {
+    if (error instanceof SideChatError) return error
+    const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : error instanceof Error ? error.message : ''
+    if (code === 'session_not_found') return new SideChatError('session_not_found')
+    if (code === 'session_expired') return new SideChatError('session_unavailable')
+    if (code === 'egress_unavailable') return new SideChatError('egress_unavailable')
+    if (code === 'idempotency_conflict') return new SideChatError('operation_conflict')
+    if (['session_busy', 'writer_busy', 'writer_fenced', 'stale_lease'].includes(code)) return new SideChatError('session_busy')
+    if (code === 'invalid_event') return new SideChatError('validation_failed')
+    return new SideChatError('agent_unavailable')
+  }
+  async sideChatRespond(id: string, raw: unknown, signal?: AbortSignal): Promise<SideChatRespondResponse> {
+    const request = sideChatRespondRequestSchema.parse(raw)
+    const { events, input } = this.sideChatSession(id)
+    let model: ReturnType<typeof selectedModel>
+    try { model = selectedModel(this.connections, input) } catch { throw new SideChatError('connection_unavailable') }
+    return runSideChat({ connections: this.connections, scrubber: this.scrubber, model, input, events, request, signal })
+  }
+  /** Appends one history-only `agent.note`; the same operation id and content never appends twice. */
+  async sideChatSave(id: string, raw: unknown): Promise<SideChatSaveResponse> {
+    const request = sideChatSaveRequestSchema.parse(raw)
+    this.sideChatSession(id)
+    const input = { type: 'agent.note' as const, data: { text: encodeSideChatSavedNote(request.operationId, request.messages) } }
+    const options = { idempotencyKey: `side-chat-save:${request.operationId}` }
+    try {
+      const queue = this.active.get(id)?.queue ?? null
+      let result: AppendResult
+      if (queue !== null) {
+        // Through the running turn's FIFO so the append cannot interleave with its own. The
+        // operation never throws into the FIFO: a failure there would abort the main turn.
+        const outcome = await queue.enqueue(() => { try { return { result: queue.appendNow(input, options) } } catch (error) { return { error } } })
+        if ('error' in outcome) throw outcome.error
+        result = outcome.result
+      } else {
+        this.runs.heartbeat()
+        result = this.runs.homeFence().transaction('side_chat_save', () => this.log.appendFromHomeWithin(id, { kind: 'agent', threadId: id }, input, options))
+        this.log.notify([id])
+      }
+      return { operationId: request.operationId, eventId: result.event.id, seq: result.event.seq, duplicate: result.duplicate }
+    } catch (error) { throw this.sideChatFailure(error) }
+  }
+  /** Posts one message to the main session exactly once per operation id (prompt id = derived UUID). */
+  async sideChatSend(id: string, raw: unknown): Promise<SideChatSendResponse> {
+    const request = sideChatSendRequestSchema.parse(raw)
+    this.sideChatSession(id)
+    const messageId = sideChatMessageId(request.operationId)
+    const answer = (delivery: SideChatSendResponse['delivery'], duplicate: boolean): SideChatSendResponse => ({ operationId: request.operationId, messageId, delivery, duplicate })
+    try {
+      if (this.hasPrompt(id, messageId) || this.progress(id).queue.some(item => item.id === messageId)) return answer('already_sent', true)
+      if (this.active.has(id)) {
+        try {
+          return (await this.queue(id, request.text, true, messageId)) === 'duplicate' ? answer('already_sent', true) : answer('queued', false)
+        } catch (error) {
+          // The turn settled between the check and the enqueue; start a fresh one instead.
+          if (!(error instanceof NativeAgentError && error.code === 'session_not_running')) throw error
+        }
+      }
+      await this.prompt(id, request.text, messageId)
+      return answer('started', false)
+    } catch (error) { throw this.sideChatFailure(error) }
   }
   leaveSession(id: string) { this.ready(); this.runs.heartbeat(); return this.sessions.leave(id) }
   setRetention(id: string, mode: 'keep' | 'ttl' | 'session') { this.ready(); this.runs.heartbeat(); return this.sessions.setRetention(id, mode) }
@@ -298,11 +384,11 @@ export class NativeAgents {
     try { await this.sessions.remove(id) } catch (error) { throw new NativeAgentError(error instanceof Error && ['session_busy','writer_busy','session_not_found','cleanup_unconfirmed'].includes('code' in error ? String(error.code) : error.message) ? ('code' in error ? String(error.code) : error.message) : 'deletion_failed') }
     return { sessionId: id, deleted: true as const }
   }
-  async prompt(id: string, text: string) {
+  async prompt(id: string, text: string, messageId?: string) {
     this.ready()
     this.runs.heartbeat()
     this.sessions.assertAvailable(id)
-    if (this.active.has(id)) { await this.queue(id, text); return }
+    if (this.active.has(id)) { await this.queue(id, text, true, messageId); return }
     const events = this.events(id)
     const event = events.find(e => e.type === 'agent.policy')!
     if (event.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
@@ -320,7 +406,7 @@ export class NativeAgents {
       handle.close()
       throw error
     }
-    this.launch(id, input, policy, handle, text, history)
+    this.launch(id, input, policy, handle, text, history, messageId)
   }
   private attempt(id: string, input: NativeAgentInput) {
     this.runs.heartbeat()
@@ -338,7 +424,7 @@ export class NativeAgents {
         { ...options, expectedSeq: options.expectedSeq ?? this.log.session(handle.sessionId)!.lastSeq + 1 }),
     }
   }
-  private launch(id: string, input: NativeAgentInput, policy: SandboxPolicy, rawHandle: SessionHandle, prompt: string, history: AgentMessage[]) {
+  private launch(id: string, input: NativeAgentInput, policy: SandboxPolicy, rawHandle: SessionHandle, prompt: string, history: AgentMessage[], firstMessageId?: string) {
     let attempt: Attempt
     try { this.sessions.touch(id); attempt = this.attempt(id, input) } catch (error) { rawHandle.close(); throw error }
     const abort = new AbortController()
@@ -346,7 +432,7 @@ export class NativeAgents {
     this.active.set(id, active)
     active.settled = (async () => {
       let next: string | undefined = prompt
-      let queuedId: string | undefined
+      let queuedId: string | undefined = firstMessageId
       while (next !== undefined) {
         const timer = setInterval(() => {
           try { this.runs.renew(active.attempt); this.runs.checkExecution(active.attempt) }
@@ -394,7 +480,7 @@ export class NativeAgents {
     active.queue = created
     const tools = nativeTools({
       policy, log: this.log, handle, scrubber: this.scrubber,
-      queue: text => this.queue(id, text, false),
+      queue: async text => { await this.queue(id, text, false) },
       executeCommand: this.commandRunner, index: this.index,
       append: (event, options) => created.append(event, options),
       awaitToolCall: (toolCallId, toolSignal) => created.waitForToolCall(toolCallId, toolSignal),

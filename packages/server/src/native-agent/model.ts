@@ -37,7 +37,7 @@ export function connectionStream(connections: Connections, scrubber: EgressScrub
         const call = { model: input.model, runId: attempt.run_id, requestId: randomUUID(), signal: options?.signal, ...(model.provider === 'ollama'
           ? { onStarted: () => runs.modelStarted(attempt) } : { onResponseObserved: () => runs.modelStarted(attempt) }) }
         if (model.provider !== 'ollama') result = await connections.complete('local', input.connectionId, clean, call)
-        else result = await local(connections, input, clean, call)
+        else result = await localModelCall(connections, input, clean, call)
         runs.recordCost(attempt, { key: call.requestId, inputTokens: result.usage.input + result.usage.cacheRead + result.usage.cacheWrite,
           outputTokens: result.usage.output, costMicrounits: model.provider === 'ollama' ? null : Math.round(result.usage.cost.total * 1000000), currency: model.provider === 'ollama' ? 'unknown' : 'USD' })
         runs.checkExecution(attempt)
@@ -55,7 +55,7 @@ export function connectionStream(connections: Connections, scrubber: EgressScrub
     return stream
   }
 }
-async function local(connections: Connections, input: NativeAgentInput, context: TranscriptContext,
+export async function localModelCall(connections: Connections, input: NativeAgentInput, context: TranscriptContext,
   call: { runId: string; requestId: string; signal?: AbortSignal; onStarted?: () => void }): Promise<AssistantMessage> {
   const messages: OllamaChatMessage[] = context.messages.map(m => {
     if (m.role === 'system') return { role: 'system', content: typeof m.content === 'string' ? m.content : m.content.map(c => c.text).join('\n') }
