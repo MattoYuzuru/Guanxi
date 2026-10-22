@@ -120,6 +120,34 @@ export type EvidenceEvent =
 
 export type EvidenceEventType = EvidenceEvent['type']
 
+/**
+ * ADR-0032: only the harness may report acceptance, commits and judge verdicts; only a human
+ * may decide; agents may propose and claim. The suffix names the concrete producer, for
+ * example `harness:acceptance`, `agent:executor`, `lead:owner` or `user:owner`.
+ */
+const SOURCE_PREFIXES: Record<EvidenceEventType, readonly string[]> = {
+  proposed: ['agent:'],
+  accepted: ['user:', 'lead:'],
+  rejected: ['user:', 'lead:'],
+  claimed: ['agent:'],
+  released: ['agent:'],
+  verification_requested: ['agent:'],
+  acceptance_result: ['harness:'],
+  commit_accepted: ['harness:'],
+  judge_verdict: ['harness:'],
+  human_decision: ['user:', 'lead:'],
+}
+
+function validateSource(type: EvidenceEventType, source: string): void {
+  const allowed = SOURCE_PREFIXES[type]
+  if (!allowed.some(prefix => source.startsWith(prefix))) {
+    throw new WorkError(
+      'invalid_source',
+      `${type} requires source starting with ${allowed.join(' or ')}; got ${source}`,
+    )
+  }
+}
+
 /** The append-only store adds its monotonic sequence to the stored payload. */
 export type StoredEvidenceEvent = EvidenceEvent & { readonly seq: number }
 
@@ -273,6 +301,7 @@ export function parseEvidenceEvent(value: unknown): EvidenceEvent {
   const itemId = text(input.itemId, 'event.itemId')
   const at = timestamp(input.at, 'event.at')
   const source = text(input.source, 'event.source')
+  validateSource(type, source)
   const base = { itemId, at, source }
   switch (type) {
     case 'proposed': {

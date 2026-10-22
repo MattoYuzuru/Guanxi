@@ -18,21 +18,21 @@ function item(id: string, overrides: Partial<ItemSpec> = {}): ItemSpec {
 
 function event(type: EvidenceEvent['type'], itemId: string): EvidenceEvent {
   if (type === 'acceptance_result') {
-    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'harness', passed: true, cleanCheckout: true, commit: 'c1', command: 'node --test' }
+    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'harness:acceptance', passed: true, cleanCheckout: true, commit: 'c1', command: 'node --test' }
   }
   if (type === 'commit_accepted') {
-    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'lead', commit: 'c1' }
+    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'harness:commits', commit: 'c1' }
   }
   if (type === 'judge_verdict') {
-    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'judge', verdict: 'fail' }
+    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'harness:judge', verdict: 'fail' }
   }
   if (type === 'human_decision') {
-    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'user', decision: 'cancel' }
+    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'user:owner', decision: 'cancel' }
   }
   if (type === 'proposed') {
-    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'agent', item: item(itemId) }
+    return { type, itemId, at: new Date(FIXED).toISOString(), source: 'agent:planner', item: item(itemId) }
   }
-  return { type, itemId, at: new Date(FIXED).toISOString(), source: 'executor' }
+  return { type, itemId, at: new Date(FIXED).toISOString(), source: 'agent:executor' }
 }
 
 function withStore(run: (store: WorkStore, path: string) => void): void {
@@ -130,11 +130,11 @@ test('events are append-only, paged by sequence and shape-validated', () => {
     ).run(1, 'p', 1, 'a', 'released', new Date(FIXED).toISOString(), '{}'), /append only/)
     assert.equal(store.events('p', {}).length, 3)
 
-    assert.throws(() => store.appendEvent('p', { type: 'claimed', itemId: 'a', at: 'not-a-time', source: 'agent' }), /invalid_shape/)
-    assert.throws(() => store.appendEvent('p', { type: 'unknown', itemId: 'a', at: new Date(FIXED).toISOString(), source: 'agent' } as never), /invalid_shape/)
-    assert.throws(() => store.appendEvent('p', { type: 'acceptance_result', itemId: 'a', at: new Date(FIXED).toISOString(), source: 'harness', passed: true, cleanCheckout: true, command: 'x' } as never), /invalid_shape/)
+    assert.throws(() => store.appendEvent('p', { type: 'claimed', itemId: 'a', at: 'not-a-time', source: 'agent:executor' }), /invalid_shape/)
+    assert.throws(() => store.appendEvent('p', { type: 'unknown', itemId: 'a', at: new Date(FIXED).toISOString(), source: 'agent:executor' } as never), /invalid_shape/)
+    assert.throws(() => store.appendEvent('p', { type: 'acceptance_result', itemId: 'a', at: new Date(FIXED).toISOString(), source: 'harness:acceptance', passed: true, cleanCheckout: true, command: 'x' } as never), /invalid_shape/)
     assert.throws(() => store.appendEvent('p', {
-      type: 'proposed', itemId: 'c', at: new Date(FIXED).toISOString(), source: 'agent', item: item('d'),
+      type: 'proposed', itemId: 'c', at: new Date(FIXED).toISOString(), source: 'agent:planner', item: item('d'),
     }), /item.id must equal/)
     assert.throws(() => store.appendEvent('missing', event('claimed', 'a')), /revision_not_found/)
     assert.throws(() => store.events('p', { afterSeq: -1 }), /invalid_paging/)
@@ -143,6 +143,48 @@ test('events are append-only, paged by sequence and shape-validated', () => {
     const direct = store.appendEvent({ ...event('claimed', 'b'), projectId: 'p' })
     assert.equal(direct.seq, 4)
     assert.equal(deriveStatuses(plan, store.events('p', {})).get('b')!.status, 'in_progress')
+  })
+})
+
+test('evidence sources are namespaced and allowlisted by event type', () => {
+  withStore(store => {
+    store.addRevision({ projectId: 'p', author: 'user', items: [item('a')] })
+    const at = new Date(FIXED).toISOString()
+    const invalid: EvidenceEvent[] = [
+      { type: 'acceptance_result', itemId: 'a', at, source: 'agent:executor', passed: true, cleanCheckout: true, commit: 'c1', command: 'node --test' },
+      { type: 'commit_accepted', itemId: 'a', at, source: 'lead:owner', commit: 'c1' },
+      { type: 'judge_verdict', itemId: 'a', at, source: 'judge:local', verdict: 'pass' },
+      { type: 'human_decision', itemId: 'a', at, source: 'agent:executor', decision: 'done' },
+      { type: 'accepted', itemId: 'a', at, source: 'agent:planner' },
+      { type: 'rejected', itemId: 'a', at, source: 'agent:planner' },
+      { type: 'proposed', itemId: 'b', at, source: 'user:owner', item: item('b') },
+      { type: 'claimed', itemId: 'a', at, source: 'executor' },
+      { type: 'released', itemId: 'a', at, source: 'lead:owner' },
+      { type: 'verification_requested', itemId: 'a', at, source: 'user:owner' },
+    ]
+    for (const event of invalid) {
+      assert.throws(() => store.appendEvent('p', event), (error: unknown) => {
+        assert.ok(error instanceof WorkError)
+        assert.equal(error.code, 'invalid_source')
+        assert.match(error.message, new RegExp(`^invalid_source: ${event.type} requires source`))
+        return true
+      })
+    }
+    assert.equal(store.events('p', {}).length, 0)
+
+    const valid: EvidenceEvent[] = [
+      { type: 'proposed', itemId: 'b', at, source: 'agent:planner', item: item('b') },
+      { type: 'claimed', itemId: 'b', at, source: 'agent:executor' },
+      { type: 'verification_requested', itemId: 'b', at, source: 'agent:executor' },
+      { type: 'acceptance_result', itemId: 'b', at, source: 'harness:acceptance', passed: true, cleanCheckout: true, commit: 'c1', command: 'node --test' },
+      { type: 'commit_accepted', itemId: 'b', at, source: 'harness:commits', commit: 'c1' },
+      { type: 'judge_verdict', itemId: 'b', at, source: 'harness:judge', verdict: 'pass' },
+      { type: 'human_decision', itemId: 'b', at, source: 'lead:owner', decision: 'reopen' },
+      { type: 'accepted', itemId: 'b', at, source: 'lead:owner' },
+      { type: 'rejected', itemId: 'b', at, source: 'user:owner' },
+    ]
+    for (const event of valid) store.appendEvent('p', event)
+    assert.equal(store.events('p', {}).length, valid.length)
   })
 })
 
@@ -159,7 +201,7 @@ test('a canceled item accepts only reopen; reopen restores the dependency state'
     })
     assert.throws(() => store.appendEvent('p', event('verification_requested', 'a')), /canceled/)
     const reopened = store.appendEvent('p', {
-      type: 'human_decision', itemId: 'a', at: new Date(FIXED).toISOString(), source: 'user', decision: 'reopen',
+      type: 'human_decision', itemId: 'a', at: new Date(FIXED).toISOString(), source: 'user:owner', decision: 'reopen',
     })
     assert.equal(reopened.seq, 3)
     assert.equal(deriveStatuses(plan, store.events('p', {})).get('a')!.status, 'ready')
@@ -204,7 +246,7 @@ test('event timestamps accept epoch milliseconds', () => {
   withStore(store => {
     store.addRevision({ projectId: 'p', author: 'user', items: [item('a')] })
     const stored = store.appendEvent('p', {
-      type: 'claimed', itemId: 'a', at: FIXED, source: 'executor',
+      type: 'claimed', itemId: 'a', at: FIXED, source: 'agent:executor',
     })
     assert.equal(stored.at, FIXED)
     assert.equal(store.events('p', {})[0]!.at, FIXED)

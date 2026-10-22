@@ -122,15 +122,15 @@ test('strip property: 500 seeded plans/views stay within both counters', () => {
     for (let count = 0; count < Math.floor(random() * 8); count++) {
       const target = planItems[Math.floor(random() * planItems.length)]!
       const roll = random()
-      if (roll < 0.25) generatedEvents.push({ type: 'claimed', itemId: target.id, at: AT, source: 'executor' })
-      else if (roll < 0.45) generatedEvents.push({ type: 'verification_requested', itemId: target.id, at: AT, source: 'agent' })
+      if (roll < 0.25) generatedEvents.push({ type: 'claimed', itemId: target.id, at: AT, source: 'agent:executor' })
+      else if (roll < 0.45) generatedEvents.push({ type: 'verification_requested', itemId: target.id, at: AT, source: 'agent:executor' })
       else if (roll < 0.65) generatedEvents.push({
-        type: 'acceptance_result', itemId: target.id, at: AT, source: 'harness',
+        type: 'acceptance_result', itemId: target.id, at: AT, source: 'harness:acceptance',
         passed: random() < 0.7, cleanCheckout: random() < 0.7, commit: `commit-${count}`, command: 'node --test',
       })
-      else if (roll < 0.8) generatedEvents.push({ type: 'commit_accepted', itemId: target.id, at: AT, source: 'lead', commit: `commit-${count}` })
-      else if (roll < 0.9) generatedEvents.push({ type: 'human_decision', itemId: target.id, at: AT, source: 'user', decision: 'cancel' })
-      else generatedEvents.push({ type: 'human_decision', itemId: target.id, at: AT, source: 'user', decision: 'reopen' })
+      else if (roll < 0.8) generatedEvents.push({ type: 'commit_accepted', itemId: target.id, at: AT, source: 'harness:commits', commit: `commit-${count}` })
+      else if (roll < 0.9) generatedEvents.push({ type: 'human_decision', itemId: target.id, at: AT, source: 'user:owner', decision: 'cancel' })
+      else generatedEvents.push({ type: 'human_decision', itemId: target.id, at: AT, source: 'user:owner', decision: 'reopen' })
     }
     const view = random() < 0.5 ? workView(generatedPlan, deriveStatuses(generatedPlan, generatedEvents)) : randomView
     const budgets = [0, 1, 2, 5, 10, 25, 50, 100, 300, Math.floor(random() * 600)]
@@ -155,7 +155,7 @@ test('workView selects active work, the next ready item and blocking issues', ()
     item('d', { dependsOn: ['a'] }),
   ])
   const statuses = deriveStatuses(p, [
-    { type: 'claimed', itemId: 'b', at: AT, source: 'executor' },
+    { type: 'claimed', itemId: 'b', at: AT, source: 'agent:executor' },
   ])
   const view = workView(p, statuses)
   assert.equal(view.current?.id, 'b')
@@ -172,7 +172,7 @@ test('query pages the full graph with an id cursor that survives new events', ()
   assert.equal(first.total, 5)
   assert.equal(first.nextCursor === null, false)
 
-  statuses = deriveStatuses(p, [{ type: 'claimed', itemId: 'a', at: AT, source: 'executor' }])
+  statuses = deriveStatuses(p, [{ type: 'claimed', itemId: 'a', at: AT, source: 'agent:executor' }])
   const second = query(statuses, p, { limit: 2, cursor: first.nextCursor! })
   assert.deepEqual(second.items.map(entry => entry.id), ['c', 'd'])
   assert.equal(second.total, 5)
@@ -197,19 +197,19 @@ test('query cursor survives rejection of the cursor item and earlier proposals',
   const c = item('c')
   const d = item('d')
   const events: EvidenceEvent[] = [
-    { type: 'proposed', itemId: 'b', at: AT, source: 'agent', item: b },
-    { type: 'accepted', itemId: 'b', at: AT, source: 'lead' },
-    { type: 'proposed', itemId: 'c', at: AT, source: 'agent', item: c },
-    { type: 'accepted', itemId: 'c', at: AT, source: 'lead' },
-    { type: 'proposed', itemId: 'd', at: AT, source: 'agent', item: d },
-    { type: 'accepted', itemId: 'd', at: AT, source: 'lead' },
+    { type: 'proposed', itemId: 'b', at: AT, source: 'agent:planner', item: b },
+    { type: 'accepted', itemId: 'b', at: AT, source: 'lead:owner' },
+    { type: 'proposed', itemId: 'c', at: AT, source: 'agent:planner', item: c },
+    { type: 'accepted', itemId: 'c', at: AT, source: 'lead:owner' },
+    { type: 'proposed', itemId: 'd', at: AT, source: 'agent:planner', item: d },
+    { type: 'accepted', itemId: 'd', at: AT, source: 'lead:owner' },
   ]
   const first = query(deriveStatuses(p, events), p, { limit: 3 })
   assert.deepEqual(first.items.map(entry => entry.id), ['a', 'b', 'c'])
   const rejected: EvidenceEvent[] = [
     ...events,
-    { type: 'rejected', itemId: 'b', at: AT, source: 'lead' },
-    { type: 'rejected', itemId: 'c', at: AT, source: 'lead' },
+    { type: 'rejected', itemId: 'b', at: AT, source: 'lead:owner' },
+    { type: 'rejected', itemId: 'c', at: AT, source: 'lead:owner' },
   ]
   const page = query(deriveStatuses(p, rejected), p, { limit: 10, cursor: first.nextCursor! })
   assert.deepEqual(page.items.map(entry => entry.id), ['d'])
@@ -221,8 +221,8 @@ test('query includes accepted proposals and drops rejected ones', () => {
   const d = item('d', { title: 'Proposal D' })
   const e = item('e', { title: 'Proposal E' })
   const events: EvidenceEvent[] = [
-    { type: 'proposed', itemId: 'd', at: AT, source: 'agent', item: d },
-    { type: 'accepted', itemId: 'd', at: AT, source: 'lead' },
+    { type: 'proposed', itemId: 'd', at: AT, source: 'agent:planner', item: d },
+    { type: 'accepted', itemId: 'd', at: AT, source: 'lead:owner' },
   ]
   let statuses = deriveStatuses(p, events)
   let page = query(statuses, p, { limit: 10 })
@@ -230,8 +230,8 @@ test('query includes accepted proposals and drops rejected ones', () => {
 
   statuses = deriveStatuses(p, [
     ...events,
-    { type: 'proposed', itemId: 'e', at: AT, source: 'agent', item: e },
-    { type: 'rejected', itemId: 'e', at: AT, source: 'lead' },
+    { type: 'proposed', itemId: 'e', at: AT, source: 'agent:planner', item: e },
+    { type: 'rejected', itemId: 'e', at: AT, source: 'lead:owner' },
   ])
   page = query(statuses, p, { limit: 10 })
   assert.deepEqual(page.items.map(entry => entry.id), ['a', 'd'])
@@ -243,11 +243,11 @@ test('exportMarkdown projects status, acceptance and evidence without writing fi
     item('b', { title: 'Docs', acceptance: null, dependsOn: ['a'] }),
   ], 2)
   const events: EvidenceEvent[] = [
-    { type: 'claimed', itemId: 'a', at: AT, source: 'executor' },
-    { type: 'verification_requested', itemId: 'a', at: AT, source: 'agent' },
-    { type: 'acceptance_result', itemId: 'a', at: AT, source: 'harness', passed: true, cleanCheckout: true, commit: 'abc123', command: 'node --test' },
-    { type: 'commit_accepted', itemId: 'a', at: AT, source: 'lead', commit: 'abc123' },
-    { type: 'judge_verdict', itemId: 'a', at: AT, source: 'judge', verdict: 'pass' },
+    { type: 'claimed', itemId: 'a', at: AT, source: 'agent:executor' },
+    { type: 'verification_requested', itemId: 'a', at: AT, source: 'agent:executor' },
+    { type: 'acceptance_result', itemId: 'a', at: AT, source: 'harness:acceptance', passed: true, cleanCheckout: true, commit: 'abc123', command: 'node --test' },
+    { type: 'commit_accepted', itemId: 'a', at: AT, source: 'harness:commits', commit: 'abc123' },
+    { type: 'judge_verdict', itemId: 'a', at: AT, source: 'harness:judge', verdict: 'pass' },
   ]
   const statuses = deriveStatuses(p, events)
   const markdown = exportMarkdown(p, statuses)
@@ -261,7 +261,7 @@ test('exportMarkdown projects status, acceptance and evidence without writing fi
   assert.match(markdown, /- Acceptance: none \(human decision only\)/)
   assert.match(markdown, /- Depends on: `a`/)
   assert.match(markdown, /- Protected paths: `src\/parser\.ts`/)
-  assert.match(markdown, /`acceptance_result` at `2026-10-20T12:00:00.000Z` from `harness`/)
+  assert.match(markdown, /`acceptance_result` at `2026-10-20T12:00:00.000Z` from `harness:acceptance`/)
   assert.match(markdown, /commit=`abc123`/)
   assert.ok(markdown.endsWith('\n'))
   assert.doesNotMatch(markdown, /undefined/)
@@ -269,7 +269,7 @@ test('exportMarkdown projects status, acceptance and evidence without writing fi
 
 test('exportMarkdown reports unknown-item warnings', () => {
   const p = plan([item('a')])
-  const statuses = deriveStatuses(p, [{ type: 'claimed', itemId: 'ghost', at: AT, source: 'agent' }])
+  const statuses = deriveStatuses(p, [{ type: 'claimed', itemId: 'ghost', at: AT, source: 'agent:executor' }])
   const markdown = exportMarkdown(p, statuses)
   assert.match(markdown, /^## Warnings$/m)
   assert.match(markdown, /- `ghost`: unknown_item \(`claimed`\)/)

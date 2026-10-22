@@ -22,8 +22,17 @@ ItemSpec { id, title, acceptance, dependsOn, estimateMinutes, ownerRole, protect
 only a human decision can. `ownerRole` is `lead`, `executor`, `reviewer` or `null`.
 
 `EvidenceEvent` is a discriminated union. Every event has `itemId`, `at` (ISO-8601 or epoch
-milliseconds) and `source` (`agent`, `executor`, `lead`, `user`, `judge`, `harness`, or another
-non-empty producer label). Event types:
+milliseconds) and a namespaced `source`. `parseEvidenceEvent` (and therefore `appendEvent`)
+enforces an allowlist and rejects a disallowed producer with `WorkError` code `invalid_source`:
+
+| Events | Allowed source prefix |
+| --- | --- |
+| `acceptance_result`, `commit_accepted`, `judge_verdict` | `harness:` |
+| `human_decision`, `accepted`, `rejected` | `user:` or `lead:` (D-172) |
+| `proposed`, `claimed`, `released`, `verification_requested` | `agent:` |
+
+The suffix names the concrete producer, for example `harness:acceptance`, `harness:judge`,
+`agent:executor`, `lead:reviewer` or `user:owner`. Event types:
 
 | Event | Meaning |
 | --- | --- |
@@ -87,9 +96,9 @@ proposed id is also reported as a warning and ignored.
   method, so a revision is immutable.
 - Events are JSON payloads with an autoincrement `seq`, append-only through UPDATE, DELETE
   and INSERT OR REPLACE guards.
-  `appendEvent(projectId, event)` validates shape, requires a revision, and rejects every event
-  after `canceled` except `human_decision: reopen`. An event for an unknown item id is allowed
-  so derivation can report a warning.
+  `appendEvent(projectId, event)` validates shape and source, requires a revision, and rejects
+  every event after `canceled` except `human_decision: reopen`. An event for an unknown item id
+  is allowed so derivation can report a warning.
 - `events(projectId, { afterSeq?, limit? })` returns sequence order. No limit means all events;
   there is no hidden cap. `latestRevision(projectId)` returns `null` before the first revision.
 - `setMode(projectId, mode, reason)` records activation; `mode(projectId)` returns `off` by

@@ -23,13 +23,13 @@ function plan(items: ItemSpec[], revision = 1): PlanRevision {
 }
 
 function claimed(itemId: string): EvidenceEvent {
-  return { type: 'claimed', itemId, at: AT, source: 'executor' }
+  return { type: 'claimed', itemId, at: AT, source: 'agent:executor' }
 }
 function released(itemId: string): EvidenceEvent {
-  return { type: 'released', itemId, at: AT, source: 'executor' }
+  return { type: 'released', itemId, at: AT, source: 'agent:executor' }
 }
 function verification(itemId: string): EvidenceEvent {
-  return { type: 'verification_requested', itemId, at: AT, source: 'agent' }
+  return { type: 'verification_requested', itemId, at: AT, source: 'agent:executor' }
 }
 function acceptance(
   itemId: string,
@@ -39,27 +39,27 @@ function acceptance(
   command = 'node --test',
 ): EvidenceEvent {
   return {
-    type: 'acceptance_result', itemId, at: AT, source: 'harness',
+    type: 'acceptance_result', itemId, at: AT, source: 'harness:acceptance',
     passed, cleanCheckout, commit, command,
   }
 }
 function commitAccepted(itemId: string, commit = 'commit-1'): EvidenceEvent {
-  return { type: 'commit_accepted', itemId, at: AT, source: 'lead', commit }
+  return { type: 'commit_accepted', itemId, at: AT, source: 'harness:commits', commit }
 }
 function human(itemId: string, decision: 'done' | 'reopen' | 'cancel'): EvidenceEvent {
-  return { type: 'human_decision', itemId, at: AT, source: 'user', decision }
+  return { type: 'human_decision', itemId, at: AT, source: 'user:owner', decision }
 }
 function judge(itemId: string, verdict: 'pass' | 'fail' | 'escalate'): EvidenceEvent {
-  return { type: 'judge_verdict', itemId, at: AT, source: 'judge', verdict }
+  return { type: 'judge_verdict', itemId, at: AT, source: 'harness:judge', verdict }
 }
 function proposed(spec: ItemSpec): EvidenceEvent {
-  return { type: 'proposed', itemId: spec.id, at: AT, source: 'agent', item: spec }
+  return { type: 'proposed', itemId: spec.id, at: AT, source: 'agent:planner', item: spec }
 }
 function accepted(itemId: string): EvidenceEvent {
-  return { type: 'accepted', itemId, at: AT, source: 'lead' }
+  return { type: 'accepted', itemId, at: AT, source: 'lead:owner' }
 }
 function rejected(itemId: string): EvidenceEvent {
-  return { type: 'rejected', itemId, at: AT, source: 'lead' }
+  return { type: 'rejected', itemId, at: AT, source: 'lead:owner' }
 }
 
 test('a planted done claim needs clean acceptance and an accepted commit', () => {
@@ -243,7 +243,7 @@ test('unknown item events are ignored and reported as warnings', () => {
   const p = plan([item('a')])
   const statuses = deriveStatuses(p, [
     claimed('ghost'),
-    { type: 'judge_verdict', itemId: 'ghost', at: AT, source: 'judge', verdict: 'fail' },
+    { type: 'judge_verdict', itemId: 'ghost', at: AT, source: 'harness:judge', verdict: 'fail' },
     accepted('never-proposed'),
   ])
   assert.equal(statuses.has('a'), true)
