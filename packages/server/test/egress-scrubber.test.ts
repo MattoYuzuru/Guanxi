@@ -307,15 +307,17 @@ describe('egress scrubber: kernel service', () => {
     assert.ok(Object.isFrozen(facade))
     assert.deepEqual(
       Object.keys(facade).sort(),
-      ['expect', 'isReady', 'pendingSources', 'ready', 'register', 'scrub', 'unregister', 'whenReady'],
+      ['expect', 'isReady', 'pendingSources', 'ready', 'register', 'scrub', 'scrubTruncatedPrefix', 'unregister', 'whenReady'],
     )
     const value = fakeSecret()
     facade.register('secret://test/kernel', value)
     assert.equal(facade.scrub(value), redactionMarker('secret://test/kernel'))
+    assert.equal(facade.scrubTruncatedPrefix!(value.slice(0, 1)), redactionMarker('secret://test/kernel'))
 
     await handle.dispose()
     assert.equal(kernel.service(EGRESS_SCRUBBER_SERVICE), undefined)
     assert.equal(errorCode(() => facade.scrub(value)), 'closed')
+    assert.equal(errorCode(() => facade.scrubTruncatedPrefix!(value.slice(0, 1))), 'closed')
     assert.equal(errorCode(() => facade.register('secret://test/kernel', value)), 'closed')
     assert.equal(errorCode(() => facade.unregister('secret://test/kernel')), 'closed')
     await kernel.dispose()

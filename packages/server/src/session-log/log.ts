@@ -55,6 +55,7 @@ import {
 } from '@guanxi/contract'
 import { REDACTION_MARKER_CLOSE, REDACTION_MARKER_PREFIX, type EgressScrubber } from '../egress/types.ts'
 import { buildSnippet, searchTerms } from './snippet.ts'
+import { projectInputExcerpt } from './excerpt.ts'
 import type { Db } from '../store/db.ts'
 
 export const DEFAULT_WRITER_TTL_MS = 30_000
@@ -747,7 +748,7 @@ export class SessionLog {
     let title: string | null = null
     if (row.first_prompt !== null) {
       try {
-        const payload = JSON.parse(row.first_prompt) as { text?: unknown; artifact?: { excerpt?: unknown } }
+        const payload = projectInputExcerpt(JSON.parse(row.first_prompt), this.scrubber) as { text?: unknown; artifact?: { excerpt?: unknown } }
         const text = typeof payload.text === 'string' ? payload.text : payload.artifact?.excerpt
         if (typeof text === 'string') title = titleOf(this.scrubber.scrub(text))
       } catch {
@@ -875,24 +876,20 @@ export class SessionLog {
         ...(options.types ?? []),
       ) as Iterable<{ row_id: number }>
     const candidate = this.db.prepare(
-      'SELECT session_id, seq, type, class, created_at, search_text FROM session_events WHERE row_id = ?',
+      'SELECT * FROM session_events WHERE row_id = ?',
     )
     const terms = searchTerms(text)
     const hits: SessionSearchHit[] = []
     for (const { row_id: rowId } of candidates) {
-      const row = candidate.get(rowId) as unknown as {
-        session_id: string
-        seq: number
-        type: SessionEventType
-        class: 'standard' | 'reasoning'
-        created_at: string
-        search_text: string
-      }
-      // The snippet comes from the whole indexed text, scrubbed with every value registered now.
-      const snippet = buildSnippet(this.scrubber.scrub(row.search_text), terms)
-      if (snippet === null) continue
-      // A hit in a session whose id holds a registered value is never returned (N1).
+      const row = candidate.get(rowId) as unknown as EventRow & { type: SessionEventType; class: 'standard' | 'reasoning' }
+      // Omit withheld sessions before projecting their event identifiers (N1).
       if (!this.returnable(row.session_id)) continue
+      // FTS only nominates candidates. A late-registered value may cross the
+      // stored excerpt boundary, so rebuild v2 text BEFORE matching or clipping.
+      const projected = row.event_version === SESSION_EVENT_VERSION_2 ? this.toEvent(row) : null
+      const text = projected ? searchTextOf(projected.type, projected.data) : this.scrubber.scrub(row.search_text)
+      const snippet = text === null ? null : buildSnippet(text, terms)
+      if (snippet === null) continue
       hits.push({
         sessionId: row.session_id,
         seq: row.seq,
@@ -1422,26 +1419,10 @@ export class SessionLog {
       } catch {
         throw new SessionLogError('stored_data_invalid', `Session event #${row.seq} is not valid JSON`)
       }
-      if (options.rescrub !== false) {
+      if (row.event_version === SESSION_EVENT_VERSION_2) {
+        data = projectInputExcerpt(data, this.scrubber)
+      } else if (options.rescrub !== false) {
         data = this.scrubber.scrub(data)
-        // A secret registered after the write can change the bounded excerpt.
-        // Recompute its length for this projection without mutating the stored
-        // payload; the excerpt stays within its published byte bound.
-        const candidate = data as { artifact?: { excerpt?: unknown; excerptBytes?: unknown } }
-        if (candidate !== null && typeof candidate === 'object' && candidate.artifact !== undefined
-          && typeof candidate.artifact.excerpt === 'string') {
-          let excerpt = this.scrubber.scrub(candidate.artifact.excerpt)
-          if (Buffer.byteLength(excerpt, 'utf8') > INPUT_EXCERPT_BYTES) {
-            const bytes = Buffer.from(excerpt, 'utf8')
-            let end = INPUT_EXCERPT_BYTES
-            while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end -= 1
-            excerpt = bytes.subarray(0, end).toString('utf8')
-          }
-          data = {
-            ...candidate,
-            artifact: { ...candidate.artifact, excerpt, excerptBytes: Buffer.byteLength(excerpt, 'utf8') },
-          }
-        }
       }
     }
     // A value registered after the write is hidden in identifiers too on the way out.

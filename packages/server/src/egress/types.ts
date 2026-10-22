@@ -41,6 +41,14 @@ export interface EgressScrubber {
    */
   scrub<T>(value: T): T
   /**
+   * For text known to end at a right-truncation boundary: redacts complete
+   * registered forms and every nonempty terminal proper prefix of a form.
+   * Uses the private registry; callers must never apply this assumption to
+   * ordinary complete text. Older implementations may omit the capability;
+   * consumers must then withhold the affected truncated projection.
+   */
+  scrubTruncatedPrefix?(text: string): string
+  /**
    * Declares a secret source (for example `vault`) whose values must be
    * registered before scrubbed output is complete. The scrubber is not ready
    * while any declared source is not. Idempotent; declaring a source that is
