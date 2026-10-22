@@ -61,18 +61,28 @@ Jinja, so equality cannot be shown for an unknown model; the installed llama-ser
 vocab-only mode, so a sidecar means a second full model load; and a llama.cpp-only host has no
 Ollama store at all. Stock Ollama therefore still refuses `runtime_meter_unavailable`.
 
-Identity is `{alias, SHA-256 of the GGUF named by /props, llama-server/<build_info>, n_ctx}`; the
-digest is computed once and recomputed when path, size, mtime or inode change. The synchronous
+Identity is `{alias, SHA-256 of the GGUF file named by /props, llama-server/<build_info>, n_ctx}`;
+the digest is computed once and recomputed when path, size, mtime or inode change. In `spawn` mode
+the file's device, inode, size and mtime are also recorded when the child is started, so a file
+renamed over the same path afterwards is `runtime_identity_unknown` instead of a silent swap, and a
+split GGUF (`-00001-of-0000N`) is refused (`llama_server_model_unsupported`) because its shards are
+not hashed. An `attach`ed server cannot be checked this way; shards, `--mmproj` and draft models
+are outside its identity. The synchronous
 `count` that the executor needs is served by one worker thread doing the two HTTP calls while the
-calling thread blocks in `Atomics.wait` with a hard timeout (default 10 s); a timeout or any
-invalid reply is `runtime_count_invalid`, never an estimate. This blocks the server event loop
-for milliseconds per uncached count, so it suits one relay run at a time. Bind proves once per
+calling thread blocks in `Atomics.wait` with a hard timeout (default 10 s plus 2 s); a timeout or
+any invalid reply is `runtime_count_invalid`, never an estimate. The block is milliseconds for an
+uncached count on a healthy server and up to the timeout when the server hangs, and it stalls the
+whole event loop, so it suits one relay run at a time. Bind proves once per
 served identity that the template adds framing, echoes the message once and agrees with the
 bridge. Before each POST the transport re-renders, re-counts and compares with the executor's
 synchronous count (`runtime_counter_mismatch`), refuses a window overrun, re-runs the final fence
 check and issues the POST in the same synchronous stretch, and refuses a `truncated` reply. After
 the reply the executor's existing `prompt_eval_count` comparison (`truncation_protocol`) is the
-first real-dispatch cross-check; there is no fallback.
+first real-dispatch cross-check; there is no fallback. `tokens_evaluated` is taken to be the whole
+prompt including cached prefix tokens (`cache_prompt` is on); if a real binary reports otherwise,
+every cached call fails closed and `cachePrompt: false` is the boot-level remedy. No request to a
+real llama-server has been made yet: field names were only found as strings in the installed
+build 10964.
 
 Dispatch still goes through K3 `localChat` (`transport` option): scrubbing, unattended consent,
 the single governor permit (provider `ollama`, model name prefixed `llama-server:`; widening the
@@ -81,8 +91,11 @@ governor vocabulary is open) and the usage receipt (`llama-server:/completion`) 
 **Boot modes.** `spawn` runs the owner-supplied binary with a fixed argv (`--host 127.0.0.1 -np 1
 --jinja --no-context-shift --no-webui --alias`), an allow-listed environment and discarded
 output, loads in the background (loading means `runtime_meter_unavailable`), never restarts, and
-stops only the child it started on close. `attach` uses an existing loopback server and never
-signals it. The model reference must be a local one; no cloud name is accepted.
+stops only the child it started on close. `attach` uses an existing loopback server (started with
+`--alias` and `--jinja`; another host needs a tunnel) and never signals it. The model reference must
+be a local one; no cloud name is accepted. The child gets a neutral working directory, and a child
+that exits is recorded with its exit code or signal only, because its output is discarded. A crash
+of the Guanxi process itself leaves the child running (residual).
 
 **Owned checkout allocator.** `allocate` clones the project's committed history under
 `<data>/relay-checkouts/r-*` (a marked directory), detaches at `plan.base`, removes the remote and
@@ -91,7 +104,9 @@ every ref, expires reflogs and repacks so no object newer than the base remains,
 repository are only read. Files are never hardlinked (the K4 sandbox refuses writable hardlinks).
 `close()` deletes only a marked directory directly under the allowed root, keeps everything when a
 K4 quarantine exists, proves the removal and otherwise reports `cleanup_unconfirmed`, which an
-abort cannot hide. Crash leftovers are not reaped at boot (residual).
+abort cannot hide. A source that borrows objects through alternates is made self-contained and then
+checked: the stored objects must equal exactly those `HEAD` reaches. Crash leftovers are not reaped
+at boot and removal assumes the sandbox is stopped, which the quarantine check enforces (residual).
 
 ## ETA projection (R3-a)
 

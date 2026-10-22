@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdir, mkdtemp, opendir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, opendir, readFile, realpath, rm, rmdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { assertRootsClean } from '../native-agent/cleanup.ts'
@@ -55,9 +55,13 @@ export class OwnedCheckoutAllocator {
     const allowed = await realpath(target)
     invariant(allowed === target, 'relay_checkout_invalid')
     signal.throwIfAborted()
-    const directory = await realpath(await mkdtemp(join(allowed, PREFIX))), id = randomUUID()
+    const made = await mkdtemp(join(allowed, PREFIX)), id = randomUUID()
+    let directory = made
     try {
-      await writeFile(join(directory, MARKER), JSON.stringify({ owner: OWNER, id }), { mode: 0o600, flag: 'wx' })
+      directory = await realpath(made)
+      // Until the marker exists the directory is known to be empty: remove only that, and nothing recursive.
+      try { await writeFile(join(directory, MARKER), JSON.stringify({ owner: OWNER, id }), { mode: 0o600, flag: 'wx' }) }
+      catch (failure) { await rmdir(directory).catch(() => { throw new RelayError('cleanup_unconfirmed') }); throw failure }
       const root = join(directory, 'checkout'), runtimeBase = join(directory, 'runtime'), scratch = join(runtimeBase, 'scratch')
       await mkdir(scratch, { recursive: true, mode: 0o700 })
       await this.prepare(source, root, base, signal)
@@ -68,6 +72,7 @@ export class OwnedCheckoutAllocator {
         .catch((error: unknown) => { closing = undefined; throw error }) }
       return owned
     } catch (error) {
+      if (error instanceof RelayError && error.code === 'cleanup_unconfirmed') throw error
       // An aborted or failed allocation still owns what it created. A failure to remove it is
       // reported as such; it is never replaced by the cancellation that triggered it.
       try { await this.release(allowed, directory, id, join(directory, 'checkout'), join(directory, 'runtime', 'scratch'), join(directory, 'runtime')) }
@@ -115,11 +120,32 @@ export class OwnedCheckoutAllocator {
     const refs = (await this.run(['for-each-ref', '--format=delete %(refname)'], root, signal)).trim()
     if (refs) await this.run(['update-ref', '--stdin'], root, signal, refs + '\n')
     await this.run(['reflog', 'expire', '--expire=now', '--expire-unreachable=now', '--all'], root, signal)
+    // `repack -a` (not `-l`) copies anything borrowed through alternates into a local pack; only then
+    // is the borrowed store dropped, so a source made with `clone --shared` leaves no path back.
     await this.run(['repack', '-a', '-d', '-q'], root, signal)
+    await rm(join(root, '.git', 'objects', 'info', 'alternates'), { force: true })
     await this.run(['prune', '--expire=now'], root, signal)
     invariant((await this.run(['rev-parse', 'HEAD'], root, signal)).trim() === base, 'relay_checkout_invalid')
     invariant((await this.run(['for-each-ref'], root, signal)).trim() === '' && (await this.run(['remote'], root, signal)).trim() === '', 'relay_checkout_invalid')
     invariant((await this.run(['status', '--porcelain=v2', '-z', '--untracked-files=all'], root, signal)).length === 0, 'relay_checkout_invalid')
+    // The object store holds exactly what the base commit reaches: every reachable object exists
+    // (the walk fails on a missing one) and nothing else is stored, loose, packed or borrowed.
+    const reachable = await this.lines(['rev-list', '--objects', 'HEAD'], root, signal)
+    const stored = await this.lines(['cat-file', '--batch-all-objects', '--batch-check=%(objectname)'], root, signal)
+    invariant(reachable > 0 && stored === reachable, 'relay_checkout_invalid')
+  }
+  /** Line count of a git command's output, streamed so a large repository is never buffered. */
+  private async lines(args: string[], cwd: string, signal: AbortSignal): Promise<number> {
+    signal.throwIfAborted()
+    const child = spawn(this.git, [...gitFlags, ...args], { cwd, env: gitEnv, stdio: ['ignore', 'pipe', 'ignore'], signal, killSignal: 'SIGKILL' })
+    const closed = new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve) })
+    let count = 0
+    try { for await (const chunk of child.stdout as AsyncIterable<Buffer>) for (const byte of chunk) if (byte === 10) count++ }
+    catch (error) { if (signal.aborted) throw signal.reason ?? error; throw new RelayError('relay_project_unavailable') }
+    let code: number | null
+    try { code = await closed } catch (error) { if (signal.aborted) throw signal.reason ?? error; throw new RelayError('relay_project_unavailable') }
+    if (code !== 0) { if (signal.aborted) throw signal.reason; throw new RelayError('relay_checkout_invalid') }
+    return count
   }
   /** Delete one allocation and prove it is gone. Idempotent through the caller's memoised promise. */
   private async release(allowed: string, directory: string, id: string, root: string, scratch: string, runtimeBase: string): Promise<void> {

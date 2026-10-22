@@ -23,6 +23,8 @@ export interface LlamaServerClientOptions {
   requestTimeoutMs?: number
   /** One `/completion` call, including prompt processing. Generation is not capped by Guanxi. */
   completionTimeoutMs?: number
+  /** llama-server prefix reuse between calls. On by default; the reply's `tokens_evaluated` must still be the whole prompt. */
+  cachePrompt?: boolean
 }
 
 const propsSchema = z.object({
@@ -58,11 +60,13 @@ export class LlamaServerClient {
   private readonly transport: typeof fetch
   private readonly requestTimeoutMs: number
   private readonly completionTimeoutMs: number
+  private readonly cachePrompt: boolean
   constructor(options: LlamaServerClientOptions) {
     this.baseUrl = loopbackOrigin(options.baseUrl)
     this.transport = options.fetch ?? globalThis.fetch
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000
     this.completionTimeoutMs = options.completionTimeoutMs ?? 30 * 60_000
+    this.cachePrompt = options.cachePrompt ?? true
     for (const ms of [this.requestTimeoutMs, this.completionTimeoutMs]) {
       if (!Number.isSafeInteger(ms) || ms <= 0) throw new LlamaServerError('llama_server_refused')
     }
@@ -141,7 +145,7 @@ export class LlamaServerClient {
   async complete(prompt: string, maxTokens: number, signal: AbortSignal, onDispatched?: () => void): Promise<LlamaServerCompletion> {
     if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) throw new LlamaServerError('llama_server_refused')
     const { status, body } = await this.json('/completion', { method: 'POST',
-      body: { prompt, n_predict: maxTokens, stream: false, cache_prompt: true } }, signal, this.completionTimeoutMs, onDispatched)
+      body: { prompt, n_predict: maxTokens, stream: false, cache_prompt: this.cachePrompt } }, signal, this.completionTimeoutMs, onDispatched)
     if (status !== 200) throw new LlamaServerError(status === 503 ? 'llama_server_unavailable' : 'llama_server_protocol')
     const completion = this.parse(completionSchema, body)
     return { content: completion.content, promptTokens: completion.tokens_evaluated, completionTokens: completion.tokens_predicted,

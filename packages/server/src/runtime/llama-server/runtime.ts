@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
+import { realpathSync, statSync } from 'node:fs'
 import { realpath, stat } from 'node:fs/promises'
 import type { LocalChatTransport } from '../../connections/service.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../../ollama/types.ts'
@@ -14,12 +15,19 @@ export const LLAMA_SERVER_PROPS_SOURCE = 'llama_server_props'
 export const LLAMA_SERVER_COUNTER_SOURCE = 'llama-server:/apply-template+/tokenize'
 const PROBE = 'guanxi-render-probe-7f3a91c4'
 
+/** What a file was when the owner process opened it. A later replacement under the same path (an atomic
+ * rename leaves the server on the old inode) is then a different identity, not a silent swap. */
+export interface ModelFileIdentity { path: string; dev: number; ino: number; size: number; mtimeMs: number }
+export function modelFileIdentity(path: string): ModelFileIdentity {
+  const real = realpathSync(path), entry = statSync(real)
+  return { path: real, dev: entry.dev, ino: entry.ino, size: entry.size, mtimeMs: entry.mtimeMs }
+}
 export interface LlamaServerRuntimeOptions {
   client: LlamaServerClient
   /** The one model reference this server instance serves; `--alias` must report it. */
   model: string
-  /** Spawn mode: the GGUF file the owner process was started with. `/props` must agree. */
-  expectedModelPath?: string
+  /** Spawn mode: the GGUF file the owner process was started with. `/props` and the file itself must agree. */
+  expectedModel?: ModelFileIdentity
   /** Throws a relay refusal while the owned process is not usable. Attach mode omits it. */
   ready?: () => void
   clock?: () => number
@@ -38,7 +46,7 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
   readonly transport: LocalChatTransport
   readonly model: string
   private readonly client: LlamaServerClient
-  private readonly expectedModelPath?: string
+  private readonly expectedModel?: ModelFileIdentity
   private readonly ready?: () => void
   private readonly clock: () => number
   private readonly bridge: SyncTokenCounter
@@ -50,7 +58,7 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
     const model = normalizeOllamaModelReference(options.model)
     invariant(model && !/:cloud$/i.test(options.model), 'relay_local_model_required')
     this.model = model; this.client = options.client; this.host = options.client.baseUrl
-    this.expectedModelPath = options.expectedModelPath; this.ready = options.ready; this.clock = options.clock ?? Date.now
+    this.expectedModel = options.expectedModel; this.ready = options.ready; this.clock = options.clock ?? Date.now
     this.bridge = new SyncTokenCounter({ baseUrl: this.host, timeoutMs: options.countTimeoutMs, cacheEntries: options.cacheEntries })
     const transport: LocalChatTransport = { id: 'llama-server', host: this.host, usageSource: 'llama-server:/completion',
       chat: (request, signal, onDispatched, dispatch) => this.chat(request, signal, onDispatched, dispatch) }
@@ -94,7 +102,10 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
       const props = await this.client.props(signal)
       signal.throwIfAborted()
       invariant(normalizeOllamaModelReference(props.alias ?? '') === this.model, 'runtime_identity_unknown')
-      if (this.expectedModelPath) invariant(await realpath(props.modelPath).catch(() => '') === await realpath(this.expectedModelPath).catch(() => '#'), 'runtime_identity_unknown')
+      if (this.expectedModel) {
+        const real = await realpath(props.modelPath), entry = await stat(real), expected = this.expectedModel
+        invariant(real === expected.path && entry.dev === expected.dev && entry.ino === expected.ino && entry.size === expected.size && entry.mtimeMs === expected.mtimeMs, 'runtime_identity_unknown')
+      }
       const digest = await this.digest(props.modelPath)
       signal.throwIfAborted()
       const observation = { model: this.model, digest, contextTokens: props.contextTokens, runtimeVersion: `llama-server/${props.buildInfo}`,

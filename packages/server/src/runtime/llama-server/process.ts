@@ -1,23 +1,25 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { accessSync, constants, realpathSync, statSync } from 'node:fs'
 import { createServer } from 'node:net'
-import { isAbsolute } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, isAbsolute } from 'node:path'
 import { RelayError } from '../../relay/types.ts'
 import { normalizeOllamaModelReference } from '../observation-key.ts'
 import { LlamaServerClient, loopbackOrigin } from './client.ts'
-import { LlamaServerRuntime } from './runtime.ts'
+import { LlamaServerRuntime, modelFileIdentity } from './runtime.ts'
 
 /** Immutable boot description of the one llama-server instance the relay may use. It never comes
  * from HTTP. `spawn` lets Guanxi own a child process; `attach` uses a server the owner already
- * runs (for example a service on a Fedora host) and never signals it. */
+ * runs (a service on this node; the address is loopback only, so another host needs a tunnel) and
+ * never signals it. That server must have been started with `--alias` and `--jinja`. */
 export type LlamaServerBoot =
-  | { kind: 'spawn'; binary: string; modelPath: string; model: string; contextTokens: number; port?: number; startupTimeoutMs?: number; stopGraceMs?: number }
-  | { kind: 'attach'; baseUrl: string; model: string }
+  | { kind: 'spawn'; binary: string; modelPath: string; model: string; contextTokens: number; port?: number; startupTimeoutMs?: number; stopGraceMs?: number; cachePrompt?: boolean }
+  | { kind: 'attach'; baseUrl: string; model: string; cachePrompt?: boolean }
 export type LlamaServerState =
   | { state: 'starting' }
   | { state: 'ready' }
-  | { state: 'unavailable'; reason: LlamaServerUnavailable }
-export type LlamaServerUnavailable = 'llama_server_binary_missing' | 'llama_server_model_missing' | 'llama_server_spawn_failed' |
+  | { state: 'unavailable'; reason: LlamaServerUnavailable; detail?: string }
+export type LlamaServerUnavailable = 'llama_server_binary_missing' | 'llama_server_model_missing' | 'llama_server_model_unsupported' | 'llama_server_spawn_failed' |
   'llama_server_start_timeout' | 'llama_server_exited' | 'llama_server_closed'
 
 /** Only these variables reach the child. In particular no `LLAMA_ARG_*` (which could rebind the
@@ -71,15 +73,15 @@ export class LlamaServerHost {
   ready(): void {
     if (this.current.state !== 'ready') throw new RelayError('runtime_meter_unavailable')
   }
-  private fail(reason: LlamaServerUnavailable): void {
-    if (this.current.state !== 'unavailable') this.current = { state: 'unavailable', reason }
+  private fail(reason: LlamaServerUnavailable, detail?: string): void {
+    if (this.current.state !== 'unavailable') this.current = { state: 'unavailable', reason, ...(detail ? { detail } : {}) }
   }
   static create(boot: LlamaServerBoot): LlamaServerHost {
     const model = normalizeOllamaModelReference(boot.model)
     if (!model || /:cloud$/i.test(boot.model)) throw new RelayError('relay_local_model_required')
     const host = new LlamaServerHost()
     if (boot.kind === 'attach') {
-      host.served = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: loopbackOrigin(boot.baseUrl) }), model })
+      host.served = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: loopbackOrigin(boot.baseUrl), cachePrompt: boot.cachePrompt }), model })
       host.current = { state: 'ready' }
       return host
     }
@@ -88,6 +90,8 @@ export class LlamaServerHost {
     const binary = executable(boot.binary), modelPath = readable(boot.modelPath)
     if (!binary) host.fail('llama_server_binary_missing')
     else if (!modelPath) host.fail('llama_server_model_missing')
+    // A split GGUF has sibling shards whose identity this host does not hash.
+    else if (/-\d{5}-of-\d{5}\.gguf$/i.test(basename(modelPath))) host.fail('llama_server_model_unsupported')
     else { host.graceMs = boot.stopGraceMs ?? LLAMA_SERVER_STOP_GRACE_MS; host.startup = host.launch(boot, binary, modelPath, model) }
     return host
   }
@@ -95,18 +99,19 @@ export class LlamaServerHost {
     try {
       const port = boot.port ?? await freePort()
       if (this.closing) return
-      const client = new LlamaServerClient({ baseUrl: `http://127.0.0.1:${port}` })
-      this.served = new LlamaServerRuntime({ client, model, expectedModelPath: modelPath, ready: () => this.ready() })
+      const client = new LlamaServerClient({ baseUrl: `http://127.0.0.1:${port}`, cachePrompt: boot.cachePrompt })
+      this.served = new LlamaServerRuntime({ client, model, expectedModel: modelFileIdentity(modelPath), ready: () => this.ready() })
       const args = ['-m', modelPath, '--alias', model, '--host', '127.0.0.1', '--port', String(port), '-c', String(boot.contextTokens),
         '-np', '1', '--jinja', '--no-context-shift', '--no-webui']
       const env: Record<string, string> = {}
       for (const name of CHILD_ENV) if (process.env[name] !== undefined) env[name] = process.env[name]!
       // Output can contain prompts at verbose levels: it is not captured and never logged.
-      const child = spawn(binary, args, { stdio: 'ignore', env, detached: false })
+      // A neutral working directory: the child must not run beside Guanxi's own files.
+      const child = spawn(binary, args, { stdio: 'ignore', env, detached: false, cwd: tmpdir() })
       this.child = child
       this.exited = new Promise<void>(resolve => child.once('close', () => { this.child = undefined; resolve() }))
       child.once('error', () => this.fail('llama_server_spawn_failed'))
-      child.once('exit', () => this.fail(this.closing ? 'llama_server_closed' : 'llama_server_exited'))
+      child.once('exit', (code, signal) => this.fail(this.closing ? 'llama_server_closed' : 'llama_server_exited', signal ? `signal:${signal}` : `exit:${code}`))
       const deadline = Date.now() + (boot.startupTimeoutMs ?? LLAMA_SERVER_STARTUP_TIMEOUT_MS)
       while (this.current.state === 'starting') {
         if (this.lifetime.signal.aborted) return

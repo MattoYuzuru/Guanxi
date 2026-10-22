@@ -178,3 +178,35 @@ test('concurrent allocations are independent clones with distinct roots', async 
   await Promise.all(all.map(owned => owned.close()))
   assert.deepEqual(await readdir(await realpath(f.root)), [])
 })
+
+test('a source that borrows objects through alternates leaves no path back and no object beyond the base', async t => {
+  const f = await fixture(t), shared = join(f.parent, 'shared-project')
+  // `clone --shared` stores nothing itself: its history, including the future commit, lives in the origin.
+  await exec('/usr/bin/git', ['clone', '-q', '--shared', f.source, shared])
+  await git(shared, ['checkout', '-q', f.future])
+  const alternates = await readFile(join(shared, '.git', 'objects', 'info', 'alternates'), 'utf8')
+  assert.ok(alternates.includes(f.source), 'the fixture really does borrow from the origin')
+  const owned = await f.allocator.allocate(f.policy({ source: shared }), new AbortController().signal)
+  await assert.rejects(stat(join(owned.root, '.git', 'objects', 'info', 'alternates')), { code: 'ENOENT' })
+  await assert.rejects(git(owned.root, ['cat-file', '-e', f.future]), 'the later commit is not reachable through any store')
+  assert.equal(await git(owned.root, ['rev-parse', 'HEAD']), f.base)
+  assert.equal(await git(owned.root, ['fsck', '--no-dangling', '--connectivity-only']).catch(() => 'broken'), '')
+  const everything = await Promise.all((await files(join(owned.root, '.git'))).map(async path => (await readFile(path)).toString('latin1')))
+  assert.equal(everything.some(text => text.includes(f.source) || text.includes(shared)), false)
+  await owned.close()
+})
+
+test('an object store that keeps anything the base commit does not reach is refused by the object-set invariant, not trusted to the pruning step', async t => {
+  const f = await fixture(t), wrapper = await mkdtemp(join(tmpdir(), 'guanxi-git-wrapper-'))
+  t.after(() => rm(wrapper, { recursive: true, force: true }))
+  // A git whose `prune` silently does nothing: the later commit stays behind as a loose object.
+  const lax = join(wrapper, 'git')
+  await writeFile(lax, '#!/bin/sh\nfor a in "$@"; do if [ "$a" = prune ]; then exit 0; fi; done\nexec /usr/bin/git "$@"\n'); await chmod(lax, 0o755)
+  await assert.rejects(new OwnedCheckoutAllocator({ root: f.root, git: lax }).allocate(f.policy(), new AbortController().signal), code('relay_checkout_invalid'))
+  assert.deepEqual(await readdir(f.root), [], 'the refused allocation was removed')
+  // And a git that adds one unreachable object of its own.
+  const sneaky = join(wrapper, 'git-sneaky')
+  await writeFile(sneaky, '#!/bin/sh\nfor a in "$@"; do if [ "$a" = prune ]; then /usr/bin/git "$@" || exit 1; echo unreachable | /usr/bin/git hash-object -w --stdin >/dev/null; exit 0; fi; done\nexec /usr/bin/git "$@"\n'); await chmod(sneaky, 0o755)
+  await assert.rejects(new OwnedCheckoutAllocator({ root: f.root, git: sneaky }).allocate(f.policy(), new AbortController().signal), code('relay_checkout_invalid'))
+  assert.deepEqual(await readdir(f.root), [])
+})

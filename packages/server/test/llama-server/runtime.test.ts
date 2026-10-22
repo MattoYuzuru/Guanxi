@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdtemp, rename, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -9,7 +9,7 @@ import type { OllamaChatRequest } from '../../src/ollama/types.ts'
 import { RelayRuntimeSource, type RelayRuntimeModels } from '../../src/relay/runtime.ts'
 import { RelayError } from '../../src/relay/types.ts'
 import { LlamaServerClient } from '../../src/runtime/llama-server/client.ts'
-import { LlamaServerRuntime } from '../../src/runtime/llama-server/runtime.ts'
+import { LlamaServerRuntime, modelFileIdentity } from '../../src/runtime/llama-server/runtime.ts'
 import { fakeRender, fakeTokens, startFakeLlama, type FakeLlama } from '../fixtures/fake-llama-server.ts'
 
 const NOW = 1_800_000_000_000
@@ -63,14 +63,22 @@ test('an unknown, differently named, unreadable or unintelligible server never y
   await assert.rejects(f.runtime.observe('fixture:latest', signal()), code('runtime_identity_unknown'))
 })
 
-test('spawn mode refuses a server that reports a different model file than the one it was started with', async t => {
+test('spawn mode refuses a server that reports a different model file, or a file replaced after the process opened it', async t => {
   const f = await fixture(t)
-  const other = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: f.fake.url }), model: 'fixture', expectedModelPath: join(f.directory, 'different.gguf') })
+  const other = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: f.fake.url }), model: 'fixture', expectedModel: { ...modelFileIdentity(f.modelPath), path: join(f.directory, 'different.gguf') } })
   t.after(() => other.close())
   await assert.rejects(other.observe('fixture:latest', signal()), code('runtime_identity_unknown'))
-  const same = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: f.fake.url }), model: 'fixture', expectedModelPath: f.modelPath })
+  const same = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: f.fake.url }), model: 'fixture', expectedModel: modelFileIdentity(f.modelPath) })
   t.after(() => same.close())
   assert.equal((await same.observe('fixture:latest', signal())).model, 'fixture:latest')
+  // An atomic rename of a new file over the same path leaves the server on the old inode.
+  await writeFile(join(f.directory, 'replacement.gguf'), 'GGUF-fixture-weights-one'); await rename(join(f.directory, 'replacement.gguf'), f.modelPath)
+  await assert.rejects(same.observe('fixture:latest', signal()), code('runtime_identity_unknown'))
+  // Every attribute but the inode matches what the process is claimed to have opened.
+  const current = modelFileIdentity(f.modelPath)
+  const lookalike = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: f.fake.url }), model: 'fixture', expectedModel: { ...current, ino: current.ino + 1 } })
+  t.after(() => lookalike.close())
+  await assert.rejects(lookalike.observe('fixture:latest', signal()), code('runtime_identity_unknown'))
 })
 
 test('an unreachable server or a not-ready owner is the stock meter refusal, and cancellation stays a cancellation', async t => {
@@ -235,4 +243,21 @@ test('cancellation during the asynchronous count or the completion surfaces as c
   await assert.rejects(running, /stop during completion/)
   await new Promise(resolve => setTimeout(resolve, 100))
   assert.equal(await f.fake.aborted(), 1)
+})
+
+test('no await separates the final fence check from the POST: nothing queued after the check can run before the request is issued', async t => {
+  const f = await fixture(t)
+  let microtaskRan = false, issuedAfterMicrotask: boolean | undefined
+  const client = new LlamaServerClient({ baseUrl: f.fake.url, fetch: (url, init) => {
+    if (String(url).endsWith('/completion')) issuedAfterMicrotask = microtaskRan
+    return fetch(url, init)
+  } })
+  const runtime = new LlamaServerRuntime({ client, model: 'fixture', clock: f.clock, countTimeoutMs: 3000 }); t.after(() => runtime.close())
+  const counter = await runtime.counter(await runtime.observe('fixture:latest', signal()), signal()), prepared = request('ordered')
+  counter.count(prepared)
+  let calls = 0
+  // The fence check is the second prepare(); anything it schedules would run at the first await after it.
+  const dispatch = { authorizeDispatch: async () => undefined, prepare: () => { if (++calls === 2) queueMicrotask(() => { microtaskRan = true }); return prepared } }
+  await runtime.transport.chat(prepared, signal(), () => {}, dispatch)
+  assert.equal(issuedAfterMicrotask, false, 'the POST was issued in the same synchronous stretch as the final check')
 })

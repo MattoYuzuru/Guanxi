@@ -34,6 +34,7 @@ export interface FakeLlamaState {
   /** Process mode only: what the child inherited. */
   env: string[]
   pid: number
+  cwd: string
 }
 export interface FakeLlamaRequest { method: string; path: string; body: any }
 export interface FakeLlama {
@@ -61,7 +62,7 @@ export function fakeRender(content: string, state: Pick<FakeLlamaState, 'templat
 async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (message: any) => void) {
   const state: FakeLlamaState = { alias: 'fixture', modelPath: '/nonexistent.gguf', nCtx: 16000, buildInfo: 'b0-fixture', loading: false,
     template: 'chat', evaluatedSkew: 0, tokenizeSkewAfter: null, truncated: false, stopType: 'eos', tokenizeDelayMs: 0, completionDelayMs: 0,
-    replies: ['{}'], propsOverride: undefined, argv: [], env: [], pid: 0, ...initial }
+    replies: ['{}'], propsOverride: undefined, argv: [], env: [], pid: 0, cwd: '', ...initial }
   const requests: FakeLlamaRequest[] = []
   let completions = 0, tokenizes = 0, aborted = 0
   const read = async (request: IncomingMessage) => { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(chunk as Buffer); const text = Buffer.concat(chunks).toString('utf8'); return text ? JSON.parse(text) : undefined }
@@ -74,7 +75,7 @@ async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (
     requests.push({ method: request.method!, path, body })
     if (path === '/health') return state.loading ? send(response, 503, { error: { code: 503, message: 'Loading model' } }) : send(response, 200, { status: 'ok' })
     if (path === '/props') return send(response, 200, state.propsOverride !== undefined ? state.propsOverride : { default_generation_settings: { id: 0, n_ctx: state.nCtx },
-      total_slots: 1, model_alias: state.alias, model_path: state.modelPath, build_info: state.buildInfo, chat_template: '{{ messages }}', __argv: state.argv, __env: state.env, __pid: state.pid })
+      total_slots: 1, model_alias: state.alias, model_path: state.modelPath, build_info: state.buildInfo, chat_template: '{{ messages }}', __argv: state.argv, __env: state.env, __pid: state.pid, __cwd: state.cwd })
     if (path === '/apply-template') {
       const thinking = body.chat_template_kwargs?.enable_thinking !== false
       return send(response, 200, { prompt: fakeRender(body.messages[0].content, state, thinking) })
@@ -134,7 +135,7 @@ if (isMainThread && process.argv[1] === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2), value = (flag: string) => argv[argv.indexOf(flag) + 1]
   const behaviour = value('--fixture-behaviour') ?? 'serve'
   if (behaviour === 'exit') process.exit(3)
-  const running = await serve({ alias: value('--alias') ?? null, modelPath: value('-m') ?? '', nCtx: Number(value('-c') ?? 0), argv, env: Object.keys(process.env), pid: process.pid,
+  const running = await serve({ alias: value('--alias') ?? null, modelPath: value('-m') ?? '', nCtx: Number(value('-c') ?? 0), argv, env: Object.keys(process.env), pid: process.pid, cwd: process.cwd(),
     loading: behaviour === 'never-ready' }, Number(value('--port')))
   const stop = () => { void running.close().then(() => process.exit(0)) }
   process.on('SIGTERM', behaviour === 'ignore-term' ? () => undefined : stop)

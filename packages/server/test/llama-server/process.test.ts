@@ -32,6 +32,7 @@ async function fixture(t: { after(fn: () => unknown): void }, behaviour = 'serve
 
 test('an absent, unreadable, relative or non-executable binary or model is "not configured here": no throw, no process, no runtime', async t => {
   const f = await fixture(t)
+  await writeFile(join(f.directory, 'huge-00001-of-00004.gguf'), 'shard')
   const missing = [
     [{ binary: join(f.directory, 'nope') }, 'llama_server_binary_missing'],
     [{ binary: f.directory }, 'llama_server_binary_missing'],
@@ -40,6 +41,7 @@ test('an absent, unreadable, relative or non-executable binary or model is "not 
     [{ modelPath: join(f.directory, 'nope.gguf') }, 'llama_server_model_missing'],
     [{ modelPath: f.directory }, 'llama_server_model_missing'],
     [{ modelPath: 'model.gguf' }, 'llama_server_model_missing'],
+    [{ modelPath: join(f.directory, 'huge-00001-of-00004.gguf') }, 'llama_server_model_unsupported'],
   ] as const
   for (const [patch, reason] of missing) {
     const host = f.create(patch)
@@ -64,6 +66,7 @@ test('spawn starts the child with the fixed argv and allow-listed environment, b
   assert.throws(() => host.ready(), (error: unknown) => error instanceof RelayError && error.code === 'runtime_meter_unavailable')
   await host.settled(); assert.deepEqual(host.state(), { state: 'ready' }); host.ready()
   const props = await f.props(host)
+  assert.equal(await realpath(props.__cwd), await realpath(tmpdir()), 'the child does not run beside Guanxi\'s own files')
   const port = props.__argv[props.__argv.indexOf('--port') + 1]
   assert.deepEqual(props.__argv.slice(2), ['-m', await realpath(f.modelPath), '--alias', 'fixture:latest', '--host', '127.0.0.1', '--port', port, '-c', '8192',
     '-np', '1', '--jinja', '--no-context-shift', '--no-webui'])
@@ -100,7 +103,7 @@ test('a child that never reports healthy times out unavailable and is stopped; a
   assert.equal(alive(pid), false)
   const gone = await fixture(t, 'exit'), exited = gone.create(); await exited.settled()
   await until(() => exited.state().state === 'unavailable')
-  assert.deepEqual(exited.state(), { state: 'unavailable', reason: 'llama_server_exited' })
+  assert.deepEqual(exited.state(), { state: 'unavailable', reason: 'llama_server_exited', detail: 'exit:3' }, 'the exit code is kept, since output is discarded')
   await assert.rejects(exited.runtime!.observe('fixture:latest', new AbortController().signal), /runtime_meter_unavailable/)
 })
 
@@ -109,7 +112,7 @@ test('a child that dies after becoming ready makes the relay unavailable at once
   const pid = (await f.props(host)).__pid as number
   process.kill(pid, 'SIGKILL')
   await until(() => host.state().state === 'unavailable')
-  assert.deepEqual(host.state(), { state: 'unavailable', reason: 'llama_server_exited' })
+  assert.deepEqual(host.state(), { state: 'unavailable', reason: 'llama_server_exited', detail: 'signal:SIGKILL' })
   await new Promise(resolve => setTimeout(resolve, 300))
   assert.equal(host.state().state, 'unavailable'); assert.throws(() => host.ready(), /runtime_meter_unavailable/)
 })
@@ -126,10 +129,13 @@ test('attach mode uses an existing loopback server, is ready immediately, and ne
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-llama-attach-')); t.after(() => rm(dir, { recursive: true, force: true }))
   await mkdir(dir, { recursive: true }); const modelPath = join(dir, 'm.gguf'); await writeFile(modelPath, 'GGUF-attached')
   const fake = await startFakeLlama({ alias: 'fixture', modelPath }); t.after(() => fake.close())
+  const kill = t.mock.method(process, 'kill', () => true)
   const host = LlamaServerHost.create({ kind: 'attach', baseUrl: fake.url, model: 'fixture' })
   assert.deepEqual(host.state(), { state: 'ready' })
   assert.equal((await host.runtime!.observe('fixture:latest', new AbortController().signal)).model, 'fixture:latest')
   await host.close()
+  assert.equal(kill.mock.callCount(), 0, 'no signal was sent to any process')
+  kill.mock.restore()
   assert.equal((await fetch(fake.url + '/health')).status, 200, 'the externally owned server keeps running')
   const down = LlamaServerHost.create({ kind: 'attach', baseUrl: 'http://127.0.0.1:1', model: 'fixture' })
   await assert.rejects(down.runtime!.observe('fixture:latest', new AbortController().signal), /runtime_meter_unavailable/)
