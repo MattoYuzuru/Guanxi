@@ -107,6 +107,7 @@ export type PluginManagerErrorCode =
   | 'plugin_not_installed'
   | 'plugin_directory_exists'
   | 'version_exists'
+  | 'plugins_busy'
   | 'invalid_arguments'
 
 export interface PluginManagerErrorDetails {
@@ -250,6 +251,8 @@ interface InstallRollbackContext {
 const PLUGIN_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const PLUGIN_DIRECTORY_NAME = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+@[^@/\\]+$/
 const STATE_TEMPORARY_NAME = /^\.plugins(?:\.lock)?\.json\.[0-9a-f]+\.tmp$/
+const LOCK_FILE_NAME = '.lock'
+const LOCK_STALE_MS = 30 * 60 * 1000
 const EMPTY_RECOVERY: RecoveryReport = {
   removedStaging: false,
   removedDirectories: [],
@@ -665,8 +668,10 @@ export class PluginManager {
   private readonly hooks: PluginManagerHooks
   private readonly pluginsPath: string
   private readonly lockPath: string
+  private readonly exclusiveLockPath: string
   private tail: Promise<unknown> = Promise.resolve()
   private recovered = false
+  private holdsExclusiveLock = false
 
   constructor(options: PluginManagerOptions) {
     if (!options || typeof options !== 'object') throw new TypeError('PluginManager needs options')
@@ -681,6 +686,7 @@ export class PluginManager {
     this.hooks = options.hooks ?? { point: () => undefined }
     this.pluginsPath = join(this.pluginsDir, 'plugins.json')
     this.lockPath = join(this.pluginsDir, 'plugins.lock.json')
+    this.exclusiveLockPath = join(this.pluginsDir, LOCK_FILE_NAME)
   }
 
   /** Read-only source inspection. It never creates the plugins directory. */
@@ -696,17 +702,17 @@ export class PluginManager {
 
   /** Install or upgrade a local T1 plugin. Enabled state is preserved on upgrade. */
   install(sourceDir: string, options: InstallOptions = {}): Promise<InstalledPlugin> {
-    return this.enqueue(() => this.installLocked(sourceDir, options))
+    return this.enqueue(() => this.withExclusiveLock(() => this.installLocked(sourceDir, options)))
   }
 
   /** Remove an installed plugin and its lock entry. */
   uninstall(id: string): Promise<void> {
-    return this.enqueue(() => this.uninstallLocked(id))
+    return this.enqueue(() => this.withExclusiveLock(() => this.uninstallLocked(id)))
   }
 
   /** Change only the enabled set; the lock keeps the exact installed version. */
   setEnabled(id: string, enabled: boolean): Promise<void> {
-    return this.enqueue(() => this.setEnabledLocked(id, enabled))
+    return this.enqueue(() => this.withExclusiveLock(() => this.setEnabledLocked(id, enabled)))
   }
 
   /** Installed plugins sorted by id, oldest lock state included. */
@@ -798,7 +804,99 @@ export class PluginManager {
 
   private ensureRecovered(): void {
     if (this.recovered) return
+    if (!this.holdsExclusiveLock && this.exclusiveLockExists()) return
     this.recover()
+  }
+
+  private exclusiveLockExists(): boolean {
+    try {
+      lstatSync(this.exclusiveLockPath)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Hold `<pluginsDir>/.lock` for one mutation. O_EXCL is the mutex; the JSON
+   * body carries a random token so a manager never removes another process's
+   * lock. A lock older than 30 minutes is treated as stale, removed once and
+   * retried; otherwise a concurrent mutation fails with `plugins_busy`.
+   */
+  private async withExclusiveLock<T>(operation: () => Promise<T>): Promise<T> {
+    const createdPluginsDir = !(await pathExists(this.pluginsDir))
+    if (createdPluginsDir) await mkdir(this.pluginsDir, { recursive: true })
+    const token = randomBytes(16).toString('hex')
+    let acquired = false
+    try {
+      await this.acquireExclusiveLock(token)
+      acquired = true
+      this.holdsExclusiveLock = true
+      this.ensureRecovered()
+      return await operation()
+    } finally {
+      if (acquired) {
+        this.holdsExclusiveLock = false
+        await this.releaseExclusiveLock(token)
+      }
+      if (createdPluginsDir) await this.removeEmptyDirectory(this.pluginsDir)
+    }
+  }
+
+  private async acquireExclusiveLock(token: string): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const handle = await open(
+          this.exclusiveLockPath,
+          constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+          0o600,
+        )
+        try {
+          await handle.writeFile(
+            `${JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() })}
+`,
+          )
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
+        return
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw new PluginManagerError(
+            'invalid_state',
+            `${this.exclusiveLockPath}: cannot create the plugin lock (${String(error)})`,
+          )
+        }
+        if (attempt === 0 && (await this.exclusiveLockIsStale())) {
+          await unlink(this.exclusiveLockPath).catch(() => undefined)
+          continue
+        }
+        throw new PluginManagerError(
+          'plugins_busy',
+          `${this.pluginsDir} is locked by another plugin manager; remove ${this.exclusiveLockPath} if it is stale`,
+        )
+      }
+    }
+  }
+
+  private async exclusiveLockIsStale(): Promise<boolean> {
+    try {
+      const stat = await lstat(this.exclusiveLockPath)
+      return Date.now() - stat.mtimeMs > LOCK_STALE_MS
+    } catch {
+      return false
+    }
+  }
+
+  private async releaseExclusiveLock(token: string): Promise<void> {
+    try {
+      const bytes = await readFile(this.exclusiveLockPath)
+      const parsed: unknown = JSON.parse(bytes.toString('utf8'))
+      if (isRecord(parsed) && parsed['token'] === token) await unlink(this.exclusiveLockPath)
+    } catch {
+      // A stale lock may already be gone; release stays best-effort.
+    }
   }
 
   private recoverSync(): RecoveryReport {

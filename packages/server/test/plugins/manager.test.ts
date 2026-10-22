@@ -884,3 +884,33 @@ test('requires a lock entry directory to equal id@version', async t => {
     await rejectsWithCode(manager(pluginsDir).install(source), 'invalid_state')
   }
 })
+
+test('a second manager cannot install while the first holds the exclusive lock', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const first = await writePlugin(join(base, 'v1'), { version: '1.0.0' })
+  const second = await writePlugin(join(base, 'v2'), { version: '2.0.0' })
+  await manager(pluginsDir).install(first)
+
+  let entered!: () => void
+  let release!: () => void
+  const atCommit = new Promise<void>(resolve => { entered = resolve })
+  const hold = new Promise<void>(resolve => { release = resolve })
+  const holder = manager(pluginsDir, {
+    hooks: {
+      point: async name => {
+        if (name !== 'install:staged-integrity') return
+        entered()
+        await hold
+      },
+    },
+  })
+  const installing = holder.install(second)
+  await atCommit
+  await rejectsWithCode(manager(pluginsDir).install(second), 'plugins_busy')
+  release()
+  const installed = await installing
+  assert.equal(installed.version, '2.0.0')
+  assert.equal(await exists(join(pluginsDir, '.lock')), false)
+  assert.deepEqual(manager(pluginsDir).bootSet(), [installed.path])
+})
