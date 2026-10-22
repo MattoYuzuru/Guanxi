@@ -1,0 +1,322 @@
+[
+  {
+    "input": "хоно",
+    "expected": "Hono",
+    "note": "plain Cyrillic variant"
+  },
+  {
+    "input": "Hono",
+    "expected": "Hono",
+    "note": "already canonical is untouched"
+  },
+  {
+    "input": "гуанси",
+    "expected": "Guanxi",
+    "note": "irregular Cyrillic variant"
+  },
+  {
+    "input": "гуаньси",
+    "expected": "Guanxi",
+    "note": "soft sign variant"
+  },
+  {
+    "input": "гуанкси",
+    "expected": "Guanxi",
+    "note": "canonical key reached by folding"
+  },
+  {
+    "input": "пиар",
+    "expected": "PR",
+    "note": "initialism variant"
+  },
+  {
+    "input": "ворктри",
+    "expected": "worktree",
+    "note": "merged worktree variant"
+  },
+  {
+    "input": "вортри",
+    "expected": "worktree",
+    "note": "dropped-consonant worktree variant"
+  },
+  {
+    "input": "дипсик",
+    "expected": "DeepSeek",
+    "note": "merged DeepSeek variant"
+  },
+  {
+    "input": "кодекс",
+    "expected": "Codex",
+    "note": "x and ks folding meet"
+  },
+  {
+    "input": "клод",
+    "expected": "Claude",
+    "note": "irregular Claude variant"
+  },
+  {
+    "input": "сонет",
+    "expected": "Sonnet",
+    "note": "doubled consonant folding"
+  },
+  {
+    "input": "соннет",
+    "expected": "Sonnet",
+    "note": "explicit doubled variant"
+  },
+  {
+    "input": "опус",
+    "expected": "Opus",
+    "note": "plain Opus variant"
+  },
+  {
+    "input": "эмсипи",
+    "expected": "MCP",
+    "note": "merged initialism variant"
+  },
+  {
+    "input": "оллама",
+    "expected": "Ollama",
+    "note": "doubled l variant"
+  },
+  {
+    "input": "олама",
+    "expected": "Ollama",
+    "note": "single l variant"
+  },
+  {
+    "input": "федора",
+    "expected": "Fedora",
+    "note": "plain Fedora variant"
+  },
+  {
+    "input": "пиара",
+    "expected": "PR-а",
+    "note": "D-157 inflection"
+  },
+  {
+    "input": "кодексом",
+    "expected": "Codex-ом",
+    "note": "D-157 inflection"
+  },
+  {
+    "input": "воркт триах",
+    "expected": "worktree-ах",
+    "note": "multi-word D-157 inflection"
+  },
+  {
+    "input": "дипсика",
+    "expected": "DeepSeek-а",
+    "note": "D-157 inflection from a variant"
+  },
+  {
+    "input": "гуансией",
+    "expected": "Guanxi-ей",
+    "note": "D-157 ending ей"
+  },
+  {
+    "input": "опуса",
+    "expected": "Opus-а",
+    "note": "D-157 inflection from the canonical"
+  },
+  {
+    "input": "клода",
+    "expected": "Claude-а",
+    "note": "D-157 inflection from a variant"
+  },
+  {
+    "input": "вортриах",
+    "expected": "worktree-ах",
+    "note": "D-157 inflection from a one-token variant"
+  },
+  {
+    "input": "пиары",
+    "expected": "PR-ы",
+    "note": "D-157 ending ы"
+  },
+  {
+    "input": "кодексы",
+    "expected": "Codex-ы",
+    "note": "D-157 ending ы from a variant"
+  },
+  {
+    "input": "дипсиком",
+    "expected": "DeepSeek-ом",
+    "note": "D-157 ending ом"
+  },
+  {
+    "input": "воркт три",
+    "expected": "worktree",
+    "note": "two-token variant"
+  },
+  {
+    "input": "дип сик",
+    "expected": "DeepSeek",
+    "note": "two-token variant"
+  },
+  {
+    "input": "эм си пи",
+    "expected": "MCP",
+    "note": "three-token variant"
+  },
+  {
+    "input": "ворк три",
+    "expected": "worktree",
+    "note": "two-token variant outranks the one-token work variant"
+  },
+  {
+    "input": "дип сик помогает",
+    "expected": "DeepSeek помогает",
+    "note": "match a prefix of a longer token run"
+  },
+  {
+    "input": "воркт три и дип сик",
+    "expected": "worktree и DeepSeek",
+    "note": "two non-overlapping multi-word matches"
+  },
+  {
+    "input": "Хоно,",
+    "expected": "Hono,",
+    "note": "punctuation adjacency"
+  },
+  {
+    "input": "Хоно, как дела?",
+    "expected": "Hono, как дела?",
+    "note": "punctuation adjacency inside a sentence"
+  },
+  {
+    "input": "Используй «Гуанси».",
+    "expected": "Используй «Guanxi».",
+    "note": "guillemets and full stop are preserved"
+  },
+  {
+    "input": "Кодекс сделал",
+    "expected": "Codex сделал",
+    "note": "capitalised sentence start"
+  },
+  {
+    "input": "ХОНО",
+    "expected": "Hono",
+    "note": "matching is case-insensitive"
+  },
+  {
+    "input": "пиар!",
+    "expected": "PR!",
+    "note": "exclamation mark adjacency"
+  },
+  {
+    "input": "кодекс\nгуанси",
+    "expected": "Codex\nGuanxi",
+    "note": "newline is preserved"
+  },
+  {
+    "input": "`хоно`",
+    "expected": "`хоно`",
+    "note": "backticked text is protected"
+  },
+  {
+    "input": "`кодекс`, `гуанси`",
+    "expected": "`кодекс`, `гуанси`",
+    "note": "multiple code spans are protected"
+  },
+  {
+    "input": "кодекс и `кодекс`",
+    "expected": "Codex и `кодекс`",
+    "note": "outside a code span changes, inside does not"
+  },
+  {
+    "input": "```\nкодекс\n```",
+    "expected": "```\nкодекс\n```",
+    "note": "fenced code is protected"
+  },
+  {
+    "input": "https://example.com/хоно",
+    "expected": "https://example.com/хоно",
+    "note": "URL is protected"
+  },
+  {
+    "input": "`https://x` и `кодекс`",
+    "expected": "`https://x` и `кодекс`",
+    "note": "a URL inside a code span does not swallow the next code span"
+  },
+  {
+    "input": "Смотри https://example.com/кодекс?q=гуанси и хоно",
+    "expected": "Смотри https://example.com/кодекс?q=гуанси и Hono",
+    "note": "only the term after the URL changes"
+  },
+  {
+    "input": "http://x.test/гуанси\nгуанси",
+    "expected": "http://x.test/гуанси\nGuanxi",
+    "note": "URL protection ends at whitespace"
+  },
+  {
+    "input": "опустить",
+    "expected": "опустить",
+    "note": "near miss: stem опуст does not equal opus"
+  },
+  {
+    "input": "федорова",
+    "expected": "федорова",
+    "note": "near miss: no Russian ending produces the fedora key"
+  },
+  {
+    "input": "привет",
+    "expected": "привет",
+    "note": "unrelated word is untouched"
+  },
+  {
+    "input": "хонO",
+    "expected": "Hono",
+    "note": "mixed Cyrillic and Latin script"
+  },
+  {
+    "input": "Guanxi и гуанси",
+    "expected": "Guanxi и Guanxi",
+    "note": "canonical and variant in one line"
+  },
+  {
+    "input": "DeepSeek и дипсик",
+    "expected": "DeepSeek и DeepSeek",
+    "note": "canonical and variant in one line"
+  },
+  {
+    "input": "PR и пиар",
+    "expected": "PR и PR",
+    "note": "canonical and variant in one line"
+  },
+  {
+    "input": "worktree и ворктри",
+    "expected": "worktree и worktree",
+    "note": "canonical and variant in one line"
+  },
+  {
+    "input": "MCP и эмсипи",
+    "expected": "MCP и MCP",
+    "note": "canonical and variant in one line"
+  },
+  {
+    "input": "",
+    "expected": "",
+    "note": "empty string"
+  },
+  {
+    "input": "   ",
+    "expected": "   ",
+    "note": "whitespace-only string"
+  },
+  {
+    "input": "...",
+    "expected": "...",
+    "note": "punctuation-only string"
+  },
+  {
+    "input": "хоно/гуанси",
+    "expected": "Hono/Guanxi",
+    "note": "slash keeps two separate candidates"
+  },
+  {
+    "input": "Кодекс, Хоно и Гуанси.",
+    "expected": "Codex, Hono и Guanxi.",
+    "note": "several replacements with punctuation"
+  }
+]
