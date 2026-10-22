@@ -35,24 +35,29 @@ describe('Linux native proxy paths', () => {
       childProcess.fork = function (...args) {
         const child = Reflect.apply(originalFork, this, args);
         if (args[2]?.cwd === policy.scratch) {
-          const proxy = args[2].env.TMPDIR;
-          const stage = dirname(fileURLToPath(args[0]));
-          launches.push({ proxy, stage, mode: lstatSync(proxy).mode & 0o777,
-            canonical: realpathSync(proxy) === proxy,
-            tmpBase: dirname(proxy) === realpathSync('/tmp'),
-            socketFits: ['claude-http-', 'claude-socks-'].every(prefix =>
-              Buffer.byteLength(join(proxy, prefix + '0'.repeat(16) + '.sock')) <= 107),
-            outsideScratch: proxy !== policy.scratch && !proxy.startsWith(policy.scratch + sep),
-            matchingHome: args[2].env.HOME === proxy,
-            ownedStage: stage.startsWith(policy.runtimeBase + sep),
-          });
+          try {
+            const proxy = args[2].env.TMPDIR;
+            const stage = dirname(fileURLToPath(args[0]));
+            launches.push({ proxy, stage, mode: lstatSync(proxy).mode & 0o777,
+              canonical: realpathSync(proxy) === proxy,
+              tmpBase: dirname(proxy) === realpathSync('/tmp'),
+              socketFits: ['claude-http-', 'claude-socks-'].every(prefix =>
+                Buffer.byteLength(join(proxy, prefix + '0'.repeat(16) + '.sock')) <= 107),
+              outsideScratch: proxy !== policy.scratch && !proxy.startsWith(policy.scratch + sep),
+              matchingHome: args[2].env.HOME === proxy,
+              ownedStage: stage.startsWith(policy.runtimeBase + sep),
+            });
+          } catch {
+            // The worker is already running: let its owner attach handlers and clean up.
+            launches.push({ observationFailed: true });
+          }
         }
         return child;
       };
       syncBuiltinESMExports();
       try {
         const { sandboxCommand } = await import(${JSON.stringify(moduleUrl)});
-        const result = await sandboxCommand(policy, 'printf proxy-ok > "$TMPDIR/value"; /bin/cat "$TMPDIR/value"', undefined, 10000, true);
+        const result = await sandboxCommand(policy, '[ "$HOME" = "$TMPDIR" ] || exit 32; printf proxy-ok > "$TMPDIR/value"; /bin/cat "$TMPDIR/value"', undefined, 10000, true);
         const launch = launches[0];
         process.stdout.write(JSON.stringify({ code: result.code, stdout: result.stdout,
           stderrBytes: Buffer.byteLength(result.stderr), truncated: result.truncated,
@@ -60,8 +65,8 @@ describe('Linux native proxy paths', () => {
           tmpBase: launch?.tmpBase, socketFits: launch?.socketFits,
           outsideScratch: launch?.outsideScratch, matchingHome: launch?.matchingHome,
           ownedStage: launch?.ownedStage,
-          proxyRemoved: !!launch && missing(launch.proxy),
-          stageRemoved: !!launch && missing(launch.stage),
+          proxyRemoved: typeof launch?.proxy === 'string' && missing(launch.proxy),
+          stageRemoved: typeof launch?.stage === 'string' && missing(launch.stage),
         }));
       } finally {
         childProcess.fork = originalFork;
