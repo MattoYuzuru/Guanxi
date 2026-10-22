@@ -1,8 +1,9 @@
 # K4 queue v3 Q0 handoff
 
-**Status:** Q0 implementation and independent-review repairs authored; author-pure checks run.
-Real SQLite/helper, native, browser, build and full-suite gates are **UNRUN** by this author.
-The independent reviewer recheck is **UNRUN**; its earlier pin was `92637fb1`. Date: 2026-10-22.
+**Status:** bounded independent repair recheck passes at `71dc6bb0`; Q0 acceptance pending.
+Repository64/64 and unchanged outside5/5 pass. Remaining native/CLI, inspector component/
+browser and integration gates are unrun. Date: 2026-10-22. Historical author-only results below
+retain their original scope and are superseded only where the newer evidence explicitly says so.
 
 - Checkout: `/Users/yuzuru/Projects/Guanxi-lanes/k4-queue-v3-foundation`
 - Branch: `codex/k4-queue-v3-foundation`
@@ -19,6 +20,33 @@ The independent reviewer recheck is **UNRUN**; its earlier pin was `92637fb1`. D
 - Scope authority: `docs/plans/lanes/K4-queue-v3.plan.md`, especially "Root Q0 authorization
   and exact ownership" and "Root-authorized independent Q0 review repair". Q1/Q2 are not
   authorized in this round.
+
+## Independent repair recheck at 71dc6bb0
+
+The first repair pin187edabc passed63/64 repository cases; the new Q14 final observer raced
+worker connection teardown. Root fixed this separately in369f9746 by awaiting both owned
+worker exits before the final observer. No sleep, retry, timeout or production change.
+Independent source review also found that the negative FTS sentinel was a suffix of another
+word. Root's separate71dc6bb0 makes it a whitespace-delimited term within exactly16KiB and
+uses the same token in the subsequent indexed-prompt positive, preserving exact row/count
+and search_textNULL assertions.
+
+The separate GPT6.1Sol/high reviewer reran the original eight repository files: **64/64 pass,
+zero skips**, check-np6q_yoe. This is **34 Q0-new /30 inherited**, including the real SQLite
+held-writer/competing-initializer, mandatory future-ledger refusal, historical global31 SQL
+fixture, routes/privacy and v1/v2 compatibility. The original outside five controls pass5/5,
+check-q3orx9yn; SHA remains
+`eae2c7e2ff078d0dcd6ca51a76d1c0ce4054dad352c847c84b82399c99792e1d` before/after.
+All original findings plus Q14/FTS residuals are closed in this bounded scope. Earlier failed
+receipts remain failures, not overwritten greens. The root fixes add zero case identities.
+
+Both checks are terminal at unchanged clean71dc6bb0 with Node26, own dependencies and the
+shared Mac heavy lock. The external UI-skill symlink prevents reusable source certification;
+these are direct observed results at the named pin. Outside report:
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-k4-queue-v3-Q0-20261022.md`.
+The complete authored slice remains41 new cases. Native service1 and inspector6 (component5,
+browser1) lie outside this64-case command and are not credited yet. Broader native/helper/
+CLI, inspector and candidate/main gates remain before Q0 acceptance, Q1/Q2 or integration.
 
 ## Independent-review repair round (Q0)
 
@@ -41,8 +69,9 @@ outside controls must be rerun unchanged (SHA
 Every earlier reviewer check remains terminal. This round does not claim Q1/Q2, native v3
 consumption, progress2, a new HTTP 406 carrier, hydration, or a whole queue rollback floor.
 If the earlier eight-file repository command is rerun unchanged after this repair, its scope is
-64 cases (34 new/30 inherited); the handoff command below also adds `native-agent/agent.test.ts`
-and `native-agent/migration.test.ts`, which were not in that eight-file scope. Web new tests
+64 cases (34 new/30 inherited); that scope includes `native-agent/migration.test.ts`.
+The handoff command below additionally covers `native-agent/agent.test.ts` and the other
+listed native/helper/CLI files. Web new tests
 remain outside the repository command.
 
 ## Exact new
@@ -175,7 +204,7 @@ Earlier Q0 author round (historical, not rerun in this repair): contract/project
 contract/server/web/cli `tsc`, scoped eslint, markdownlint and doc-link checks. No full
 `lint:md`/license/UI gate was run.
 
-## Checks UNRUN (must not be called green)
+## Author-only unrun record (newer independent results above take precedence)
 
 - `session-log-queue-artifacts.test.ts` (all 20 seeded SQLite/helper/routes/privacy cases,
   including the Q14 worker-thread held-writer/competing-initializer case and the stale-switch
