@@ -75,7 +75,7 @@ test('production host factory separates experiment ledger from R1 run, fences re
       get: f.store.get.bind(f.store),
       append: f.store.append.bind(f.store),
       mutate: f.store.mutate.bind(f.store),
-      renew: (value: typeof attempt) => { renews++; f.store.renew(value) },
+      renew: (value: typeof attempt) => { renews++; return f.store.renew(value) },
     }
     const bound = createBoundTrialHost({
       binding, attempt, budget, k3: k3 as never, billing, runs, session: f.log,
