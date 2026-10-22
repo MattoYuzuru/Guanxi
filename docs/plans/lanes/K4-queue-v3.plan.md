@@ -458,3 +458,41 @@ handoff and runs real log/helper/browser checks. Author pure contract/schema/pro
 checks and tsc/lint only, no real native/helper filesystem/browser/build/full suites in DSH.
 Own npmci is root-installed first; source quiet for every command. NoSSH/provider/model/
 ownerdata/push/central-status edits. Root updates PHASE/NEXT only after actual integration.
+
+## Root-authorized independent Q0 review repair
+
+Independent review at clean `92637fb1` requests changes; report is outside
+`reviews/codex-k4-queue-v3-Q0-20261022.md`. Repository62 cases are32 new/30 inherited,
+58pass/4fail (`check-iada7ni5`); original outside controls2pass/3fail (`check-h90odbgf`).
+Broader component/browser/native stages stopped and are still unrun. This round closes:
+
+1. Remove the exported installQueueSchema opt-out. Independent40 is mandatory even with a
+   future/invalid ledger; no caller/test switch may bypass it. Replace the historical31
+   migration fixture's modern SessionLog writer with test-local valid legacy session/writer/
+   four-event SQL, preserving existing trigger/hash/sequence/timestamp/adoption/rollback
+   assertions. Do not change applied global migrations or manufacture a production fixture API.
+2. Root authorizes only the necessary native legacy type-boundary exception: the original
+   agent.queue branch must explicitly refuse non-v1 with the existing content-free
+   agent_unavailable before assigning narrowed legacy items. Never silently ignore v3 and
+   retain an earlier v1 queue. No native v3 consumer/progress2/hydration/dispatch activation
+   or new HTTP406 schema is authorized; Q1 remains a later restricted-reader slice.
+3. Correct three null-prototype node:sqlite row assertions by comparing actual values or
+   explicit plain projections, with exact count/version retained. Correct the FTS oracle:
+   external-content rowid existence is not indexed text. Keep/assert search_text NULL and
+   MATCH/log.search negative controls plus a positive indexed-text control. No weaker privacy
+   assertion or production index change is justified by these test failures.
+4. Fix inspector boundedPreview so a decorative `⟦` is ordinary text. Recognize only the
+   actual marker syntax when avoiding a clipped marker, preserve maximal valid UTF-8 prefix,
+   enforce the real byte bound and protect real-marker controls. Original outside probe must
+   pass unchanged; do not erase legitimate text to avoid a privacy test.
+5. Add the missing actual competing-initializer/held-writer assertion from Q14, with separate
+   SQLite connections/processes and explicit synchronization. Both constructors must observe
+   one committed ledger40/unchanged trigger after serialization; no partial ledger/DDL,
+   stale pre-lock version acceptance or timing-only claim. Author it for root/reviewer actual
+   execution; no SQLite/helper/native/browser checks inside DSH.
+
+Commit discriminating tests before each minimal fix where practical, separate test-oracle
+repairs from production fixes, then exact handoff new/envelope and unrun evidence. Preserve
+the outside controls' bytes and accepted v1/v2 meanings. No status/snapshot/signature/dependency/
+policy expansion. All prior reviewer checks are terminal; source ownership returns to author
+until a clean final handoff, then the same independent reviewer reruns original controls.
