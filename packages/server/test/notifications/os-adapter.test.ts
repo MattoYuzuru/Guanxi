@@ -6,7 +6,6 @@ import {
   OS_NOTIFY_TIMEOUT_MS,
   type CommandRunner,
   type OsNotifier,
-  type OsNotifierOptions,
 } from '../../src/notifications/os-adapter.ts'
 
 const APP_NAME = 'Guanxi'
@@ -212,16 +211,28 @@ test('payload validation refuses extra keys, long titles and control characters'
   const secret = 'sk-live-SECRET-looking-value-42'
   const hiddenSecret = { title: 'Quota 10% left', tag: 'quota' }
   Object.defineProperty(hiddenSecret, 'body', { value: secret, enumerable: false })
+  let extraKeyRead = false
+  const readTrap = { title: 'Quota 10% left', tag: 'quota' }
+  Object.defineProperty(readTrap, 'body', {
+    enumerable: true,
+    get() {
+      extraKeyRead = true
+      return secret
+    },
+  })
+  const symbolSecret: Record<PropertyKey, unknown> = { title: 'Quota 10% left', tag: 'quota' }
+  symbolSecret[Symbol('body')] = secret
 
   const invalid: unknown[] = [
     { title: 'Quota 10% left', tag: 'quota:five_hour', body: secret },
     hiddenSecret,
+    readTrap,
+    symbolSecret,
     { title: 'a'.repeat(121), tag: 'quota' },
     { title: 'Quota\n10% left', tag: 'quota' },
     { title: 'Quota\u000010% left', tag: 'quota' },
     { title: 'Quota\u007f10% left', tag: 'quota' },
     { title: 'Quota 10% left', tag: 'quota\nfive_hour' },
-    { title: 'Quota 10% left', tag: 't'.repeat(121) },
     { title: '', tag: 'quota' },
     { title: '   ', tag: 'quota' },
     { title: 42, tag: 'quota' },
@@ -239,18 +250,21 @@ test('payload validation refuses extra keys, long titles and control characters'
   }
 
   assert.equal(calls.length, 0, 'invalid payloads must never reach the runner')
+  assert.equal(extraKeyRead, false, 'an extra key must not be read')
   assert.equal(JSON.stringify(calls).includes(secret), false)
 })
 
-test('titles are trimmed and 120 characters after trimming is accepted', async () => {
+test('titles are trimmed, 120 characters after trimming is accepted, and tags stay opaque', async () => {
   const { notifier, calls } = linuxNotifier()
   const title = 'x'.repeat(120)
+  const longTag = 'dedup:'.padEnd(500, 't')
 
   assert.deepEqual(
-    await notifier.notify({ title: `  ${title}  `, tag: TAG }),
+    await notifier.notify({ title: `  ${title}  `, tag: longTag }),
     { delivered: true, code: 'delivered' },
   )
   assert.deepEqual(calls[0]!.args, ['--app-name', APP_NAME, '--', title])
+  assert.equal(calls[0]!.args.includes(longTag), false)
 })
 
 test('runner non-zero exits, signals and timeouts map to os_notify_failed', async () => {

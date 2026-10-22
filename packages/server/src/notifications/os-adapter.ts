@@ -31,7 +31,6 @@ export interface OsNotifierOptions {
 
 export const OS_NOTIFY_TIMEOUT_MS = 5_000
 export const MAX_TITLE_LENGTH = 120
-export const MAX_TAG_LENGTH = 120
 
 /**
  * The AppleScript is constant. `item 1 of argv` is the payload title (the notification
@@ -105,9 +104,10 @@ function validatePayload(payload: unknown): string | null {
   const title = rawTitle.trim()
   if (title.length === 0 || title.length > MAX_TITLE_LENGTH) return null
 
+  // The tag is opaque and never reaches a process, so it has no display-length cap. Its
+  // control-character check only keeps a caller's own logs and comparisons predictable.
   const rawTag = record.tag
   if (typeof rawTag !== 'string' || CONTROL_CHARACTERS.test(rawTag)) return null
-  if (rawTag.length > MAX_TAG_LENGTH) return null
 
   return title
 }
