@@ -96,3 +96,19 @@ Transitive G11 enforcement and IconButton/Menu/Tooltip readiness are separate la
 edit their source/status/gate or promote them in this repair. Actual browsers remain root/
 reviewer-owned after author tsc/static checks. Fixes are separate commits; append exact new/
 envelope and unrun evidence to the handoff. No full U1 or main integration is claimed yet.
+
+## Root-authorized second review repair
+
+Independent `check-d4xbupdt` at `8e019f0c` passes all nine mounted cases and 17/18 adapted
+legacy cases. The remaining new-session test stops before its final axe scan because both
+responsive ContextPanels exist in the DOM. Filter cache-row locators by actual visibility,
+then assert exactly one visible active and one visible inactive row before the existing
+opacity/color assertions. Keep the whole-page zero-diagnostic scan and both seeded controls;
+do not use an arbitrary first match, hide content or change the viewport.
+
+Fast UI independently finds six unused App.tsx G5 allowances after the host replacement:
+backdrop-blur-md, font-medium, font-semibold, rounded-md, text-xs and tracking-tight.
+Root authorizes removing only these obsolete App.tsx entries from legacy-allowlist.json and
+their policy declaration if required by the existing ratchet. Preserve all other entries,
+budgets and gate semantics; this shrinks debt rather than adding an exemption. Validate the
+exact structural delta. Primitive readiness and transitive G11 remain separate ownership.
