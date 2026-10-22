@@ -157,7 +157,10 @@ events. Reasoning stays in K2's retention class, outside model/CLI output and co
 Queued prompts still use the v1 `agent.queue` representation in this lane state: full queued
 text inline, even after consumption, with no new cap. Q0 has added the v3 contract, independent
 ledger 40 and session-log reader/privacy/export support, but the native producer, native
-progress/service/routes/UI and CLI remain v1 until Q1/Q2; this README does not claim queue
+routes/UI and CLI remain v1 until Q1/Q2; progress itself stays the legacy v1 body. If a v3
+snapshot is present, legacy progress refuses with the existing content-free `agent_unavailable`
+(HTTP 503) instead of silently retaining an older v1 queue; this is a compatibility boundary,
+not a v3 consumer and not the Q1 progress2 contract. This README does not claim queue
 artifactization or a native v3 rollback floor. Consuming a queued prompt may artifactize its
 own later `prompt` event, while the earlier queue event stays inline. A published input blob
 left by a failed append is an orphan until the whole session is deleted; no per-blob GC runs in
