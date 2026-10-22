@@ -366,6 +366,33 @@ test('the label swap audits only Guanxi status labels and keeps guanxi:needs-tri
   )
 })
 
+test('failed and blocked collapse to one outward blocked transition', async () => {
+  const fake = new FakeGitHub()
+  const { engine } = githubEngine(fake)
+
+  const failed = await engine.sync(link(), 'failed', { now: START })
+  assert.equal(failed.outcome, 'synced')
+  assert.equal(failed.commentPosted, true)
+  assert.equal(fake.comments.length, 1)
+  assert.match(fake.comments[0]!.body, /is now \*\*blocked\*\*/)
+  assert.deepEqual(
+    fake.issue.labels.filter(label => label.startsWith('guanxi:')),
+    ['guanxi:blocked'],
+  )
+
+  const blocked = await engine.sync(failed.link, 'blocked', { now: START + 1 })
+  assert.equal(blocked.outcome, 'synced')
+  assert.equal(blocked.commentPosted, false)
+  assert.deepEqual(blocked.writes, [])
+  assert.equal(blocked.link.lastSyncedStatus, 'blocked')
+  assert.equal(fake.comments.length, 1)
+  assert.equal(fake.commentPosts().length, 1)
+  assert.deepEqual(
+    fake.issue.labels.filter(label => label.startsWith('guanxi:')),
+    ['guanxi:blocked'],
+  )
+})
+
 test('a user comment carrying the marker does not suppress the status comment', async () => {
   const fake = new FakeGitHub()
   fake.comments.push({

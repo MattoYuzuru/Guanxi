@@ -20,6 +20,13 @@ export function isCoarseStatus(status: DerivedStatus): status is CoarseStatus {
   return (COARSE_STATUSES as readonly string[]).includes(status)
 }
 
+/** The three outward states: `failed` and `blocked` are one blocked transition. */
+export type OutwardStatus = 'in_progress' | 'blocked' | 'done'
+
+export function outwardStatus(status: CoarseStatus): OutwardStatus {
+  return status === 'failed' ? 'blocked' : status
+}
+
 /** Persisted link between one ledger item and one external issue. */
 export interface TrackerLink {
   itemId: string

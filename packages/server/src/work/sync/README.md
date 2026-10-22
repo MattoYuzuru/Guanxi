@@ -76,12 +76,15 @@ read mapping, never a write.
 
 A write happens only on a derived-status transition into the coarse set (ADR-0032 §7):
 
-| Target status | Comment | GitHub label | Jira |
+| Outward state | Comment | GitHub label | Jira |
 | --- | --- | --- | --- |
 | `in_progress` | one start comment | `guanxi:in_progress` | mapped transition when configured |
-| `blocked` / `failed` | one blocked comment | `guanxi:<status>` | mapped transition when configured |
+| `blocked` (from `blocked` or `failed`) | one blocked comment | `guanxi:blocked` | mapped `blocked` transition when configured |
 | `done` | one done comment with the evidence link | `guanxi:done` | mapped transition when configured |
 | anything else | none | none | none |
+
+ADR-0032 §7 has one blocked outward state. Moving between `failed` and `blocked` updates the
+stored derived status but posts no comment and writes no label or transition.
 
 The comment body ends with
 `<!-- guanxi:transition:<itemId>:<status>:<seq> -->`. Before posting, the engine lists existing
@@ -151,9 +154,10 @@ One adapter, selected by `apiVersion`: Cloud uses `/rest/api/3`, Data Center use
 Cloud descriptions are flattened from ADF; Data Center descriptions remain plain/wiki text.
 Cloud comments are sent as an ADF document; Data Center comments are sent as plain text.
 Comment reads flatten ADF to text so marker checks work on both variants; the author is
-`accountId` (Cloud) or `name` (Data Center), and `self()` caches `GET /rest/api/*/myself`. `transitions` maps a
-coarse status to a transition id or name; the adapter resolves it from the issue's available
-transitions and sends only `{ transition: { id } }`.
+`accountId` (Cloud) or `name` (Data Center), and `self()` caches `GET /rest/api/*/myself`.
+`transitions` maps an outward state (`in_progress`, `blocked`, `done`) to a transition id or
+name; configure `blocked` once for both `blocked` and `failed`. The adapter resolves it from
+the issue's available transitions and sends only `{ transition: { id } }`.
 
 ## Tests and fixtures
 

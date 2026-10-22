@@ -16,6 +16,7 @@ import {
   headerValue,
   isCoarseStatus,
   isSuccessStatus,
+  outwardStatus,
   transitionMarker,
   type BusinessField,
   type BusinessFieldChange,
@@ -244,9 +245,20 @@ export class TrackerSyncEngine {
       return { outcome: 'synced', link: cloneLink(nextLink), writes: [], commentPosted: false }
     }
 
+    const target = outwardStatus(status)
+    if (
+      link.lastSyncedStatus !== null
+      && isCoarseStatus(link.lastSyncedStatus)
+      && outwardStatus(link.lastSyncedStatus) === target
+    ) {
+      const nextLink: TrackerLink = { ...link, lastSyncedStatus: status }
+      this.links.set(link.itemId, cloneLink(nextLink))
+      return { outcome: 'synced', link: cloneLink(nextLink), writes: [], commentPosted: false }
+    }
+
     const writes: SyncWrite[] = []
     const seq = (link.lastTransitionSeq ?? 0) + 1
-    const marker = transitionMarker(link.itemId, status, seq)
+    const marker = transitionMarker(link.itemId, target, seq)
     let pending = cloneLink(link)
 
     let comments
@@ -308,7 +320,7 @@ export class TrackerSyncEngine {
       try {
         result = await this.adapter.mutate(link.externalKey, {
           kind: 'comment',
-          body: commentBody(link, status, marker, options.evidence),
+          body: commentBody(link, target, marker, options.evidence),
           marker,
         })
       } catch (error) {
@@ -350,7 +362,7 @@ export class TrackerSyncEngine {
       })
     }
 
-    const mapping = this.adapter.statusMapping(status)
+    const mapping = this.adapter.statusMapping(target)
     if (mapping !== 'none') {
       const decision = this.governor.checkWrite({
         tracker: link.tracker,
@@ -367,8 +379,8 @@ export class TrackerSyncEngine {
         result = await this.adapter.mutate(
           link.externalKey,
           mapping === 'label'
-            ? { kind: 'status-label', status }
-            : { kind: 'transition', status },
+            ? { kind: 'status-label', status: target }
+            : { kind: 'transition', status: target },
         )
       } catch (error) {
         if (error instanceof TrackerTransportError) {
