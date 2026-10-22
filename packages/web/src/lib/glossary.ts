@@ -111,8 +111,8 @@ export const glossaryEntries: readonly GlossaryEntry[] = [
   },
   {
     key: 'attempt',
-    en: { term: 'Attempt', definition: 'One execution segment of a Run on one Node, valid only under a current Lease and fencing token. A retry starts a new Attempt, and two Attempts of one Run never execute at the same time.', example: 'After an executor is lost, the Run continues in a new Attempt only once the old Lease has expired or been released.' },
-    ru: { term: 'Попытка', definition: 'Один отрезок исполнения запуска на одном узле, действительный только при действующей аренде и fencing-токене. Повтор начинает новую попытку, и две попытки одного запуска никогда не выполняются одновременно.', example: 'После потери исполнителя запуск продолжается новой попыткой только после истечения или освобождения старой аренды.' },
+    en: { term: 'Attempt', definition: 'One execution segment of a Run on one Node, valid only under a current Lease and fencing token. A retry starts a new Attempt, and two Attempts of one Run never execute at the same time.', example: 'After an executor is lost, the Run continues in a new Attempt only once the granting Node has confirmed the old Lease ended by expiry, release, fenced handover or an audited admin break; a timeout alone never grants a second holder.' },
+    ru: { term: 'Попытка', definition: 'Один отрезок исполнения запуска на одном узле, действительный только при действующей аренде и fencing-токене. Повтор начинает новую попытку, и две попытки одного запуска никогда не выполняются одновременно.', example: 'После потери исполнителя запуск продолжается новой попыткой, только когда выдавший узел подтвердил завершение старой аренды истечением, освобождением, передачей с fencing или аудируемым административным разрывом; сам таймаут никогда не создаёт второго владельца.' },
   },
   {
     key: 'node',
@@ -156,8 +156,8 @@ export const glossaryEntries: readonly GlossaryEntry[] = [
   },
   {
     key: 'lease',
-    en: { term: 'Lease', definition: 'A time-bounded grant of ownership for a resource, issued by the Node that owns it. Ownership changes only by a transaction on the granting Node: grant, release, expiry, fenced handover or audited admin break. A timeout stops renewal; it never creates a second holder.', example: 'When an executor stops renewing, the old Lease must expire before a new Attempt can hold the resource.' },
-    ru: { term: 'Lease', definition: 'Ограниченное по времени право владения ресурсом, которое выдаёт узел-владелец. Владение меняется только транзакцией на выдавшем узле: выдача, освобождение, истечение, передача с fencing или аудируемый административный разрыв. Таймаут прекращает продление и никогда не создаёт второго владельца.', example: 'Если исполнитель перестал продлевать аренду, старая аренда должна истечь, прежде чем новая попытка получит ресурс.' },
+    en: { term: 'Lease', definition: 'A time-bounded grant of ownership for a resource, issued by the Node that owns it. Ownership changes only by a transaction on the granting Node: grant, release, expiry, fenced handover or audited admin break. A timeout stops renewal; it never creates a second holder.', example: 'When an executor stops renewing, the granting Node ends the old ownership only by confirming expiry, release, fenced handover or an audited admin break before a new Attempt can hold the resource; a timeout alone never creates a second holder.' },
+    ru: { term: 'Lease', definition: 'Ограниченное по времени право владения ресурсом, которое выдаёт узел-владелец. Владение меняется только транзакцией на выдавшем узле: выдача, освобождение, истечение, передача с fencing или аудируемый административный разрыв. Таймаут прекращает продление и никогда не создаёт второго владельца.', example: 'Если исполнитель перестал продлевать аренду, выдавший узел завершает старое владение, только подтвердив истечение, освобождение, передачу с fencing или аудируемый административный разрыв, и лишь затем новая попытка может получить ресурс; сам таймаут никогда не создаёт второго владельца.' },
   },
 ] as const
 
