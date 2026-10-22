@@ -4,7 +4,7 @@
  * Modified by Guanxi contributors: portal container, semantic-token CSS, no arrow.
  */
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
-import { createContext, useContext, useId, useLayoutEffect, useState, type ComponentProps } from 'react'
+import { cloneElement, createContext, useContext, useId, useLayoutEffect, useState, type AriaAttributes, type ComponentProps, type ReactElement } from 'react'
 import { cx } from '../../lib/cx.ts'
 import { usePortalContainer } from '../../lib/portal.tsx'
 import './tooltip.css'
@@ -47,11 +47,25 @@ export function Tooltip({ open, defaultOpen = false, disabled, onOpenChange, ...
   )
 }
 
-export function TooltipTrigger({ 'aria-describedby': describedBy, ...props }: TooltipTriggerProps) {
+function descriptionIds(...values: (string | undefined)[]) {
+  return [...new Set(values.filter(Boolean).join(' ').split(/\s+/).filter(Boolean))].join(' ') || undefined
+}
+
+function describeRenderElement(element: ReactElement, ids: string | undefined) {
+  const describedElement = element as ReactElement<Pick<AriaAttributes, 'aria-describedby'>>
+  return cloneElement(describedElement, {
+    'aria-describedby': descriptionIds(describedElement.props['aria-describedby'], ids),
+  })
+}
+
+export function TooltipTrigger({ 'aria-describedby': describedBy, render, ...props }: TooltipTriggerProps) {
   const description = useContext(TooltipDescriptionContext)
-  const ids = [...new Set([describedBy, description?.open ? description.contentId : undefined]
-    .filter(Boolean).join(' ').split(/\s+/).filter(Boolean))].join(' ')
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} aria-describedby={ids || undefined} />
+  const ids = descriptionIds(describedBy, description?.open ? description.contentId : undefined)
+  // Base UI merges render-element props last; reconcile descriptions at that same boundary.
+  const describedRender: TooltipTriggerProps['render'] = typeof render === 'function'
+    ? (renderProps, state) => describeRenderElement(render(renderProps, state), descriptionIds(renderProps['aria-describedby'], ids))
+    : render ? describeRenderElement(render, ids) : undefined
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} render={describedRender} aria-describedby={ids} />
 }
 
 export function TooltipContent({
