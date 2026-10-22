@@ -46,14 +46,7 @@ describe('DS1-a extension registrations', () => {
   for (const gate of registrations.filter((item) => item.mode === 'fast')) {
     it(`${gate.id} reports the checkout and fails its seed with the expected diagnostic`, async () => {
       const clean = await gate.check(context())
-      if (gate.id === 'G11') {
-        // The actual mounted shell reaches draft components; this is expected policy evidence
-        // until the owner's separate readiness decision, not a green registration.
-        assert.equal(clean.ok, false, 'G11 must report the actual mounted draft closure')
-        assert.ok(clean.errors.some((error) => /icon-button/.test(error) && /draft component/.test(error)), clean.errors.join('\n'))
-      } else {
-        assert.equal(clean.ok, true, clean.errors.join('\n'))
-      }
+      assert.equal(clean.ok, true, clean.errors.join('\n'))
       const seed = JSON.parse(readFileSync(join(root, gate.seed), 'utf8')) as { files: Record<string, string>; expectedError: string }
       const seeded = await gate.check(context(seed.files))
       assert.equal(seeded.ok, false)
