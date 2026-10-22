@@ -78,3 +78,45 @@ adapter.
   `V1-a`; the integrator may reconcile it.
 
 V1 remains in progress; this slice is not the V1 exit gate.
+
+## Independent review fixes
+
+This section supersedes the pre-review statements above about account mismatches, the hidden
+final-text symbol and the two-letter stem floor. The baseline entering this round was 134 tests;
+the 31 new / 122 total evidence above predates the V1-a review fixes.
+
+| Finding | Commit | Fix |
+| --- | --- | --- |
+| P2-1 | `ff0d14b5` | Revert replays the revision chain instead of reading the target op. A revert row now takes the replayed state of the revision it reverted to. |
+| P2-2 | `b57b2e30` | Entry ids are per account. Migration v1 keys entries by `(account_id, id)` and revisions by `(account_id, entry_id, revision)`, with a composite foreign key. Another account's id is `entry_not_found`. |
+| P3-1 | `4ffa41c0` | `voiceBlock(origin, finalText, maxChars = 400)` validates first and no longer hides the final text in a symbol; spread and `structuredClone` origins render the same block. |
+| P3-2 | `5352887b` | Replacement spans must be sorted and non-overlapping; zero-length confidence spans are rejected. |
+| P3-3 | `96235958` | `voiceBlock` truncates on code points, so a surrogate pair is never split. |
+| P3-4 | `5bf41182` | The inflection stem floor is three letters. A user variant `пр` leaves `про` unchanged; `пиара` still becomes `PR-а` from the stem `пиар`. |
+| P3-5 | this section | Note only: `кодекса` → `Codex-а` also hits the legal word; golden glossary curation is the owner's call. |
+
+Each fix commit contains its regression test. The failing assertions were run against the pre-fix
+tree and failed where the behaviour was wrong; the requested `create → deactivate → revert →
+revert` case and the cross-project duplicate-id case were already correct and remain explicit
+regression guards. The `create → revert → reactivate → revert` case failed before P2-1.
+
+**Counts.** New in this round: 9 tests (2 revert replay, 3 account-scoped keys/isolation, 4
+marker signature/span/code-point). Regression envelope: all
+`packages/server/test/voice/*.test.ts` — 143 tests in 17 suites, 143 pass, 0 fail (134 before
+this round) — plus `tsc -p packages/server` with no diagnostics and markdownlint on
+`packages/server/src/voice/README.md` and this file. No broader suite was run.
+
+### In-place v1 schema
+
+P2-2 changed migration v1 in place instead of adding v2. The integrator recorded that migration
+v1 has never been applied to any user database, which is the only condition that makes an
+in-place change safe: the sidecar is not wired into server assembly, no route or plugin ships
+it, and there is no user data or upgrade path to preserve. A lane-local `voice.sqlite` created
+before this change is unsupported and must be recreated; no user database is affected. Version 1
+is frozen from this commit and any later schema change needs a new append-only version.
+
+### Golden glossary note
+
+`кодекса` → `Codex-а` also transforms the legal word (the genitive of `кодекс`). The golden
+glossary currently keeps the `кодекс` variant; accepting that false positive or curating the
+variant out is the owner's call. No matcher change was made for P3-5.
