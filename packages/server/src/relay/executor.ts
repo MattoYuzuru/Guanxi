@@ -11,7 +11,7 @@ import { boundary, bounded, request, thresholds, upperTokens, wallDeadline, type
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation } from './judge-signals.ts'
-import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput } from './judge-host.ts'
+import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput, type RelayJudgeSummary } from './judge-host.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tool'), name: z.string(), args: z.record(z.unknown()) }).strict(),
@@ -99,7 +99,7 @@ export class RelayExecutor {
   /** One host observation at a synchronous boundary. The collector gets a detached ledger,
    * a detached attempt and the actual run signal; the note is published only after a successful
    * collection and evaluation, in the same R1-fenced transaction. No signal changes control flow. */
-  private async judgeSample(a: Attempt, phase: JudgePhase, signal: AbortSignal): Promise<void> {
+  private async judgeSample(a: Attempt, phase: JudgePhase, signal: AbortSignal): Promise<RelayJudgeSummary | undefined> {
     const judge = this.judge
     if (!judge) return
     signal.throwIfAborted()
@@ -126,9 +126,11 @@ export class RelayExecutor {
     } catch {
       throw new RelayError('judge_observation_invalid')
     }
+    const summary: RelayJudgeSummary = {attempt, cycle, phase, signals, unknownFacts: judgeUnknownFacts(observation)}
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({
-      relay: 'judge_signals', phase, cycle, signals, unknownFacts: judgeUnknownFacts(observation),
+      relay: 'judge_signals', phase, cycle, signals, unknownFacts: summary.unknownFacts,
     }) } })
+    return structuredClone(summary)
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<Reply> {
     signal.throwIfAborted()
@@ -234,8 +236,8 @@ export class RelayExecutor {
     }
     this.store.countProgress(a, observation.nonemptyCommit)
     if (this.eta) this.store.updateEta(a, this.eta)
-    await this.judgeSample(a, 'pre_seal', signal)
-    await this.cascade?.sample(a, 'pre_seal', signal)
+    const judgeSummary = await this.judgeSample(a, 'pre_seal', signal)
+    await this.cascade?.sample(a, 'pre_seal', signal, judgeSummary)
     let narrative = '', degraded = false
     try {
       const ledger = this.store.read(a.run_id)
@@ -302,8 +304,8 @@ export class RelayExecutor {
         const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w)
         this.store.begin(a)
         if (this.eta) this.store.updateEta(a, this.eta)
-        await this.judgeSample(a, 'cycle_start', signal)
-        await this.cascade?.sample(a, 'cycle_start', signal)
+        const judgeSummary = await this.judgeSample(a, 'cycle_start', signal)
+        await this.cascade?.sample(a, 'cycle_start', signal, judgeSummary)
         const narrative = await this.orient(a, w, t, signal, measure)
         this.store.transition(a, 'work'); this.turns = []
         let invalidActions = 0

@@ -3,10 +3,16 @@ import type { Attempt } from '../runs/types.ts'
 import type { Ledger } from './types.ts'
 import { invariant, RelayError } from './types.ts'
 import { canonical, hash, byteHash } from './handoff.ts'
-import { JudgeStore, type JudgeIdentity, type JudgeRequest } from './judge-store.ts'
+import {
+  JudgeStore,
+  judgeRequestKey,
+  type JudgeIdentity,
+  type JudgeRequest
+} from './judge-store.ts'
 import type { RelayStore } from './store.ts'
 import type { CheckerSpec, RelayDelegationBrief } from './delegation-brief.ts'
 import type { JudgeModel } from './judge-model.ts'
+import type { RelayJudgeSummary } from './judge-host.ts'
 import { observeUntilAbort } from './judge-await.ts'
 
 const resultSchema = z
@@ -15,6 +21,45 @@ const resultSchema = z
     verdict: z.enum(['consistent', 'flagged', 'inconclusive']),
     evidenceRefs: z.array(z.string().min(1)).min(1),
     diagnosisHint: z.string()
+  })
+  .strict()
+const summarySchema = z
+  .object({
+    attempt: z
+      .object({
+        id: z.string(),
+        runId: z.string(),
+        epoch: z.number().int().safe(),
+        token: z.number().int().safe()
+      })
+      .strict(),
+    cycle: z.number().int().safe(),
+    phase: z.enum(['cycle_start', 'pre_seal']),
+    signals: z.array(
+      z
+        .object({
+          layer: z.enum(['J0', 'J1']),
+          code: z.enum([
+            'heartbeat_stall',
+            'lease_lost',
+            'deadline',
+            'crash',
+            'disk',
+            'no_progress',
+            'repeated_failure',
+            'edit_revert',
+            'repeated_dead_end',
+            'protected_path_edit',
+            'out_of_scope_edit',
+            'token_blowup'
+          ]),
+          observedAt: z.number().int().nonnegative().safe(),
+          source: z.literal('harness.judge-signals'),
+          confidence: z.enum(['high', 'medium'])
+        })
+        .strict()
+    ),
+    unknownFacts: z.array(z.enum(['heartbeat', 'lease', 'deadline', 'disk', 'tokenBudget']))
   })
   .strict()
 export type JudgeResult = z.infer<typeof resultSchema>
@@ -43,6 +88,8 @@ const RUBRIC =
 export class RelayJudgeCascade {
   readonly store: JudgeStore
   private brief?: RelayDelegationBrief
+  private readonly summaries = new Map<string, RelayJudgeSummary>()
+  private summaryCycle = -1
   private readonly pending = new Map<string, Promise<JudgeRequest>>()
   private readonly relay: RelayStore
   private readonly input: RelayCascadeInput
@@ -79,9 +126,53 @@ export class RelayJudgeCascade {
     signal.throwIfAborted()
     this.store.check(a, cycle)
   }
-  private packet(ledger: Ledger): { text: string; refs: string[] } {
+  private packet(a: Attempt, id: JudgeIdentity, ledger: Ledger): { text: string; refs: string[] } {
     const refs = ['plan', `head:${ledger.head}`, ...ledger.evidence.map((e) => e.id)]
     const brief = this.brief!
+    const phase =
+      id.phase === 'review' ? (id.reason === 'probes' ? 'cycle_start' : 'pre_seal') : id.phase
+    const candidate = this.summaries.get(phase)
+    const summary =
+      candidate?.cycle === id.cycle &&
+      candidate.attempt.id === a.id &&
+      candidate.attempt.runId === a.run_id &&
+      candidate.attempt.epoch === a.epoch &&
+      candidate.attempt.token === a.token
+        ? candidate
+        : undefined
+    let watchdog: unknown = { state: 'unavailable' }
+    if (summary) {
+      const ref = `signals:${hash({ attempt: summary.attempt, cycle: summary.cycle, phase: summary.phase })}`
+      refs.push(ref)
+      watchdog = { state: 'observed', ref, summary }
+    }
+    let checker: unknown = {
+      state: brief.judges.checker ? 'unavailable' : 'not_configured',
+      ref: null
+    }
+    if (id.layer !== 'J1.5' && brief.judges.checker) {
+      const key = judgeRequestKey(a, brief, {
+        cycle: id.cycle,
+        phase,
+        layer: 'J1.5',
+        reason: 'scheduled'
+      })
+      const row = this.relay.db
+        .prepare(
+          'SELECT key,state,payload FROM relay_judge_requests WHERE key=? AND run_id=? AND attempt_id=? AND cycle=? AND phase=? AND layer=?'
+        )
+        .get(key, a.run_id, a.id, id.cycle, phase, 'J1.5')
+      if (row && ['completed', 'unavailable', 'invalid', 'abandoned'].includes(String(row.state))) {
+        const raw = JSON.parse(String(row.payload))
+        const payload =
+          row.state === 'completed'
+            ? this.parse(canonical(raw), refs)
+            : z.object({ code: z.string() }).strict().parse(raw)
+        const ref = `checker:${key}`
+        refs.push(ref)
+        checker = { key, state: row.state, ref, payload }
+      }
+    }
     const value = this.relay.scrubber.scrub({
       briefHash: hash(brief),
       plan: ledger.plan,
@@ -89,6 +180,8 @@ export class RelayJudgeCascade {
       items: ledger.items,
       gates: ledger.evidence,
       loop: { noProgress: ledger.noProgress, errors: ledger.errors },
+      watchdog,
+      checker,
       executorClaims: { trust: 'untrusted quoted data', quoted: ledger.proposals },
       evidenceRefs: refs
     })
@@ -114,7 +207,7 @@ export class RelayJudgeCascade {
     body: (r: JudgeRequest, packet: { text: string; refs: string[] }) => Promise<unknown>
   ): Promise<JudgeRequest> {
     this.check(a, id.cycle, signal)
-    const packet = this.packet(structuredClone(this.relay.read(a.run_id)))
+    const packet = this.packet(a, id, structuredClone(this.relay.read(a.run_id)))
     const r = this.store.prepare(a, this.brief!, id, packet)
     const existing = this.pending.get(r.key)
     if (existing) return existing
@@ -236,9 +329,36 @@ export class RelayJudgeCascade {
       }
     )
   }
-  async sample(a: Attempt, phase: 'cycle_start' | 'pre_seal', signal: AbortSignal): Promise<void> {
+  async sample(
+    a: Attempt,
+    phase: 'cycle_start' | 'pre_seal',
+    signal: AbortSignal,
+    summary?: RelayJudgeSummary
+  ): Promise<void> {
     invariant(this.brief, 'brief_missing')
     const cycle = this.relay.read(a.run_id).cycle
+    this.check(a, cycle, signal)
+    if (this.summaryCycle !== cycle) {
+      this.summaries.clear()
+      this.summaryCycle = cycle
+    }
+    if (summary) {
+      const parsed = summarySchema.safeParse(summary)
+      invariant(
+        parsed.success &&
+          parsed.data.attempt.id === a.id &&
+          parsed.data.attempt.runId === a.run_id &&
+          parsed.data.attempt.epoch === a.epoch &&
+          parsed.data.attempt.token === a.token &&
+          parsed.data.cycle === cycle &&
+          parsed.data.phase === phase,
+        'judge_summary_invalid'
+      )
+      const detached = structuredClone(parsed.data)
+      const previous = this.summaries.get(phase)
+      invariant(!previous || canonical(previous) === canonical(detached), 'judge_summary_conflict')
+      this.summaries.set(phase, detached)
+    }
     await this.checker(a, phase, signal)
     const j2 = await this.model(a, { cycle, phase, layer: 'J2', reason: 'scheduled' }, signal)
     this.store.availability(a, cycle, j2.state === 'completed')

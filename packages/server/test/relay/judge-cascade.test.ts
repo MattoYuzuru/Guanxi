@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import type { RelayJudgeSummary, RelayJudgeInput } from '../../src/relay/judge-host.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
 import { RelayStore } from '../../src/relay/store.ts'
 import { JudgeStore } from '../../src/relay/judge-store.ts'
@@ -960,6 +961,252 @@ test('a refused durable dispatch trace rolls back request transition, run reserv
     assert.equal(f.db.prepare('SELECT state FROM relay_judge_requests').get()!.state, 'prepared')
     assert.equal(f.db.prepare('SELECT count(*) AS n FROM relay_judge_debits').get()!.n, 0)
     assert.equal(f.relay.read(f.run.id).tokens, 0)
+  } finally {
+    f.close()
+  }
+})
+
+test('actual J2 prompts contain fenced J0/J1 summaries and the preceding same-phase checker receipt', async () => {
+  const f = fixture()
+  try {
+    const rawPath = 'synthetic-observation-path-never-in-context',
+      claim = 'untrusted executor claim',
+      bytes = Buffer.from('lead script')
+    const b = brief()
+    b.judges.checker = {
+      base: plan.base,
+      path: 'checks/lead',
+      digest: byteHash(bytes),
+      timeoutMs: 1000,
+      outputBytes: 4096
+    }
+    f.relay.propose(f.attempt, claim)
+    const packets: Array<Record<string, any>> = []
+    const signals: RelayJudgeInput = {
+      policy: {
+        heartbeatStallMs: 10,
+        noProgressCycles: 3,
+        repeatedFailureCycles: 3,
+        editRevertCycles: 3,
+        repeatedDeadEnds: 3,
+        tokenBlowupRatio: 2
+      },
+      collect: async (i) => ({
+        observedAt: 1000,
+        heartbeatAt: null,
+        lease: null,
+        deadlineAt: null,
+        disk: null,
+        cycle: i.ledger.cycle,
+        noProgressCycles: 0,
+        sameFailureStreak: 0,
+        editRevertStreak: 0,
+        deadEndRepetitions: 0,
+        protectedPathEdits: [rawPath],
+        outOfScopeEdits: [],
+        tokensThisItem: 0,
+        tokenBudgetForItem: null,
+        crashed: true
+      })
+    }
+    const configured = input(b, {
+      checker: {
+        read: async () => ({ base: plan.base, path: 'checks/lead', bytes }),
+        run: async () =>
+          canonical({
+            taxonomy: 'scope',
+            verdict: 'flagged',
+            evidenceRefs: ['plan'],
+            diagnosisHint: 'Distinctive pinned checker diagnosis'
+          })
+      },
+      model: {
+        admit: async () => true,
+        sample: async (i) => {
+          const packet = JSON.parse(i.prompt.slice(i.prompt.indexOf('\n') + 1))
+          packets.push(packet)
+          assert.equal(i.prompt.includes(rawPath), false)
+          assert.deepEqual(
+            packet.watchdog.summary.signals.map((s: any) => [s.layer, s.code]),
+            [
+              ['J0', 'crash'],
+              ['J1', 'protected_path_edit']
+            ]
+          )
+          assert.deepEqual(packet.watchdog.summary.unknownFacts, [
+            'heartbeat',
+            'lease',
+            'deadline',
+            'disk',
+            'tokenBudget'
+          ])
+          assert.equal(packet.watchdog.summary.attempt.id, f.attempt.id)
+          assert.equal(packet.watchdog.summary.attempt.runId, f.run.id)
+          assert.equal(packet.watchdog.summary.attempt.epoch, f.attempt.epoch)
+          assert.equal(packet.watchdog.summary.attempt.token, f.attempt.token)
+          assert.equal(packet.checker.state, 'completed')
+          assert.equal(packet.checker.payload.diagnosisHint, 'Distinctive pinned checker diagnosis')
+          assert.equal(packet.evidenceRefs.includes(packet.checker.ref), true)
+          assert.equal(packet.evidenceRefs.includes(packet.watchdog.ref), true)
+          assert.equal(packet.evidenceRefs.includes(claim), false)
+      assert.deepEqual(packet.executorClaims, {
+            trust: 'untrusted quoted data',
+            quoted: [claim]
+          })
+          const record = f.db
+            .prepare(
+              "SELECT key FROM relay_judge_requests WHERE attempt_id=? AND cycle=1 AND phase=? AND layer='J1.5' AND state='completed'"
+            )
+            .get(f.attempt.id, packet.watchdog.summary.phase)!
+          assert.equal(packet.checker.ref, `checker:${record.key}`)
+          return canonical({
+            taxonomy: 'progress',
+            verdict: 'consistent',
+            evidenceRefs: ['plan', packet.checker.ref, packet.watchdog.ref],
+            diagnosisHint: 'Harness facts reviewed.'
+          })
+        }
+      }
+    })
+    const executor = new RelayExecutor(
+      f.relay,
+      f.model,
+      f.workspace,
+      reserves,
+      f.scrubber,
+      DEFAULT_RELAY_LIMITS,
+      undefined,
+      signals,
+      configured
+    )
+    await executor.run(f.attempt)
+    assert.equal(packets.length, 4)
+    assert.deepEqual(
+      packets.map((p) => p.watchdog.summary.phase),
+      ['cycle_start', 'cycle_start', 'pre_seal', 'pre_seal']
+    )
+    assert.notEqual(packets[0]!.checker.ref, packets[2]!.checker.ref)
+    const sealed = f.relay.sealed(f.attempt)!
+    assert.equal(sealed.handoff.ledgerHash, hash(sealed.ledger))
+    assert.equal(sealed.ledger.judge!.requests.length, 4)
+  } finally {
+    f.close()
+  }
+})
+test('checker refusal is explicit J2 evidence and prior-phase checker refs cannot be reused', async () => {
+  for (const mode of ['refusal', 'prior_phase'] as const) {
+    const f = fixture()
+    try {
+      begin(f)
+      const bytes = Buffer.from('lead script'),
+        b = brief()
+      b.judges.checker = {
+        base: plan.base,
+        path: 'checker',
+        digest: byteHash(bytes),
+        timeoutMs: 1000,
+        outputBytes: 4096
+      }
+      let firstRef = '',
+        phaseCount = 0
+      const c = new RelayJudgeCascade(
+        f.relay,
+        input(b, {
+          checker: {
+            read: async () => ({
+              base: plan.base,
+              path: 'checker',
+              bytes: mode === 'refusal' ? Buffer.from('modified') : bytes
+            }),
+            run: async () => valid()
+          },
+          model: {
+            admit: async () => true,
+            sample: async (i) => {
+              const p = JSON.parse(i.prompt.slice(i.prompt.indexOf('\n') + 1))
+              assert.equal(p.watchdog.state, 'unavailable')
+              if (mode === 'refusal') {
+                assert.equal(p.checker.state, 'unavailable')
+                assert.equal(p.checker.payload.code, 'judge_checker_pin_mismatch')
+                return valid()
+              }
+              if (phaseCount < 2) {
+                firstRef = p.checker.ref
+                phaseCount++
+                return valid()
+              }
+              assert.notEqual(p.checker.ref, firstRef)
+              return canonical({
+                taxonomy: 'scope',
+                verdict: 'flagged',
+                evidenceRefs: [firstRef],
+                diagnosisHint: 'Invalid prior-phase citation'
+              })
+            }
+          }
+        })
+      )
+      c.bind(f.attempt)
+      await c.sample(f.attempt, 'cycle_start', new AbortController().signal)
+      if (mode === 'prior_phase') {
+        await c.sample(f.attempt, 'pre_seal', new AbortController().signal)
+        assert.equal(
+          f.db
+            .prepare("SELECT state FROM relay_judge_requests WHERE phase='pre_seal' AND layer='J2'")
+            .get()!.state,
+          'invalid'
+        )
+      }
+    } finally {
+      f.close()
+    }
+  }
+})
+test('foreign cycle phase run and attempt summaries refuse before any checker/model request', async () => {
+  const f = fixture()
+  try {
+    begin(f)
+    let calls = 0
+    const c = new RelayJudgeCascade(
+      f.relay,
+      input(brief(), {
+        model: {
+          admit: async () => {
+            calls++
+            return true
+          },
+          sample: async () => valid()
+        }
+      })
+    )
+    c.bind(f.attempt)
+    const summary: RelayJudgeSummary = {
+      attempt: {
+        id: f.attempt.id,
+        runId: f.run.id,
+        epoch: f.attempt.epoch,
+        token: f.attempt.token
+      },
+      cycle: 1,
+      phase: 'cycle_start',
+      signals: [],
+      unknownFacts: ['heartbeat']
+    }
+    const patches = [
+      { cycle: 2 },
+      { phase: 'pre_seal' as const },
+      { attempt: { ...summary.attempt, id: 'foreign' } },
+      { attempt: { ...summary.attempt, runId: 'foreign' } },
+      { attempt: { ...summary.attempt, epoch: summary.attempt.epoch + 1 } },
+      { attempt: { ...summary.attempt, token: summary.attempt.token + 1 } }
+    ]
+    for (const patch of patches)
+      await assert.rejects(
+        c.sample(f.attempt, 'cycle_start', new AbortController().signal, { ...summary, ...patch }),
+        /judge_summary_invalid/
+      )
+    assert.equal(calls, 0)
+    assert.equal(f.db.prepare('SELECT count(*) AS n FROM relay_judge_requests').get()!.n, 0)
   } finally {
     f.close()
   }

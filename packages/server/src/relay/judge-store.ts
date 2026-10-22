@@ -38,6 +38,20 @@ export interface JudgeIdentity {
   layer: JudgeLayer
   reason: string
 }
+export function judgeRequestKey(
+  a: Attempt,
+  brief: RelayDelegationBrief,
+  identity: JudgeIdentity
+): string {
+  return hash({
+    run: a.run_id,
+    attempt: a.id,
+    epoch: a.epoch,
+    token: a.token,
+    ...identity,
+    policyHash: hash(brief)
+  })
+}
 export class JudgeStore {
   readonly relay: RelayStore
   constructor(relay: RelayStore) {
@@ -132,14 +146,7 @@ export class JudgeStore {
   ): JudgeRequest {
     return this.relay.runs.mutate(a, (db, emit) => {
       invariant(this.relay.read(a.run_id).cycle === identity.cycle, 'judge_stale_cycle')
-      const key = hash({
-        run: a.run_id,
-        attempt: a.id,
-        epoch: a.epoch,
-        token: a.token,
-        ...identity,
-        policyHash: hash(brief)
-      })
+      const key = judgeRequestKey(a, brief, identity)
       const digest = hash(evidence)
       const old = db.prepare('SELECT * FROM relay_judge_requests WHERE key=?').get(key)
       if (old) {

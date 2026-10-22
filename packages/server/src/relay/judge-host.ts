@@ -1,5 +1,5 @@
 import { RelayError, type Ledger } from './types.ts'
-import type { JudgeObservation, JudgeSignalPolicy } from './judge-signals.ts'
+import type { JudgeObservation, JudgeSignalPolicy, JudgeSignal } from './judge-signals.ts'
 
 /** The two synchronous executor boundaries where a trusted host may observe J0/J1 facts.
  * Sampling is not a timer: it happens once per cycle before orient and once before the
@@ -12,6 +12,15 @@ export interface RelayJudgeAttempt {
   runId: string
   epoch: number
   token: number
+}
+
+/** Fenced detached summary only; no raw host/path observations cross into model context. */
+export interface RelayJudgeSummary {
+  attempt: RelayJudgeAttempt
+  cycle: number
+  phase: JudgePhase
+  signals: JudgeSignal[]
+  unknownFacts: JudgeUnknownFact[]
 }
 
 export interface RelayJudgeCollectInput {
