@@ -303,6 +303,7 @@ for (const [path, mode, source] of [
 })
 
 test('workspace state loading reserves known geometry without actionable or empty content', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
   await setup(page)
   await stateFault(page, { path: '/api/layouts/context', kind: 'hold' })
   await page.goto('/workspace')
@@ -313,10 +314,15 @@ test('workspace state loading reserves known geometry without actionable or empt
   await expect(page.getByRole('status', { name: 'Loading workspace layouts…' })).toHaveCount(1)
   await expect(geometry.locator('[data-slot="empty-state"]')).toHaveCount(0)
   const before = await geometry.boundingBox()
+  const placeholders = await geometry.locator('.gx-workspace-loading-control').count()
+  const toolbarBefore = (await geometry.locator('.gx-workspace-toolbar').boundingBox())!
   expect(before!.height).toBeGreaterThan(100)
   await page.evaluate(() => (window as any).__STATE_FAULT__.release())
   await expect(page.locator('.dv-tab')).toHaveCount(11)
   const after = await page.locator('.workspace').boundingBox()
+  const toolbar = page.getByRole('group', { name: 'Session workspace', exact: true })
+  expect(placeholders).toBe(await toolbar.locator('button,input').count())
+  expect((await toolbar.boundingBox())!.height).toBeCloseTo(toolbarBefore.height, 0)
   expect(after!.width).toBeCloseTo(before!.width, 0)
   expect(after!.height).toBeCloseTo(before!.height, 0)
   await expect(geometry).toHaveCount(0)
