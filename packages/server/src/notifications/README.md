@@ -193,13 +193,69 @@ the user's settings and `now`; there is no clock, timer, I/O or process state.
   value inside `channelsByKind` is dropped, so that kind uses `defaults`.
 
 ### NC1-c test evidence
+## NC1-d: vendor quota and balance fact producers
+
+**Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-d
+
+`producers.ts` maps K5 quota observations and K3 connection balances into the NC1-a
+`QuotaFact` vocabulary. Both entry points are pure and return `{ facts, skipped }` instead
+of a bare fact or `null`: a reported value that cannot be represented is never silently
+dropped. A skip is `{ window, reason }`, where `window` is the reported name and is `null`
+for a balance. The reasons are:
+
+- `unknown_window_kind` — the window name does not identify an NC1-a window.
+- `missing_observed_at` — a balance has no observation time.
+- `unknown_confidence` — a balance has `unknown` confidence.
+
+### Window mapping
+
+`five_hour` and `seven_day` map to the facts of the same name. Codex
+`<id>.primary` / `<id>.secondary` names are relative: the period is reported separately by
+the vendor. The current `QuotaWindow` contract carries only `name`, `usedPercent` and
+`resetsAt`, and K5's `codexRateLimits` drops the raw `windowDurationMins`, so the producer
+does not guess those names into `five_hour` or `seven_day`. They are skipped with
+`unknown_window_kind`; the same applies to every other unrecognised name. Supporting them
+requires carrying the reported window length through K5 first.
+
+### Percent, provenance and unknown values
+
+`remainingPercent` is `100 - usedPercent`, clamped to `[0, 100]`. A provider that reports
+`usedPercent` above 100 (an overrun) therefore produces `0`, not a negative percentage; an
+unused window produces `100`. A `null` `usedPercent` produces a `null` `remainingPercent`,
+never `0` or `100`. Quota windows carry no absolute amount, so `remainingAbsolute` is
+`null` and values are not rounded.
+
+`source`, `observedAt` and `resetsAt` are copied from the observation (a balance always has
+`resetsAt: null`). A `high` vendor confidence becomes `observed`; `medium` and `low` become
+`estimated`.
+
+### Balances
+
+A balance becomes one `window: 'balance'` fact. `remainingAbsolute` is the provider's
+decimal `amount` kept as-is: `ConnectionBalance` carries a currency, `QuotaFact` does not,
+and this producer neither converts minor units nor invents a currency.
+`remainingPercent` is `amount / initialAmount * 100` (clamped to `[0, 100]`) only when
+`initialAmount` is a positive finite number; otherwise it stays `null`. Balance facts
+always have `resetsAt: null`.
+
+A `scope: 'key_allowance'` balance is not an account balance, so `#key_allowance` is
+appended to `source` (once; an already-suffixed source is unchanged). `account_balance` or
+an absent scope adds nothing. A balance with a missing `observedAt`, or with confidence
+`unknown`, produces no fact and one skip reason; when both are missing, the observation
+time is reported first. A known-provenance balance whose amount is `null` remains a fact
+with unknown values.
+
+Both functions parse their input with the existing `quotaObservationSchema` or
+`connectionBalanceSchema`; malformed values throw instead of becoming facts.
+
+### NC1-d test evidence
 
 ```bash
 nice -n 10 node --test packages/server/test/notifications/*.test.ts
 ```
 
-The command runs 73 tests: 25 new NC1-c delivery tests and the 48 existing NC1-a/b tests as
-the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
+On integrated main the command runs 86 tests (48 NC1-a/b, 25 NC1-c delivery, 13 NC1-d producers).
+At the NC1-c slice it ran 73: 25 new delivery tests and 48 NC1-a/b as the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
 server source and test trees; markdownlint passes on this README and the NC1-c hand-off.
 
 ### Still later
@@ -207,3 +263,12 @@ server source and test trees; markdownlint passes on this README and the NC1-c h
 Settings persistence and the notification-settings UI; per-platform OS adapters; Web Push;
 plugin/boot wiring, HTTP routes and `packages/contract` schemas. Actual delivery adapters, not
 planning, remain later work.
+The command runs 61 tests: 13 new NC1-d producer tests and 48 existing NC1-a/NC1-b tests as
+the regression envelope. `nice -n 10 npx tsc --noEmit -p packages/server` typechecks the
+server source and test trees.
+
+### Still later (NC1-d residuals)
+
+Wiring the producers to K5 quota events and K3 balance probe results in the plugin, Codex
+window-length evidence, local metering for providers without quota APIs, and an automatic
+Claude producer are not in this slice. NC1 is not complete.
