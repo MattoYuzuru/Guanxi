@@ -13,9 +13,13 @@ the native agent loop: legacy orientation reports `Skills=off`, so skills stay o
 - `<projectRoot>/.claude/skills/*/SKILL.md`
 - every directory in `userSkillDirs`, one level deep (`<dir>/<skill>/SKILL.md`)
 
-Only YAML front matter is read, in a bounded window of at most 8 KiB. The minimal parser
-accepts `key: value` scalars (quoted or plain) and folded `>` / literal `|` description
-blocks; it adds no dependency. A missing or empty `name`/`description` is skipped with
+Only YAML front matter is read, in a bounded window of at most 8 KiB; discovery never asks the
+reader for more. The minimal parser accepts `key: value` scalars (quoted or plain) and folded
+`>` / literal `|` description blocks; it adds no dependency and stores keys in a null-prototype
+object. A block scalar's content must be indented more than its key, so a following top-level
+key is never swallowed. Explicit indentation indicators (`|2`, `>2`) and plain multi-line
+continuation are unsupported: an indented line after a plain scalar is ignored. A missing or
+empty `name`/`description`, or a `name` outside `^[a-z0-9][a-z0-9-]{0,63}$`, is skipped with
 `invalid_front_matter`.
 
 Each `SkillSummary` carries `id` (`<source>:<name>`), `name`, `description`, `source`,

@@ -155,7 +155,7 @@ function fold(lines: string[]): string {
   return value.replace(/[ \t]+\n/g, '\n').replace(/\n+$/, '')
 }
 
-function parseBlock(lines: string[], start: number, style: '>' | '|'): { value: string; next: number } {
+function parseBlock(lines: string[], start: number, style: '>' | '|', keyIndent: number): { value: string; next: number } {
   const content: string[] = []
   let indent: number | null = null
   let index = start + 1
@@ -166,7 +166,12 @@ function parseBlock(lines: string[], start: number, style: '>' | '|'): { value: 
       continue
     }
     const leading = line.length - line.trimStart().length
-    if (indent === null) indent = leading
+    if (indent === null) {
+      // YAML requires block content to be indented more than its key. A
+      // dedented line belongs to the next key, never to this scalar.
+      if (leading <= keyIndent) break
+      indent = leading
+    }
     if (leading < indent) break
     content.push(line.slice(indent))
   }
@@ -177,9 +182,14 @@ function parseBlock(lines: string[], start: number, style: '>' | '|'): { value: 
   }
 }
 
-function parseFrontMatter(raw: string): Record<string, string> {
+/**
+ * Parses the small YAML subset used by Agent Skills. Explicit indentation
+ * indicators (`|2`, `>2`) and plain multi-line continuation are unsupported:
+ * an indented line after a plain scalar is ignored, not appended.
+ */
+export function parseSkillFrontMatter(raw: string): Record<string, string> {
   const lines = raw.replace(/\r\n?/g, '\n').split('\n')
-  const values: Record<string, string> = {}
+  const values: Record<string, string> = Object.create(null)
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!
     const trimmed = line.trim()
@@ -191,7 +201,7 @@ function parseFrontMatter(raw: string): Record<string, string> {
     if (!/^[A-Za-z0-9_.-]+$/.test(key)) continue
     const rest = line.slice(colon + 1).trim()
     if (/^[>|][+-]?$/.test(rest)) {
-      const block = parseBlock(lines, index, rest[0] as '>' | '|')
+      const block = parseBlock(lines, index, rest[0] as '>' | '|', 0)
       values[key] = block.value
       index = block.next - 1
       continue
@@ -200,6 +210,8 @@ function parseFrontMatter(raw: string): Record<string, string> {
   }
   return values
 }
+
+const SKILL_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 function truncate(text: string, max: number | undefined): string {
   if (max === undefined || !Number.isFinite(max)) return text
@@ -313,10 +325,10 @@ export async function discoverSkills(input: {
     realFiles.add(candidate.file)
     let head: FrontMatterFile | null
     try { head = await readHead(candidate.file, FRONT_MATTER_LIMIT) } catch { head = null }
-    const values = head ? parseFrontMatter(head.text) : null
+    const values = head ? parseSkillFrontMatter(head.text) : null
     const name = (values?.name ?? '').trim()
     const description = (values?.description ?? '').trim()
-    if (!head || !name || !description) {
+    if (!head || !SKILL_NAME.test(name) || !description) {
       warnings.push({ path: candidate.file, code: 'invalid_front_matter' })
       continue
     }
