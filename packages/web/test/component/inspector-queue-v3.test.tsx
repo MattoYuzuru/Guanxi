@@ -20,6 +20,18 @@ const ARTIFACT_ID = '55555555-5555-4555-8555-555555555555'
 const ARTIFACT_EXCERPT = 'ARTIFACT-EXCERPT-ONLY'
 const INLINE_TAIL = 'INLINE-TAIL-MUST-NOT-REACH-THE-DOM'
 const FULL_TAIL = 'FULL-ARTIFACT-TAIL-MUST-NOT-REACH-THE-DOM'
+const COPY = {
+  en: {
+    timeline: 'Session events in order',
+    preview: 'Preview: first 8 KB of 8 KB. The rest of the inline text is not shown here.',
+    artifact: 'First 21 B of 16 KB are stored in this event. The full input stays in the local session store; it is not included in this event or export.',
+  },
+  ru: {
+    timeline: 'События сессии по порядку',
+    preview: 'Предпросмотр: первые 8 КБ из 8 КБ. Остальная часть встроенного текста здесь не показана.',
+    artifact: 'В этом событии сохранены первые 21 Б из 16 КБ. Полный ввод остаётся в локальном хранилище сессии и не входит в это событие или экспорт.',
+  },
+} as const
 
 function queueEvent(): SessionEvent {
   const inline = `${'i'.repeat(INPUT_EXCERPT_BYTES + 40)}${INLINE_TAIL}`
@@ -111,7 +123,8 @@ describe('inspector queue v3', () => {
     expect(rows.map((row) => row.getAttribute('data-queue-item-id'))).toEqual(['queue-inline', 'queue-artifact'])
     expect(within(queue).getAllByText('Inline')).toHaveLength(1)
     expect(within(queue).getAllByText('Bounded input')).toHaveLength(1)
-    expect(within(queue).getByText(/Preview: first .* of .* bytes/)).toBeTruthy()
+    expect(within(queue).getByText(COPY.en.preview, { exact: true })).toBeTruthy()
+    expect(within(queue).getByText(COPY.en.artifact, { exact: true })).toBeTruthy()
     expect(within(queue).getByText(ARTIFACT_EXCERPT)).toBeTruthy()
     expect(document.body.textContent).not.toContain(INLINE_TAIL)
     expect(document.body.textContent).not.toContain(FULL_TAIL)
@@ -130,14 +143,15 @@ describe('inspector queue v3', () => {
     const queue = await within(timeline).findByRole('list', { name: 'Элементы очереди' })
     expect(within(queue).getAllByText('Встроено')).toHaveLength(1)
     expect(within(queue).getAllByText('Ограниченный ввод')).toHaveLength(1)
-    expect(within(queue).getByText(/Предпросмотр: первые/)).toBeTruthy()
+    expect(within(queue).getByText(COPY.ru.preview, { exact: true })).toBeTruthy()
+    expect(within(queue).getByText(COPY.ru.artifact, { exact: true })).toBeTruthy()
   })
 
-  it('bounds a legacy inline preview and keeps plural item order without rendering an artifact id', () => {
-    setActiveLocale('en')
+  it.each(['en', 'ru'] as const)('bounds a legacy inline preview and explains its omitted remainder (%s)', async (locale) => {
+    setActiveLocale(locale)
     const legacy = sessionEventSchema.parse({
       sessionId: SESSION_ID,
-      seq: 90,
+      seq: sessionTrace().length + 1,
       id: '77777777-7777-4777-8777-777777777777',
       version: 1,
       type: 'agent.queue',
@@ -165,6 +179,16 @@ describe('inspector queue v3', () => {
     const queue = queueEvent()
     if (queue.type !== 'agent.queue' || queue.version !== SESSION_EVENT_VERSION_3) throw new Error('expected v3 queue')
     expect(queueRenderItems(queue).map((row) => row.kind)).toEqual(['inline', 'artifact'])
+    mockFetch([...sessionTrace(), legacy])
+    render(<InspectorPage sessionId={SESSION_ID} />)
+    const timeline = await screen.findByRole('list', { name: COPY[locale].timeline })
+    const renderedQueue = timeline.querySelector('[data-event-type="agent.queue"]')
+    expect(renderedQueue).not.toBeNull()
+    const itemRows = renderedQueue!.querySelectorAll('[data-testid="inspector-queue-item"]')
+    expect(Array.from(itemRows, row => row.getAttribute('data-queue-item-id'))).toEqual(['legacy-one', 'legacy-two'])
+    expect(within(renderedQueue as HTMLElement).getByText(COPY[locale].preview, { exact: true })).toBeTruthy()
+    expect(renderedQueue!.textContent).not.toContain('LEGACY-TAIL')
+    expect(renderedQueue!.textContent).not.toContain(ARTIFACT_ID)
   })
 
   it('bounds ordinary brackets and genuine marker cuts without discarding legitimate text', () => {
