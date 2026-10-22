@@ -238,3 +238,12 @@ Evidence: `ms2-work-routes.test.ts` (16 tests), the work parts of `ms2-plugins.t
 
 Still later: the board UI, the `work.query` tool, sharing the run-mode relay ledger, WL-series
 A/B and WG2 tracker sync.
+
+## Residual: unauthenticated human decisions over loopback
+
+`POST /api/work/projects/:id/events` accepts `human_decision` and records it as `user:local`. Any
+process on the host that can reach the loopback listener without an `Origin` header (including a
+local agent's shell) can therefore mark an item `done` as a human override. Harness evidence
+cannot be forged over HTTP (strict schema, server-fixed `source` and `at`), but the human
+attribution is unauthenticated until a per-session UI token or U3 `can()` guards `events` and
+`revisions`. Treat `human_done` as an override, not as harness evidence.

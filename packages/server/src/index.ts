@@ -219,10 +219,17 @@ export async function start(options: StartOptions = {}) {
       },
     } })
     // MS2: three independent sidecars. Loading opens a database and starts nothing else.
+    // A damaged sidecar disables only its own feature: its service stays unregistered and its routes
+    // answer 503 `*_unavailable`; chat, models and every other route keep working.
     const sidecar = (name: string) => join(dirname(dbPath), name)
-    await kernel.node.plugin(notificationsPlugin, { databasePath: sidecar('notifications.sqlite') })
-    await kernel.node.plugin(voicePlugin, { databasePath: sidecar('voice.sqlite') })
-    await kernel.node.plugin(workPlugin, { databasePath: sidecar('work.sqlite') })
+    const optional = async (name: string, load: () => Promise<unknown>) => {
+      try { await load() } catch (error) {
+        process.stderr.write(`guanxi: ${name} sidecar unavailable (${error instanceof Error ? error.name : 'error'})\n`)
+      }
+    }
+    await optional('notifications', () => kernel.node.plugin(notificationsPlugin, { databasePath: sidecar('notifications.sqlite') }))
+    await optional('voice', () => kernel.node.plugin(voicePlugin, { databasePath: sidecar('voice.sqlite') }))
+    await optional('work', () => kernel.node.plugin(workPlugin, { databasePath: sidecar('work.sqlite') }))
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)

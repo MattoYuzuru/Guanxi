@@ -206,3 +206,17 @@ test('start() boots all three plugins, mounts their routes and persists across a
     await server.close().catch(() => undefined)
   }
 })
+
+test('a damaged sidecar disables only its own feature; the node still boots', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'guanxi-ms2-damaged-'))
+  t.after(() => rm(dataDir, { recursive: true, force: true }))
+  await writeFile(join(dataDir, 'work.sqlite'), 'this is not a sqlite database, '.repeat(200))
+  const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
+  t.after(() => server.close())
+  assert.equal(server.kernel.node.service(WORK_SERVICE), undefined, 'the damaged feature stays unregistered')
+  const work = await fetch(`${server.url}/api/work/projects/p1/mode`)
+  assert.equal(work.status, 503)
+  assert.equal((await work.json() as { code: string }).code, 'work_unavailable')
+  assert.equal((await fetch(`${server.url}/api/notifications`)).status, 200, 'other sidecars keep working')
+  assert.ok(server.kernel.node.service(NOTIFICATIONS_SERVICE))
+})

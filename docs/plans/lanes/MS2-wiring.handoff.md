@@ -124,3 +124,12 @@ this slice does not touch indexing. It is recorded as an observation, not dismis
 The UI lane builds the notification center, glossary editor and board on the U1 shell using these
 clients and contract types, then maps each error `code` to locale keys. Independently, wire a quota
 producer (K3 connection probes into `inbox.ingest`) and the first real action port.
+
+## Independent review (Opus, 2026-10-23) and integrator fixes
+
+Verdict accept. Fixed: a damaged sidecar database no longer fails the whole boot (each MS2 plugin
+loads in its own guard; its routes answer 503 `*_unavailable`; new `start()` test with a garbage
+`work.sqlite`); the in-process action de-duplication key now includes the account. Recorded
+residuals: loopback `human_decision` is unauthenticated (see `work/README.md`); glossary
+mutations have no base revision (two tabs can overwrite); `hasCompleted` lookups are not
+account-filtered; the kernel counter test does not assert the three services by name.
