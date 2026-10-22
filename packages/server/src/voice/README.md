@@ -187,10 +187,11 @@ matched/hypothesis occurrences, recall is matched/reference occurrences, and F1 
 
 ### Normalisation and alignment
 
-`normalizeForWer` applies NFC, lower-cases, maps `ё` to `е`, keeps `-` and `'` only inside a word,
-strips all other punctuation and returns Unicode letter/number/mark tokens. Whitespace is collapsed
-by tokenisation. For example `Ёлка, well-known don't!` becomes
-`['елка', 'well-known', "don't"]`.
+`normalizeForWer` applies NFC, lower-cases, maps `ё` to `е`, maps U+2010 and U+2011 to `-` and
+U+2019 and U+02BC to `'`, keeps `-` and `'` only inside a word, strips all other punctuation and
+returns Unicode letter/number/mark tokens. En and em dashes are not aliases and stay separators.
+Whitespace is collapsed by tokenisation. For example `Ёлка, well-known don't!` becomes
+`['елка', 'well-known', "don't"]`, and `PR‑а don’t` becomes `['pr-а', "don't"]`.
 
 `wordErrors` runs Levenshtein over normalised tokens and returns substitution, deletion and
 insertion counts plus a forward alignment. The traceback tie-break is deterministic: an equal-token
@@ -214,11 +215,14 @@ token of a multi-word term and accepts any non-empty all-Cyrillic suffix (combin
 so `worktree-ах` and `PR-а́` also match. This deliberately mirrors the output shape of
 `glossary.ts` without reimplementing its ending table; it is not general Russian morphology.
 
-Insertions are attributed to U-WER unless the inserted hypothesis token is covered by a glossary
-term occurrence, in which case they are charged to B-WER. Substitutions and deletions are
-attributed by the reference token. B-WER's denominator remains the number of biased reference
-words, so biased insertions can make it exceed 1; when that denominator is zero the value is
-`null`, not 0, even if biased insertions exist. U-WER uses all non-biased reference words.
+Insertions are charged to B-WER when the inserted hypothesis token is covered by a glossary term
+occurrence, or when the insertion falls between two reference tokens of one multi-word term
+occurrence. For example, with term `pull request`, `open pull request now` versus
+`open pull the request now` charges `the` to B-WER even though `the` is not a term token, because
+it splits a reference term occurrence. Every other insertion goes to U-WER. Substitutions and
+deletions are attributed by the reference token. B-WER's denominator remains the number of biased
+reference words, so biased insertions can make it exceed 1; when that denominator is zero the value
+is `null`, not 0, even if biased insertions exist. U-WER uses all non-biased reference words.
 
 Term occurrences are extracted non-overlapping and leftmost-longest per item; equal token lengths
 keep glossary input order. Counts are then aggregated over the whole corpus with multiset
@@ -226,18 +230,31 @@ intersection, so a missed occurrence in one item can be offset by an extra occur
 Terms are case-insensitive because they use `normalizeForWer`; identifier casing is not scored by
 this slice.
 
+### Evaluation-set fingerprints
+
+`scoreEval` refuses duplicate item ids with a `TypeError`. It records a SHA-256 fingerprint per
+item over the id and normalised reference tokens, sorted by id, plus one over the sorted compiled
+glossary keys. `compareEval` requires both before evaluating a gate: the same id with a changed
+reference is `item_mismatch`, and a different scoring glossary is `glossary_mismatch`. Refusal
+precedence is `empty`, `item_mismatch`, `glossary_mismatch`, `mixed_origin`, `synthetic_eval`.
+
+A V2 candidate changes the glossary used for **replacement**, not the term list used for
+**scoring**. Callers must score the baseline and the candidate with the same scoring term list; the
+glossary fingerprint enforces this because a different list changes the term metrics and their
+denominators.
+
 ### Origin and gates
 
 `scoreEval` reports `origin` as `synthetic`, `owner_recording`, `mixed` or `empty`, counts both
 origins, and keeps a sorted `itemIds` list. `compareEval` converts metric differences to percentage
 points, rounded to nine decimals so inclusive boundaries are stable, and refuses evidence unless
-both reports are non-empty owner recordings over the same item ids.
+both reports are non-empty owner recordings over the same item references and scoring glossary.
 
 - `v1Gate` is evaluated only on that evidence. Its `reason` is `owner_recordings`; `met` is true
   only when the term-F1 delta is at least 10 points and the U-WER delta is at most 1 point, both
   inclusive. A missing delta leaves `met` false.
-- Refusal reasons, in precedence order, are `empty`, `item_mismatch`, `mixed_origin` and
-  `synthetic_eval`; refused gates omit `met`.
+- Refusal reasons, in precedence order, are `empty`, `item_mismatch`, `glossary_mismatch`,
+  `mixed_origin` and `synthetic_eval`; refused gates omit `met`.
 - `v2Apply` is the ADR-0028 §5 pre-apply gate. It is allowed only on the same owner-recording
   evidence, with a term-F1 delta of at least 0 and a U-WER delta of at most 1 point, both
   inclusive. It reports `within_bounds`, `term_f1_drop`, `u_wer_rise` or `missing_metrics`.

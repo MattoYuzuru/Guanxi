@@ -4,8 +4,11 @@
  * Pure and in-memory: no storage, STT adapter, network, filesystem or module-level mutable state.
  * B-WER/U-WER follow the standard biased/unbiased split (Le et al., Interspeech 2021): reference
  * words covered by a glossary term are biased, all other reference words are unbiased, and an
- * insertion is biased only when the inserted hypothesis token belongs to a glossary term.
+ * insertion is charged to B-WER when the inserted token belongs to a glossary term or falls
+ * between two words of one reference term occurrence.
  */
+
+import { createHash } from 'node:crypto'
 
 export type EvalOrigin = 'synthetic' | 'owner_recording'
 
@@ -56,6 +59,19 @@ export interface EvalCounts {
   matchedTermOccurrences: number
 }
 
+export interface EvalItemFingerprint {
+  id: string
+  /** SHA-256 hex over the item id and its normalised reference tokens. */
+  reference: string
+}
+
+export interface EvalFingerprint {
+  /** Per-item fingerprints, sorted by item id. */
+  items: EvalItemFingerprint[]
+  /** SHA-256 hex over the sorted compiled glossary keys. */
+  glossary: string
+}
+
 export interface EvalScore {
   wer: number | null
   bWer: number | null
@@ -67,9 +83,14 @@ export interface EvalScore {
   origin: EvalOrigin | 'mixed' | 'empty'
   /** Sorted item ids, used by the gate comparison to require the same evaluation set. */
   itemIds: string[]
+  /** Item-reference and scoring-glossary fingerprints enforced by `compareEval`. */
+  fingerprint: EvalFingerprint
 }
 
 const WORD_TOKEN = /[\p{L}\p{N}\p{M}]+(?:[-'][\p{L}\p{N}\p{M}]+)*/gu
+
+const HYPHEN_ALIASES = /[\u2010\u2011]/gu
+const APOSTROPHE_ALIASES = /[\u2019\u02bc]/gu
 
 const CYRILLIC_SUFFIX = /^[\p{Script=Cyrillic}\p{M}]+$/u
 const CYRILLIC_LETTER = /\p{Script=Cyrillic}/u
@@ -78,15 +99,22 @@ const LATIN_LETTER = /\p{Script=Latin}/u
 /**
  * Normalise text for word-error scoring.
  *
- * Order: NFC, lower-case, `ё` to `е`, tokenise. Tokens are runs of Unicode letters, numbers and
- * combining marks; a hyphen or apostrophe is kept only between two such runs. All other
- * punctuation is stripped and whitespace is collapsed by the token scan.
+ * Order: NFC, lower-case, `ё` to `е`, Unicode hyphen aliases (U+2010, U+2011) to `-` and
+ * apostrophe aliases (U+2019, U+02BC) to `'`, tokenise. Tokens are runs of Unicode letters,
+ * numbers and combining marks; a hyphen or apostrophe is kept only between two such runs. En and
+ * em dashes are not aliases and remain separators. All other punctuation is stripped and
+ * whitespace is collapsed by the token scan.
  */
 export function normalizeForWer(text: string): string[] {
   if (typeof text !== 'string') {
     throw new TypeError('normalizeForWer requires a string')
   }
-  const normalized = text.normalize('NFC').toLowerCase().replace(/ё/gu, 'е')
+  const normalized = text
+    .normalize('NFC')
+    .toLowerCase()
+    .replace(/ё/gu, 'е')
+    .replace(HYPHEN_ALIASES, '-')
+    .replace(APOSTROPHE_ALIASES, "'")
   return normalized.match(WORD_TOKEN) ?? []
 }
 
@@ -264,17 +292,48 @@ function extractTermOccurrences(tokens: string[], terms: CompiledTerm[]): string
   return occurrences
 }
 
+/**
+ * Mark the token boundaries that fall strictly inside any multi-word term occurrence. An
+ * insertion at boundary N sits between reference tokens N - 1 and N; marking the interior
+ * boundaries lets a split multi-word term still charge the inserted token to B-WER.
+ */
+function collectInternalTermBoundaries(
+  tokens: string[],
+  terms: CompiledTerm[],
+): Uint8Array {
+  const marks = new Uint8Array(tokens.length + 1)
+  for (const term of terms) {
+    const length = term.tokens.length
+    if (length < 2) continue
+    for (let index = 0; index + length <= tokens.length; index += 1) {
+      if (matchesTermAt(tokens, index, term)) {
+        marks.fill(1, index + 1, index + length)
+      }
+    }
+  }
+  return marks
+}
+
 function ratio(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator
+}
+
+function sha256(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
 /**
  * Score a corpus of reference/hypothesis pairs.
  *
  * Corpus metrics aggregate token counts, not per-item averages. B-WER and U-WER use reference
- * token counts as denominators; insertions in a glossary term are charged to B-WER, every other
- * insertion to U-WER. Term precision and recall use multiset matching over extracted term
- * occurrences and share the normalised token stream, so matching is case-insensitive.
+ * token counts as denominators; insertions in a glossary term or inside a multi-word reference
+ * term occurrence are charged to B-WER, every other insertion to U-WER. Term precision and recall
+ * use multiset matching over extracted term occurrences and share the normalised token stream, so
+ * matching is case-insensitive.
+ *
+ * Each item contributes a fingerprint over its id and normalised reference tokens, and the
+ * compiled glossary contributes one over its sorted keys. `compareEval` uses them to reject
+ * reports that scored a different evaluation set. Duplicate item ids in one set are a TypeError.
  */
 export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore {
   if (!Array.isArray(items)) {
@@ -285,7 +344,10 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
   }
 
   const terms = compileGlossaryTerms(glossaryTerms)
+  const glossaryFingerprint = sha256(terms.map((term) => term.key).sort())
   const itemIds: string[] = []
+  const seenItemIds = new Set<string>()
+  const referenceFingerprints = new Map<string, string>()
   const refTermCounts = new Map<string, number>()
   const hypTermCounts = new Map<string, number>()
 
@@ -312,12 +374,17 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
     if (item.origin !== 'synthetic' && item.origin !== 'owner_recording') {
       throw new TypeError(`Eval item "${String(item.id)}" has an invalid origin`)
     }
+    if (seenItemIds.has(item.id)) {
+      throw new TypeError(`scoreEval received duplicate item id "${item.id}"`)
+    }
+    seenItemIds.add(item.id)
     itemIds.push(item.id)
     if (item.origin === 'synthetic') syntheticItems += 1
     else ownerRecordingItems += 1
 
     const reference = normalizeForWer(item.reference)
     const hypothesis = normalizeForWer(item.hypothesis)
+    referenceFingerprints.set(item.id, sha256([item.id, reference]))
     refWords += reference.length
     hypWords += hypothesis.length
 
@@ -328,6 +395,7 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
 
     const refBiased = collectBiasedTokens(reference, terms)
     const hypBiased = collectBiasedTokens(hypothesis, terms)
+    const refInternalBoundaries = collectInternalTermBoundaries(reference, terms)
     let biasedCount = 0
     for (const mark of refBiased) {
       if (mark === 1) biasedCount += 1
@@ -356,8 +424,11 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
         refIndex += 1
         continue
       }
-      if (hypBiased[hypIndex] === 1) biasedInsertions += 1
-      else unbiasedInsertions += 1
+      if (hypBiased[hypIndex] === 1 || refInternalBoundaries[refIndex] === 1) {
+        biasedInsertions += 1
+      } else {
+        unbiasedInsertions += 1
+      }
       hypIndex += 1
     }
 
@@ -426,6 +497,10 @@ export function scoreEval(items: EvalItem[], glossaryTerms: string[]): EvalScore
     },
     origin,
     itemIds,
+    fingerprint: {
+      items: itemIds.map((id) => ({ id, reference: referenceFingerprints.get(id)! })),
+      glossary: glossaryFingerprint,
+    },
   }
 }
 
@@ -454,11 +529,31 @@ function sameItemIds(baseline: readonly string[], candidate: readonly string[]):
   return true
 }
 
+function sameItemFingerprints(baseline: EvalScore, candidate: EvalScore): boolean {
+  const baselineItems = baseline.fingerprint?.items
+  const candidateItems = candidate.fingerprint?.items
+  if (!Array.isArray(baselineItems) || !Array.isArray(candidateItems)) return false
+  if (baselineItems.length !== candidateItems.length) return false
+  for (let index = 0; index < baselineItems.length; index += 1) {
+    const baselineItem = baselineItems[index]!
+    const candidateItem = candidateItems[index]!
+    if (baselineItem.id !== candidateItem.id) return false
+    if (baselineItem.reference !== candidateItem.reference) return false
+  }
+  return true
+}
+
+function sameGlossaryFingerprint(baseline: EvalScore, candidate: EvalScore): boolean {
+  const baselineGlossary = baseline.fingerprint?.glossary
+  const candidateGlossary = candidate.fingerprint?.glossary
+  return typeof baselineGlossary === 'string' && baselineGlossary === candidateGlossary
+}
+
 /**
  * Gate evidence is evaluated only on a non-empty, matching set of owner recordings. Precedence:
- * empty, item mismatch, mixed origin, synthetic origin. On evaluation, the reason is
- * `owner_recordings`; refusal reasons are exactly `empty`, `item_mismatch`, `mixed_origin` and
- * `synthetic_eval`.
+ * empty, item mismatch, glossary mismatch, mixed origin, synthetic origin. On evaluation, the
+ * reason is `owner_recordings`; refusal reasons are exactly `empty`, `item_mismatch`,
+ * `glossary_mismatch`, `mixed_origin` and `synthetic_eval`.
  */
 function evidenceReason(baseline: EvalScore, candidate: EvalScore): string | null {
   const baselineIds = baseline.itemIds
@@ -473,7 +568,13 @@ function evidenceReason(baseline: EvalScore, candidate: EvalScore): string | nul
   ) {
     return 'empty'
   }
-  if (!sameItemIds(baselineIds, candidateIds)) return 'item_mismatch'
+  if (
+    !sameItemIds(baselineIds, candidateIds) ||
+    !sameItemFingerprints(baseline, candidate)
+  ) {
+    return 'item_mismatch'
+  }
+  if (!sameGlossaryFingerprint(baseline, candidate)) return 'glossary_mismatch'
   if (baseline.origin === 'mixed' || candidate.origin === 'mixed') return 'mixed_origin'
   if (baseline.origin !== 'owner_recording' || candidate.origin !== 'owner_recording') {
     return 'synthetic_eval'
@@ -486,8 +587,8 @@ function evidenceReason(baseline: EvalScore, candidate: EvalScore): string | nul
  *
  * Deltas are percentage points. The V1 gate is met at term-F1 delta >= 10 and U-WER delta <= 1,
  * both inclusive. The V2 pre-apply gate is weaker: term F1 may stay flat but not drop, and U-WER
- * may rise by at most 1 point. Both gates require owner recordings with identical item ids;
- * synthetic evidence can never authorise auto-apply.
+ * may rise by at most 1 point. Both gates require owner recordings with identical item references
+ * and the same scoring glossary; synthetic evidence can never authorise auto-apply.
  */
 export function compareEval(baseline: EvalScore, candidate: EvalScore): EvalComparison {
   const termF1DeltaPoints = pointsDelta(candidate.termF1, baseline.termF1)

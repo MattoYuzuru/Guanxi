@@ -67,6 +67,17 @@ describe('normalizeForWer', () => {
     assert.deepEqual(normalizeForWer('PR-а GPT-4'), ['pr-а', 'gpt-4'])
   })
 
+  it('maps Unicode hyphens and apostrophes to their ASCII forms', () => {
+    assert.deepEqual(normalizeForWer('PR\u2011а'), ['pr-а'])
+    assert.deepEqual(normalizeForWer('PR\u2010ом'), ['pr-ом'])
+    assert.deepEqual(normalizeForWer('don\u2019t'), ["don't"])
+    assert.deepEqual(normalizeForWer('don\u02bct'), ["don't"])
+  })
+
+  it('keeps en and em dashes as token separators', () => {
+    assert.deepEqual(normalizeForWer('PR\u2013а PR\u2014а'), ['pr', 'а', 'pr', 'а'])
+  })
+
   it('returns no tokens for empty or punctuation-only text', () => {
     assert.deepEqual(normalizeForWer(''), [])
     assert.deepEqual(normalizeForWer('... --- !!!'), [])
@@ -416,6 +427,17 @@ describe('scoreEval B-WER and U-WER', () => {
     assert.equal(score.uWer, 0)
   })
 
+  it('charges an insertion inside a multi-word reference term to B-WER', () => {
+    const score = scoreEval(
+      [item('one', 'open pull request now', 'open pull the request now')],
+      ['pull request'],
+    )
+    assert.equal(score.counts.biasedInsertions, 1)
+    assert.equal(score.counts.unbiasedInsertions, 0)
+    assert.ok(score.bWer !== null && score.bWer > 0)
+    assert.equal(score.uWer, 0)
+  })
+
   it('does not transliterate a Cyrillic spoken form into a Latin term', () => {
     const score = scoreEval([item('one', 'хоно и Hono', 'хоно и Hono')], ['Hono'])
     assert.equal(score.counts.biasedRefWords, 1)
@@ -434,6 +456,14 @@ describe('scoreEval B-WER and U-WER', () => {
     const score = scoreEval([item('one', 'пиар-а это', 'пиар-а это')], ['пиар'])
     assert.equal(score.counts.biasedRefWords, 0)
     assert.equal(score.counts.termRefOccurrences, 0)
+    assert.equal(score.termF1, null)
+  })
+
+  it('does not treat a Latin suffix as a D-157 inflection', () => {
+    const score = scoreEval([item('x', 'pull-request here', 'pull-request here')], ['pull'])
+    assert.equal(score.counts.biasedRefWords, 0)
+    assert.equal(score.counts.termRefOccurrences, 0)
+    assert.equal(score.counts.termHypOccurrences, 0)
     assert.equal(score.termF1, null)
   })
 
@@ -574,6 +604,70 @@ describe('scoreEval origin labelling', () => {
   it('sorts item ids so report comparisons do not depend on item order', () => {
     const score = scoreEval([item('b', 'a', 'a'), item('a', 'b', 'b')], [])
     assert.deepEqual(score.itemIds, ['a', 'b'])
+  })
+})
+
+describe('evaluation-set fingerprints', () => {
+  it('refuses duplicate item ids in one evaluation set', () => {
+    assert.throws(
+      () => scoreEval([item('x', 'a', 'a'), item('x', 'b', 'b')], []),
+      /duplicate item id/i,
+    )
+  })
+
+  it('records per-item reference and glossary fingerprints', () => {
+    const score = scoreEval(
+      [
+        item('b', 'Hono is fast', 'hono is fast'),
+        item('a', 'open pull request', 'open pull request'),
+      ],
+      ['Hono', 'Open Pull', 'hono'],
+    )
+    assert.deepEqual(
+      score.fingerprint.items.map((entry) => entry.id),
+      ['a', 'b'],
+    )
+    for (const entry of score.fingerprint.items) {
+      assert.match(entry.reference, /^[0-9a-f]{64}$/)
+    }
+    assert.match(score.fingerprint.glossary, /^[0-9a-f]{64}$/)
+
+    const repunctuated = scoreEval(
+      [
+        item('a', 'Open, pull request!', 'open pull request'),
+        item('b', 'HONO is fast', 'hono is fast'),
+      ],
+      ['hono', 'open pull'],
+    )
+    assert.deepEqual(repunctuated.fingerprint, score.fingerprint)
+  })
+
+  it('refuses reports whose item has the same id but a different reference', () => {
+    const baseline = scoreEval(
+      [item('x', 'Hono is fast', 'Hono is fast', 'owner_recording')],
+      ['Hono'],
+    )
+    const candidate = scoreEval(
+      [item('x', 'nothing here', 'nothing here', 'owner_recording')],
+      ['Hono'],
+    )
+    const comparison = compareEval(baseline, candidate)
+    assert.deepEqual(comparison.v1Gate, { evaluated: false, reason: 'item_mismatch' })
+    assert.deepEqual(comparison.v2Apply, { allowed: false, reason: 'item_mismatch' })
+  })
+
+  it('refuses reports scored against different glossary keys', () => {
+    const baseline = scoreEval(
+      [item('x', 'Hono and Codex', 'Hono and Codex', 'owner_recording')],
+      ['Hono', 'Codex'],
+    )
+    const candidate = scoreEval(
+      [item('x', 'Hono and Codex', 'Hono and Codex', 'owner_recording')],
+      ['Hono'],
+    )
+    const comparison = compareEval(baseline, candidate)
+    assert.deepEqual(comparison.v1Gate, { evaluated: false, reason: 'glossary_mismatch' })
+    assert.deepEqual(comparison.v2Apply, { allowed: false, reason: 'glossary_mismatch' })
   })
 })
 
