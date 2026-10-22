@@ -56,7 +56,8 @@ export const inspectorApi = {
       sessionSearchResponse,
       signal,
     ),
-  exportUrl: (sessionId: string) => SESSION_ROUTES.export(sessionId),
+  exportUrl: (sessionId: string) =>
+    `${SESSION_ROUTES.export(sessionId)}?${new URLSearchParams({ exportVersion: '2' })}`,
 
   /** Every persisted event in order, page by page. */
   async allEvents(sessionId: string, signal?: AbortSignal): Promise<SessionEvent[]> {
@@ -64,7 +65,7 @@ export const inspectorApi = {
     let after = 0
     while (true) {
       const page = await getJson(
-        `${SESSION_ROUTES.events(sessionId)}?after=${after}&limit=500`,
+        `${SESSION_ROUTES.events(sessionId)}?after=${after}&limit=500&eventVersion=2`,
         sessionEventsResponse,
         signal,
       )
@@ -82,7 +83,7 @@ export const inspectorApi = {
     handlers: { onOpen?: () => void; onReconnect?: () => void } = {},
   ): AsyncIterable<SessionEvent> {
     return sseStream({
-      url: `${SESSION_ROUTES.stream(sessionId)}?after=${afterSeq}`,
+      url: `${SESSION_ROUTES.stream(sessionId)}?after=${afterSeq}&eventVersion=2`,
       method: 'GET',
       schema: sessionEventSchema,
       signal,
