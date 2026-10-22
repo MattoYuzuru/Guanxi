@@ -8,8 +8,9 @@ Independent review is **UNRUN**. Date: 2026-10-22.
 - Branch: `codex/k4-queue-v3-foundation`
 - Base: `f8c65df4` / plan commit `4cebea71`
 - Q0 implementation commits: `1c06f0d6`, `85ddb3d0`, `9a399c66`, `8ab362e5`
-- Author fix commit: `3f6b7129` (readAll refuses an unsupported boundary instead of silently
-  stopping at it)
+- Author fix commits: `3f6b7129` (readAll refuses an unsupported boundary instead of silently
+  stopping at it), `f9fc6e06` (ledger installer also guards the global event/artifact table
+  shapes), `cba7faf0` (portable inspector queue fixture byte counts)
 - Docs/handoff commit: this commit (HEAD at handoff)
 - Scope authority: `docs/plans/lanes/K4-queue-v3.plan.md`, especially "Root Q0 authorization
   and exact ownership". Q1/Q2 are not authorized in this round.
