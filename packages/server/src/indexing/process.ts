@@ -38,7 +38,11 @@ export function backgroundPriority(command: string, args: readonly string[], pla
 
 /** The scanner runs only trusted captured code; this OS boundary also protects
  * against hostile ancestor swaps that pathname checks alone cannot close. */
-export async function indexProcess(entry: string, root: string, dataDir: string): Promise<ChildProcess> {
+/** `background` (default) is the product behaviour. `inherit` exists only for tests of service
+ * semantics: macOS background QoS also throttles I/O, so under a busy parallel suite a background
+ * worker can starve indefinitely. The wrapper itself is covered by `backgroundPriority` tests. */
+export type IndexWorkerPriority = 'background' | 'inherit'
+export async function indexProcess(entry: string, root: string, dataDir: string, priority: IndexWorkerPriority = 'background'): Promise<ChildProcess> {
   const databaseDir = join(dataDir, 'knowledge-index')
   await mkdir(databaseDir, { recursive: true, mode: 0o700 })
   const executable = await realpath(process.execPath)
@@ -65,7 +69,7 @@ export async function indexProcess(entry: string, root: string, dataDir: string)
     const spec = linuxSandboxSpawn(existing, root, rootHandle.fd, databaseDir, cwd, executable, entry)
     command = spec.command; args = spec.args; stdio = spec.stdio
   } else throw new Error('index_sandbox_unavailable')
-  ;({ command, args } = backgroundPriority(command, args))
+  if (priority === 'background') ({ command, args } = backgroundPriority(command, args))
   let child: ChildProcess
   try {
     child = spawn(command, args, { detached: true, cwd,

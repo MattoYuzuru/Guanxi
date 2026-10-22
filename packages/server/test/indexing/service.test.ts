@@ -14,11 +14,12 @@ import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { ProjectIndex, type IndexEvent } from '../../src/indexing/service.ts'
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 
+// Service-semantics tests run the worker at inherited priority (`workerPriority: 'inherit'`): macOS
+// background QoS also throttles I/O and starved the worker under the busy parallel suite. The
+// background-priority wrapper is covered by `process.test.ts`.
+
 const green = async () => ({ observedAt: new Date().toISOString(), source: 'fixture', confidence: 'observed' as const, memoryAvailableFraction: 0.8, cpuBusyFraction: 0.1, thermal: 'nominal' as const, foreground: 'active' as const, allowed: true })
-// The index worker runs at background QoS (`taskpolicy -b` on macOS, `nice 19` on Linux), which the
-// OS throttles ~8x whenever foreground work exists, e.g. the rest of the parallel suite. This is
-// patience for a real build under that scheduling, not a latency assertion.
-async function waitFor(predicate: () => boolean, timeout = 60_000) {
+async function waitFor(predicate: () => boolean, timeout = 20_000) {
   const deadline = Date.now() + timeout
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error('fixture_timeout')
@@ -49,7 +50,7 @@ async function fixture(files = 200) {
 test('two unchanged ticks build and publish once; a change rebuilds; a deleted root is untracked', async () => {
   const f = await fixture()
   const events: IndexEvent[] = []
-  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor, settings: { pollMs: 50 }, headroom: green, onIndexEvent: event => events.push(event) })
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor, settings: { pollMs: 50 }, headroom: green, onIndexEvent: event => events.push(event) })
   const count = (type: IndexEvent['type']) => events.filter(event => event.type === type).length
   try {
     await service.track(f.root)
@@ -85,7 +86,7 @@ test('two unchanged ticks build and publish once; a change rebuilds; a deleted r
 test('a newly registered value invalidates an unchanged fingerprint and purges stored rows', async () => {
   const f = await fixture(2)
   const events: IndexEvent[] = []
-  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor, settings: { pollMs: 50 }, headroom: green, onIndexEvent: event => events.push(event) })
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor, settings: { pollMs: 50 }, headroom: green, onIndexEvent: event => events.push(event) })
   try {
     const value = `service-${randomUUID()}`
     await writeFile(join(f.root, 'secret.ts'), value)
@@ -107,7 +108,7 @@ test('a newly registered value invalidates an unchanged fingerprint and purges s
 
 test('overlapping builds share one writer and release the idle lease', async () => {
   const f = await fixture(1), events: IndexEvent[] = []
-  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
     settings: { pollMs: 60_000 }, headroom: green, onIndexEvent: event => events.push(event) })
   try {
     await Promise.all([service.build(f.root), service.build(f.root)])
@@ -122,7 +123,7 @@ test('overlapping builds share one writer and release the idle lease', async () 
 
 test('reopening an unchanged root with a lower FTS threshold rebuilds its postings', async () => {
   const f = await fixture(1), events: IndexEvent[] = []
-  const first = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+  const first = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
     settings: { pollMs: 60_000, ftsMinFiles: 2 }, headroom: green })
   let second: ProjectIndex | undefined
   try {
@@ -131,7 +132,7 @@ test('reopening an unchanged root with a lower FTS threshold rebuilds its postin
     const before = new DatabaseSync(first.database, { readOnly: true })
     assert.equal(before.prepare('SELECT count(*) n FROM fulltext').get()!.n, 0)
     before.close()
-    second = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+    second = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
       settings: { pollMs: 60_000, ftsMinFiles: 1 }, headroom: green, onIndexEvent: event => events.push(event) })
     await second.build(f.root)
     assert.equal(events.filter(event => event.type === 'publish').length, 1)
@@ -147,7 +148,7 @@ test('untracking a queued root prevents an older tick from building or publishin
   await mkdir(other); await writeFile(join(other, 'b.ts'), 'export const other = 1')
   f.scrubber.expect('fixture')
   let removed = false
-  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
     settings: { pollMs: 50 }, onIndexEvent: event => events.push(event), headroom: async () => {
       if (!removed) removed = await service.untrack(other)
       return green()
@@ -171,7 +172,7 @@ test('untracking cancels an idle build already queued behind an explicit build',
   await mkdir(other); await writeFile(join(other, 'b.ts'), 'export const other = 1')
   let resume!: () => void, samples = 0
   const headroom = new Promise<void>(resolve => { resume = resolve })
-  const service = new ProjectIndex({ dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, scrubber: f.scrubber, governor: f.governor,
     settings: { pollMs: 60_000 }, onIndexEvent: event => events.push(event), headroom: async () => {
       if (++samples === 1) await headroom
       return green()
@@ -195,7 +196,7 @@ test('a root removed during the sandboxed fingerprint cannot publish a partial t
   const f = await fixture(1), events: IndexEvent[] = []
   let moved = false, admissions = 0, checks = 0
   const facade = f.scrubber.facade()
-  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 },
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 },
     onIndexEvent: event => events.push(event), headroom: async () => { admissions++; return green() },
     scrubber: { ...facade, snapshot: () => {
       // The second registration snapshot answers the fingerprint worker's
@@ -234,7 +235,7 @@ test('fingerprint policy reads happen only in the sandbox, never in the server p
     return originalReadFile(...args)
   })
   syncBuiltinESMExports()
-  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, scrubber: f.scrubber,
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, governor: f.governor, scrubber: f.scrubber,
     settings: { pollMs: 60_000 }, headroom: green, onIndexEvent: event => events.push(event) })
   try {
     // Positive instrumentation control: the formerly parent-side helper really
@@ -263,7 +264,7 @@ test('a query cannot replace its immutable root grant by recanonicalizing an out
   const outside = join(f.dir, 'outside')
   await mkdir(outside); await writeFile(join(outside, 'private.ts'), 'outside fixture text')
   await rename(f.root, join(f.dir, 'original')); await symlink(outside, f.root)
-  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, scrubber: f.scrubber,
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, governor: f.governor, scrubber: f.scrubber,
     settings: { pollMs: 60_000 }, headroom: green })
   try {
     await assert.rejects(service.search(f.root, 'outside'), /index_tree_changed/)
@@ -294,7 +295,7 @@ for (const cancel of [false, true]) test(`result validation ${cancel ? 'cancels'
   })
   syncBuiltinESMExports()
   const scrubber = f.scrubber.facade()
-  const service = new ProjectIndex({ dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 }, headroom: green,
+  const service = new ProjectIndex({ workerPriority: 'inherit',  dataDir: f.data, governor: f.governor, settings: { pollMs: 60_000 }, headroom: green,
     scrubber: { ...scrubber, snapshot: () => {
       const active = [...Reflect.get(service, 'workers') as Set<import('node:child_process').ChildProcess>][0]
       if (active && !worker) {

@@ -81,8 +81,7 @@ test('Linux sandbox worker runs at nice 19 and idle IO priority', { skip: proces
   } finally { await stopIndexProcess(child); await rm(directory, { recursive: true, force: true }) }
 })
 
-// Background-QoS worker: patience for real scheduling under the parallel suite, not a latency claim.
-test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxed control reads the bytes', { timeout: 60_000 }, async () => {
+test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxed control reads the bytes', { timeout: 20_000 }, async () => {
   const { readFile, rename, symlink } = await import('node:fs/promises')
   const { spawn } = await import('node:child_process')
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'guanxi-x1-read-race-')))
@@ -109,7 +108,7 @@ test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxe
     }catch(e){process.send({kind:'failure',code:e.code})}finally{process.disconnect()}})`)
   type Result = { kind: string; inside: string; content: string | null; bytes: number; code: string | null }
   const run = async (sandbox: boolean): Promise<Result> => {
-    const child = sandbox ? await indexProcess(entry, root, data) : spawn(process.execPath, [entry], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+    const child = sandbox ? await indexProcess(entry, root, data, 'inherit') : spawn(process.execPath, [entry], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
     try {
       return await new Promise<Result>((resolve, reject) => {
         child.on('message', message => {
