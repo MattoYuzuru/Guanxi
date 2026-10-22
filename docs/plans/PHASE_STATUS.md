@@ -6,7 +6,7 @@ merged; K4, K5 and R2 have merged bounded implementations with named unfinished 
 K4 follow-up 2 is merged after full integrator gates. DS2 source and positive HTTPS evidence
 are merged locally; all eight post-merge gates pass at clean `5e9bbfe`. X1 remains a reviewed
 candidate; U1 replication and R3 ETA/signals have bounded candidates. B1 admission/gateway,
-staging and private stream source is merged locally as `7366df8`, with post-merge gates pending. Their full stage gates remain open.
+staging and private stream source is merged locally as `7366df8`; all eight post-merge gates pass at clean `6da2058`. Their full stage gates remain open.
 See the [continuation record](evidence/coordination-2026-10-22.md) for current ownership and
 pinned candidates; the [previous audit](evidence/coordination-2026-10-21.md) retains the initial
 progress estimates. A merge is distinct from a whole stage exit.
@@ -234,20 +234,20 @@ decision was made.
 | --- | --- | --- |
 | K1 Kernel | implemented, merged | see the K1 section above |
 | DS1 Design foundations | implemented, reviewed, all three parts merged | see the DS1 section above and the integrated-main audit below |
-| DS2 Approval signing helper | reviewed implementation merged locally (`03c655b`); candidate and post-merge full gates pass at `5e9bbfe` | [evidence/DS2](evidence/DS2.md); production user-presence/installed-helper path remains unverified. Hardware support discovery does not prove the full signing gate. |
+| DS2 Approval signing helper | reviewed implementation merged locally (`03c655b`); candidate and post-merge full gates pass at `5e9bbfe` | [evidence/DS2](evidence/DS2.md); production helper installed and build/code-sign checks pass locally; owner-present key creation/signing remains unverified. Installation does not prove the full signing gate. |
 | NC1 Notification center | not started | after K3, R1 and U1 |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | partially implemented; retention/R1 follow-up merged (`8006cd8`); input artifacts, expanded UI evidence and platform scope remain; positive HTTPS case merged locally | see the K4 section above |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | partial implementation merged (`80f7245`); review fixes included | [evidence/K5](evidence/K5.md); real release captures, effective implicit bare detection, automatic Claude quota producer and distributed admission remain open. |
-| B1 Bench base | bounded foundation/admission/gateway/staging/private stream independently reviewed and merged locally (`7366df8`); post-merge checks pending | [evidence/B1](evidence/B1.md); candidate `70e4be2` passes full affected gates, including 132 selected = 55 new / 77 inherited envelope. Process/peer/K2 binding remains. Real corpus/executor/billing evidence and five-seed measurements remain open. |
+| B1 Bench base | bounded foundation/admission/gateway/staging/private stream independently reviewed and merged locally (`7366df8`); all eight post-merge checks pass at `6da2058` | [evidence/B1](evidence/B1.md); candidate `70e4be2` passes full affected gates, including 132 selected = 55 new / 77 inherited envelope. Process/peer/K2 binding remains. Real corpus/executor/billing evidence and five-seed measurements remain open. |
 | X1 Repo map and FTS | repair reviewed in `codex/x1-parent-read-boundary` (`647c5d0`); current main incorporated, combined indexing/boot gate passed | [lanes/X1](lanes/X1.md); parent policy reads now use the sandbox worker. Full integration gates and repaired-source Linux checks remain; candidate is not merged. |
 | R2 Relay executor | internal single-node implementation merged (`726efc3`); review fixes included | [evidence/R2](evidence/R2.md); trusted live runtime meter/admission and independent semantic probe evidence remain open. No public start flow or live long-run claim. |
 | U1 Shell, layout, modes | layout plus signed-replication candidate independently reviewed (`codex/u1-completion`, `e5f8e0a`); full candidate gates pass, integration pending; shell/CSS migration active | [lanes/U1](lanes/U1.md); current main has no U1 replication. Candidate uses real signed F1 operations; actual remote-node operation is unmeasured. |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
-| R3 Judge + ETA | ETA foundation independently reviewed (`codex/ms1-r3`, `bf6a222`); integration pending | 13 focused tests pass; full judge/delegation, real calibration/night-run exit gates remain open. |
-| F2 Remote attempts | offer/reservation foundation independently reviewed (`codex/ms1-f2`, `5c66e27`); integration pending after U1 | 17 new / 9 independent governor envelope = 26 pass. Renewable dispatch grants and actual execution/results remain unfinished. |
+| R3 Judge + ETA | ETA and observational signal wiring independently reviewed (`codex/r3-watchdog`, `cd00a82`); integration pending | 31 new / 124 inherited relay/R1 tests pass; stop/wall pending-collector fix separately verified. Current-main synchronization `4657f47` is under candidate gates; full judge/delegation, real calibration/night-run exit gates remain open. |
+| F2 Remote attempts | offer/reservation foundation independently reviewed (`codex/ms1-f2`, `5c66e27`); integration pending after U1 | 17 new / 9 independent governor envelope = 26 pass. Renewable grant/execution/results candidate `ffa9d1a` is separately reviewed (30 new / 151 inherited), not integrated. Cost/toolful transport/physical host evidence remain open. |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
 
 ## Integration coordination audit (2026-10-21)
