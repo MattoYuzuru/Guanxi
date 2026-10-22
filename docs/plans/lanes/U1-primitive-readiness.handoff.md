@@ -12,6 +12,13 @@ This is primitive readiness evidence, not independent author approval, component
 whole U1, MS1 or product integration. Root reserved `encoding_review2` for separate review.
 All review records remain unchanged (`draft` for IconButton/Menu/Tooltip, approval null).
 
+| Catalog component | Lifecycle change | Catalog route |
+| --- | --- | --- |
+| Menu | draft unchanged | `/settings/developer/components?component=menu` |
+| IconButton | draft unchanged; source unchanged | `/settings/developer/components?component=icon-button` |
+| Tooltip | draft unchanged | `/settings/developer/components?component=tooltip` |
+| Dialog composition | review unchanged; inherited warning | `/settings/developer/components?component=dialog` |
+
 ## Implemented changes
 
 1. Added one actual-browser fixture and 23 maintainable cases using public `@guanxi/ui`
@@ -96,6 +103,7 @@ clean source. Unless named red below, commands exited 0 with no skips/failures/c
 | Final explicit browser spec/fixture strict TypeScript | `437f5042` | passed | `check-c2343g56` |
 | Scoped TSX/spec/Menu CSS ESLint | `437f5042` | passed | `check-45gqjtga` |
 | Final affected forced-colors browser case | `437f5042` | 1/1, repeat of one new case | `check-pintnsv1` |
+| Scoped plan/handoff/Menu/Tooltip Markdown | `c511ff2e` | passed | `check-lgchpkny` |
 
 The final forced-colors-only CSS/guard delta did not trigger another blanket 23-case run.
 The earlier complete25 and UI23 observations retain their actual pins; Tooltip production
