@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { brief, leadFixture, HOUR } from './helpers.ts'
 import { RunError } from '../../src/runs/types.ts'
+import { LeadStore } from '../../src/leads/store.ts'
+import { LeadToolServer } from '../../src/leads/tool-server.ts'
 
 type Fixture = Awaited<ReturnType<typeof leadFixture>>
 const resumedPrompts = async (f: Fixture, adapter: 'claude-code' | 'copilot' = 'claude-code') =>
@@ -408,4 +410,89 @@ test('a failed acknowledgement is retried: the wake is not skipped and the lead 
   await f.lead().idle()
   assert.equal(run.get(runId).state, 'completed')
   assert.equal(run.wakes(runId).filter(w => w.acknowledged_at !== null).length, 1)
+})
+
+test('a delegation R1 already committed is finished by recovery, not abandoned, when the bookkeeping after it fails', async t => {
+  const f = await leadFixture(t)
+  t.mock.method(LeadStore.prototype, 'setHandoff', () => { throw Object.assign(new Error('storage'), { code: 'storage_error' }) }, { times: 1 })
+  const { runId, first } = f.start()
+  await first
+  const run = f.runs()
+  assert.equal(run.promises(runId).length, 1, 'the delegation committed')
+  assert.equal(f.db.prepare('SELECT state FROM lead_delegations').get()!.state, 'intent', 'not marked, but not abandoned either')
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(f.db.prepare('SELECT state FROM lead_delegations').get()!.state, 'child_started')
+  assert.equal(f.children.launches.length, 1, 'the child started exactly once')
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(run.get(runId).state, 'completed')
+})
+
+test('the cost baseline survives a turn that reported no cost and a different currency starts afresh', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [brief(), brief({ objective: 'two' }), brief({ objective: 'three' })], redelegate: true,
+    usageByTurn: [{ inputTokens: 100, outputTokens: 10, amount: 5 }, { inputTokens: 200, outputTokens: 20 },
+      { inputTokens: 300, outputTokens: 30, amount: 8 }, { inputTokens: 400, outputTokens: 40, amount: 9 }] } })
+  const { runId, first } = f.start()
+  await first
+  for (let i = 0; i < 3; i++) { f.children.complete(i); f.lead().pump(); await f.lead().idle() }
+  const run = f.runs()
+  assert.equal(run.get(runId).state, 'completed')
+  assert.deepEqual(run.costEntries(runId).map(e => [e.inputTokens, e.currency, e.costMicrounits]), [[100, 'USD', 5_000_000], [100, 'unknown', null], [100, 'USD', 3_000_000], [100, 'USD', 1_000_000]])
+  assert.deepEqual(run.costs(runId).sort((a, b) => (a.currency < b.currency ? -1 : 1)), [
+    { currency: 'USD', inputTokens: 300, outputTokens: 30, costMicrounits: 9_000_000 }, { currency: 'unknown', inputTokens: 100, outputTokens: 10, costMicrounits: null }])
+})
+
+test('a refused acknowledgement at the delegate call is answered to the lead, which keeps working', async t => {
+  const f = await leadFixture(t, { lead: { silentTool: true, usagePerTurn: { inputTokens: 10, outputTokens: 5 } } })
+  const run = f.runs()
+  t.mock.method(run, 'modelStarted', () => { throw new RunError('writer_busy') }, { times: 1 })
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'completed')
+  const answer = (await f.events()).find(e => e.event === 'tool_answer')!
+  assert.deepEqual([answer.isError, answer.text], [true, 'writer_busy'])
+  assert.equal(run.promises(runId).length, 0)
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM lead_delegations').get()!.n, 0)
+})
+
+test('a resumed turn that emits no update at all is acknowledged when it ends, so the wake is not looped', async t => {
+  const f = await leadFixture(t, { lead: { noUpdates: true, usagePerTurn: { inputTokens: 10, outputTokens: 5 } } })
+  const { runId, first } = f.start()
+  await first
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  const run = f.runs()
+  assert.equal(run.get(runId).state, 'completed')
+  assert.deepEqual(run.wakes(runId).map(w => [w.acknowledged_at !== null, w.deliveries]), [[true, 1]])
+  assert.equal((await resumedPrompts(f)).length, 1)
+})
+
+test('when abandoning fails the run still asks a person; an explicit resume then abandons and a failed start abandons nothing', async t => {
+  const f = await leadFixture(t)
+  const run = f.runs()
+  t.mock.method(run, 'delegate', () => { throw Object.assign(new Error('storage'), { code: 'storage_error' }) }, { times: 1 })
+  t.mock.method(LeadStore.prototype, 'delegations', () => { throw Object.assign(new Error('storage'), { code: 'storage_error' }) }, { times: 1 })
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'failed')
+  assert.equal(run.get(runId).state, 'input_required', 'the safety net did not depend on the abandon succeeding')
+  assert.deepEqual(f.notices.map(n => n.kind), ['lead_failed'])
+  assert.equal(f.db.prepare('SELECT state FROM lead_delegations').get()!.state, 'intent')
+  // A resume whose attempt cannot be created abandons nothing.
+  const start = t.mock.method(run, 'decide', () => { throw new RunError('writer_busy') }, { times: 1 })
+  assert.throws(() => f.lead().resume(runId, 'again'), { code: 'writer_busy' })
+  assert.equal(start.mock.callCount(), 1)
+  assert.equal(f.db.prepare('SELECT state FROM lead_delegations').get()!.state, 'intent')
+  await f.scenario({ briefs: [] })
+  assert.equal((await f.lead().resume(runId, 'decide afresh')).outcome, 'completed')
+  assert.equal(f.db.prepare('SELECT state FROM lead_delegations').get()!.state, 'abandoned')
+})
+
+test('a late error event on the tool listener does not take the node down', async t => {
+  const server = new LeadToolServer()
+  t.after(() => server.close())
+  await server.url()
+  const inner = (server as unknown as { server: { emit(event: string, error: Error): boolean } }).server
+  assert.doesNotThrow(() => inner.emit('error', new Error('accept failure')))
 })

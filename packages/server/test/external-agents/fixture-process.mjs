@@ -62,7 +62,7 @@ const leadUsage = sessionId => {
   // `usageByTurn[n]` is the CUMULATIVE usage reported by the n-th prompt this agent ever received (any process).
   const turn = leadEvents().filter(e => e.event === 'prompt').length - 1
   const scripted = (lead.usageByTurn ?? [])[turn]
-  if (scripted) return { currency: 'USD', ...scripted }
+  if (scripted) return { currency: 'USD', ...scripted }  // an entry without `amount` reports no cost that turn
   const base = existsSync(usageFile(sessionId)) ? JSON.parse(readFileSync(usageFile(sessionId), 'utf8')) : { inputTokens: 0, outputTokens: 0, amount: 0 }
   const per = lead.usagePerTurn ?? { inputTokens: 0, outputTokens: 0, amount: 0 }
   const next = { inputTokens: base.inputTokens + per.inputTokens, outputTokens: base.outputTokens + per.outputTokens, amount: base.amount + (per.amount ?? 0), currency: 'USD' }
@@ -71,7 +71,7 @@ const leadUsage = sessionId => {
 }
 const reportUsage = sessionId => {
   const total = leadUsage(sessionId)
-  if (lead.usagePerTurn?.amount !== undefined || lead.usageByTurn) sessionUpdate(sessionId, { sessionUpdate: 'usage_update', used: 1, size: 100, cost: { amount: total.amount, currency: total.currency } })
+  if (total.amount !== undefined && (lead.usagePerTurn?.amount !== undefined || lead.usageByTurn)) sessionUpdate(sessionId, { sessionUpdate: 'usage_update', used: 1, size: 100, cost: { amount: total.amount, currency: total.currency } })
   return lead.usageOmitted ? undefined : { totalTokens: total.inputTokens + total.outputTokens, inputTokens: total.inputTokens, outputTokens: total.outputTokens }
 }
 async function mcpCall(body, signal) {
@@ -101,7 +101,7 @@ async function leadPrompt(frame) {
     leadLog('noise_sent')
     await new Promise(resolve => setTimeout(resolve, 400))
   }
-  if (!(lead.silentTool && brief)) {
+  if (!(lead.silentTool && brief) && !(lead.noUpdates && resumed)) {
     sessionUpdate(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'PRIVATE_REASONING_FIXTURE' } })
     sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: resumed ? 'resumed lead turn' : 'planning delegation' } })
   }
