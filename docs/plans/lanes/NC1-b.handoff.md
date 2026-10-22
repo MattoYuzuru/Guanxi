@@ -19,8 +19,9 @@ NC1 remains **in progress** and the stage is not complete. No status file was ed
   re-ingestion inserts nothing.
 - `actions.ts` — ten typed commands, `ActionPorts` with one async method each, offered-action
   validation, idempotency reservation, terminal-result replay, content-free `port_failed`
-  storage and the crash-recovery `hasCompleted` probe. `wakeLeads(connectionId)` is called at
-  most once per notification and exactly once per successful effect.
+  storage and the crash-recovery `hasCompleted` probe. `wakeLeads(connectionId, ctx)` is
+  called at most once per notification and exactly once per successful effect; every port
+  receives the idempotency key in its context.
 - `recommend.ts` — deterministic rules: defer lead wakes until a sooner reset, switch to the
   first fallback, snooze until a known reset. No clock, model or randomness.
 - `payload.ts` — `{ title, tag }` only, from fixed kind/window templates; no subject, source, time, run or session content.

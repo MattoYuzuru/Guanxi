@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import {
   NotificationActionError,
   executeAction,
+  type ActionPortContext,
   type ActionPorts,
   type ExecuteActionInput,
 } from '../../src/notifications/actions.ts'
@@ -87,43 +88,79 @@ function seedNotification(
 interface FakePorts {
   calls: string[]
   probes: string[]
+  recorded: Set<string>
   ports: ActionPorts
 }
 
 function fakePorts(options: {
-  hasCompleted?: (key: string) => boolean | Promise<boolean>
   beforeWakeLeads?: () => Promise<void>
   overrides?: Partial<ActionPorts>
+  withoutProbe?: boolean
 } = {}): FakePorts {
   const calls: string[] = []
   const probes: string[] = []
+  const recorded = new Set<string>()
   const ports: ActionPorts = {
-    open: async () => { calls.push('open'); return { ok: 'open' } },
-    addPrompt: async () => { calls.push('add_prompt'); return { ok: 'add_prompt' } },
-    acceptRecommendation: async () => { calls.push('accept_recommendation'); return { ok: 'accept_recommendation' } },
-    chooseAction: async () => { calls.push('choose_action'); return { ok: 'choose_action' } },
-    wakeLeads: async (connectionId: string) => {
+    open: async context => {
+      calls.push('open')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'open' }
+    },
+    addPrompt: async context => {
+      calls.push('add_prompt')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'add_prompt' }
+    },
+    acceptRecommendation: async context => {
+      calls.push('accept_recommendation')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'accept_recommendation' }
+    },
+    chooseAction: async context => {
+      calls.push('choose_action')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'choose_action' }
+    },
+    wakeLeads: async (connectionId, context) => {
       calls.push(`wake_leads:${connectionId}`)
       await options.beforeWakeLeads?.()
+      recorded.add(context.idempotencyKey)
       return { ok: 'wake_leads' }
     },
     switchConnection: async context => {
       calls.push(`switch_connection:${context.args.connectionId}`)
+      recorded.add(context.idempotencyKey)
       return { ok: 'switch_connection' }
     },
-    pauseRuns: async () => { calls.push('pause_runs'); return { ok: 'pause_runs' } },
-    resumeRuns: async () => { calls.push('resume_runs'); return { ok: 'resume_runs' } },
-    snooze: async () => { calls.push('snooze'); return { ok: 'snooze' } },
-    raiseBudget: async () => { calls.push('raise_budget'); return { ok: 'raise_budget' } },
+    pauseRuns: async context => {
+      calls.push('pause_runs')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'pause_runs' }
+    },
+    resumeRuns: async context => {
+      calls.push('resume_runs')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'resume_runs' }
+    },
+    snooze: async context => {
+      calls.push('snooze')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'snooze' }
+    },
+    raiseBudget: async context => {
+      calls.push('raise_budget')
+      recorded.add(context.idempotencyKey)
+      return { ok: 'raise_budget' }
+    },
     ...options.overrides,
   }
-  if (options.hasCompleted !== undefined) {
+  if (options.withoutProbe !== true) {
     ports.hasCompleted = async (key: string) => {
       probes.push(key)
-      return options.hasCompleted?.(key) ?? false
+      return recorded.has(key)
     }
   }
-  return { calls, probes, ports }
+  return { calls, probes, recorded, ports }
 }
 
 function input(notification: StoredNotification, action: NotificationAction, args: Record<string, unknown>, key: string): ExecuteActionInput {
@@ -132,6 +169,17 @@ function input(notification: StoredNotification, action: NotificationAction, arg
     notificationId: notification.id,
     action,
     args,
+    idempotencyKey: key,
+  }
+}
+
+function wakeContext(notification: StoredNotification, key: string): ActionPortContext<'wake_leads'> {
+  return {
+    accountId: 'acct-a',
+    notificationId: notification.id,
+    subject: notification.subject,
+    action: 'wake_leads',
+    args: {},
     idempotencyKey: key,
   }
 }
@@ -362,15 +410,20 @@ test('a started action replays only when the port reports no record of the key',
     const key = `crash-key-${completed}`
     assert.equal(store.beginAction('acct-a', notification.id, 'wake_leads', key), 'started')
 
-    const fake = fakePorts({ hasCompleted: () => completed })
+    const fake = fakePorts()
+    if (completed) {
+      // The process died after the port took effect but before finishAction committed.
+      await fake.ports.wakeLeads('conn-a', wakeContext(notification, key))
+    }
+    const callsBeforeRetry = fake.calls.length
     const result = await executeAction(store, fake.ports, input(notification, 'wake_leads', {}, key))
     assert.deepEqual(fake.probes, [key])
 
     if (completed) {
-      assert.deepEqual(fake.calls, [], 'a completed port effect must not run twice')
+      assert.equal(fake.calls.length, callsBeforeRetry, 'a recorded port effect must not run twice')
       assert.deepEqual(result.result, { recovered: true })
     } else {
-      assert.deepEqual(fake.calls, ['wake_leads:conn-a'], 'a port without a record replays once')
+      assert.equal(fake.calls.length, callsBeforeRetry + 1, 'a port without a record replays once')
       assert.deepEqual(result.result, { ok: 'wake_leads' })
     }
     assert.equal(store.actionRecord('acct-a', key)?.status, 'done')
@@ -379,9 +432,40 @@ test('a started action replays only when the port reports no record of the key',
   }
 })
 
+test('a crash after the port returned is recovered from the key the port recorded', async (t) => {
+  const store = await tempStore(t)
+  const fake = fakePorts()
+  const notification = seedNotification(store, ['wake_leads'], 'port-returned-notification')
+  const key = 'port-returned-key'
+
+  const finish = store.finishAction.bind(store)
+  let crash = true
+  t.mock.method(store, 'finishAction', (...args: Parameters<NotificationStore['finishAction']>) => {
+    if (crash) {
+      crash = false
+      throw new Error('simulated crash before commit')
+    }
+    return finish(...args)
+  })
+
+  // The port performs the wake and records the key, then the process dies before finishAction
+  // commits the terminal row.
+  await assert.rejects(() => executeAction(store, fake.ports, input(notification, 'wake_leads', {}, key)))
+  assert.deepEqual(fake.calls, ['wake_leads:conn-a'])
+  assert.deepEqual([...fake.recorded], [key], 'wake_leads must receive its idempotency context')
+  assert.equal(store.actionRecord('acct-a', key)?.status, 'started')
+
+  const retried = await executeAction(store, fake.ports, input(notification, 'wake_leads', {}, key))
+  assert.deepEqual(fake.probes, [key])
+  assert.deepEqual(retried.result, { recovered: true })
+  assert.deepEqual(fake.calls, ['wake_leads:conn-a'], 'the fake saw the key, so the port must not run twice')
+  assert.equal(store.actionRecord('acct-a', key)?.status, 'done')
+  assert.equal(store.get('acct-a', notification.id).state, 'acted')
+})
+
 test('wake_leads calls its port exactly once per notification across retries', async (t) => {
   const store = await tempStore(t)
-  const fake = fakePorts({ hasCompleted: () => false })
+  const fake = fakePorts()
   const notification = seedNotification(store, ['wake_leads'], 'wake-once-notification')
   const key = 'wake-once-key'
   assert.equal(store.beginAction('acct-a', notification.id, 'wake_leads', key), 'started')
@@ -396,7 +480,7 @@ test('wake_leads calls its port exactly once per notification across retries', a
 
 test('a started action without an idempotency probe refuses to guess', async (t) => {
   const store = await tempStore(t)
-  const fake = fakePorts()
+  const fake = fakePorts({ withoutProbe: true })
   const notification = seedNotification(store, ['open'], 'unknown-outcome-notification')
   const key = 'unknown-outcome-key'
   assert.equal(store.beginAction('acct-a', notification.id, 'open', key), 'started')

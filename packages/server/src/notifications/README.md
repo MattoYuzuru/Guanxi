@@ -79,21 +79,26 @@ attempts). Re-ingesting an identical fact therefore inserts nothing.
 
 `actions.ts` defines one typed command per ADR-0033 action and an `ActionPorts` interface with
 one async method per command (`open`, `addPrompt`, `acceptRecommendation`, `chooseAction`,
-`wakeLeads`, `switchConnection`, `pauseRuns`, `resumeRuns`, `snooze`, `raiseBudget`).
-`executeAction` validates that the notification offers the action, reserves the idempotency
-key with `beginAction`, calls the matching port and stores the terminal result with
-`finishAction`. A notification that is already `acted` rejects a new key, and a `started` row
-for another key rejects the command as `action_in_progress`, so one notification cannot run two
-actions at once. `finishAction` marks the notification `acted` on success, except for the typed
-`snooze` command, which enters `snoozed` with its deadline. A terminal duplicate returns the
-stored result without touching a port; a failed port stores only `{ "code": "port_failed" }`
-and rethrows `NotificationActionError`, never the port message.
+`wakeLeads`, `switchConnection`, `pauseRuns`, `resumeRuns`, `snooze`, `raiseBudget`). Every
+port receives an `ActionPortContext` (`accountId`, `notificationId`, `subject`, `action`,
+`args`, `idempotencyKey`); `wakeLeads(connectionId, context)` also receives the connection id
+as its first argument. `executeAction` validates that the notification offers the action,
+reserves the idempotency key with `beginAction`, calls the matching port and stores the
+terminal result with `finishAction`. A notification that is already `acted` rejects a new key,
+and a `started` row for another key rejects the command as `action_in_progress`, so one
+notification cannot run two actions at once. `finishAction` marks the notification `acted` on
+success, except for the typed `snooze` command, which enters `snoozed` with its deadline. A
+terminal duplicate returns the stored result without touching a port; a failed port stores
+only `{ "code": "port_failed" }` and rethrows `NotificationActionError`, never the port
+message.
 
 The reservation plus the process-local in-flight map makes effects at-most-once within one
 process. Same-process calls with one key share a single in-flight promise, so a racing retry
 cannot probe a live `started` row and call the port again. `hasCompleted` covers a process
 restart:
 
+- every port must record the `context.idempotencyKey` of each effect it applies and answer
+  `hasCompleted(key)` from that durable record; a scripted constant is not a probe;
 - a terminal `done` or `failed` row is immutable and is never replayed;
 - a `started` row with no in-flight caller in this process is treated as a crashed attempt;
 - the effect is replayed only when `ports.hasCompleted(key)` explicitly returns `false`;
@@ -102,12 +107,13 @@ restart:
 - no probe, or a probe that throws, raises `action_outcome_unknown` and leaves the row
   `started` for reconciliation rather than risking a second effect.
 
-`wakeLeads(connectionId)` therefore runs at most once per notification and exactly once when
-the probe says no wake happened. Across processes a live `started` row is indistinguishable
-from a crash without a lease, so ports must implement `hasCompleted` truthfully or be
-idempotent; a cross-process lease remains later work. `raiseBudget` is only an
-intent-recording port; this module has no wallet or money path. Ports should still use the
-supplied key as their own idempotency key where the downstream system supports it.
+`wakeLeads(connectionId, context)` therefore runs at most once per notification and exactly
+once when the probe says no wake happened. Across processes a live `started` row is
+indistinguishable from a crash without a lease, so ports must implement `hasCompleted`
+truthfully from the keys they received or be idempotent by `context.idempotencyKey`; a
+cross-process lease remains later work. `raiseBudget` is only an intent-recording port; this
+module has no wallet or money path. Ports should still use the supplied key as their own
+idempotency key where the downstream system supports it.
 
 ### Recommendations and OS payloads
 

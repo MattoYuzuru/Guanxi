@@ -42,7 +42,7 @@ export interface ActionPorts {
   acceptRecommendation(context: ActionPortContext<'accept_recommendation'>): Promise<unknown>
   chooseAction(context: ActionPortContext<'choose_action'>): Promise<unknown>
   /** Exactly one call per notification is allowed across retries. */
-  wakeLeads(connectionId: string): Promise<unknown>
+  wakeLeads(connectionId: string, context: ActionPortContext<'wake_leads'>): Promise<unknown>
   switchConnection(context: ActionPortContext<'switch_connection'>): Promise<unknown>
   pauseRuns(context: ActionPortContext<'pause_runs'>): Promise<unknown>
   resumeRuns(context: ActionPortContext<'resume_runs'>): Promise<unknown>
@@ -240,7 +240,7 @@ async function invokePort(
         ? notification.subject.id
         : args.connectionId
       if (typeof connectionId !== 'string' || connectionId.length === 0) throw invalidArgs('connectionId')
-      return ports.wakeLeads(connectionId)
+      return ports.wakeLeads(connectionId, contextFor(notification, action, args, idempotencyKey))
     }
     case 'switch_connection': return ports.switchConnection(contextFor(notification, action, args, idempotencyKey))
     case 'pause_runs': return ports.pauseRuns(contextFor(notification, action, args, idempotencyKey))
