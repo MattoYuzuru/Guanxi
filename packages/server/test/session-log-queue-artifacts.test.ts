@@ -89,6 +89,12 @@ function tableNames(db: Db): string[] {
     .all() as unknown as { name: string }[]).map((row) => row.name)
 }
 
+/** `node:sqlite` rows have a null prototype; compare their exact scalar values, not prototypes. */
+function ledgerVersions(db: Db): number[] {
+  return (db.prepare(`SELECT version FROM ${SESSION_QUEUE_MIGRATIONS_TABLE} ORDER BY version`)
+    .all() as unknown as { version: number }[]).map((row) => Number(row.version))
+}
+
 function triggerSql(db: Db, name = POLICY): string | undefined {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name) as
     | { sql: string | null }
@@ -240,10 +246,7 @@ describe('session queue ledger 40', () => {
       installSessionQueueSchema(db)
       const afterTables = tableNames(db)
       assert.deepEqual(afterTables, [...beforeTables, SESSION_QUEUE_MIGRATIONS_TABLE].sort())
-      assert.deepEqual(
-        db.prepare(`SELECT version FROM ${SESSION_QUEUE_MIGRATIONS_TABLE}`).all(),
-        [{ version: 40 }],
-      )
+      assert.deepEqual(ledgerVersions(db), [40])
       assert.match(triggerSql(db)!, /event_version NOT IN \(1,2,3\)/u)
       assert.match(triggerSql(db)!, /agent\.queue/u)
       assert.equal(normalize(triggerSql(db)), normalize(SESSION_QUEUE_POLICY_TRIGGER_SQL))
@@ -253,10 +256,7 @@ describe('session queue ledger 40', () => {
       installSessionQueueSchema(db)
       assert.deepEqual(tableNames(db), afterTables)
       assert.equal(triggerSql(db), installedTrigger)
-      assert.deepEqual(
-        db.prepare(`SELECT version FROM ${SESSION_QUEUE_MIGRATIONS_TABLE}`).all(),
-        [{ version: 40 }],
-      )
+      assert.deepEqual(ledgerVersions(db), [40])
     } finally {
       db.close()
     }
@@ -277,10 +277,7 @@ describe('session queue ledger 40', () => {
         assert.deepEqual(tableNames(db), beforeTables)
         assert.equal(triggerSql(db), beforeTrigger)
         installSessionQueueSchema(db)
-        assert.deepEqual(
-          db.prepare(`SELECT version FROM ${SESSION_QUEUE_MIGRATIONS_TABLE}`).all(),
-          [{ version: 40 }],
-        )
+        assert.deepEqual(ledgerVersions(db), [40])
       } finally {
         db.close()
       }
@@ -343,10 +340,7 @@ describe('session queue ledger 40', () => {
     const db = openDb(':memory:')
     try {
       new SessionLog({ db, scrubber: new SecretScrubber() })
-      assert.deepEqual(
-        db.prepare(`SELECT version FROM ${SESSION_QUEUE_MIGRATIONS_TABLE}`).all(),
-        [{ version: 40 }],
-      )
+      assert.deepEqual(ledgerVersions(db), [40])
     } finally {
       db.close()
     }
@@ -359,7 +353,7 @@ describe('queue v3 append and read', () => {
     const tail = `QUEUE-TAIL-${randomBytes(8).toString('hex')}`
     const full = `${'q'.repeat(INPUT_INLINE_BYTES)}${tail}`
     const input = await descriptor(f.store, f.sessionId, full)
-    const exact = `${'q'.repeat(INPUT_INLINE_BYTES - 19)}queue-fts-sentinel`
+    const exact = `${'q'.repeat(INPUT_INLINE_BYTES - 16)}queueftssentinel`
     const appended = appendV3(f, [
       { id: 'inline-item', kind: 'inline', text: exact },
       { id: 'artifact-item', kind: 'artifact', input },
@@ -382,15 +376,31 @@ describe('queue v3 append and read', () => {
     const read = f.log.readAll(f.sessionId, 'person').at(-1)!
     assert.deepEqual(read, appended)
     const stored = f.db.prepare(
-      'SELECT row_id, search_text FROM session_events WHERE seq = ?',
-    ).get(appended.seq) as { row_id: number; search_text: string | null }
+      'SELECT search_text FROM session_events WHERE seq = ?',
+    ).get(appended.seq) as { search_text: string | null }
     assert.equal(stored.search_text, null, 'queue text stays out of FTS')
-    assert.equal(
-      (f.db.prepare('SELECT COUNT(*) AS n FROM session_events_fts WHERE rowid = ?').get(stored.row_id) as { n: number }).n,
-      0,
-      'no FTS row exists for a queue snapshot',
-    )
-    assert.equal(f.log.search('queue-fts-sentinel', { audience: 'person' }).length, 0)
+    const queueMatch = f.db.prepare(
+      "SELECT COUNT(*) AS n FROM session_events_fts WHERE session_events_fts MATCH 'queueftssentinel'",
+    ).get() as { n: number }
+    assert.equal(queueMatch.n, 0, 'the queue sentinel is not indexed')
+    assert.equal(f.log.search('queueftssentinel', { audience: 'person' }).length, 0)
+
+    // External-content FTS can return a content row by rowid without indexing it.
+    // A normal prompt proves this database is really indexing searchable text, so
+    // the negative queue assertion above cannot pass because indexing is disabled.
+    const positive = f.handle.append({
+      type: 'prompt',
+      data: { origin: 'typed', messageId: 'fts-positive', text: 'queueftspositivesentinel', attachmentCount: 0 },
+    }).event
+    const positiveRow = f.db.prepare(
+      'SELECT row_id, search_text FROM session_events WHERE seq = ?',
+    ).get(positive.seq) as { row_id: number; search_text: string | null }
+    assert.equal(positiveRow.search_text, 'queueftspositivesentinel')
+    const positiveMatches = f.db.prepare(
+      "SELECT rowid FROM session_events_fts WHERE session_events_fts MATCH 'queueftspositivesentinel'",
+    ).all() as unknown as { rowid: number }[]
+    assert.deepEqual(positiveMatches.map((row) => Number(row.rowid)), [positiveRow.row_id])
+    assert.equal(f.log.search('queueftspositivesentinel', { audience: 'person' }).length, 1)
   })
 
   test('resolves several descriptors atomically and keeps distinct ids for equal text', async (t) => {
