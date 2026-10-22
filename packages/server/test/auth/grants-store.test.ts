@@ -196,6 +196,27 @@ test('link grants are viewer-only', (t) => {
   assert.equal(f.store.forResource('project', 'project-1').length, 1)
 })
 
+test('grant validates subjectType and relation before writing', (t) => {
+  const f = fixture(t)
+  const invalid: Array<{ name: string; input: Grant }> = [
+    { name: 'unknown subject type', input: { ...grantOn(project, 'viewer', 'user-a'), subjectType: 'team' } as unknown as Grant },
+    { name: 'empty subject type', input: { ...grantOn(project, 'viewer', 'user-a'), subjectType: '' } as unknown as Grant },
+    { name: 'unknown relation', input: { ...grantOn(project, 'viewer', 'user-a'), relation: 'admin' } as unknown as Grant },
+    { name: 'empty relation', input: { ...grantOn(project, 'viewer', 'user-a'), relation: '' } as unknown as Grant },
+  ]
+  for (const { name, input } of invalid) {
+    assert.throws(
+      () => f.store.grant(owner, input, project),
+      (error: unknown) => error instanceof GrantStoreError && error.code === 'invalid_grant',
+      name,
+    )
+  }
+  assert.equal(f.store.forResource('project', 'project-1').length, 0)
+
+  f.store.grant(owner, grantOn(project, 'viewer', 'user-a'), project)
+  assert.equal(f.store.forResource('project', 'project-1').length, 1)
+})
+
 test('grant and revoke reject a tuple that does not match the supplied resource', (t) => {
   const f = fixture(t)
   assert.throws(

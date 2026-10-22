@@ -125,10 +125,11 @@ Methods:
 - `grant(actor, input, resource)` — requires `project.share`, `session.share` or
   `connection.manage` on the supplied resource. `createdBy` and `createdAt` are taken from the
   actor and clock, never trusted from `input`. An `owner` grant is rejected: ownership transfer
-  is later work. A grant to a `link` subject is viewer-only. `expiresAt` must be `null` or a
-  safe integer strictly after `now`; anything else fails with `invalid_expiry` before the
-  transaction starts. Inside the transaction an expired row with the same tuple is deleted
-  before insertion, so an unpurged expired grant does not block re-granting.
+  is later work. A grant to a `link` subject is viewer-only. `subjectType` and `relation` are
+  validated against their enums before any SQL and fail with `invalid_grant`. `expiresAt` must
+  be `null` or a safe integer strictly after `now`; anything else fails with `invalid_expiry`
+  before the transaction starts. Inside the transaction an expired row with the same tuple is
+  deleted before insertion, so an unpurged expired grant does not block re-granting.
 - `revoke(actor, key, resource)` — same permission check; returns whether a row was deleted.
 - `forResource(type, id)` and `forSubject(type, id)` — direct rows in insertion order, including
   expired grants. Callers apply `now` through `can`; `purgeExpired` removes them physically.
@@ -138,9 +139,10 @@ Methods:
 All mutations use `BEGIN IMMEDIATE` and roll back on failure. Grants on `run` and `node` are not
 shareable in this slice: runs inherit project grants, and node administration belongs to the
 server. A duplicate tuple fails with `grant_exists`; other stable codes are `invalid_actor`,
-`resource_mismatch`, `owner_grant_forbidden`, `link_grant_forbidden`, `forbidden`,
-`resource_not_shareable`, `invalid_expiry` and `write_failed`. Foreign keys are enabled even
-though accounts live in another database and no cross-database reference is possible.
+`resource_mismatch`, `invalid_grant`, `owner_grant_forbidden`, `link_grant_forbidden`,
+`forbidden`, `resource_not_shareable`, `invalid_expiry` and `write_failed`. Foreign keys are
+enabled even though accounts live in another database and no cross-database reference is
+possible.
 
 ## Remote-bind guard
 

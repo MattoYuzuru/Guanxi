@@ -6,7 +6,16 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { can } from './policy.ts'
-import type { Action, Grant, Principal, Resource, ResourceType, SubjectType } from './types.ts'
+import {
+  RELATIONS,
+  SUBJECT_TYPES,
+  type Action,
+  type Grant,
+  type Principal,
+  type Resource,
+  type ResourceType,
+  type SubjectType,
+} from './types.ts'
 
 /** The tuple that identifies one grant. */
 export type GrantKey = Pick<Grant, 'resourceType' | 'resourceId' | 'relation' | 'subjectType' | 'subjectId'>
@@ -18,6 +27,7 @@ export type GrantClock = () => number | Date
 export type GrantStoreErrorCode =
   | 'invalid_actor'
   | 'resource_mismatch'
+  | 'invalid_grant'
   | 'owner_grant_forbidden'
   | 'link_grant_forbidden'
   | 'forbidden'
@@ -146,6 +156,9 @@ export class GrantStore {
     const createdBy = requireUser(actor)
     if (input.resourceType !== resource.type || input.resourceId !== resource.id) {
       throw new GrantStoreError('resource_mismatch', 'Grant target does not match the supplied resource')
+    }
+    if (!SUBJECT_TYPES.includes(input.subjectType) || !RELATIONS.includes(input.relation)) {
+      throw new GrantStoreError('invalid_grant', 'subjectType and relation must be valid grant enums')
     }
     if (input.relation === 'owner') {
       throw new GrantStoreError('owner_grant_forbidden', 'Ownership transfer is not supported in this slice')
