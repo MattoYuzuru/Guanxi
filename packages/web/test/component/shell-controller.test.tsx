@@ -72,4 +72,26 @@ describe('shell host commands', () => {
     expect(result.current.sessions.sessions).toEqual([])
   })
 
+  it('cancels complete search synchronously on palette close and offers retry after the initial page fails', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof inspectorApi.page>>) => void
+    const pending = new Promise<Awaited<ReturnType<typeof inspectorApi.page>>>(done => { resolve = done })
+    vi.mocked(inspectorApi.page).mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ sessions: [], nextCursor: 'p1', omitted: { withheld: false, catchingUp: false } })
+      .mockReturnValueOnce(pending)
+    const { result } = renderHook(useShellController, { wrapper })
+    await waitFor(() => expect(result.current.sessionSearch.error).toBe(true))
+    expect(result.current.sessionSearch.hasMore).toBe(false)
+    act(() => result.current.sessionSearch.search())
+    await waitFor(() => expect(result.current.sessions.loading).toBe(false))
+    expect(result.current.sessionSearch.hasMore).toBe(true)
+    act(() => result.current.setPaletteOpen(true))
+    act(() => result.current.sessionSearch.search())
+    expect(result.current.sessionSearch.searching).toBe(true)
+    act(() => result.current.setPaletteOpen(false))
+    expect(vi.mocked(inspectorApi.page).mock.calls[2]?.[1]?.aborted).toBe(true)
+    expect(result.current.sessionSearch.searching).toBe(false)
+    await act(async () => { resolve({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }); await pending })
+    expect(result.current.sessionSearch.hasMore).toBe(true)
+  })
+
 })

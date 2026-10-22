@@ -1,17 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
-import { ShellPalette, type ShellCommand } from '../../src/features/shell/ShellPalette.tsx'
+import { ShellPalette, type ShellCommand, type ShellSessionSearch } from '../../src/features/shell/ShellPalette.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 
 beforeAll(() => {
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: () => undefined })
 })
 
-function Host({ commands }: { commands: ShellCommand[] }) {
+function Host({ commands, sessionSearch }: { commands: ShellCommand[]; sessionSearch?: ShellSessionSearch }) {
   const [open, setOpen] = useState(false)
   return <><button onClick={() => setOpen(true)}>Open commands</button>
-    <ShellPalette commands={commands} open={open} onOpenChange={setOpen} /></>
+    <ShellPalette commands={commands} sessionSearch={sessionSearch} open={open} onOpenChange={setOpen} /></>
 }
 
 describe('shell palette', () => {
@@ -53,5 +53,36 @@ describe('shell palette', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open commands' }))
     expect((await screen.findByRole('combobox') as HTMLInputElement).value).toBe('')
     expect(screen.getByRole('option', { name: 'Move block' })).toBeTruthy()
+  })
+
+  it.each(['en', 'ru'] as const)('makes partial/failure/available search coverage explicit in %s without closing the query', async locale => {
+    setActiveLocale(locale)
+    const search = vi.fn(), cancel = vi.fn()
+    const state: ShellSessionSearch = { loaded: 50, loading: false, hasMore: true, searching: false, error: false, omitted: false, search, cancel }
+    const { rerender } = render(<Host commands={[]} sessionSearch={state} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open commands' }))
+    const input = await screen.findByRole('combobox') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'older matching session' } })
+    const availableCopy = locale === 'en' ? 'Searching all 237 sessions available from the loaded pages.' : 'Поиск среди всех сессий, доступных на загруженных страницах: 237.'
+    expect(screen.queryByText(availableCopy)).toBeNull()
+    expect(screen.getByText(locale === 'en' ? 'Searching 50 loaded sessions. Older sessions are not loaded yet.' : 'Поиск среди загруженных сессий: 50. Более старые сессии ещё не загружены.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Search all available sessions' : 'Искать во всех доступных сессиях' }))
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(input.value).toBe('older matching session')
+    rerender(<Host commands={[]} sessionSearch={{ ...state, searching: true, loaded: 100 }} />)
+    expect(screen.queryByText(availableCopy)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Stop loading sessions' : 'Остановить загрузку сессий' }))
+    expect(cancel).toHaveBeenCalledTimes(1)
+    rerender(<Host commands={[]} sessionSearch={{ ...state, error: true, loaded: 100 }} />)
+    expect(screen.getByText(locale === 'en' ? 'Could not load all sessions. Searching 100 loaded sessions.' : 'Не удалось загрузить все сессии. Поиск среди загруженных: 100.')).toBeTruthy()
+    expect(screen.queryByText(availableCopy)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Retry loading remaining sessions' : 'Повторить загрузку оставшихся сессий' }))
+    expect(search).toHaveBeenCalledTimes(2)
+    rerender(<Host commands={[]} sessionSearch={{ ...state, hasMore: false, loaded: 237, omitted: true }} />)
+    expect(screen.getByText(availableCopy)).toBeTruthy()
+    expect(screen.getByText(locale === 'en' ? 'Some sessions are temporarily unavailable.' : 'Некоторые сессии временно недоступны.')).toBeTruthy()
+    expect(input.value).toBe('older matching session')
+    expect(screen.queryByRole('button', { name: locale === 'en' ? 'Search all available sessions' : 'Искать во всех доступных сессиях' })).toBeNull()
   })
 })

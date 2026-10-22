@@ -10,10 +10,20 @@ export interface ShellCommand {
   reason?: string
   execute(): void
 }
+export interface ShellSessionSearch {
+  loaded: number
+  loading: boolean
+  hasMore: boolean
+  searching: boolean
+  error: boolean
+  omitted: boolean
+  search(): void
+  cancel(): void
+}
 
 /** The host supplies admitted commands; this search UI grants no capabilities. */
-export function ShellPalette({ open, onOpenChange, commands }: {
-  open: boolean; onOpenChange(open: boolean): void; commands: readonly ShellCommand[]
+export function ShellPalette({ open, onOpenChange, commands, sessionSearch }: {
+  open: boolean; onOpenChange(open: boolean): void; commands: readonly ShellCommand[]; sessionSearch?: ShellSessionSearch
 }) {
   const id = useId(), input = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState(''), [activeId, setActiveId] = useState<string | null>(null)
@@ -51,6 +61,16 @@ export function ShellPalette({ open, onOpenChange, commands }: {
             document.getElementById(optionId(available[next]))?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
           }
         }} />
+      {sessionSearch && <div className="flex flex-col gap-1">
+        <p role="status" aria-live="polite" className="text-12 text-secondary">{t(sessionSearch.loading ? 'shell.search.loading'
+          : sessionSearch.searching ? 'shell.search.searching' : sessionSearch.error ? 'shell.search.error'
+            : sessionSearch.hasMore ? 'shell.search.partial' : 'shell.search.available', { count: sessionSearch.loaded })}</p>
+        {sessionSearch.omitted && <p className="text-12 text-secondary">{t('shell.sessions.omitted')}</p>}
+        {sessionSearch.searching
+          ? <Button variant="ghost" onClick={() => { sessionSearch.cancel(); input.current?.focus() }}>{t('shell.search.cancel')}</Button>
+          : (sessionSearch.hasMore || sessionSearch.error) && <Button variant="ghost" disabled={sessionSearch.loading}
+            onClick={() => { sessionSearch.search(); input.current?.focus() }}>{t(sessionSearch.error ? 'shell.search.retry' : 'shell.search.all')}</Button>}
+      </div>}
       <p className="sr-only" role="status" aria-live="polite">{t('shell.palette.results', { count: filtered.length })}</p>
       <div id={`${id}-results`} role="listbox" aria-label={t('shell.palette')} className="flex max-h-64 flex-col gap-1 overflow-y-auto">
         {filtered.map(command => <div key={command.id} className="flex flex-col gap-1">

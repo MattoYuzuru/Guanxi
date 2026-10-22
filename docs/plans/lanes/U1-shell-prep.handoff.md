@@ -89,8 +89,9 @@ Product use of review components remains a warning; owner approval still gates w
 Root's shell geometry component must finish readiness before integration, then browser-test hidden/
 rail/moved navigation and the palette/controller across real product routes; avoid duplicate
 plugin entries when moving the slot out of the legacy chat sidebar. Preserve lazy catalog and
-engine boundaries. Session search currently searches loaded pages; it must gain an explicit
-complete-search path or clearly scoped loading workflow before claiming all-session search.
+engine boundaries. The separate complete-search continuation is described in
+[U1-search.handoff.md](U1-search.handoff.md); its independent review and mounted acceptance
+remain open before claiming all-session search in the product.
 Finished-unseen state, full new-session flow, ephemeral side chat with explicit idempotent
 Save/Send ownership, reviewed glossary/browser-count integration, other U1-c migrations and zero
 suppression exit remain unfinished. No scope is closed by this preparation.

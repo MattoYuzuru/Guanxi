@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { api } from '../../lib/api.ts'
 import { translate as t } from '../../lib/locale.ts'
 import { navigate, paths, useLocation } from '../../lib/router.tsx'
@@ -8,7 +8,7 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { requestBlockMove, requestBlockReveal, requestWorkspaceMode } from '../workspace/commands.ts'
 import { workspaceShellState } from '../workspace/shell-state.ts'
 import { readShellPreferences, writeShellPreferences } from './preferences.ts'
-import type { ShellCommand } from './ShellPalette.tsx'
+import type { ShellCommand, ShellSessionSearch } from './ShellPalette.tsx'
 import { sessionNavigationPath } from './sessionNavigation.ts'
 import { useShellSessions } from './useShellSessions.ts'
 
@@ -17,8 +17,12 @@ export function useShellController() {
   useLocale()
   const location = useLocation()
   const [preferences, setPreferences] = useState(readShellPreferences)
-  const [paletteOpen, setPaletteOpen] = useState(false), [modelsRequested, setModelsRequested] = useState(false)
+  const [paletteOpen, updatePaletteOpen] = useState(false), [modelsRequested, setModelsRequested] = useState(false)
   const sessions = useShellSessions(location)
+  const setPaletteOpen = useCallback((next: boolean) => {
+    if (!next) sessions.cancelSearch()
+    updatePaletteOpen(next)
+  }, [sessions.cancelSearch])
   const workspace = useSyncExternalStore(workspaceShellState.subscribe, workspaceShellState.snapshot)
   const { preference, setPreference } = useTheme()
   const models = useAsync(signal => modelsRequested ? api.listModels(undefined, signal) : Promise.resolve({ models: [] }), [modelsRequested])
@@ -27,11 +31,11 @@ export function useShellController() {
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat || event.altKey || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return
-      event.preventDefault(); setPaletteOpen(value => !value)
+      event.preventDefault(); setPaletteOpen(!paletteOpen)
     }
     window.addEventListener('keydown', keyboard)
     return () => window.removeEventListener('keydown', keyboard)
-  }, [])
+  }, [paletteOpen, setPaletteOpen])
   const commands: ShellCommand[] = [
     { id: 'new', label: t('shell.new'), execute: () => navigate(paths.agent()) },
     { id: 'projects', label: t('shell.projects'), execute: () => navigate(paths.projects()) },
@@ -77,7 +81,10 @@ export function useShellController() {
     ...(['light', 'dark', 'system'] as const).map(theme => ({ id: `theme:${theme}`, label: t('shell.command.theme', { theme: t(`theme.${theme}`) }),
       execute: () => setPreference(theme) })),
   ]
-  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessions, workspace, preference,
+  const sessionSearch: ShellSessionSearch = { loaded: sessions.sessions.length, loading: sessions.loading || (sessions.loadingMore && !sessions.searchingAll),
+    hasMore: sessions.hasMore, searching: sessions.searchingAll, error: sessions.error, omitted: sessions.omitted,
+    search: () => { if (sessions.error && !sessions.hasMore) sessions.reload(); else void sessions.searchAll() }, cancel: sessions.cancelSearch }
+  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, workspace, preference,
     togglePin: (id: string) => setPreferences(previous => ({ ...previous, pinned: previous.pinned.includes(id)
       ? previous.pinned.filter(value => value !== id) : [...previous.pinned, id] })) }
 }
