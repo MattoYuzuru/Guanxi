@@ -1,7 +1,8 @@
 # K3 transport settlement — implementation plan
 
-**Status:** in progress · **Updated:** 2026-10-22 · **Branch:** `codex/k3-transport-settlement` ·
-**Base:** `af0ccab0c7c3164539fe597aa55527e69fa0369a`
+**Status:** implemented (local candidate; root heavy gates pending) · **Updated:** 2026-10-22 ·
+**Branch:** `codex/k3-transport-settlement` · **Base:**
+`af0ccab0c7c3164539fe597aa55527e69fa0369a`
 
 ## Objective
 
