@@ -92,15 +92,19 @@ function severityFor(threshold: number, sorted: readonly number[]): Alert['sever
   return 'warning'
 }
 
-/** Earliest valid P80 ETA across the dependent runs. */
-function earliestDependent(runs: readonly DependentRun[]): { run: DependentRun; etaMs: number } | null {
-  let earliest: { run: DependentRun; etaMs: number } | null = null
-  for (const run of runs) {
-    const etaMs = timestampMs(run.etaP80)
-    if (etaMs === null || (earliest !== null && etaMs >= earliest.etaMs)) continue
-    earliest = { run, etaMs }
+/** Every dependent ETA must parse; an unparsable ETA is a caller error, not a silent skip. */
+function dependentEtas(runs: readonly DependentRun[]): { run: DependentRun; etaMs: number }[] {
+  return runs.map(run => ({ run, etaMs: parseTimestamp(run.etaP80, 'dependentRuns.etaP80') }))
+}
+
+/** The earliest dependent run that cannot finish before the projected exhaustion, if any. */
+function firstOutlivedRun(runs: readonly { run: DependentRun; etaMs: number }[], projectedMs: number): { run: DependentRun; etaMs: number } | null {
+  let first: { run: DependentRun; etaMs: number } | null = null
+  for (const entry of runs) {
+    if (entry.etaMs <= projectedMs || (first !== null && entry.etaMs >= first.etaMs)) continue
+    first = entry
   }
-  return earliest
+  return first
 }
 
 /**
@@ -118,6 +122,8 @@ export function evaluateQuota(input: EvaluateQuotaInput): { state: WindowState; 
   const resetsMs = fact.resetsAt === null ? null : parseTimestamp(fact.resetsAt, 'resetsAt')
   // Validate the caller clock even though the rules only compare supplied instants.
   parseTimestamp(input.now, 'now')
+  if (fact.connectionId.includes('|')) throw new TypeError('connectionId must not contain "|" (idempotency key separator)')
+  const etas = dependentEtas(dependentRuns)
 
   const baseKey = fact.resetsAt ?? 'no-reset'
   let instanceKey = baseKey
@@ -130,7 +136,9 @@ export function evaluateQuota(input: EvaluateQuotaInput): { state: WindowState; 
       return { state: previous, alerts: [] }
     }
     if (sameReset(resetKeyOf(previous.instanceKey), resetsMs)) {
-      const providerReset = previous.lastPercent !== null && remaining !== null && remaining - previous.lastPercent > 50
+      // Compare with the last KNOWN percent so a reset hidden behind an unknown reading is still seen.
+      const lastKnown = previous.lastKnownPercent ?? previous.lastPercent
+      const providerReset = lastKnown !== null && lastKnown !== undefined && remaining !== null && remaining - lastKnown > 50
       if (providerReset) instanceKey = `${baseKey}#${fact.observedAt}`
       else {
         instanceKey = previous.instanceKey
@@ -180,8 +188,8 @@ export function evaluateQuota(input: EvaluateQuotaInput): { state: WindowState; 
     if (previousObservedMs !== null && previousObservedMs < observedMs && drop > 0) {
       const projectedMs = observedMs + Math.floor(remaining * (observedMs - previousObservedMs) / drop)
       if (Number.isFinite(projectedMs) && projectedMs >= -MAX_DATE_MS && projectedMs <= MAX_DATE_MS) {
-        const dependent = earliestDependent(dependentRuns)
-        const beforeDependent = dependent !== null && projectedMs < dependent.etaMs
+        const dependent = firstOutlivedRun(etas, projectedMs)
+        const beforeDependent = dependent !== null
         const beforeReset = resetsMs !== null && projectedMs < resetsMs
         if (beforeDependent || beforeReset) {
           alerts.push({
@@ -225,6 +233,7 @@ export function evaluateQuota(input: EvaluateQuotaInput): { state: WindowState; 
       fired,
       armedBelow,
       lastPercent: remaining,
+      lastKnownPercent: remaining ?? (prior === null ? null : (prior.lastKnownPercent ?? prior.lastPercent)),
       lastObservedAt: fact.observedAt,
       forecastFired,
       exhaustedFired,

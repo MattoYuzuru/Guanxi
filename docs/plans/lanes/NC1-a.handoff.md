@@ -77,3 +77,20 @@ UTC, `Asia/Tokyo` and `America/New_York`. No blocking findings remain.
 NC1 stays **in progress**. This slice does not close the stage: the durable inbox, actions,
 automatic-reaction policy and delivery/UI surfaces above remain unfinished. `PHASE_STATUS.md`
 and `NEXT_AGENT_PROMPT.md` were not edited; the integrator folds this handoff in.
+
+## Independent review (Opus, 2026-10-23) and fixes
+
+No P1. Two P2s fixed in a separate commit by the integrator:
+
+- Forecast now fires when the projected exhaustion precedes **any** dependent run's P80 ETA
+  (ADR-0033 "a run that depends on it"); `runId` names the earliest run that cannot finish.
+  The old test that locked in "earliest ETA decides" is inverted.
+- Provider-reset detection compares with `lastKnownPercent`, carried across unknown readings,
+  so `10 → null → 100 → 15` re-arms and fires 20%. `WindowState.lastKnownPercent` is optional
+  for compatibility with states persisted before this change.
+- P3s fixed: the "no reset and no dependent run" assertion no longer passes by starting a new
+  instance; an unparsable `etaP80` throws; a connection id containing `|` throws.
+
+Result: 13/13 pass (2 new); `tsc --noEmit -p packages/server` passes.
+Residuals kept: any `resetsAt` change starts a new instance (no jitter tolerance); an equal
+`observedAt` with a different value is evaluated rather than treated as stale.
