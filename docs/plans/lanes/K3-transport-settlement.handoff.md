@@ -108,7 +108,10 @@ cleanup was touched.
 - **Regression coverage:** `13881c7 test(ollama): prove model POST settlement before release`
   and `da3ffa0 test(ollama): assert late GET response disposal`.
 - **Verification:** adapted probe tests failed before `6cc95c1` (4 of 5 settlement tests) and
-  pass after it; the list above is the post-fix run.
+  pass after it; the list above is the post-fix run. An exact temp-only copy of the mandated
+  probe with only its import prefixes repointed at this clone then ran at `da3ffa0` and
+  printed `{"gets":1,"posts":1,"postAborted":true,"fetchSettled":false,"callSettled":false,"governorHeld":true}`
+  with `tests 1, pass 1, fail 0`.
 
 ## Residual risk and claims boundary
 
