@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "g11-cycle-a",
+  "status": "review",
+  "approval": null,
+  "requests": []
+}

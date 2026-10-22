@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "g11-barrel-draft",
+  "status": "draft",
+  "approval": null,
+  "requests": []
+}

@@ -31,6 +31,13 @@ export interface DelegateInput {
   deadlinePolicy?: 'cancel_wrap_up' | 'detach'
   cancelPolicy?: 'cancel' | 'detach'
 }
+export interface CostInput {
+  key: string
+  inputTokens: number
+  outputTokens: number
+  costMicrounits: number | null
+  currency: 'USD' | 'EUR' | 'RUB' | 'unknown'
+}
 type Action = SessionEventData<'run.lifecycle'>['action']
 const HOME_KEY = 'durable-runs/home'
 const EPSILON_MS = 1_000
@@ -515,8 +522,9 @@ export class RunStore implements HomeAuthority {
     this.wake(promise.parent_id, 'resolution', promise.id)
     return true
   }
-  complete<T>(attempt: Attempt, outcome: TerminalRunState, receipt?: (db: Db) => Synchronous<T>): void {
+  complete<T>(attempt: Attempt, outcome: TerminalRunState, receipt?: (db: Db) => Synchronous<T>, cost?: CostInput): void {
     if (!TERMINAL_RUN_STATES.has(outcome)) throw new RunError('invalid_input')
+    if (cost) this.validateCostInput(cost)
     this.tx('complete', () => {
       this.fenced(attempt)
       if (outcome !== 'canceled' && this.wakes(attempt.run_id).some((w) => w.acknowledged_at === null && w.suppressed_at === null)) {
@@ -526,6 +534,7 @@ export class RunStore implements HomeAuthority {
       const reporting = deadline || this.get(attempt.run_id).state === 'wrapping_up'
       if (reporting) this.write("UPDATE run_execution SET terminal_reason=COALESCE(terminal_reason,'wrap_up_requested') WHERE run_id=?", attempt.run_id)
       this.syncCallback(receipt)
+      if (cost) this.insertCost(attempt, cost)
       this.terminal(attempt.run_id, reporting ? 'canceled' : outcome)
     })
   }
@@ -757,23 +766,29 @@ export class RunStore implements HomeAuthority {
       return keys
     })
   }
-  recordCost(attempt: Attempt, input: { key: string; inputTokens: number; outputTokens: number;
-    costMicrounits: number | null; currency: 'USD' | 'EUR' | 'RUB' | 'unknown' }): void {
+  private validateCostInput(input: CostInput): void {
     this.clean(input.key); this.integer(input.inputTokens); this.integer(input.outputTokens)
     if (input.costMicrounits !== null) this.integer(input.costMicrounits)
     if (!['USD', 'EUR', 'RUB', 'unknown'].includes(input.currency)) throw new RunError('invalid_input')
+  }
+  /** Caller holds the transaction and has already checked the attempt fence. */
+  private insertCost(attempt: Attempt, input: CostInput): void {
+    const prior = this.row<{ attempt_id: string; input_tokens: number; output_tokens: number; cost_microunits: number | null; currency: string }>(
+      'SELECT * FROM run_costs WHERE run_id=? AND entry_key=?', attempt.run_id, input.key)
+    if (prior) {
+      if (prior.attempt_id !== attempt.id || prior.input_tokens !== input.inputTokens || prior.output_tokens !== input.outputTokens ||
+        prior.cost_microunits !== input.costMicrounits || prior.currency !== input.currency) throw new RunError('idempotency_conflict')
+      return
+    }
+    this.write('INSERT INTO run_costs VALUES (?,?,?,?,?,?,?,?)', attempt.run_id, input.key, attempt.id,
+      input.inputTokens, input.outputTokens, input.costMicrounits, input.currency, this.now())
+    this.event(this.get(attempt.run_id), 'cost', attempt.id)
+  }
+  recordCost(attempt: Attempt, input: CostInput): void {
+    this.validateCostInput(input)
     this.tx('cost', () => {
       this.fenced(attempt)
-      const prior = this.row<{ attempt_id: string; input_tokens: number; output_tokens: number; cost_microunits: number | null; currency: string }>(
-        'SELECT * FROM run_costs WHERE run_id=? AND entry_key=?', attempt.run_id, input.key)
-      if (prior) {
-        if (prior.attempt_id !== attempt.id || prior.input_tokens !== input.inputTokens || prior.output_tokens !== input.outputTokens ||
-          prior.cost_microunits !== input.costMicrounits || prior.currency !== input.currency) throw new RunError('idempotency_conflict')
-        return
-      }
-      this.write('INSERT INTO run_costs VALUES (?,?,?,?,?,?,?,?)', attempt.run_id, input.key, attempt.id,
-        input.inputTokens, input.outputTokens, input.costMicrounits, input.currency, this.now())
-      this.event(this.get(attempt.run_id), 'cost', attempt.id)
+      this.insertCost(attempt, input)
     })
   }
   costs(runId: string): { currency: string; inputTokens: number; outputTokens: number; costMicrounits: number | null }[] {

@@ -1,0 +1,1 @@
+export { G11BarrelWrapper } from './components/g11-barrel-wrapper/index.ts'

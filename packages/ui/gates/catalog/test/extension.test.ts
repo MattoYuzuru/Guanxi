@@ -44,7 +44,7 @@ describe('DS1-a extension registrations', () => {
   })
 
   for (const gate of registrations.filter((item) => item.mode === 'fast')) {
-    it(`${gate.id} passes on the checkout and fails its seed with the expected diagnostic`, async () => {
+    it(`${gate.id} reports the checkout and fails its seed with the expected diagnostic`, async () => {
       const clean = await gate.check(context())
       assert.equal(clean.ok, true, clean.errors.join('\n'))
       const seed = JSON.parse(readFileSync(join(root, gate.seed), 'utf8')) as { files: Record<string, string>; expectedError: string }

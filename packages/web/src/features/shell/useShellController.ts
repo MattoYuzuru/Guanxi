@@ -85,7 +85,7 @@ export function useShellController() {
     hasMore: sessions.hasMore, searching: sessions.searchingAll, error: sessions.error,
     refreshFailed: sessions.error && !sessions.paginationReady, omitted: sessions.omitted,
     search: () => { if (!sessions.paginationReady) sessions.reload(); else void sessions.searchAll() }, cancel: sessions.cancelSearch }
-  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, workspace, preference,
+  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, workspace, preference, setPreference,
     togglePin: (id: string) => setPreferences(previous => ({ ...previous, pinned: previous.pinned.includes(id)
       ? previous.pinned.filter(value => value !== id) : [...previous.pinned, id] })) }
 }

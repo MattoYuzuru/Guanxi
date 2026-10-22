@@ -21,6 +21,17 @@ describe('shell navigation and session presentation', () => {
     for (const name of ['New', 'Projects', 'Models', 'Settings']) expect(within(navigation).getByRole('link', { name })).toBeTruthy()
     expect(screen.queryByRole('region', { name: 'Sessions' })).toBeNull()
   })
+  it('marks the owning core destination current on nested legacy routes', () => {
+    setActiveLocale('en')
+    const { rerender } = render(<ShellSidebar {...props()} location="/models/fixture:latest" />)
+    const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(navigation).getByRole('link', { name: 'Models' }).getAttribute('aria-current')).toBe('page')
+    expect(within(navigation).getByRole('link', { name: 'Projects' }).getAttribute('aria-current')).toBeNull()
+
+    rerender(<ShellSidebar {...props()} location="/settings/developer/components" />)
+    expect(within(navigation).getByRole('link', { name: 'Settings' }).getAttribute('aria-current')).toBe('page')
+    expect(within(navigation).getByRole('link', { name: 'Models' }).getAttribute('aria-current')).toBeNull()
+  })
   it('lists pinned rows once, keeps unknown distinct from zero, and names missing pages and provenance', () => {
     setActiveLocale('en')
     const values = props()

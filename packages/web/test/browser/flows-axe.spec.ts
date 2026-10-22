@@ -5,12 +5,12 @@
  * also has a seeded violation, an unnamed icon-only button injected into it, which the scan
  * must report, so a scan that silently checks nothing fails.
  *
- * One legacy violation is known and not fixed in DS1-b (scope decision in docs/plans/evidence/DS1-b.md):
- * the inactive rows of the Context panel's cache bar dim their text with `opacity-45`, which
- * fails color-contrast. It is listed by exact rule and target, and the test asserts it is still
- * present, so the entry has to be removed once the screen is fixed.
+ * The DS1-b residual for the inactive Context panel cache rows (text dimmed with `opacity-45`)
+ * was repaired in the U1 shell-mount review round. The new-session flow now has to be clean,
+ * and a direct computed-style check fails against the old opacity before the axe scan does.
  */
 import AxeBuilder from '@axe-core/playwright'
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { installChatApiFixture } from './fixtures/chat-api.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
@@ -54,6 +54,9 @@ async function mockSettingsApi(page: Page): Promise<void> {
     if (url.pathname === '/api/health') return route.fulfill(json(health))
     if (url.pathname === '/api/settings') return route.fulfill(json(browserSettings({ locale: 'en', theme: 'light' })))
     if (url.pathname === '/api/runtime') return route.fulfill(json(runtimeBrowserSnapshot()))
+    if (url.pathname === SESSION_ROUTES.page()) {
+      return route.fulfill(json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } }))
+    }
     if (url.pathname === '/api/models') return route.fulfill(json({ models: [] }))
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })
@@ -66,9 +69,6 @@ async function seriousViolations(page: Page): Promise<string[]> {
     .filter((violation) => violation.impact === 'serious' || violation.impact === 'critical')
     .flatMap((violation) => violation.nodes.map((node) => `${violation.id}: ${node.target.join(' ')}`))
 }
-
-/** Known legacy violation: ContextPanel CacheBar, inactive row (label and duration). */
-const KNOWN_CACHE_BAR = /^color-contrast: .*\.opacity-45\.gap-2\.flex > \.(w-16\.shrink-0|w-12\.text-right\.tabular-nums)$/
 
 function seeded(violations: string[]): boolean {
   return violations.some((line) => line.startsWith('button-name: ') && line.includes('data-g14-seed'))
@@ -121,9 +121,22 @@ test('G14 new-session flow has no serious or critical axe violation', async ({ p
   await page.getByRole('button', { name: 'Создать диалог' }).click()
   await expect(page).toHaveURL(/\/chat\/thread-p0-e-full$/)
   await expect(page.getByRole('textbox', { name: 'Сообщение' })).toBeVisible()
-  const dialog = await seriousViolations(page)
-  expect(dialog.filter((line) => !KNOWN_CACHE_BAR.test(line)), 'new dialog with composer').toEqual([])
-  expect(dialog.filter((line) => KNOWN_CACHE_BAR.test(line)), 'known cache-bar violation still present').toHaveLength(2)
+
+  // Both responsive ContextPanels are in the DOM; only one is visible at a given viewport.
+  // The fixture reports a cache miss, so the hit row is the inactive one. It used to dim its
+  // label and duration with `opacity-45`; the semantic secondary text token replaced that, so
+  // this fails against the old contrast implementation even before axe runs.
+  const inactive = page.getByText('Попадание', { exact: true }).locator('xpath=..').filter({ visible: true })
+  const active = page.getByText('Промах', { exact: true }).locator('xpath=..').filter({ visible: true })
+  await expect(inactive, 'one visible inactive cache row').toHaveCount(1)
+  await expect(active, 'one visible active cache row').toHaveCount(1)
+  await expect(inactive).toBeVisible()
+  await expect(active).toBeVisible()
+  await expect(inactive).toHaveCSS('opacity', '1')
+  expect(await inactive.evaluate((row) => getComputedStyle(row).color))
+    .not.toBe(await active.evaluate((row) => getComputedStyle(row).color))
+
+  expect(await seriousViolations(page), 'new dialog with composer').toEqual([])
 })
 
 test('G14 seeded: an unnamed icon button in the new-session flow is reported', async ({ page }) => {

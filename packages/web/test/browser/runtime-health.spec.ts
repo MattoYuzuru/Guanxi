@@ -1,3 +1,4 @@
+import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
@@ -5,7 +6,7 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.addInitScript(({ runtimeSnapshot, settings }) => {
+  await page.addInitScript(({ runtimeSnapshot, settings, sessionPageRoute }) => {
     const observedAt = '2026-08-02T12:00:00.000Z'
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
@@ -91,6 +92,9 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       const rawUrl = typeof input === 'string' ? input : input.url
       const url = new URL(rawUrl, window.location.origin)
       if (url.pathname === '/api/health') return json(health)
+      if (url.pathname === sessionPageRoute) {
+        return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+      }
       if (url.pathname === '/api/settings') return json(settings)
       if (url.pathname === '/api/runtime') return json(degradedRuntime)
       if (url.pathname === '/api/models') {
@@ -134,11 +138,14 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
       }
       return json({ code: 'internal_error', message: url.pathname, details: null }, 500)
     }
-  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings() })
+  }, { runtimeSnapshot: runtimeBrowserSnapshot(), settings: browserSettings(), sessionPageRoute: SESSION_ROUTES.page() })
 
   await page.goto('/')
 
-  await expect(page.getByRole('link', { name: 'Чат' })).toBeVisible()
+  const navigation = page.getByRole('navigation', { name: 'Главная навигация' })
+  await expect(navigation).toBeVisible()
+  await expect(navigation.getByRole('link')).toHaveCount(4)
+  await expect(page.getByRole('link', { name: 'Новая сессия' })).toBeVisible()
   await expect(page.getByText('Ollama вернула несовместимый ответ')).toBeVisible()
   const runtime = page.getByRole('region', { name: 'Runtime и ресурсы' })
   await expect(runtime).toContainText('Источник Ollama несовместим')
