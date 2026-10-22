@@ -227,3 +227,99 @@ e578049 test(k5): cover durable admission, cleanup and crash recovery
 This handoff is a separate docs commit. The tree is clean on `codex/k5-durable-admission` at the
 implementation pin above. Stop here for the root-coordinated independent GPT review; do not
 merge, push, rebase or claim full K5/MS1 completion.
+
+## Review-fix follow-up — 2026-10-22
+
+**Status:** the confirmed P2 is fixed and locally validated; stopped for independent re-review.
+This appended section covers only the separate review fix. It does not self-certify, and it
+does not change the earlier implementation evidence or any central status file.
+
+The independent review in
+`/Users/yuzuru/Projects/Guanxi-lanes/reviews/codex-k5-durable-admission-20261022.md` confirmed that
+`ExternalStore.learn` read both extrema and then wrote the whole row with `INSERT OR REPLACE`.
+A success that had read no rejection could therefore erase a concurrent stricter rejection and
+admit one extra run. Two actual SQLite handles reproduced the loss:
+`rejectedAt=null`, second admission accepted, occupancy `2`.
+
+### Fix
+
+`packages/server/src/external-agents/store.ts` — `learn()` is now one SQLite UPSERT on the
+existing `(owner,account,adapter)` primary key:
+
+- success writes `successful=MAX(existing, observed)` and leaves `rejected` untouched;
+- rejection writes `rejected=MIN(existing, observed)` and leaves `successful` untouched;
+- explicit `NULL` means "not observed", so a first success keeps `rejectedAt=null` and a first
+  rejection keeps `successful=null`;
+- `observed_at` is the later of the existing and incoming observation times, so a late commit
+  from an older observation cannot move the row's provenance backwards;
+- no transaction, dummy `SELECT`, schema, migration, wire contract, retry loop, counter, global
+  state, acquire change, K3/cleanup/service change or new error code is introduced. The single
+  statement is atomic; SQL failures still propagate unchanged.
+
+`packages/server/test/external-agents/learning.test.ts` (new) — 4 focused tests using two real
+`ExternalStore`/SQLite handles on a private sidecar and deterministic interleaving at the actual
+concurrency `INSERT` boundary. No fake learning result is injected. They cover the rejection
+committed immediately before the success write (retained `rejectedAt=2`, exact admission
+occupancy `1`, peer `account_busy`), a later success retaining an existing rejection, racing
+successes retaining the maximum, first-observation `NULL`s, row provenance source/confidence and
+owner/account/adapter isolation.
+
+The two frozen outside probes were not edited:
+
+- read boundary `a91716e7c12e193f4a5adf1baa1de7e994a777da5eece8205fb01b36664fc457`;
+- write boundary `68910a9020817ee2ec95b101259b5589ceb43d9b8e6b6a1f19f8ad7f32930b43`.
+
+### Observed red / green (author, focused fixtures)
+
+The red run was at the test commit `e4896a2` on top of the reviewed pin `04b606b`, before the
+fix: `4 tests, 2 pass, 2 fail`. The failure was semantic, not a missing import:
+
+| Test | Observed red |
+| --- | --- |
+| concurrent success cannot erase a stricter rejection | `rejectedAt` was `null`, expected `2` |
+| racing successes retain the highest value | `successful` was `1`, expected `3` |
+
+The unchanged frozen write probe was also red at `04b606b`: `0 pass / 1 fail`, output
+`injected:true, rejectedAt:null, secondAdmitted:true, occupancy:2`.
+
+Green at fix commit `5853ba3`, with `PATH=/opt/homebrew/opt/node@26/bin:$PATH`, Node **26.9.0**
+and `nice -n 10`:
+
+| Command | Result |
+| --- | --- |
+| `node --test packages/server/test/external-agents/learning.test.ts /Users/yuzuru/Projects/Guanxi-lanes/reviews/k5-learning-write-interleaving-review.test.ts` | 5 tests, 5 pass, 0 fail, 0 skipped; probe output `injected:true, rejectedAt:2, secondAdmitted:false, occupancy:1` |
+| `node --test --test-name-pattern "concurrency learning is account-scoped" packages/server/test/external-agents/policy.test.ts` | 1 existing test, 1 pass, 0 fail |
+| `npx tsc --noEmit -p packages/server/tsconfig.json` | exit 0, no output |
+| `npx eslint packages/server/src/external-agents/store.ts packages/server/test/external-agents/learning.test.ts` | exit 0, no output |
+| `npx markdownlint-cli2 docs/plans/lanes/K5-durable-admission.handoff.md` | exit 0, no output |
+
+The historical read-boundary probe no longer exercises interleaving after the `SELECT` was
+removed: it reports `injected:false` and fails its explicit `injected===true` assertion. That
+failure is honest and is not claimed as a green or as semantic evidence against the fixed path;
+the probe is left unchanged and is not weakened.
+
+### Counts and unrun scope
+
+- **New: 4** repository tests (`learning.test.ts`), no skips.
+- **Regression envelope: 99** — the prior 33 K5 tests plus 66 inherited tests. This follow-up
+  author did not run that envelope; the root/reviewer must rerun it unchanged under the shared
+  heavy lock at the final clean pin.
+- Author-run focused total: **6/6** across the 4 new repository tests, the one frozen outside
+  write probe and the one existing policy learning test. Only the 4 repository tests are
+  new-test credit; the probe and the existing test are not.
+- Migration is unchanged: `MIGRATION_V1`, `MIGRATION_V2`, the sidecar schema and
+  `PRAGMA user_version` behavior are untouched. No new table, column, index or migration row.
+- Not run by the author: the 99-test host envelope, actual two-worker/process cleanup suites,
+  `npm test`, browser, build, full Markdown/license gates, `agent-dev`, containers, network,
+  vendor CLIs or live provider models. Full K5 and MS1 remain open.
+
+### Commits and stop
+
+```text
+e4896a2 test(k5): reproduce lost concurrent learning extrema
+5853ba3 fix(k5): make concurrency learning atomic
+```
+
+The final handoff/docs commit is separate. The tree is clean on
+`codex/k5-durable-admission`; no main/PHASE/NEXT/roadmap/approval/merge/rebase/push operation
+was performed. Stop for independent re-review; do not self-certify this fix.
