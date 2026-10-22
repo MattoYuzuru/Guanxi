@@ -113,8 +113,8 @@ function cleanup(root: string, pids: (number | null | undefined)[] = []): void {
   }
   rmSync(root, { recursive: true, force: true })
 }
-async function groupedHolder(root: string): Promise<{ supervisor: ReturnType<typeof spawn>; clientPid: number }> {
-  const groupFile = join(root, 'group.json')
+async function groupedHolder(root: string, suffix = ''): Promise<{ supervisor: ReturnType<typeof spawn>; clientPid: number }> {
+  const groupFile = join(root, `group${suffix}.json`)
   const holderScript = `const {spawn}=require('node:child_process');` +
     `const fs=require('node:fs');` +
     `const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});` +
@@ -133,6 +133,20 @@ function v2Record(x: ReturnType<typeof setup>, supervisorPid: number, clientPid:
     clientScript: x.policy.clientScript, startedAt: Date.now(),
   }), { mode: 0o600 })
   return recordPath
+}
+function v1Record(x: ReturnType<typeof setup>, supervisorPid: number, clientPid: number | null): string {
+  const recordPath = privateProcessRecordPath(x.binding, x.policy)
+  writeFileSync(recordPath, JSON.stringify({
+    version: 1, bindingTag: trialBindingTag(x.binding), nonceHash: nonceHash(x.binding),
+    supervisorPid, pgid: supervisorPid, clientPid, clientExitCode: null,
+    clientScript: x.policy.clientScript, startedAt: Date.now(),
+  }), { mode: 0o600 })
+  return recordPath
+}
+function supervisorCommand(x: ReturnType<typeof setup>, recordPath: string): string {
+  return [process.execPath, resolve('packages/bench/src/private-supervisor.mjs'),
+    x.policy.clientScript, recordPath, String(x.policy.killGraceMs),
+    trialBindingTag(x.binding), nonceHash(x.binding)].join(' ')
 }
 
 test('actual OS fixture uses fds 3/4 for two sequential public completions with no private identity in argv, env or frames', { timeout: 20_000 }, async () => {
@@ -546,6 +560,81 @@ test('v2 observed-zombie supervisor with a wrong client token quarantines and do
     try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
     await waitGone(holder.supervisor.pid!).catch(() => undefined)
     await waitGone(holder.clientPid).catch(() => undefined)
+    cleanup(x.root)
+  }
+})
+
+test('documented macOS and Linux live supervisor states permit exact-identity reaper cleanup', { timeout: 30_000 }, async () => {
+  const x = setup()
+  const liveStates: Array<{ state: string | undefined; label: string }> = [
+    { state: undefined, label: 'legacy omitted state' },
+    { state: 'S', label: 'macOS/BSD sleeping primary' },
+    { state: 'Ss', label: 'macOS session leader' },
+    { state: 'SN', label: 'macOS reduced priority (nice)' },
+    { state: 'SS', label: 'macOS FIFO page replacement' },
+    { state: 'S<s', label: 'macOS raised priority session leader' },
+    { state: 'RWNA', label: 'macOS documented example with W/N/A' },
+    { state: 'R+', label: 'Linux foreground process group' },
+    { state: 'Ssl', label: 'Linux session leader and multithreaded' },
+    { state: 'D', label: 'Linux uninterruptible sleep' },
+    { state: 't', label: 'Linux debugger stop' },
+    { state: 'U', label: 'macOS uninterruptible wait' },
+  ]
+  try {
+    for (const [index, { state, label }] of liveStates.entries()) {
+      const holder = await groupedHolder(x.root, `-live-${index}`)
+      const recordPath = v1Record(x, holder.supervisor.pid!, holder.clientPid)
+      try {
+        assert.equal(alive(holder.supervisor.pid!), true, label)
+        assert.equal(alive(holder.clientPid), true, label)
+        const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+          observe: async pid => pid === holder.supervisor.pid
+            ? { pid, pgid: holder.supervisor.pid!, state, command: supervisorCommand(x, recordPath) }
+            : null,
+        })
+        assert.equal(result, 'removed', label)
+        assert.equal(existsSync(recordPath), false, label)
+        await waitGone(holder.supervisor.pid!)
+        await waitGone(holder.clientPid)
+      } finally {
+        try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+        try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+        try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
+      }
+    }
+  } finally { cleanup(x.root) }
+})
+
+test('zombie, dead/obsolete and malformed supervisor states quarantine without signal or unlink', { timeout: 15_000 }, async () => {
+  const x = setup()
+  const holder = await groupedHolder(x.root)
+  const recordPath = privateProcessRecordPath(x.binding, x.policy)
+  const negativeStates = [
+    ['Z', 'zombie'], ['Zs', 'zombie with modifier'], ['Z9', 'zombie with malformed modifier'],
+    ['X', 'Linux dead primary'], ['W', 'obsolete Linux paging primary'], ['z', 'lowercase zombie primary'],
+    ['Q', 'unknown primary'], ['S9', 'unknown modifier'], ['Sq', 'unknown letter modifier'],
+    ['S++', 'duplicate modifier'], ['SSS', 'duplicate FIFO modifier'],
+    ['??', 'punctuation'], ['S garbage', 'whitespace'], ['', 'empty'],
+  ] as const
+  try {
+    assert.equal(alive(holder.supervisor.pid!), true)
+    assert.equal(alive(holder.clientPid), true)
+    for (const [state, label] of negativeStates) {
+      v1Record(x, holder.supervisor.pid!, holder.clientPid)
+      const result = await reapPrivateProcessRecord(x.binding, x.policy, {
+        observe: async pid => pid === holder.supervisor.pid
+          ? { pid, pgid: holder.supervisor.pid!, state, command: supervisorCommand(x, recordPath) }
+          : null,
+      })
+      assert.equal(result, 'cleanup_unconfirmed', label)
+      assert.equal(existsSync(recordPath), true, label)
+      assert.equal(alive(holder.supervisor.pid!), true, label)
+      assert.equal(alive(holder.clientPid), true, label)
+    }
+  } finally {
+    try { process.kill(-holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.supervisor.pid!, 'SIGKILL') } catch { /* already gone */ }
+    try { process.kill(holder.clientPid, 'SIGKILL') } catch { /* already gone */ }
     cleanup(x.root)
   }
 })

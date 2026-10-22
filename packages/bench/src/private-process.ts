@@ -290,12 +290,20 @@ async function inspectProcess(inspect: Observer, pid: number | null): Promise<Pr
   } catch { return { status: 'unknown' } }
 }
 function processState(state: string | undefined): 'live' | 'zombie' | 'unknown' {
-  // Injected legacy seams omit state; production always parses it. An absent
-  // known state is fail-closed, while macOS/BSD state modifiers remain live.
+  // Injected legacy seams omit state; production always parses it. Accept the
+  // documented macOS/BSD and Linux live primaries with documented modifiers.
+  // Z remains a zombie; dead/obsolete primaries, duplicate modifiers and
+  // malformed strings remain unknown so the caller quarantines.
   if (state === undefined) return 'live'
   if (state.length === 0) return 'unknown'
-  if (state.startsWith('Z')) return 'zombie'
-  return /^[A-Za-z][+<>]*$/.test(state) ? 'live' : 'unknown'
+  const primary = state[0]!
+  const modifiers = new Set<string>()
+  for (const modifier of state.slice(1)) {
+    if (!'+<>AELNSsVWXl'.includes(modifier) || modifiers.has(modifier)) return 'unknown'
+    modifiers.add(modifier)
+  }
+  if (primary === 'Z') return 'zombie'
+  return 'DIRSTUt'.includes(primary) ? 'live' : 'unknown'
 }
 function tokens(command: string): string[] { return command.trim().split(/\s+/).filter(Boolean) }
 function isSupervisor(observed: ObservedProcess, record: PrivateProcessRecord, policy: PrivateProcessPolicy, path: string): boolean {
