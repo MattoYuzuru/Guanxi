@@ -276,7 +276,9 @@ for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfor
         font: parseFloat(getComputedStyle(node.querySelector('[role="menuitem"]')!).fontSize) }))
       expect(regime.row).toBe(density === 'compact' ? 26 : 32)
       expect(regime.font).toBe(density === 'compact' ? 13 : 14)
-      expect(regime.backdrop).toContain(glass === 'solid' ? 'none' : glass === 'glass' ? 'blur(20px)' : 'blur(12px)')
+      // Solid's generated material expresses no effect as zero blur and unit saturation.
+      if (glass === 'solid') expect(regime.backdrop).toMatch(/^(none|blur\(0px\) saturate\(1\))$/)
+      else expect(regime.backdrop).toContain(glass === 'glass' ? 'blur(20px)' : 'blur(12px)')
       await expect(page.getByRole('menuitem').nth(2)).toHaveAttribute('aria-disabled', 'true')
       const menuImage = testInfo.outputPath(`${locale}-menu.png`)
       await page.screenshot({ path: menuImage })
