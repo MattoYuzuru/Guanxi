@@ -27,10 +27,13 @@ ACP bridge 0.94.0 (read from the installed package) offers `effort` (`category: 
 
 ## Decisions taken (defaults)
 
-1. The connection decides the mode (no installation flag). 2. API mode keeps the persistent config directory. 3. Effort is
-installation policy through the ACP option, not a `settings.json` edit and not `params.reasoning`. 4. A failed or key-less boot import
-refuses the lead; the vault's older key is used only when no file is named. 5. Key-file source order: `StartOptions.providerKeysFile`,
-`GUANXI_PROVIDER_KEYS_FILE`, `home.lead.providerKeysFile` (an empty variable is unset). 6. `claudeBare` still refuses in API mode.
+1. The connection decides the mode (no installation flag).
+2. API mode keeps the persistent config directory.
+3. Effort is installation policy through the ACP option, not a `settings.json` edit and not `params.reasoning`.
+4. A failed or key-less boot import refuses the lead; the vault's older key is used only when no file is named.
+5. Key-file source order: `StartOptions.providerKeysFile`, `GUANXI_PROVIDER_KEYS_FILE`, `home.lead.providerKeysFile` (an empty
+   variable is unset).
+6. `claudeBare` still refuses in API mode.
 7. I did not set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`: its effect on the bridge is unverified.
 
 ## The configuration the integrator sets
