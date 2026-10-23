@@ -115,9 +115,14 @@ export async function killOrphanGroup(pgid: number): Promise<boolean> {
   return false
 }
 
-export async function isolatedEnvironment(root: string, install: AgentInstallation) {
+/** The private directory (HOME, config, work) of one installation; a path only, nothing is created or opened. */
+export function configDirectoryFor(root: string, install: Pick<AgentInstallation, 'nodeId' | 'ownerAccountId' | 'connectionId'>) {
   const key = createHash('sha256').update(JSON.stringify([install.nodeId, install.ownerAccountId, install.connectionId])).digest('hex')
-  const base = join(root, 'external-agent-config', key)
+  return join(root, 'external-agent-config', key)
+}
+
+export async function isolatedEnvironment(root: string, install: AgentInstallation) {
+  const base = configDirectoryFor(root, install)
   const dirs = [join(root, 'external-agent-config'), base, join(base, 'home'), join(base, 'config'), join(base, 'data'), join(base, 'cache'), join(base, 'tmp'), join(base, 'work')]
   for (const path of dirs) {
     await mkdir(path, { recursive: true, mode: 0o700 })

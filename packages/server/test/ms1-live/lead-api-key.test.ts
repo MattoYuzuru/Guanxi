@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
 import type { Connections } from '../../src/connections/service.ts'
@@ -373,6 +373,7 @@ test('end to end through the start command\'s lead set-up: the fixture agent rec
     assert.equal(environment[mode === 'api_key' ? 'anthropicKeyMatches' : 'oauthTokenMatches'], true, 'the vault key reached the agent process')
     assert.equal(environment.names.includes(mode === 'api_key' ? 'CLAUDE_CODE_OAUTH_TOKEN' : 'ANTHROPIC_API_KEY'), false)
     assert.equal(environment.subprocessScrub, '1')
+    assert.equal(auth['configDirectory'], dirname(environment.HOME), 'the event names the directory the CLI really ran in')
     for (const path of [...filesUnder(join(w.root, 'data')), ...filesUnder(agentDir).filter(file => !file.endsWith('scenario.json'))]) {
       const bytes = readFileSync(path); assert.equal(bytes.includes(secret), false, path); assert.equal(bytes.includes(secret.slice(-20)), false, path)
     }

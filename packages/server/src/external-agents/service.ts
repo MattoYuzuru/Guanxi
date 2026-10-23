@@ -7,7 +7,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
 import { CodexClient } from './codex.ts'
-import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
+import { canonicalExecutable, isolatedEnvironment, configDirectoryFor, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
   type ClaudeAuthProbe, type ProcessCleanup } from './process.ts'
 import { vendorSettingsPresent } from './settings-guard.ts'
 import { ExternalStore } from './store.ts'
@@ -220,6 +220,11 @@ export class ExternalAgents {
       return this.scrubber.scrub({ nodeId: this.policy.nodeId, executable, args: install.adapter === 'claude-code' ? ['auth', 'login'] : install.adapter === 'codex' ? ['login'] : [],
         interaction: install.adapter === 'copilot' ? '/login' : null, environment: config.env })
     })
+  }
+  /** Where this installation's private CLI directory is (a path only): what to clean when `claude_settings_present` refuses a launch. */
+  configDirectory(owner: string, actor: string, connectionId: string) {
+    this.assertOwner(owner, actor)
+    return configDirectoryFor(this.root, this.installation(owner, connectionId))
   }
   limits(owner: string, connectionId: string, now = Date.now()) {
     const install = this.installation(owner, connectionId)
