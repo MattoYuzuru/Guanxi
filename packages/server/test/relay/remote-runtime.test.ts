@@ -710,3 +710,16 @@ test('the grant carries the home holder TTL and the executor never outlives it, 
   r.controller.abort()
   assert.ok((await call) instanceof Error)
 })
+
+test('an offer naming a relay parent is refused at offer time from an old peer or by an executor without the relay runtime', async t => {
+  const f = await remoteFixture(t), r = await f.relay(), content = 'Parent at offer time.'
+  await r.model.countAsync!(content)
+  const counted = { contentSha256: sha(content), renderedSha256: sha(rendered(content)), tokens: exact(content), digest: 'sha256:d', contextTokens: 16000 }
+  f.home.runs.create({ id: 'kid-feature', sessionId: 'relay-session' })
+  const offer = f.home.federation.prepareDispatch('kid-feature', 'target', { kind: 'local_inference', model: 'fixture', context: 16000, outputTokens: 100,
+    deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }, 4000, { runId: 'relay', epoch: 1 })
+  await assert.rejects(f.target.federation.receiveAttemptOffer({ ...f.homeCtx, version: { major: 1, minor: 3 } }, offer), /contract_feature_unavailable/)
+  const bare = await remoteFixture(t, { noRelayRuntime: true })
+  bare.target.federation.replicas.bind({ streamId: 'relay:relay', kind: 'run', sessionId: 'relay-session', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
+  await assert.rejects(bare.target.federation.receiveAttemptOffer(bare.homeCtx, offer), /contract_feature_unavailable/)
+})
