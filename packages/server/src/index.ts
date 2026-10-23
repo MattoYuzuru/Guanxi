@@ -23,8 +23,6 @@ import { accessSync, constants, existsSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
-import { hostAllowlist } from './http/host-allowlist.ts'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { PRODUCT_NAME } from '@guanxi/contract'
 import { createApp } from './app.ts'
@@ -64,6 +62,7 @@ import type { WorkLedger } from './work/ledger.ts'
 import { workRoutes } from './work/routes.ts'
 import type { ExternalPolicy } from './external-agents/types.ts'
 import { Ms1LiveNode, type Ms1LiveHomeRelay } from './ms1-live/boot.ts'
+import { federationListener } from './ms1-live/listener.ts'
 import { Ms1LiveError, type Ms1LiveSettings } from './ms1-live/config.ts'
 
 export { RELEASE_BUILD } from './release.ts'
@@ -476,14 +475,7 @@ export async function start(options: StartOptions = {}) {
   // this port only, so the owner API (workspaces, projects, relay starts, connections) is never reachable through the link.
   let federationInstance: ReturnType<typeof serve> | undefined
   if (live) {
-    const federationServer = new Hono()
-    federationServer.use('*', hostAllowlist({ host, port: live.federationPort }))
-    federationServer.route('/api/federation', federationRoutes(() => {
-      const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
-      if (!service) throw new FederationError('federation_unavailable', 503)
-      return service
-    }))
-    federationServer.all('*', c => c.json({ code: 'not_found' }, 404))
+    const federationServer = federationListener({ host, port: live.federationPort, federation: () => kernel.node.service<Federation>(FEDERATION_SERVICE) })
     try {
       await new Promise<void>((resolveListening, reject) => {
         const onError = (error: Error) => reject(error)
