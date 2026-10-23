@@ -1,0 +1,75 @@
+# K3-chat implementation plan
+
+Status: autonomous under D-208 and the lane owner's instructions. Base: `631cd5c8`.
+
+## Outcome and scope
+
+- Import owner-designated dotenv data through boot and a local CLI into the K3 vault.
+- Persist an immutable OpenAI-compatible endpoint per connection; validate DNS/IP policy with stored owner private-network opt-in,
+  reject credentials/query/fragment and redirects. No request-level endpoint or environment keys.
+- Expose generic chat model groups combining Ollama and usable K3 connections, including
+  model-list provenance; retain the existing picker styling.
+- Route provider Chat through K3 completion and the existing durable Job/SSE projection.
+- Prepend the existing ADR-0021 English light orientation to local and provider Chat,
+  with only the brand-module product name added (integrator correction).
+
+## Defaults
+
+- Import only explicitly supported model-provider key names, with no shell interpolation.
+  Imported connections are named by provider and dedicated import identity. No unattended opt-in.
+- A trusted import may unlock the vault for this process; the standalone importer closes it.
+  Compare decrypted current keys without persisting plaintext or a public key fingerprint.
+- OPENAI_API_URL is fixed on an imported connection. Endpoint changes create a new identity;
+  they never redirect an existing conversation's key silently.
+- Custom OpenAI endpoints use the chat-completions protocol. Discover `/models` with an explicit
+  vault key and bounded timeout/body/list; retain stale endpoint evidence or explicit unknown.
+- Provider streaming may buffer text at the K3 scrubber boundary to avoid partial-secret leaks.
+  Durable execution remains independent from subscribers; restart interrupts rather than retries.
+- Plain Chat uses the shared orientation source with truthful no-tools/no-execution facts.
+  Its orientation plus fixed English language line is bounded to 350 UTF-8 bytes, first before history, and byte-stable across
+  turns and locale changes. No paths, secrets, project metadata or volatile values enter it.
+- Per-project prompt editing is deferred. This reuses the ADR-0021 baseline, not a new prompt;
+  any expansion needs an ADR-0025 bench result. Fake-transport assertions establish dispatch,
+  not model quality, cache hits or non-inferiority.
+
+## Boundaries and migration
+
+Contract, K3 registry/vault/transport, trusted CLI and boot, durable chat owner, chat picker,
+Settings host display and related route/component tests are in scope. Minimal shared edits to
+legacy thread/project creation and model validation are recorded in the handoff.
+Existing connection JSON gains optional fields; any new K3 tables use append-only migration 3.
+Existing local model strings and old connection records remain readable. Rollback retains the
+sidecar and vault keys; provider threads require the new consumer and must not dispatch to Ollama.
+No real dotenv, live provider, SSH, owner data, push or status-file edits.
+No third-party code is copied; reuse pinned pi-ai and existing UI components.
+
+## Verification
+
+New tests: data-only dotenv parsing; idempotence/rotation; canary scans of outputs/errors/storage;
+endpoint validation and pinned transport; current/stale/unknown endpoint provenance; grouped picker;
+fake pi-ai durable chat including cancellation/replay, scrubbed request/result, harness prompt;
+local prompt and contract/route compatibility.
+
+Gates: Node 26 and lane ports/data, `npm ci`, workspace resolution, `typecheck`, `lint:md`,
+`check:licenses`, `lint:js`, `ui:check`. Heavy `test`, `test:web:browser`, `build` only through
+`/Users/yuzuru/.local/bin/agent-dev run --cwd /Users/yuzuru/Projects/Guanxi-lanes/chatmodels
+--node 26 --resource heavy --lock-timeout 3600 -- npm run <gate>`.
+Separate read-only reviewer after implementation; findings fixed in separate commits.
+Separate plan, implementation, tests and docs commits. Handoff records new/envelope evidence,
+receipts, review, limitations and the exact operator-only live smoke command.
+
+## Independent Opus review fixes — 2026-10-23
+
+Work is authorized by the owner's itemized review. Each finding is fixed in a separate
+conventional commit with a regression, followed by a read-only reviewer action. No database
+migration is required: network consent is an optional connection JSON field; existing records
+remain denied for private endpoints. HTTP no longer accepts custom roots. Unknown provider
+context makes allocation/percentage nullable; server, contract, clients and durable events
+change together. Existing local context numbers remain unchanged. Rollback retains the vault
+and endpoint metadata; old consumers cannot claim support for the new nullable projections.
+No real credentials, dotenv or provider/model calls are part of validation.
+
+Checks run on Node 26, ports 5236/4436 and isolated lane data. Required order: typecheck,
+Markdown/links, licenses, JavaScript lint, affected server/CLI/web tests, then the locked
+full `test` and mocked Chromium `test:web:browser`. Hand-off records actual failures,
+new versus regression scope, reviewer findings and receipts; no whole-stage exit is inferred.

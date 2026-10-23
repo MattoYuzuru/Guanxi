@@ -21,6 +21,14 @@ export const connectionBalanceSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low', 'unknown']),
 }).strict()
 export const secretReferenceSchema = z.string().regex(/^secret:\/\/[A-Za-z0-9_-]+\/[0-9a-f-]{36}$/)
+/** Owner-pinned API root, never accepted on a completion request. */
+export const connectionBaseUrlSchema = z.string().url().max(2048).refine(value => {
+  try {
+    const url = new URL(value)
+    return !url.username && !url.password && !url.search && !url.hash &&
+      (url.protocol === 'https:' || url.protocol === 'http:')
+  } catch { return false }
+}, 'API root requires HTTP(S) without credentials, query or fragment; dispatch enforces network policy')
 export const createConnectionSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: connectionKindSchema,
@@ -43,6 +51,8 @@ export const connectionSchema = z.object({
   id: z.string().uuid(), accountId: z.string().min(1), name: z.string(),
   kind: connectionKindSchema, provider: connectionProviderSchema,
   auth: z.enum(['api_key', 'cli_login', 'none']), unattended: z.boolean(),
+  baseUrl: connectionBaseUrlSchema.optional(),
+  allowPrivate: z.boolean().optional(),
   secretRef: secretReferenceSchema.nullable(),
   facts: z.record(connectionFactSchema), balance: connectionBalanceSchema.nullable(),
   createdAt: z.string().datetime(),
@@ -76,3 +86,23 @@ export const connectionErrorCodeSchema = z.enum([
 ])
 export const connectionErrorSchema = z.object({ code: connectionErrorCodeSchema }).strict()
 export type ConnectionErrorCode = z.infer<typeof connectionErrorCodeSchema>
+
+export const MAX_DISCOVERED_MODELS = 1024
+export const MAX_PROVIDER_MODEL_ID = 256
+export const providerModelIdSchema = z.string().min(1).max(MAX_PROVIDER_MODEL_ID)
+/** Generic picker data; selection is opaque to clients and persists as Thread.model. */
+export const chatModelSelection = (connectionId: string, modelId: string): string =>
+  `k3:${connectionId}:${encodeURIComponent(modelId)}`
+export function parseChatModelSelection(value: string): { connectionId: string; modelId: string } | null {
+  const match = /^k3:([0-9a-f-]{36}):(.+)$/.exec(value)
+  if (!match) return null
+  try { return { connectionId: z.string().uuid().parse(match[1]), modelId: providerModelIdSchema.parse(decodeURIComponent(match[2]!)) } } catch { return null }
+}
+export const chatModelsResponse = z.object({ groups: z.array(z.object({
+  id: z.string(), label: z.string(), kind: z.enum(['local', 'provider']),
+  discovery: z.object({ state: z.enum(['current', 'stale', 'unknown']), source: z.string(), observedAt: z.string().datetime().nullable(), confidence: z.enum(['medium', 'low', 'unknown']) }).strict().optional(),
+  models: z.array(z.object({ selection: z.string().max(MAX_PROVIDER_MODEL_ID * 3 + 41), modelId: providerModelIdSchema,
+    source: z.string(), observedAt: z.string().datetime(), confidence: z.enum(['medium', 'low']),
+  }).strict()).max(MAX_DISCOVERED_MODELS),
+}).strict()) }).strict()
+export type ChatModelsResponse = z.infer<typeof chatModelsResponse>

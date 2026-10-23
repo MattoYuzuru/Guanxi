@@ -1,3 +1,4 @@
+import { ConnectionError } from '../connections/errors.ts'
 /**
  * Агентный цикл: запрос к модели → вызовы инструментов → результаты обратно в модель.
  *
@@ -37,13 +38,15 @@ import type { ToolRegistry } from '../tools/registry.ts'
 import { ToolError } from '../tools/types.ts'
 import type { ApprovalGate } from './approvals.ts'
 import { ContentGate } from './content-gate.ts'
-import { CHAT_SYSTEM_PROMPT, agentSystemPrompt } from './prompts.ts'
+import { agentSystemPrompt } from './prompts.ts'
+import { harnessSystemPrompt } from './harness-prompt.ts'
 import { parseToolCalls } from './tool-parser.ts'
 
 export interface RunTurnParams {
   thread: Thread
+  providerContext?: import('@guanxi/contract').ContextState['providerContext']
   workspace: Workspace | null
-  client: OllamaClient
+  client: Pick<OllamaClient, 'chatStream'>
   store: ThreadStore
   registry: ToolRegistry
   approvals: ApprovalGate
@@ -93,6 +96,7 @@ function cancellationReason(signal: AbortSignal): TurnStopReason {
 }
 
 function safeTurnFailure(error: unknown): { error: TurnError; stopReason: TurnStopReason } {
+  if (error instanceof ConnectionError) return { error: { code: error.code, message: 'Connection request failed' }, stopReason: 'provider_error' }
   if (error instanceof TerminalPersistenceError) {
     return {
       error: {
@@ -246,7 +250,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           toolNames: registry.list().map((tool) => tool.name),
           supportsNativeTools: params.modelSupportsTools,
         })
-      : CHAT_SYSTEM_PROMPT
+      : harnessSystemPrompt()
 
   const persistedMessages = store
     .activeContextMessages(thread.id)
@@ -452,6 +456,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           buildContextState({
             usedTokens: usage.promptTokens,
             allocatedTokens: thread.options.numCtx,
+            providerContext: params.providerContext,
             usage,
             model: thread.model,
             tracker,
@@ -672,6 +677,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         buildContextState({
           usedTokens: usage.promptTokens,
           allocatedTokens: thread.options.numCtx,
+            providerContext: params.providerContext,
           usage,
           model: thread.model,
           tracker,

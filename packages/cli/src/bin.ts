@@ -1,3 +1,4 @@
+import { connectionsImport } from './connections-import.ts'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -21,6 +22,7 @@ function usage(): string {
   return `Guanxi ${VERSION}
 
 Использование:
+  guanxi connections import --file PATH [--data-dir PATH] [--json]
   guanxi [--port 4310] [--host 127.0.0.1] [--data-dir PATH] [--no-open]
 
 Опции:
@@ -96,7 +98,12 @@ function requestedUrl(options: CliOptions): { url: string; port: number } {
 }
 
 const args = process.argv.slice(2)
-if (args[0] === 'relay' && args[1] === 'exec') {
+if (args[0] === 'connections' && args[1] === 'import') {
+  const result = await connectionsImport(args.slice(2))
+  console.log(args.includes('--json') ? JSON.stringify(result) : result.ok ? 'Provider keys imported' : [result.error, ...('errors' in result ? result.errors ?? [] : []).map(item => `${item.key}:${item.code}`)].join('; '))
+  process.exit(result.ok ? 0 : 1)
+}
+if (args[0] === 'relay'  && args[1] === 'exec') {
   const abort = new AbortController()
   process.once('SIGINT', () => abort.abort())
   const result = await relayExec(args.slice(2), fetch, abort.signal)
