@@ -5,10 +5,19 @@ import { once } from 'node:events'
 import { createConnectionSchema } from '@guanxi/contract'
 import { endpointFetch } from '../../src/connections/endpoint.ts'
 
-test('HTTP connection creation refuses endpoint and network-policy overrides', () => {
+test('HTTP connection creation refuses endpoint and network-policy overrides', async () => {
+  const { Hono } = await import('hono')
+  const { connectionRoutes } = await import('../../src/connections/routes.ts')
+  const app = new Hono().route('/connections', connectionRoutes(() => ({
+    create: () => assert.fail('HTTP override reached the registry'),
+  }) as unknown as import('../../src/connections/service.ts').Connections, 'local'))
   const row = { name: 'x', kind: 'model_api', provider: 'openai', auth: 'api_key' }
-  for (const extra of [{ baseUrl: 'https://10.0.0.1/v1' }, { allowPrivate: true }])
+  for (const extra of [{ baseUrl: 'https://10.0.0.1/v1' }, { allowPrivate: true }]) {
     assert.equal(createConnectionSchema.safeParse({ ...row, ...extra }).success, false)
+    const response = await app.request('/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...row, ...extra }) })
+    assert.equal(response.status, 400)
+    assert.deepEqual(await response.json(), { code: 'validation_failed' })
+  }
 })
 
 test('dispatch refuses all link-local addresses, including IPv4 mapped IPv6, even with opt-in', async () => {
