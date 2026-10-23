@@ -9,6 +9,9 @@ import { hostAllowlist } from '../http/host-allowlist.ts'
 export function federationListener(options: { host: string; port: number; federation: () => Federation | undefined }): Hono {
   const app = new Hono()
   app.use('*', hostAllowlist({ host: options.host, port: options.port }))
+  // Device enrollment is the one unsigned, state-writing part of the federation API. MS1 nodes are paired by exchanging public
+  // files, never by enrollment, so it is not served here at all.
+  app.all('/api/federation/device/*', c => c.json({ code: 'not_found' }, 404))
   app.route('/api/federation', federationRoutes(() => {
     const service = options.federation()
     if (!service) throw new FederationError('federation_unavailable', 503)

@@ -241,3 +241,19 @@ test('the relay host and plugin accept extra trusted fields (the seam for a judg
   assert.equal(host.limits.gateTimeoutMs, 1234, 'a field passed through relayHost reaches the relay start host')
   assert.ok(host.runtime && host.allocate && host.reserves, 'the pairing\'s runtime, allocator and reserves are still the home\'s own')
 })
+
+test('device enrollment is not served on the federation listener: an unsigned caller cannot write enrollment rows', async t => {
+  const { root, settings } = await pairing(t)
+  const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: settings })
+  t.after(() => server.close())
+  const federation = `http://127.0.0.1:${settings.listen.federationPort}`
+  const { readFileSync } = await import('node:fs')
+  const publicKey = (JSON.parse(readFileSync(settings.node.identityFile, 'utf8')) as { identity: { publicKey: string } }).identity.publicKey
+  for (const [path, body] of [['/api/federation/device/code', { publicKey }], ['/api/federation/device/token', { device_code: 'x' }]] as const) {
+    const response = await fetch(federation + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    assert.deepEqual([response.status, await response.json()], [404, { code: 'not_found' }], path)
+  }
+  assert.equal(server.context.db.prepare('SELECT COUNT(*) n FROM federation_devices').get()!.n, 0, 'no enrollment row was written')
+  // The signed API is still there: an unsigned request is refused by authentication, not by routing.
+  assert.equal((await fetch(`${federation}/api/federation/handshake`)).status, 401)
+})
