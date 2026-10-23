@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { chmodSync, copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
 import type { Connections } from '../../src/connections/service.ts'
 import { EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../../src/external-agents/plugin.ts'
@@ -12,6 +12,7 @@ import { start } from '../../src/index.ts'
 import { Ms1LiveNode } from '../../src/ms1-live/boot.ts'
 import { loadMs1LiveConfig, Ms1LiveError, parseMs1LiveConfig, type Ms1LiveSettings } from '../../src/ms1-live/config.ts'
 import type { VaultKeychain } from '../../src/vault/keychain.ts'
+import { main } from '../../src/ms1-live/cli.ts'
 import { cli, freePort } from './live-world.ts'
 
 const reserves = { turn: 4096, safety: 512, handoff: 3072, tool: 3072, stepMedian: 1536, effective: 24000 }
@@ -23,6 +24,10 @@ const home = (leadOverrides: Record<string, unknown> = {}) => ({ version: 1, rol
 const refused = (raw: unknown, code: string, field: string) => assert.throws(() => parseMs1LiveConfig(raw, '/etc/x/ms1-live.json'),
   (error: unknown) => error instanceof Ms1LiveError && error.code === code && error.field === field, `${code} at ${field}`)
 const fakeKey = () => `sk-ant-api03-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
+// The owner's own key file may be named in this process's environment: no test here may read it, and none may reach the OS keychain.
+let ambientKeyFile: string | undefined
+before(() => { ambientKeyFile = process.env['GUANXI_PROVIDER_KEYS_FILE']; delete process.env['GUANXI_PROVIDER_KEYS_FILE'] })
+after(() => { if (ambientKeyFile === undefined) delete process.env['GUANXI_PROVIDER_KEYS_FILE']; else process.env['GUANXI_PROVIDER_KEYS_FILE'] = ambientKeyFile })
 let keychainReads = 0
 /** The OS keychain stand-in: it counts every wrapping-key read, so a refusal can prove it never reached the vault. */
 const keychain = async (): Promise<VaultKeychain> => ({ key: () => { keychainReads++; return Buffer.alloc(32, 9) } })
@@ -219,4 +224,22 @@ test('a key file that was imported pays for the lead: a named older connection, 
   // Naming another connection while a file was imported would pay with a key this boot did not import.
   const refused = await outcome('older-anthropic')
   assert.ok(refused instanceof Ms1LiveError && refused.code === 'lead_connection_not_imported' && refused.field === 'home.lead.connection', `got ${refused instanceof Error ? refused.message : refused}`)
+})
+
+test('start reads the key file from the same environment the command was given as doctor does, not from the process\'s own', async t => {
+  const w = await pair(t)
+  w.settings(config => { delete config.home.lead.providerKeysFile })
+  // A different file named only in the process environment (an OAuth token: it would fail the import if it were read).
+  const ambient = join(w.root, 'ambient.env')
+  writeKeys(ambient, `ANTHROPIC_API_KEY=sk-ant-oat01-${'c'.repeat(50)}\n`)
+  process.env['GUANXI_PROVIDER_KEYS_FILE'] = ambient
+  t.after(() => { delete process.env['GUANXI_PROVIDER_KEYS_FILE'] })
+  const out: string[] = []
+  keychainReads = 0
+  const api = await freePort()
+  const code = await main(['start', '--config', join(w.home, 'ms1-live.json'), '--data-dir', join(w.root, 'data'), '--port', String(api), '--json'], { out: text => out.push(text), err: () => undefined },
+    { HOME: w.root }, { connectionsKeychain: keychain })
+  const event = JSON.parse(out.join('\n').split('\n').at(-1)!)
+  assert.equal(code, 2); assert.equal(event.code, 'lead_key_missing', 'the process environment\'s file was not read')
+  assert.equal(keychainReads, 0)
 })

@@ -313,7 +313,8 @@ export async function start(options: StartOptions = {}) {
       policy: options.connectionsPolicy ?? (live ? { ownerDevice: true, nodeKeyOptIn: true } : undefined),
     })
     // An explicit option and `GUANXI_PROVIDER_KEYS_FILE` come first; an MS1 API-key lead's own file is the fallback.
-    const providerKeysFile = options.providerKeysFile || process.env.GUANXI_PROVIDER_KEYS_FILE || live?.providerKeysFile
+    // An explicit option (even an empty one: none) replaces the process environment; the live configuration's file is the last resort.
+    const providerKeysFile = (options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE) || live?.providerKeysFile
     let providerKeysFailed = false, anthropicImported: string | undefined
     if (providerKeysFile) {
       try {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { ZodError } from 'zod'
 import { resolve } from 'node:path'
-import { start } from '../index.ts'
+import { start, type StartOptions } from '../index.ts'
 import { EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../external-agents/plugin.ts'
 import { LOCAL_ACCOUNT_ID } from '../http/local-guard.ts'
 import { LEAD_SERVICE, type LeadHostService } from '../leads/plugin.ts'
@@ -79,7 +79,9 @@ function template(role: 'home' | 'executor', options: { port: number; federation
   }
 }
 
-export async function main(argv: readonly string[], io: Io = stdio, env: Readonly<Record<string, string | undefined>> = process.env): Promise<number> {
+export async function main(argv: readonly string[], io: Io = stdio, env: Readonly<Record<string, string | undefined>> = process.env,
+  /** Trusted extras for the node `start` boots (a test seam: the vault's keychain). The command's own environment, not the process's, names the key file. */
+  startExtra: Partial<StartOptions> = {}): Promise<number> {
   const [command, ...rest] = argv
   let parsed: Parsed
   try { parsed = parse(rest) } catch (error) { io.err(`${error instanceof Error ? error.message : 'bad arguments'}\n\n${USAGE}`); return 2 }
@@ -133,7 +135,7 @@ export async function main(argv: readonly string[], io: Io = stdio, env: Readonl
           result.ok ? 'preflight: ok' : 'preflight: FAILED'])
         return result.ok ? 0 : 1
       }
-      case 'start': return await startCommand(parsed, io, env, json)
+      case 'start': return await startCommand(parsed, io, env, json, startExtra)
       default: throw new Usage(`unknown command ${command}`)
     }
   } catch (error) {
@@ -144,7 +146,7 @@ export async function main(argv: readonly string[], io: Io = stdio, env: Readonl
   }
 }
 
-async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string, string | undefined>>, json: boolean): Promise<number> {
+async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string, string | undefined>>, json: boolean, startExtra: Partial<StartOptions>): Promise<number> {
   const settings = loadMs1LiveConfig(configPath(parsed, env))
   const promptFile = text(parsed, 'lead-prompt-file'), project = text(parsed, 'project')
   if (!!promptFile !== !!project) throw new Usage('--lead-prompt-file and --project go together')
@@ -154,7 +156,8 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   const emit = (event: Record<string, unknown>) => io.out(json ? JSON.stringify(event) : Object.entries(event).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(' '))
   const dataDir = text(parsed, 'data-dir'), listen = port(parsed, 'port')
   let server: Awaited<ReturnType<typeof start>>
-  try { server = await start({ ms1Live: settings, ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}) }) } catch (error) {
+  // `providerKeysFile` is always given (empty: none), so `doctor` and `start` read the one source, the command's environment.
+  try { server = await start({ ms1Live: settings, providerKeysFile: env['GUANXI_PROVIDER_KEYS_FILE'] ?? '', ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}), ...startExtra }) } catch (error) {
     if (error instanceof Ms1LiveError) { emit({ event: 'failed', code: error.code, field: error.field, summary: describeConfigError(error) }); return 2 }
     const code = (error as NodeJS.ErrnoException | null)?.code
     emit({ event: 'failed', code: code === 'EADDRINUSE' ? 'port_in_use' : 'start_failed' })
