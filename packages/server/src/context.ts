@@ -1,3 +1,4 @@
+import type { Connections } from './connections/service.ts'
 import { normalizeHost } from './ollama/normalize-host.ts'
 /**
  * Сборка зависимостей приложения.
@@ -62,6 +63,7 @@ export const DEFAULT_OLLAMA_HOST = process.env['OLLAMA_HOST']
 
 
 export interface AppContext {
+  connections?: () => Connections
   db: Db
   /** Generic immutable metadata + content-addressed blob boundary; no public raw paths. */
   artifacts: ArtifactStore
@@ -121,6 +123,7 @@ export interface AppContext {
 }
 
 export interface CreateContextOptions {
+  connections?: () => Connections
   dbPath: string
   appVersion: string
   featureFlagEnvironment?: FeatureFlagEnvironment
@@ -217,6 +220,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       rootDir: join(dirname(options.dbPath), 'artifacts'),
     })
     const base = {
+      connections: options.connections,
       db,
       artifacts,
       artifactTransfers: new ArtifactTransferService({

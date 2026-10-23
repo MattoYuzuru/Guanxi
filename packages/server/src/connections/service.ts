@@ -13,12 +13,17 @@ import { ConnectionStore } from './store.ts'
 import { assertApiKey, piModels, piTransport, type PiTransport } from './pi.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { modelsDevFacts } from './metadata.ts'
+import type { ImportedProvider } from './dotenv.ts'
+import { SafeTextStream } from './safe-stream.ts'
+import type { Api, Model } from '@earendil-works/pi-ai'
 
 export interface ModelCall {
   model: string; runId: string; requestId: string; background?: boolean
   /** Trusted billing boundary: one K3-visible HTTP attempt, never a provider retry. */
   singleAttempt?: true
   signal?: AbortSignal
+  /** Trusted consumer receives only scrubbed, secret-boundary-safe text. */
+  onText?: (text: string) => void
   /** Trusted executor observation after dispatch starts; never supplied by HTTP/model input. */
   onStarted?: () => void
   /** API response/chunk observation for native inference acknowledgment. */
@@ -50,7 +55,9 @@ export interface LocalChatTransport {
     dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }): Promise<OllamaChatChunk>
 }
 export class Connections {
+  private imports: Promise<unknown> = Promise.resolve()
   private closed = false
+  private readonly discovered = new Map<string, { at: string; models: string[] }>()
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
   #vault: Vault
@@ -95,6 +102,84 @@ export class Connections {
     this.assertOpen()
     if (input.unattended && !this.#vault.unattendedAvailable) throw new ConnectionError('policy_denied', 'Node unattended access is not enabled')
     return this.store.create(accountId, input)
+  }
+  /** Trusted import keeps one identity per provider/API root. Never grants unattended consent. */
+  importKeys(accountId: string, entries: ImportedProvider[]) {
+    const task = this.imports.then(() => this.importEntries(accountId, entries))
+    this.imports = task.catch(() => undefined)
+    return task
+  }
+  private importEntries(accountId: string, entries: ImportedProvider[]) {
+    return this.track(async () => {
+      if (!entries.length) return { imported: [] }
+      await this.#vault.unlock(accountId)
+      const imported: { connectionId: string; provider: string; action: 'created' | 'rotated' | 'unchanged' }[] = []
+      // No await inside the transaction: synchronous writers cannot interleave.
+      const prepared = []
+      for (const entry of entries) {
+        const mapped = this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND endpoint=?')
+          .get(accountId, entry.provider, entry.baseUrl ?? '')
+        const row = mapped ? this.store.get(accountId, String(mapped.connection_id)) : undefined
+        prepared.push({ entry, row, same: row ? await this.#vault.matches(accountId, row.id, entry.value) : false })
+      }
+      this.store.db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const { entry, row, same } of prepared) {
+          const connection = row ?? this.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
+            provider: entry.provider, auth: 'api_key', ...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}) })
+          if (!same) this.saveImportedSecret(accountId, connection.id, entry.value)
+          if (!row) this.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)')
+            .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)
+          imported.push({ connectionId: connection.id, provider: entry.provider, action: !row ? 'created' : same ? 'unchanged' : 'rotated' })
+        }
+        this.store.db.exec('COMMIT')
+        return { imported }
+      } catch { this.store.db.exec('ROLLBACK'); throw new ConnectionError('validation_failed', 'Provider key import failed') }
+    })
+  }
+  private saveImportedSecret(accountId: string, id: string, value: string) {
+    const ref = this.#vault.put(accountId, value)
+    const connection = this.store.get(accountId, id)
+    this.#vault.prepareUnattended(accountId, id, connection.unattended && this.#vault.unattendedAvailable, ref)
+    this.store.setSecret(accountId, id, ref)
+  }
+  async chatModels(accountId: string, id: string, signal?: AbortSignal) {
+    this.assertOpen()
+    const connection = this.store.get(accountId, id)
+    const fallback = () => ({ models: piModels(connection.provider).map(model => model.id),
+      source: '@earendil-works/pi-ai@1.3.0', observedAt: new Date().toISOString(), confidence: 'medium' as const })
+    if (!connection.baseUrl) return fallback()
+    const cached = this.discovered.get(id)
+    if (cached && Date.now() - Date.parse(cached.at) < 60_000) return {
+      models: cached.models, source: `${new URL(connection.baseUrl).host}/models`, observedAt: cached.at, confidence: 'medium' as const,
+    }
+    try {
+      const result = await this.#vault.inject(accountId, id, false, async key => {
+        this.#vault.assertScrubbingReady(accountId)
+        const response = await this.transport(`${connection.baseUrl!.replace(/\/+$/, '')}/models`, {
+          headers: { Authorization: `Bearer ${key}` }, redirect: 'error',
+          signal: AbortSignal.any([this.lifetime, AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
+        })
+        if (!response.ok) throw new Error('Model discovery failed')
+        const body = await response.json() as { data?: { id?: unknown }[] }
+        if (!Array.isArray(body.data) || !body.data.length || body.data.some(model => typeof model.id !== 'string' || !model.id.length)) throw new Error('Invalid model list')
+        return [...new Set(body.data.map(model => model.id as string))]
+      })
+      const at = new Date().toISOString()
+      const models = this.scrubber.scrub(result)
+      this.discovered.set(id, { at, models })
+      return { models, source: `${new URL(connection.baseUrl).host}/models`, observedAt: at, confidence: 'medium' as const }
+    } catch {
+      // Cache fallback too: quiet background polling must not hammer a failing endpoint.
+      return fallback()
+    }
+  }
+  async assertChatModel(accountId: string, id: string, modelId: string) {
+    const connection = this.store.get(accountId, id)
+    if (connection.kind !== 'model_api' || !connection.secretRef) throw new ConnectionError('policy_denied', 'A model API key is required')
+    if (!this.#vault.unlocked(accountId)) throw new ConnectionError('vault_locked', 'Unlock Connections in Settings')
+    const catalog = await this.chatModels(accountId, id)
+    if (!catalog.models.includes(modelId)) throw new ConnectionError('connection_not_found', 'Provider model unavailable')
   }
   setUnattended(accountId: string, id: string, unattended: boolean) {
     this.assertOpen()
@@ -143,7 +228,13 @@ export class Connections {
     return this.track(async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
-      const model = piModels(connection.provider).find(item => item.id === call.model)
+      const catalogModel = piModels(connection.provider).find(item => item.id === call.model)
+      if (connection.baseUrl) await this.assertChatModel(accountId, id, call.model)
+      const template = catalogModel ?? piModels('openai')[0]
+      const model: Model<Api> | undefined = connection.baseUrl && template
+        ? { ...template, id: call.model, provider: 'openai', api: 'openai-completions', baseUrl: connection.baseUrl,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
+        : catalogModel
       if (!model) throw new ConnectionError('connection_not_found', 'Model not found in the provider catalog')
       if (call.singleAttempt && !['anthropic-messages', 'openai-responses', 'openai-completions'].includes(model.api))
         throw new ConnectionError('policy_denied', 'Single-attempt transport is unavailable for this wire protocol')
@@ -165,6 +256,8 @@ export class Connections {
           const observeResponse = () => {
             try { call.onResponseObserved?.() } catch (error) { dispatchAbort.abort(); throw error }
           }
+          const textStream = new SafeTextStream(this.scrubber)
+          let streamed = false
           const pending = this.pi.complete(model, clean, {
             temperature: call.options?.temperature, maxTokens: call.options?.maxTokens,
             reasoning: call.options?.reasoning, apiKey: key, signal, maxRetries: 0,
@@ -176,12 +269,23 @@ export class Connections {
             ...(model.api === 'google-generative-ai' ? {} : {
               fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
                 if (call.singleAttempt && ++httpAttempts > 1) throw new Error('single_attempt_exhausted')
+                if (connection.baseUrl) {
+                  const target = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url)
+                  const root = new URL(connection.baseUrl)
+                  if (target.origin !== root.origin || target.pathname !== `${root.pathname.replace(/\/+$/, '')}/chat/completions` || target.search || target.hash || target.username || target.password)
+                    throw new ConnectionError('policy_denied', 'Request escaped the connection API root')
+                }
                 const response = await this.transport(url, { ...init, redirect: 'error', signal })
                 quota ||= response.status === 429
                 return response
               },
             }),
-          })
+          }, call.onText ? delta => {
+            signal.throwIfAborted()
+            streamed = true
+            const safe = textStream.push(delta)
+            if (safe) call.onText!(safe)
+          } : undefined)
           try { signal.throwIfAborted(); call.onStarted?.() } catch (error) { dispatchAbort.abort(); void pending.catch(() => undefined); throw error }
           const result = await pending
           if (model.api === 'google-generative-ai' && result.stopReason === 'error') {
@@ -192,9 +296,13 @@ export class Connections {
           if (quota) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
           signal.throwIfAborted()
           if (result.stopReason === 'error' || result.stopReason === 'aborted') throw new Error('Model request failed')
+          if (call.onText) {
+            const tail = streamed ? textStream.finish() : this.scrubber.scrub(result.content.filter(item => item.type === 'text').map(item => item.text).join(''))
+            if (tail) call.onText(tail)
+          }
           this.store.record({ accountId, connectionId: id, runId: call.runId, requestId: call.requestId,
             inputTokens: result.usage.input, outputTokens: result.usage.output,
-            costUsd: result.usage.cost.total, source: '@earendil-works/pi-ai@1.3.0:usage',
+            costUsd: connection.baseUrl ? null : result.usage.cost.total, source: connection.baseUrl ? 'owner_endpoint:usage;cost_unknown' : '@earendil-works/pi-ai@1.3.0:usage:catalog_estimate',
             confidence: 'medium', observedAt: new Date().toISOString() })
           return this.scrubber.scrub(result)
         })

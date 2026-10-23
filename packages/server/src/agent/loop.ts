@@ -37,13 +37,15 @@ import type { ToolRegistry } from '../tools/registry.ts'
 import { ToolError } from '../tools/types.ts'
 import type { ApprovalGate } from './approvals.ts'
 import { ContentGate } from './content-gate.ts'
-import { CHAT_SYSTEM_PROMPT, agentSystemPrompt } from './prompts.ts'
+import { agentSystemPrompt } from './prompts.ts'
+import { harnessSystemPrompt } from './harness-prompt.ts'
 import { parseToolCalls } from './tool-parser.ts'
 
 export interface RunTurnParams {
   thread: Thread
+  harnessPrompt?: string
   workspace: Workspace | null
-  client: OllamaClient
+  client: Pick<OllamaClient, 'chatStream'>
   store: ThreadStore
   registry: ToolRegistry
   approvals: ApprovalGate
@@ -246,7 +248,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           toolNames: registry.list().map((tool) => tool.name),
           supportsNativeTools: params.modelSupportsTools,
         })
-      : CHAT_SYSTEM_PROMPT
+      : (params.harnessPrompt ?? harnessSystemPrompt('en'))
 
   const persistedMessages = store
     .activeContextMessages(thread.id)

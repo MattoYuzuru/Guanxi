@@ -31,6 +31,7 @@ import {
   DEFAULT_CHAT_NUM_CTX,
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
+  parseChatModelSelection,
 } from '@guanxi/contract'
 import { Markdown } from '../../components/Markdown.tsx'
 import {
@@ -140,6 +141,15 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       ? requestedContext
       : defaultContext
   const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
+  const providerModels = useAsync(signal => api.chatModels(signal), [])
+  useEffect(() => {
+    const timer = setInterval(providerModels.reload, 15_000)
+    const refresh = () => providerModels.reload()
+    window.addEventListener('focus', refresh)
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [providerModels.reload])
+  const providerGroups = mode === 'chat' ? providerModels.data?.groups ?? [] : []
+  const providerSelected = providerGroups.some(group => group.models.some(item => item.selection === model))
   const workspaces = useAsync(
     (signal) => projectId ? Promise.resolve({ workspaces: [] }) : api.listWorkspaces(signal),
     [projectId],
@@ -157,7 +167,12 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   })
 
   useEffect(() => {
-    if (model || availableModels.length === 0) return
+    if (model) return
+    if (availableModels.length === 0) {
+      const first = providerGroups[0]?.models[0]?.selection
+      if (first) setModel(first)
+      return
+    }
     const preferred = settings.data?.defaultModel
     setModel(
       (preferred && availableModels.some((item) => item.name === preferred)
@@ -166,7 +181,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
         availableModels[0]?.name ??
         '',
     )
-  }, [availableModels, model, settings.data?.defaultModel])
+  }, [availableModels, providerGroups, model, settings.data?.defaultModel])
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
@@ -286,14 +301,18 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
                 ariaLabel={translate('chat.create.modelAria')}
                 options={availableModels.map((item) => ({
                   value: item.name,
-                  label: `${item.name}${item.capabilities.includes('tools') ? ' · tools' : ''}`,
+                  label: item.name,
+                  group: translate('chat.models.local'),
                   disabled: item.capabilities.includes('embedding'),
-                }))}
+                })).concat(providerGroups.flatMap(group => group.models.map(item => ({
+                  value: item.selection, label: item.modelId, group: group.label, disabled: false,
+                }))))}
               />
             )}
             {models.error !== null && (
               <p className="mt-1 text-2xs text-danger">{errorMessage(models.error)}</p>
             )}
+            {providerModels.error !== null && availableModels.length === 0 && !providerSelected && <p role="status" className="mt-1 text-2xs text-muted">{translate('chat.models.unavailable')}</p>}
             {selectedModel && mode === 'chat' ? (
               <p className="mt-1 text-2xs text-muted" role="status" aria-live="polite">
                 {prewarmLabel(prewarm)}
@@ -587,7 +606,7 @@ function ThreadPage({
           {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
           <Composer
             inputRef={composerRef}
-            disabled={!health.ollama.running}
+            disabled={!health.ollama.running && !parseChatModelSelection(chat.thread?.model ?? '')}
             decisionOpen={resourceDecision.decision !== null}
             phase={chat.phase}
             isStreaming={chat.isStreaming}

@@ -1,3 +1,4 @@
+import { chatModelsResponse } from '@guanxi/contract'
 /**
  * Типизированный клиент. Все пути — только через ROUTES из контракта,
  * все ответы — прогоняются через zod-схемы контракта.
@@ -297,6 +298,7 @@ export const api = {
       signal,
     }),
 
+  chatModels: (signal?: AbortSignal) => request('/api/threads/models', chatModelsResponse, { signal }),
   listModels: (contextLength?: number, signal?: AbortSignal) =>
     request(ROUTES.models(), listModelsResponse, { query: { contextLength }, signal }),
 

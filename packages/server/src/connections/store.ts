@@ -41,6 +41,11 @@ export class ConnectionStore {
           INSERT INTO k3_migrations VALUES(2);
         `)
       }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=3').get()) {
+        this.db.exec(`CREATE TABLE dotenv_imports(account_id TEXT NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL,
+          connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
+          INSERT INTO k3_migrations VALUES(3);`)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
     for (const file of [path, `${path}-wal`, `${path}-shm`]) chmodSync(file, 0o600)

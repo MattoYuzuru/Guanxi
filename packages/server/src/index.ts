@@ -1,3 +1,5 @@
+import { importProviderKeysFile } from './connections/dotenv.ts'
+export { importLocalProviderKeys } from './connections/import-local.ts'
 import { relayPlugin, RELAY_SERVICE, type RelayService } from './relay/plugin.ts'
 import { relayStartRoutes } from './relay/routes.ts'
 import { RelayRuntimeSource, type RelayRuntimePolicy } from './relay/runtime.ts'
@@ -150,6 +152,7 @@ export interface StartOptions {
   /** Директория со сборкой фронта. По умолчанию ищется рядом с пакетом. */
   webDir?: string
   devOrigins?: string[]
+  providerKeysFile?: string
   connectionsPolicy?: VaultPolicy
   indexSettings?: Partial<IndexSettings>
   federation?: Omit<FederationHostOptions, 'db'>
@@ -241,6 +244,11 @@ export async function start(options: StartOptions = {}) {
       dbPath,
       db,
       appVersion: APP_VERSION,
+      connections: () => {
+        const service = kernel.node.service<Connections>(CONNECTIONS_SERVICE)
+        if (!service) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
+        return service
+      },
       governor: kernel.governor,
       ollama: kernel.ollama,
       sessionLog: kernel.sessionLog ?? undefined,
@@ -265,6 +273,8 @@ export async function start(options: StartOptions = {}) {
       localHost: () => context.settings.get().ollamaHost,
       policy: options.connectionsPolicy,
     })
+    const providerKeysFile = options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE
+    if (providerKeysFile) await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
     await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
     operationalRelay = options.operationalRelay ? createOperationalRelay(options.operationalRelay, dirname(dbPath)) : null

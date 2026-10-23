@@ -1,3 +1,8 @@
+import { parseChatModelSelection } from '@guanxi/contract'
+import type { Connections } from '../connections/service.ts'
+import { providerChatClient } from '../connections/chat.ts'
+import { harnessSystemPrompt } from '../agent/harness-prompt.ts'
+import type { ProjectService } from '../projects/service.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type {
   ChatJobInputSnapshot,
@@ -40,6 +45,8 @@ export const CHAT_OUTPUT_CHUNK_BYTES = 16 * 1024
 const TERMINAL = new Set<JobState>(['completed', 'failed', 'cancelled', 'interrupted'])
 
 export interface ChatExecutionDependencies {
+  connections?: () => Connections
+  projects?: ProjectService
   jobs: JobStore
   jobService: JobService
   threads: ThreadStore
@@ -282,6 +289,9 @@ export class ChatJobExecutionOwner {
         return
       }
 
+      const provider = parseChatModelSelection(thread.model)
+      if (thread.model.startsWith('k3:') && (!provider || thread.mode !== 'chat')) throw new Error('Invalid provider Chat route')
+      if (!provider) {
       ticket = this.dependencies.governor.enqueue({
         owner: { kind: 'job', jobId: association.job.id },
         operation: 'chat',
@@ -297,6 +307,8 @@ export class ChatJobExecutionOwner {
       if (controller.signal.aborted) {
         this.confirmCancellation(association, 'user_requested')
         return
+      }
+
       }
 
       const loading = this.dependencies.jobService.transition({
@@ -326,12 +338,16 @@ export class ChatJobExecutionOwner {
         hasWorkspace: thread.mode === 'agent' && workspace !== null,
         enableBash: settings.enableBash,
       })
-      const modelSupportsTools = await this.dependencies.models().supportsTools(thread.model).catch(() => false)
+      const modelSupportsTools = !provider && await this.dependencies.models().supportsTools(thread.model).catch(() => false)
 
       for await (const event of runTurn({
         thread,
         workspace,
-        client: this.dependencies.ollama(),
+        client: provider ? providerChatClient(this.dependencies.connections!(), provider, association.job.id) : this.dependencies.ollama(),
+        harnessPrompt: harnessSystemPrompt(settings.locale, (() => {
+          const projectId = this.dependencies.threads.getWithOwnership(thread.id)?.projectId
+          return projectId ? this.dependencies.projects?.get(projectId)?.name : null
+        })()),
         store: this.dependencies.threads,
         registry,
         approvals: this.dependencies.approvals,

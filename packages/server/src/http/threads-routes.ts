@@ -1,3 +1,5 @@
+import { assertChatSelection, providerChatGroups } from '../connections/chat.ts'
+import { chatModelsResponse, parseChatModelSelection } from '@guanxi/contract'
 /**
  * Роуты тредов: список, создание, история, отправка сообщения, остановка, компакция.
  */
@@ -86,7 +88,12 @@ export function threadsRoutes(app: AppContext): Hono {
       : { query: parsed.data, store: { scope: 'projectless' as const, projectId: null } }
   }
 
-  routes.get('/', (context) => {
+  routes.get('/models', async c => {
+    const groups = app.connections ? await providerChatGroups(app.connections(), c.req.raw.signal) : []
+    return c.json(chatModelsResponse.parse({ groups }))
+  })
+
+  routes.get('/',  (context) => {
     const query = new URL(context.req.url).searchParams
     if (query.size === 0) return context.json({ threads: app.threads.list() })
     const parsed = listProjectlessChatsQuery.safeParse(Object.fromEntries(query))
@@ -118,6 +125,7 @@ export function threadsRoutes(app: AppContext): Hono {
     }
 
     const { mode } = parsed.data
+    if (mode !== 'chat' && parsed.data.model.startsWith('k3:')) return context.json({ code: 'validation_failed', message: 'Provider models require Chat mode', details: null }, 400)
     const workspaceId = mode === 'agent' ? (parsed.data.workspaceId ?? null) : null
     if (workspaceId && !app.workspaces.get(workspaceId)) {
       return notFound(context, 'workspace_not_found', 'Рабочая директория не найдена')
@@ -132,7 +140,7 @@ export function threadsRoutes(app: AppContext): Hono {
     const options = { ...defaults, ...parsed.data.options }
 
     try {
-      await app.models().assertContextAllowed(
+      await assertChatSelection(app,
         parsed.data.model,
         options.numCtx,
         context.req.raw.signal,
@@ -457,9 +465,10 @@ export function threadsRoutes(app: AppContext): Hono {
     }
 
     const nextModel = parsed.data.model ?? existing.model
+    if (existing.mode !== 'chat' && nextModel.startsWith('k3:')) return context.json({ code: 'validation_failed', message: 'Provider models require Chat mode', details: null }, 400)
     const nextContext = parsed.data.options?.numCtx ?? existing.options.numCtx
     try {
-      await app.models().assertContextAllowed(
+      await assertChatSelection(app,
         nextModel,
         nextContext,
         context.req.raw.signal,
@@ -547,7 +556,7 @@ export function threadsRoutes(app: AppContext): Hono {
       return notFound(context, 'workspace_not_found', 'Рабочая директория не найдена')
     }
     try {
-      await app.models().assertContextAllowed(
+      await assertChatSelection(app,
         thread.model,
         thread.options.numCtx,
         context.req.raw.signal,
@@ -648,6 +657,7 @@ export function threadsRoutes(app: AppContext): Hono {
       return fail(context, error)
     }
 
+    if (parseChatModelSelection(app.threads.get(threadId)!.model)) return context.json({ code: 'validation_failed', message: 'Provider Chat compaction is not available yet', details: null }, 400)
     const ownerController = new AbortController()
     const abortFromRequest = () => ownerController.abort(context.req.raw.signal.reason)
     if (context.req.raw.signal.aborted) abortFromRequest()

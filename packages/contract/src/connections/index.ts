@@ -21,12 +21,21 @@ export const connectionBalanceSchema = z.object({
   confidence: z.enum(['high', 'medium', 'low', 'unknown']),
 }).strict()
 export const secretReferenceSchema = z.string().regex(/^secret:\/\/[A-Za-z0-9_-]+\/[0-9a-f-]{36}$/)
+/** Owner-pinned API root, never accepted on a completion request. */
+export const connectionBaseUrlSchema = z.string().url().max(2048).refine(value => {
+  try {
+    const url = new URL(value)
+    return !url.username && !url.password && !url.search && !url.hash &&
+      (url.protocol === 'https:' || url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+  } catch { return false }
+}, 'API root requires HTTPS (or loopback HTTP) without credentials, query or fragment')
 export const createConnectionSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: connectionKindSchema,
   provider: connectionProviderSchema,
   auth: z.enum(['api_key', 'cli_login', 'none']),
   unattended: z.boolean().default(false),
+  baseUrl: connectionBaseUrlSchema.optional(),
 }).strict().superRefine((value, ctx) => {
   const agents = ['claude-code', 'codex', 'copilot']
   const models = ['anthropic', 'openai', 'google', 'openrouter', 'deepseek']
@@ -37,12 +46,14 @@ export const createConnectionSchema = z.object({
       : value.kind === 'local_runtime'
         ? value.provider === 'ollama' && value.auth === 'none'
         : ['brave', 'tavily', 'openai-stt'].includes(value.provider) && value.auth === 'api_key'
+  if (value.baseUrl && (value.provider !== 'openai' || value.kind !== 'model_api')) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Custom API roots require an OpenAI-compatible model connection' })
   if (!valid) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Unsupported connection route' })
 })
 export const connectionSchema = z.object({
   id: z.string().uuid(), accountId: z.string().min(1), name: z.string(),
   kind: connectionKindSchema, provider: connectionProviderSchema,
   auth: z.enum(['api_key', 'cli_login', 'none']), unattended: z.boolean(),
+  baseUrl: connectionBaseUrlSchema.optional(),
   secretRef: secretReferenceSchema.nullable(),
   facts: z.record(connectionFactSchema), balance: connectionBalanceSchema.nullable(),
   createdAt: z.string().datetime(),
@@ -76,3 +87,19 @@ export const connectionErrorCodeSchema = z.enum([
 ])
 export const connectionErrorSchema = z.object({ code: connectionErrorCodeSchema }).strict()
 export type ConnectionErrorCode = z.infer<typeof connectionErrorCodeSchema>
+
+/** Generic picker data; selection is opaque to clients and persists as Thread.model. */
+export const chatModelSelection = (connectionId: string, modelId: string): string =>
+  `k3:${connectionId}:${encodeURIComponent(modelId)}`
+export function parseChatModelSelection(value: string): { connectionId: string; modelId: string } | null {
+  const match = /^k3:([0-9a-f-]{36}):(.+)$/.exec(value)
+  if (!match) return null
+  try { return { connectionId: z.string().uuid().parse(match[1]), modelId: decodeURIComponent(match[2]!) } } catch { return null }
+}
+export const chatModelsResponse = z.object({ groups: z.array(z.object({
+  id: z.string(), label: z.string(), kind: z.enum(['local', 'provider']),
+  models: z.array(z.object({ selection: z.string(), modelId: z.string(),
+    source: z.string(), observedAt: z.string().datetime(), confidence: z.enum(['medium', 'low']),
+  }).strict()),
+}).strict()) }).strict()
+export type ChatModelsResponse = z.infer<typeof chatModelsResponse>

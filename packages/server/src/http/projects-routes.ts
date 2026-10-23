@@ -19,7 +19,7 @@ export function projectsRoutes(app: AppContext): Hono {
   const routes = new Hono()
   let projectChatService: ProjectChatService | null = null
   const projectChats = () => {
-    projectChatService ??= new ProjectChatService(app.threads, app.projects, app.models)
+    projectChatService ??= new ProjectChatService(app.threads, app.projects, app.models, app.connections)
     return projectChatService
   }
 

@@ -1,3 +1,4 @@
+import { ConnectionError } from '../connections/errors.ts'
 /**
  * Единый формат ошибок API.
  *
@@ -21,6 +22,8 @@ import { ContextCheckpointStoreError } from '../store/threads.ts'
 type StatusCode = 400 | 403 | 404 | 409 | 500 | 502 | 503 | 504
 
 function classify(error: unknown): { status: StatusCode; body: ApiError } {
+  if (error instanceof ConnectionError) return { status: error.code === 'validation_failed' ? 400 : 503,
+    body: { code: 'upstream_error', message: error.message, details: { connectionCode: error.code } } }
   if (error instanceof ContextCheckpointStoreError) {
     if (error.code === 'stale_checkpoint') {
       return {
