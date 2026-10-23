@@ -824,7 +824,7 @@ test('review: pending node-key injection rejects revocation and rotation after a
   unavailable.close(); assert.equal(used, 0)
 })
 
-test('review: migration 2 upgrades a version-1 vault without rewriting keys, ciphertext or connections', async t => {
+test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput); const secret = fakeKey()
   await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const before = {
@@ -833,10 +833,11 @@ test('review: migration 2 upgrades a version-1 vault without rewriting keys, cip
     connections: s.store.db.prepare('SELECT * FROM connections').all(),
   }
   // Build a real on-disk version-1 fixture; this is only the throwaway test database.
-  s.store.db.exec('DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version=2;')
+  s.store.db.exec('DROP TABLE dotenv_imports; DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version>=2;')
   await f.restart()
   const next = f.service()
-  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2])
+  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3])
+  assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports').get()!.n, 0)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_keys').all(), before.keys)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_secrets').all(), before.secrets)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM connections').all(), before.connections)

@@ -1,4 +1,4 @@
-import { definePlugin } from '@guanxi/kernel'
+import { definePlugin, interval } from '@guanxi/kernel'
 import type { Db } from '../store/db.ts'
 import type { SessionLog } from '../session-log/log.ts'
 import type { Connections } from '../connections/service.ts'
@@ -16,9 +16,26 @@ import { RelayStarts, type RelayStartHost } from './start.ts'
 import type { EtaInput } from './eta.ts'
 import type { RelayJudgeInput } from './judge-host.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
+import { startHostWithJudge, type RelayStartJudgeSource } from './judge-start.ts'
+import { JudgeJournalStore, journalIfPresent, lazyJournal, type JudgeJournal } from './judge-journal.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
-export interface RelayConfig { db: Db; limits?: Partial<RelayLimits>; startHost?: RelayStartHost }
+const JOURNAL_PURGE_INTERVAL_MS = 10 * 60 * 1_000
+
+/** Default-on injection for one execution. The journal store is created lazily so a node with
+ * no cascaded judge run creates no journal table. An explicit `journal: null` stays off. */
+export function cascadeWithJournal(
+  cascade: RelayCascadeInput | undefined,
+  journal: () => JudgeJournal
+): RelayCascadeInput | undefined {
+  if (!cascade) return undefined
+  return {
+    ...cascade,
+    journal: cascade.journal === undefined ? journal() : cascade.journal
+  }
+}
+/** `judge` is the default judge source of the public start; a `startHost.judge` replaces it for that host. */
+export interface RelayConfig { db: Db; limits?: Partial<RelayLimits>; startHost?: RelayStartHost; judge?: RelayStartJudgeSource }
 export interface RelayInput {
   connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves; limits?: Partial<RelayLimits>
   eta?: EtaInput
@@ -35,8 +52,26 @@ export const relayPlugin = definePlugin<RelayConfig>({
     const connections = ctx.service<Connections>('connections.registry')
     const scrubber = ctx.service<EgressScrubber>('egress.scrubber')
     const store = new RelayStore(config.db, runs.store, scrubber)
+    // D-199 journal is owned by this node and bounded by the reasoning retention. It is
+    // created on the first cascaded execution, so a node without a judge creates no table; the
+    // periodic purge then removes expired rows.
+    let journal: JudgeJournalStore | null = null
+    const knownJournal = (): JudgeJournalStore | null =>
+      (journal ??= journalIfPresent(config.db, scrubber))
+    const journalStore = (): JudgeJournal =>
+      lazyJournal(() => knownJournal() ?? (journal = new JudgeJournalStore(config.db, { scrubber })))
+    const purgeJournal = () => {
+      try {
+        knownJournal()?.purgeExpired()
+      } catch {
+        // The next tick retries; a local sidecar purge never stops the relay.
+      }
+    }
+    purgeJournal()
+    interval(ctx, purgeJournal, JOURNAL_PURGE_INTERVAL_MS)
+    const startHost = config.startHost ?? { project: async () => { throw new Error('relay_project_unavailable') }, nodePorts: () => [] }
     const publicStarts = new RelayStarts(config.db, runs.store, ctx.service<SessionLog>('session.log'), connections, scrubber, store,
-      config.startHost ?? { project: async () => { throw new Error('relay_project_unavailable') }, nodePorts: () => [] })
+      startHostWithJudge(startHost, config.judge))
     const active = new Map<string, { executor: RelayExecutor; promise: Promise<unknown> }>()
     let closed = false
     ctx.provide(RELAY_SERVICE, Object.freeze({
@@ -47,7 +82,8 @@ export const relayPlugin = definePlugin<RelayConfig>({
         invariant(!closed && !active.has(a.run_id), 'relay_busy')
         invariant(!input.eta || input.eta.scope.model === input.model, 'eta_model')
         const limits = { ...DEFAULT_RELAY_LIMITS, ...config.limits, ...input.limits }
-        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits, input.eta, input.judgeSignals, input.cascade)
+        const cascade = cascadeWithJournal(input.cascade, journalStore)
+        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits, input.eta, input.judgeSignals, cascade)
         const promise = executor.run(a)
         active.set(a.run_id, { executor, promise })
         try { return await promise } finally { active.delete(a.run_id) }

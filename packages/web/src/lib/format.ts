@@ -1,3 +1,4 @@
+import { parseChatModelSelection } from '@guanxi/contract'
 /** Locale-aware common formatting. Units remain base-1024 compatibility labels. */
 import { getActiveLocale, translate, type LocaleKey } from './locale.ts'
 
@@ -180,11 +181,9 @@ function currentLocale(): 'en' | 'ru' {
 export { NBSP }
 
 /**
- * The model name to show for a thread's model selection. Provider selections from the K3 chat
- * lane are `k3:<connection uuid>:<model id>`; only the model id is shown, never the raw
- * selection (merge note: switch to the contract's parseChatModelSelection once it lands).
+ * The model name to show for a thread's model selection: a provider selection
+ * (`k3:<connection>:<model>`) shows its model id only, never the raw selection.
  */
 export function displayModelSelection(selection: string): string {
-  const provider = /^k3:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(.+)$/iu.exec(selection)
-  return provider?.[1] ?? selection
+  return parseChatModelSelection(selection)?.modelId ?? selection
 }

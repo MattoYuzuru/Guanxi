@@ -132,6 +132,10 @@ export class Vault {
     finally { plaintext.fill(0) }
     return ref
   }
+  async matches(accountId: string, connectionId: string, value: string): Promise<boolean> {
+    if (!this.store.get(accountId, connectionId).secretRef) return false
+    return this.inject(accountId, connectionId, false, async current => current === value)
+  }
   /** Registration-only keychain access: never opens an injection session or uses the node key. */
   async registerForScrubbing() {
     this.assertOpen()

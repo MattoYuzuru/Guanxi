@@ -180,7 +180,7 @@ export function eventDetail(event: SessionEvent): string | null {
     case 'usage':
       return `${event.data.promptTokens} → ${event.data.evalTokens}`
     case 'context':
-      return `${event.data.usedTokens} / ${event.data.allocatedTokens}`
+      return `${event.data.usedTokens} / ${event.data.allocatedTokens ?? translate('inspector.unknown')}`
     case 'turn.done':
       return event.data.outcome ?? event.data.stopReason
     case 'error':

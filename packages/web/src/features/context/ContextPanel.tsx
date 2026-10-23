@@ -51,11 +51,19 @@ export function ContextPanel({
     )
   }
 
-  const fraction = context.allocatedTokens > 0 ? context.usedTokens / context.allocatedTokens : 0
+  if (context.providerContext) return (
+    <div className="p-3 text-12 text-secondary">
+      <p>{context.allocatedTokens === null ? translate('context.provider.unknown') : translate('context.provider.limit', { tokens: formatTokens(context.allocatedTokens ?? 0) })}</p>
+      <p>{translate('context.provider.source', { source: context.providerContext.source, time: context.providerContext.observedAt ?? translate('inspector.unknown'), confidence: translate(`connections.confidence.${context.providerContext.confidence}`) })}</p>
+      <p>{translate('context.provider.compaction')}</p>
+    </div>
+  )
+
+  const fraction = (context.allocatedTokens ?? 0) > 0 ? context.usedTokens / context.allocatedTokens! : 0
   const tone =
-    context.percent >= 90
+    (context.percent ?? 0) >= 90
       ? 'var(--color-fit-red)'
-      : context.percent >= 70
+      : (context.percent ?? 0) >= 70
         ? 'var(--color-fit-yellow)'
         : 'var(--accent)'
 
@@ -66,7 +74,7 @@ export function ContextPanel({
         <div className="mb-1.5 flex items-baseline justify-between gap-2">
           <h3 className="text-xs font-semibold">{translate('context.panel.title')}</h3>
           <span className="font-mono text-xs tabular-nums" style={{ color: tone }}>
-            {formatPercent(context.percent, context.percent < 10 ? 1 : 0)}
+            {formatPercent(context.percent ?? 0, (context.percent ?? 0) < 10 ? 1 : 0)}
           </span>
         </div>
 
@@ -74,10 +82,10 @@ export function ContextPanel({
 
         <div className="mt-1.5 flex items-center justify-between font-mono text-2xs text-muted tabular-nums">
           <span>{translate('context.used', { tokens: formatTokens(context.usedTokens) })}</span>
-          <span>{translate('context.of', { tokens: formatTokens(context.allocatedTokens) })}</span>
+          <span>{translate('context.of', { tokens: formatTokens(context.allocatedTokens ?? 0) })}</span>
         </div>
 
-        {context.percent >= 90 && (
+        {(context.percent ?? 0) >= 90 && (
           <p className="mt-1.5 text-2xs text-[var(--color-fit-red)]">
             {translate('context.almostFull')}
           </p>
@@ -362,11 +370,12 @@ function PhaseSegment({
 /** Компактная строка контекста для узких мест (шапка треда). */
 export function ContextChip({ context }: { context: ContextState | null }) {
   if (!context) return null
+  if (context.providerContext) return <span title={context.providerContext.source}>{context.allocatedTokens === null ? translate('context.provider.unknown') : translate('context.provider.limit', { tokens: formatTokens(context.allocatedTokens) })}</span>
 
   const tone =
-    context.percent >= 90
+    (context.percent ?? 0) >= 90
       ? 'var(--color-fit-red)'
-      : context.percent >= 70
+      : (context.percent ?? 0) >= 70
         ? 'var(--color-fit-yellow)'
         : 'var(--fg-muted)'
 
@@ -376,7 +385,7 @@ export function ContextChip({ context }: { context: ContextState | null }) {
       style={{ color: tone }}
       title={translate('context.chip.title', {
         used: formatTokens(context.usedTokens),
-        allocated: formatTokens(context.allocatedTokens),
+        allocated: formatTokens(context.allocatedTokens ?? 0),
       })}
     >
       <span
@@ -384,7 +393,7 @@ export function ContextChip({ context }: { context: ContextState | null }) {
         style={{ background: context.cacheHit ? 'var(--color-fit-green)' : 'var(--color-fit-yellow)' }}
         title={context.cacheHit ? translate('context.cache.hitTitle') : translate('context.cache.missTitle')}
       />
-      {formatPercent(context.percent)}
+      {formatPercent(context.percent ?? 0)}
     </span>
   )
 }

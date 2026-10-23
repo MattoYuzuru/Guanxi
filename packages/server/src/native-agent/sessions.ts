@@ -6,6 +6,7 @@ import type { Db } from '../store/db.ts'
 import type { SessionLog } from '../session-log/log.ts'
 import type { HomeAuthority } from '../runs/types.ts'
 import { assertRootsClean } from './cleanup.ts'
+import { purgeJournalForSession } from '../relay/judge-journal.ts'
 
 const DAY = 86400000
 /** Thread-owned metadata and a durable deletion intent; filesystem cleanup is retryable. */
@@ -120,6 +121,9 @@ export class NativeSessions {
             : table === 'promises' ? 'parent_id IN (SELECT id FROM durable_runs WHERE session_id=?)' : 'run_id IN (SELECT id FROM durable_runs WHERE session_id=?)'
           this.db.prepare(`DELETE FROM ${table} WHERE ${predicate}`).run(id)
         }
+        // The run cascade is the primary removal. Purge by session first so a row whose
+        // session_id disagrees with its run_id cannot outlive the session deletion.
+        try { purgeJournalForSession(this.db, id) } catch { /* the run cascade remains authoritative */ }
         this.db.prepare('DELETE FROM durable_runs WHERE session_id=?').run(id)
         for (const runId of ids) this.db.prepare("DELETE FROM leases WHERE key=? OR (key LIKE 'resource:%' AND holder=?)").run(`run:${runId}/exec`, runId)
         this.db.prepare('DELETE FROM native_sessions WHERE session_id=?').run(id)

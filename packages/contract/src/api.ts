@@ -153,6 +153,7 @@ export const ROUTES = {
   modelStop: (name: string) => `/api/models/${encodeURIComponent(name)}/stop`,
 
   threads: () => '/api/threads',
+  threadModels: () => '/api/threads/models',
   thread: (id: string) => `/api/threads/${id}`,
   threadMessages: (id: string) => `/api/threads/${id}/messages`,
   threadCompact: (id: string) => `/api/threads/${id}/compact`,

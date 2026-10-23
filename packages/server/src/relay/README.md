@@ -166,9 +166,10 @@ Only the reviewed `judge-signals.ts` pure module evaluates the observation. On s
 executor appends exactly one `agent.note` with
 `{relay:'judge_signals', phase, cycle, signals, unknownFacts}` through the existing R1-fenced
 transaction. `unknownFacts` names `heartbeat`, `lease`, `deadline`, `disk` and `tokenBudget` for
-each missing observation field, so an empty `signals` array is not a health claim. The full
-observation and the `protectedPathEdits` / `outOfScopeEdits` values are never persisted or
-logged.
+each missing observation field, so an empty `signals` array is not a health claim. Without a
+journal (the default for a bare cascade) the full observation and the `protectedPathEdits` /
+`outOfScopeEdits` values are never persisted or logged; the optional local journal below is the
+only place they may be stored (D-199).
 
 A collector rejection or an invalid observation fails the cycle closed with the fixed
 `judge_observation_unavailable` or `judge_observation_invalid` code respectively; no judge note
@@ -180,6 +181,61 @@ consume late outcomes and cannot hold disposal open; this adds no timer or new c
 authority. Resourceful checker/model ownership uses the distinct settlement contract below. Fixture tests prove wiring,
 detached inputs, cancellation/fence behavior and seal consistency only; they are not real host
 observations, a calibrated classifier, or the R3 precision/recall/night-wake gates.
+
+## Local judge observation journal (D-199)
+
+The cascade has one optional local sink. When a relay executor receives a `cascade`, it supplies
+a lazy `JudgeJournal` unless the caller explicitly passes `journal: null`; the relay plugin does
+the same for a public start. Construction (`BEGIN IMMEDIATE`, DDL, version check) happens on the
+first `record()`, never while a start or executor is assembled: a foreign ledger value, an open
+transaction or `SQLITE_BUSY` disables the local sidecar and leaves the judged relay untouched.
+If a journal table already exists, a load-time probe still constructs the store (inside the
+purge guard) so the retention purge runs on a restart without a judge. A bare
+`RelayJudgeCascade` has no journal and creates no journal table. The sink is the single
+`request()` evaluation point: one row per actually evaluated J1.5 checker/J2/J3 request, not per
+model sample and not for a duplicate request that reuses a stored result.
+
+`judge-journal.ts` owns independent additive ledger **43** (`relay_journal_migrations`), so
+`user_version`, ledger 42 (F2-reap) and every earlier ledger are untouched. A row holds
+run/session/attempt ids, cycle, phase, layer, reason, request key, the exact scrubbed evidence
+packet the judge received (paths included), the detached host `JudgeObservation` and signal
+policy, the J0/J1 signals, `summary.unknownFacts` and the collector's declared `unobserved`
+facts, the terminal state and result (sample verdicts, checker result or a fixed
+unavailable/invalid code), and start/finish timestamps. `UPDATE` is refused by a trigger. A
+journal write is best-effort after the fenced judge result is persisted, so a local sidecar
+failure never turns a valid verdict into `unavailable`. A failed write increments the run's
+counter in `relay_journal_runs`; `readJournalReplay` then carries `incomplete: true` and the R3
+gate refuses the corpus as `incomplete_corpus` rather than scoring a short one as complete.
+
+The journal is not an export. No route, contract, event, wake packet, handoff, federation
+message or log line reads it. Every packet/observation/result/signal is scrubbed at insert and
+again on read, and the scrubber must be ready at both points, so a registered secret never
+enters a row or comes back out of one; paths intentionally remain (D-199). Rows expire under the
+implemented D-113 reasoning retention (7 days, shortened by a parent Thread TTL); expired rows
+are unreadable even before the purge. The plugin purges every 10 minutes once a journal exists,
+and `purgeRun` / `purgeSession` are the explicit run paths; the native session delete also
+calls the non-migrating session purge inside its home-fenced transaction, and `ON DELETE
+CASCADE` from `durable_runs` removes rows with the owning run. `secure_delete` zeroes the freed
+pages.
+
+For local calibration, `readJournalReplay` / `readJournalCorpus` turn a finished run's J2 rows
+into the strict R3-b v1 corpus with `origin: 'recorded'`. A real store leaves an unverified
+executor claim at `verification_requested` and only moves an item to `done` after a passing
+gate, so both statuses are recognised as a claim; `acceptancePassed` is the newest gate at the
+packet's current head. Steps are ordered by attempt ordinal, cycle, phase and insertion id, so a
+recovery attempt is never stitched onto the previous attempt; equal `observedAt` values from a
+same-millisecond host clock are valid. `unknownFacts` is carried into the step and a detector
+whose source fact was unobserved reports an unknown step instead of treating the zero as
+healthy. Labels are never invented: a caller supplies the owner's ground truth later. A
+finished but unlabelled run therefore scores, but does not evaluate the R3 gate.
+`judge-journal.test.ts` proves default/off and plugin-injection wiring, append-only rows,
+read-time expiry and re-scrubbing, all three purge paths plus the native delete transaction,
+completed and unavailable/invalid/abandoned rows, real-store premature-done replay, per-attempt
+ordering, equal timestamps, unknown-fact markers, incomplete-corpus refusal, and that a planted
+journal path and a registered secret appear in no wake packet (built from the real child
+reporter), real session-export route, relay handoff, signed F2 dispatch grant (built through
+`AttemptDispatch.prepare`/`grant`) or captured test log. Source guards fail if those egress
+producers start reading the journal.
 
 ## Runtime and context
 
@@ -372,6 +428,26 @@ is no byte count, catalog value or local-runtime fallback: an unreachable, unsig
 mismatching executor is `runtime_meter_unavailable`, `runtime_identity_unknown`,
 `runtime_identity_changed` or `runtime_counter_mismatch`, and the home never evaluates a request.
 
+**Pin lifetime (F2-reap).** The executor's `relay:<run>` pin must not outlive its run, including when the home dies. Four rules
+keep that true without a second holder of anything (ADR-0018): (1) the home writes its own durable journal row
+(`federation_relay_pin_journal`) *before* the signed pin leaves, and deletes it when the executor acknowledges the signed
+`unpin`; (2) `Federation.reconcileRelayPins()` sends a signed, fenced `unpin` for every journal row that no session of this
+process still needs (after a crash that is every row; a live session is registered in memory in the same synchronous step as
+its journal write, so a fresh start cannot be mistaken for an old row), at construction and then every
+`dispatch.relayPinMaintenanceMs` (60 s; `0` disables), and a session whose `close()` could not reach the executor leaves its row
+to the same reconciliation; (3) the unpin is fenced by the run id and epoch: a pin bound at another epoch is not removed; (4) the
+executor leases each pin (`relayLimits.pinTtlMs`, 10 minutes by default), renewed by every valid observe/count and by the live
+session's heartbeat (`pinRenewMs`, 60 s, the same idempotent signed pin). A lapsed or lease-less relay pin is deleted on the
+executor's own transaction, lazily before every relay request and by its maintenance timer. A lapsed pin only removes a
+permission, so a home that is alive but partitioned for longer than the TTL simply re-pins with its next heartbeat, if the
+cap allows. Federation **1.5** gates this: an executor refuses (`426`) pin and unpin messages from a home that declares an older
+minor, because such a home never renews. A released run id is tombstoned on the executor for one TTL, so a pin or heartbeat that is
+slower than the home's own 5 s bound cannot re-create a pin after its unpin. Leases run on the lease clock (the monotonic-anchored
+`dispatch.leaseClock`), and an executor restart grants every relay pin one fresh TTL before anything can be swept. The home cannot see the executor's TTL: keep `pinRenewMs` well under `pinTtlMs`, and note that an executor clock jump
+or suspend longer than the TTL lapses a live run's pin (the run's next call is `runtime_identity_unknown`, the next heartbeat
+re-pins). A journal row for an executor that refuses permanently (another model, no relay runtime, no longer trusted) is retried
+every pass and never given up; the executor's lease still frees its pin. Tests: `test/relay/pin-reaping.test.ts` and the pin lines of `test/ms1/rehearsal.test.ts`.
+
 **Asynchronous exact count.** The R2-op `Atomics.wait` bridge is not used over F2: the signing key
 and transport live on the main thread, and blocking the home event loop for a network round trip
 would also stop the lease renewals that keep the fence alive. The meter gains `countAsync`;
@@ -384,5 +460,84 @@ identity and are dropped when it changes.
 the executor's own governor admits the call through its F2 reservation. The final scrub, fence check,
 fenced start observation and the signed dispatch request share one synchronous stretch
 (`FederationChannel.dispatch(grant, beforeSend)`); while a call is pending the transport heartbeats the
-fence so a lost relay attempt aborts and cancels it. `ConnectionJudgeModel` refuses a meter that needs
-a runtime transport, so a judge call can never be counted by one runtime and run on another.
+fence so a lost relay attempt aborts and cancels it. A judge on such a meter is described in
+[the next section](#judge-on-the-public-start-and-on-a-remote-runtime-r3-remote).
+
+## Judge on the public start and on a remote runtime (R3-remote)
+
+`RelayStartHost.judge` (`judge-start.ts`) carries the R3 judge into `RelayStarts`, local or remote. It is a
+T0 source function called **once per start** with that start's input and policy, the guarded meter the relay's
+own calls use, and the admitted runtime facts. It returns `{ signals?, cascade? }`: the existing
+`RelayJudgeInput` (J0/J1 signals, needs no model) and `RelayCascadeInput` (delegation brief, judge model,
+optional checker). Nothing of it is wire input. `RelayConfig.judge` is the plugin-level default, used only
+when the start host has no `judge` of its own (`startHostWithJudge`). No source, or a source that returns
+nothing, leaves that start exactly as before: no judge event, no judge call, no judge ledger.
+
+**Fail closed before the pin and the run exist.** The source runs after the runtime is admitted and the checkout is
+allocated, and before the signed pin, the run or its session exist (the checkout is released like any other
+refusal). The signals policy, the brief (`copyBrief` against the start's plan, caps equal to the start's caps), the
+model shape and, for a runtime that counts through its own transport, the brief's J2/J3 roles (they must be the
+relay's own connection and model) are validated there, and the executor, which opens the additive judge ledger 38,
+is built there. Any failure, including a source that throws or returns a promise, refuses the start with the one
+public code `judge_config_invalid`. The judge ledger tables are additive and may remain after a later refusal
+(pin, abort); a run, session or pin never do.
+
+**Signals.** `ledgerJudgeInput(policy, clock)` is a ready collector that reports what the relay ledger holds
+(cycle, no-progress streak, wall deadline) and leaves heartbeat, lease, disk and the per-item token budget
+unknown, never healthy. The ledger has no repeated-failure, edit-revert, dead-end, crash, protected-path or
+per-item token facts; the observation shape requires a value for them, so they are zero or empty and the collector
+declares them in `RelayJudgeInput.unobserved`, which adds `failureStreak`, `editRevert`, `deadEnds`, `pathEdits`,
+`crash` and `itemTokens` to the `unknownFacts` of every published observation and of the J2 packet. This
+collector can raise only `no_progress` and `deadline`; a host that observes more supplies its own collector. A
+collector that fails keeps its existing rule (fixed `judge_observation_unavailable`, run `input_required`,
+ledger retained).
+
+**Judge model on a transport meter.** `ConnectionJudgeModel` takes a `runtime` binding
+`{ connectionId, model }`. A meter that carries a `transport` (llama-server, remote node) is accepted only
+with that binding. With a binding, whatever the meter, the judge role must be exactly that connection and that
+model string (the string the relay itself sends); another spelling or runtime is `judge_config_invalid` at
+admission. The judge never leaves the runtime that counts: the prompt is pre-counted with the
+meter's `countAsync` when it has one (the remote count is a signed round trip, and `meter.count` is then a
+lookup of that answer), the request is dispatched through `meter.transport` itself with `think:false`, the
+meter's `authorizeDispatch` re-observes the runtime first, `onPrepared` pins the exact request K3 hands back (model,
+options, shape) and the count, and the result must echo the counted input tokens. A meter with `countAsync` and no
+transport (counted by one runtime, dispatched on another), a transport without a binding or an inexact
+meter is `judge_config_invalid`. `meter.validatePrepared` is not used for the judge: it pins `num_predict`
+to the relay turn, and the judge has its own output ceiling. `relayJudgeModel(context, ...)` builds this model
+from a start's context; `relayRuntimeAttestor` attests it from a fresh observation of the runtime, and only for
+the relay's own connection and model. A host that wants a different judge model on a stock Ollama relay builds
+`ConnectionJudgeModel` itself, without a binding. The role's `temperature` is not sent to a llama-server
+runtime (its client posts only the prompt and the output limit), so the samples of one boundary are drawn with the
+server's own sampling and the cascade's "agreement" is only that.
+
+A judge on any relay runtime (a binding, or a local-only exact meter, which includes the stock Ollama relay) asks it in
+the form the relay's own calls use: `think:false`, a fresh runtime observation (`authorizeDispatch`) before the dispatch,
+and the request pinned exactly (model, options). A thinking model evaluates a request without `think:false` in another form
+than the one the exact counter rendered, which would be `judge_usage_invalid` after paid inference.
+
+**Age and time limits.** One admission (the attestation and the loaded window) serves every sample of a request. Past half of
+`maxAgeMs` it is observed again before the sample and again right after the dispatch authorization, so a runtime whose samples
+each take longer than `maxAgeMs` is not refused on its own admission's age; a refresh that finds another loaded window or
+another model identity is refused. Each refresh is one more observation (a signed round trip on a remote runtime). A sample
+also has a wall limit (`role.sampleTimeoutMs`, default `DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS`, 5 minutes) that aborts the same
+signal the owner's cancel does, so the runtime is stopped and acknowledged first and the verdict is `unavailable` with
+`judge_sample_timeout`; without it a stuck executor holds a cycle for the call deadline of its runtime (30 minutes a call).
+The relay `maxAgeMs` must still be longer than the observations themselves.
+
+**Billing.** A remote judge sample is one more per-call child run on the relay's session, so the
+executor-reported tokens land on that child's R1 ledger atomically with its terminal (F2-c), apart from the
+relay run's own rows and from the lead. The relay run's `run_costs` never include judge calls. The relay caps
+see the judge only through the cascade's existing pre-debit (`tokenReserve` per sample, never settled to
+actuals), so a judged relay reaches `caps.tokens` earlier than the same relay without a judge, and the wake
+packet's token metric includes that reserve. The two views are never summed. A judge on a local relay (Ollama or a
+local llama-server) has no child run: its usage is K3's usage record plus the same pre-debit.
+
+**Degradation.** Unchanged cascade rules: an unavailable, invalid or inconsistent judge gives a verdict row
+(`unavailable`, `invalid`), never an item marked done and never a stopped run. A cancel during a judge call
+waits for the executor's acknowledgement like any remote call, and the request stays `dispatched`
+(the revoked fence cannot append an outcome) until a later judge ledger opening abandons it. A run lost with
+its process never replays a judge call.
+
+**Not covered.** No real model, no Fedora run, no calibration, no checker supervisor, no durable night
+wake; a remote judge call costs a signed round trip pair per sample on the executor (two samples at each of
+two boundaries per cycle by default).

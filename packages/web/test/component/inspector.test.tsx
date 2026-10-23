@@ -314,3 +314,19 @@ describe('inspector page', () => {
     }
   })
 })
+
+
+it('renders nullable provider context as unknown with its source, without a fabricated percent', async () => {
+  setActiveLocale('en')
+  const events = sessionTrace().map(event => event.type === 'context' ? { ...event, data: { ...event.data,
+    allocatedTokens: null, percent: null, compactable: false,
+    providerContext: { value: null, source: 'provider.fixture', observedAt: null, confidence: 'unknown' as const },
+  } } : event)
+  mockApi({ events })
+  render(<InspectorPage sessionId={SESSION_ID} />)
+  await screen.findByRole('list', { name: 'Session events in order' })
+  expect(screen.getAllByText('52 / Unknown')).toHaveLength(2)
+  expect(screen.getByText(/provider.fixture/).textContent).toContain('As of Unknown.')
+  expect(document.body.textContent).not.toContain('/ null')
+  expect(document.body.textContent).not.toContain('0%)')
+})

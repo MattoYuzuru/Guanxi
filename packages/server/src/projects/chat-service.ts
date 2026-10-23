@@ -1,3 +1,5 @@
+import type { Connections } from '../connections/service.ts'
+import { assertChatSelection } from '../connections/chat.ts'
 import {
   DEFAULT_CHAT_NUM_CTX,
   DEFAULT_TEMPERATURE,
@@ -23,16 +25,19 @@ export type ProjectChatLookup =
 export class ProjectChatService {
   private readonly threads: ThreadStore
   private readonly projects: ProjectService
+  private readonly connections?: () => Connections
   private readonly models: () => ModelService
 
   constructor(
     threads: ThreadStore,
     projects: ProjectService,
     models: () => ModelService,
+    connections?: () => Connections,
   ) {
     this.threads = threads
     this.projects = projects
     this.models = models
+    this.connections = connections
   }
 
   list(projectId: string): { project: Project; chats: ThreadWithOwnership[] } | null {
@@ -66,7 +71,7 @@ export class ProjectChatService {
       think: input.options?.think ?? 'off',
     }
     // Exactly one call preserves the existing model/context admission boundary.
-    await this.models().assertContextAllowed(input.model, options.numCtx, signal)
+    await assertChatSelection({ models: this.models, connections: this.connections }, input.model, options.numCtx, signal)
 
     return this.threads.createWithOwnership({
       title: input.title ?? 'Новый диалог',

@@ -13,7 +13,7 @@
  *   холодный prefill   7847 токенов за 41.8 с
  *   попадание в кэш    7870 токенов за  0.3 с
  */
-import type { ContextState, Usage } from '@guanxi/contract'
+import { parseChatModelSelection, type ContextState, type Usage } from '@guanxi/contract'
 import type { OllamaChatChunk } from '../ollama/types.ts'
 
 /** Кэш должен сократить холодное время хотя бы вдвое. */
@@ -120,20 +120,25 @@ const COMPACTION_SUGGESTION_THRESHOLD_PERCENT = 60
 export function buildContextState(input: {
   usedTokens: number
   allocatedTokens: number
+  providerContext?: ContextState['providerContext']
   usage: Usage | null
   model: string
   tracker: PrefillTracker
 }): ContextState {
-  const { usedTokens, allocatedTokens, usage, model, tracker } = input
-  const percent = allocatedTokens > 0 ? (usedTokens / allocatedTokens) * 100 : 0
+  const { usedTokens, usage, model, tracker } = input
+  const provider = parseChatModelSelection(model)
+  const providerContext = input.providerContext ?? { value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' as const }
+  const allocatedTokens = provider ? providerContext.value : input.allocatedTokens
+  const percent = allocatedTokens === null ? null : allocatedTokens > 0 ? (usedTokens / allocatedTokens) * 100 : 0
 
   return {
     usedTokens,
+    ...(provider ? { providerContext } : {}),
     allocatedTokens,
     percent,
     cacheHit: usage?.cacheHit ?? false,
     cachedTokens: usage?.cachedTokens ?? 0,
-    compactable: percent > COMPACTION_SUGGESTION_THRESHOLD_PERCENT,
+    compactable: !provider && (percent ?? 0) > COMPACTION_SUGGESTION_THRESHOLD_PERCENT,
     /*
      * Честная цена компакции: она сбрасывает префикс KV-кэша, и следующий ход
      * придётся считать с нуля. Именно это число показывается на кнопке.

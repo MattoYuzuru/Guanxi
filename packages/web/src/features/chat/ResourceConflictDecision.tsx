@@ -49,7 +49,7 @@ type ConflictDecision = {
   error: DecisionError
 }
 
-export function useResourceConflictDecision(dispatch: ChatIntentDispatcher) {
+export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, localAdmission = true) {
   const runtime = useRuntimeProjection()
   const [decision, setDecision] = useState<ConflictDecision | null>(null)
   const decisionRef = useRef<ConflictDecision | null>(null)
@@ -101,6 +101,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher) {
       if (requestPendingRef.current || decisionRef.current || dispatchPendingRef.current) {
         return 'ignored'
       }
+      if (!localAdmission) { dispatchIntent(intent, false); return 'dispatched' }
       requestPendingRef.current = true
       const bounded = createBoundedController(RUNTIME_DECISION_TIMEOUT_MS)
       const { controller } = bounded
@@ -132,7 +133,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher) {
         if (readAbortRef.current === controller) readAbortRef.current = null
       }
     },
-    [dispatchIntent, runtime],
+    [dispatchIntent, runtime, localAdmission],
   )
 
   const close = useCallback(() => {

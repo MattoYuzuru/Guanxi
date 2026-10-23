@@ -32,11 +32,14 @@ export class Replicas {
     if (old && old.binding !== canonical(binding)) throw new FederationError('home_conflict')
     this.db.prepare('INSERT OR IGNORE INTO federation_streams VALUES (?,?)').run(binding.streamId, canonical(binding))
   }
-  /** Removes a pin made for the home that asks, and only while nothing was replicated under it. */
-  unbind(streamId: string, homeNodeId: string): boolean {
+  /** Removes a pin made for the home that asks, and only while nothing was replicated under it. With `epoch` the removal is
+   * fenced: a pin bound at another epoch is not the one the caller means, so a late unpin of an old attempt removes nothing. */
+  unbind(streamId: string, homeNodeId: string, epoch?: number): boolean {
     const row = this.db.prepare('SELECT binding FROM federation_streams WHERE id=?').get(streamId)
     if (!row) return false
-    if (streamBindingSchema.parse(JSON.parse(row.binding as string)).homeNodeId !== homeNodeId) throw new FederationError('home_conflict')
+    const bound = streamBindingSchema.parse(JSON.parse(row.binding as string))
+    if (bound.homeNodeId !== homeNodeId) throw new FederationError('home_conflict')
+    if (epoch !== undefined && bound.homeEpoch !== epoch) return false
     if (this.db.prepare('SELECT 1 FROM federation_replicas WHERE stream_id=? LIMIT 1').get(streamId)) throw new FederationError('replica_in_use')
     this.db.prepare('DELETE FROM federation_streams WHERE id=?').run(streamId)
     return true

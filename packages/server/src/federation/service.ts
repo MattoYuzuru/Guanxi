@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCommandSchema, telemetrySchema,
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema, dispatchCancelSchema,
   type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
-  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_RUNTIME_PROBE, RELAY_PIN_PREFIX, relayRuntimePinSchema, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_PIN_LEASE_MINOR, RELAY_RUNTIME_PROBE, RELAY_PIN_PREFIX, relayRuntimePinSchema, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -37,6 +38,11 @@ export interface FederationOptions {
   attempts?: OfferPolicy & { governor: ResourceGovernor }
   dispatch?: DispatchPolicy
 }
+export interface RelayPinReconciliation { released: number; kept: number; failed: number }
+const PIN_TTL_DEFAULT_MS = 10 * 60_000
+const UNPIN_TIMEOUT_MS = 5000
+/** Node clamps a longer timer delay to 1 ms, which would turn a period into a tight loop. */
+export const MAX_TIMER_MS = 2 ** 31 - 1
 export interface PeerContext { identity: NodeIdentity; readOnly: boolean; version: { major: number; minor: number } }
 export class Federation {
   readonly configOpsPerRequest: number
@@ -49,14 +55,25 @@ export class Federation {
   readonly attemptDispatch: AttemptDispatch | null
   #options: FederationOptions
   private readonly now: () => number
+  /** F2-reap: the clock of relay pin leases. The monotonic-anchored lease clock of dispatch and offers, never the wall clock, so a
+   * clock step or a resume cannot lapse a live pin. */
+  private readonly leaseNow: () => number
   private closed = false
+  private graced = false
   private readonly lifetime = new AbortController()
   private readonly counting = new Map<string, number>()
+  /** F2-reap, home side: relay runs whose session in THIS process still needs its executor pin. Everything else in the journal is dead. This is in-process memory: exactly one
+   * Federation may own a database (the home lease admits one writer), or its sibling would unpin this one's live runs. */
+  private readonly livePins = new Set<string>()
+  private reconciling: Promise<RelayPinReconciliation> | undefined
+  readonly #maintenance: Array<ReturnType<typeof setTimeout>> = []
   constructor(options: FederationOptions) {
     this.configOpsPerRequest = options.configOpsPerRequest ?? 256
     if (!Number.isSafeInteger(this.configOpsPerRequest) || this.configOpsPerRequest < 1) throw new FederationError('invalid_config_budget')
     this.#options = options
     this.now = options.clock ?? Date.now
+    const wall = Date.now(), monotonic = performance.now()
+    this.leaseNow = options.dispatch?.leaseClock ?? (() => Math.floor(wall + performance.now() - monotonic))
     this.identity = nodeIdentitySchema.parse(options.identity)
     publicKey(this.identity.publicKey)
     // Validate that the host actually owns the pinned key, without serializing private bytes.
@@ -79,6 +96,7 @@ export class Federation {
     if (options.dispatch && !this.attemptOffers) throw new FederationError('attempts_required')
     this.attemptDispatch = options.dispatch ? new AttemptDispatch(options.db, options.runs, this.attemptOffers!, this.identity.id,
       this.identity.accountId, privateKey, options.dispatch, this.now) : null
+    if (options.dispatch) this.startPinMaintenance(options.dispatch.relayPinMaintenanceMs ?? 60_000)
   }
   private assertOpen() { if (this.closed) throw new FederationError('closed', 503) }
   private clean(value: unknown): void {
@@ -264,7 +282,7 @@ export class Federation {
     if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId || !target.scopes.includes('attempts')) throw new FederationError('owner_mismatch', 403)
     return dispatch.channel(executorNodeId)
   }
-  /** F2-d executor side. Reads only: nothing here starts inference, takes a permit or writes metadata. */
+  /** F2-d executor side. Nothing here starts inference, takes a permit or writes metadata; the only write is the pin's own lease. */
   private relayRuntime(context: PeerContext, binding: RelayRuntimeBinding) {
     this.clean(null)
     const runtime = this.#options.dispatch?.relayRuntime
@@ -274,10 +292,14 @@ export class Federation {
     this.clean(binding)
     if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || binding.homeNodeId !== peer.id || binding.executorNodeId !== this.identity.id) throw new FederationError('owner_mismatch', 403)
     if (normalizeOllamaModelReference(binding.model) !== runtime.model) throw new FederationError('relay_model_mismatch')
+    // F2-reap: an expired pin is gone before it is looked up, on this node's own transaction.
+    this.sweepRelayPins()
     if (binding.run) {
-      const pinned = this.replicas.binding(RELAY_PIN_PREFIX + binding.run.runId)
+      const streamId = RELAY_PIN_PREFIX + binding.run.runId
+      const pinned = this.replicas.binding(streamId)
       if (pinned.kind !== 'run' || pinned.sessionId !== binding.run.sessionId || pinned.ownerAccountId !== peer.accountId ||
         pinned.homeNodeId !== peer.id || pinned.homeEpoch !== binding.run.fence.epoch) throw new FederationError('not_home')
+      this.leaseRelayPin(streamId)   // a valid use of the pin renews its lease
     }
     return runtime
   }
@@ -299,15 +321,137 @@ export class Federation {
   receiveRelayPin(context: PeerContext, raw: unknown) {
     const request = relayRuntimePinSchema.parse(raw)
     this.relayRuntime(context, { homeNodeId: request.homeNodeId, executorNodeId: request.executorNodeId, model: request.model, run: null })
-    const streamId = RELAY_PIN_PREFIX + request.runId
-    if (request.action === 'pin') {
-      const held = this.#options.db.prepare("SELECT COUNT(*) n FROM federation_streams WHERE id LIKE 'relay:%' AND json_extract(binding,'$.homeNodeId')=?").get(context.identity.id)!.n as number
-      const existing = this.#options.db.prepare('SELECT 1 FROM federation_streams WHERE id=?').get(streamId)
-      if (!existing && held >= this.relayLimit('maxPinsPerPeer')) throw new FederationError('relay_pin_limit', 429)
-      this.replicas.bind({ streamId, kind: 'run', sessionId: request.sessionId, ownerAccountId: context.identity.accountId, homeNodeId: context.identity.id, homeEpoch: request.epoch })
-    } else this.replicas.unbind(streamId, context.identity.id)
+    if (context.version.minor < RELAY_PIN_LEASE_MINOR) throw new FederationError('contract_feature_unavailable', 426)   // an older home never renews a lease
+    const streamId = RELAY_PIN_PREFIX + request.runId, db = this.#options.db
+    this.transaction(() => {
+      if (request.action === 'pin') {
+        const held = db.prepare("SELECT COUNT(*) n FROM federation_streams WHERE id LIKE 'relay:%' AND json_extract(binding,'$.homeNodeId')=?").get(context.identity.id)!.n as number
+        // A released run id stays released for one TTL: an unpin can overtake a pin or heartbeat that was slower than the home's
+        // own bound (run ids are fresh UUIDs, so no honest pin follows its unpin).
+        if (db.prepare('SELECT 1 FROM federation_relay_pin_tombstones WHERE stream_id=? AND expires_at>?').get(streamId, this.leaseNow())) throw new FederationError('relay_pin_released')
+        const existing = db.prepare('SELECT 1 FROM federation_streams WHERE id=?').get(streamId)
+        if (!existing && held >= this.relayLimit('maxPinsPerPeer')) throw new FederationError('relay_pin_limit', 429)
+        this.replicas.bind({ streamId, kind: 'run', sessionId: request.sessionId, ownerAccountId: context.identity.accountId, homeNodeId: context.identity.id, homeEpoch: request.epoch })
+        this.leaseRelayPin(streamId)    // a pin and its lease commit together; asking again renews
+      } else {
+        const existed = !!db.prepare('SELECT 1 FROM federation_streams WHERE id=?').get(streamId)
+        const removed = this.replicas.unbind(streamId, context.identity.id, request.epoch)
+        if (removed) db.prepare('DELETE FROM federation_relay_pin_leases WHERE stream_id=?').run(streamId)
+        // Released, or never arrived: either way nothing may pin it later. A fenced-out unpin (a newer pin exists) records nothing.
+        if (removed || !existed) db.prepare('INSERT INTO federation_relay_pin_tombstones VALUES (?,?) ON CONFLICT(stream_id) DO UPDATE SET expires_at=excluded.expires_at')
+          .run(streamId, this.leaseNow() + this.pinTtl())
+      }
+    })
     const { model: _model, ...ack } = request
     return signRuntimePinAck(this.#options.privateKey, ack)
+  }
+  private transaction<T>(body: () => T): T {
+    const db = this.#options.db
+    db.exec('BEGIN IMMEDIATE')
+    try { const result = body(); db.exec('COMMIT'); return result } catch (error) { db.exec('ROLLBACK'); throw error }
+  }
+  /** Executor: how long a pin outlives the last time its home used or renewed it. */
+  private pinTtl(): number {
+    const value = this.#options.dispatch?.relayLimits?.pinTtlMs ?? PIN_TTL_DEFAULT_MS
+    if (!Number.isSafeInteger(value) || value < 1) throw new FederationError('invalid_relay_limits')
+    return value
+  }
+  private leaseRelayPin(streamId: string): void {
+    this.#options.db.prepare('INSERT INTO federation_relay_pin_leases VALUES (?,?) ON CONFLICT(stream_id) DO UPDATE SET expires_at=excluded.expires_at')
+      .run(streamId, this.leaseNow() + this.pinTtl())
+  }
+  /** Boot grace (ADR-0018: a restart never makes a live holder lose to its own downtime). Every relay pin gets at least one full
+   * TTL from this boot, and a pin without a lease gets one, so the homes can renew before anything is swept. */
+  private graceRelayPins(): void {
+    if (this.graced || !this.#options.dispatch) return
+    this.graced = true      // lazily, at the first relay request or maintenance tick: a host's lease clock may not exist yet at construction
+    const db = this.#options.db, until = this.leaseNow() + this.pinTtl()
+    this.transaction(() => {
+      db.prepare("INSERT OR IGNORE INTO federation_relay_pin_leases SELECT id,? FROM federation_streams WHERE id LIKE 'relay:%'").run(until)
+      db.prepare('UPDATE federation_relay_pin_leases SET expires_at=MAX(expires_at,?)').run(until)
+    })
+  }
+  /** Executor backstop: a relay pin whose lease lapsed (its home crashed or never returned) is released on this node's own
+   * transaction. It removes a permission and grants none, so it cannot create a second holder of anything. A pin without a
+   * lease (made after boot by a path other than the pin message) is released at once. */
+  sweepRelayPins(): number {
+    this.graceRelayPins()
+    const db = this.#options.db, now = this.leaseNow()
+    const lapsed = `FROM federation_streams WHERE id LIKE 'relay:%'
+        AND NOT EXISTS (SELECT 1 FROM federation_replicas r WHERE r.stream_id=federation_streams.id)
+        AND NOT EXISTS (SELECT 1 FROM federation_relay_pin_leases l WHERE l.stream_id=federation_streams.id AND l.expires_at>?)`
+    const stale = !!db.prepare(`SELECT 1 ${lapsed} LIMIT 1`).get(now), tombs = !!db.prepare('SELECT 1 FROM federation_relay_pin_tombstones WHERE expires_at<=? LIMIT 1').get(now)
+    if (!stale && !tombs) return 0                                       // the common case takes no write lock
+    return this.transaction(() => {
+      db.prepare('DELETE FROM federation_relay_pin_tombstones WHERE expires_at<=?').run(now)
+      const removed = Number(db.prepare(`DELETE ${lapsed}`).run(now).changes)
+      if (removed) db.exec('DELETE FROM federation_relay_pin_leases WHERE stream_id NOT IN (SELECT id FROM federation_streams)')
+      return removed
+    })
+  }
+
+  // ---- F2-reap, home side: the durable journal of pins this node asked executors to make --------------------------------------------
+  /** Written before the signed `pin` leaves, so a crash after the executor's acknowledgement still leaves a record. The run
+   * is live in this process until it is settled or retired. */
+  journalRelayPin(executorNodeId: string, pin: { runId: string; sessionId: string; epoch: number; model: string }): void {
+    this.assertOpen()
+    this.#options.db.prepare('INSERT OR IGNORE INTO federation_relay_pin_journal VALUES (?,?,?,?,?,?)')
+      .run(pin.runId, executorNodeId, pin.model, pin.sessionId, pin.epoch, this.now())
+    this.livePins.add(pin.runId)
+  }
+  /** The executor acknowledged the unpin: nothing is left to reap. */
+  settleRelayPin(runId: string): void {
+    this.livePins.delete(runId)
+    if (!this.closed) this.#options.db.prepare('DELETE FROM federation_relay_pin_journal WHERE run_id=?').run(runId)
+  }
+  /** The session ended without an acknowledged unpin: the row stays, and now belongs to the reconciliation. */
+  retireRelayPin(runId: string): void { this.livePins.delete(runId) }
+  /** Signed, fenced `unpin` for every journaled pin that no session of this process still needs. Idempotent, single-flight,
+   * bounded per executor: an unreachable executor is tried once per pass and its rows wait for the next. */
+  reconcileRelayPins(): Promise<RelayPinReconciliation> {
+    this.reconciling ??= this.reconcile().finally(() => { this.reconciling = undefined })
+    return this.reconciling
+  }
+  private async reconcile(): Promise<RelayPinReconciliation> {
+    const result: RelayPinReconciliation = { released: 0, kept: 0, failed: 0 }, down = new Set<string>()
+    const rows = this.#options.db.prepare('SELECT * FROM federation_relay_pin_journal ORDER BY journaled_at, run_id').all()
+    for (const row of rows) {
+      const runId = String(row.run_id), executor = String(row.executor_node_id)
+      if (this.closed) break
+      if (this.livePins.has(runId)) { result.kept++; continue }
+      if (down.has(executor)) { result.failed++; continue }
+      let timer: ReturnType<typeof setTimeout> | undefined, stop: (() => void) | undefined
+      try {
+        const unpin = this.relayChannel(executor).relayPin({ action: 'unpin', homeNodeId: this.identity.id, executorNodeId: executor, model: String(row.model),
+          runId, sessionId: String(row.session_id), epoch: Number(row.epoch), challenge: randomUUID() })
+        unpin.catch(() => undefined)
+        await Promise.race([unpin, new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new FederationError('relay_unpin_timeout', 504)), UNPIN_TIMEOUT_MS); timer.unref()
+          stop = () => reject(new FederationError('closed', 503)); this.lifetime.signal.addEventListener('abort', stop, { once: true })   // close() ends the wait
+        })])
+        // A pin that became live in the meantime (it cannot: run ids are fresh) would be left alone by the settle below.
+        if (!this.livePins.has(runId)) this.settleRelayPin(runId)
+        result.released++
+      } catch (error) {
+        // Only an unreachable executor ends the pass for it. A definitive refusal (another model, a stranger's pin, an executor
+        // without the runtime) concerns this row alone; the executor's lease frees that pin.
+        const refused = error instanceof FederationError && error.status < 500 && error.code !== 'relay_unpin_timeout'
+        if (!refused) down.add(executor)
+        result.failed++
+      } finally { clearTimeout(timer); if (stop) this.lifetime.signal.removeEventListener('abort', stop) }
+    }
+    return result
+  }
+  private startPinMaintenance(periodMs: number): void {
+    if (!Number.isSafeInteger(periodMs) || periodMs < 0 || periodMs > MAX_TIMER_MS) throw new FederationError('invalid_relay_limits')
+    if (periodMs === 0) return
+    const tick = async () => {
+      if (this.closed) return
+      try { this.sweepRelayPins() } catch { /* a closed database ends the maintenance */ }
+      try { await this.reconcileRelayPins() } catch { /* retried at the next tick */ }
+    }
+    const first = setTimeout(() => { void tick() }, 0), every = setInterval(() => { void tick() }, periodMs)
+    first.unref(); every.unref(); this.#maintenance.push(first, every)
   }
   async receiveRelayCount(context: PeerContext, raw: unknown) {
     const request = relayRuntimeCountSchema.parse(raw), runtime = this.relayRuntime(context, request.binding)
@@ -378,5 +522,5 @@ export class Federation {
     if (canonical(dispatch.binding(input.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
     return dispatch.cancel(input.id)
   }
-  close(): void { if (this.closed) return; this.lifetime.abort(); this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
+  close(): void { if (this.closed) return; for (const timer of this.#maintenance) { clearTimeout(timer); clearInterval(timer) } this.lifetime.abort(); this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
 }

@@ -86,6 +86,8 @@ export interface WorldOptions {
   leadDeadlineMs?: number
   /** Called at every gap, while no model call is in flight and before the clock has been told to the executor. */
   onGap?: (gap: Gap, world: World) => void | Promise<void>
+  /** R3: the judge (signals and J2 on the executor) is on for every relay start. Default true. */
+  judge?: boolean
 }
 
 let container: Promise<void> | undefined
@@ -166,7 +168,9 @@ export class World {
           ...(request.method === 'GET' ? {} : { body: await request.text() }), redirect: 'error' })
       } })
     // As in the F2-d fixture, the policy is completed once the node exists: its connections need the node's scrubber.
-    const policy: DispatchPolicy = { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => toHome }
+    // F2-reap: the simulated clock jumps 75 minutes per gap, which no real-time heartbeat can follow, so the executor's pin lease is
+    // long here; the lease itself is proven in test/relay/pin-reaping.test.ts. What the rehearsal proves is the home's reconciliation.
+    const policy: DispatchPolicy = { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => toHome, relayLimits: { pinTtlMs: 7 * 24 * HOUR } }
     target = this.target = new SimNode(this.targetKeys, ':memory:', { attempts: { governor, maxReservationMs: 5000, leaseClock: clock }, dispatch: policy })
     target.time = START
     target.federation.trust(this.homeKeys.identity)
@@ -202,7 +206,7 @@ export class World {
       gapMs: opts.gapMs ?? this.options.gapMs ?? 75 * MINUTE, ttlMs: 100 * MINUTE,
       reserves: { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 },
       limits: { maxCaps: { cycles: 60, tokens: 4_000_000, moneyMicros: 1_000_000, wallMs: 24 * HOUR }, maxDeadlineMs: 72 * HOUR },
-      model: 'fixture', executorName: 'ms1-executor', canary: this.canary }
+      model: 'fixture', executorName: 'ms1-executor', canary: this.canary, judge: this.options.judge ?? true }
     const path = join(this.dir, `home-${this.configIndex++}.json`)
     writeFileSync(path, JSON.stringify(config))
     const child = fork(HOME_SCRIPT, [], { env: { ...process.env, MS1_CONFIG: path }, execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })

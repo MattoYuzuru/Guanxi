@@ -41,6 +41,11 @@ export class ConnectionStore {
           INSERT INTO k3_migrations VALUES(2);
         `)
       }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=3').get()) {
+        this.db.exec(`CREATE TABLE dotenv_imports(account_id TEXT NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL,
+          connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
+          INSERT INTO k3_migrations VALUES(3);`)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
     for (const file of [path, `${path}-wal`, `${path}-shm`]) chmodSync(file, 0o600)
@@ -54,9 +59,9 @@ export class ConnectionStore {
     if (!row) throw new ConnectionError('connection_not_found', 'Connection not found')
     return connectionSchema.parse(JSON.parse(String(row.data)))
   }
-  create(accountId: string, input: CreateConnection): Connection {
+  create(accountId: string, input: CreateConnection, endpoint?: { baseUrl: string; allowPrivate?: boolean }): Connection {
     const data = createConnectionSchema.parse(input)
-    const row = connectionSchema.parse({ ...data, id: randomUUID(), accountId,
+    const row = connectionSchema.parse({ ...data, ...endpoint, id: randomUUID(), accountId,
       secretRef: null, facts: {
         health: { value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' },
         billing: { value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' },
@@ -70,6 +75,12 @@ export class ConnectionStore {
     this.db.prepare('UPDATE connections SET data=? WHERE id=? AND account_id=?')
       .run(JSON.stringify(safe), safe.id, safe.accountId)
     return safe
+  }
+  /** Trusted import only; no HTTP mutation exposes this owner network consent. */
+  setImportedNetworkPolicy(accountId: string, id: string, allowPrivate: boolean): Connection {
+    const row = this.get(accountId, id)
+    if (!row.baseUrl) throw new ConnectionError('validation_failed', 'Custom endpoint required')
+    return this.write({ ...row, allowPrivate })
   }
   setUnattended(accountId: string, id: string, unattended: boolean): Connection {
     return this.write({ ...this.get(accountId, id), unattended })
