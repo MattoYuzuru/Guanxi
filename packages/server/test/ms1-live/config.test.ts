@@ -9,16 +9,16 @@ import { cli } from './live-world.ts'
 
 const reserves = { turn: 4096, safety: 512, handoff: 3072, tool: 3072, stepMedian: 1536, effective: 24000 }
 const home = (overrides: Record<string, unknown> = {}) => ({ version: 1, role: 'home', node: { identityFile: 'identity.json', privateKeyFile: 'node.key' },
-  peer: { identityFile: 'peer.json', url: 'http://127.0.0.1:4552' }, model: 'qwen3.8-27b', home: { alwaysOn: true, reserves }, ...overrides })
+  peer: { identityFile: 'peer.json', url: 'http://127.0.0.1:4562' }, listen: { federationPort: 4561 }, model: 'qwen3.8-27b', home: { alwaysOn: true, reserves }, ...overrides })
 const executor = (overrides: Record<string, unknown> = {}) => ({ version: 1, role: 'executor', node: { identityFile: 'identity.json', privateKeyFile: 'node.key' },
-  peer: { identityFile: 'peer.json', url: 'http://127.0.0.1:4551' }, model: 'qwen3.8-27b', executor: { llamaServer: { baseUrl: 'http://127.0.0.1:8090' } }, ...overrides })
+  peer: { identityFile: 'peer.json', url: 'http://127.0.0.1:4561' }, listen: { federationPort: 4562 }, model: 'qwen3.8-27b', executor: { llamaServer: { baseUrl: 'http://127.0.0.1:8090' } }, ...overrides })
 const refused = (raw: unknown, code: string, field: string | null) => assert.throws(() => parseMs1LiveConfig(raw, '/etc/x/ms1-live.json'),
   (error: unknown) => error instanceof Ms1LiveError && error.code === code && error.field === field, `${code} at ${field}`)
 
 test('a valid home and executor configuration parse, with every path absolute and link timing defaulted from named policy', () => {
   const h = parseMs1LiveConfig(home(), '/etc/x/ms1-live.json')
-  assert.equal(h.node.privateKeyFile, '/etc/x/node.key'); assert.equal(h.peer.identityFile, '/etc/x/peer.json'); assert.equal(h.peer.url, 'http://127.0.0.1:4552')
-  assert.deepEqual(h.link, { requestTimeoutMs: 900_000, holderTtlMs: 30_000, safetyMs: 2_000, maxModelAgeMs: 60_000, maxReservationMs: 120_000 })
+  assert.equal(h.node.privateKeyFile, '/etc/x/node.key'); assert.equal(h.peer.identityFile, '/etc/x/peer.json'); assert.equal(h.peer.url, 'http://127.0.0.1:4562'); assert.deepEqual(h.listen, { federationPort: 4561 })
+  assert.deepEqual(h.link, { requestTimeoutMs: 900_000, messageTimeoutMs: 15_000, holderTtlMs: 30_000, safetyMs: 2_000, maxModelAgeMs: 60_000, maxReservationMs: 120_000 })
   assert.equal(h.home!.maximumAgeMs, 60_000); assert.equal(h.home!.checkoutRoot, undefined)
   const e = parseMs1LiveConfig(executor({ node: { identityFile: '/abs/id.json', privateKeyFile: '../key' } }), '/etc/x/ms1-live.json')
   assert.equal(e.node.identityFile, '/abs/id.json'); assert.equal(e.node.privateKeyFile, '/etc/key')
@@ -33,6 +33,10 @@ test('the configuration is strict: unknown keys, wrong roles and missing section
   refused(home({ executor: { llamaServer: { baseUrl: 'http://127.0.0.1:1' } } }), 'config_section_not_for_role', 'executor')
   refused(home({ role: 'both' }), 'config_invalid', 'role')
   refused(home({ version: 2 }), 'config_invalid', 'version')
+  refused(home({ listen: undefined }), 'config_invalid', 'listen')
+  refused(home({ listen: { port: 4551 } }), 'config_invalid', 'listen.federationPort')
+  refused(home({ listen: { federationPort: 70000 } }), 'config_invalid', 'listen.federationPort')
+  refused(home({ listen: { federationPort: 4561, host: '0.0.0.0' } }), 'config_unknown_key', 'listen')
   refused(home({ home: { reserves, alwaysOn: false } }), 'config_invalid', 'home.alwaysOn')
   refused(home({ home: { alwaysOn: true } }), 'config_invalid', 'home.reserves')
   refused(home({ home: { alwaysOn: true, reserves: { ...reserves, effective: 0 } } }), 'config_invalid', 'home.reserves.effective')
@@ -52,7 +56,7 @@ test('only http loopback addresses with an explicit port are accepted anywhere a
   for (const good of ['http://127.0.0.1:4552', 'http://localhost:4552', 'http://[::1]:4552', 'http://127.0.0.1:4552/']) assert.ok(loopbackBase(good, 'x').startsWith('http://'))
 })
 
-test('a lead needs every owner ceiling, an absolute-path-ready bridge and an exact version; the home must assert it stays awake', () => {
+test('a lead needs every owner ceiling, absolute paths for both binaries and an exact version; the home must assert it stays awake', () => {
   const lead = { adapter: 'claude-code', bridge: '/x/claude-agent-acp', bridgeVersion: '0.94.0', claudeExecutable: '/x/claude',
     limits: { maxCaps: { cycles: 40, tokens: 2_000_000, moneyMicros: 500_000, wallMs: 3_600_000 }, maxDeadlineMs: 86_400_000 } }
   const ok = parseMs1LiveConfig(home({ home: { alwaysOn: true, reserves, lead } }), '/x/c.json').home!.lead!
@@ -60,6 +64,9 @@ test('a lead needs every owner ceiling, an absolute-path-ready bridge and an exa
   refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, bridgeVersion: 'latest' } } }), 'config_invalid', 'home.lead.bridgeVersion')
   refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, limits: { maxDeadlineMs: 1, maxCaps: { cycles: 1, tokens: 1, wallMs: 1 } } } } }), 'config_invalid', 'home.lead.limits.maxCaps.moneyMicros')
   refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, adapter: 'codex' } } }), 'config_invalid', 'home.lead.adapter')
+  // The vendor binaries are launched by path: a relative one would be resolved against whatever directory the node starts in.
+  refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, bridge: 'bin/claude-agent-acp' } } }), 'config_path_not_absolute', 'home.lead.bridge')
+  refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, claudeExecutable: '~/.local/bin/claude' } } }), 'config_path_not_absolute', 'home.lead.claudeExecutable')
 })
 
 test('loading reads one file by path; the environment variable is the only switch and unset means the plain boot', () => {
@@ -82,8 +89,8 @@ test('the template that init writes parses, and its reserves fit a 32768-token w
       const result = await cli(['init', '--role', role, '--dir', join(dir, role), '--json'])
       assert.equal(result.code, 0, result.err)
       const settings = loadMs1LiveConfig(join(dir, role, 'ms1-live.json'))
-      assert.equal(settings.role, role); assert.equal(settings.model, 'qwen3.8-27b'); assert.equal(settings.peer.url, role === 'home' ? 'http://127.0.0.1:4552' : 'http://127.0.0.1:4551')
-      assert.equal(settings.listen!.port, role === 'home' ? 4551 : 4552)
+      assert.equal(settings.role, role); assert.equal(settings.model, 'qwen3.8-27b'); assert.equal(settings.peer.url, role === 'home' ? 'http://127.0.0.1:4562' : 'http://127.0.0.1:4561')
+      assert.deepEqual(settings.listen, role === 'home' ? { port: 4551, federationPort: 4561 } : { port: 4552, federationPort: 4562 }, 'the owner API and the forwarded port are different numbers')
       if (role === 'home') {
         const window = (tokens: number) => ({ tokens, framingTokens: 0, source: 'test', observedAt: 1, confidence: 'high' as const })
         assert.ok(thresholds(window(32768), settings.home!.reserves).soft > 0, 'the template is usable for the real window')

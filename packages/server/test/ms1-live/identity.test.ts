@@ -30,7 +30,7 @@ test('init writes a private key (0600), a public identity and offer that hold no
   for (const file of ['identity.json', 'peer-offer.json', 'ms1-live.json', 'peer.json']) assert.ok(!readFileSync(join(dir, 'a', file), 'utf8').includes(body.slice(0, 30)), `${file} holds no key`)
   const offer = JSON.parse(readFileSync(join(dir, 'a', 'peer-offer.json'), 'utf8'))
   assert.equal(offer.format, PEER_FORMAT); assert.deepEqual(offer.identity.scopes, MS1_SCOPES); assert.equal(offer.identity.trust, 'owner_device'); assert.equal(offer.identity.admin, false)
-  assert.equal(offer.port, 4551)
+  assert.equal(offer.federationPort, 4561); assert.equal(offer.port, undefined, 'the owner API port is not shared with the peer')
   assert.ok(!a1.out.includes(body.slice(0, 30)) && !a1.err.includes(body.slice(0, 30)), 'no command output carries the key')
   assert.ok(!a1.out.includes('BEGIN'))
 }))
@@ -47,7 +47,7 @@ test('an identity is never replaced: a second init in the same directory fails a
 test('credentials load only for a private key that belongs to the identity, paired with a peer of the same account', scratch(async dir => {
   const { a, b } = await pair(dir)
   const ok = readCredentials(a)
-  assert.equal(ok.local.identity.accountId, 'owner'); assert.equal(ok.peer.id, readCredentials(b).local.identity.id); assert.equal(ok.peerPort, 4552)
+  assert.equal(ok.local.identity.accountId, 'owner'); assert.equal(ok.peer.id, readCredentials(b).local.identity.id); assert.equal(ok.peerFederationPort, 4562)
 
   chmodSync(a.node.privateKeyFile, 0o644)
   assert.throws(() => readCredentials(a), code('private_key_mode'), 'a key other users can read is refused')
@@ -66,11 +66,20 @@ test('credentials load only for a private key that belongs to the identity, pair
   rmSync(a.peer.identityFile); assert.throws(() => readCredentials(a), code('peer_unreadable'))
 }))
 
-test('nodes of different accounts, non-owner trust or too few scopes do not pair', scratch(async dir => {
+test('nodes of different accounts, non-owner trust, too few scopes, extra scopes or an admin right do not pair', scratch(async dir => {
   const { a } = await pair(dir, { account: 'someone-else' })
   assert.throws(() => readCredentials(a), code('account_mismatch'))
   const offer = JSON.parse(readFileSync(join(dir, 'b', 'peer-offer.json'), 'utf8'))
   const mutate = (change: (identity: any) => void) => { const copy = structuredClone(offer); change(copy.identity); copy.identity.accountId = 'someone-else'; writeFileSync(a.peer.identityFile, JSON.stringify(copy)) }
   mutate(identity => { identity.trust = 'shared_device' }); assert.throws(() => readCredentials(a), code('peer_not_owner_device'))
-  mutate(identity => { identity.scopes = ['attempts'] }); assert.throws(() => readCredentials(a), code('peer_scope_missing'), 'attempts alone cannot pin a relay run')
+  mutate(identity => { identity.scopes = ['attempts'] }); assert.throws(() => readCredentials(a), code('peer_scope_invalid'), 'attempts alone cannot pin a relay run')
+  // A hand-edited peer file must not be pinned with more authority than the pairing needs.
+  mutate(identity => { identity.scopes = ['attempts', 'replicas', 'config'] }); assert.throws(() => readCredentials(a), code('peer_scope_invalid'), 'config sync')
+  mutate(identity => { identity.scopes = ['attempts', 'replicas', 'commands', 'telemetry'] }); assert.throws(() => readCredentials(a), code('peer_scope_invalid'), 'commands and telemetry')
+  mutate(identity => { identity.admin = true }); assert.throws(() => readCredentials(a), code('peer_scope_invalid'), 'admin')
+  mutate(identity => { identity.scopes = ['attempts', 'attempts'] }); assert.throws(() => readCredentials(a), code('peer_scope_invalid'), 'a repeated scope is not the pair')
+  // The same applies to this node's own identity file.
+  const own = JSON.parse(readFileSync(a.node.identityFile, 'utf8')); own.identity.scopes = ['attempts', 'replicas', 'config']; own.identity.accountId = 'owner'
+  copyFileSync(join(dir, 'b', 'peer-offer.json'), a.peer.identityFile); writeFileSync(a.node.identityFile, JSON.stringify(own))
+  assert.throws(() => readCredentials(a), code('peer_scope_invalid'))
 }))

@@ -4,8 +4,8 @@
  * fake llama-server in attach mode. Nothing is injected into either node: no clock, no transport, no relay class. */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { copyFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { createServer as createHttpServer, request as httpRequest, type Server } from 'node:http'
-import { createServer as createNetServer, type Socket } from 'node:net'
+import { createServer as createHttpServer, type Server } from 'node:http'
+import { connect as netConnect, createServer as createNetServer, type Server as NetServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
@@ -29,39 +29,55 @@ export async function cli(args: string[], env: Record<string, string | undefined
   return { code, out: out.join('\n'), err: err.join('\n') }
 }
 
-/** The "ssh -L": a loopback listener that forwards to another loopback port. Like a TCP forward it keeps no state, but this one
- * rewrites Host so the peer's own-port allowlist accepts it (a real forward uses the same number on both ends). */
+/** The ssh forward: a TCP pipe that listens on `[::1]:P` and connects to `127.0.0.1:P`. Like `ssh -L P:127.0.0.1:P` it forwards bytes
+ * and knows nothing of HTTP, and the number on both ends is the same, so the peer's Host allowlist sees exactly the authority it
+ * would see across two machines. It only *watches* the client-to-server stream, to log the federation requests that cross it, and
+ * can be cut like a dropped link. Clients reach it as `http://[::1]:P`. */
 export class Forward {
-  readonly requests: Array<{ path: string; action?: string }> = []
-  private server: Server | null = null
-  private readonly sockets = new Set<Socket>()
+  readonly requests: Array<{ method: string; path: string; action?: string }> = []
   readonly port: number
-  readonly target: number
-  constructor(port: number, target: number) { this.port = port; this.target = target }
+  private server: NetServer | null = null
+  private readonly sockets = new Set<Socket>()
+  constructor(port: number) { this.port = port }
+  get url() { return `http://[::1]:${this.port}` }
   async listen() {
-    const server = createHttpServer((req, res) => {
-      const chunks: Buffer[] = []
-      req.on('data', chunk => chunks.push(chunk as Buffer))
-      req.on('end', () => {
-        const body = Buffer.concat(chunks)
-        let action: string | undefined
-        try { action = (JSON.parse(body.toString('utf8')) as { action?: string }).action } catch { /* not JSON */ }
-        this.requests.push({ path: req.url!.replace('/api/federation', ''), ...(action ? { action } : {}) })
-        const upstream = httpRequest({ host: '127.0.0.1', port: this.target, method: req.method, path: req.url, headers: { ...req.headers, host: `127.0.0.1:${this.target}` } }, response => {
-          res.writeHead(response.statusCode!, response.headers); response.pipe(res)
-        })
-        upstream.on('error', () => res.destroy())
-        upstream.end(body)
-      })
+    const server = createNetServer(client => {
+      const upstream = netConnect({ host: '127.0.0.1', port: this.port })
+      this.sockets.add(client); this.sockets.add(upstream)
+      const log = requestLogger(entry => this.requests.push(entry))
+      client.on('data', chunk => log(chunk))
+      client.pipe(upstream); upstream.pipe(client)
+      for (const [a, b] of [[client, upstream], [upstream, client]] as const) {
+        a.on('close', () => { this.sockets.delete(a); b.destroy() }); a.on('error', () => b.destroy())
+      }
     })
-    server.on('connection', socket => { this.sockets.add(socket); socket.on('close', () => this.sockets.delete(socket)) })
-    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(this.port, '127.0.0.1', resolve) })
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(this.port, '::1', resolve) })
     this.server = server
   }
   /** The forward dies: nothing accepts, and open connections drop. */
   async cut() { const server = this.server; this.server = null; for (const s of this.sockets) s.destroy(); await new Promise<void>(resolve => server ? server.close(() => resolve()) : resolve()) }
   async restore() { if (!this.server) await this.listen() }
   paths(prefix: string) { return this.requests.filter(r => r.path.startsWith(prefix)) }
+}
+/** Reads HTTP/1.1 requests (content-length bodies) out of a byte stream, for the log only. */
+function requestLogger(emit: (entry: { method: string; path: string; action?: string }) => void) {
+  let buffer: Buffer = Buffer.alloc(0)
+  return (chunk: Buffer) => {
+    buffer = Buffer.concat([buffer, chunk])
+    for (;;) {
+      const end = buffer.indexOf('\r\n\r\n')
+      if (end < 0) return
+      const head = buffer.subarray(0, end).toString('utf8')
+      const line = /^(\w+) (\S+) HTTP\/1\.1/.exec(head)
+      if (!line) { buffer = Buffer.alloc(0); return }
+      const length = Number(/content-length: *(\d+)/i.exec(head)?.[1] ?? 0)
+      if (buffer.length < end + 4 + length) return
+      let action: string | undefined
+      try { action = (JSON.parse(buffer.subarray(end + 4, end + 4 + length).toString('utf8')) as { action?: string }).action } catch { /* not JSON */ }
+      emit({ method: line[1]!, path: line[2]!.replace('/api/federation', ''), ...(action ? { action } : {}) })
+      buffer = buffer.subarray(end + 4 + length)
+    }
+  }
 }
 
 /** Where a local Ollama would be: it must never be asked anything on a relay path. */
@@ -89,7 +105,11 @@ export class LiveNode {
   readonly dataDir: string
   readonly port: number
   readonly env: NodeJS.ProcessEnv
-  constructor(name: string, config: string, dataDir: string, port: number, env: NodeJS.ProcessEnv) { this.name = name; this.config = config; this.dataDir = dataDir; this.port = port; this.env = env }
+  /** The loopback port of the federation listener: the one that is forwarded. */
+  readonly federationPort: number
+  constructor(name: string, config: string, dataDir: string, port: number, federationPort: number, env: NodeJS.ProcessEnv) {
+    this.name = name; this.config = config; this.dataDir = dataDir; this.port = port; this.federationPort = federationPort; this.env = env
+  }
   spawn(extra: string[] = []) {
     this.events.length = 0
     const child = spawn(process.execPath, [SCRIPT, 'start', '--config', this.config, '--data-dir', this.dataDir, '--json', ...extra], { env: this.env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -113,6 +133,7 @@ export class LiveNode {
     return found
   }
   get url() { return `http://127.0.0.1:${this.port}` }
+  get federationUrl() { return `http://127.0.0.1:${this.federationPort}` }
   async api(method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> {
     const response = await fetch(this.url + path, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: 'error' })
     const text = await response.text()
@@ -142,7 +163,16 @@ export interface LiveOptions {
 }
 export const LEAD_LIMITS = { maxCaps: { cycles: 40, tokens: 2_000_000, moneyMicros: 500_000, wallMs: 12 * 3_600_000 }, maxDeadlineMs: 24 * 3_600_000, allowDetach: false }
 
+let container: Promise<void> | undefined
+/** The acceptance gates run in K4's container sandbox on macOS: say so at once instead of timing out inside a relay. */
+function containerRuntime(): Promise<void> {
+  if (process.platform !== 'darwin') return Promise.resolve()
+  return container ??= exec('docker', ['info', '--format', '{{.OSType}}'], { timeout: 15_000, env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env['PATH'] ?? ''}` } })
+    .then(() => undefined, error => { throw new Error(`The MS1 live tests need the local container runtime (Colima) for their acceptance gates: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`) })
+}
+
 export async function createLiveWorld(t: { after(fn: () => unknown): void }, options: LiveOptions = {}) {
+  await containerRuntime()
   mkdirSync(join(process.cwd(), '.lane-data'), { recursive: true })
   // Colima shares the working directory, not the system temp directory: the gate sandbox must see the checkouts.
   const dir = realpathSync(mkdtempSync(join(process.cwd(), '.lane-data', 'ms1live-')))
@@ -178,6 +208,7 @@ export class LiveWorld {
   private async git(args: string[], cwd = this.project) {
     return (await exec('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', ...args], { cwd })).stdout.trim()
   }
+  patchHome(change: (config: any) => void) { this.patch(this.homeConfig, change) }
   private patch(file: string, change: (config: any) => void) { const config = JSON.parse(readFileSync(file, 'utf8')); change(config); writeFileSync(file, JSON.stringify(config, null, 2)) }
 
   async init() {
@@ -190,14 +221,15 @@ export class LiveWorld {
     this.fake = await startFakeLlama({ alias: 'fixture', modelPath, nCtx: 16000, replies: [ms1Script], ...this.options.fake })
     this.closers.push(() => this.fake.close())
     await this.tripwire.listen(); this.closers.push(() => this.tripwire.close())
-    const [homePort, execPort, toHomePort, toExecPort] = [await freePort(), await freePort(), await freePort(), await freePort()]
-    this.toExecutor = new Forward(toExecPort, execPort); this.toHome = new Forward(toHomePort, homePort)
+    const [homeApi, homeFed, execApi, execFed] = [await freePort(), await freePort(), await freePort(), await freePort()]
+    // One forward per direction, each carrying the federation port only, with the same number on both ends.
+    this.toExecutor = new Forward(execFed); this.toHome = new Forward(homeFed)
     await this.toExecutor.listen(); await this.toHome.listen()
     this.closers.push(() => this.toExecutor.cut(), () => this.toHome.cut())
 
     // The operator's steps, through the same commands: init on each side, then exchange the public files.
-    const initHome = await cli(['init', '--role', 'home', '--dir', this.homeDir, '--port', String(homePort), '--peer-port', String(toExecPort), '--model', 'fixture', '--json'])
-    const initExec = await cli(['init', '--role', 'executor', '--dir', this.execDir, '--port', String(execPort), '--peer-port', String(toHomePort), '--model', 'fixture', '--llama-url', this.fake.url, '--json'])
+    const initHome = await cli(['init', '--role', 'home', '--dir', this.homeDir, '--port', String(homeApi), '--federation-port', String(homeFed), '--peer-federation-port', String(execFed), '--model', 'fixture', '--json'])
+    const initExec = await cli(['init', '--role', 'executor', '--dir', this.execDir, '--port', String(execApi), '--federation-port', String(execFed), '--peer-federation-port', String(homeFed), '--model', 'fixture', '--llama-url', this.fake.url, '--json'])
     if (initHome.code !== 0 || initExec.code !== 0) throw new Error(`init failed ${initHome.out}${initHome.err}${initExec.out}${initExec.err}`)
     this.homeConfig = join(this.homeDir, 'ms1-live.json'); this.execConfig = join(this.execDir, 'ms1-live.json')
     const strangerOffer = async () => {
@@ -217,10 +249,11 @@ export class LiveWorld {
     // Timing is policy: shorter than production's, longer than a loaded test machine's worst pause.
     const link = { requestTimeoutMs: 30_000, holderTtlMs: 10_000, safetyMs: 500, maxModelAgeMs: 60_000, maxReservationMs: 30_000 }
     const reserves = { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 }
-    this.patch(this.execConfig, config => { config.link = link })
+    // Each side reaches the other through the `[::1]` forward, never through the peer's own address.
+    this.patch(this.execConfig, config => { config.link = link; config.peer.url = this.toHome.url })
     if (this.options.lead) this.writeLeadFixture()
     this.patch(this.homeConfig, config => {
-      config.link = link
+      config.link = link; config.peer.url = this.toExecutor.url
       config.home.reserves = reserves; config.home.checkoutRoot = this.checkouts; config.home.pollMs = 200
       if (this.options.lead) {
         const agent = join(this.homeDir, 'claude-code', 'fixture-agent.mjs')
@@ -233,8 +266,8 @@ export class LiveWorld {
       for (const key of ['GUANXI_API_PORT', 'GUANXI_DATA_DIR', 'PORT', 'HOST', 'GUANXI_MS1_LIVE_CONFIG']) delete (base as Record<string, unknown>)[key]
       return base
     }
-    this.executor = new LiveNode('executor', this.execConfig, join(this.execDir, 'data'), execPort, env())
-    this.home = new LiveNode('home', this.homeConfig, join(this.homeDir, 'data'), homePort, env())
+    this.executor = new LiveNode('executor', this.execConfig, join(this.execDir, 'data'), execApi, execFed, env())
+    this.home = new LiveNode('home', this.homeConfig, join(this.homeDir, 'data'), homeApi, homeFed, env())
     this.closers.push(() => this.home.stop(), () => this.executor.stop())
     if (this.options.start !== false) await this.startAll()
   }

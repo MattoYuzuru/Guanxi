@@ -1,6 +1,7 @@
 /** Misconfiguration and outages fail loudly and never fall back to inference on the home: a refused relay start creates no run,
  * the executor's llama-server generates nothing, and a local Ollama (a tripwire on OLLAMA_HOST) is never asked. */
 import assert from 'node:assert/strict'
+import { existsSync, readdirSync } from 'node:fs'
 import { test } from 'node:test'
 import { cli, createLiveWorld, until, type LiveWorld } from './live-world.ts'
 
@@ -15,6 +16,7 @@ async function assertRefusedWithoutInference(w: LiveWorld, response: { status: n
   assert.equal(w.home.count("SELECT COUNT(*) AS n FROM sqlite_master WHERE name='relay_public_starts'") === 0 || w.home.count('SELECT COUNT(*) AS n FROM relay_public_starts') === 0, true, 'no start row')
   assert.equal(w.home.count('SELECT COUNT(*) AS n FROM durable_runs'), 0, 'no run of any kind')
   assert.equal(w.home.count('SELECT COUNT(*) AS n FROM sessions'), 0, 'no session')
+  assert.deepEqual(existsSync(w.checkouts) ? readdirSync(w.checkouts) : [], [], 'no checkout was allocated')
   assert.equal((await w.fake.requests('/completion')).length, completions, 'the llama-server generated nothing')
   assert.deepEqual(w.tripwire.requests, [], 'a local Ollama was not asked either')
 }

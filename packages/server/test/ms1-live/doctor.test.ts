@@ -11,9 +11,9 @@ const status = (report: Report, id: string) => report.checks.find(check => check
 async function pair(t: { after(fn: () => unknown): void }, options: { llama?: string } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ms1-doctor-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const [hp, ep] = [await freePort(), await freePort()]
-  const home = await cli(['init', '--role', 'home', '--dir', join(dir, 'home'), '--port', String(hp), '--peer-port', String(ep), '--json'])
-  const exec = await cli(['init', '--role', 'executor', '--dir', join(dir, 'exec'), '--port', String(ep), '--peer-port', String(hp), '--llama-url', options.llama ?? 'http://127.0.0.1:1', '--json'])
+  const [hp, hf, ep, ef] = [await freePort(), await freePort(), await freePort(), await freePort()]
+  const home = await cli(['init', '--role', 'home', '--dir', join(dir, 'home'), '--port', String(hp), '--federation-port', String(hf), '--peer-federation-port', String(ef), '--json'])
+  const exec = await cli(['init', '--role', 'executor', '--dir', join(dir, 'exec'), '--port', String(ep), '--federation-port', String(ef), '--peer-federation-port', String(hf), '--llama-url', options.llama ?? 'http://127.0.0.1:1', '--json'])
   assert.equal(home.code + exec.code, 0)
   copyFileSync(join(dir, 'exec', 'peer-offer.json'), join(dir, 'home', 'peer.json')); copyFileSync(join(dir, 'home', 'peer-offer.json'), join(dir, 'exec', 'peer.json'))
   const doctor = async (role: 'home' | 'exec') => {
@@ -21,7 +21,7 @@ async function pair(t: { after(fn: () => unknown): void }, options: { llama?: st
     return { code: result.code, report: JSON.parse(result.out) as Report, raw: result.out }
   }
   const edit = (role: 'home' | 'exec', change: (config: any) => void) => { const file = join(dir, role, 'ms1-live.json'); const c = JSON.parse(readFileSync(file, 'utf8')); change(c); writeFileSync(file, JSON.stringify(c)) }
-  return { dir, hp, ep, doctor, edit }
+  return { dir, hp, hf, ep, ef, doctor, edit }
 }
 
 test('doctor on a fresh pairing reports nothing wrong, calls an absent peer "not yet" and prints no key', async t => {
@@ -29,6 +29,7 @@ test('doctor on a fresh pairing reports nothing wrong, calls an absent peer "not
   const { code, report, raw } = await w.doctor('home')
   assert.equal(code, 0, raw); assert.equal(report.ok, true)
   for (const id of ['config', 'identity', 'private_key', 'peer_file', 'pairing', 'listen', 'forward_port', 'own_port', 'git', 'checkout_root']) assert.equal(status(report, id)?.status, 'ok', id)
+  assert.match(status(report, 'listen')!.summary, /Owner API on 127\.0\.0\.1:\d+ \(never forwarded\); federation on/)
   assert.equal(status(report, 'peer_reachable')?.status, 'warn'); assert.equal(status(report, 'peer_reachable')?.code, 'peer_unreachable')
   assert.match(status(report, 'peer_reachable')!.fix!, /ssh forward/)
   const body = readFileSync(join(w.dir, 'home', 'node.key'), 'utf8').split('\n').filter(line => line && !line.startsWith('-----')).join('')
@@ -52,16 +53,24 @@ test('doctor names each broken piece and exits 1: key mode, missing peer file, a
   writeFileSync(join(w.dir, 'home', 'peer.json'), JSON.stringify({ ...offer, identity: { ...offer.identity, accountId: 'other' } }))
   r = await w.doctor('home'); assert.equal(status(r.report, 'pairing')?.code, 'pairing_invalid'); assert.match(status(r.report, 'pairing')!.summary, /accounts differ/)
   writeFileSync(join(w.dir, 'home', 'peer.json'), JSON.stringify({ ...offer, identity: { ...offer.identity, scopes: ['attempts'] } }))
-  r = await w.doctor('home'); assert.match(status(r.report, 'pairing')!.summary, /attempts and replicas/)
+  r = await w.doctor('home'); assert.match(status(r.report, 'pairing')!.summary, /exactly the attempts and replicas scopes/)
+  writeFileSync(join(w.dir, 'home', 'peer.json'), JSON.stringify({ ...offer, identity: { ...offer.identity, scopes: ['attempts', 'replicas', 'config'] } }))
+  r = await w.doctor('home'); assert.equal(status(r.report, 'pairing')?.code, 'pairing_invalid', 'a peer file with more authority than the pairing needs is not "fine"')
+  writeFileSync(join(w.dir, 'home', 'peer.json'), JSON.stringify({ ...offer, identity: { ...offer.identity, admin: true } }))
+  r = await w.doctor('home'); assert.match(status(r.report, 'pairing')!.summary, /neither identity may be an admin/)
   copyFileSync(join(w.dir, 'exec', 'peer-offer.json'), join(w.dir, 'home', 'peer.json'))
 
-  w.edit('home', config => { config.peer.url = `http://127.0.0.1:${w.ep + 1}` })
-  r = await w.doctor('home'); assert.equal(status(r.report, 'forward_port')?.code, 'forward_port_mismatch'); assert.match(status(r.report, 'forward_port')!.fix!, new RegExp(`-L ${w.ep}:127.0.0.1:${w.ep}`))
-  w.edit('home', config => { config.peer.url = `http://127.0.0.1:${w.ep}`; config.home.lead = { adapter: 'claude-code', bridge: join(w.dir, 'absent-bridge'), bridgeVersion: '1.2.3', claudeExecutable: 'relative/claude',
+  w.edit('home', config => { config.peer.url = `http://127.0.0.1:${w.ef + 1}` })
+  r = await w.doctor('home'); assert.equal(status(r.report, 'forward_port')?.code, 'forward_port_mismatch'); assert.match(status(r.report, 'forward_port')!.fix!, new RegExp(`-L ${w.ef}:127.0.0.1:${w.ef}`))
+  w.edit('home', config => { config.listen.federationPort = config.listen.port })
+  r = await w.doctor('home'); assert.equal(status(r.report, 'listen')?.code, 'ports_collide')
+  w.edit('home', config => { config.listen.federationPort = w.hf; config.peer.url = `http://127.0.0.1:${w.ef}`; config.home.lead = { adapter: 'claude-code', bridge: join(w.dir, 'absent-bridge'), bridgeVersion: '1.2.3', claudeExecutable: join(w.dir, 'absent-claude'),
     limits: { maxCaps: { cycles: 1, tokens: 1, moneyMicros: 1, wallMs: 1 }, maxDeadlineMs: 1 } } })
-  r = await w.doctor('home'); assert.equal(status(r.report, 'lead_bridge')?.code, 'executable_missing'); assert.equal(status(r.report, 'lead_claude')?.code, 'path_not_absolute')
+  r = await w.doctor('home'); assert.equal(status(r.report, 'lead_bridge')?.code, 'executable_missing'); assert.equal(status(r.report, 'lead_claude')?.code, 'executable_missing')
   assert.equal(r.report.ok, false)
 
+  w.edit('home', config => { config.home.lead.bridge = 'relative/bridge' })
+  r = await w.doctor('home'); assert.equal(status(r.report, 'config')?.code, 'config_path_not_absolute'); assert.equal(status(r.report, 'config')?.status, 'fail')
   w.edit('home', config => { config.home.alwaysOn = false })
   r = await w.doctor('home'); assert.equal(r.code, 1); assert.equal(status(r.report, 'config')?.code, 'config_invalid'); assert.equal(r.report.checks.length, 1, 'nothing else is guessed from an invalid configuration')
 })

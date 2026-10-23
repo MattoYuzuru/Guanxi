@@ -1,6 +1,7 @@
 /** The owner's Claude Code stands in as the ACP fixture agent (the one the K5 and LW suites use): the production boot wires K5 and LW
  * from the home's `lead` section, the lead delegates through `guanxi_delegate`, and the plan runs on the executor. */
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { createLiveWorld, until, type LiveWorld } from './live-world.ts'
@@ -82,4 +83,16 @@ test('the owner\'s configuration binds the lead: an executor or caps beyond the 
     assert.equal((await w.fake.requests('/completion')).length, 0); assert.deepEqual(w.toExecutor.requests.filter(r => /offers|dispatch|pin/.test(r.path)), [])
     await w.close()
   }
+})
+
+test('a lead that cannot be set up fails the start and leaves nothing running', async t => {
+  const w = await createLiveWorld(t, { lead: true, start: false })
+  w.patchHome(config => { config.home.lead.claudeExecutable = join(w.dir, 'absent-claude') })
+  w.executor.spawn(); await w.executor.wait('started')
+  w.home.spawn()
+  const failed = await w.home.wait('failed')
+  assert.ok(failed['code'], 'a code names what failed')
+  assert.equal((await w.home.exit).code, 1, 'the node exited non-zero')
+  assert.equal(w.home.alive, false, 'and it is not left running half-configured')
+  await assert.rejects(fetch(w.home.url + '/api/health'), 'its listeners are closed')
 })

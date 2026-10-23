@@ -70,3 +70,20 @@ test('a redirect is an error, a silent peer times out, and a refused connection 
   } finally { await t.close() }
   await assert.rejects(loopbackTransport({ base: t.base, timeoutMs: 1000 })(request('/api/federation/handshake')), TypeError, 'nothing listens any more')
 })
+
+test('only observation, count and offer may take minutes: every other message has the short deadline, so a half-open forward cannot hold a renewal', async () => {
+  const t = await target((seen, respond) => { if (seen.url.endsWith('/observe') || seen.url.endsWith('/offers')) setTimeout(() => respond(200, '{"slow":true}'), 600) })
+  try {
+    const transport = loopbackTransport({ base: t.base, timeoutMs: 5000, messageTimeoutMs: 200 })
+    for (const path of ['/api/federation/handshake', '/api/federation/attempts/renew', '/api/federation/attempts/events', '/api/federation/attempts/dispatch',
+      '/api/federation/attempts/runtime/pin', '/api/federation/attempts/dispatch-cancel']) {
+      const began = Date.now()
+      await assert.rejects(transport(request(path, { method: 'POST', body: '{}' })), (error: unknown) => (error as Error).name === 'TimeoutError', path)
+      assert.ok(Date.now() - began < 2000, `${path} gave up at the short deadline`)
+    }
+    for (const path of ['/api/federation/attempts/runtime/observe', '/api/federation/attempts/offers']) {
+      assert.deepEqual(await (await transport(request(path, { method: 'POST', body: '{}' }))).json(), { slow: true }, `${path} may take longer than a message`)
+    }
+    assert.throws(() => loopbackTransport({ base: t.base, timeoutMs: 1000, messageTimeoutMs: 0 }), (error: unknown) => error instanceof Ms1LiveError && error.code === 'timeout_invalid')
+  } finally { await t.close() }
+})

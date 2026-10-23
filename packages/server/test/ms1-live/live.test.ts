@@ -129,3 +129,20 @@ test('a plan run twice with the same key attaches to the first run and dispatche
   assert.equal(w.executor.count("SELECT COUNT(*) AS n FROM remote_dispatch_holders WHERE status IN ('accepted','running')"), 0, 'no holder is still computing on the executor')
   assert.deepEqual(w.tripwire.requests, [])
 })
+
+test('what crosses the forward is the federation API and only that: the owner API of either node is not reachable through it, and the forward is the topology a real ssh -L makes', async t => {
+  const w = await createLiveWorld(t)
+  await w.registerProject()
+  for (const forward of [w.toExecutor, w.toHome]) {
+    for (const [method, path] of [['GET', '/api/workspaces'], ['GET', '/api/projects'], ['POST', '/api/relay'], ['GET', '/api/connections'], ['GET', '/api/health']] as const) {
+      const response = await fetch(forward.url + path, { method, ...(method === 'POST' ? { headers: { 'content-type': 'application/json' }, body: '{}' } : {}) })
+      assert.deepEqual([response.status, await response.json()], [404, { code: 'not_found' }], `${method} ${path} through the forward`)
+    }
+    const handshake = await fetch(`${forward.url}/api/federation/handshake`)
+    assert.deepEqual([handshake.status, await handshake.json()], [401, { code: 'unauthenticated' }], 'the federation API answers, and refuses an unsigned caller')
+  }
+  // The forward listens on ::1 and connects to 127.0.0.1 with the same port number: nothing was rewritten on the way.
+  assert.equal(new URL(w.toExecutor.url).hostname, '[::1]'); assert.equal(w.toExecutor.port, w.executor.federationPort)
+  assert.notEqual(w.executor.port, w.executor.federationPort, 'the owner API has its own port, which is never forwarded')
+  assert.equal((await w.executor.api('GET', '/api/workspaces')).status, 200, 'and it works where it belongs')
+})
