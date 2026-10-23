@@ -5,7 +5,7 @@ import { FEDERATION_VERSION, federationVersionSchema, replicaEntrySchema, signed
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, dispatchRenewalSchema, dispatchStateSchema, dispatchCancelSchema,
   type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptReceiptSchema,
-  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, signedRelayRuntimeEvidenceSchema, signedRelayRuntimePinAckSchema, type RelayRuntimePinRequest, type RelayRuntimeObserveRequest, type RelayRuntimeCountRequest,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_STRUCTURED_MINOR, signedRelayRuntimeEvidenceSchema, signedRelayRuntimePinAckSchema, type RelayRuntimePinRequest, type RelayRuntimeObserveRequest, type RelayRuntimeCountRequest,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
 import { canonical, FederationError, requestProof, signValue, validSignature } from './crypto.ts'
 import type { SharedConfig } from './config.ts'
@@ -102,15 +102,18 @@ export class FederationChannel {
     if (receipt.offerId !== input.offerId || receipt.homeNodeId !== input.homeNodeId || receipt.executorNodeId !== input.executorNodeId) throw new FederationError('offer_receipt_mismatch')
     return receipt
   }
-  private async dispatchReady(ref: DispatchRef, toHome: boolean, ownerCancel = false): Promise<void> {
+  private async dispatchReady(ref: DispatchRef, toHome: boolean, ownerCancel = false): Promise<{ minor: number }> {
     if ((toHome ? ref.homeNodeId : ref.executorNodeId) !== this.#options.peer.id ||
       !ownerCancel && (toHome ? ref.executorNodeId : ref.homeNodeId) !== this.#options.local.id) throw new FederationError('dispatch_binding')
     const negotiated = await this.negotiate()
     if (negotiated.readOnly || negotiated.minor < ATTEMPT_DISPATCH_MINOR || !negotiated.capabilities.includes(ATTEMPT_DISPATCH_CAPABILITY)) throw new FederationError('contract_feature_unavailable', 426)
+    return { minor: negotiated.minor }
   }
   async dispatch(signed: SignedDispatchGrant, beforeSend?: () => void) {
     const g = signed.grant, ref = { id: g.id, homeNodeId: g.offer.homeNodeId, executorNodeId: g.offer.executorNodeId }
-    await this.dispatchReady(ref, false)
+    const { minor } = await this.dispatchReady(ref, false)
+    // An executor that does not declare 1.6 would reject the field (or, if lenient, run the job unconstrained): the call is refused here.
+    if (g.job.responseSchema && minor < RELAY_STRUCTURED_MINOR) throw new FederationError('contract_feature_unavailable', 426)
     const state = dispatchStateSchema.parse(await this.request('POST', '/attempts/dispatch', signed, beforeSend))
     if (state.id !== ref.id) throw new FederationError('dispatch_binding')
     return state

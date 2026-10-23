@@ -142,10 +142,11 @@ export class LlamaServerClient {
     if (status !== 200) throw new LlamaServerError('llama_server_protocol')
     return this.parse(tokenizeSchema, body).tokens.length
   }
-  async complete(prompt: string, maxTokens: number, signal: AbortSignal, onDispatched?: () => void): Promise<LlamaServerCompletion> {
+  /** `jsonSchema` constrains decoding (llama.cpp turns it into a grammar). It changes no prompt token: `tokens_evaluated` is the same with and without. */
+  async complete(prompt: string, maxTokens: number, signal: AbortSignal, onDispatched?: () => void, jsonSchema?: Record<string, unknown>): Promise<LlamaServerCompletion> {
     if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) throw new LlamaServerError('llama_server_refused')
     const { status, body } = await this.json('/completion', { method: 'POST',
-      body: { prompt, n_predict: maxTokens, stream: false, cache_prompt: this.cachePrompt } }, signal, this.completionTimeoutMs, onDispatched)
+      body: { prompt, n_predict: maxTokens, stream: false, cache_prompt: this.cachePrompt, ...(jsonSchema ? { json_schema: jsonSchema } : {}) } }, signal, this.completionTimeoutMs, onDispatched)
     if (status !== 200) throw new LlamaServerError(status === 503 ? 'llama_server_unavailable' : 'llama_server_protocol')
     const completion = this.parse(completionSchema, body)
     return { content: completion.content, promptTokens: completion.tokens_evaluated, completionTokens: completion.tokens_predicted,

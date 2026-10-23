@@ -25,15 +25,22 @@ export class NativeOutputs {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
     return JSON.stringify({ truncated: true, bytes: data.length, artifact: id, excerpt: data.subarray(0, PAGE_BYTES).toString('utf8'), readWith: 'tool_output_read' })
   }
-  async read(id: string, offset: number): Promise<string> {
+  /** One page of an artifact. `limit`, when given, is the largest serialized result the caller can keep whole: the page shrinks until
+   * the result fits, and `nextOffset` always names the first byte that was not returned. */
+  async read(id: string, offset: number, limit?: number): Promise<string> {
     if (!/^[a-f0-9]{64}$/.test(id) || !Number.isSafeInteger(offset) || offset < 0) throw new Error('path_denied')
     // Scrub the whole artifact before paging: a newly registered value can straddle pages.
     const clean = Buffer.from(this.scrubber.scrub(await readFile(join(this.directory, id), 'utf8')))
-    const data = clean.subarray(offset, offset + PAGE_BYTES)
     const bytes = clean.length
-    if (data.length && (data[0]! & 0xc0) === 0x80) throw new Error('path_denied')
-    const text = new StringDecoder('utf8').write(data)
-    const nextOffset = offset + Buffer.byteLength(text)
-    return JSON.stringify({ artifact: id, offset, nextOffset, bytes, truncated: nextOffset < bytes, text: this.scrubber.scrub(text) })
+    for (let page = PAGE_BYTES; ;) {
+      const data = clean.subarray(offset, offset + page)
+      if (data.length && (data[0]! & 0xc0) === 0x80) throw new Error('path_denied')
+      const text = new StringDecoder('utf8').write(data)
+      const nextOffset = offset + Buffer.byteLength(text)
+      const body = JSON.stringify({ artifact: id, offset, nextOffset, bytes, truncated: nextOffset < bytes, text: this.scrubber.scrub(text) })
+      if (limit === undefined || Buffer.byteLength(body) <= limit) return body
+      if (page === 0) throw new Error('page_too_small')
+      page = Math.max(0, Math.min(page - 1, Math.floor(page * limit / Buffer.byteLength(body)) - 1))
+    }
   }
 }

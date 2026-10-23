@@ -1,6 +1,7 @@
 import type { Connections, LocalChatTransport } from '../connections/service.ts'
 import type { WindowObservation } from './types.ts'
 import { invariant } from './types.ts'
+import { plainSchema, type JsonSchema } from './json-schema.ts'
 
 export interface Reply { text: string; inputTokens: number; outputTokens: number; moneyMicros: number | null; inputTruncated: boolean; outputLimited: boolean }
 /** Host adapter, never model-authored. W and token counts refer to the ACTUAL rendered
@@ -11,7 +12,8 @@ export interface RuntimeMeter {
   /** T0 wire transport of a non-Ollama local runtime; K3 keeps every admission and scrubbing check. */
   readonly transport?: LocalChatTransport
   authorizeDispatch?(signal?: AbortSignal): Promise<void>
-  validatePrepared?(request: import('../ollama/types.ts').OllamaChatRequest): void
+  /** `responseSchema` is the one the call asked for: the prepared request must carry exactly it (or none). */
+  validatePrepared?(request: import('../ollama/types.ts').OllamaChatRequest, responseSchema?: JsonSchema): void
   observe(signal?: AbortSignal): Promise<WindowObservation>
   count(prompt: string): number
   /** A meter whose exact answer needs a network round trip (F2-d). `count` is then only a lookup of answers
@@ -24,7 +26,9 @@ export interface RelayModel extends RuntimeMeter {
    * so packing and the boundary share the same conservative measure. */
   readonly countIsExact?: boolean
   countAsync?(prompt: string, signal?: AbortSignal): Promise<number>
-  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; maxInput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void }): Promise<Reply>
+  /** `responseSchema` asks the runtime to constrain decoding to that JSON Schema (a local runtime only; a provider connection
+   * ignores it). It never changes the prompt, so the count of the prompt is the count of the request. */
+  call(prompt: string, options: { runId: string; requestId: string; maxOutput: number; maxInput: number; window: WindowObservation; signal?: AbortSignal; onStarted?: () => void; responseSchema?: JsonSchema }): Promise<Reply>
 }
 export class ConnectionRelayModel implements RelayModel {
   get countIsExact() { return this.meter.countIsExact === true }
@@ -41,6 +45,8 @@ export class ConnectionRelayModel implements RelayModel {
     invariant(connection, 'connection_not_found')
     invariant(!this.meter.localOnly || connection.kind === 'local_runtime', 'relay_local_connection_required')
     let dispatchedTokens = -1
+    // Only a local runtime can decode under a grammar; a copy, so a caller's later edit cannot change a request in flight.
+    const format = o.responseSchema && connection.kind === 'local_runtime' ? plainSchema(o.responseSchema) : undefined
     const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background, onStarted: o.onStarted,
       ...(this.meter.authorizeDispatch ? { authorizeDispatch: () => this.meter.authorizeDispatch!(o.signal) } : {}),
       onPrepared: (request: import('@earendil-works/pi-ai').Context | import('../ollama/types.ts').OllamaChatRequest) => {
@@ -48,10 +54,10 @@ export class ConnectionRelayModel implements RelayModel {
         const tokens = this.count(request.messages[0]!.content as string)
         invariant(Number.isSafeInteger(tokens) && tokens >= 0 && tokens <= o.maxInput, 'context_ceiling')
         dispatchedTokens = tokens
-        this.meter.validatePrepared?.(request as import('../ollama/types.ts').OllamaChatRequest)
+        this.meter.validatePrepared?.(request as import('../ollama/types.ts').OllamaChatRequest, format)
       } }
     if (connection.kind === 'local_runtime') {
-      const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false, ...(this.meter.localOnly ? { think: false } : {}),
+      const r = await this.connections.localChat('local', this.connectionId, { model: this.model, stream: false, ...(this.meter.localOnly ? { think: false } : {}), ...(format ? { format } : {}),
         messages: [{ role: 'user', content: prompt }], options: { num_ctx: o.window.tokens, num_predict: o.maxOutput } },
       { ...call, ...(this.meter.transport ? { transport: this.meter.transport } : {}) })
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')

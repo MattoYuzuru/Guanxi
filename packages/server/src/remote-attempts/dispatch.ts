@@ -11,6 +11,7 @@ import type { AttemptOffers } from './offers.ts'
 import { canonical, hash, signValue, FederationError, FEDERATION_BODY_BYTES } from '../federation/crypto.ts'
 import { sha256Hex, type ExecutorRelayRuntime } from './relay-runtime.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
+import { schemaDigest } from '../relay/json-schema.ts'
 
 export interface LocalModelAttestation {
   connectionId: string; model: string; placement: 'installed_local'; source: string; observedAt: number
@@ -297,6 +298,8 @@ export class AttemptDispatch {
     if (!!g.job.counted !== !!g.offer.parent) throw new FederationError('dispatch_binding')
     if (g.job.counted && (!this.policy.relayRuntime || normalizeOllamaModelReference(g.job.model) !== this.policy.relayRuntime.model ||
       g.job.messages.length !== 1 || g.job.messages[0]!.role !== 'user' || g.job.counted.contentSha256 !== sha256Hex(g.job.messages[0]!.content))) throw new FederationError('dispatch_binding')
+    // R2-json: the schema the runtime will decode under is the one the counted chain names, not merely one that is signed with the job.
+    if (g.job.responseSchema && g.job.counted?.responseSchemaSha256 !== schemaDigest(g.job.responseSchema)) throw new FederationError('dispatch_binding')
     if (!this.policy.connections) throw new FederationError('local_executor_unavailable')
     const old = this.db.prepare('SELECT grant FROM remote_dispatch_holders WHERE id=?').get(g.id)
     if (old) { if (old.grant !== canonical(signed)) throw new FederationError('dispatch_conflict'); return this.state(g.id) }
@@ -338,7 +341,7 @@ export class AttemptDispatch {
     try {
       const attested = this.attestation(g.job)
       const result = await this.policy.connections!.localChat(this.accountId, attested.connectionId,
-        { model: g.job.model, messages: g.job.messages, think: false, options: { num_ctx: g.job.context, num_predict: g.job.outputTokens } }, {
+        { model: g.job.model, messages: g.job.messages, think: false, ...(g.job.responseSchema ? { format: g.job.responseSchema } : {}), options: { num_ctx: g.job.context, num_predict: g.job.outputTokens } }, {
           runId: g.offer.runId, requestId: g.id, background: true, signal: h.controller.signal, ...(expected ? { transport: expected } : {}),
           authorizeDispatch: async () => { this.guard(h); validate(); await this.refresh(h, validate); this.guard(h); validate() },
           onPrepared: () => { this.guard(h); validate(); if (this.attestation(g.job).connectionId !== attested.connectionId) throw new FederationError('local_placement_changed') },
@@ -348,7 +351,8 @@ export class AttemptDispatch {
       if (!result.done || result.message?.role !== 'assistant' || typeof result.message.content !== 'string') throw new FederationError('local_result_invalid')
       // The evaluated rendering and token count must be the counted ones; the transport has already refused otherwise.
       const evaluated = expected?.evidence()?.renderedSha256
-      if (counted && (evaluated !== counted.renderedSha256 || result.prompt_eval_count !== counted.tokens)) throw new FederationError('truncation_protocol')
+      const evaluatedSchema = expected?.evidence()?.responseSchemaSha256
+      if (counted && (evaluated !== counted.renderedSha256 || evaluatedSchema !== counted.responseSchemaSha256 || result.prompt_eval_count !== counted.tokens)) throw new FederationError('truncation_protocol')
       const content = result.message?.content ?? ''
       // The signed event is one HTTP body. A result that cannot be delivered would be retried forever while the home
       // waits out its deadline, so the executor reports a typed refusal (and the usage it spent) instead.
@@ -358,7 +362,7 @@ export class AttemptDispatch {
         return
       }
       this.emit(h, { kind: 'terminal', outcome: 'completed', content, inputTokens: result.prompt_eval_count ?? null,
-        outputTokens: result.eval_count ?? null, source, ...(evaluated ? { renderedSha256: evaluated } : {}),
+        outputTokens: result.eval_count ?? null, source, ...(evaluated ? { renderedSha256: evaluated } : {}), ...(evaluatedSchema ? { responseSchemaSha256: evaluatedSchema } : {}),
         ...(counted && result.done_reason ? { doneReason: result.done_reason === 'length' ? 'length' as const : 'stop' as const } : {}) })
       this.setStatus(g.id, 'completed')
     } catch (error) {

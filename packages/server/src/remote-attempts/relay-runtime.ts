@@ -13,7 +13,7 @@ export interface ExecutorRelayRuntime {
   /** Identity, template proof, rendering and exact token count of one user message. */
   measure(content: string, signal: AbortSignal): Promise<{ observation: RelayRuntimeObservation; rendered: string; tokens: number }>
   /** A one-call transport that refuses unless the evaluated rendering is the counted one. */
-  expectedTransport(expected: { renderedSha256: string; tokens: number; digest: string; contextTokens: number }): LocalChatTransport & { evidence(): { renderedSha256?: string; failure?: string } | undefined }
+  expectedTransport(expected: { renderedSha256: string; tokens: number; digest: string; contextTokens: number; responseSchemaSha256?: string }): LocalChatTransport & { evidence(): { renderedSha256?: string; responseSchemaSha256?: string; failure?: string } | undefined }
 }
 export const sha256Hex = (text: string): string => createHash('sha256').update(text).digest('hex')
 /** Signs the facts the executor observed, bound to the request that asked for them. */

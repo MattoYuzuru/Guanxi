@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { sessionEventSchema } from '../events/session-events.ts'
 import { layoutClockSchema, layoutDocumentSchema } from '../layouts.ts'
 
-export const FEDERATION_VERSION = { major: 1, minor: 5 } as const
+export const FEDERATION_VERSION = { major: 1, minor: 6 } as const
 export const ATTEMPT_RESERVATIONS_MINOR = 2
 export const ATTEMPT_RESERVATIONS_CAPABILITY = 'attempt-reservations-v1'
 export const LAYOUT_CONFIG_MINOR = 1
@@ -107,14 +107,21 @@ const sha256 = z.string().regex(/^[a-f0-9]{64}$/)
  * message and refuses on any difference, so the counted string is the evaluated string. */
 export const countedRequestSchema = z.object({ contentSha256: sha256, renderedSha256: sha256, tokens: integer.positive(),
   /** Runtime identity the count was made under; the executor refuses a dispatch if it no longer serves exactly this. */
-  digest: z.string().min(1), contextTokens: integer.positive() }).strict()
+  digest: z.string().min(1), contextTokens: integer.positive(),
+  /** R2-json (federation 1.6): SHA-256 of the response schema the counted request is bound to; present exactly when the job carries one. */
+  responseSchemaSha256: sha256.optional() }).strict()
 export type CountedRequest = z.infer<typeof countedRequestSchema>
+/** R2-json (federation 1.6): the largest JSON Schema a counted job may carry. A signed message is one 1 MiB body that also holds the prompt. */
+export const RELAY_RESPONSE_SCHEMA_BYTES = 64 * 1024
 export const localInferenceJobSchema = z.object({
   kind: z.literal('local_inference'), model: z.string().trim().min(1), context: integer.positive(),
   outputTokens: integer.positive(), deadline: integer,
   messages: z.array(z.object({ role: z.enum(['system', 'user', 'assistant']), content: z.string() }).strict()).min(1),
   counted: countedRequestSchema.optional(),
-}).strict()
+  /** R2-json (federation 1.6): a JSON Schema the executor's runtime must decode the reply under. It is part of the signed job and of the counted
+   * chain, so a request with another schema is another request. Only a counted (relay) job may carry one. */
+  responseSchema: z.record(z.string(), z.unknown()).refine(v => new TextEncoder().encode(JSON.stringify(v)).length <= RELAY_RESPONSE_SCHEMA_BYTES, 'schema too large').optional(),
+}).strict().refine(job => (job.responseSchema === undefined) === (job.counted?.responseSchemaSha256 === undefined), 'responseSchema and its hash go together')
 export type LocalInferenceJob = z.infer<typeof localInferenceJobSchema>
 export const dispatchGrantSchema = z.object({
   id: federationId, offer: remoteAttemptOfferSchema, reservationId: federationId,
@@ -140,7 +147,7 @@ export const dispatchEventSchema = z.object({
     z.object({ kind: z.literal('terminal'), outcome: z.enum(['completed','failed','canceled']), content: z.string(),
       inputTokens: integer.nullable(), outputTokens: integer.nullable(), source: z.enum(['ollama:/api/chat', 'llama-server:/completion']),
       /** F2-d: hash of the rendered prompt the executor evaluated, and a fixed refusal reason of a failed counted call. */
-      renderedSha256: sha256.nullable().optional(), doneReason: z.enum(['stop', 'length']).optional(), reason: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).optional() }).strict(),
+      renderedSha256: sha256.nullable().optional(), responseSchemaSha256: sha256.optional(), doneReason: z.enum(['stop', 'length']).optional(), reason: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/).optional() }).strict(),
   ]),
 }).strict()
 export type DispatchEvent = z.infer<typeof dispatchEventSchema>
@@ -152,6 +159,9 @@ export const RELAY_RUNTIME_MINOR = 4
 /** F2-reap (federation 1.5): relay pins are leased by the executor and must be renewed by the home's heartbeat. An older home
  * never renews, so the executor refuses its pins instead of silently expiring them mid-run. */
 export const RELAY_PIN_LEASE_MINOR = 5
+/** R2-json (federation 1.6): a counted job may carry a response schema. An executor older than this would reject the unknown field, and a home
+ * older than this never sends one; each side refuses the other's job instead of running it unconstrained. */
+export const RELAY_STRUCTURED_MINOR = 6
 export const RELAY_RUNTIME_CAPABILITY = 'remote-relay-runtime-v1'
 export const relayRuntimeBindingSchema = z.object({
   homeNodeId: federationId, executorNodeId: federationId, model: z.string().trim().min(1),

@@ -13,6 +13,7 @@ import { ProjectIndex } from '../indexing/service.ts'
 import { ResourceGovernor } from '../runtime/resource-governor.ts'
 import { type MapResult } from '../indexing/types.ts'
 import { dirname, relative, sep, join } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { NativeOutputs } from './outputs.ts'
 
 export interface NativeToolContext {
@@ -23,6 +24,8 @@ export interface NativeToolContext {
   scrubber: EgressScrubber
   executeCommand?: typeof sandboxCommand
   guard?(): void
+  /** Largest serialized result of a paged tool (`file_read`, `tool_output_read`) the caller can keep whole. Absent: the tool's own bounds. */
+  pageBytes?: number
   queue(text: string): void | Promise<void>
   /** Enqueue one native trace append through the attempt FIFO. */
   append?<T extends SessionEventType>(input: SessionEventInput<T>, options?: AppendOptions): Promise<AppendResult>
@@ -72,6 +75,25 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
     return JSON.stringify(clean)
   }
+  /** One page of a text file starting at byte `offset`. The result is the command result with the cursor fields in front; `stdout`
+   * stays last, so a reader that cuts the tail of the text still has `more` and `nextOffset`. */
+  const fileRead = async (requested: string, rawOffset: unknown, signal?: AbortSignal) => {
+    const offset = rawOffset === undefined || rawOffset === '' ? 0 : Number(rawOffset)
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('invalid_offset')
+    const target = quote(path(requested))
+    const result = scrubber.scrub(await (ctx.executeCommand ?? sandboxCommand)(policy, offset === 0 ? `/bin/cat -- ${target}` : `/usr/bin/tail -c +${offset + 1} -- ${target}`, signal, 120_000, true, scrubber))
+    if (result.code !== 0) throw new Error('tool_failed')
+    // A start inside a multi-byte character decodes to a replacement character; a cursor this tool returned never does.
+    if (offset > 0 && result.stdout.startsWith('\uFFFD')) throw new Error('invalid_offset')
+    const data = Buffer.from(result.stdout), limit = ctx.pageBytes
+    for (let page = data.length; ;) {
+      const text = new StringDecoder('utf8').write(data.subarray(0, page)), used = Buffer.byteLength(text)
+      const body = JSON.stringify({ more: used < data.length || result.truncated, nextOffset: offset + used, offset, code: result.code, stderr: result.stderr, truncated: result.truncated, stdout: text })
+      if (limit === undefined || Buffer.byteLength(body) <= limit) return body
+      if (page === 0) throw new Error('page_too_small')
+      page = Math.max(0, Math.min(page - 1, Math.floor(page * limit / Buffer.byteLength(body)) - 1))
+    }
+  }
   const tool = (name: string, description: string, properties: Record<string, ReturnType<typeof Type.String>>, execute: (args: Record<string, string>, signal?: AbortSignal) => Promise<string>): AgentTool => ({
     name, label: name, description, parameters: Type.Object(properties),
     async execute(_id, raw, signal) {
@@ -84,7 +106,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
         ctx.guard?.()
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
+        const safeCodes = ['invalid_offset', 'page_too_small', 'cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
         const code = error instanceof Error && (safeCodes.includes(error.message) || /^index_[a-z_]+$/.test(error.message)) ? error.message : 'tool_denied_or_failed'
         if (code === 'input_artifact_storage_failed' || code === 'tool_call_trace_missing') {
           ctx.abortTurn?.()
@@ -95,9 +117,9 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     },
   })
   return [
-    tool('tool_output_read', 'Read a session output artifact by its returned ID and byte offset. Results are paged at 8 KiB; nextOffset resumes without a hidden content cap.', { artifact: Type.String(), offset: Type.String() }, async a => outputs.read(a.artifact!, Number(a.offset))),
+    tool('tool_output_read', 'Read a session output artifact by its returned ID and byte offset. Results are paged at 8 KiB; nextOffset resumes without a hidden content cap.', { artifact: Type.String(), offset: Type.String() }, async a => outputs.read(a.artifact!, Number(a.offset), ctx.pageBytes)),
     tool('project_info', 'Read immutable roots, scratch, network policy, attachments and instruction paths. No token budget is invented.', {}, async () => JSON.stringify({ ...policy, budgets: 'model/runtime limits; no additional cap', instructions: policy.roots.map(root => `${root}/AGENTS.md`) })),
-    tool('file_read', 'Read a UTF-8 file in roots, scratch or attachments. Absolute paths select another root.', { path: Type.String() }, async (a, s) => run(`/bin/cat -- ${quote(path(a.path!))}`, s)),
+    tool('file_read', 'Read a UTF-8 text file in roots, scratch or attachments. Absolute paths select another root. offset is a byte offset (default 0); the result has more and nextOffset, so a large file is read page by page with offset=nextOffset.', { path: Type.String(), offset: Type.Optional(Type.String()) }, async (a, s) => fileRead(a.path!, a.offset, s)),
     tool('file_write', 'Write UTF-8 content. Read-only writes only to scratch. Protected paths are always denied.', { path: Type.String(), content: Type.String() }, async (a, s) => run(`printf %s ${quote(a.content!)} > ${quote(path(a.path!, true))}`, s)),
     tool('shell', 'Run a shell command under the access policy and a PID-namespace execution owner. macOS requires the local container runtime and provisioned execution image; no host-shell fallback. Fixed pwd/ls/cat/head/tail/wc commands also work without that runtime.', { command: Type.String() }, async (a, s) => {
       if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, [0], false)

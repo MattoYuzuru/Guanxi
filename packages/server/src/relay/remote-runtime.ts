@@ -11,6 +11,7 @@ import type { Attempt } from '../runs/types.ts'
 import { FEDERATION_BODY_BYTES } from '../federation/routes.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { invariant, RelayError } from './types.ts'
+import { requestSchema, schemaDigest } from './json-schema.ts'
 import type { RelayExactCounter, RelayRuntimeObservation, RelayRuntimeObserver, RelayRuntimeSession } from './runtime.ts'
 import { abortableRead } from './runtime.ts'
 
@@ -278,6 +279,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
     const first = dispatch.prepare(), content = this.message(first)
     const window = first.options?.num_ctx, limit = first.options?.num_predict
     invariant(Number.isSafeInteger(window) && Number.isSafeInteger(limit) && limit! > 0, 'runtime_request_changed')
+    // The schema, when there is one, is part of the signed job and of the counted chain: the executor evaluates under exactly it.
+    const schema = requestSchema(first.format), schemaHash = schema ? schemaDigest(schema) : undefined
     const counted = this.cache.get(sha256(content))
     // `prepare()` above already refused an uncounted or other-identity string (`count` is an identity-tagged lookup).
     invariant(counted, 'runtime_count_invalid')
@@ -285,7 +288,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
     const childId = `rc-${randomUUID()}`
     const session = runs.get(attempt.run_id).session_id
     const job: LocalInferenceJob = { kind: 'local_inference', model: request.model, context: window!, outputTokens: limit!,
-      deadline: this.clock() + (this.options.callDeadlineMs ?? 30 * 60_000), messages: [{ role: 'user', content }], counted: counted.evidence }
+      deadline: this.clock() + (this.options.callDeadlineMs ?? 30 * 60_000), messages: [{ role: 'user', content }],
+      counted: schemaHash ? { ...counted.evidence, responseSchemaSha256: schemaHash } : counted.evidence, ...(schema ? { responseSchema: schema } : {}) }
     let offerId: string | undefined, dispatched = false
     // Requests that may still be processed by the executor after this call was aborted. A cancel must follow them.
     const inFlight: Promise<unknown>[] = []
@@ -324,7 +328,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
       if (terminal.outcome !== 'completed') throw new RelayError(terminal.reason ?? (terminal.outcome === 'canceled' ? 'relay_stopped' : 'model_failed'))
       // The executor evaluated the rendering and the token count that were counted, or the call is not accepted.
       invariant(terminal.source === 'llama-server:/completion' && terminal.renderedSha256 === counted.evidence.renderedSha256 &&
-        terminal.inputTokens === counted.evidence.tokens && terminal.outputTokens !== null, 'truncation_protocol')
+        terminal.responseSchemaSha256 === schemaHash && terminal.inputTokens === counted.evidence.tokens && terminal.outputTokens !== null, 'truncation_protocol')
       return { model: request.model, created_at: new Date(this.clock()).toISOString(), done: true, done_reason: terminal.doneReason === 'length' ? 'length' : 'stop',
         message: { role: 'assistant', content: terminal.content }, prompt_eval_count: terminal.inputTokens!, eval_count: terminal.outputTokens! }
     } catch (error) {
