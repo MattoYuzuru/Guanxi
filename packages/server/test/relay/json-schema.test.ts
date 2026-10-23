@@ -130,6 +130,8 @@ test('the work prompt lists exactly the tools it is given, with valid JSON examp
   for (const example of examples) assert.ok(actionSchema.safeParse(JSON.parse(example)).success, example)
   // The relay's own turns are compact JSON; an example with the same bytes would make a script or a model think the turn was taken.
   assert.equal(prompt.includes('"action":"'), false)
+  // A model copies what it is shown: the example path is a placeholder, not a file the plan may or may not have.
+  assert.equal(/SPEC|\.md|\.ts|src\//.test(prompt), false, 'no concrete file name in the examples'); assert.ok(prompt.includes('"path": "PATH"'))
 })
 
 test('the probe prompt defines every key it asks for and keeps the prefix the executor and its fixtures recognise', () => {
