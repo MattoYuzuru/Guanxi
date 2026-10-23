@@ -55,5 +55,31 @@ Unit `guanxi-llama` (owner user): `--host 127.0.0.1 --port 8090 -c 32768 -np 1 -
 
 ## Not yet run
 
-A relay through the production boot on two hosts, a judge on a remote relay, a real Claude Code lead and the
-six-hour run. See `NEXT_AGENT_PROMPT.md` for the order.
+A verified relay item on the real model, a judge sample on the real executor, a real Claude Code lead and the six-hour
+run. See `NEXT_AGENT_PROMPT.md` for the order.
+
+## Two-host pairing and the first real relay runs (later on 2026-10-23)
+
+`main` `536cad90` on both machines (Fedora: a bundle clone as `guanxi-bench`, `npm ci`, Node 22.23.1). Executor node as a
+`systemd-run --user` unit `guanxi-ms1-exec`; home node on the Mac under `caffeinate -dimsu`; one `ssh -N` with
+`-L 4562` and `-R 34561`. **Fedora's SELinux (enforcing) lets sshd bind remote forwards only in the ephemeral range**:
+`-R 4561` and `-R 14561`/`24561` failed (`remote port forwarding failed`), `-R 34561` worked, so the home's federation
+port is 34561 (informational `federationPort` in the peer offer edited to match). `doctor` and `preflight` passed on
+both sides; `preflight --completion` evaluated exactly the counted probe; the home's `preflight` showed the signed
+handshake, observation and exact count (22 tokens) across the link, window 32768, digest `sha256:64b53b64…6d810`.
+
+Four one-item relay runs (plan: ledger-lite `I01`, gate `node --test test/01-money.test.mjs`, protected `test/`), each
+ending `input_required` without a verified item:
+
+| Run | Reached | Stopped by | Cause |
+| --- | --- | --- | --- |
+| smoke-1 | orient, two probes | `probe_failed_twice` | correct probe values inside a ```` ```json ```` fence; strict `JSON.parse` |
+| smoke-2 | probes passed, tool work, a full `file_write` of an implementation (892 tokens, executor `completed`) | `model_failed` | discarded reason (see smoke-3) |
+| smoke-3 | as smoke-2 | `model_failed`, reason `runtime_observation_stale` | the relay model recounted the prompt after the reply, which demands an observation younger than 60 s; calls of 13 860 prompt tokens + 892 output tokens take minutes |
+| smoke-4 | tool work | three `invalid_action`, then `probe_failed_twice` | model format: `<tool_call>` tags, prose before JSON, missing `action`, invented tool `work.query`, wrong probe values (`nextItem: null`) |
+
+Fixes on `claude/model-json-fences` (one fence removed, nothing else repaired; the prepare-time count reused; a fixed
+`call_failed_reason` note). Also observed: `file_read` ignores an `offset` argument the model keeps sending, so it never
+sees past the first 8 KiB page of a long file. llama-server b11496 honours `json_schema` on `/completion` without changing
+`tokens_evaluated` (checked: an action schema with `const`/`enum`/`required`/`additionalProperties` produced exactly
+`{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}`); lane R2-json carries it through the relay.
