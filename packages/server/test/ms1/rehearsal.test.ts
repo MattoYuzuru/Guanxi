@@ -318,7 +318,8 @@ interface Crash {
   resume?: boolean
   /** The lead's wake turn is allowed to START twice (killed before its acknowledgement) but completes once. */
   restarted?: boolean
-  /** The executor still holds a pin for a relay run that died with the home (F2-d residual 3): one per crash, never the live run's. */
+  /** The executor pinned a relay run that died with the home (F2-d residual 3). Since F2-reap the restarted home releases it by a
+   * signed, fenced unpin: the expectation after recovery is zero pins and an empty journal, and the live run's pin is never confused. */
   stalePin?: boolean
   /** What the disk says at the instant of the kill: proof that the process died on the boundary the name claims. */
   atKill(w: World, lead: string): void | Promise<void>
@@ -417,6 +418,7 @@ for (const crash of crashes) {
     const before = { wakeRows: w.rows('SELECT packet,packet_hash FROM lead_wakes WHERE run_id=?', lead), leadCosts: JSON.stringify(w.costs(lead)) }
     w.db(legalState)
     await crash.atKill(w, lead)
+    const pinsAtKill = pinsOf(w).length
 
     const home = await w.boot({ restart: true })
     if (crash.resume) {
@@ -471,13 +473,17 @@ for (const crash of crashes) {
     const leadRows = w.costs(lead)
     assert.ok(leadRows.every(row => String(row['entry_key']).startsWith('lead-turn:')), 'no relay or remote tokens reached the lead')
     assert.ok(JSON.stringify(leadRows).startsWith(before.leadCosts.slice(0, -1)), 'what the lead had been billed before the kill is unchanged')
-    // Executor: a pin whose run died with the home stays (F2-d residual 3); it is bounded and never the live run's.
+    // Executor (F2-reap): the pin of a run that died with the home was released by the restarted home's reconciliation, whether or not a
+    // relay run row existed. Had the live (re-started) run's pin been confused with it, that run could not have finished above.
+    if (crash.stalePin) assert.equal(pinsAtKill, 1, 'the kill left exactly one stale pin on the executor')
+    await until(() => w.target.db.prepare('SELECT id FROM federation_streams').all().length === 0, 'the restarted home to release every pin it journaled', 60_000)
     const pins = w.target.db.prepare('SELECT id FROM federation_streams').all().map(row => String(row['id']))
-    assert.equal(pins.length, crash.stalePin ? 1 : 0, `executor pins ${pins}`)
-    if (relay && crash.recovery === 'completes') assert.ok(!pins.includes(`relay:${relay.run_id}`), 'the finished run released its pin')
+    assert.deepEqual(pins, [], `no stale pin after restart and reconciliation: ${pins}`)
+    assert.equal(w.count('SELECT COUNT(*) AS n FROM federation_relay_pin_journal'), 0, 'and the home\'s journal is empty')
+    assert.equal(w.target.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_leases').get()!['n'], 0, 'with no orphan lease row')
 
     assert.deepEqual(await w.agentProcesses(), [], 'no agent process survives recovery')
     w.db(legalState); w.db(integrity)
-    t.diagnostic(`outcome=${packet.outcome} items=${packet.items.map((item: { status: string }) => item.status).join(',')} relay=${relay?.status ?? 'none'} wakePrompts=${prompts} pins=${pins.length} sim=${(w.now - START) / HOUR}h`)
+    t.diagnostic(`outcome=${packet.outcome} items=${packet.items.map((item: { status: string }) => item.status).join(',')} relay=${relay?.status ?? 'none'} wakePrompts=${prompts} pins=${pins.length} atKill=${pinsAtKill} sim=${(w.now - START) / HOUR}h`)
   })
 }

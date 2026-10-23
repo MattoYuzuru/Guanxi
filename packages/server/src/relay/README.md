@@ -372,6 +372,26 @@ is no byte count, catalog value or local-runtime fallback: an unreachable, unsig
 mismatching executor is `runtime_meter_unavailable`, `runtime_identity_unknown`,
 `runtime_identity_changed` or `runtime_counter_mismatch`, and the home never evaluates a request.
 
+**Pin lifetime (F2-reap).** The executor's `relay:<run>` pin must not outlive its run, including when the home dies. Four rules
+keep that true without a second holder of anything (ADR-0018): (1) the home writes its own durable journal row
+(`federation_relay_pin_journal`) *before* the signed pin leaves, and deletes it when the executor acknowledges the signed
+`unpin`; (2) `Federation.reconcileRelayPins()` sends a signed, fenced `unpin` for every journal row that no session of this
+process still needs (after a crash that is every row; a live session is registered in memory in the same synchronous step as
+its journal write, so a fresh start cannot be mistaken for an old row), at construction and then every
+`dispatch.relayPinMaintenanceMs` (60 s; `0` disables), and a session whose `close()` could not reach the executor leaves its row
+to the same reconciliation; (3) the unpin is fenced by the run id and epoch: a pin bound at another epoch is not removed; (4) the
+executor leases each pin (`relayLimits.pinTtlMs`, 10 minutes by default), renewed by every valid observe/count and by the live
+session's heartbeat (`pinRenewMs`, 60 s, the same idempotent signed pin). A lapsed or lease-less relay pin is deleted on the
+executor's own transaction, lazily before every relay request and by its maintenance timer. A lapsed pin only removes a
+permission, so a home that is alive but partitioned for longer than the TTL simply re-pins with its next heartbeat, if the
+cap allows. Federation **1.5** gates this: an executor refuses (`426`) pin and unpin messages from a home that declares an older
+minor, because such a home never renews. A released run id is tombstoned on the executor for one TTL, so a pin or heartbeat that is
+slower than the home's own 5 s bound cannot re-create a pin after its unpin. Leases run on the lease clock (the monotonic-anchored
+`dispatch.leaseClock`), and an executor restart grants every relay pin one fresh TTL before anything can be swept. The home cannot see the executor's TTL: keep `pinRenewMs` well under `pinTtlMs`, and note that an executor clock jump
+or suspend longer than the TTL lapses a live run's pin (the run's next call is `runtime_identity_unknown`, the next heartbeat
+re-pins). A journal row for an executor that refuses permanently (another model, no relay runtime, no longer trusted) is retried
+every pass and never given up; the executor's lease still frees its pin. Tests: `test/relay/pin-reaping.test.ts` and the pin lines of `test/ms1/rehearsal.test.ts`.
+
 **Asynchronous exact count.** The R2-op `Atomics.wait` bridge is not used over F2: the signing key
 and transport live on the main thread, and blocking the home event loop for a network round trip
 would also stop the lease renewals that keep the fence alive. The meter gains `countAsync`;

@@ -100,7 +100,8 @@ async function main() {
   const kernel = await bootServerKernel(undefined, { db,
     federation: { identity: cfg.home.identity, privateKey: cfg.home.privateKey, peers: [cfg.target], clock,
       attempts: { maxReservationMs: 5000, leaseClock: clock },
-      dispatch: { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => homeChannel() } },
+      // F2-reap: the restarted home reconciles its journaled pins by itself, shortly after boot and then every 500 ms.
+      dispatch: { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => homeChannel(), relayPinMaintenanceMs: 500 } },
     // `leaseClock` defaults to the injected clock, so simulated time moves wall time and leases together.
     runs: { alwaysOn: true, clock, ownerTtlMs: cfg.ttlMs, maxAttemptTtlMs: cfg.ttlMs, tickMs: 250,
       fault: (operation, point) => { if (['before_begin', 'before_commit', 'committed'].includes(point)) fault(`${operation}:${point}`) } } })
@@ -166,7 +167,7 @@ async function main() {
       return session
     }
   }
-  const remote = new GappedRemote({ federation, runs, executorNodeId: cfg.target.id, model: cfg.model, clock, pollMs: 20 })
+  const remote = new GappedRemote({ federation, runs, executorNodeId: cfg.target.id, model: cfg.model, clock, pollMs: 20, pinRenewMs: 3_600_000 })
   const source = new RelayRuntimeSource(connections, () => { throw new Error('Ollama models must not be consulted') },
     { maximumAgeMs: 10_000, observer: remote }, clock)
   const allocator = new OwnedCheckoutAllocator({ root: cfg.checkouts })
