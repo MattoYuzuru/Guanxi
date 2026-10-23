@@ -456,3 +456,41 @@ test('admitted custom completion needs no rediscovery and uses neutral compat fo
   await f.service.complete('local', id, { messages: [] }, { model: 'gpt-5', runId: 'admitted', requestId: 'admitted' })
   assert.equal(discovery, 0)
 })
+
+test('dotenv handles BOM/CRLF and refuses duplicate, truncated, unterminated and unsupported input safely', () => {
+  const key = canary()
+  assert.equal(parseProviderKeys(`\uFEFFOPENAI_API_KEY="${key}"\r\n`)[0]!.value, key)
+  for (const text of [
+    `OPENAI_API_KEY=${key}\nOPENAI_API_KEY=${canary()}`,
+    `OPENAI_API_KEY=${key}#truncated`,
+    `OPENAI_API_KEY="${key}`,
+    'UNSUPPORTED_KEY=fixture', '',
+  ]) assert.throws(() => parseProviderKeys(text), error => {
+    assert.ok(!String(error).includes(key)); return true
+  })
+})
+
+test('provider turns bypass a held governor permit while local turns queue behind it', async t => {
+  let providerCalls = 0, localCalls = 0
+  const f = await setup(t, { complete: async (...args) => { providerCalls++; return reply(...args) } })
+  const id = await imported(f.service)
+  const ticket = f.governor.enqueue({ owner: { kind: 'operation', operationId: 'held' }, operation: 'chat',
+    model: { provider: 'ollama', name: 'held' }, requestedContext: 4096, priority: 'normal', enqueuedAt: new Date().toISOString() })
+  const lease = await f.governor.acquire(ticket)
+  t.after(() => lease.release())
+  const chat = chatFixture(f, t, { async *chatStream(request) {
+    localCalls++
+    yield { model: request.model, created_at: new Date().toISOString(), message: { role: 'assistant', content: 'local' }, done: true }
+  } })
+  const send = (model: string) => chat.app.request(`/threads/${chat.create(model).id}/messages`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'fixture' }) })
+  const local = await send('local-model')
+  const provider = await send(chatModelSelection(id, piModels('openai')[0]!.id))
+  await provider.text()
+  try {
+    assert.equal(providerCalls, 1); assert.equal(localCalls, 0)
+    assert.equal(f.governor.snapshot().queued.length, 1)
+  } finally { lease.release() }
+  await local.text()
+  assert.equal(localCalls, 1)
+})

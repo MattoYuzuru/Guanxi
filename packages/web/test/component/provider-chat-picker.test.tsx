@@ -84,3 +84,25 @@ it('keeps equally named connections in separate groups by connection identity', 
   expect(screen.getAllByRole('group', { name: 'Owner API' })).toHaveLength(2)
   expect(screen.getByRole('option', { name: 'owner-model' }).closest('optgroup')).not.toBe(screen.getByRole('option', { name: 'second-model' }).closest('optgroup'))
 })
+
+it('enables provider composer with Ollama down and dispatches without a local resource decision', async () => {
+  Element.prototype.scrollIntoView = vi.fn()
+  const thread = { id: 'provider-thread', title: 'Provider thread', model: selection, mode: 'chat', workspaceId: null,
+    messageCount: 0, options: { numCtx: 4096, temperature: 0.7, think: 'off' }, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+  vi.spyOn(api, 'getThread').mockResolvedValue({ thread, messages: [], contextCheckpoints: [], context: null } as never)
+  const apiModule = await import('../../src/lib/api.ts')
+  const send = vi.spyOn(apiModule, 'streamChat').mockImplementation((_id, _body, handlers) => {
+    handlers.onAccepted?.()
+    return { abort: () => {}, finished: Promise.resolve() }
+  })
+  const runtime = vi.fn(async () => runtimeSnapshotFixture())
+  render(<RuntimeProvider loader={runtime}><ChatPage threadId={thread.id} health={{ ollama: { running: false } } as Health} /></RuntimeProvider>)
+  const composer = await screen.findByRole('textbox', { name: 'Сообщение' })
+  expect(composer.hasAttribute('disabled')).toBe(false)
+  const reads = runtime.mock.calls.length
+  fireEvent.change(composer, { target: { value: 'provider fixture' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+  await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+  expect(runtime.mock.calls.length).toBe(reads)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
