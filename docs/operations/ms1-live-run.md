@@ -83,6 +83,7 @@ this document runs and the node boots exactly as before.
 | `home.alwaysOn` | must be `true`: your assertion that the Mac stays awake (R1 refuses remote attempts without it) |
 | `home.reserves` | ADR-0020 reserves in tokens of one window; `preflight` checks them against the observed window |
 | `home.checkoutRoot` | optional; default `<data dir>/relay-checkouts` |
+| `home.structuredOutput` | optional, default `true`: every probe, work step and judge verdict is decoded under a JSON Schema (`json_schema` on the executor's `/completion`; federation 1.6, so both nodes must run this commit). Set `false` only if the executor's llama-server rejects the grammar |
 | `home.lead` | optional: the Claude Code lead (section 7); its binary paths must be absolute |
 | `home.judge` | optional: the R3 judge of every relay this home starts (section 5); absent means no judge |
 | `executor.llamaServer.baseUrl` | the attached llama-server, on the executor's loopback |
