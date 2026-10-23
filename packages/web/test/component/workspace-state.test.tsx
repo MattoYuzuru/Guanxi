@@ -6,6 +6,9 @@ import type { WorkspaceLayoutHandle } from '../../src/features/workspace/Workspa
 import type { LayoutDocument } from '@guanxi/contract'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { WORKSPACE_MODE } from '../../src/features/workspace/Workspace.tsx'
+import { workspaceEnglish, workspaceRussian } from '../../src/features/workspace/messages.ts'
+import { glossaryEntries as GLOSSARY } from '../../src/lib/glossary.ts'
 
 const control = vi.hoisted(() => ({ failSnapshot: false }))
 vi.mock('../../src/lib/locale-context.tsx', () => ({ useLocale: () => ({ locale: 'en', setLocale() {} }) }))
@@ -49,6 +52,23 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     expect(error.textContent).toContain('could not be prepared in this browser')
     expect(error.textContent).not.toContain('private-snapshot-sentinel')
     expect(api.saveLayout).not.toHaveBeenCalled()
+  })
+
+  it('one interface (D-204): reads layouts for the one pinned mode once and never switches mode (P2)', async () => {
+    render(<Workspace><p>Chat content</p></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    expect(api.layouts).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.layouts).mock.calls.map(call => call[0].mode)).toEqual([WORKSPACE_MODE])
+    expect(document.querySelectorAll('.workspace')).toHaveLength(1)
+    expect(document.querySelector('.workspace')!.getAttribute('data-mode')).toBe(WORKSPACE_MODE)
+  })
+
+  it('carries no experience-mode copy in the workspace catalogue or the glossary (D-204, P2)', () => {
+    const keys = [...Object.keys(workspaceEnglish), ...Object.keys(workspaceRussian)]
+    expect(keys.filter(key => /^workspaceLayout\.(mode|developer|visual)$/u.test(key))).toEqual([])
+    expect(GLOSSARY.map(entry => entry.key).filter(key => /-mode$/u.test(key))).toEqual([])
+    const text = GLOSSARY.flatMap(entry => [entry.en, entry.ru]).map(item => `${item.term} ${item.definition} ${item.example}`).join(' ')
+    expect(text).not.toMatch(/Developer mode|Visual mode|режим(е|а)? разработчика|визуальн(ый|ом) режим/iu)
   })
 
   it('aborts the old load and ignores its delayed rejection after a newer account has loaded', async () => {

@@ -131,23 +131,13 @@ export const glossaryEntries: readonly GlossaryEntry[] = [
   },
   {
     key: 'block',
-    en: { term: 'Block', definition: 'A self-contained pane or card in a Workspace, built in or contributed by a plugin. A Block declares the modes it belongs to and can move between zones without changing the Project.', example: 'Context, Changes and Terminal can be separate Blocks in one Workspace.' },
-    ru: { term: 'Блок', definition: 'Самостоятельная панель или карточка рабочего пространства, встроенная или добавленная плагином. Блок указывает, в каких режимах он доступен, и может перемещаться между зонами, не меняя проект.', example: 'Контекст, изменения и терминал могут быть отдельными блоками одного рабочего пространства.' },
-  },
-  {
-    key: 'developer-mode',
-    en: { term: 'Developer mode', definition: 'An experience mode for code-oriented work: files, diffs, terminal, processes and the trace are at hand. It keeps its own Layout, so switching to Visual mode does not delete it.', example: 'Use Developer mode to inspect a failing test in the terminal and follow it in the trace.' },
-    ru: { term: 'Режим разработчика', definition: 'Режим работы с кодом: файлы, диффы, терминал, процессы и трассировка под рукой. У него собственная раскладка, поэтому переключение в визуальный режим её не удаляет.', example: 'В режиме разработчика разберите упавший тест в терминале и проследите его в трассировке.' },
-  },
-  {
-    key: 'visual-mode',
-    en: { term: 'Visual mode', definition: 'An experience mode for artifacts and the product: artifacts, diagrams, product preview and the browser are at hand. It is not a model-autonomy mode: it does not grant the model extra freedom, permissions or decisions.', example: 'Use Visual mode to review the generated interface, then choose Show in Developer to inspect the code.' },
-    ru: { term: 'Визуальный режим', definition: 'Режим работы с артефактами и продуктом: артефакты, схемы, предпросмотр продукта и браузер под рукой. Это не режим автономии модели: он не даёт модели дополнительной свободы, прав или решений.', example: 'В визуальном режиме посмотрите собранный интерфейс, затем откройте «Показать в режиме разработчика», чтобы перейти к коду.' },
+    en: { term: 'Block', definition: 'A self-contained pane or card in a Workspace, built in or contributed by a plugin. A Block can move between zones without changing the Project.', example: 'Context, Changes and Terminal can be separate Blocks in one Workspace.' },
+    ru: { term: 'Блок', definition: 'Самостоятельная панель или карточка рабочего пространства, встроенная или добавленная плагином. Блок может перемещаться между зонами, не меняя проект.', example: 'Контекст, изменения и терминал могут быть отдельными блоками одного рабочего пространства.' },
   },
   {
     key: 'layout',
-    en: { term: 'Layout', definition: 'A saved arrangement of a Workspace: zones, Blocks, density and narrow-screen priority for one mode. A Layout resolves from the most specific scope to the built-in one, and window geometry stays on the device.', example: 'Visual mode can keep a compact Layout without changing the Developer mode Layout.' },
-    ru: { term: 'Раскладка', definition: 'Сохранённое расположение рабочего пространства: зоны, блоки, плотность и приоритет для узких экранов в одном режиме. Раскладка разрешается от самого конкретного уровня к встроенной, а геометрия окон остаётся на устройстве.', example: 'Визуальный режим может хранить компактную раскладку, не меняя раскладку режима разработчика.' },
+    en: { term: 'Layout', definition: 'A saved arrangement of a Workspace: zones, Blocks, density and narrow-screen priority. A Layout resolves from the most specific scope to the built-in one, and window geometry stays on the device.', example: 'A Project can keep a compact Layout without changing the account Layout.' },
+    ru: { term: 'Раскладка', definition: 'Сохранённое расположение рабочего пространства: зоны, блоки, плотность и приоритет для узких экранов. Раскладка разрешается от самого конкретного уровня к встроенной, а геометрия окон остаётся на устройстве.', example: 'Проект может хранить компактную раскладку, не меняя раскладку учётной записи.' },
   },
   {
     key: 'side-chat',

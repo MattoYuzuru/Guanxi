@@ -54,6 +54,12 @@ export interface WorkspaceProps {
 }
 
 /** Node-owned documents; browser memory owns pane lifetimes, never credentials or processes. */
+/**
+ * One interface (D-204): the workspace has one experience mode. Layouts stay stored under the
+ * `developer` scope so documents saved before D-204 keep resolving; no view ever switches it.
+ */
+export const WORKSPACE_MODE: ExperienceMode = 'developer'
+
 export function Workspace({ children, account, project, safeMode = false }: WorkspaceProps) {
   const { locale, setLocale } = useLocale()
   const { resolved: theme } = useTheme()
@@ -61,7 +67,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const [device] = useState(deviceId)
   const [nodeAccount, setNodeAccount] = useState(account ?? 'local')
   const [deviceClass] = useState<LayoutQuery['deviceClass']>(() => phone ? 'phone' : 'desktop')
-  const [mode, setMode] = useState<ExperienceMode>('developer')
+  const mode = WORKSPACE_MODE
   const [documents, setDocuments] = useState<Partial<Record<ExperienceMode, LayoutDocument>>>({})
   const [list, setList] = useState<LayoutList>({ documents: [], active: [] })
   const [geometry, setGeometry] = useState<LayoutGeometry>({})
@@ -118,17 +124,13 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       const ownedAccount = account ?? (await workspaceStep('layout-context', () => api.layoutContext(controller.signal))).account
       if (controller.signal.aborted) return
       const queryFor = (nextMode: ExperienceMode): LayoutQuery => ({ account: ownedAccount, ...(project ? { project } : {}), device, deviceClass, mode: nextMode })
-      const lists = await Promise.all((['developer', 'visual'] as const).map(next => workspaceStep(next === 'developer' ? 'load-developer-layouts' : 'load-visual-layouts', () => api.layouts(queryFor(next), controller.signal))))
-      const nextDocuments: Partial<Record<ExperienceMode, LayoutDocument>> = {}
-      for (let i = 0; i < 2; i++) {
-        const nextMode = i === 0 ? 'developer' : 'visual'
-        nextDocuments[nextMode] = await workspaceStep('resolve-layout', () => resolveLayout(lists[i]!, queryFor(nextMode), builtInLayout(queryFor(nextMode))))
-      }
-      const current = nextDocuments[mode]!
+      const layouts = await workspaceStep('load-layouts', () => api.layouts(queryFor(mode), controller.signal))
+      const current = await workspaceStep('resolve-layout', () => resolveLayout(layouts, queryFor(mode), builtInLayout(queryFor(mode))))
+      const nextDocuments: Partial<Record<ExperienceMode, LayoutDocument>> = { [mode]: current }
       const local = await workspaceStep('load-layout-geometry', () => api.layoutGeometry(current.scope, device, current.id, controller.signal))
       if (controller.signal.aborted) return
       setNodeAccount(ownedAccount)
-      setList({ documents: lists.flatMap(row => row.documents), active: lists.flatMap(row => row.active) })
+      setList({ documents: layouts.documents.filter(row => row.scope.mode === mode), active: layouts.active.filter(row => row.scope.mode === mode) })
       setDocuments(nextDocuments)
       setSaveScopes({})
       geometryCache.current.set(`${layoutScopeKey(current.scope)}#${current.id}`, local.geometry)
@@ -174,7 +176,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     return next
   }
   function compatible(candidate: LayoutDocument): LayoutDocument {
-    return candidate.engineState.major === WORKSPACE_ENGINE_MAJOR ? candidate : builtInLayout(query(candidate.scope.mode))
+    return candidate.engineState.major === WORKSPACE_ENGINE_MAJOR && candidate.scope.mode === mode ? candidate : builtInLayout(query(mode))
   }
   async function activateDocument(candidate: LayoutDocument, persist = false, attempt: ActivationAttempt = {}) {
     if (operationBusy.current) return
@@ -207,7 +209,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setGeometry(local)
       setDocuments(previous => ({ ...previous, [next.scope.mode]: next }))
       setSaveScopes(previous => ({ ...previous, [next.scope.mode]: layoutSaveScope(next.scope) }))
-      setMode(next.scope.mode)
       setName(next.name)
       setSelected('guanxi.core/chat')
       setGeneration(value => value + 1)

@@ -261,8 +261,7 @@ test('node unavailable state is truthful and recovers by itself, with no Retry (
 
 for (const [path, mode, source] of [
   ['/api/layouts/context', '', 'layout-context: GET /api/layouts/context'],
-  ['/api/layouts', 'developer', 'load-developer-layouts: GET /api/layouts'],
-  ['/api/layouts', 'visual', 'load-visual-layouts: GET /api/layouts'],
+  ['/api/layouts', 'developer', 'load-layouts: GET /api/layouts'],
   ['/api/layouts/geometry', '', 'load-layout-geometry: GET /api/layouts/geometry'],
 ]) test(`workspace state failure ${source} preserves observed facts and safe details, then recovers by itself`, async ({ page, context }, testInfo) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])

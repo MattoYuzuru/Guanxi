@@ -302,8 +302,6 @@ const TARGET_GLOSSARY_KEYS = [
   'connection',
   'workspace',
   'block',
-  'developer-mode',
-  'visual-mode',
   'layout',
   'side-chat',
   'lease',
@@ -468,8 +466,6 @@ describe('Settings language and glossary', () => {
       ['connection', 'Connection', 'Подключение'],
       ['workspace', 'Workspace', 'Рабочее пространство'],
       ['block', 'Block', 'Блок'],
-      ['developer-mode', 'Developer mode', 'Режим разработчика'],
-      ['visual-mode', 'Visual mode', 'Визуальный режим'],
       ['layout', 'Layout', 'Раскладка'],
       ['side-chat', 'Side chat', 'Боковой чат'],
       ['lease', 'Lease', 'Lease'],
@@ -499,12 +495,10 @@ describe('Settings language and glossary', () => {
     expect(keysFor('fenced handover', 'en')).toContain('lease')
     expect(keysFor('second holder', 'en')).toContain('lease')
     expect(keysFor('Save to session log', 'en')).toContain('side-chat')
-    expect(keysFor('model-autonomy mode', 'en')).toContain('visual-mode')
     expect(keysFor('does not require a filesystem folder', 'en')).toContain('workspace')
     expect(keysFor('только дописываемой', 'ru')).toContain('session')
     expect(keysFor('второго владельца', 'ru')).toContain('lease')
     expect(keysFor('Сохранить в журнал сессии', 'ru')).toContain('side-chat')
-    expect(keysFor('автономии модели', 'ru')).toContain('visual-mode')
     expect(keysFor('не требует папки', 'ru')).toContain('workspace')
 
     expect(searchGlossary(glossaryEntries, 'definitely absent', 'en')).toEqual([])
@@ -590,12 +584,8 @@ describe('Settings language and glossary', () => {
     expect(sideChat.ru.definition).toContain('Сохранить в журнал сессии')
     expect(sideChat.ru.definition).toContain('Отправить в основной чат')
 
-    const visual = entryFor('visual-mode')
-    expect(visual.en.definition).toMatch(/not a model-autonomy mode/u)
-    expect(visual.en.definition)
-      .toMatch(/does not grant the model extra freedom, permissions or decisions/u)
-    expect(visual.ru.definition).toMatch(/не режим автономии модели/u)
-    expect(visual.ru.definition).toMatch(/не даёт модели дополнительной свободы, прав или решений/u)
+    // D-204: one interface; the glossary has no experience modes to explain.
+    expect(glossaryEntries.filter(entry => entry.key.endsWith('-mode'))).toHaveLength(0)
 
     const workspace = entryFor('workspace')
     expect(workspace.en.definition).toMatch(/not a Project/u)
