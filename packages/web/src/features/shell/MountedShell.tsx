@@ -5,6 +5,8 @@ import { ErrorBoundary } from '../../components/ErrorBoundary.tsx'
 import { translate as t } from '../../lib/locale.ts'
 import { useRoute, type Route } from '../../lib/router.tsx'
 import type { ThemePreference } from '../../lib/theme.tsx'
+import { NotificationBell } from '../notifications/NotificationBell.tsx'
+import { NotificationsProvider } from '../notifications/NotificationsProvider.tsx'
 import { OllamaHealthNotice } from '../health/HealthGate.tsx'
 import { RuntimeStatus } from '../health/RuntimeStatus.tsx'
 import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
@@ -44,6 +46,7 @@ export function MountedShell({
   }
 
   return (
+    <NotificationsProvider>
     <div className="h-dvh min-w-0">
       <AppShellChrome
         side={shell.preferences.side}
@@ -75,6 +78,7 @@ export function MountedShell({
               workspace={shell.workspace}
               runtime={runtime.data}
               stale={runtime.error !== null && runtime.data !== null}
+              inbox={<NotificationBell />}
             />
             <ShellThemeButton preference={shell.preference} onChange={shell.setPreference} />
           </>
@@ -103,6 +107,7 @@ export function MountedShell({
         sessionSearch={shell.sessionSearch}
       />
     </div>
+    </NotificationsProvider>
   )
 }
 
@@ -167,6 +172,8 @@ function breadcrumb(route: Route): string {
       return t('voiceGlossary.navigation')
     case 'inspector':
       return t('inspector.navigation')
+    case 'notifications':
+      return t('notifications.navigation')
     case 'notFound':
       return t('app.notFound.title')
   }

@@ -130,3 +130,19 @@ limit agents, not the user's own actions.
   empty, error, `node_unreachable` and degraded (project list unavailable) states. Not built: search or
   paging of entries (the node has neither), import and export, learned-candidate review (V2), and a
   project-page entry point.
+
+## 8. Implementation status (NC1 notification center UI, 2026-10-23)
+
+- The **notification center** is implemented at `/notifications` (`packages/web/src/features/notifications`) and
+  reachable from the status strip's Inbox item (unread count, a polite live region for arrivals) and the command
+  palette. It reads the MS2 routes through one shared store, so the strip's count and the Unread list are derived from
+  the same rows. It shows state (unread, read, acted, snoozed, expired), severity as text plus a shape, and for every
+  row the fact's source, observation time and confidence. Mark read, snooze (presets, until the window resets, or a
+  chosen time) and the typed actions run from it; every action button except Mark read is enabled only while the node
+  reports it `available`, and Offline means the node did not answer, not the browser's network flag; `not_configured` and `not_exposed`
+  actions are shown disabled with the reason. Action requests carry an `Idempotency-Key` that is reused only when the
+  outcome was unknown. Loading, empty, error, offline and paging states are covered.
+- Not built: filters by kind, project or "waiting for you" (the wire has no such fields), mark all read and a toast for
+  `input_required` and the 10% and 5% thresholds (no node API or push channel), `add_prompt`, `choose_action` and
+  `raise_budget` (not exposed on the wire), a floating panel (the center is a route), and settings for channels and
+  quiet hours.

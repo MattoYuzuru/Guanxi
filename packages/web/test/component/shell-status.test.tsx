@@ -44,4 +44,11 @@ describe('shell status provenance', () => {
     expect((changeMode.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({ mode: 'visual' })
     window.removeEventListener(WORKSPACE_MODE_COMMAND, changeMode)
   })
+  it('puts the supplied inbox entry in the Inbox item instead of an unknown, and keeps the other three unknown', () => {
+    setActiveLocale('en')
+    render(<ShellStatus breadcrumb="Projects" workspace={workspace} runtime={null} stale={false} inbox={<a href="/notifications">3 unread</a>} />)
+    const inbox = screen.getByText('Inbox', { selector: 'dt' }).parentElement!
+    expect(inbox.querySelector('dd')!.textContent).toBe('3 unread')
+    expect(screen.getAllByText('No current data')).toHaveLength(4)
+  })
 })

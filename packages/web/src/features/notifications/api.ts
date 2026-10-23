@@ -61,10 +61,11 @@ export const notificationsApi = {
   /** Which actions this node can execute; refused actions are `not_configured`, never faked. */
   actions: (signal?: AbortSignal) => call('/actions', notificationActionsResponseSchema, { signal }),
   /** The body is validated before it leaves the browser, so a content-bearing action is never sent. */
-  execute: (notificationId: string, body: ExecuteNotificationActionBody, idempotencyKey: string) =>
+  execute: (notificationId: string, body: ExecuteNotificationActionBody, idempotencyKey: string, signal?: AbortSignal) =>
     call(`/${id(notificationId)}/actions`, notificationActionResponseSchema, {
       method: 'POST',
       headers: { [NOTIFICATION_IDEMPOTENCY_HEADER]: notificationIdempotencyKeySchema.parse(idempotencyKey) },
       body: executeNotificationActionBodySchema.parse(body),
+      signal,
     }),
 }

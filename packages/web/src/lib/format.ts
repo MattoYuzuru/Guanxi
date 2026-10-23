@@ -168,8 +168,9 @@ export function formatCount(count: number, one: string, few: string, many: strin
   return `${count}${NBSP}${pluralize(count, one, few, many)}`
 }
 
+/** Trims zeros after a decimal point only: `1.50` → `1.5`, `2.0` → `2`, but `10` stays `10`. */
 function trimZeros(value: string): string {
-  return value.replace(/\.?0+$/, '')
+  return value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value
 }
 
 function currentLocale(): 'en' | 'ru' {

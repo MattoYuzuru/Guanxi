@@ -21,6 +21,7 @@ import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
 import { GlossaryPage } from './features/voice/GlossaryPage.tsx'
 import { InspectorPage } from './features/inspector/InspectorPage.tsx'
+import { NotificationsPage } from './features/notifications/NotificationsPage.tsx'
 import { NativeAgentPage } from './features/native-agent/NativeAgentPage.tsx'
 import { UiLocaleProvider } from '@guanxi/ui'
 import { translate } from './lib/locale.ts'
@@ -84,6 +85,7 @@ export function App() {
         {route.name === 'voiceGlossary' && <GlossaryPage />}
         {route.name === 'projects' && <ProjectsPage />}
         {route.name === 'inspector' && <InspectorPage sessionId={route.sessionId} />}
+        {route.name === 'notifications' && <NotificationsPage />}
         {route.name === 'notFound' && (
           <EmptyState
             title={translate('app.notFound.title')}

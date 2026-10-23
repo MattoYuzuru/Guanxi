@@ -404,10 +404,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 13,
+        "count": 15,
         "files": [
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationRow.tsx",
+          "packages/web/src/features/notifications/NotificationsPage.tsx",
           "packages/web/src/features/shell/MountedShell.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
@@ -752,9 +754,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 3,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationsPage.tsx",
           "packages/web/src/features/voice/GlossaryPage.tsx"
         ]
       },
@@ -870,9 +873,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 6,
+        "count": 7,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationsPage.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx",
           "packages/web/src/features/voice/GlossaryHistory.tsx",
@@ -1141,9 +1145,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 4,
+        "count": 5,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx"

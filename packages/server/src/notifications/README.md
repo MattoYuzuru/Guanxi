@@ -332,7 +332,7 @@ a U3 `can()` check is one call per handler. U3 is not wired.
 Evidence: `ms2-notifications-routes.test.ts` (24 tests), the notification parts of
 `ms2-plugins.test.ts`, `ms2-contract.test.ts` and `ms2-guard.test.ts`.
 
-Still later: the notification center UI, OS and push delivery, quota producers calling `ingest`,
+Still later: OS and push delivery beyond NC1-f (the web notification center landed in NC1-ui, see `docs/design/LAYOUT_AND_SCREENS.md` §8), quota producers calling `ingest`,
 the `wake_leads`, `switch_connection`, `pause_runs` and `resume_runs` ports, run-policy reactions.
 
 ## NC1-e: OS notification adapters
