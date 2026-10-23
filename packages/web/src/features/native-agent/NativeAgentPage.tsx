@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { AgentProgress } from '@guanxi/contract'
 import { Button } from '@guanxi/ui'
 import { Field, Textarea } from '../../components/ui.tsx'
@@ -50,6 +50,9 @@ export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
 }
 function NativeSessionPage({ sessionId }: { sessionId: string }) {
   useLocale()
+  // A route change moves focus to the page heading, so keyboard and screen-reader users land on the session they just opened.
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { heading.current?.focus() }, [])
   const [prompt, setPrompt] = useState('')
   const [progress, setProgress] = useState<AgentProgress | null>(null)
   const [error, setError] = useState(false), [busy, setBusy] = useState(false), [revision, setRevision] = useState(0)
@@ -71,7 +74,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
     void mutate(async () => { await nativeApi.prompt(sessionId, prompt); setPrompt('') })
   }
   return <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 text-foreground">
-    <h1 className="text-18">{t('native.progress')}</h1>
+    <h1 ref={heading} tabIndex={-1} className="text-18 focus-visible:outline-focus">{t('native.progress')}</h1>
     {error && <div role="alert"><p>{t(navigator.onLine ? 'native.error' : 'native.offline')}</p><Button onClick={() => setRevision(r => r + 1)}>{t('native.retry')}</Button></div>}
     {progress && <NativeProgress progress={progress} stop={() => void mutate(() => nativeApi.stop(progress.sessionId))} remove={id => void mutate(() => nativeApi.remove(progress.sessionId, id))} />}
     {progress && <SideChatPanel sessionId={progress.sessionId} />}

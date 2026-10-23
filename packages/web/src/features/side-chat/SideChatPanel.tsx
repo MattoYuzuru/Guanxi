@@ -13,11 +13,12 @@ import { sideChatApi, SideChatRequestError, type SideChatFailureCode } from './a
  * Send to main) each carry a client-chosen operation id, reused for a retry and replaced when
  * the content changes, so a lost response can never post or save twice.
  */
-interface Turn { id: string; role: 'user' | 'assistant'; text: string; facts?: SideChatContextFacts }
+interface Turn { id: string; role: 'user' | 'assistant'; text: string; facts?: SideChatContextFacts; truncated?: boolean }
 type Action = 'respond' | 'save' | 'send'
 interface Failure { action: Action; code: SideChatFailureCode; details?: SideChatRequestError['details']; at: string; turnId?: string }
 type SendState = { status: 'sending' } | { status: 'sent'; delivery: 'queued' | 'started' | 'already_sent' }
 type ContextMode = 'session' | 'last' | 'none'
+type Announcement = { key: LocaleKey; values?: Record<string, string | number> } | null
 
 const digestOf = (turns: readonly Turn[]) => JSON.stringify(turns.map(turn => [turn.role, turn.text]))
 const ERROR_KEYS = ['validation_failed', 'session_not_found', 'session_unavailable', 'session_busy', 'egress_unavailable', 'context_too_large', 'connection_unavailable',
@@ -38,13 +39,17 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
   const [turns, setTurns] = useState<Turn[]>([]), [draft, setDraft] = useState('')
   const [mode, setMode] = useState<ContextMode>('session'), [lastTurns, setLastTurns] = useState('3')
   const [asking, setAsking] = useState(false), [saving, setSaving] = useState(false)
-  const [canceled, setCanceled] = useState(false), [failure, setFailure] = useState<Failure | null>(null)
+  const [failure, setFailure] = useState<Failure | null>(null)
   const [saved, setSaved] = useState<{ count: number; digest: string; seq: number; duplicate: boolean } | null>(null)
   const [sends, setSends] = useState<Record<string, SendState>>({})
   const [confirming, setConfirming] = useState(false)
+  // One persistent live region announces every outcome; per-message marks are not live, so nothing is read twice.
+  const [announcement, setAnnouncement] = useState<Announcement>(null)
+  const [focusRequest, setFocusRequest] = useState<{ target: 'prompt' | 'status'; token: number } | null>(null)
   const abort = useRef<AbortController | null>(null), saveOperation = useRef<{ digest: string; id: string } | null>(null)
   const sendOperations = useRef(new Map<string, string>()), busy = useRef(false)
   const promptRef = useRef<HTMLTextAreaElement>(null), keepRef = useRef<HTMLButtonElement>(null)
+  const discardRef = useRef<HTMLButtonElement>(null), statusRef = useRef<HTMLParagraphElement>(null)
   const id = useId()
   const turnsInvalid = mode === 'last' && !(Number.isInteger(Number(lastTurns)) && Number(lastTurns) > 0)
   const unsaved = useMemo(() => {
@@ -62,6 +67,13 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
   // Leaving the page cancels an in-flight question; the node aborts the owned model request.
   useEffect(() => () => abort.current?.abort(), [])
   useEffect(() => { if (confirming) keepRef.current?.focus() }, [confirming])
+  // When the control that had focus was removed or disabled by the action, move focus on deliberately.
+  useEffect(() => {
+    if (!focusRequest) return
+    const active = document.activeElement as HTMLElement | null
+    if (!active || active === document.body || (active as HTMLButtonElement).disabled || !active.isConnected) (focusRequest.target === 'prompt' ? promptRef : statusRef).current?.focus()
+  }, [focusRequest])
+  const requestFocus = (target: 'prompt' | 'status') => setFocusRequest(previous => ({ target, token: (previous?.token ?? 0) + 1 }))
 
   const contextRequest = (): SideChatRespondRequest['context'] =>
     mode === 'none' ? { include: 'none' } : mode === 'last' ? { include: 'session', lastTurns: Number(lastTurns) } : { include: 'session' }
@@ -70,16 +82,17 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
     busy.current = true
     const controller = new AbortController()
     abort.current = controller
-    setAsking(true); setFailure(null); setCanceled(false)
+    setAsking(true); setFailure(null); setAnnouncement({ key: 'sideChat.thinking' })
     try {
       const answer = await sideChatApi.respond(sessionId, { requestId: crypto.randomUUID(), context: contextRequest(),
         messages: conversation.map(({ role, text }) => ({ role, text })) }, controller.signal)
-      setTurns([...conversation, { id: crypto.randomUUID(), role: 'assistant', text: answer.text, facts: answer.context }])
+      setTurns([...conversation, { id: crypto.randomUUID(), role: 'assistant', text: answer.text, facts: answer.context, truncated: answer.truncated }])
+      setAnnouncement(null)
     } catch (error) {
-      if (controller.signal.aborted) { if (abort.current === controller) setCanceled(true) }
-      else setFailure({ action: 'respond', code: error instanceof SideChatRequestError ? error.code : 'agent_unavailable',
-        ...(error instanceof SideChatRequestError && error.details ? { details: error.details } : {}), at: new Date().toISOString() })
-    } finally { abort.current = null; busy.current = false; setAsking(false) }
+      if (controller.signal.aborted) { if (abort.current === controller) setAnnouncement({ key: 'sideChat.canceled' }) }
+      else { setAnnouncement(null); setFailure({ action: 'respond', code: error instanceof SideChatRequestError ? error.code : 'agent_unavailable',
+        ...(error instanceof SideChatRequestError && error.details ? { details: error.details } : {}), at: new Date().toISOString() }) }
+    } finally { abort.current = null; busy.current = false; setAsking(false); requestFocus('prompt') }
   }
   const canAsk = !asking && !saving && draft.trim().length > 0 && !turnsInvalid
   const ask = () => {
@@ -89,7 +102,7 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
     void perform(next)
   }
   const promptKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || !canAsk) return
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229 || !canAsk) return
     event.preventDefault(); ask()
   }
   const failWith = (action: Action, error: unknown, turnId?: string) => setFailure({ action, code: error instanceof SideChatRequestError ? error.code : 'agent_unavailable',
@@ -99,22 +112,26 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
     busy.current = true
     const digest = digestOf(turns), count = turns.length
     if (saveOperation.current?.digest !== digest) saveOperation.current = { digest, id: crypto.randomUUID() }
-    setSaving(true); setFailure(null)
+    setSaving(true); setFailure(null); setAnnouncement({ key: 'sideChat.saving' })
     try {
       const receipt = await sideChatApi.save(sessionId, saveOperation.current.id, turns.map(({ role, text }) => ({ role, text })))
       setSaved({ count, digest, seq: receipt.seq, duplicate: receipt.duplicate })
-    } catch (error) { failWith('save', error) } finally { busy.current = false; setSaving(false) }
+      setAnnouncement({ key: receipt.duplicate ? 'sideChat.saved.duplicate' : 'sideChat.saved', values: { seq: receipt.seq } })
+    } catch (error) { setAnnouncement(null); failWith('save', error) } finally { busy.current = false; setSaving(false); requestFocus('status') }
   }
   const sendToMain = async (turn: Turn) => {
     if (sends[turn.id]) return
     const operation = sendOperations.current.get(turn.id) ?? crypto.randomUUID()
     sendOperations.current.set(turn.id, operation)
-    setSends(previous => ({ ...previous, [turn.id]: { status: 'sending' } })); setFailure(null)
+    setSends(previous => ({ ...previous, [turn.id]: { status: 'sending' } })); setFailure(null); setAnnouncement({ key: 'sideChat.sending' })
     try {
       const receipt = await sideChatApi.send(sessionId, operation, turn.text)
       setSends(previous => ({ ...previous, [turn.id]: { status: 'sent', delivery: receipt.delivery } }))
+      setAnnouncement({ key: receipt.delivery === 'queued' ? 'sideChat.sent.queued' : receipt.delivery === 'started' ? 'sideChat.sent.started' : 'sideChat.sent.already' })
+      requestFocus('status')
     } catch (error) {
       setSends(previous => { const { [turn.id]: _dropped, ...rest } = previous; return rest })
+      setAnnouncement(null)
       failWith('send', error, turn.id)
     }
   }
@@ -126,7 +143,7 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
   }
   const discard = () => {
     abort.current?.abort(); abort.current = null
-    setTurns([]); setDraft(''); setSaved(null); setSends({}); setFailure(null); setCanceled(false); setConfirming(false)
+    setTurns([]); setDraft(''); setSaved(null); setSends({}); setFailure(null); setAnnouncement(null); setConfirming(false)
     saveOperation.current = null; sendOperations.current.clear()
     promptRef.current?.focus()
   }
@@ -168,10 +185,11 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
             ? t('sideChat.provenance.none', { time: formatTime(facts.observedAt) })
             : t('sideChat.provenance', { seq: facts.upToSeq, turns: facts.turns, bytes: facts.bytes, time: formatTime(facts.observedAt) })}
             {facts.excerpted > 0 ? ` · ${t('sideChat.provenance.excerpts', { count: facts.excerpted })}` : ''}</p>}
+          {turn.truncated && <p className="text-12">{t('sideChat.truncated')}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" aria-label={t('sideChat.send.named', { n: index + 1 })} disabled={send !== undefined || saving} loading={send?.status === 'sending'}
               onClick={() => void sendToMain(turn)}>{t('sideChat.send')}</Button>
-            {send?.status === 'sent' && <p role="status" className="text-12">{t(send.delivery === 'queued' ? 'sideChat.sent.queued' : send.delivery === 'started' ? 'sideChat.sent.started' : 'sideChat.sent.already')}</p>}
+            {send?.status === 'sent' && <span data-testid="side-chat-sent" className="text-12 font-heading">{t('sideChat.sent.mark')}</span>}
           </div>
         </li>
       })}
@@ -181,8 +199,7 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
       <ErrorState title={`${t('sideChat.error.title')}. ${failureText(failure)}`} source={t(SOURCE_KEYS[failure.action])} occurredAt={failure.at} timeMeaning="observed" details={failure.code}
         action={failure.code === 'context_too_large' || failure.code === 'validation_failed' ? undefined : <Button onClick={retry}>{t('sideChat.retry')}</Button>} />
     </div>}
-    {asking && <p role="status" className="text-14">{t('sideChat.thinking')}</p>}
-    {canceled && <p role="status" className="text-14">{t('sideChat.canceled')}</p>}
+    <p ref={statusRef} role="status" tabIndex={-1} data-testid="side-chat-status" className="min-h-6 text-14 focus-visible:outline-focus">{announcement ? t(announcement.key, announcement.values) : ''}</p>
 
     <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={`${id}-prompt`} className="text-14 font-heading">{t('sideChat.prompt')}</label>
@@ -200,13 +217,13 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button aria-describedby={`${id}-save-hint`} disabled={turns.length === 0 || asking || saving || (unsaved === 0 && receipt !== null)} loading={saving} loadingLabel={t('sideChat.saving')}
           onClick={() => void save()}>{t('sideChat.save')}</Button>
-        <Button variant="danger" disabled={turns.length === 0 || saving} onClick={() => (unsaved > 0 ? setConfirming(true) : discard())}>{t('sideChat.discard')}</Button>
+        <Button ref={discardRef} variant="danger" disabled={turns.length === 0 || saving} onClick={() => (unsaved > 0 ? setConfirming(true) : discard())}>{t('sideChat.discard')}</Button>
       </div>
-      {receipt && unsaved === 0 && <p role="status" className="text-14">{t(receipt.duplicate ? 'sideChat.saved.duplicate' : 'sideChat.saved', { seq: receipt.seq })}</p>}
-      {confirming && <div role="group" aria-label={t('sideChat.discard')} className="flex flex-col gap-2 rounded-control border border-danger p-3">
-        <p>{t('sideChat.discard.confirm', { count: unsaved })}</p>
+      {confirming && <div role="group" aria-label={t('sideChat.discard')} aria-describedby={`${id}-confirm`} className="flex flex-col gap-2 rounded-control border border-danger p-3"
+        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setConfirming(false); requestAnimationFrame(() => discardRef.current?.focus()) } }}>
+        <p id={`${id}-confirm`}>{t('sideChat.discard.confirm', { count: unsaved })}</p>
         <div className="flex flex-wrap gap-2">
-          <Button ref={keepRef} onClick={() => { setConfirming(false); promptRef.current?.focus() }}>{t('sideChat.discard.no')}</Button>
+          <Button ref={keepRef} onClick={() => { setConfirming(false); requestAnimationFrame(() => discardRef.current?.focus()) }}>{t('sideChat.discard.no')}</Button>
           <Button variant="danger" onClick={discard}>{t('sideChat.discard.yes')}</Button>
         </div>
       </div>}

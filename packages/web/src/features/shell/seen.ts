@@ -27,8 +27,13 @@ export function readSeenSessions(now = new Date()): SeenSessions {
   } catch { /* A blocked or corrupt store starts a fresh baseline. */ }
   return { baselineAt: now.toISOString(), seen: {} }
 }
+/** Writes the larger head of each session, so a tab never lowers what another tab recorded. */
 export function writeSeenSessions(value: SeenSessions): void {
-  try { window.localStorage.setItem(SEEN_SESSIONS_KEY, JSON.stringify(value)) } catch { /* Remain usable without storage. */ }
+  try {
+    const stored = readSeenSessions(new Date(value.baselineAt))
+    const merged = markSeen({ baselineAt: value.baselineAt, seen: stored.seen }, new Map(Object.entries(value.seen)))
+    window.localStorage.setItem(SEEN_SESSIONS_KEY, JSON.stringify(merged))
+  } catch { /* Remain usable without storage. */ }
 }
 
 export function isFinishedUnseen(session: SessionPageItem, store: SeenSessions): boolean {

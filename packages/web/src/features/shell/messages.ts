@@ -76,7 +76,7 @@ export const shellEnglish = {
   'shell.status.source': 'Saved run state · {time} · observed',
   'shell.unseen.row': 'Finished, not yet opened',
   'shell.unseen.count': 'Finished, not yet opened: {count}',
-  'shell.unseen.countAtLeast': 'Finished, not yet opened: at least {count} (more sessions are not loaded)',
+  'shell.unseen.countAtLeast': 'Finished, not yet opened: at least {count} (some sessions are not loaded or not available)',
 } as const
 export const shellRussian: Record<keyof typeof shellEnglish, string> = {
   'shell.palette': 'Палитра команд',
@@ -156,5 +156,5 @@ export const shellRussian: Record<keyof typeof shellEnglish, string> = {
   'shell.status.source': 'Сохранённое состояние запуска · {time} · наблюдение',
   'shell.unseen.row': 'Завершена, ещё не открыта',
   'shell.unseen.count': 'Завершено, ещё не открыто: {count}',
-  'shell.unseen.countAtLeast': 'Завершено, ещё не открыто: не менее {count} (остальные сессии не загружены)',
+  'shell.unseen.countAtLeast': 'Завершено, ещё не открыто: не менее {count} (часть сессий не загружена или недоступна)',
 }

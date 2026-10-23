@@ -10,11 +10,13 @@ import { Link, navigate, paths } from '../../lib/router.tsx'
 import { agentRequest, AgentRequestError, nativeApi } from '../native-agent/api.ts'
 import { BrandMark } from './BrandMark.tsx'
 import { readRecentProjects, rememberProject } from './recent.ts'
-import { useBrowserOnline, useSessionChoices } from './useSessionChoices.ts'
+import { useSessionChoices } from './useSessionChoices.ts'
 
-const START_ERRORS = ['project_not_found', 'root_busy', 'root_unavailable', 'root_overlaps_node_data', 'protected_path_invalid', 'egress_unavailable', 'validation_failed'] as const
+const START_ERRORS = ['project_not_found', 'root_busy', 'root_unavailable', 'root_overlaps_node_data', 'protected_path_invalid', 'egress_unavailable', 'validation_failed', 'unreachable'] as const
 const startErrorKey = (code: string): LocaleKey => (START_ERRORS as readonly string[]).includes(code)
   ? `newSession.error.${code as (typeof START_ERRORS)[number]}` : 'newSession.error.agent_unavailable'
+const loadReasonKey = (code: string): LocaleKey => code === 'egress_unavailable' ? 'newSession.error.egress_unavailable' : 'newSession.load.reason'
+const rootsErrorKey = (code: string): LocaleKey => (START_ERRORS as readonly string[]).includes(code) && code !== 'unreachable' ? startErrorKey(code) : 'newSession.error.roots'
 const splitList = (value: string, separator: RegExp) => value.split(separator).map(item => item.trim()).filter(Boolean)
 
 /** One labelled control with its hint and error wired through `aria-describedby`. */
@@ -42,7 +44,6 @@ function ChoicesSkeleton() {
 export function NewSessionScreen() {
   useLocale()
   const choices = useSessionChoices()
-  const online = useBrowserOnline()
   const [projectId, setProjectId] = useState(''), [connectionId, setConnectionId] = useState(''), [model, setModel] = useState('')
   const [mode, setMode] = useState<AccessMode>('read-only'), [prompt, setPrompt] = useState('')
   const [domains, setDomains] = useState(''), [context, setContext] = useState(''), [attachments, setAttachments] = useState('')
@@ -51,8 +52,10 @@ export function NewSessionScreen() {
   const [recent, setRecent] = useState(readRecentProjects)
   const [phase, setPhase] = useState<'idle' | 'starting'>('idle')
   const [startFailure, setStartFailure] = useState<{ code: string; at: string } | null>(null)
-  const [rootsBusy, setRootsBusy] = useState(false), [rootsFailure, setRootsFailure] = useState(false)
-  const submitting = useRef(false)
+  const [rootsBusy, setRootsBusy] = useState(false), [rootsFailure, setRootsFailure] = useState<string | null>(null)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const submitting = useRef(false), mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const failureRef = useRef<HTMLDivElement>(null)
   const data = choices.choices
   const project: Project | undefined = data?.projects.find(item => item.id === projectId)
@@ -60,13 +63,15 @@ export function NewSessionScreen() {
   const savedRoots = useMemo(() => project?.filesystemBindings.map(binding => binding.workspaceId) ?? [], [project])
   const selectedRoots = roots ?? savedRoots
   const rootsDirty = project !== undefined && (selectedRoots.length !== savedRoots.length || selectedRoots.some(id => !savedRoots.includes(id)))
-  const unreachable = !online || (choices.failure !== null && choices.failure.kind === 'unreachable')
-  // Back online: reload once so the screen does not keep describing an unreachable node.
-  const wasOnline = useRef(online)
+  // Only an unanswered request says the node is unreachable; the browser's own connectivity flag says nothing about a loopback node.
+  const unreachable = choices.failure !== null && choices.failure.kind === 'unreachable'
+  // The browser regained a network: refresh once instead of describing a node that may be back.
   useEffect(() => {
-    if (online && !wasOnline.current) choices.reload()
-    wasOnline.current = online
-  }, [online, choices.reload])
+    window.addEventListener('online', choices.reload)
+    return () => window.removeEventListener('online', choices.reload)
+  }, [choices.reload])
+  // A local runtime's context size is required, so the disclosure that holds it opens by itself.
+  useEffect(() => { if (connection?.kind === 'local_runtime') setOptionsOpen(true) }, [connection?.kind])
   useEffect(() => { if (startFailure) failureRef.current?.focus() }, [startFailure])
 
   const domainList = splitList(domains, /,/), protectedList = splitList(protectedPaths, /\n/), attachmentList = splitList(attachments, /,/)
@@ -87,6 +92,7 @@ export function NewSessionScreen() {
     if (!model.trim()) needs.push('newSession.need.model')
     if (!prompt.trim()) needs.push('newSession.need.prompt')
     if (contextRequired && !context.trim()) needs.push('newSession.need.context')
+    if (rootsDirty) needs.push('newSession.need.roots')
     if (domainsInvalid || contextInvalid) needs.push('newSession.need.valid')
     if (unreachable) needs.push('newSession.need.online')
   }
@@ -109,21 +115,23 @@ export function NewSessionScreen() {
         domains: domainList, attachmentIds: attachmentList, protectedPaths: protectedList, ...(context.trim() ? { contextTokens: contextValue } : {}) })
       if (typeof created?.sessionId !== 'string' || !created.sessionId) throw new AgentRequestError(502, 'agent_unavailable')
       setRecent(rememberProject(projectId))
-      navigate(paths.agent(created.sessionId))
+      // The user may have navigated elsewhere while the node worked; the session exists either way.
+      if (mounted.current) navigate(paths.agent(created.sessionId))
     } catch (error) {
-      setStartFailure({ code: error instanceof AgentRequestError ? error.code : 'agent_unavailable', at: new Date().toISOString() })
+      // No answer at all means the outcome is unknown, which is not the same as a refusal.
+      setStartFailure({ code: error instanceof AgentRequestError ? error.code : 'unreachable', at: new Date().toISOString() })
     } finally { submitting.current = false; setPhase('idle') }
   }
   const submit = (event: FormEvent) => { event.preventDefault(); void start() }
   const promptKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || !canStart) return
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229 || !canStart) return
     event.preventDefault(); void start()
   }
   const saveRoots = async () => {
     if (!project) return
-    setRootsBusy(true); setRootsFailure(false)
+    setRootsBusy(true); setRootsFailure(null)
     try { await agentRequest(`/projects/${encodeURIComponent(project.id)}/roots`, 'PATCH', { workspaceIds: selectedRoots }); setRoots(null); choices.reload() }
-    catch { setRootsFailure(true) } finally { setRootsBusy(false) }
+    catch (error) { setRootsFailure(error instanceof AgentRequestError ? error.code : 'unreachable') } finally { setRootsBusy(false) }
   }
 
   const noProjects = data !== null && data.projects.length === 0
@@ -159,7 +167,7 @@ export function NewSessionScreen() {
       <div><Button onClick={choices.reload} loading={choices.refreshing}>{t('newSession.retry')}</Button></div>
     </div>}
     {!unreachable && choices.failure && <ErrorState
-      title={t('newSession.load.error')}
+      title={`${t('newSession.load.error')}. ${t(loadReasonKey(choices.failure.code))}`}
       source={t(choices.failure.source === 'projects' ? 'newSession.load.sourceProjects' : 'newSession.load.sourceConnections')}
       occurredAt={choices.failure.at} timeMeaning="observed" details={choices.failure.code}
       action={<Button onClick={choices.reload} loading={choices.refreshing}>{t('newSession.retry')}</Button>} />}
@@ -180,7 +188,7 @@ export function NewSessionScreen() {
       {recentProjects.length > 0 && <section aria-labelledby="new-session-recent" className="flex flex-col gap-2">
         <h2 id="new-session-recent" className="text-14 font-heading">{t('newSession.recent')}</h2>
         <ul className="flex flex-wrap gap-2">
-          {recentProjects.map(item => <li key={item.id}><Button size="sm" aria-pressed={item.id === projectId}
+          {recentProjects.map(item => <li key={item.id} className="max-w-full"><Button size="sm" aria-pressed={item.id === projectId} className="h-auto! max-w-full whitespace-normal! break-words py-1 text-left"
             onClick={() => { setProjectId(item.id); setRoots(null) }}>{item.name}</Button></li>)}
         </ul>
       </section>}
@@ -209,7 +217,7 @@ export function NewSessionScreen() {
         </FormField>
         {mode === 'full-access' && <p className="text-secondary">{t('native.shellLimited')}</p>}
 
-        <details className="rounded-panel border border-divider bg-surface p-3">
+        <details open={optionsOpen} onToggle={event => setOptionsOpen(event.currentTarget.open)} className="rounded-panel border border-divider bg-surface p-3">
           <summary className="min-h-6 cursor-pointer text-14 font-heading focus-visible:outline-focus">{t('newSession.options')}</summary>
           <div className="mt-3 flex min-w-0 flex-col gap-4">
             <p className="text-12 text-secondary">{t('newSession.options.hint')}</p>
@@ -221,14 +229,14 @@ export function NewSessionScreen() {
                 <ul className="flex flex-wrap gap-2">
                   {data.workspaces.map(workspace => {
                     const included = selectedRoots.includes(workspace.id)
-                    return <li key={workspace.id}><Button size="sm" variant={included ? 'primary' : 'secondary'} aria-pressed={included}
+                    return <li key={workspace.id} className="max-w-full"><Button size="sm" variant={included ? 'primary' : 'secondary'} aria-pressed={included} className="h-auto! max-w-full whitespace-normal! break-words py-1 text-left"
                       onClick={() => setRoots(included ? selectedRoots.filter(rootId => rootId !== workspace.id) : [...selectedRoots, workspace.id])}>
                       <span aria-hidden="true">{included ? '✓ ' : ''}</span>{workspace.exists ? workspace.name : t('newSession.folders.missing', { name: workspace.name })}</Button></li>
                   })}
                 </ul>
                 <p className="text-12 text-secondary">{t('newSession.folders.hint')}</p>
                 <div><Button disabled={!rootsDirty || rootsBusy || unreachable} loading={rootsBusy} onClick={() => void saveRoots()}>{t('native.saveFolders')}</Button></div>
-                {rootsFailure && <p role="alert" className="text-12 text-danger">{t('newSession.error.agent_unavailable')}</p>}
+                {rootsFailure && <p role="alert" className="text-12 text-danger">{t(rootsErrorKey(rootsFailure))}</p>}
               </fieldset>)}
             <FormField label={t('native.domains')} hint={t('native.domainsHint')} error={domainsInvalid ? t('newSession.domains.invalid') : undefined}>
               {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} value={domains} onChange={event => setDomains(event.target.value)} />}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Connection, Project, Workspace } from '@guanxi/contract'
 import { api } from '../../lib/api.ts'
 import { ZodError } from 'zod'
@@ -15,16 +15,6 @@ export type ChoiceSource = 'projects' | 'connections'
 /** `unreachable`: no HTTP answer at all. `rejected`: the node answered with an error or an invalid body. */
 export interface ChoiceFailure { source: ChoiceSource; code: string; kind: 'unreachable' | 'rejected'; at: string }
 export type ChoiceStatus = 'loading' | 'ready' | 'failed'
-
-function subscribeOnline(listener: () => void): () => void {
-  window.addEventListener('online', listener)
-  window.addEventListener('offline', listener)
-  return () => { window.removeEventListener('online', listener); window.removeEventListener('offline', listener) }
-}
-/** The browser's own connectivity signal; it says nothing about the node. */
-export function useBrowserOnline(): boolean {
-  return useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true)
-}
 
 // Machine discriminants stay typed references so no display string is a function return.
 const FAILURE_KIND = { unreachable: 'unreachable', rejected: 'rejected' } as const

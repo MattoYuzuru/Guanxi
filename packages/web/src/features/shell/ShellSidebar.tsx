@@ -38,7 +38,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
     ...(['today', 'yesterday', 'earlier'] as const).map(key => ({ key,
       sessions: props.sessions.filter(session => !pinned.has(session.sessionId) && sessionDateGroup(session.createdAt) === key) })),
   ]
-  const unseenLabel = t(props.hasMore ? 'shell.unseen.countAtLeast' : 'shell.unseen.count', { count: props.unseen.size })
+  const unseenLabel = t(props.hasMore || props.omitted ? 'shell.unseen.countAtLeast' : 'shell.unseen.count', { count: props.unseen.size })
   return <div className="flex min-w-0 flex-col gap-3">
     <nav aria-label={t('shell.navigation')}>
       <ul className="flex flex-col gap-1">
@@ -50,7 +50,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
         </Link></li>)}
       </ul>
     </nav>
-    {props.rail && props.unseen.size > 0 && <p data-testid="shell-unseen-rail" title={unseenLabel} className="px-2 text-12">
+    {props.rail && props.unseen.size > 0 && <p data-testid="shell-unseen-rail" className="px-2 text-12">
       <span aria-hidden="true">● {props.unseen.size}</span><span className="sr-only">{unseenLabel}</span></p>}
     <div hidden={props.rail}>
       <SidebarSlot />
