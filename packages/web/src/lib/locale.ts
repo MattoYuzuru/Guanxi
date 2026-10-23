@@ -1066,6 +1066,7 @@ const english = {
   'model.carousel.item': 'Model {index} of {count}',
   'launcher.context.aria': 'Context window used for fit calculation',
   'launcher.context.short': 'context',
+  'launcher.context.suggestions': 'Suggested context sizes',
   'launcher.context.hint':
     'Preset values are suggestions. You can enter any positive whole-token count.',
   'hardware.acceleratorProfile': 'Accelerator profile',
@@ -2905,6 +2906,7 @@ const russian: Messages = {
   'model.carousel.item': 'Модель {index} из {count}',
   'launcher.context.aria': 'Размер окна контекста для расчёта влезаемости',
   'launcher.context.short': 'окно',
+  'launcher.context.suggestions': 'Предлагаемые размеры окна',
   'launcher.context.hint':
     'Preset-значения — только подсказки. Можно ввести любое положительное целое число токенов.',
   'hardware.acceleratorProfile': 'Профиль ускорителя',

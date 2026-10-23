@@ -9,13 +9,13 @@
   },
   "packages/web/src/components/ui.tsx": {
     "guanxi/no-inline-colours": {
-      "count": 7
+      "count": 6
     },
     "guanxi/no-literal-styles": {
-      "count": 5
+      "count": 2
     },
     "guanxi/reuse-primitives": {
-      "count": 5
+      "count": 4
     },
     "guanxi/semantic-classes": {
       "count": 6
@@ -52,7 +52,7 @@
   },
   "packages/web/src/features/attachments/AttachmentsPage.tsx": {
     "guanxi/reuse-primitives": {
-      "count": 2
+      "count": 1
     },
     "guanxi/semantic-classes": {
       "count": 1
@@ -193,16 +193,13 @@
     }
   },
   "packages/web/src/features/quick-runs/QuickRunsPage.tsx": {
-    "guanxi/reuse-primitives": {
-      "count": 2
-    },
     "guanxi/semantic-classes": {
       "count": 1
     }
   },
   "packages/web/src/features/recipes/RecipesPage.tsx": {
     "guanxi/reuse-primitives": {
-      "count": 9
+      "count": 7
     },
     "guanxi/semantic-classes": {
       "count": 2

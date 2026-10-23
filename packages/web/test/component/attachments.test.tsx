@@ -4,6 +4,7 @@ import type { ArtifactTransferPolicy, Attachment, Project } from '@guanxi/contra
 import { AttachmentsPage } from '../../src/features/attachments/AttachmentsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { chooseValue } from '../helpers/select.ts'
 
 const AT = '2026-08-14T14:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -117,9 +118,7 @@ describe('AttachmentsPage', () => {
 
     render(<AttachmentsPage />)
     await screen.findByText('В этой области нет вложений')
-    fireEvent.change(screen.getByRole('combobox', { name: 'Область' }), {
-      target: { value: LEGACY_PROJECT.id },
-    })
+    await chooseValue(screen.getByRole('combobox', { name: 'Область' }), LEGACY_PROJECT.id)
     await screen.findByRole('heading', { name: LEGACY_PROJECT.name })
     const file = new File(['exact'], 'exact.txt', { type: 'text/plain' })
     fireEvent.change(screen.getByLabelText('Выберите или перетащите один локальный файл'), {

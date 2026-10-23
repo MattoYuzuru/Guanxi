@@ -5,6 +5,7 @@ import { encodeSideChatSavedNote, type SessionEvent } from '@guanxi/contract'
 import { SideChatPanel } from '../../src/features/side-chat/SideChatPanel.tsx'
 import { sideChatEnglish, sideChatRussian } from '../../src/features/side-chat/messages.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { chooseValue } from '../helpers/select.ts'
 
 interface Call { action: 'respond' | 'save' | 'send'; body: Record<string, unknown>; signal?: AbortSignal | null }
 let calls: Call[]
@@ -57,11 +58,11 @@ describe('ephemeral labelling and storage', () => {
     await ask('First?')
     expect(turns()).toHaveLength(2)
     expect(calls[0]!.body).toMatchObject({ messages: [{ role: 'user', text: 'First?' }], context: { include: 'session' } })
-    fireEvent.change(screen.getByLabelText('Context from the session'), { target: { value: 'last' } })
+    await chooseValue(screen.getByLabelText('Context from the session'), 'last')
     fireEvent.change(screen.getByLabelText('Number of last turns'), { target: { value: '2' } })
     await ask('Second?')
     expect(calls[1]!.body).toMatchObject({ messages: [{ role: 'user', text: 'First?' }, { role: 'assistant', text: 'Side answer' }, { role: 'user', text: 'Second?' }], context: { include: 'session', lastTurns: 2 } })
-    fireEvent.change(screen.getByLabelText('Context from the session'), { target: { value: 'none' } })
+    await chooseValue(screen.getByLabelText('Context from the session'), 'none')
     await ask('Third?')
     expect(calls[2]!.body.context).toEqual({ include: 'none' })
     expect(turns()).toHaveLength(6)
@@ -84,9 +85,9 @@ describe('ephemeral labelling and storage', () => {
     await ask('q2')
     expect(screen.getAllByText('The answer stopped at the model\'s output limit and may be cut short.')).toHaveLength(1)
   })
-  it('refuses an invalid number of turns before any request', () => {
+  it('refuses an invalid number of turns before any request', async () => {
     render(<SideChatPanel sessionId="s1" />)
-    fireEvent.change(screen.getByLabelText('Context from the session'), { target: { value: 'last' } })
+    await chooseValue(screen.getByLabelText('Context from the session'), 'last')
     fireEvent.change(screen.getByLabelText('Number of last turns'), { target: { value: '0' } })
     fireEvent.change(prompt(), { target: { value: 'q' } })
     expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(true)

@@ -377,7 +377,7 @@ test('phone width (320 px) with 200% text keeps everything inside the viewport w
     expect(overflow.document, `${label} document overflow`).toBeLessThanOrEqual(0)
     expect(overflow.page, `${label} glossary page overflow`).toBeLessThanOrEqual(1)
     expect(overflow.past, `${label} elements past the right edge`).toEqual([])
-    const small = await page.getByTestId('glossary-page').locator('button, select, summary, input, textarea, a').evaluateAll(
+    const small = await page.getByTestId('glossary-page').locator('button, select, summary, input:not([aria-hidden="true"][tabindex="-1"]), textarea, a').evaluateAll(
       (elements) => elements.filter((element) => {
         const box = element.getBoundingClientRect()
         return box.width > 0 && (box.height < 24 || box.width < 24)

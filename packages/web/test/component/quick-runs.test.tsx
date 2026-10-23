@@ -4,6 +4,7 @@ import type { Project, QuickRun } from '@guanxi/contract'
 import { QuickRunsPage } from '../../src/features/quick-runs/QuickRunsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { chooseValue } from '../helpers/select.ts'
 
 const AT = '2026-08-13T10:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -109,8 +110,8 @@ describe('QuickRunsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Quick Run' })).toBeTruthy()
     expect(screen.getByText('Metadata is ready; execution is not')).toBeTruthy()
     const scope = screen.getByRole('combobox', { name: 'Scope' })
-    fireEvent.change(scope, { target: { value: PROJECT.id } })
-    await screen.findByText('Exact Project')
+    await chooseValue(scope, PROJECT.id)
+    await screen.findByRole('heading', { name: 'Exact Project' })
 
     const create = screen.getByRole('button', { name: 'Create metadata' })
     const form = create.closest('form')!

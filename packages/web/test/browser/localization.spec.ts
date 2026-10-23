@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import { RUNTIME_IDLE_POLL_INTERVAL_MS } from '../../src/features/health/useRuntimePolling.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { fetchReads, installFetchLifecycle } from './fixtures/fetch-lifecycle.ts'
+import { pickValueByKeyboard } from './fixtures/select.ts'
 
 // Advance after each committed locale transition; together these windows stay below
 // the legitimate idle poll while exposing short timer-driven refetches.
@@ -155,7 +156,7 @@ for (const deferNetworkStart of [false, true]) {
     })
     await language.focus()
     const readsBeforePreview = settingsReads
-    await language.selectOption('ru')
+    await pickValueByKeyboard(page, language, 'ru', { clockStepMs: 20 })
     await expect(languageControl).toBeFocused()
     expect(settingsReads).toBe(readsBeforePreview)
     expect(settingsWrites).toBe(0)

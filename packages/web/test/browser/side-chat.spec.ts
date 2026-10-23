@@ -300,7 +300,7 @@ test('errors are single and accessible; phone width and large text do not overfl
     expect(measured.document, `${label} document`).toBeLessThanOrEqual(0)
     expect(measured.host, `${label} route host`).toBeLessThanOrEqual(1)
     expect(measured.panelRight, `${label} panel`).toBeLessThanOrEqual(1)
-    const small = await panel(page).locator('button, select, input, textarea').evaluateAll(elements => elements.filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && (box.height < 24 || box.width < 24) }).length)
+    const small = await panel(page).locator('button, select, input:not([aria-hidden="true"][tabindex="-1"]), textarea').evaluateAll(elements => elements.filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && (box.height < 24 || box.width < 24) }).length)
     expect(small, `${label} targets under 24 px`).toBe(0)
   }
   await fits('phone 320')

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   QUICK_RUN_OPERATIONS,
   QUICK_RUN_VERSION,
@@ -10,7 +10,7 @@ import {
   type QuickRunScopeQuery,
   type RetentionPolicy,
 } from '@guanxi/contract'
-import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
+import { Badge, Button, Callout, EmptyState, Select, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { useAutoRecover } from '../../lib/recover.ts'
@@ -41,6 +41,7 @@ function policyFor(mode: RetentionPolicy['mode']): RetentionPolicy {
 export function QuickRunsPage() {
   const projects = useAsync((signal) => api.listProjects(signal), [])
   const [scope, setScope] = useState<ScopeSelection>({ scope: 'projectless' })
+  const scopeId = useId()
   const selectedScope = scope.scope === 'project' ? scope.projectId : 'projectless'
 
   return (
@@ -58,24 +59,21 @@ export function QuickRunsPage() {
         </Callout>
       </div>
 
-      <label className="mt-5 block max-w-md text-xs font-medium">
-        {translate('quickRuns.scope.label')}
-        <select
+      <div className="mt-5 max-w-md text-xs font-medium">
+        <label htmlFor={scopeId} className="block">{translate('quickRuns.scope.label')}</label>
+        <Select
+          id={scopeId}
           value={selectedScope}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-          onChange={(event) => {
-            const value = event.target.value
-            setScope(value === 'projectless'
-              ? { scope: 'projectless' }
-              : { scope: 'project', projectId: value })
-          }}
-        >
-          <option value="projectless">{translate('quickRuns.scope.projectless')}</option>
-          {projects.data?.projects.map((project) => (
-            <option key={project.id} value={project.id}>{project.name}</option>
-          ))}
-        </select>
-      </label>
+          className="mt-1"
+          onChange={(value) => setScope(value === 'projectless'
+            ? { scope: 'projectless' }
+            : { scope: 'project', projectId: value })}
+          options={[
+            { value: 'projectless', label: translate('quickRuns.scope.projectless') },
+            ...(projects.data?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
+          ]}
+        />
+      </div>
       {projects.loading ? (
         <p role="status" className="mt-1 text-2xs text-muted">
           {translate('quickRuns.projects.loading')}
@@ -108,6 +106,7 @@ function QuickRunScopePanel({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [operation, setOperation] = useState<QuickRunOperation>('complete')
+  const operationId = useId()
   const [creating, setCreating] = useState(false)
   const [restoreCreateFocus, setRestoreCreateFocus] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
@@ -282,20 +281,16 @@ function QuickRunScopePanel({
       </div>
 
       <form onSubmit={create} className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1 text-xs font-medium">
-          {translate('quickRuns.operation.label')}
-          <select
+        <div className="min-w-0 flex-1 text-xs font-medium">
+          <label htmlFor={operationId} className="block">{translate('quickRuns.operation.label')}</label>
+          <Select
+            id={operationId}
             value={operation}
-            className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-            onChange={(event) => setOperation(event.target.value as QuickRunOperation)}
-          >
-            {QUICK_RUN_OPERATIONS.map((value) => (
-              <option key={value} value={value}>
-                {translate(`quickRuns.operation.${value}`)}
-              </option>
-            ))}
-          </select>
-        </label>
+            className="mt-1"
+            onChange={(value) => setOperation(value as QuickRunOperation)}
+            options={QUICK_RUN_OPERATIONS.map((value) => ({ value, label: translate(`quickRuns.operation.${value}`) }))}
+          />
+        </div>
         <Button ref={createButtonRef} type="submit" variant="primary" loading={creating}>
           {translate('quickRuns.create')}
         </Button>

@@ -15,6 +15,7 @@ import type {
   ListCatalogResponse,
 } from '@guanxi/contract'
 import { CATALOG_DEFAULT_PAGE_SIZE, DEFAULT_NUM_CTX } from '@guanxi/contract'
+import { Icon, IconButton, Menu, MenuContent, MenuItem, MenuTrigger } from '@guanxi/ui'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync, useDebounced } from '../../lib/useAsync.ts'
 import {
@@ -276,6 +277,7 @@ export function LauncherPage({ health }: { health: Health }) {
             </div>
 
             <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
               <label className="flex items-center gap-1.5">
                 <span className="text-2xs text-muted">
                   {translate('launcher.context.short')}
@@ -288,7 +290,6 @@ export function LauncherPage({ health }: { health: Health }) {
                   min={1}
                   step={1}
                   inputMode="numeric"
-                  list="launcher-context-suggestions"
                   aria-invalid={contextError !== null}
                   onChange={(event) => setContextDraft(event.target.value)}
                   onBlur={() => applyContextDraft(
@@ -313,12 +314,31 @@ export function LauncherPage({ health }: { health: Health }) {
                   }}
                   className="w-28"
                 />
-                <datalist id="launcher-context-suggestions">
-                  {CONTEXT_SUGGESTIONS.map((value) => (
-                    <option key={value} value={value}>{formatContextLength(value)}</option>
-                  ))}
-                </datalist>
               </label>
+              <Menu>
+                <MenuTrigger render={<IconButton size="sm" label={translate('launcher.context.suggestions')} icon={<Icon name="chevron-down" />} />} />
+                <MenuContent align="end">
+                  {CONTEXT_SUGGESTIONS.map((value) => (
+                    <MenuItem
+                      key={value}
+                      onClick={() => {
+                        setContextDraft(String(value))
+                        applyContextDraft(
+                          String(value),
+                          (next) => {
+                            if (next !== contextLength) invalidateCatalogBasis()
+                            setContextLength(next)
+                          },
+                          setContextError,
+                        )
+                      }}
+                    >
+                      {formatContextLength(value)}
+                    </MenuItem>
+                  ))}
+                </MenuContent>
+              </Menu>
+              </div>
               <p id="launcher-context-hint" className="mt-1 max-w-64 text-2xs text-muted">
                 {translate('launcher.context.hint')}
               </p>

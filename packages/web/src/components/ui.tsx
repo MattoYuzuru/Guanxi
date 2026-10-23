@@ -15,7 +15,18 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { FitLevel } from '@guanxi/contract'
-import { Button as UiButton, Icon, Switch } from '@guanxi/ui'
+import {
+  Button as UiButton,
+  Icon,
+  Select as UiSelect,
+  SelectContent,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from '@guanxi/ui'
 import { translate, type LocaleKey } from '../lib/locale.ts'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -241,6 +252,13 @@ export const Textarea = forwardRef<
   return <textarea ref={ref} className={cx(INPUT_CLASS, 'resize-none', className)} {...rest} />
 })
 
+type SelectOption = { value: string; label: string; disabled?: boolean; group?: string; groupId?: string }
+
+/**
+ * The legacy choice field, drawn by the design-system Select (D-206): a combobox trigger with the
+ * chosen label and a themed popup list, never the operating system's native menu. Options sharing
+ * a `groupId` (or `group` label) render as one labelled group in first-appearance order.
+ */
 export function Select({
   value,
   onChange,
@@ -254,7 +272,7 @@ export function Select({
 }: {
   value: string
   onChange: (next: string) => void
-  options: Array<{ value: string; label: string; disabled?: boolean; group?: string; groupId?: string }>
+  options: SelectOption[]
   className?: string
   disabled?: boolean
   ariaLabel?: string
@@ -262,31 +280,35 @@ export function Select({
   /** Ids of the hint and error text that describe this control. */
   describedBy?: string
 }) {
+  const sections: Array<{ key: string; label?: string; options: SelectOption[] }> = []
+  for (const option of options) {
+    const key = option.groupId ?? option.group ?? ''
+    const section = sections.find(candidate => candidate.key === key)
+    if (section) section.options.push(option)
+    else sections.push({ key, label: option.group, options: [option] })
+  }
+  const item = (option: SelectOption) => (
+    <SelectItem key={option.value} value={option.value} disabled={option.disabled} data-value={option.value}>{option.label}</SelectItem>
+  )
   return (
-    <select
-      id={id}
-      aria-describedby={describedBy}
+    <UiSelect
+      items={options.map(option => ({ value: option.value, label: option.label }))}
       value={value}
       disabled={disabled}
-      aria-label={ariaLabel}
-      onChange={(event) => onChange(event.target.value)}
-      className={cx(INPUT_CLASS, 'cursor-pointer appearance-none pr-6', className)}
-      style={{
-        backgroundImage:
-          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23888' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")",
-        backgroundRepeat: 'no-repeat',
-        backgroundPosition: 'right 4px center',
-        backgroundSize: '12px',
-      }}
+      onValueChange={(next) => { if (typeof next === 'string' && next !== value) onChange(next) }}
     >
-      {[...new Set(options.map(option => option.groupId ?? option.group))].map(groupId => options.find(option => (option.groupId ?? option.group) === groupId)?.group ? (
-        <optgroup key={groupId} label={options.find(option => (option.groupId ?? option.group) === groupId)!.group!}>
-          {options.filter(option => (option.groupId ?? option.group) === groupId).map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
-        </optgroup>
-      ) : options.filter(option => !option.group).map(option => (
-        <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>
-      )))}
-    </select>
+      <SelectTrigger id={id} aria-label={ariaLabel} aria-describedby={describedBy} data-value={value} className={cx('legacy-select', className)}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {sections.map(section => section.label ? (
+          <SelectGroup key={section.key}>
+            <SelectGroupLabel>{section.label}</SelectGroupLabel>
+            {section.options.map(item)}
+          </SelectGroup>
+        ) : section.options.map(item))}
+      </SelectContent>
+    </UiSelect>
   )
 }
 
