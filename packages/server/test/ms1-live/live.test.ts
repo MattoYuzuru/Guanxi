@@ -55,6 +55,11 @@ test('preflight proves the link both ways and prints what the executor\'s llama-
   const text = await cli(['preflight', '--config', w.homeConfig], { HOME: w.dir })
   assert.equal(text.code, 0); assert.match(text.out, /window +16000 tokens \(federation:llama_server_props\)/); assert.match(text.out, /build +llama-server\/b0-fixture/); assert.match(text.out, /counter +federation:llama-server:\/apply-template\+\/tokenize \(probe: \d+ tokens\)/)
 
+  // A real generation shares the single slot with the relay: it is refused while this node's federation port answers.
+  const running = await preflight(w, 'executor', ['--completion'])
+  assert.equal(running.code, 1); assert.equal(check(running.report, 'completion')?.code, 'completion_while_running'); assert.match(check(running.report, 'completion')!.fix!, /never during a run/)
+  assert.equal((await w.fake.requests('/completion')).length, 0, 'and nothing was generated')
+  await w.executor.stop()
   const exec = await preflight(w, 'executor', ['--completion'])
   assert.equal(exec.code, 0, exec.text)
   assert.deepEqual(exec.report.checks.map(c => [c.id, c.status]), [['credentials', 'ok'], ['llama_server', 'ok'], ['template', 'ok'], ['slots', 'ok'], ['completion', 'ok'], ['home_link', 'ok'], ['home_handshake', 'ok']])

@@ -142,7 +142,11 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
           : warn('slots', 'slots_not_one', `The llama-server reports ${props.slots} slots; the relay was validated with one.`, 'Start llama-server with -np 1 so the observed window is the whole context.')
       }))
       if (options.completion) {
-        if (measured.status === 'ok') {
+        // One slot: a generation made while the node serves relays would queue behind, or in front of, a live run.
+        const answering = await probeFederation(`http://127.0.0.1:${settings.listen.federationPort}`, 2_000, options.transport)
+        if (answering.kind === 'status') checks.push(fail('completion', 'completion_while_running', 'This node\'s federation port answers: a generation now would share the single slot with the relay.',
+          'Run --completion before starting the node, or after stopping it; never during a run.'))
+        else if (measured.status === 'ok') {
           await run(step('completion', async () => {
             const client = new LlamaServerClient({ baseUrl: settings.executor!.llamaServer.baseUrl })
             const done = await client.complete(rendered, 1, AbortSignal.timeout(settings.link.requestTimeoutMs), () => undefined)

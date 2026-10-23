@@ -103,10 +103,12 @@ test('a model the pairing does not serve is refused before any message is sent',
 test('a meter mismatch (the server evaluates other tokens than it counted): the first call is refused as truncation_protocol, nothing is accepted and nothing local runs', async t => {
   const w = await createLiveWorld(t, { fake: { evaluatedSkew: 1, replies: ['pong'] } })
   await w.registerProject()
+  await w.executor.stop()
   const exec = await preflight(w, 'executor', ['--completion'])
   assert.equal(exec.code, 1); assert.equal(find(exec, 'completion')?.code, 'truncation_protocol'); assert.match(find(exec, 'completion')!.fix!, /cachePrompt/)
   assert.equal(find(exec, 'template')?.status, 'ok', 'the count itself is consistent: it is the evaluation that disagrees')
 
+  w.executor.spawn(); await w.executor.wait('started')
   const response = await w.startRelay('skew', 2)
   assert.equal(response.status, 202, 'admission passes: observation and the probe count are fine')
   const status = await (async () => { await until(async () => (await w.relayStatus('skew')).status !== 'running', 'the relay to stop', 90_000); return w.relayStatus('skew') })()
