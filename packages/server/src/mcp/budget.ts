@@ -1,16 +1,18 @@
 /**
  * Per-session MCP tool budget.
  *
- * A large server must not put every tool description into the model context.
- * The injected counter measures description text, so callers can use their
- * own token estimator. The hard guarantee is:
+ * A large server must not put every tool name, title, description and input
+ * schema into the model context. The injected counter measures the serialized
+ * form of each tool, so callers can use their own token estimator. The hard
+ * guarantee is:
  *
  *     countToolContext(toolContext(tools, count, budget), count) <= budget
  *
- * When all descriptions fit, the tools are listed directly. Otherwise the
- * context exposes exactly two meta-tools (`mcp_search_tools` and
- * `mcp_load_tool`), reports how many tools were replaced, and keeps the
- * guarantee even at a zero budget by leaving the meta descriptions empty.
+ * Counters must return zero for the empty string. When every serialized tool
+ * fits, the tools are listed directly. Otherwise the context exposes exactly
+ * two meta-tools (`mcp_search_tools` and `mcp_load_tool`) and reports how many
+ * tools were replaced. If even those do not fit, the context is empty with
+ * `mode: 'none'`, which also keeps the guarantee at a zero budget.
  */
 import type { McpTool } from './types.ts'
 
@@ -36,7 +38,14 @@ export interface McpSearchToolContext {
   omitted: number
 }
 
-export type McpToolContext = McpFullToolContext | McpSearchToolContext
+export interface McpNoneToolContext {
+  mode: 'none'
+  tools: []
+  /** Number of original tools omitted because no meta-tool fit. */
+  omitted: number
+}
+
+export type McpToolContext = McpFullToolContext | McpSearchToolContext | McpNoneToolContext
 
 export interface McpToolSearchResult {
   name: string
@@ -91,19 +100,25 @@ function checkedCount(count: McpToolCounter, text: string): number {
   return value
 }
 
-function descriptionOf(tool: McpTool): string {
-  return typeof tool.description === 'string' ? tool.description : ''
+/** The exact model-facing projection counted by the budget. */
+function toolContextEntry(tool: McpTool): string {
+  return JSON.stringify({
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  })
 }
 
-/** Sum of per-tool description counts; names and schemas are not counted. */
-export function countToolDescriptions(tools: readonly McpTool[], count: McpToolCounter): number {
+function countTools(tools: readonly McpTool[], count: McpToolCounter): number {
   let total = 0
-  for (const tool of tools) total += checkedCount(count, descriptionOf(tool))
+  for (const tool of tools) total += checkedCount(count, toolContextEntry(tool))
   return total
 }
 
+/** Sum of per-tool serialized-entry counts, including names and schemas. */
 export function countToolContext(context: McpToolContext, count: McpToolCounter): number {
-  return countToolDescriptions(context.tools, count)
+  return countTools(context.tools, count)
 }
 
 /**
@@ -119,20 +134,16 @@ export function toolContext(
   if (!Array.isArray(tools)) throw new TypeError('tools must be an array')
   const available = assertBudget(budget)
   const full = [...tools]
-  if (countToolDescriptions(full, count) <= available) {
+  if (countTools(full, count) <= available) {
     return { mode: 'full', tools: full }
   }
 
   const omitted = full.length
   const meta = mcpMetaTools()
-  if (countToolDescriptions(meta, count) <= available) {
+  if (countTools(meta, count) <= available) {
     return { mode: 'search', tools: meta, omitted }
   }
-  return {
-    mode: 'search',
-    tools: meta.map(tool => ({ ...tool, description: '' })),
-    omitted,
-  }
+  return { mode: 'none', tools: [], omitted }
 }
 
 function oneLine(description: unknown): string {

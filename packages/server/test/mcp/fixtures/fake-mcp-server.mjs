@@ -61,7 +61,9 @@ if (mode === 'noisy') {
 const pageOne = [
   {
     name: 'echo',
+    title: 'Echo arguments',
     description: 'Echo the JSON arguments back as structured content.',
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object',
       properties: {

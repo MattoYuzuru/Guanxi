@@ -128,12 +128,15 @@ export interface McpInitializeResult {
   instructions?: string
 }
 
-/** Tool shape as returned by `tools/list`; unknown fields are preserved. */
+/**
+ * Tool shape kept from `tools/list`. Unknown server fields are dropped, so a
+ * server cannot smuggle arbitrary data past the context budget.
+ */
 export interface McpTool {
   name: string
+  title?: string
   description?: string
   inputSchema?: unknown
-  [key: string]: unknown
 }
 
 /**

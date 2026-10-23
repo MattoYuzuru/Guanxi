@@ -183,9 +183,10 @@ function parseToolPage(value: unknown): { tools: McpTool[]; nextCursor: string |
     if (!isRecord(raw) || typeof raw.name !== 'string' || raw.name.length === 0) {
       throw new McpError('mcp_protocol', 'MCP tools/list returned a tool without a name')
     }
-    const tool: McpTool = { ...raw, name: raw.name }
+    const tool: McpTool = { name: raw.name }
+    if (typeof raw.title === 'string') tool.title = raw.title
     if (typeof raw.description === 'string') tool.description = raw.description
-    else delete tool.description
+    if (raw.inputSchema !== undefined) tool.inputSchema = raw.inputSchema
     tools.push(tool)
   }
   const cursor = value.nextCursor

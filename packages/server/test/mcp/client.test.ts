@@ -149,6 +149,11 @@ it('completes the pinned handshake before listing every tool page', async (t) =>
     tools.map(tool => tool.name),
     ['echo', 'slow', 'inspect', 'fail', 'soft'],
   )
+  const echo = tools[0]
+  assert.ok(echo)
+  assert.deepEqual(Object.keys(echo).sort(), ['description', 'inputSchema', 'name', 'title'])
+  assert.equal(echo.title, 'Echo arguments')
+  assert.equal('annotations' in echo, false, 'unknown tool fields must be dropped')
 
   const log = await messages(harness.log)
   assert.deepEqual(
