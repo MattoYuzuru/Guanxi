@@ -663,7 +663,8 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
         let secondTimer = 0
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            const send = (event: (typeof downloadEvents)[number]) => controller.enqueue(encoder.encode(
+            // Any server event, including the failure this test injects outside downloadEvents.
+            const send = (event: { type: string; seq: number; data: object }) => controller.enqueue(encoder.encode(
               `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`,
             ))
             send(downloadEvents[0]!)

@@ -212,6 +212,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await page.getByRole('button', { name: 'Подготовить снимок Job в очереди' }).press('Enter')
   const confirmSnapshot = page.getByRole('button', { name: 'Создать снимок Job в очереди' })
   await confirmSnapshot.evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) throw new Error('the confirm control is a button')
     button.click()
     button.click()
   })

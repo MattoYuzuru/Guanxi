@@ -19,6 +19,7 @@ const TTL: ChatRetentionProjection = {
   expiresAt: EXPIRES_AT,
   expirySource: 'server_calculated',
   enforcement: 'rolling_ttl_trash',
+  sessionLeave: null,
 }
 const SESSION: ChatRetentionProjection = {
   ...TTL,
@@ -402,7 +403,7 @@ describe('Chat retention info', () => {
     let clickedDownload: { download: string; href: string } | null = null
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reasoning-export')
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
       clickedDownload = { download: this.download, href: this.href }
     })
     vi.spyOn(api, 'getReasoningArtifact')
@@ -417,11 +418,12 @@ describe('Chat retention info', () => {
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
     const exportedBlob = createObjectURL.mock.calls[0]?.[0]
     expect(exportedBlob).toBeInstanceOf(Blob)
+    if (!(exportedBlob instanceof Blob)) throw new Error('the export is a Blob')
     const exportedText = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.addEventListener('load', () => resolve(String(reader.result)))
       reader.addEventListener('error', () => reject(reader.error))
-      reader.readAsText(exportedBlob!)
+      reader.readAsText(exportedBlob)
     })
     expect(exportedText).toBe('exported diagnostic only')
     expect(clickedDownload).toEqual({

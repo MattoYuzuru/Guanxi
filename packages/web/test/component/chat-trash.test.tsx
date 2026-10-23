@@ -111,7 +111,6 @@ describe('Chat Trash list', () => {
   it('loads one exact Project scope and shows sourced reason/time with truthful hard-deletion state', async () => {
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1,
-      deletionVersion: 1,
       ...EMPTY_DELETIONS,
       scope: 'project',
       projectId: 'project-a',

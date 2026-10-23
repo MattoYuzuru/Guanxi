@@ -1,6 +1,6 @@
 import { StrictMode, useState } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { LocalModel, PrewarmModelResponse, RuntimeSnapshot } from '@guanxi/contract'
+import { legacyInstalledModelDescriptor, type LocalModel, type PrewarmModelResponse, type RuntimeSnapshot } from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../../src/lib/api.ts'
 import { RuntimeProvider, useRuntimeProjection } from '../../src/features/health/RuntimeContext.tsx'
@@ -20,7 +20,10 @@ function model(name: string): LocalModel {
     parameterSize: '3B',
     quantization: 'Q4_K_M',
     contextLength: 32_768,
+    // What the schema's defaults give a response without context or descriptor evidence.
+    contextLimit: { state: 'unknown', value: null, source: 'not_reported', observedAt: '1970-01-01T00:00:00.000Z', confidence: 'unknown' },
     capabilities: ['completion'],
+    descriptor: legacyInstalledModelDescriptor,
     isCloud: false,
     fit: {
       level: 'green',

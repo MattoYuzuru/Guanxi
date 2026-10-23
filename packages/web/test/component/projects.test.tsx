@@ -41,6 +41,9 @@ beforeEach(() => {
     projectId: query.scope === 'project' ? query.projectId : null,
     chats: [],
     hasMore: false,
+    deletionVersion: 1,
+    deletions: [],
+    deletionsHaveMore: false,
   }))
   vi.spyOn(api, 'listProjectChats').mockResolvedValue({
     ownershipVersion: 1,

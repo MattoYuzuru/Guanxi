@@ -17,7 +17,7 @@ const HEALTH: Health = {
   appVersion: 'test',
   application: { state: 'reachable', source: 'application_http', observedAt: AT },
   ollama: {
-    installed: true, running: true, state: 'reachable', source: 'ollama_api_version',
+    installed: true, installSource: 'runtime_response', running: true, state: 'reachable', source: 'ollama_api_version',
     observedAt: AT, version: '0.12.6', host: 'http://fixture.invalid', installHint: null,
   },
   hardware: {
@@ -127,7 +127,7 @@ function mockInstallFlow(target: string, digest: string) {
   }))
   let releaseRefresh!: () => void
   const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve })
-  const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+  const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => {
     const page = response(params.page ?? 1, 25)
     if (!installed) return page
     await refreshGate
@@ -167,7 +167,7 @@ afterEach(() => {
 describe('bounded catalog paging', () => {
   it('renders one bounded page and constant pager controls for 1,000 logical rows', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
-    const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params) =>
+    const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) =>
       response(params.page ?? 1),
     )
     const { container } = render(<LauncherPage health={HEALTH} />)
@@ -184,7 +184,7 @@ describe('bounded catalog paging', () => {
 
   it('keeps two exact snapshots across distant pages and resets on accepted query changes', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => response(params.page ?? 1, 25))
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => response(params.page ?? 1, 25))
     render(<LauncherPage health={HEALTH} />)
     await screen.findByRole('button', { name: 'Добавить к сравнению synthetic-0000:q4' })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить к сравнению synthetic-0000:q4' }))
@@ -216,7 +216,7 @@ describe('bounded catalog paging', () => {
   it('shows source shrink as an explicit empty requested page without optimistic count', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     let totalItems = 13
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) =>
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) =>
       response(params.page ?? 1, totalItems),
     )
     render(<LauncherPage health={HEALTH} />)
@@ -235,7 +235,7 @@ describe('bounded catalog paging', () => {
       signal: AbortSignal
       resolve: (value: ListCatalogResponse) => void
     }> = []
-    vi.spyOn(api, 'listCatalog').mockImplementation((params, signal) =>
+    vi.spyOn(api, 'listCatalog').mockImplementation((params = {}, signal) =>
       new Promise((resolve) => requests.push({ page: params.page ?? 1, signal: signal!, resolve })),
     )
     render(<LauncherPage health={HEALTH} />)
@@ -255,10 +255,10 @@ describe('bounded catalog paging', () => {
   it('keeps the real exact pull owned while page navigation is blocked', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     const catalog = vi.spyOn(api, 'listCatalog').mockResolvedValue(response(1, 25))
-    let pullSignal: AbortSignal | null = null
+    const pull: { signal: AbortSignal | null } = { signal: null }
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, init) => {
       if (String(input).endsWith('/start')) {
-        pullSignal = init?.signal ?? null
+        pull.signal = init?.signal ?? null
         return await new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener(
             'abort',
@@ -282,10 +282,10 @@ describe('bounded catalog paging', () => {
     expect(next.disabled).toBe(true)
     fireEvent.click(next)
     expect(catalog).toHaveBeenCalledTimes(1)
-    expect(pullSignal?.aborted).toBe(false)
+    expect(pull.signal?.aborted).toBe(false)
 
     view.unmount()
-    await waitFor(() => expect(pullSignal?.aborted).toBe(true))
+    await waitFor(() => expect(pull.signal?.aborted).toBe(true))
   })
 
   it('keeps the page and the install result mounted through the post-install refresh', async () => {
@@ -317,7 +317,7 @@ describe('bounded catalog paging', () => {
     expect(variant.isConnected).toBe(true)
     expect(within(dialog).getByText(digest)).toBeTruthy()
     expect(screen.getByText('Страница 2 из 3, на странице 12, всего найдено 25')).toBeTruthy()
-    expect(catalog.mock.calls.slice(callsBeforeInstall).map(([params]) => params.page))
+    expect(catalog.mock.calls.slice(callsBeforeInstall).map(([params]) => params?.page))
       .toEqual([2])
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Готово' }))
@@ -369,7 +369,7 @@ describe('bounded catalog paging', () => {
       models: installed ? [installedModel('qwen3:8b', 'sha256:fixture')] : [],
     }))
     let gate: Promise<void> | null = null
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => {
       if (gate) await gate
       return response(params.page ?? 1, 25)
     })
@@ -417,7 +417,7 @@ describe('bounded catalog paging', () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     let gate: Promise<void> | null = null
     let failNext = false
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => {
       if (gate) await gate
       if (failNext) {
         failNext = false

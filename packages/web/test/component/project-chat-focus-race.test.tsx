@@ -58,7 +58,10 @@ beforeEach(() => {
     autoApproveTools: false,
     enableBash: false,
     prewarmEnabled: false,
-    webSearch: { provider: 'none', baseUrl: null, apiKey: null },
+    locale: 'en',
+    localeSource: 'default',
+    webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
+    theme: 'system',
   })
   vi.spyOn(api, 'listModels').mockResolvedValue({
     models: [{

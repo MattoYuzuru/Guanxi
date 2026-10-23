@@ -173,10 +173,10 @@ async function installFixture(page: Page, enabled = true): Promise<void> {
       }
 
       window.fetch = async (input, init) => {
-        const rawUrl = typeof input === 'string' ? input : input.url
+        const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         const url = new URL(rawUrl, window.location.origin)
         const method = (
-          init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET'
+          init?.method ?? (input instanceof Request ? input.method : undefined) ?? 'GET'
         ).toUpperCase()
         if (url.pathname === '/api/health') return json(health)
         if (url.pathname === '/api/runtime') return json(runtime)

@@ -29,7 +29,8 @@ function withLog(log: MockLog): Partial<SessionFeaturesFixture> {
       const side = /^\/api\/agent\/s1\/side-chat\/(respond|save|send)$/u.exec(url.pathname)
       const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
       if (url.pathname === '/api/sessions/s1/events' && method === 'GET') {
-        return void await json({ sessionId: 's1', events: log.events, nextAfter: log.events.length, lastSeq: log.events.length, hasMore: false }) ?? true
+        await json({ sessionId: 's1', events: log.events, nextAfter: log.events.length, lastSeq: log.events.length, hasMore: false })
+        return true
       }
       if (!side) return false
       const body = route.request().postDataJSON() as { operationId?: string; text?: string; requestId?: string; messages?: { role: string; text: string }[] }

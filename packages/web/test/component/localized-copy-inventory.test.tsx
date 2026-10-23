@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 // The inventory is an executable repository guard; keeping it in plain ESM also
-// lets maintainers run it without adding a browser build dependency.
-// @ts-expect-error plain ESM script intentionally has no declaration package
+// lets maintainers run it without adding a browser build dependency. Its types live
+// in the neighbouring localized-copy-inventory.d.mts.
 import {
   collectDynamicCopyViolations,
   collectLocalizedCopyViolations,

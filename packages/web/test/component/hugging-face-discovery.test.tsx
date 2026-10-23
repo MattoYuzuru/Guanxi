@@ -374,7 +374,7 @@ describe('Marketplace Hugging Face discovery section', () => {
       expect(alert.textContent).toMatch(/компьютер офлайн/u)
     } finally {
       if (online) Object.defineProperty(navigator, 'onLine', online)
-      else delete (navigator as Navigator & { onLine?: boolean }).onLine
+      else Reflect.deleteProperty(navigator, 'onLine')
     }
   })
 
@@ -1296,7 +1296,7 @@ describe('P2-L exact GGUF download projection', () => {
 
   it('collapses duplicate activation and cancels one connection-owned stream', async () => {
     let calls = 0
-    let signal: AbortSignal | null = null
+    const captured: { signal: AbortSignal | null } = { signal: null }
     const encoder = new TextEncoder()
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -1310,7 +1310,7 @@ describe('P2-L exact GGUF download projection', () => {
     vi.stubGlobal('fetch', routedFetch({
       download: (_body, currentSignal) => {
         calls += 1
-        signal = currentSignal
+        captured.signal = currentSignal
         return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
       },
     }))
@@ -1325,7 +1325,7 @@ describe('P2-L exact GGUF download projection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
     const cancelled = await screen.findByText('Скачивание отменено')
     expect(cancelled).toBeTruthy()
-    expect(signal?.aborted).toBe(true)
+    expect(captured.signal?.aborted).toBe(true)
     expect(screen.getByRole('button', { name: 'Скачать точный GGUF' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.textContent).toContain('Скачивание отменено'))
   })
@@ -1334,7 +1334,7 @@ describe('P2-L exact GGUF download projection', () => {
     let releaseOld!: () => void
     const oldGate = new Promise<void>((resolve) => { releaseOld = resolve })
     let calls = 0
-    let oldSignal: AbortSignal | null = null
+    const old: { signal: AbortSignal | null } = { signal: null }
     const encoder = new TextEncoder()
     const oldStream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -1358,7 +1358,7 @@ describe('P2-L exact GGUF download projection', () => {
       download: (_body, signal) => {
         calls += 1
         if (calls === 1) {
-          oldSignal = signal
+          old.signal = signal
           return new Response(oldStream, { headers: { 'content-type': 'text/event-stream' } })
         }
         return downloadEvents()
@@ -1372,7 +1372,7 @@ describe('P2-L exact GGUF download projection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Скачать точный GGUF' }))
     expect(await screen.findByText('Staging artifact скачан и проверен')).toBeTruthy()
     expect(calls).toBe(2)
-    expect(oldSignal?.aborted).toBe(true)
+    expect(old.signal?.aborted).toBe(true)
 
     releaseOld()
     await waitFor(() => {

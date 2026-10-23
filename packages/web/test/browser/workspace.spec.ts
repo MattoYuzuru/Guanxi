@@ -553,7 +553,12 @@ test('move cancellation and hiding return focus; existing tabs update with local
   await page.getByRole('menuitem', { name: 'Move block to…', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Block', exact: true })).toHaveText('Terminal')
   await page.keyboard.press('Escape')
-  await page.evaluate(async () => { const { requestBlockMove } = await import('/src/features/workspace/commands.ts'); requestBlockMove('guanxi.core/terminal') })
+  await page.evaluate(async () => {
+    // A Vite dev-server URL, imported in the page; the type comes from the same module on disk.
+    const commands = '/src/features/workspace/commands.ts'
+    const { requestBlockMove } = await import(/* @vite-ignore */ commands) as typeof import('../../src/features/workspace/commands.ts')
+    requestBlockMove('guanxi.core/terminal')
+  })
   await expect(page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Block', exact: true })).toHaveText('Terminal')
   await page.keyboard.press('Escape')
   await paneMove.click()
@@ -600,12 +605,19 @@ test('a restored popout reopens with device-local geometry on its same-origin pa
   await expect(page.getByLabel('Browser address draft', { exact: true })).toBeAttached()
 })
 
+/** Loads the plugin fixture in the page from its Vite dev-server URL; typed by the same module on disk. */
+async function loadWorkspacePluginFixture() {
+  const url = '/test/browser/fixtures/workspace-plugin.tsx'
+  const fixture = await import(/* @vite-ignore */ url) as typeof import('./fixtures/workspace-plugin.tsx')
+  await fixture.load()
+}
+
 test('loaded plugin panes become exact placeholders on unload and are ignored in safe mode', async ({ page }) => {
   const doc = builtInLayout({ account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' })
   doc.blocks['plugin-instance'] = { contribution: 'test.workspace/pane', pluginVersion: '0.1.0', priority: 12, params: {} }
   doc.engineState.groups[0]!.blocks.push('plugin-instance')
   await open(page, doc)
-  await page.evaluate(async () => { const fixture = await import('/test/browser/fixtures/workspace-plugin.tsx'); await fixture.load() })
+  await page.evaluate(loadWorkspacePluginFixture)
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(1)
   await page.evaluate(async () => { await (window as any).__GUANXI_KERNEL__.unload('test.workspace') })
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(0)
@@ -613,7 +625,7 @@ test('loaded plugin panes become exact placeholders on unload and are ignored in
   expect(Object.keys((await state(page)).blocks)).toHaveLength(12)
   await page.goto('/workspace?safe=1')
   await expect(page.locator('.workspace')).toBeVisible()
-  await page.evaluate(async () => { const fixture = await import('/test/browser/fixtures/workspace-plugin.tsx'); await fixture.load() })
+  await page.evaluate(loadWorkspacePluginFixture)
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Plugin blocks are disabled in safe mode.', { exact: true })).toHaveCount(1)
 })

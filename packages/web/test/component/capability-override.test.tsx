@@ -94,7 +94,8 @@ function model(patch: Partial<ModelDetail['descriptor']> = {}): ModelDetail {
 }
 
 function outcome(
-  patch: Partial<Extract<ModelCapabilityOverrideOutcome, { state: 'applied' }>> = {},
+  patch: Partial<Omit<Extract<ModelCapabilityOverrideOutcome, { state: 'applied' }>, 'state'>>
+    & { state?: 'applied' | 'cleared' | 'absent' } = {},
 ): ModelCapabilityOverrideResponse {
   return {
     outcome: {
@@ -122,11 +123,11 @@ function renderOverrides(
   return { view, onRefresh }
 }
 
-const clipboard = { writeText: vi.fn(async () => undefined) }
+const clipboard = { writeText: vi.fn(async (_text: string) => undefined) }
 
 beforeEach(() => {
   setActiveLocale('ru')
-  clipboard.writeText = vi.fn(async () => undefined)
+  clipboard.writeText = vi.fn(async (_text: string) => undefined)
   Object.defineProperty(navigator, 'clipboard', {
     value: clipboard,
     configurable: true,

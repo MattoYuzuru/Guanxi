@@ -8,6 +8,7 @@ function assistant(overrides: Partial<Message> = {}): Message {
   return {
     id: 'assistant-1',
     threadId: 'thread-1',
+    jobId: null,
     role: 'assistant',
     content: '',
     thinking: null,
