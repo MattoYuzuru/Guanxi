@@ -819,6 +819,90 @@ test('a real RelayStore verification_requested claim replays as premature_done',
   }
 })
 
+test('a recovery attempt keeps its own replay steps and is not stitched into attempt 1', () => {
+  const row = (
+    id: number,
+    attemptId: string,
+    attemptOrdinal: number,
+    phase: 'cycle_start' | 'pre_seal',
+    observedAt: number,
+    items: Record<string, string>
+  ): JudgeJournalRow => {
+    const observation = observationAt(observedAt)
+    return {
+      ...replayRow(1, { items, gates: [], head: 'h' }),
+      id,
+      attempt_id: attemptId,
+      attempt_ordinal: attemptOrdinal,
+      phase,
+      request_key: `${attemptId}-${phase}`,
+      observation: canonical(observation),
+      signals: canonical(evaluateJudgeSignals(observation, policy)),
+      started_at: observedAt,
+      finished_at: observedAt,
+      expires_at: observedAt + 1_000_000
+    }
+  }
+  const rows = [
+    row(4, 'attempt-2', 2, 'pre_seal', 4_000, { one: 'verification_requested' }),
+    row(2, 'attempt-1', 1, 'pre_seal', 2_000, { one: 'open' }),
+    row(3, 'attempt-2', 2, 'cycle_start', 3_000, { one: 'verification_requested' }),
+    row(1, 'attempt-1', 1, 'cycle_start', 1_000, { one: 'open' })
+  ]
+  const run = journalReplayRun(rows)
+  assert.equal(run.steps.length, 4, 'both attempts and both boundaries survive')
+  assert.deepEqual(
+    run.steps.map((step) => step.observation.observedAt),
+    [1_000, 2_000, 3_000, 4_000],
+    'attempt 1 completes before attempt 2 begins; no cross-attempt boundary is stitched'
+  )
+  assert.deepEqual(
+    run.steps.map((step) => step.claimsDone),
+    [undefined, undefined, true, true],
+    'claims stay with the attempt that produced them'
+  )
+})
+
+test('readRun orders journal rows by attempt ordinal before cycle and phase', () => {
+  const f = fixture()
+  try {
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: f.relay.clock })
+    f.db
+      .prepare(
+        "INSERT INTO run_attempts(id,run_id,ordinal,state,epoch,token) VALUES('attempt-2',?,2,'completed',1,1)"
+      )
+      .run(f.run.id)
+    const now = f.relay.clock()
+    const first = {
+      ...journalEntry(f.run.id, f.run.session_id, 'attempt-1-start', now + 100),
+      attemptId: f.attempt.id,
+      startedAt: now + 100,
+      finishedAt: now + 100
+    }
+    const second = {
+      ...journalEntry(f.run.id, f.run.session_id, 'attempt-2-start', now + 50),
+      attemptId: 'attempt-2',
+      startedAt: now + 50,
+      finishedAt: now + 50
+    }
+    store.record(second)
+    store.record(first)
+    f.db.prepare("UPDATE durable_runs SET state='completed' WHERE id=?").run(f.run.id)
+    const rows = store.readRun(f.run.id)
+    assert.deepEqual(
+      rows.map((item) => item.attempt_id),
+      [f.attempt.id, 'attempt-2'],
+      'attempt ordinal wins over the attempt-2 row having an earlier timestamp'
+    )
+    assert.deepEqual(
+      rows.map((item) => item.attempt_ordinal),
+      [1, 2]
+    )
+  } finally {
+    f.close()
+  }
+})
+
 test('plugin injection defaults to the journal, preserves explicit/null and is lazy without a cascade', () => {
   const injected = { record() {} }
   assert.equal(

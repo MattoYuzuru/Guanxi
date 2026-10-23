@@ -99,6 +99,8 @@ export interface JudgeJournalRow {
   run_id: string
   session_id: string
   attempt_id: string
+  /** Admission order from `run_attempts`; the replay reader never orders attempts by id. */
+  attempt_ordinal?: number
   cycle: number
   phase: string
   layer: string
@@ -225,7 +227,9 @@ export function journalReplayRun(
   const selected = new Map<string, JudgeJournalRow>()
   for (const row of rows) {
     if (!pickStep(row)) continue
-    const key = `${row.cycle}:${row.phase}`
+    // Request keys already include the attempt id; the replay selection must too, or a recovery
+    // attempt's boundary disappears and its sibling boundary attaches to the previous attempt.
+    const key = `${row.attempt_id}:${row.cycle}:${row.phase}`
     const prior = selected.get(key)
     if (
       !prior ||
@@ -234,8 +238,10 @@ export function journalReplayRun(
       selected.set(key, row)
     }
   }
+  const attemptOrder = (row: JudgeJournalRow): number => row.attempt_ordinal ?? 0
   const stepsInOrder = [...selected.values()].sort(
     (left, right) =>
+      attemptOrder(left) - attemptOrder(right) ||
       left.cycle - right.cycle ||
       PHASE_ORDER.indexOf(left.phase as (typeof PHASE_ORDER)[number]) -
         PHASE_ORDER.indexOf(right.phase as (typeof PHASE_ORDER)[number]) ||
@@ -403,9 +409,13 @@ export class JudgeJournalStore implements JudgeJournal {
     }
     const rows = this.db
       .prepare(
-        `SELECT * FROM relay_judge_journal
-         WHERE run_id=? AND expires_at > ?
-         ORDER BY cycle, started_at, id`
+        `SELECT j.*, a.ordinal AS attempt_ordinal
+         FROM relay_judge_journal j
+         LEFT JOIN run_attempts a ON a.id=j.attempt_id
+         WHERE j.run_id=? AND j.expires_at > ?
+         ORDER BY a.ordinal, j.cycle,
+           CASE j.phase WHEN 'cycle_start' THEN 0 WHEN 'pre_seal' THEN 1 ELSE 2 END,
+           j.started_at, j.id`
       )
       .all(runId, now) as unknown as JudgeJournalRow[]
     for (const row of rows) {
