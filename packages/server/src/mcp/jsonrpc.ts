@@ -61,7 +61,10 @@ export class JsonRpcConnection {
 
   private readonly pending = new Map<number, PendingRequest>()
   private nextId = 1
-  private buffer: Buffer = Buffer.alloc(0)
+  private chunks: Buffer[] = []
+  private bufferedBytes = 0
+  /** Absolute offset into `chunks` that has already been searched for a newline. */
+  private scannedBytes = 0
   private closed = false
 
   constructor(options: JsonRpcConnectionOptions) {
@@ -150,7 +153,7 @@ export class JsonRpcConnection {
     if (this.closed) return
     this.closed = true
     this.rejectPending(new McpError('mcp_closed', 'MCP connection closed'))
-    this.buffer = Buffer.alloc(0)
+    this.discardBuffer()
   }
 
   /** Called when the transport reports process exit. Never includes stderr. */
@@ -161,12 +164,16 @@ export class JsonRpcConnection {
   private readonly handleData = (chunk: Buffer | string): void => {
     if (this.closed) return
     const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk
-    this.buffer = this.buffer.length === 0 ? bytes : Buffer.concat([this.buffer, bytes])
+    if (bytes.length > 0) {
+      this.chunks.push(bytes)
+      this.bufferedBytes += bytes.length
+    }
 
-    let newline = this.buffer.indexOf(0x0a)
-    while (newline !== -1) {
-      let line = this.buffer.subarray(0, newline)
-      this.buffer = this.buffer.subarray(newline + 1)
+    for (;;) {
+      const newline = this.findNewline()
+      if (newline === -1) break
+      const framed = this.takeBuffered(newline + 1)
+      let line = framed.subarray(0, framed.length - 1)
       if (line.length > 0 && line[line.length - 1] === 0x0d) line = line.subarray(0, line.length - 1)
       if (line.length > this.maxMessageBytes) {
         this.fail(new McpError(
@@ -177,15 +184,58 @@ export class JsonRpcConnection {
       }
       if (line.length > 0) this.handleLine(line.toString('utf8'))
       if (this.closed) return
-      newline = this.buffer.indexOf(0x0a)
     }
 
-    if (this.buffer.length > this.maxMessageBytes) {
+    if (this.bufferedBytes > this.maxMessageBytes) {
       this.fail(new McpError(
         'mcp_message_too_large',
         `MCP message exceeded the ${this.maxMessageBytes}-byte limit`,
       ), true)
     }
+  }
+
+  /** Finds a newline without re-concatenating every buffered chunk. */
+  private findNewline(): number {
+    let base = 0
+    for (const chunk of this.chunks) {
+      const start = Math.max(0, this.scannedBytes - base)
+      if (start < chunk.length) {
+        const index = chunk.indexOf(0x0a, start)
+        if (index !== -1) return base + index
+      }
+      base += chunk.length
+    }
+    this.scannedBytes = this.bufferedBytes
+    return -1
+  }
+
+  /** Removes the leading `count` bytes, copying only when a frame spans chunks. */
+  private takeBuffered(count: number): Buffer {
+    let remaining = count
+    let wholeChunks = 0
+    while (wholeChunks < this.chunks.length && this.chunks[wholeChunks]!.length <= remaining) {
+      remaining -= this.chunks[wholeChunks]!.length
+      wholeChunks++
+    }
+    const parts = this.chunks.slice(0, wholeChunks)
+    if (remaining > 0) {
+      const head = this.chunks[wholeChunks]
+      if (head !== undefined) {
+        parts.push(head.subarray(0, remaining))
+        this.chunks[wholeChunks] = head.subarray(remaining)
+      }
+    }
+    this.chunks.splice(0, wholeChunks)
+    this.bufferedBytes -= count
+    this.scannedBytes = 0
+    if (parts.length === 1) return parts[0]!
+    return Buffer.concat(parts, count)
+  }
+
+  private discardBuffer(): void {
+    this.chunks = []
+    this.bufferedBytes = 0
+    this.scannedBytes = 0
   }
 
   private handleLine(line: string): void {
@@ -333,7 +383,7 @@ export class JsonRpcConnection {
     if (this.closed) return
     this.closed = true
     this.rejectPending(error)
-    this.buffer = Buffer.alloc(0)
+    this.discardBuffer()
     if (kill) {
       try {
         this.kill?.()

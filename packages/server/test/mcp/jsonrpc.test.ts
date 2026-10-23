@@ -23,6 +23,31 @@ async function expectCode(promise: Promise<unknown>, code: McpErrorCode): Promis
   assert.fail(`expected rejection with ${code}`)
 }
 
+it('frames a response split across many chunks', async () => {
+  const stdin = sink()
+  const stdout = new PassThrough()
+  const rpc = new JsonRpcConnection({
+    stdin,
+    stdout,
+    maxMessageBytes: 1024,
+    requestTimeoutMs: 1_000,
+  })
+  const pending = rpc.request('initialize')
+  const response = `${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    result: { ok: true, text: 'chunked'.repeat(20) },
+  })}\n`
+  for (let offset = 0; offset < response.length; offset += 3) {
+    stdout.write(response.slice(offset, offset + 3))
+  }
+
+  assert.deepEqual(await pending, { ok: true, text: 'chunked'.repeat(20) })
+  rpc.close()
+  stdin.destroy()
+  stdout.destroy()
+})
+
 it('fails an oversized frame before a newline arrives', async () => {
   const stdin = sink()
   const stdout = new PassThrough()
