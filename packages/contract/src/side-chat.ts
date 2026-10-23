@@ -94,21 +94,28 @@ export type SideChatSendResponse = z.infer<typeof sideChatSendResponseSchema>
 export const sideChatErrorCodeSchema = z.enum([
   'validation_failed', 'session_not_found', 'session_unavailable', 'session_busy', 'egress_unavailable',
   'context_too_large', 'connection_unavailable', 'quota_exhausted', 'model_failed', 'operation_conflict',
-  'cancelled', 'agent_unavailable',
+  'cancelled', 'agent_unavailable', 'budget_exhausted', 'too_many_requests', 'too_large',
 ])
 export type SideChatErrorCode = z.infer<typeof sideChatErrorCodeSchema>
 export const sideChatErrorSchema = z.object({
   code: sideChatErrorCodeSchema,
-  details: z.object({
-    /** UTF-8 bytes of everything that would be sent: instructions, context and the whole draft conversation. */
-    bytes: z.number().int().nonnegative(),
-    boundBytes: z.number().int().nonnegative(),
-    windowTokens: z.number().int().positive(),
-    outputTokens: z.number().int().nonnegative(),
-    source: z.string(),
-  }).strict().optional(),
+  details: z.union([
+    z.object({
+      /** UTF-8 bytes of everything that would be sent: instructions, context and the whole draft conversation. */
+      bytes: z.number().int().nonnegative(),
+      boundBytes: z.number().int().nonnegative(),
+      windowTokens: z.number().int().positive(),
+      outputTokens: z.number().int().nonnegative(),
+      source: z.string(),
+    }).strict(),
+    /** `too_large` on Save: the encoded transcript and the explicit bound it exceeded. */
+    z.object({ bytes: z.number().int().nonnegative(), boundBytes: z.number().int().nonnegative() }).strict(),
+  ]).optional(),
 }).strict()
 export type SideChatError = z.infer<typeof sideChatErrorSchema>
+
+/** Explicit bound on one saved transcript (UTF-8 bytes of the encoded note). Larger chats are refused, never truncated. */
+export const SIDE_CHAT_SAVE_MAX_BYTES = 256 * 1024
 
 /** The saved transcript as stored in the `agent.note` text. Key order is fixed. */
 export const sideChatSavedNoteSchema = z.object({

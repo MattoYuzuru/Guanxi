@@ -1,6 +1,6 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, realpath, stat, lstat, writeFile, rm, open } from 'node:fs/promises'
 import { resolve, join, sep, dirname } from 'node:path'
 import {
@@ -14,7 +14,7 @@ import {
   type SessionInputArtifactRef,
   type SessionEventDataV2,
   nativeRunBudgetSchema,
-  promptTextOf, sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema, encodeSideChatSavedNote,
+  promptTextOf, SIDE_CHAT_SAVE_MAX_BYTES, sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema, encodeSideChatSavedNote,
   type SideChatRespondResponse, type SideChatSaveResponse, type SideChatSendResponse,
 } from '@guanxi/contract'
 import { RunStore } from '../runs/store.ts'
@@ -29,7 +29,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { Connections } from '../connections/service.ts'
 import { assertRootsClean } from './cleanup.ts'
 import { selectedModel, connectionStream, emptyUsage } from './model.ts'
-import { runSideChat, SideChatError, sideChatMessageId } from './side-chat.ts'
+import { runSideChat, SideChatError, sideChatConcurrencyFromEnv, sideChatMessageId } from './side-chat.ts'
 import { orientation } from './orientation.ts'
 import type { ProjectIndexService } from '../indexing/plugin.ts'
 import { nativeTools } from './tools.ts'
@@ -63,6 +63,9 @@ async function rejectUnresolvedLinks(path: string): Promise<void> {
 }
 export class NativeAgents {
   private preparing = new Set<string>()
+  /** In-flight side-chat `respond` requests per session, bounded by `sideChatConcurrency`. */
+  private sideChatInFlight = new Map<string, number>()
+  sideChatConcurrency = sideChatConcurrencyFromEnv(process.env)
   private active = new Map<string, Active>()
   private closed = false
   private projectRoots: NativeProjectRoots
@@ -338,13 +341,25 @@ export class NativeAgents {
     const { events, input } = this.sideChatSession(id)
     let model: ReturnType<typeof selectedModel>
     try { model = selectedModel(this.connections, input) } catch { throw new SideChatError('connection_unavailable') }
-    return runSideChat({ connections: this.connections, scrubber: this.scrubber, model, input, events, request, signal })
+    // One slot per request, released when the provider call settles (including a client abort).
+    const running = this.sideChatInFlight.get(id) ?? 0
+    if (running >= this.sideChatConcurrency) throw new SideChatError('too_many_requests')
+    this.sideChatInFlight.set(id, running + 1)
+    try {
+      return await runSideChat({ sessionId: id, budget: input.budget, connections: this.connections, scrubber: this.scrubber, model, input, events, request, signal })
+    } finally {
+      const left = (this.sideChatInFlight.get(id) ?? 1) - 1
+      if (left <= 0) this.sideChatInFlight.delete(id); else this.sideChatInFlight.set(id, left)
+    }
   }
   /** Appends one history-only `agent.note`; the same operation id and content never appends twice. */
   async sideChatSave(id: string, raw: unknown): Promise<SideChatSaveResponse> {
     const request = sideChatSaveRequestSchema.parse(raw)
     this.sideChatSession(id)
     const input = { type: 'agent.note' as const, data: { text: encodeSideChatSavedNote(request.operationId, request.messages) } }
+    // An explicit bound, never a silent cut: a transcript this large is refused so the caller can keep it elsewhere.
+    const encodedBytes = Buffer.byteLength(input.data.text, 'utf8')
+    if (encodedBytes > SIDE_CHAT_SAVE_MAX_BYTES) throw new SideChatError('too_large', { bytes: encodedBytes, boundBytes: SIDE_CHAT_SAVE_MAX_BYTES })
     const options = { idempotencyKey: `side-chat-save:${request.operationId}` }
     try {
       const queue = this.active.get(id)?.queue ?? null
@@ -373,33 +388,38 @@ export class NativeAgents {
     // The receipt is the durable log, never process memory: a recorded prompt (consumed) or a pending queue item.
     const receipt = () => {
       const prompt = this.log.readAll(id, 'remote_agent').find(event => event.type === 'prompt' && event.data.messageId === messageId)
-      if (prompt?.type === 'prompt') return { kind: 'prompt' as const, text: promptTextOf(prompt), excerpt: prompt.version !== SESSION_EVENT_VERSION }
+      if (prompt?.type === 'prompt') {
+        // Short prompts are stored inline and compared exactly; long ones are stored as an artifact, so the
+        // stored checksum of the full scrubbed text is compared, never a bounded excerpt.
+        const same = prompt.version === SESSION_EVENT_VERSION ? prompt.data.text === incoming
+          : prompt.data.artifact.checksum === `sha256:${createHash('sha256').update(incoming, 'utf8').digest('hex')}`
+        return { kind: 'prompt' as const, same }
+      }
       const item = this.progress(id).queue.find(entry => entry.id === messageId)
-      return item ? { kind: 'queued' as const, text: item.text, excerpt: false } : null
+      return item ? { kind: 'queued' as const, same: item.text === incoming } : null
     }
-    const sameContent = (found: NonNullable<ReturnType<typeof receipt>>) => found.excerpt ? incoming.startsWith(found.text) : found.text === incoming
     try {
       const found = receipt()
-      if (found && !sameContent(found)) throw new SideChatError('operation_conflict')
+      if (found && !found.same) throw new SideChatError('operation_conflict')
       if (found?.kind === 'prompt') return answer('already_sent', true)
       // A pending item is only a receipt while a turn can still consume it. With nothing running
       // (the turn was stopped, failed or the node restarted) it falls through to a fresh start, whose
       // prompt id is the same, so the stale item is filtered as consumed instead of waiting forever.
       if (found?.kind === 'queued' && this.active.has(id)) return answer('queued', true)
-      if (this.active.has(id)) {
-        try {
-          if ((await this.queue(id, request.text, true, messageId)) === 'queued') return answer('queued', false)
-          return receipt()?.kind === 'prompt' ? answer('already_sent', true) : answer('queued', true)
-        } catch (error) {
-          // The turn is between its final append and its teardown; the caller retries. Starting a new
-          // turn here would race the old one for the writer.
-          const code = error instanceof Error && 'code' in error ? error.code : ''
-          if (code !== 'session_not_running' && code !== 'trace_sealed') throw error
-          if (this.active.has(id)) throw new NativeAgentError('session_busy')
-        }
+      try {
+        // `prompt` decides under its own checks whether a turn started or the text was queued, so the
+        // answer reports what actually happened even if a turn became active since the checks above.
+        const outcome = await this.prompt(id, request.text, messageId)
+        if (outcome === 'started') return answer('started', false)
+        if (outcome === 'queued') return answer('queued', false)
+        return receipt()?.kind === 'prompt' ? answer('already_sent', true) : answer('queued', true)
+      } catch (error) {
+        // The turn is between its final append and its teardown; the caller retries. Starting a new
+        // turn here would race the old one for the writer.
+        const code = error instanceof Error && 'code' in error ? error.code : ''
+        if (code === 'session_not_running' || code === 'trace_sealed') throw new NativeAgentError('session_busy')
+        throw error
       }
-      await this.prompt(id, request.text, messageId)
-      return answer('started', false)
     } catch (error) { throw this.sideChatFailure(error) }
   }
   leaveSession(id: string) { this.ready(); this.runs.heartbeat(); return this.sessions.leave(id) }
@@ -412,11 +432,12 @@ export class NativeAgents {
     try { await this.sessions.remove(id) } catch (error) { throw new NativeAgentError(error instanceof Error && ['session_busy','writer_busy','session_not_found','cleanup_unconfirmed'].includes('code' in error ? String(error.code) : error.message) ? ('code' in error ? String(error.code) : error.message) : 'deletion_failed') }
     return { sessionId: id, deleted: true as const }
   }
-  async prompt(id: string, text: string, messageId?: string) {
+  /** Reports what happened: a turn started, the text was queued behind a running one, or the id was already queued or sent. */
+  async prompt(id: string, text: string, messageId?: string): Promise<'started' | 'queued' | 'duplicate'> {
     this.ready()
     this.runs.heartbeat()
     this.sessions.assertAvailable(id)
-    if (this.active.has(id)) { await this.queue(id, text, true, messageId); return }
+    if (this.active.has(id)) return this.queue(id, text, true, messageId)
     const events = this.events(id)
     const event = events.find(e => e.type === 'agent.policy')!
     if (event.type !== 'agent.policy') throw new NativeAgentError('session_not_found')
@@ -435,6 +456,7 @@ export class NativeAgents {
       throw error
     }
     this.launch(id, input, policy, handle, text, history, messageId)
+    return 'started'
   }
   private attempt(id: string, input: NativeAgentInput) {
     this.runs.heartbeat()

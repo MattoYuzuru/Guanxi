@@ -12,7 +12,7 @@ import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import type { AssistantMessage, Context, Message, Model, Api } from '@earendil-works/pi-ai'
 import {
   promptTextOf, SESSION_EVENT_VERSION, type NativeAgentInput, type SessionEvent, type SideChatContextFacts, type SideChatErrorCode,
-  type SideChatError as SideChatErrorBody, type SideChatMessage, type SideChatRespondRequest, type SideChatRespondResponse,
+  type NativeRunBudget, type SideChatError as SideChatErrorBody, type SideChatMessage, type SideChatRespondRequest, type SideChatRespondResponse,
 } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -67,6 +67,10 @@ export const MESSAGE_FRAMING_BYTES = 16
 const escapeTranscript = (text: string) => text.replaceAll('</session_transcript', '<\\/session_transcript')
 
 export interface SideChatRun {
+  /** The native session being read; receipts are keyed to it so its spend is attributable. */
+  sessionId: string
+  /** The session's immutable run budget (per-run in the native model); a side chat gets one budget-worth per session. */
+  budget?: NativeRunBudget | undefined
   connections: Connections
   scrubber: EgressScrubber
   model: Model<Api>
@@ -79,11 +83,42 @@ export interface SideChatRun {
 
 const textOf = (message: AssistantMessage) => message.content.filter(part => part.type === 'text').map(part => part.text).join('\n')
 
+/**
+ * Native budgets are per run and a side chat has no run, so each limit is applied to the
+ * cumulative side-chat spend of this session (K3 receipts under `side-chat:<session>:`). The check
+ * happens before dispatch from completed receipts; a request canceled after the provider billed it
+ * leaves no receipt (K3 under-accounting), which is a known residual. A cost that is unknown cannot be
+ * proven to stay inside a money limit, so it refuses, as the run budget does.
+ */
+export function assertWithinBudget(budget: NativeRunBudget | undefined, costs: readonly { runId: string; inputTokens: number | null; outputTokens: number | null; costUsd: number | null }[], sessionId: string): void {
+  if (!budget || (budget.maxModelCalls === undefined && budget.maxTokens === undefined && budget.maxCostMicrounits === undefined)) return
+  const prefix = `side-chat:${sessionId}:`
+  const mine = costs.filter(cost => cost.runId.startsWith(prefix) && /^[0-9a-f-]{36}$/u.test(cost.runId.slice(prefix.length)))
+  const tokens = mine.reduce((sum, cost) => sum + (cost.inputTokens ?? 0) + (cost.outputTokens ?? 0), 0)
+  const microunits = mine.reduce((sum, cost) => sum + Math.round((cost.costUsd ?? 0) * 1_000_000), 0)
+  if ((budget.maxModelCalls !== undefined && mine.length >= budget.maxModelCalls)
+    || (budget.maxTokens !== undefined && tokens >= budget.maxTokens)
+    || (budget.maxCostMicrounits !== undefined && (microunits >= budget.maxCostMicrounits || mine.some(cost => cost.costUsd === null)))) {
+    throw new SideChatError('budget_exhausted')
+  }
+}
+
+/** Concurrent `respond` requests allowed per session; `GUANXI_SIDE_CHAT_MAX_CONCURRENT`, default 1 (requests are serialised). */
+export const SIDE_CHAT_CONCURRENCY_ENV = 'GUANXI_SIDE_CHAT_MAX_CONCURRENT'
+export const SIDE_CHAT_DEFAULT_CONCURRENCY = 1
+export function sideChatConcurrencyFromEnv(env: Record<string, string | undefined>): number {
+  const raw = env[SIDE_CHAT_CONCURRENCY_ENV]
+  if (raw === undefined || raw === '') return SIDE_CHAT_DEFAULT_CONCURRENCY
+  if (!/^[1-9][0-9]{0,2}$/u.test(raw)) throw new Error(`${SIDE_CHAT_CONCURRENCY_ENV} must be a positive integer up to 999`)
+  return Number(raw)
+}
+
 export async function runSideChat(run: SideChatRun): Promise<SideChatRespondResponse> {
   const { model, input, request } = run
   const rendered = renderSessionContext(run.events, request.context)
   const connection = run.connections.snapshot('local').connections.find(item => item.id === input.connectionId)
   if (!connection) throw new SideChatError('connection_unavailable')
+  assertWithinBudget(run.budget, run.connections.snapshot('local').costs, run.sessionId)
   const systemPrompt = rendered.facts.include === 'none' ? INSTRUCTIONS
     : `${INSTRUCTIONS}${rendered.facts.excerpted > 0 ? `\n${EXCERPT_NOTE}` : ''}\n<session_transcript upToSeq="${rendered.facts.upToSeq}">\n${escapeTranscript(rendered.text)}\n</session_transcript>`
   // A byte is at least one token, so total bytes <= bound proves the whole request fits; a larger
@@ -108,7 +143,7 @@ export async function runSideChat(run: SideChatRun): Promise<SideChatRespondResp
   // The client's request id only correlates the response; the K3 usage receipt is keyed by a fresh
   // id so a retried request is never rejected as a conflicting receipt after the provider billed it.
   const meter = randomUUID()
-  const call = { runId: `side-chat:${meter}`, requestId: meter, signal: run.signal }
+  const call = { runId: `side-chat:${run.sessionId}:${meter}`, requestId: meter, signal: run.signal }
   let reply: AssistantMessage
   try {
     if (connection.kind === 'model_api') {

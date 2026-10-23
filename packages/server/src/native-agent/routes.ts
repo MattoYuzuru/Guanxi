@@ -9,7 +9,7 @@ const text = nativeAgentPromptSchema
 export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins: readonly string[] = []) {
   const app = new Hono()
   const status = { session_not_found: 404, session_unavailable: 409, session_busy: 409, operation_conflict: 409, context_too_large: 413, validation_failed: 400,
-    quota_exhausted: 429, cancelled: 499, model_failed: 502, connection_unavailable: 503, egress_unavailable: 503, agent_unavailable: 503 } as const
+    budget_exhausted: 429, too_many_requests: 429, too_large: 413, quota_exhausted: 429, cancelled: 499, model_failed: 502, connection_unavailable: 503, egress_unavailable: 503, agent_unavailable: 503 } as const
   app.onError((error, c) => {
     if (error instanceof SideChatError) return c.json({ code: error.code, ...(error.details ? { details: error.details } : {}) }, status[error.code] as 400)
     return c.json({ code: error instanceof NativeAgentError ? error.code : error instanceof z.ZodError || error instanceof SyntaxError ? 'validation_failed' : 'agent_unavailable' },
