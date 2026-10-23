@@ -9,6 +9,7 @@ import { CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
 import type { Connections } from '../../src/connections/service.ts'
 import { EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../../src/external-agents/plugin.ts'
 import { start } from '../../src/index.ts'
+import { describeConfigError } from '../../src/ms1-live/checks.ts'
 import { Ms1LiveNode } from '../../src/ms1-live/boot.ts'
 import { loadMs1LiveConfig, Ms1LiveError, parseMs1LiveConfig, type Ms1LiveSettings } from '../../src/ms1-live/config.ts'
 import type { VaultKeychain } from '../../src/vault/keychain.ts'
@@ -202,7 +203,7 @@ test('the command explains a lead without a key by code, field and summary, and 
   assert.equal(result.code, 2)
   const event = JSON.parse(result.out.split('\n').at(-1)!)
   assert.deepEqual([event.event, event.code, event.field], ['failed', 'lead_key_missing', 'home.lead.providerKeysFile'])
-  assert.match(event.summary, /No key or token is available/)
+  assert.match(event.summary, /No credential is available/)
   await assert.rejects(fetch(`http://127.0.0.1:${api}/api/health`), 'the owner API listener is closed')
 })
 
@@ -376,4 +377,44 @@ test('end to end through the start command\'s lead set-up: the fixture agent rec
       const bytes = readFileSync(path); assert.equal(bytes.includes(secret), false, path); assert.equal(bytes.includes(secret.slice(-20)), false, path)
     }
   }
+})
+
+test('doctor names the failing variable and the family it saw (a label, never characters beyond the known prefixes), and what to remove', async t => {
+  const w = await pair(t)
+  const run = async (text: string | null, mode: 'api_key' | 'oauth_token') => {
+    w.settings(config => { config.home.lead.auth = mode; if (text === null) delete config.home.lead.providerKeysFile })
+    if (text !== null) writeKeys(w.keyFile, text)
+    const result = await cli(['doctor', '--config', join(w.home, 'ms1-live.json'), '--json'], { HOME: w.root })
+    const secrets = [...text?.matchAll(/=(\S+)/g) ?? []].map(match => match[1]!)
+    for (const secret of secrets) { assert.equal(result.out.includes(secret), false, 'no value'); assert.equal(result.out.includes(secret.slice(-12)), false, 'no tail') }
+    return (JSON.parse(result.out) as { checks: Array<{ id: string; code?: string; summary: string; fix?: string }> }).checks.find(check => check.id === 'lead_key')!
+  }
+  const tail = 'ZQXJWV7777abcdefABCDEF'
+  // The owner's case: a value that is neither family. Both modes say which variable and what it starts with.
+  let check = await run(`ANTHROPIC_API_KEY=sk-ant-zzz-${tail}\n`, 'oauth_token')
+  assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>/)
+  check = await run(`ANTHROPIC_API_KEY=sk-ant-zzz-${tail}\n`, 'api_key')
+  assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>, not sk-ant-api/)
+  check = await run(`ANTHROPIC_API_KEY=plain-${tail}\n`, 'api_key')
+  assert.match(check.summary, /starts with not sk-ant/)
+  check = await run(`CLAUDE_CODE_OAUTH_TOKEN=sk-ant-api03-${tail}\n`, 'oauth_token')
+  assert.match(check.summary, /CLAUDE_CODE_OAUTH_TOKEN starts with sk-ant-api/)
+  // A subscription token where an API key is wanted says so, and says which setting takes it.
+  check = await run(`ANTHROPIC_API_KEY=sk-ant-oat01-${tail}\n`, 'api_key')
+  assert.match(check.summary, /starts with sk-ant-oat/); assert.match(check.fix!, /oauth_token/)
+  // Both names holding the token: the duplicate is named, with the line to remove.
+  check = await run(`CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-${tail}\nANTHROPIC_API_KEY=sk-ant-oat01-${tail}x\n`, 'oauth_token')
+  assert.equal(check.code, 'lead_key_duplicate'); assert.match(check.summary, /ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN/); assert.match(check.fix!, /Remove the ANTHROPIC_API_KEY line/)
+  // With no file in token mode, the hint does not send the owner to a command that cannot import the token.
+  check = await run(null, 'oauth_token')
+  assert.equal(check.code, 'lead_key_file_not_given'); assert.match(check.fix!, /cannot import the subscription token/)
+  check = await run(null, 'api_key')
+  assert.match(check.fix!, /connections import/)
+})
+
+test('refusal summaries say what each mode needs', () => {
+  const text = (code: string) => describeConfigError(new Ms1LiveError(code, 'home.lead.connection'))
+  assert.match(text('lead_key_missing'), /api_key:.*ANTHROPIC_API_KEY.*oauth_token:.*CLAUDE_CODE_OAUTH_TOKEN/)
+  assert.match(text('lead_connection_ambiguous'), /oauth_token: Claude Code token connections/)
+  assert.match(text('lead_connection_invalid'), /oauth_token needs a Claude Code connection/)
 })

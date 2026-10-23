@@ -69,10 +69,14 @@ export async function importProviderKeysFile(connections: Connections, accountId
   }
 }
 
+/** Which family a credential belongs to, as a label only: the known prefixes and never a character beyond them. */
+export function keyFamily(value: string): 'sk-ant-api' | 'sk-ant-oat' | 'sk-ant-<other>' | 'not sk-ant' {
+  return value.startsWith('sk-ant-api') ? 'sk-ant-api' : value.startsWith('sk-ant-oat') ? 'sk-ant-oat' : value.startsWith('sk-ant-') ? 'sk-ant-<other>' : 'not sk-ant'
+}
 /** Diagnostics for an owner-designated key file (the MS1 doctor): which providers it would import and which supported names are invalid,
  * plus its file mode. Never a value, and nothing is imported. */
 export function inspectProviderKeysFile(file: string, options: KeyFileOptions = {}):
-  { kind: 'unreadable' } | { kind: 'invalid' } | { kind: 'ok'; providers: string[]; invalid: string[]; mode: number } {
+  { kind: 'unreadable' } | { kind: 'invalid' } | { kind: 'ok'; providers: string[]; invalid: string[]; mode: number; families: Record<string, ReturnType<typeof keyFamily>> } {
   let text: string, mode: number
   try {
     const stat = statSync(file)
@@ -82,6 +86,9 @@ export function inspectProviderKeysFile(file: string, options: KeyFileOptions = 
   } catch { return { kind: 'unreadable' } }
   try {
     const { entries, errors } = parseProviderKeyFile(text, options)
-    return { kind: 'ok', providers: entries.map(entry => entry.provider), invalid: errors.map(error => error.key), mode }
+    const data = parseEnv(text.replace(/^\uFEFF/, ''))
+    const families: Record<string, ReturnType<typeof keyFamily>> = {}
+    for (const name of ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) if (data[name]) families[name] = keyFamily(data[name]!)
+    return { kind: 'ok', providers: entries.map(entry => entry.provider), invalid: errors.map(error => error.key), mode, families }
   } catch { return { kind: 'invalid' } }
 }
