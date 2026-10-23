@@ -16,6 +16,12 @@
   outline: none;
 }
 
+/* A popover that scrolls is a focusable region (tabIndex 0): keyboard focus on it is visible (P3). */
+.gx-popover[tabindex='0']:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .gx-popover-title {
   margin: 0;
   font-size: var(--font-size-13);

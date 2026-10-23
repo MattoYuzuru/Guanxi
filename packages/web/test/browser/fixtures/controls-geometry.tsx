@@ -22,6 +22,9 @@ function Fixture() {
       <div data-testid="icon-buttons" style={{ display: 'flex', gap: 16 }}>
         {(['sm', 'md'] as const).map(size => <IconButton key={size} size={size} label={`Icon ${size}`} data-testid={`icon-${size}`} icon={<Icon name="settings" />} />)}
         <StatusItem icon="memory-unified" label="Memory" data-testid="status-icon" />
+        <StatusItem icon="runtime" label="Runtime" wide align="start" data-testid="status-wide">
+          <ul>{Array.from({ length: 40 }, (_, index) => <li key={index}>Fact {index + 1}</li>)}</ul>
+        </StatusItem>
       </div>
       <SegmentedControl label="Density" value={density} onValueChange={setDensity}
         options={[{ value: 'compact', label: 'Compact' }, { value: 'comfortable', label: 'Comfortable' }]} />
