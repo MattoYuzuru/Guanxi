@@ -757,3 +757,16 @@ test('concurrent counts per peer are capped by a named policy setting, and the s
   const refused = await f.target.app.request(new Request('https://x.invalid/api/federation/attempts/runtime/count', { method: 'POST' }))
   assert.equal(refused.status, 401)
 })
+
+test('a result too large for one signed message fails fast with a typed reason instead of waiting out the call deadline', async t => {
+  const f = await remoteFixture(t, { fake: { replies: ['w '.repeat(600_000)] } }), r = await f.relay()
+  const started = Date.now()
+  assert.equal(await code(r.call('Produce more than a message can carry.')), 'provider_failed')
+  assert.ok(Date.now() - started < 5000, 'the executor reported the refusal instead of retrying an undeliverable result')
+  const [terminal] = terminals(f)
+  assert.equal(terminal!.outcome, 'failed'); assert.equal(terminal!.reason, 'result_too_large'); assert.equal(terminal!.content, '')
+  assert.ok(terminal!.inputTokens! > 0, 'the usage that was spent is still reported')
+  const child = grants(f.sent)[0]!.offer.runId
+  assert.equal(f.home.runs.get(child).state, 'failed')
+  assert.equal(f.costs(child).length, 1)
+})

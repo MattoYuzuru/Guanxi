@@ -8,7 +8,7 @@ import type { Attempt, HomeFence, Synchronous } from '../runs/types.ts'
 import type { Connections } from '../connections/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import type { AttemptOffers } from './offers.ts'
-import { canonical, hash, signValue, FederationError } from '../federation/crypto.ts'
+import { canonical, hash, signValue, FederationError, FEDERATION_BODY_BYTES } from '../federation/crypto.ts'
 import { sha256Hex, type ExecutorRelayRuntime } from './relay-runtime.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 
@@ -34,6 +34,8 @@ interface HomeRow { id: string; offer: string; job: string; attempt: string; gra
 interface Holder { ttlMs: number; grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
   timer?: ReturnType<typeof setTimeout>; renewTimer?: ReturnType<typeof setTimeout>; refresh?: Promise<void> }
 const ZERO = '0'.repeat(64)
+/** Room for the signature, hash and reference around a terminal event's content in one federation body. */
+const RESULT_ENVELOPE_BYTES = 8 * 1024
 
 /** Optional local inference protocol; all methods are host-owned, wire identity is checked by F1. */
 export class AttemptDispatch {
@@ -331,7 +333,15 @@ export class AttemptDispatch {
       // The evaluated rendering and token count must be the counted ones; the transport has already refused otherwise.
       const evaluated = expected?.evidence()?.renderedSha256
       if (counted && (evaluated !== counted.renderedSha256 || result.prompt_eval_count !== counted.tokens)) throw new FederationError('truncation_protocol')
-      this.emit(h, { kind: 'terminal', outcome: 'completed', content: result.message?.content ?? '', inputTokens: result.prompt_eval_count ?? null,
+      const content = result.message?.content ?? ''
+      // The signed event is one HTTP body. A result that cannot be delivered would be retried forever while the home
+      // waits out its deadline, so the executor reports a typed refusal (and the usage it spent) instead.
+      if (Buffer.byteLength(JSON.stringify(content)) > FEDERATION_BODY_BYTES - RESULT_ENVELOPE_BYTES) {
+        this.emit(h, { kind: 'terminal', outcome: 'failed', content: '', inputTokens: result.prompt_eval_count ?? null, outputTokens: result.eval_count ?? null, source, reason: 'result_too_large' })
+        this.setStatus(g.id, 'failed')
+        return
+      }
+      this.emit(h, { kind: 'terminal', outcome: 'completed', content, inputTokens: result.prompt_eval_count ?? null,
         outputTokens: result.eval_count ?? null, source, ...(evaluated ? { renderedSha256: evaluated } : {}),
         ...(counted && result.done_reason ? { doneReason: result.done_reason === 'length' ? 'length' as const : 'stop' as const } : {}) })
       this.setStatus(g.id, 'completed')
