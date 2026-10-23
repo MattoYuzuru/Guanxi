@@ -741,3 +741,19 @@ test('freshness uses the home send time: an executor clock that is ahead or behi
     assert.throws(() => r.model.count(`Skewed by ${skew}.`), /runtime_observation_stale/)
   }
 })
+
+test('concurrent counts per peer are capped by a named policy setting, and the slot is released afterwards', async t => {
+  const f = await remoteFixture(t, { relayLimits: { maxConcurrentCountsPerPeer: 1 } }), r = await f.relay(), channel = f.channel('home')
+  const binding = { homeNodeId: 'home', executorNodeId: 'target', model: 'fixture',
+    run: { runId: 'relay', sessionId: 'relay-session', fence: { attemptId: r.attempt.id, epoch: r.attempt.epoch, token: r.attempt.token } } }
+  await f.fake.configure({ tokenizeDelayMs: 300 })
+  const first = channel.relayCount({ binding, challenge: 'k1', content: 'first concurrent' })
+  await until(async () => (await f.fake.count('/tokenize')) > 0)
+  assert.equal(await code(channel.relayCount({ binding, challenge: 'k2', content: 'second concurrent' })), 'peer_refused')
+  assert.equal((await first).count!.tokens, exact('first concurrent'))
+  await f.fake.configure({ tokenizeDelayMs: 0 })
+  assert.equal((await channel.relayCount({ binding, challenge: 'k3', content: 'after release' })).count!.tokens, exact('after release'))
+  assert.equal(f.sent.filter(s => s.path === '/attempts/runtime/count').length >= 4, true)
+  const refused = await f.target.app.request(new Request('https://x.invalid/api/federation/attempts/runtime/count', { method: 'POST' }))
+  assert.equal(refused.status, 401)
+})
