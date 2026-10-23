@@ -116,7 +116,21 @@ control (errno and plain-socket control added); listener could miss a datagram q
 
 ## Gates
 
-Filled in after the final run, see the end of this file.
+All on source `d0defc8c` (clean tree, source unchanged during each run), Node 26.9.0:
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck --workspace @guanxi/server` | clean (no TypeScript errors) |
+| `npx eslint` on the five changed `.ts` files | exit 0, no findings |
+| `npm run lint:md` | 0 markdownlint errors, 292 files / 777 links, 0 link problems |
+| `npm run check:licenses` | 675 packages, 0 not allowed (no dependency or copied code added) |
+| `agent-dev ... --resource heavy -- npm run test` | `ok: true`, exit 0; receipt `~/.local/state/agent-dev/check-exxo30g8/result.json`; the server suite reports 2968 tests, 2966 pass, 0 fail, 2 skipped (two Linux-only tests: sandbox worker nice level, long-TMPDIR proxy startup) |
+| `agent-dev ... --resource heavy -- npm run build` | `ok: true`, exit 0; receipt `~/.local/state/agent-dev/check-uh_4zq54/result.json` |
+
+A first full run on `b40b5ee7` also exited 0 but the tree changed under it (receipt
+`check-7hzvrj8i`, `source_changed: true`), so it is not credited. The G12 base variable was not
+needed. Direct runs of the new files on the lane machine: `seccomp.test.ts` 11/11,
+`seccomp-kernel.test.ts` 13/13 (0 skipped), the two new `sandbox.test.ts` cases 2/2.
 
 ## Residual risks
 
