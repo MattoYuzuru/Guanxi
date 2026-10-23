@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
+import { generateKeyPairSync } from 'node:crypto'
 import { Hono } from 'hono'
 import { byteHash, canonical, probes, render } from '../../src/relay/handoff.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
@@ -23,8 +24,9 @@ import { DEFAULT_RELAY_LIMITS } from '../../src/relay/types.ts'
 import type { RelayDelegationBrief, JudgeRole } from '../../src/relay/delegation-brief.ts'
 import { score } from '../../src/relay/judge-replay.ts'
 import { buildWakePacket } from '../../src/leads/packet.ts'
-import type { ChildReport } from '../../src/leads/types.ts'
-import { signedDispatchGrantSchema } from '@guanxi/contract/federation'
+import { relayStartsChildReporter } from '../../src/leads/children.ts'
+import { AttemptDispatch } from '../../src/remote-attempts/dispatch.ts'
+import { signedDispatchGrantSchema, type LocalInferenceJob } from '@guanxi/contract/federation'
 import { sessionLogRoutes } from '../../src/session-log/routes.ts'
 import { cascadeWithJournal, relayPlugin, type RelayService } from '../../src/relay/plugin.ts'
 import { sessionExportSchema } from '@guanxi/contract'
@@ -592,10 +594,14 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
     for (const method of ['log', 'info', 'debug', 'trace', 'error', 'warn'] as const) {
       t.mock.method(console, method, capture)
     }
+    const workspace = {
+      ...f.workspace,
+      observe: async () => ({ ...(await f.workspace.observe(plan.base, plan.base)), files: [CANARY_PATH] })
+    }
     const executor = new RelayExecutor(
       f.relay,
       f.model,
-      f.workspace,
+      workspace,
       reserves,
       f.scrubber,
       DEFAULT_RELAY_LIMITS,
@@ -616,16 +622,16 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
     assert.match(journal, new RegExp(CANARY_PATH))
     assert.doesNotMatch(journal, new RegExp(CANARY_SECRET))
 
-    const report: ChildReport = {
-      items: [{ id: 'one', title: 'fixture item', status: 'done' }],
-      gates: [{ item: 'one', ok: true, head: plan.base, output: 'fixture pass' }],
-      head: plan.base,
-      diffstat: '',
-      handoff: { ref: 'run:fixture/cycles/1/handoff', cycle: 1 },
-      narrative: 'ordinary narrative',
-      openQuestions: [],
-      metrics: { cycles: 1, tokens: 10, moneyMicros: 1 }
-    }
+    // Wake through the real child reporter over the finished run's ledger. The journal canary
+    // path is also in ledger.files, so a producer that starts carrying that field fails here.
+    const reporter = relayStartsChildReporter(
+      { status: () => ({ runId: f.run.id, status: 'completed' }) as never },
+      { read: (id: string) => f.relay.read(id) }
+    )
+    const report = reporter.report(f.run.id)
+    assert.ok(report)
+    const ledger = f.relay.read(f.run.id)
+    assert.equal(ledger.files.includes(CANARY_PATH), true)
     const wake = buildWakePacket(
       {
         runId: f.run.id,
@@ -638,6 +644,7 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
       },
       f.scrubber
     )
+    assert.equal(wake.packet.items.some((item) => item.title === 'fixture item'), true)
     assert.doesNotMatch(wake.text, new RegExp(CANARY_PATH))
     assert.doesNotMatch(wake.text, new RegExp(CANARY_SECRET))
 
@@ -647,37 +654,69 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
     assert.doesNotMatch(handoff, new RegExp(CANARY_PATH))
     assert.doesNotMatch(handoff, new RegExp(CANARY_SECRET))
 
-    const signed = signedDispatchGrantSchema.parse({
-      grant: {
-        id: 'grant-fixture',
-        offer: {
-          id: 'offer-fixture',
-          runId: f.run.id,
-          sessionId: f.run.session_id,
-          homeNodeId: 'home',
-          executorNodeId: 'executor',
-          fence: { attemptId: f.attempt.id, epoch: f.attempt.epoch, token: f.attempt.token },
-          expiresAt: clock + 1000,
-          mode: 'strict',
-          resource: { kind: 'local_inference', model: 'fixture', requestedContext: 4096 }
-        },
-        reservationId: 'reservation-fixture',
-        job: {
-          kind: 'local_inference',
-          model: 'fixture',
-          context: 4096,
-          outputTokens: 10,
-          deadline: clock + 1000,
-          messages: [{ role: 'user', content: 'ordinary request' }]
-        },
-        jobHash: 'a'.repeat(64),
-        dispatchAuthorized: true
+    // Drive the real F2 producer: a fresh remote attempt, a real reservation receipt and the
+    // signed grant that is actually sent. The journal path is in the local ledger only.
+    const { privateKey } = generateKeyPairSync('ed25519')
+    const dispatch = new AttemptDispatch(
+      f.db,
+      f.store,
+      {
+        ensureReady: () => {
+          f.db.exec(
+            'CREATE TABLE IF NOT EXISTS remote_home_offers(id TEXT PRIMARY KEY, payload TEXT NOT NULL)'
+          )
+        }
+      } as never,
+      'home',
+      'fixture-account',
+      privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
+      {
+        ttlMs: 5_000,
+        safetyMs: 100,
+        maxModelAgeMs: 5_000,
+        channel: () => {
+          throw new Error('no transport in this test')
+        }
       },
-      signature: 'fixture-signature'
-    })
-    const f2 = canonical(signed)
-    assert.doesNotMatch(f2, new RegExp(CANARY_PATH))
-    assert.doesNotMatch(f2, new RegExp(CANARY_SECRET))
+      f.relay.clock
+    )
+    try {
+      const f2Run = f.store.create({ id: 'run-f2-canary', sessionId: f.run.session_id })
+      const job: LocalInferenceJob = {
+        kind: 'local_inference',
+        model: 'fixture-model',
+        context: 4096,
+        outputTokens: 10,
+        deadline: clock + 120_000,
+        messages: [{ role: 'user', content: 'ordinary remote request' }]
+      }
+      const offer = dispatch.prepare(f2Run.id, 'executor', job, 60_000)
+      const signed = dispatch.grant(offer.id, {
+        offerId: offer.id,
+        runId: offer.runId,
+        homeNodeId: 'home',
+        executorNodeId: 'executor',
+        fence: offer.fence,
+        status: 'reserved',
+        dispatchAuthorized: false,
+        reservation: {
+          id: 'reservation-fixture',
+          ticketId: 'ticket-fixture',
+          expiresAt: clock + 60_000,
+          source: 'target-governor',
+          observedAt: clock,
+          confidence: 'observed',
+          scope: 'application_process'
+        }
+      })
+      assert.equal(signed.grant.job.messages[0]!.content, 'ordinary remote request')
+      assert.equal(signedDispatchGrantSchema.safeParse(signed).success, true)
+      const f2 = canonical(signed)
+      assert.doesNotMatch(f2, new RegExp(CANARY_PATH))
+      assert.doesNotMatch(f2, new RegExp(CANARY_SECRET))
+    } finally {
+      dispatch.close()
+    }
 
     // Exercise the real export route rather than rebuilding its body by hand.
     const app = new Hono().route('/api/sessions', sessionLogRoutes(() => f.log))
