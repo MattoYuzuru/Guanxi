@@ -59,7 +59,7 @@ export class ConnectionRelayModel implements RelayModel {
       return { text: r.message?.content ?? '', inputTokens, outputTokens: r.eval_count!, moneyMicros: this.model.endsWith(':cloud') ? null : 0,
         // Compared with the count taken when the request was prepared: counting again here would demand a fresh runtime
         // observation after the call, and a real call may outlast the observation age (minutes on a slow executor).
-        inputTruncated: dispatchedTokens < 0 || inputTokens !== dispatchedTokens, outputLimited: r.done_reason === 'length' }
+        inputTruncated: inputTokens !== (dispatchedTokens < 0 ? this.count(prompt) : dispatchedTokens), outputLimited: r.done_reason === 'length' }
     }
     invariant(connection.kind === 'model_api', 'connection_not_supported')
     const r = await this.connections.complete('local', this.connectionId, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },
