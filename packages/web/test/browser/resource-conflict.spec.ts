@@ -1,4 +1,4 @@
-import { chatModelSelection, SESSION_ROUTES } from '@guanxi/contract'
+import { chatModelSelection, healthSchema, SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { activeRuntimeBrowserSnapshot, browserSettings } from './fixtures/runtime-snapshot.ts'
 import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
@@ -40,7 +40,7 @@ async function installFixture(
     const url = new URL(request.url())
     const method = request.method()
 
-    if (url.pathname === '/api/health') return fulfillJson(route, provider ? { ...health(), ollama: { ...health().ollama, running: false, state: 'unreachable' } } : health())
+    if (url.pathname === '/api/health') return fulfillJson(route, healthSchema.parse(provider ? { ...health(), ollama: { ...health().ollama, running: false, state: 'unavailable' } } : health()))
     if (url.pathname === SESSION_ROUTES.page()) {
       return fulfillJson(route, { sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
     }
