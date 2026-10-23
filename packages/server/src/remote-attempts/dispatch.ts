@@ -29,6 +29,7 @@ export interface DispatchPolicy {
   /** Named executor-side limits for the relay runtime; defaults are 4 concurrent counts and 16 pinned relay runs per peer. */
   relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number }
 }
+export interface CostTotal { currency: string; inputTokens: number; outputTokens: number; costMicrounits: number | null }
 export type TerminalEvent = Extract<DispatchEvent['event'], { kind: 'terminal' }>
 interface HomeRow { id: string; offer: string; job: string; attempt: string; grant: string | null }
 interface Holder { ttlMs: number; grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
@@ -174,6 +175,18 @@ export class AttemptDispatch {
       }
     })
     if (e.event.kind === 'terminal') for (const notify of [...(this.waiters.get(e.ref.id) ?? [])]) notify(e.event)
+  }
+  /** The only sanctioned cost total of a session. A relay's model calls are recorded twice by design: by the relay run for its
+   * own cap accounting and by each remote child run as the executor's report. Adding the two would double count, so they are
+   * returned apart and `own` never includes a relay child. */
+  sessionCosts(sessionId: string): { own: CostTotal[]; relayChildren: CostTotal[] } {
+    this.ready()
+    const children = "SELECT json_extract(payload,'$.runId') FROM remote_home_offers WHERE json_extract(payload,'$.parent') IS NOT NULL"
+    const total = (negate: string) => this.db.prepare(`SELECT c.currency AS currency, SUM(c.input_tokens) AS inputTokens, SUM(c.output_tokens) AS outputTokens,
+      CASE WHEN COUNT(c.cost_microunits)=COUNT(*) THEN SUM(c.cost_microunits) ELSE NULL END AS costMicrounits
+      FROM run_costs c JOIN durable_runs r ON r.id=c.run_id WHERE r.session_id=? AND c.run_id ${negate} IN (${children}) GROUP BY c.currency ORDER BY c.currency`)
+      .all(sessionId) as unknown as CostTotal[]
+    return { own: total('NOT'), relayChildren: total('') }
   }
   /** The terminal event the executor delivered and the home accepted, if any. */
   terminal(id: string): TerminalEvent | undefined {

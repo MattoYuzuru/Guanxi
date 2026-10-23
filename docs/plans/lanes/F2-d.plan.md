@@ -11,7 +11,7 @@ The relay (R2) runs on the **home** node with its lead, workspace, tools and acc
 Every model call is executed by the **executor node's** llama-server through signed F2
 messages, and is counted exactly by that same server. Non-goals: a real two-host run (Fedora),
 TLS between hosts, toolful remote steps, a model residency lease, automatic propagation of the
-executor-side run pin (F1 pins stay explicit), UI/CLI surface, B3 quality or six-hour claims.
+pin propagation beyond the signed pin message, UI/CLI surface, B3 quality or six-hour claims.
 
 ## Design decisions
 
@@ -42,8 +42,9 @@ executor-side run pin (F1 pins stay explicit), UI/CLI surface, B3 quality or six
    cross the wire, so the executor keeps template authority.
 4. **Dispatch reuse.** Each model call is a fresh child run (`runs.create`) with one F2-b
    dispatch. The child's pin on the executor is **derived** from the pinned relay run through
-   `offer.parentRunId` (same session, owner, home and epoch); a counted job without a parent is
-   refused. Remote tokens land on the child's R1 cost ledger atomically with its terminal receipt
+   `offer.parent {runId, epoch}` (same session, owner, home; the epoch is a consistency check, since R1 leases are always
+   epoch 1, so the protection is the home's database fence plus the F2-b renewal chain); a counted job without a parent is
+   refused. The relay run is pinned on the executor by an awaited, signed pin message sent before the run is created. Remote tokens land on the child's R1 cost ledger atomically with its terminal receipt
    (F2-c). The relay run still records its own call usage as R2 always did (its cap accounting);
    the lead's totals are untouched. Children and the relay run are different ledgers; sums across
    them would double count and no aggregation view exists yet.
@@ -63,7 +64,7 @@ executor-side run pin (F1 pins stay explicit), UI/CLI surface, B3 quality or six
 ## Components
 
 Contract: minor 4, capability, binding/evidence/count schemas, `counted` job field,
-`parentRunId` offer field, terminal `renderedSha256`/`reason` and the llama source label.
+`parent` offer field, pin message, terminal `renderedSha256`/`reason` and the llama source label.
 Executor: `LlamaServerRuntime.measure/expectedTransport`, `remote-attempts/relay-runtime.ts`
 (port + signed evidence), `Federation.receiveRelayObserve/Count`, routes, `dispatch.work` counted
 path. Home: `FederationChannel.relayObserve/relayCount`, `AttemptDispatch.awaitTerminal`,

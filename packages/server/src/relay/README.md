@@ -365,8 +365,8 @@ remain unearned.
 `RemoteRelayRuntime` (`remote-runtime.ts`) is a `RelayRuntimeObserver` factory for a llama-server on
 **another owned node**. `RelayRuntimeSource` asks it for one session per start (`open()`); the
 session is the observer, the exact counter and the chat transport, and it binds every request to the
-relay run and its fence once `RelayStarts` has created the run (`bind`, inside the creation
-transaction). Facts come only from the executor's signed evidence (see the
+relay run and its fence: `prepareBind` (awaited before the run is created) asks the executor to pin the relay run with a
+signed message, and `bind` (inside the creation transaction) attaches the attempt without any remote write. Facts come only from the executor's signed evidence (see the
 [remote attempts README](../remote-attempts/README.md#relay-inference-on-another-node-f2-d)). There
 is no byte count, catalog value or local-runtime fallback: an unreachable, unsigned, unpinned or
 mismatching executor is `runtime_meter_unavailable`, `runtime_identity_unknown`,

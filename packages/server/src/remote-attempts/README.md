@@ -144,21 +144,34 @@ reachable; the model call itself is the existing F2-b dispatch.
   and, for a count, the content hash is the asked string. A replayed, forged, re-attributed or
   re-bound answer is not evidence. Observation time is the home's send time, so clock skew never
   makes a fact look fresh or stale.
-- **Pins.** The executor needs the relay run pinned (explicit F1 binding, same session, owner, home
-  and epoch) before any bound request. Before the run exists only the fixed admission probe
-  (`RELAY_RUNTIME_PROBE`) may be counted. The host supplies `onBind` to provision the pin; a refusal
-  there rolls the whole start back. Automatic pin propagation is not built.
+- **Pins.** The relay run id is allocated before the home's creation transaction. `RelayStarts` awaits a signed
+  **`/attempts/runtime/pin`** message (executor-signed ack echoing the request) before it creates the run, so the executor
+  holds a pin before it answers any bound request; creation verifies the first attempt's epoch (always 1 for a fresh run
+  key), makes no remote write, and a refusal, a failed creation or the end of the run (`release()`) sends an `unpin`. A relay
+  pin lives in the `relay:` namespace of the executor's stream pins, is made for the asking home only and is never usable as
+  anything but a relay parent, so an ordinary pinned run cannot serve as one. Before the run exists only the fixed admission
+  probe (`RELAY_RUNTIME_PROBE`) may be counted. Per-peer limits are named policy settings, `DispatchPolicy.relayLimits`:
+  `maxPinsPerPeer` (default 16) and `maxConcurrentCountsPerPeer` (default 4), refused with HTTP 429. The pin and the `epoch`
+  it records are a consistency check, not a security boundary: R1 leases are always epoch 1, so the protection against a stale
+  or foreign attempt is the home's own database fence plus the F2-b renewal chain of each child.
 - **Counted jobs.** The count response carries `contentSha256`, `renderedSha256` and `tokens` and
   the runtime identity. The dispatch job (immutable, covered by the grant hash) repeats them as
   `counted`, with the served `digest` and loaded `contextTokens`. The executor re-observes,
   re-renders and re-counts, and refuses before `/completion` unless every one is identical, then
   refuses a reply whose `tokens_evaluated` differs. The terminal event echoes `renderedSha256`,
   carries `doneReason` and, for a refusal, a fixed `reason` code. A counted job needs
-  `offer.parentRunId`; the executor derives the child's pin from the pinned relay run.
+  `offer.parent: {runId, epoch}`, which the executor accepts only from a minor-4 peer and only when it serves the relay runtime;
+  it derives the child's pin from the pinned relay run and refuses a child id that is the parent or pinned in its own right.
 - **Per-call child runs.** Each model call is a fresh child run with one dispatch, so the F2-b
   fence, renewal, event receipt and cancel machinery applies unchanged. F2-c records the remote
   tokens on the child's ledger with its terminal receipt. The relay run keeps its own call
   accounting (cap enforcement), so child and relay ledgers must never be summed together.
+- **Holder TTL and large results.** The grant states `holderTtlMs`, the TTL the home's cancel wait is sized for (the home
+  refuses a wait shorter than its TTL); the executor's holder uses the smaller of that and its own. A terminal result that
+  cannot fit in one signed message is reported as a failed terminal with reason `result_too_large` (and its usage) instead of
+  being retried forever.
+- **Cost totals.** `AttemptDispatch.sessionCosts(sessionId)` is the only sanctioned session total: `own` (the relay run's
+  accounting) never includes relay children, which are returned apart in `relayChildren`. Summing the two double counts.
 - **Cancel.** Abort or loss of the relay fence cancels the child at the home first, then sends the
   direct signed cancel and does not settle the call until the executor acknowledges it, or the
   configured wait (at least the holder TTL) has elapsed, after which the holder has fenced itself.
