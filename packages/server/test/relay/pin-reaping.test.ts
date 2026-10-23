@@ -208,7 +208,7 @@ test('migration 42 upgrades a database made before F2-reap, reopening is idempot
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   new SimNode(k, path).close()
   const old = openDb(path)
-  old.exec('DROP TABLE federation_relay_pin_journal; DROP TABLE federation_relay_pin_leases; DROP TABLE federation_relay_pin_migrations')
+  old.exec('DROP TABLE federation_relay_pin_journal; DROP TABLE federation_relay_pin_leases; DROP TABLE federation_relay_pin_tombstones; DROP TABLE federation_relay_pin_migrations')
   old.close()
   for (let reopen = 0; reopen < 2; reopen++) {                         // the second reopening finds the ledger and changes nothing
     const node = new SimNode(k, path)
@@ -222,16 +222,16 @@ test('migration 42 upgrades a database made before F2-reap, reopening is idempot
   again.close()
 })
 
-test('a heartbeat already on the wire when the session is released cannot re-create the pin after its unpin', async t => {
+test('a heartbeat slower than the 5 s bound of the session itself cannot re-create the pin after its unpin', async t => {
   const f = await remoteFixture(t, { pinRenewMs: 10 }), r = await f.relay('late-beat')
   let delayed = 0
   f.rules.push(async (path, request) => {
     if (path !== '/attempts/runtime/pin') return
-    if ((await request.clone().json() as { action: string }).action === 'pin') { delayed++; await new Promise(resolve => setTimeout(resolve, 150)) }
+    if ((await request.clone().json() as { action: string }).action === 'pin' && !delayed++) await new Promise(resolve => setTimeout(resolve, 5500))   // slower than the heartbeat's own 5 s bound
   })
   await until(() => delayed > 0, 3000)                                   // a renewal is in flight, held up in transit
   await r.prepared.release!()
-  await new Promise(resolve => setTimeout(resolve, 300))                 // long enough for a misordered renewal to land
+  await new Promise(resolve => setTimeout(resolve, 1200))                // the beat is still in transit when the session lets go, and lands after the unpin
   assert.deepEqual(f.target.db.prepare("SELECT id FROM federation_streams WHERE id LIKE 'relay:%'").all(), [], 'the unpin was the last word')
   assert.equal(f.home.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_journal').get()!.n, 0)
 })
@@ -278,4 +278,33 @@ test('an executor restart grants every relay pin a fresh lease, including lease-
   p.lease.now += 600
   assert.equal(restarted.federation.sweepRelayPins(), 1, 'only the pin nobody renewed lapses')
   assert.deepEqual(p.streams(), ['relay:a'])
+})
+
+test('a first pin that was aborted in transit cannot create the pin after the unpin that undid it', async t => {
+  const f = await remoteFixture(t), controller = new AbortController()
+  const prepared = await f.source.prepare(f.homeConnection.id, 'fixture', 1000, controller.signal)
+  let held = 0
+  f.rules.push(async (path, request) => {
+    if (path === '/attempts/runtime/pin' && (await request.clone().json() as { action: string }).action === 'pin' && !held++) await new Promise(resolve => setTimeout(resolve, 600))
+  })
+  const run = f.home.runs.create({ id: 'aborted', sessionId: 'aborted-session' }), attempt = f.home.runs.start(run.id)
+  const binding = prepared.prepareBind!({ runId: run.id, sessionId: run.session_id, epoch: attempt.epoch }, controller.signal).catch((error: unknown) => error)
+  await until(() => held > 0, 3000)
+  controller.abort()                                                     // the start is abandoned while the pin is still on the wire
+  assert.ok((await binding) instanceof Error)
+  await new Promise(resolve => setTimeout(resolve, 900))                 // the pin lands after the unpin
+  assert.deepEqual(f.target.db.prepare("SELECT id FROM federation_streams WHERE id LIKE 'relay:%'").all(), [], 'the unpin was the last word')
+})
+
+test('a released relay run is tombstoned on the executor for one TTL, and the tombstone lapses', async t => {
+  const p = pair(t, { pinTtlMs: 1000 }), channel = () => p.home().federation.relayChannel('target')
+  await channel().relayPin(ask('gone', { action: 'unpin' }))              // an unpin that found nothing still records the release
+  await assert.rejects(channel().relayPin(ask('gone')), /peer_refused/, 'a pin of a released run id is refused')
+  assert.deepEqual(p.streams(), [])
+  await pinFromHome(p, 'kept', 2)
+  await channel().relayPin(ask('kept', { action: 'unpin', epoch: 1 }))    // fenced out: nothing was released, so nothing is tombstoned
+  await channel().relayPin(ask('kept', { epoch: 2 }))
+  p.lease.now += 1001
+  p.target.federation.sweepRelayPins()
+  assert.equal(p.target.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_tombstones').get()!.n, 0, 'tombstones lapse with the TTL')
 })

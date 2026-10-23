@@ -322,12 +322,20 @@ export class Federation {
     this.transaction(() => {
       if (request.action === 'pin') {
         const held = db.prepare("SELECT COUNT(*) n FROM federation_streams WHERE id LIKE 'relay:%' AND json_extract(binding,'$.homeNodeId')=?").get(context.identity.id)!.n as number
+        // A released run id stays released for one TTL: an unpin can overtake a pin or heartbeat that was slower than the home's
+        // own bound (run ids are fresh UUIDs, so no honest pin follows its unpin).
+        if (db.prepare('SELECT 1 FROM federation_relay_pin_tombstones WHERE stream_id=? AND expires_at>?').get(streamId, this.leaseNow())) throw new FederationError('relay_pin_released')
         const existing = db.prepare('SELECT 1 FROM federation_streams WHERE id=?').get(streamId)
         if (!existing && held >= this.relayLimit('maxPinsPerPeer')) throw new FederationError('relay_pin_limit', 429)
         this.replicas.bind({ streamId, kind: 'run', sessionId: request.sessionId, ownerAccountId: context.identity.accountId, homeNodeId: context.identity.id, homeEpoch: request.epoch })
         this.leaseRelayPin(streamId)    // a pin and its lease commit together; asking again renews
-      } else if (this.replicas.unbind(streamId, context.identity.id, request.epoch)) {
-        db.prepare('DELETE FROM federation_relay_pin_leases WHERE stream_id=?').run(streamId)
+      } else {
+        const existed = !!db.prepare('SELECT 1 FROM federation_streams WHERE id=?').get(streamId)
+        const removed = this.replicas.unbind(streamId, context.identity.id, request.epoch)
+        if (removed) db.prepare('DELETE FROM federation_relay_pin_leases WHERE stream_id=?').run(streamId)
+        // Released, or never arrived: either way nothing may pin it later. A fenced-out unpin (a newer pin exists) records nothing.
+        if (removed || !existed) db.prepare('INSERT INTO federation_relay_pin_tombstones VALUES (?,?) ON CONFLICT(stream_id) DO UPDATE SET expires_at=excluded.expires_at')
+          .run(streamId, this.leaseNow() + this.pinTtl())
       }
     })
     const { model: _model, ...ack } = request
@@ -365,8 +373,10 @@ export class Federation {
     const lapsed = `FROM federation_streams WHERE id LIKE 'relay:%'
         AND NOT EXISTS (SELECT 1 FROM federation_replicas r WHERE r.stream_id=federation_streams.id)
         AND NOT EXISTS (SELECT 1 FROM federation_relay_pin_leases l WHERE l.stream_id=federation_streams.id AND l.expires_at>?)`
-    if (!db.prepare(`SELECT 1 ${lapsed} LIMIT 1`).get(now)) return 0     // the common case takes no write lock
+    const stale = !!db.prepare(`SELECT 1 ${lapsed} LIMIT 1`).get(now), tombs = !!db.prepare('SELECT 1 FROM federation_relay_pin_tombstones WHERE expires_at<=? LIMIT 1').get(now)
+    if (!stale && !tombs) return 0                                       // the common case takes no write lock
     return this.transaction(() => {
+      db.prepare('DELETE FROM federation_relay_pin_tombstones WHERE expires_at<=?').run(now)
       const removed = Number(db.prepare(`DELETE ${lapsed}`).run(now).changes)
       if (removed) db.exec('DELETE FROM federation_relay_pin_leases WHERE stream_id NOT IN (SELECT id FROM federation_streams)')
       return removed

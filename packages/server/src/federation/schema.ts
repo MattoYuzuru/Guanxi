@@ -29,13 +29,14 @@ export const FEDERATION_MIGRATION_34 = `
   CREATE TABLE federation_command_receipts (node_id TEXT NOT NULL, command_id TEXT NOT NULL, digest TEXT NOT NULL,
     result TEXT NOT NULL, PRIMARY KEY(node_id,command_id));
 `
-/** F2-reap: the home's durable record of the relay pins it asked executors to make, and the executor's bounded lease per pin. */
+/** F2-reap: the home's durable record of the relay pins it asked executors to make, the executor's bounded lease per pin and its tombstones of released relay run ids. */
 export const FEDERATION_MIGRATION_42 = `
   CREATE TABLE federation_relay_pin_migrations (version INTEGER PRIMARY KEY);
   INSERT INTO federation_relay_pin_migrations VALUES (42);
   CREATE TABLE federation_relay_pin_journal (run_id TEXT PRIMARY KEY, executor_node_id TEXT NOT NULL, model TEXT NOT NULL,
     session_id TEXT NOT NULL, epoch INTEGER NOT NULL, journaled_at INTEGER NOT NULL);
   CREATE TABLE federation_relay_pin_leases (stream_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+  CREATE TABLE federation_relay_pin_tombstones (stream_id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
 `
 // Table-rebuilding main migrations drop attached triggers. Restore these guards on every boot.
 const FEDERATION_READ_ONLY_TRIGGERS = `
