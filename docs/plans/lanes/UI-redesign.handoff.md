@@ -1,7 +1,7 @@
 # UI-redesign lane hand-off
 
-**Status:** implemented, locally validated (mocked browser gate, no live model) · **Updated:** 2026-10-23 ·
-**Branch:** `claude/ui-redesign` from `631cd5c8` · **Plan:** [UI-redesign.plan.md](UI-redesign.plan.md) ·
+**Status:** implemented, locally validated (mocked browser gate, no live model) · **Updated:** 2026-10-24 ·
+**Branch:** `claude/ui-redesign` from `631cd5c8`, main `536cad90` merged · **Plan:** [UI-redesign.plan.md](UI-redesign.plan.md) ·
 **Research:** [2026-10-23 redesign](../../design/research/2026-10-23-redesign.md)
 
 ## What changed
@@ -51,7 +51,7 @@ native-agent, workspace-state, and the feature-page tests of the retry sub-lane.
 unseen sessions, runtime-bar, runtime-health, resource-conflict, chat-first-stream, chat-retention, connections,
 kernel-slot, capability-override and the feature specs of the retry sub-lane.
 
-## Gates
+## Gates (round 1, historical)
 
 All heavy checks ran through `agent-dev run --node 26 --resource heavy` on a clean tree; receipts are under
 `~/.local/state/agent-dev/<id>/result.json`.
@@ -73,16 +73,86 @@ separator), `icon/set-*` and `icon/domain-*` incl. HC (secondary-text labels, gr
 (no separator; `retrying` replaced by `acting`), `provenance-label/*` (no separator), `workspace-chrome/error-*`
 (no Retry action).
 
+## Round 2: review fix round and second visual pass
+
+An independent review of `cb1c6a9f` found D-200 unmet (native selects), D-203 leaks and D-204 leftovers. This round
+fixed every P1–P3 item and did a second visual pass. Each fix has a test that failed before it (named in its commit
+message). Main `536cad90` is merged (`f7e91d05`). Three sub-lanes ran in worktrees of this clone and were merged:
+F1 (selects, Models), F2 (native session, side chat), F3 (test typecheck).
+
+### Fix round
+
+| Item | Commits | Test that failed before |
+| --- | --- | --- |
+| P1 native selects | F1 `d111bc59` | `test/unit/no-native-select.test.ts` (8 offenders) |
+| P2 theme undone by Settings save | `3f5d48d3` | `test/component/theme-settings.test.tsx` |
+| P2 new session in the current project | `99f6d8bd` | routed-project case in `new-session.test.tsx`, `newSessionPath` in `shell-controller.test.tsx`, recency on open in `native-agent.test.tsx` |
+| P2 transient failures, trash focus | `67482f1e` | quiet-failure case in `live-data.test.tsx`, lasting-failure focus case in `chat-trash.test.tsx` |
+| P2 glossary times and copy | `ac05d5c2` | absolute-time and bilingual catalogue cases in `voice-glossary.test.tsx` |
+| P2 D-204 leftovers | `f0134ac4` | two cases in `workspace-state.test.tsx` (two layout reads; mode copy) |
+| P2 health/provider polls re-render | `3e4a819b` | `health-render.test.tsx` (real health-shaped answers through App), `chat-quiet-refresh.test.tsx` |
+| P2 tests not typechecked | F3 `ca3caef1`, `a2ad4d25` | `tsconfig.test.json`: 110 errors before, 0 after; Playwright's `reducedMotion` option was silently ignored |
+| P3 dead keys, static no-retry guard, Check balance | `4de790b5`, `21ba423b` | `test/unit/no-retry-copy.test.ts` (both languages, web and ui catalogues) |
+| P3 native offline note, `native.retry` | F2 `e81d5c89` | offline-note slot case in `native-agent.test.tsx` |
+| P3 programmatic focus ring | `36f74cc5` | `test/unit/programmatic-focus.test.ts` |
+| P3 status value slots, sourceless items | `a655c14c` | slot rule in `redesign-controls.test.tsx`; absence counts in `shell-status.test.tsx`, `mounted-shell.test.tsx` |
+| P3 popover scroll-region focus | `670bc31d`, `a90228a0` | scrollable-popover case in `controls-geometry.spec.ts` |
+| P3 Max graphics lifecycle | `51c6db1c` | two cases in `max-graphics.test.tsx` |
+| P3 ChatPage ids, pin toggle | `b246abd6` | `test/unit/chat-ids.test.ts`, pin case in `shell-sidebar.test.tsx` |
+| P3 keyed structural sharing | `722902e9` | keyed-rows case in `live-data.test.tsx` |
+| Popover footnote contrast (found by F2) | `402d9abb` | dark contrast case in `phone-shell.spec.ts` |
+| Spec alignment | `aedec2fa`, `6a89bb51`, F1 `16e0da1e` | browser specs follow the new behaviour; F1 fixed a real duplicate fact in the Hugging Face selection |
+
+### Second visual pass
+
+| Item | Commits | Assertions |
+| --- | --- | --- |
+| 1 every picker on Select/Menu; side-chat context as SegmentedControl | F1 `d111bc59`, F2 `b50a36e3` | no-native-select guard; side-chat radio steps |
+| 2 native session as a message timeline | F2 `b50a36e3` | rendered markdown with no backticks, icon rail with one details popover, session title and project breadcrumb, stop is a button |
+| 3 side chat panel; flat plan and queue | F2 `b50a36e3` | `native-session-timeline.spec.ts` (no four-border box inside plan/queue, panel geometry, phone sheet, axe) |
+| 4 phone drawer, one status overflow, no keycaps on touch | `06c3201e` | three phone cases in `app-shell-chrome.test.tsx`, `phone-shell.spec.ts` (touch emulation, drawer inert page, Escape/scrim/link, axe light and dark), G14 phone geometry |
+| 5 Models cards, localised fit, structured facts | F1 `ea6a5d80`, `de607e6b`, `454e51fa` | `server/test/fit.test.ts` reasons, `fit-reason.test.tsx`, `model-card.test.tsx`, `models-structured-facts.test.ts`; runtime popover facts in `runtime-health.test.tsx` and `resource-conflict.test.tsx` |
+
+New tokens: `--layout-status-value` (3.75 rem) and `--layout-fact-label` (8.5 rem), documented in FOUNDATIONS §2.
+The fit verdict gains an optional `reason` code in the contract (expand step); the server always sends it and the web
+never shows the node's Russian summary.
+
+### Screenshots (round 2)
+
+`/Users/yuzuru/Projects/Guanxi-lanes/redesign/.lane-data/screens/before/` was taken at `aedec2fa` (fix round and
+merged sub-lanes, before items 4 and 5 of this lane), `.../screens/after/` after the last commit (see the final report
+for the time): `new-session-*`, `active-session-*`, `side-chat-*` (light/dark, desktop/mobile), `models-*`,
+`status-popover-*`, `customise-*`, `phone-navigation-*` (drawer), `phone-status-*` (overflow, after only). F2's own
+before/after of the native session and side chat (from `f7e91d05`) are in
+`/Users/yuzuru/Projects/Guanxi-lanes/redesign-f2/.lane-data/screens/{before,after}/`.
+
+### Gates (round 2)
+
+All heavy checks ran through `agent-dev run --node 26 --resource heavy` on a clean tree at ``402d9abb``.
+
+| Gate | Result | Receipt |
+| --- | --- | --- |
+| `npm test` | pass (web vitest 724, ui vitest, gates, server, kernel, bench) | `check-lkamprft` |
+| `npm run test:web:browser` | 249/249 pass (incl. phone-shell and native-session-timeline) | `check-09euh_26` |
+| `npm run ui:check:browser` (G13, G14) | pass | `check-05csgb8n` |
+| `npm run build` | pass | `check-0qrh50cf` |
+| `npm run typecheck` (now includes component tests and specs), `lint:md`, `check:licenses`, `lint:js` | pass; lint:js has the 4 warnings main already has | local |
+
+G13 baselines changed this round, regenerated in the pinned image (`check-_v3x5ouw`, then the scoped rerun) and
+reviewed: `app-shell-chrome/phone-*` (drawer toggle, search icon, no keycaps), `provenance-label/*` (absolute time),
+`status-item/open-*` (fixed value slot, secondary-tone footnote). The `error-state/acting-*` and other round-1 baselines are unchanged.
+
 ## Independent verification
 
 `frontend-agent:accessibility-reviewer` reviewed `631cd5c8..17cf8711` (13 findings, no blockers). All were fixed in
 `1536b773` except two recorded below as residual. Browser-spec failures found by the first full run were fixed in
-`975a0c99`, `25583d9f`, `212548f5`.
+`975a0c99`, `25583d9f`, `212548f5`. An independent Opus review of `cb1c6a9f` drove round 2; every finding is fixed
+above.
 
 ## Pending owner approval
 
 - The palette (D-201): Porcelain + Cobalt is the working default; BRAND and FOUNDATIONS mark it pending.
-- Component statuses: Icon, Kbd, SegmentedControl, StatusItem, Composer, Popover, Switch, Badge are `review`;
+- Component statuses: Icon, Kbd, SegmentedControl, StatusItem, Composer, Popover, Switch, Badge and Select are `review`;
   PalettePreview is `draft`. Every restyled component's G13 baseline changed and needs re-review in the catalog.
 - Max graphics look (strength 0.26/0.30, hues).
 
@@ -100,10 +170,15 @@ by default; the workspace still stores per-mode layout documents but uses one; f
 - The `PalettePreview` story is wider than the 800 px G13 frame and is clipped in its baseline.
 - Some targeted browser reruns during development ran outside the lock; every receipt in the table above was taken under it.
 - Rail navigation and the palette button use native `title` tooltips, not the design tooltip.
+- Phone: the drawer and F2's side-chat sheet have no safe-area padding (G6 rejects `env(safe-area-inset-*)`; a token
+  is needed); the drawer has no swipe gesture and does not lock the page scroll behind its scrim.
+- Quota, keep-awake and power are hidden until the node reports a source; their icons stay in the registry.
+- Fact lists outside the runtime popover and the Models feature (trash, retention, inspector, recipes, attachments,
+  launcher) still read as short comma-joined lines after the middle-dot sweep.
+- The status-strip value slot is a rem token (DTCG dimensions are px or rem), sized for eight tabular digits.
 - Max graphics: measured in headless Chromium with software GL, input-to-next-frame p50 5.4 ms static vs 10.0 ms max,
   p95 6.2–6.9 ms vs 13.4–13.6 ms (both under one 60 Hz frame); hardware GPU not measured. The field pauses 600 ms after
   input.
-- Phone: the sidebar still stacks above the pane under 640 px (no drawer).
 - Device icon is inferred from the platform (`darwin`/`win32` laptop, `linux` server).
 - Many feature pages keep legacy layouts; they inherit the tokens and primitives but were not redesigned one by one.
 - Merge with `claude/chat-provider-models`: main's K3-chat change is merged; `displayModelSelection` uses the contract's
@@ -120,4 +195,5 @@ server tests `runtime-reconciliation` and `ui-catalog-review` (fixtures), `packa
 ## Next slice
 
 Owner reviews the palette and components in the catalog; then the fleet map (D-209) on StatusItem/Icon, provider
-models (D-208) into `ModelSuggestion`, a phone drawer for the sidebar, and the remaining feature pages' layouts.
+models (D-208) into `ModelSuggestion`, a safe-area token for phone overlays, and structured facts plus layouts for the
+remaining feature pages.
