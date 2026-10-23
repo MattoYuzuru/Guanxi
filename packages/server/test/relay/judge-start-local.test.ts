@@ -49,17 +49,19 @@ async function fixture(t: { after(fn: () => unknown): void }, options: { judge?:
     const content = prompt.startsWith(JUDGE_PROMPT) ? (options.judgeReply ?? judgeVerdict)
       : prompt.startsWith('Write a fresh') ? 'Completed fixture acceptance.' : JSON.stringify(++work === 1
         ? { action: 'tool', name: 'file_read', args: { path: 'src/item.txt' } } : work === 2 ? { action: 'verify', item: 'one' } : { action: 'handoff' })
-    return Response.json({ model: 'fixture', created_at: new Date(RUN_TIME).toISOString(), done: true, message: { role: 'assistant', content }, prompt_eval_count: Buffer.byteLength(prompt) + 5, eval_count: 100 })
+    return Response.json({ model: 'fixture', created_at: new Date(RUN_TIME).toISOString(), done: true, message: { role: 'assistant', content }, prompt_eval_count: Buffer.byteLength(prompt) + (request.think === false ? 5 : 999), eval_count: 100 })
   } })
   const connections = new Connections(connectionStore, vault, new BalanceProbes(connectionStore, vault), f.scrubber, life.signal, { client: () => client }, governor, () => 'http://127.0.0.1:11434')
   const connection = connections.create('local', { name: 'Fixture', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true })
   const rows: RunningModel[] = [{ name: 'fixture:latest', digest: 'fixture-digest', sizeBytes: 1, sizeVramBytes: null, gpuPercent: null,
     processorLabel: null, contextLength: 16000, expiresAt: null, source: 'ollama_api_ps', observedAt: new Date(RUN_TIME).toISOString() }]
-  const models = { runtimeHost: 'http://127.0.0.1:11434', async ps() { return rows },
+  let observations = 0
+  // A thinking model evaluates a request without `think:false` in another form than the exact counter rendered.
+  const models = { runtimeHost: 'http://127.0.0.1:11434', async ps() { observations++; return rows },
     async installedArtifacts() { return [{ name: 'fixture', digest: 'fixture-digest' }] }, async runtimeVersion() { return 'fixture-v1' } }
   const runtime = new RelayRuntimeSource(connections, () => models, { maximumAgeMs: 10000, counter: async fact => ({
     identity: { model: fact.model, digest: fact.digest, runtimeVersion: fact.runtimeVersion }, placement: 'installed_local',
-    source: 'fixture exact renderer', observedAt: RUN_TIME, confidence: 'high', count: request => Buffer.byteLength(request.messages[0]!.content) + 5 }) }, () => RUN_TIME)
+    source: 'fixture exact renderer', observedAt: RUN_TIME, confidence: 'high', count: request => Buffer.byteLength(request.messages[0]!.content) + (request.think === false ? 5 : 999) }) }, () => RUN_TIME)
   const host = { runtime, reserves, clock: () => RUN_TIME, nodePorts: () => [4432, 5232],
     project: async (id: string) => ({ projectId: id, roots: [source], source: 'fixture project/workspace store', observedAt: RUN_TIME }),
     allocate: async () => ({ root, scratch, runtimeBase, async close() { cleaned = true } }), ...(options.judge ? { judge: options.judge } : {}) }
@@ -74,7 +76,7 @@ async function fixture(t: { after(fn: () => unknown): void }, options: { judge?:
   const notes = (sessionId: string) => (f.db.prepare("SELECT payload FROM session_events WHERE session_id=? AND type='agent.note' ORDER BY seq").all(sessionId) as Array<{ payload: string }>)
     .map(row => { try { return JSON.parse((JSON.parse(row.payload) as { text: string }).text) as Record<string, any> } catch { return {} as Record<string, any> } })
     .filter(note => typeof note['relay'] === 'string')
-  return { ...f, relay, starts, input, connections, requests, governor, notes, cleaned: () => cleaned,
+  return { ...f, relay, starts, input, connections, requests, governor, notes, observations: () => observations, cleaned: () => cleaned,
     finish: async () => { await until(() => cleaned); await until(() => starts.status(input.key).status !== 'running'); return starts.status(input.key) } }
 }
 const stockJudge = (cascade: boolean): RelayStartJudgeSource => context => ({
@@ -83,7 +85,7 @@ const stockJudge = (cascade: boolean): RelayStartJudgeSource => context => ({
 })
 const judgeRequests = (f: Awaited<ReturnType<typeof fixture>>) => f.requests.filter(r => (r.messages[0].content as string).startsWith(JUDGE_PROMPT))
 
-test('a local relay with the judge on is the same relay plus judge events: its own calls are unchanged and the judge goes through the stock Ollama path', async t => {
+test('a local relay with the judge on is the same relay plus judge events: its own calls are unchanged and the judge asks the runtime in the form that was counted', async t => {
   const plain = await fixture(t), judged = await fixture(t, { judge: stockJudge(true) })
   const [a, b] = await Promise.all([plain.starts.start(plain.input), judged.starts.start(judged.input)])
   assert.equal((await plain.finish()).status, 'completed'); assert.equal((await judged.finish()).status, 'completed')
@@ -95,11 +97,14 @@ test('a local relay with the judge on is the same relay plus judge events: its o
   // The judge: two samples at the two boundaries of the one cycle, on Ollama, with no transport-only fields.
   assert.equal(judgeRequests(judged).length, 4)
   for (const request of judgeRequests(judged)) {
-    assert.equal(request.think, undefined, 'the stock judge request is the one it always was'); assert.equal(request.options.num_predict, 1000); assert.equal(request.options.num_ctx, 16000)
+    assert.equal(request.think, false, 'the form the runtime renders and counts, as for the relay\'s own calls'); assert.equal(request.options.num_predict, 700); assert.equal(request.options.num_ctx, 16000)
     assert.equal(Object.hasOwn(request, 'tools'), false)
   }
   const rows = judged.db.prepare('SELECT layer,state FROM relay_judge_requests WHERE run_id=?').all(b.runId!) as Array<{ layer: string; state: string }>
   assert.deepEqual(rows.map(r => [r.layer, r.state]), [['J2', 'completed'], ['J2', 'completed']])
+  // The runtime is observed again before every judge sample, as before every relay call: per boundary the attestation, the
+  // admitted window and one authorization for each of the two samples.
+  assert.equal(judged.observations() - plain.observations(), 2 * (2 + 2), 'two boundaries, each with two admission observations and two authorizations')
   assert.equal(judged.notes(b.sessionId!).filter(n => n['relay'] === 'judge_signals').length, 2)
   // K3 recorded the judge's usage like any other local call; the relay's own R1 rows are exactly the plain relay's.
   assert.equal(judged.connections.snapshot('local').costs.length, own(judged).length + 4)

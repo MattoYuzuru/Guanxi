@@ -166,6 +166,9 @@ export class ConnectionJudgeModel implements JudgeModel {
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const prompt = this.scrubber.scrub(input.prompt)
     const transport = this.meter.transport
+    // A relay runtime (a binding, or a local-only exact meter) renders and counts the `think:false` form of the request, as
+    // the relay's own calls do. A judge request without it would be counted in one form and evaluated in another.
+    const pinned = Boolean(transport || this.runtime || this.meter.localOnly)
     const options = {
       num_ctx: admission.window.tokens,
       num_predict: input.role.maxOutputTokens,
@@ -189,8 +192,7 @@ export class ConnectionJudgeModel implements JudgeModel {
       {
         model: input.role.model,
         stream: false,
-        // The relay's own requests to a transport runtime carry `think:false`; the runtime renders and counts that form.
-        ...(transport ? { think: false } : {}),
+        ...(pinned ? { think: false } : {}),
         messages: [{ role: 'user', content: prompt }],
         options
       },
@@ -200,10 +202,10 @@ export class ConnectionJudgeModel implements JudgeModel {
         background: true,
         singleAttempt: true,
         signal: input.signal,
-        ...(transport
+        ...(transport ? { transport } : {}),
+        // The runtime is observed again (identity, window) immediately before it is asked to evaluate, as for a relay call.
+        ...(pinned
           ? {
-              transport,
-              // The runtime is observed again (identity, window) immediately before it is asked to evaluate.
               authorizeDispatch: async () => {
                 await this.meter.authorizeDispatch?.(input.signal)
                 input.signal.throwIfAborted()
@@ -223,7 +225,7 @@ export class ConnectionJudgeModel implements JudgeModel {
           )
           // The relay meter's `validatePrepared` pins the relay turn's output limit, which is not the judge's. The
           // judge's own request is therefore pinned here, exactly, for the runtime that counts it.
-          if (transport) {
+          if (pinned) {
             const chat = request as OllamaChatRequest
             invariant(
               chat.model === input.role.model &&

@@ -8,8 +8,9 @@ export const JUDGE_PROMPT = 'Assess harness evidence only'
 export const signalPolicy: JudgeSignalPolicy = { heartbeatStallMs: 60_000, noProgressCycles: 3, repeatedFailureCycles: 3, editRevertCycles: 3, repeatedDeadEnds: 3, tokenBlowupRatio: 2 }
 export const judgeVerdict = JSON.stringify({ taxonomy: 'progress', verdict: 'consistent', evidenceRefs: ['plan'], diagnosisHint: 'Evidence agrees.' })
 
+/** The judge's own output ceiling (700) differs from the relay turn (1000) so that no test can confuse the two. */
 export function judgeRole(connectionId: string, model: string, overrides: Partial<JudgeRole> = {}): JudgeRole {
-  return { connectionId, model, windowTokens: 16000, maxInputTokens: 12000, maxOutputTokens: 1000, temperature: 0, tokenReserve: 13000, moneyReserveMicros: 0, ...overrides }
+  return { connectionId, model, windowTokens: 16000, maxInputTokens: 12000, maxOutputTokens: 700, temperature: 0, tokenReserve: 13000, moneyReserveMicros: 0, ...overrides }
 }
 /** A delegation brief for exactly the plan and caps of one public start, with J2 on the relay's own model. J3 is off. */
 export function startBrief(input: Pick<RelayStartInput, 'plan' | 'caps' | 'connectionId' | 'model'>, options: { accountId?: string; executorNodeId?: string; j2?: JudgeRole | null; samples?: 2 | 3 } = {}): RelayDelegationBrief {
