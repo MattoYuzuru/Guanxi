@@ -31,6 +31,7 @@ export interface Ms1LiveHomeRelay {
   runtime: RelayRuntimePolicy
   reserves: Reserves
   allocate: NonNullable<RelayStartHost['allocate']>
+  limits: NonNullable<RelayStartHost['limits']>
 }
 export interface Ms1LiveLeadWiring {
   externalAgents: ExternalPolicy
@@ -188,7 +189,8 @@ export class Ms1LiveNode {
       ...(home.callDeadlineMs ? { callDeadlineMs: home.callDeadlineMs } : {}),
       ...(home.reservationMs ? { reservationMs: home.reservationMs } : {}), ...(home.pollMs ? { pollMs: home.pollMs } : {}) })
     const allocator = new OwnedCheckoutAllocator({ root: home.checkoutRoot ?? join(dataDir, 'relay-checkouts') })
-    return { runtime: Object.freeze({ maximumAgeMs: home.maximumAgeMs, observer: remote }), reserves: Object.freeze({ ...home.reserves }), allocate: allocator.allocate }
+    return { runtime: Object.freeze({ maximumAgeMs: home.maximumAgeMs, observer: remote }), reserves: Object.freeze({ ...home.reserves }), allocate: allocator.allocate,
+      limits: Object.freeze({ structuredOutput: home.structuredOutput }) }
   }
 
   /** Home: the judge of each relay start, from `home.judge`; undefined (no judge) when the section is absent.

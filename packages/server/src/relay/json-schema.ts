@@ -27,6 +27,7 @@ export function toJsonSchema(schema: ZodTypeAny): JsonSchema {
     }
     case 'ZodNumber': return { type: (d.checks as Array<{ kind: string }>).some(c => c.kind === 'int') ? 'integer' : 'number' }
     case 'ZodBoolean': return { type: 'boolean' }
+    case 'ZodNull': return { type: 'null' }
     case 'ZodLiteral': return { const: d.value }
     case 'ZodEnum': return { enum: [...(d.values as string[])] }
     case 'ZodUnknown': case 'ZodAny': return {}

@@ -267,6 +267,7 @@ commands only.
 | `goalBytes` | `512` | Upper bound on the plan goal injected into each work prompt. |
 | `pageBytes` | `2048` | Page size for `work.query` and `notes.search`. |
 | `invalidActions` | `3` | Invalid work turns before the cycle hands off. Valid tool, note, proposal, checkpoint and verify turns do not count. |
+| `structuredOutput` | `true` | Decode probes, work actions and judge verdicts under a JSON Schema (see [constrained output](#constrained-json-output-r2-json)). Turn it off only for a runtime that rejects the grammar; replies are then validated exactly as before. |
 
 Local runtime calls are treated as zero cost: the adapter reports `moneyMicros: 0` because
 the host meter quotes local compute rather than an observed bill. This is an assertion shared
@@ -282,6 +283,57 @@ wind-down; only the last three enter the fresh narrative writer. Previous narrat
 enter that writer. All calls use K3, all state events use K2, and all persisted/model-facing
 values pass the scrubber. Structured provider reasoning is discarded. K3 observes dispatch start before awaiting
 the response, so R1 can acknowledge a wake while inference is still in flight.
+
+## Constrained JSON output (R2-json)
+
+The first real two-host run (Qwen3.8-27B on llama.cpp b11496) never reached a verified item: replies came back with unquoted keys,
+prose plus Qwen tool-call tags, a fenced block, or probe values that were plausible and wrong. A reply that must be JSON is therefore
+decoded under a JSON Schema, and the schema is a pinned part of the request, not a hint.
+
+- **Which calls.** The five critical probes (`probeResponseSchema`), every work step (`actionResponseSchema`) and every judge J2/J3
+  sample (`judgeResultJsonSchema`). The narrative stays prose and unconstrained. A `model_api` (provider) connection ignores the schema
+  and is unchanged. A stock Ollama `local_runtime` receives it as the chat request's `format`, which Ollama defines as a JSON Schema;
+  nothing else changed on that path.
+- **Carrier.** `RelayModel.call(..., { responseSchema })` puts the schema into `OllamaChatRequest.format` for a local runtime. K3 scrubs
+  the request like any other and runs `onPrepared` on the clean copy; the meter's `validatePrepared(request, responseSchema)` requires
+  `canonical(request)` to equal the rendering of exactly this prompt and schema (`runtime_request_changed` otherwise, as for a changed
+  prompt), and the judge's own request check pins `format` the same way (`judge_request_shape`). `LlamaServerRuntime` sends it as
+  `json_schema` and refuses a `format` that is not a bounded JSON object (`'json'`, an array, over 64 KiB). Constraint does not
+  change a prompt token: the count, the rendered-hash chain and the `tokens_evaluated` comparison are untouched.
+- **Request body.** Exactly the field llama.cpp b11496 accepts on `/completion` (checked by the integrator against the real server with
+  `const`, `enum`, `required` and `additionalProperties`):
+  `{"prompt": <rendered>, "n_predict": <turn reserve>, "stream": false, "cache_prompt": true, "json_schema": {...}}`. Without a schema the
+  body has no `json_schema` key at all.
+- **Remote (federation 1.6).** The schema is part of the signed job (`LocalInferenceJob.responseSchema`, so of `jobHash`) and of the
+  counted chain (`CountedRequest.responseSchemaSha256`, the SHA-256 of the sorted-key JSON; `schemaDigest` equals the federation
+  canonical hash, asserted by a test). The executor refuses a grant whose hash is not the schema's (`dispatch_binding`), the
+  executor's `expectedTransport` refuses a request whose `format` is another schema or none (`runtime_request_changed`), and its signed
+  terminal event echoes `responseSchemaSha256`, which the home compares with what it sent (`truncation_protocol`). An executor older
+  than 1.6 is refused by the home channel with `426` instead of dropping the field, and an executor refuses a schema from a home that
+  declares an older minor. Peers without schemas interoperate as before.
+- **Schemas.** `toJsonSchema` converts the Zod subset the relay uses (strict objects, string, number/int, boolean, null, literal,
+  enum, nullable, optional, array, record, union, discriminated union, unknown) and throws `json_schema_unsupported` for anything else,
+  including an object that would tolerate unknown keys. Numeric bounds are not emitted: the grammar fixes shape and types and Zod still
+  validates what is parsed. The work schema is an `anyOf` with one variant per tool that the workspace actually lists (`name` is a
+  `const`, `args` is that tool's own parameter object, `additionalProperties: false`) plus the non-tool actions converted from the same
+  Zod definitions that validate the reply, so the grammar is narrower than the validator on tool names and arguments. The probe schema
+  has five required keys, `nextStatus` is `open`, `verification_requested` or null, and no expected value appears in it.
+- **Tools.** `RelayWorkspace.tools()` lists the model-callable native tools (everything but `plan`, `queue`, `note_add`) with their typebox
+  parameters, plus the executor's own `work.query(offset?)` and `notes.search(query, offset?)`. `file_read` takes an optional byte
+  `offset` (decimal digits, a position this tool returned) and answers `{more, nextOffset, offset, code, stderr, truncated, stdout}`
+  with the text last. The executor passes `pageBytes = floor(T_hard / 4)`, the per-turn bound it applies to every tool result, so a
+  page is sized to fit it and is never cut by the executor behind a cursor that says it was read; `tool_output_read` honours the same
+  budget. Without a budget (the K4 session) the result is the old one plus the cursor fields.
+- **Prompts (ADR-0025).** The work prompt is generated from the tool list (`name(arg, arg?)`), its examples are valid JSON (the model had
+  copied `{action:tool,name,args}` with unquoted keys) spaced after the colon so they cannot be mistaken for the relay's own compact
+  turns, and it says once that arguments are strings and that `more:true` continues at `offset=nextOffset`. The probe prompt defines
+  each key; the cause of `nextItem: null` while an item was open was the strip's `next` (another item) beside the probe's `nextItem`,
+  which is the strip's `current`. The check itself, its inputs and its expected values are unchanged. The B1 bench does not exist yet:
+  these two prompt edits are minimal and factual, and carry no bench result.
+- **Not validated here.** No live llama-server was used. The real-server behaviour of an `anyOf` grammar with this many variants, and
+  the quality of the model's choices under it, are for the integrator's Fedora run; `structuredOutput: false` is the switch if the grammar
+  is rejected. Tests: `test/relay/{json-schema,structured-output,structured-llama,structured-remote}.test.ts`,
+  `test/llama-server/*`, `test/native-agent/file-read-paging.test.ts`.
 
 ## Ledger, probes and sealing
 

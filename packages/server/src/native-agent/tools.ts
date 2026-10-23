@@ -78,8 +78,9 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   /** One page of a text file starting at byte `offset`. The result is the command result with the cursor fields in front; `stdout`
    * stays last, so a reader that cuts the tail of the text still has `more` and `nextOffset`. */
   const fileRead = async (requested: string, rawOffset: unknown, signal?: AbortSignal) => {
+    // Decimal digits only, as a string or a number: no sign, fraction, exponent, hex or padding.
+    if (rawOffset !== undefined && rawOffset !== '' && !/^\d{1,15}$/.test(String(rawOffset))) throw new Error('invalid_offset')
     const offset = rawOffset === undefined || rawOffset === '' ? 0 : Number(rawOffset)
-    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('invalid_offset')
     const target = quote(path(requested))
     const result = scrubber.scrub(await (ctx.executeCommand ?? sandboxCommand)(policy, offset === 0 ? `/bin/cat -- ${target}` : `/usr/bin/tail -c +${offset + 1} -- ${target}`, signal, 120_000, true, scrubber))
     if (result.code !== 0) throw new Error('tool_failed')
@@ -88,7 +89,9 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     const data = Buffer.from(result.stdout), limit = ctx.pageBytes
     for (let page = data.length; ;) {
       const text = new StringDecoder('utf8').write(data.subarray(0, page)), used = Buffer.byteLength(text)
-      const body = JSON.stringify({ more: used < data.length || result.truncated, nextOffset: offset + used, offset, code: result.code, stderr: result.stderr, truncated: result.truncated, stdout: text })
+      const more = used < data.length || result.truncated
+      // `truncated` keeps its old meaning for a reader that has only seen it: the text below is not the whole of what follows the offset.
+      const body = JSON.stringify({ more, nextOffset: offset + used, offset, code: result.code, stderr: result.stderr, truncated: more, stdout: text })
       if (limit === undefined || Buffer.byteLength(body) <= limit) return body
       if (page === 0) throw new Error('page_too_small')
       page = Math.max(0, Math.min(page - 1, Math.floor(page * limit / Buffer.byteLength(body)) - 1))
