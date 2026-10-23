@@ -1094,6 +1094,54 @@ test('a foreign journal migration value disables the sidecar without failing the
   }
 })
 
+test('an aborted sample does not overwrite the observation used by a later J3 review row', async () => {
+  const f = fixture()
+  try {
+    const configured = brief()
+    configured.judges.j3.enabled = true
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: f.relay.clock })
+    const cascade = new RelayJudgeCascade(
+      f.relay,
+      cascadeInput({ brief: configured, journal: store })
+    )
+    f.relay.begin(f.attempt)
+    cascade.bind(f.attempt)
+    const first = observationAt(1_000_000)
+    await cascade.sample(f.attempt, 'cycle_start', new AbortController().signal, undefined, {
+      observation: first,
+      policy,
+      signals: evaluateJudgeSignals(first, policy),
+      unknownFacts: [],
+      unobserved: []
+    })
+
+    const abort = new AbortController()
+    abort.abort()
+    const aborted = observationAt(2_000_000)
+    await assert.rejects(
+      cascade.sample(f.attempt, 'cycle_start', abort.signal, undefined, {
+        observation: aborted,
+        policy,
+        signals: evaluateJudgeSignals(aborted, policy),
+        unknownFacts: [],
+        unobserved: []
+      })
+    )
+    await cascade.review(f.attempt, 'final', new AbortController().signal)
+
+    const row = f.db
+      .prepare("SELECT observation FROM relay_judge_journal WHERE run_id=? AND layer='J3'")
+      .get(f.run.id) as { observation: string }
+    assert.equal(
+      (JSON.parse(row.observation) as JudgeObservation).observedAt,
+      1_000_000,
+      'the fenced J3 review journals the last completed sample, not the aborted one'
+    )
+  } finally {
+    f.close()
+  }
+})
+
 test('unobserved judge facts are stored in the row and carried as unknown replay evidence', async () => {
   const f = fixture()
   let clock = f.relay.clock()

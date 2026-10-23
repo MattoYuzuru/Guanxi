@@ -423,14 +423,9 @@ export class RelayJudgeCascade {
       (summary
         ? { observation: null, policy: null, signals: summary.signals }
         : undefined)
-    this.observed = observedContext === undefined
-      ? undefined
-      : {
-          ...observedContext,
-          unknownFacts: observedContext.unknownFacts ?? summary?.unknownFacts ?? [],
-          unobserved: observedContext.unobserved ?? []
-        }
     const cycle = this.relay.read(a.run_id).cycle
+    // Fence first: an aborted or deposed sample must not replace the observation that a later
+    // J3 review row journals.
     this.check(a, cycle, signal)
     if (this.summaryCycle !== cycle) {
       this.summaries.clear()
@@ -453,6 +448,15 @@ export class RelayJudgeCascade {
       invariant(!previous || canonical(previous) === canonical(detached), 'judge_summary_conflict')
       this.summaries.set(phase, detached)
     }
+    // Only a fence-checked, validated sample may replace the observation that a later J3
+    // review row journals.
+    this.observed = observedContext === undefined
+      ? undefined
+      : {
+          ...observedContext,
+          unknownFacts: observedContext.unknownFacts ?? summary?.unknownFacts ?? [],
+          unobserved: observedContext.unobserved ?? []
+        }
     const context = this.observed
     await this.checker(a, phase, signal, context)
     const j2 = await this.model(a, { cycle, phase, layer: 'J2', reason: 'scheduled' }, signal, context)
