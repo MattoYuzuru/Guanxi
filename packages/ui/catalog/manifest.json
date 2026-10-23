@@ -404,10 +404,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 7,
+        "count": 9,
         "files": [
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationRow.tsx",
+          "packages/web/src/features/notifications/NotificationsPage.tsx",
           "packages/web/src/features/shell/MountedShell.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
@@ -746,9 +748,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 1,
+        "count": 2,
         "files": [
-          "packages/web/src/features/new-session/NewSessionScreen.tsx"
+          "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationsPage.tsx"
         ]
       },
       "since": "0.1.0"
@@ -863,9 +866,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 3,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationsPage.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx"
         ]
       },
@@ -1130,9 +1134,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 3,
+        "count": 4,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx"
         ]
