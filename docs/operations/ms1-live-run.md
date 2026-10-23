@@ -29,7 +29,9 @@ Everything below is a command line. Nothing here asks for a secret value: keys a
   `engines` says 22.5 or newer, and the Fedora evidence shows 22.23.1, which strips types by default from 22.18).
 - **Mac:** Colima running (acceptance gates run in the K4 container sandbox; the tool never starts or resets it), git, the target
   clone `~/Projects/Guanxi-Test-Repo`. The node's data directory and checkout root must live under your home directory (Colima
-  shares it, not `/tmp`).
+  shares it, not `/tmp`). Acceptance gates and the model's `shell` may use plain `node --test` (children with piped stdio work)
+  only with the `k4-v3` execution image: run `DOCKER_CONTEXT=colima sh packages/server/scripts/prepare-native-execution.sh` once
+  after updating (an older image without the current guard label makes arbitrary shell refuse with `container_runtime_unavailable`, never run with `spawn EPERM`).
 - **Fedora:** llama.cpp `b11496` and the GGUF, as an operational service. The user unit `guanxi-llama` of the 2026-10-23 evidence is
   exactly this (`--host 127.0.0.1 --port 8090 -c 32768 -np 1 -t 6 -b 512 -ub 128 --flash-attn on --cache-type-k q8_0
   --cache-type-v q8_0 --jinja --no-context-shift --metrics --no-webui --alias qwen3.8-27b-iq3s --device CUDA0`, ready in about 16 s,

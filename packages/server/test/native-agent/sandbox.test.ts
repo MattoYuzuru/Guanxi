@@ -10,6 +10,7 @@ import { networkInterfaces } from 'node:os'
 import { nativeAgentInputSchema } from '@guanxi/contract'
 import { sandboxCommand as rawSandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
 import { orientation } from '../../src/native-agent/orientation.ts'
+import { CONTAINER_IMAGE, GUARD_DIGEST } from '../../src/native-agent/execution-owner.ts'
 
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 const fixtureScrubber = new SecretScrubber()
@@ -211,6 +212,44 @@ test('Unix sockets and local binding are denied inside arbitrary execution', { t
   assert.equal(result.code, 0); assert.equal(result.stdout, 'blocked\nblocked\n')
 })
 
+test('arbitrary execution can spawn children with piped stdio, including node --test per-file subprocesses', { timeout: 60000 }, async t => {
+  const { policy } = await fixture(t)
+  // libuv builds child stdio pipes from an anonymous AF_UNIX stream socketpair.
+  const spawnProbe = `const cp=require('node:child_process');const sync=cp.spawnSync('echo',['piped'],{stdio:'pipe'});if(sync.error)throw sync.error;const both=cp.execFileSync('cat',{input:'both-ways'}).toString();console.log(String(sync.stdout).trim()+' '+both)`
+  const suite = (name: string) => `import test from 'node:test'
+import { appendFileSync } from 'node:fs'
+test('${name}', () => appendFileSync('pids', [process.pid, process.ppid].join(' ') + String.fromCharCode(10)))
+`
+  const directory = join(policy.scratch, 'fixture'), report = join(policy.scratch, 'tap.txt')
+  const command = `node -e ${quote(spawnProbe)} && mkdir ${quote(directory)} && cd ${quote(directory)} && printf %s ${quote(suite('first'))} > first.test.mjs && printf %s ${quote(suite('second'))} > second.test.mjs && node --test --test-reporter=tap > ${quote(report)}; echo "node-test-exit=$?"; cat ${quote(report)}; cat pids`
+  const result = await sandboxCommand(policy, command)
+  assert.equal(result.code, 0, result.stdout + result.stderr)
+  assert.match(result.stdout, /^piped both-ways$/m)
+  assert.match(result.stdout, /node-test-exit=0/)
+  assert.match(result.stdout, /^# pass 2$/m); assert.match(result.stdout, /^# fail 0$/m)
+  assert.doesNotMatch(result.stdout + result.stderr, /EPERM/)
+  const files = result.stdout.split('\n').filter(line => /^\d+ \d+$/.test(line)).map(line => line.split(' ').map(Number))
+  assert.equal(files.length, 2, 'both files ran'); assert.notEqual(files[0]![0], files[1]![0], 'each file in its own process')
+  assert.equal(files[0]![1], files[1]![1], 'one runner parent'); assert.ok(files.every(([pid, parent]) => pid !== parent))
+})
+test('a workload that spawns piped children still cannot listen, bind or connect to a Unix socket', { timeout: 60000 }, async t => {
+  const { policy, root } = await fixture(t)
+  const { createServer: createUnixServer } = await import('node:net')
+  let connections = 0
+  const server = createUnixServer(socket => { connections++; socket.end() })
+  const socketPath = join(root, 'pipes.sock')
+  await new Promise<void>(resolve => server.listen(socketPath, resolve))
+  t.after(() => new Promise<void>(resolve => server.close(() => resolve())))
+  const script = `const cp=require('node:child_process'),net=require('node:net');
+if(cp.spawnSync('true',{stdio:'pipe'}).error)throw new Error('children unavailable');
+const log=(...a)=>console.log(a.join(' '));
+const listen=net.createServer();listen.on('error',e=>log('listen',e.code));listen.listen({host:'127.0.0.1',port:0},()=>{log('listen ESCAPED');listen.close()});
+const unix=net.connect(${JSON.stringify(socketPath)});unix.on('connect',()=>{log('connect ESCAPED');unix.end()});unix.on('error',e=>log('connect',e.code))`
+  const result = await sandboxCommand(policy, `node -e ${quote(script)}`)
+  assert.equal(result.code, 0, result.stderr)
+  assert.deepEqual(result.stdout.trim().split('\n').sort(), ['connect EPERM', 'listen EPERM'])
+  assert.equal(connections, 0, 'the host listener saw no connection')
+})
 test('Full access cannot overwrite a dependency tree but can write an unprotected sibling', { timeout: 30000 }, async t => {
   const { policy, root } = await fixture(t)
   await writeFile(join(root, 'protected'), 'original')
@@ -425,7 +464,7 @@ test('macOS workload has only lo and cannot reach a reachable non-loopback host 
   const port = (server.address() as { port: number }).port
   const probe = `const s=require('node:net').connect(${port},${JSON.stringify(host)});s.on('connect',()=>{console.log('connected');s.end()});s.on('error',()=>console.log('blocked'));s.setTimeout(1500,()=>{console.log('blocked');s.destroy()})`
   // Prove the host fixture is reachable from an ordinary Colima container first.
-  const control = await promisify(execFile)('docker', ['run', '--rm', '--network', 'bridge', '--entrypoint', 'node', 'guanxi-native-execution:k4-v1', '-e', probe], { timeout: 10000 })
+  const control = await promisify(execFile)('docker', ['run', '--rm', '--network', 'bridge', '--entrypoint', 'node', CONTAINER_IMAGE, '-e', probe], { timeout: 10000 })
   assert.equal(control.stdout, 'connected\n'); assert.equal(connections, 1)
   const isolated = await sandboxCommand(policy, `node -e ${quote(`console.log(require('node:fs').readdirSync('/sys/class/net').sort().join(','));${probe}`)}`)
   assert.equal(isolated.code, 0)
@@ -458,7 +497,7 @@ if [ "$1" = context ]; then if [ "$2" = show ]; then printf fixture; else printf
 case "$3" in
   context) printf 'unix:///fixture';;
   info) printf linux;;
-  image) printf 'sha256:${'a'.repeat(64)}';;
+  image) printf 'sha256:${'a'.repeat(64)} ${GUARD_DIGEST}';;
   create) exit 0;;
   start) touch ${quote(marker)}; exec sleep 30;;
   *) exec sleep 30;;
@@ -525,7 +564,7 @@ test('interrupted container create retains quarantine even if the daemon current
 if [ "$1" = context ]; then if [ "$2" = show ]; then printf fixture; else printf unix:///fixture; fi; exit 0; fi
 case "$3" in
   info) printf linux;;
-  image) printf 'sha256:${'a'.repeat(64)}';;
+  image) printf 'sha256:${'a'.repeat(64)} ${GUARD_DIGEST}';;
   create) touch ${quote(marker)}; exec sleep 30;;
   rm|ps) exit 0;;
   *) exit 1;;

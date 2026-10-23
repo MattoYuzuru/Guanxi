@@ -420,7 +420,11 @@ at the new head, and the next cycle gets an `open_issue` note that the harness m
 verdict (`item`, `ok`, `failedAt`) before the gate outputs, so a bounded result never cuts the answer.
 
 Gates materialize raw objects without archive attributes, `.git` or untracked files, restore planner-owned
-protected paths from the base revision and run acceptance argv in K4 Read-only mode.
+protected paths from the base revision and run acceptance argv in K4 Read-only mode. The K4 workload
+may spawn children with piped stdio, so a gate is an ordinary `node --test ...` (per-file subprocess
+isolation); `--test-isolation=none` is no longer needed. This needs the `k4-v3` execution image on a
+macOS node (`packages/server/scripts/prepare-native-execution.sh`); datagram or listening sockets
+remain denied.
 Linked/gitlink trees are refused before preparation. All done evidence is invalidated
 when HEAD changes, and final acceptance rechecks every item at the final HEAD.
 A bundle is refused if reachable objects contain a registered secret; compressed bundles

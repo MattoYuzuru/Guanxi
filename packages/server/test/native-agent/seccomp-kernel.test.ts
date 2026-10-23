@@ -1,0 +1,288 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { execFile } from 'node:child_process'
+import { CONTAINER_IMAGE, GUARD_DIGEST, GUARD_LABEL } from '../../src/native-agent/execution-owner.ts'
+import { linuxBindingFilter } from '../../src/native-agent/sandbox-protocol.ts'
+
+// Real-kernel checks of the workload seccomp policy, inside the execution image with the production
+// container flags. Both implementations run: the compiled container guard and the generated
+// linuxBindingFilter() program (installed here by a Perl prctl loader because the image's
+// util-linux setpriv predates --seccomp-filter). Skipped when no container runtime or image exists.
+const GUARD = '/usr/local/bin/guanxi-exec-guard'
+
+interface Outcome { code: number | null; stdout: string; stderr: string }
+function docker(args: string[], stdin = ''): Promise<Outcome> {
+  return new Promise((resolve, reject) => {
+    const child = execFile('docker', args, { timeout: 90_000, maxBuffer: 1 << 20 }, (error, stdout, stderr) => {
+      if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') reject(error)
+      else resolve({ code: error ? ((error as { code?: unknown }).code as number ?? null) : 0, stdout, stderr })
+    })
+    child.stdin?.on('error', () => {})
+    child.stdin?.end(stdin)
+  })
+}
+type Discovery = { arch: 'arm64' | 'x64'; skip?: undefined } | { skip: string; arch?: undefined }
+async function discover(): Promise<Discovery> {
+  try {
+    const probe = await docker(['run', '--rm', '--entrypoint', 'uname', CONTAINER_IMAGE, '-m'])
+    if (probe.code !== 0) return { skip: 'container runtime or image unavailable' }
+    const arch = probe.stdout.trim()
+    if (arch === 'aarch64' || arch === 'x86_64') return { arch: arch === 'aarch64' ? 'arm64' as const : 'x64' as const }
+    return { skip: `unsupported execution architecture ${arch || '(none)'}` }
+  } catch { return { skip: 'no container runtime' } }
+}
+const found = await discover()
+const skip = found.skip !== undefined ? `${found.skip} (provision ${CONTAINER_IMAGE} with packages/server/scripts/prepare-native-execution.sh)` : false
+const arch: 'arm64' | 'x64' = found.arch ?? 'arm64'
+// Read from the kernel headers of each architecture by compiling a probe (see the hand-off), as in seccomp.test.ts.
+const numbers = {
+  arm64: { socket: 198, socketpair: 199, prctl: 167, bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40,
+    sendto: 206, recvfrom: 207, sendmmsg: 269, recvmmsg: 243, sendmsg: 211, recvmsg: 212 },
+  x64: { socket: 41, socketpair: 53, prctl: 157, bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165,
+    sendto: 44, recvfrom: 45, sendmmsg: 307, recvmmsg: 299, sendmsg: 46, recvmsg: 47 },
+}[arch]
+
+// serve: stand-ins for host services the workload must not reach (pathname and abstract names,
+// stream and datagram), started unfiltered and counting every connection or datagram they receive.
+// probe: the workload side. exec: install the generated filter (env BPF), then exec the command.
+const probe = String.raw`
+use strict; use warnings; use Socket; use Errno; use IO::Select;
+my ($mode, @rest) = @ARGV;
+my %names = (fs_stream => '/tmp/svc.stream', fs_dgram => '/tmp/svc.dgram', abs_stream => "\0gx-stream", abs_dgram => "\0gx-dgram");
+if ($mode eq 'serve') {
+  my (%sock, %count); my $select = IO::Select->new;
+  for my $name (sort keys %names) {
+    my $type = $name =~ /stream/ ? SOCK_STREAM : SOCK_DGRAM;
+    socket(my $s, AF_UNIX, $type, 0) or die "socket $name: $!"; bind($s, sockaddr_un($names{$name})) or die "bind $name: $!";
+    listen($s, 8) or die "listen $name: $!" if $type == SOCK_STREAM;
+    $sock{$name} = $s; $count{$name} = 0; $select->add($s);
+  }
+  open(my $ready, '>', '/tmp/ready') or die; close $ready;
+  my $deadline = time + 40;
+  while (time < $deadline) {
+    my @readable = $select->can_read(0.1);
+    last if !@readable && -e '/tmp/stop';  # stop only once every queued connection or datagram is counted
+    for my $s (@readable) {
+      my ($name) = grep { $sock{$_} == $s } keys %sock;
+      if ($name =~ /stream/) { if (accept(my $c, $s)) { close $c } } else { recv($s, my $buffer, 64, 0) }
+      $count{$name}++;
+    }
+  }
+  print "served $_=$count{$_}\n" for sort keys %count;
+  exit 0;
+}
+sub filter { return pack('H*', $ENV{BPF}) }
+sub install {
+  my $program = filter(); my $instructions = length($program) / 8;
+  syscall(${numbers.prctl}, 38, 1, 0, 0, 0) == 0 or die "no_new_privs: $!";
+  syscall(${numbers.prctl}, 22, 2, pack('S x6 P', $instructions, $program)) == 0 or die "seccomp: $!";
+}
+install() if $ENV{BPF} && $mode ne 'serve';
+exec(@rest) or die "exec: $!" if $mode eq 'exec';
+if ($mode eq 'raw') {
+  # A host with kernel.io_uring_disabled set fails io_uring itself with EPERM, which would hide the filter.
+  my $disabled = 0; if (open(my $sysctl, '<', '/proc/sys/kernel/io_uring_disabled')) { $disabled = <$sysctl> + 0; close $sysctl }
+  print "sysctl.io_uring_disabled=$disabled\n";
+  # Each call is chosen so that, without a filter, the kernel fails it with something other than EPERM
+  # (EBADF, ENOTSOCK, ESRCH, EFAULT, ENOSYS) or succeeds. Prints the errno (0 = success).
+  my $unused = "\0" x 64;
+  sub raw { my ($name, @args) = @_; $! = 0; my $r = syscall($args[0], @args[1 .. $#args]); print "raw.$name=", ($r == -1 ? $!+0 : 0), "\n" }
+  raw(bind => ${numbers.bind}, 0, $unused, 16); raw(listen => ${numbers.listen}, 0, 1);
+  raw(ptrace => ${numbers.ptrace}, 16, 999999, 0, 0); raw(process_vm_writev => ${numbers.process_vm_writev}, 999999, 0, 0, 0, 0, 0);
+  raw(unshare => ${numbers.unshare}, 0); raw(setns => ${numbers.setns}, -1, 0); raw(mount => ${numbers.mount}, 0, 0, 0, 0, 0);
+  # MSG_OOB (1) in the flags slot of each send and receive call; the plain_ twins pass flags 0 and a length of 1.
+  for my $flags ([oob => 1], [plain => 0]) {
+    my ($kind, $value) = @$flags;
+    raw($kind . '_sendto', ${numbers.sendto}, 0, $unused, 1, $value, 0, 0); raw($kind . '_recvfrom', ${numbers.recvfrom}, 0, $unused, 1, $value, 0, 0);
+    raw($kind . '_sendmmsg', ${numbers.sendmmsg}, 0, $unused, 1, $value); raw($kind . '_recvmmsg', ${numbers.recvmmsg}, 0, $unused, 1, $value, 0);
+    raw($kind . '_sendmsg', ${numbers.sendmsg}, 0, $unused, $value); raw($kind . '_recvmsg', ${numbers.recvmsg}, 0, $unused, $value);
+  }
+  # io_uring (IORING_OP_SOCKET would create sockets past the socket() rule): the same numbers on x64 and arm64.
+  raw(io_uring_setup => 425, 0, 0); raw(io_uring_enter => 426, -1, 0, 0, 0, 0, 0); raw(io_uring_register => 427, -1, 0, 0, 0);
+  raw(x32_or_unknown_abi => 0x40000000); raw(x32_socketpair => 0x40000000 + ${numbers.socketpair}, 1, 1, 0, $unused);
+  exit 0;
+}
+sub result { my $ok = shift; return $ok ? 'ok' : $!{EPERM} ? 'EPERM' : 'err:' . ($!+0) }
+sub pair { my ($family, $type) = @_; my $fds = "\0" x 8; return result(syscall(${numbers.socketpair}, $family, $type, 0, $fds) == 0) }
+sub sock { my ($family, $type) = @_; my $fd = syscall(${numbers.socket}, $family, $type, 0); return result($fd >= 0) }
+my ($cloexec, $nonblock) = (0x80000, 0x800);
+my %out = (
+  'pair.unix.stream' => pair(1, 1), 'pair.unix.stream.flags' => pair(1, 1 | $cloexec | $nonblock),
+  'pair.unix.dgram' => pair(1, 2), 'pair.unix.dgram.flags' => pair(1, 2 | $cloexec | $nonblock),
+  'pair.unix.seqpacket' => pair(1, 5), 'pair.unix.raw' => pair(1, 3),
+  'pair.inet.stream' => pair(2, 1), 'pair.inet6.dgram' => pair(10, 2), 'pair.netlink.raw' => pair(16, 3),
+  'socket.unix.stream' => sock(1, 1), 'socket.unix.dgram' => sock(1, 2), 'socket.unix.seqpacket' => sock(1, 5),
+  'socket.inet.stream' => sock(2, 1), 'socket.inet6.stream' => sock(10, 1),
+  'socket.netlink.raw' => sock(16, 3), 'socket.packet.raw' => sock(17, 3),
+);
+socket(my $tcp, AF_INET, SOCK_STREAM, 0) or die "inet socket: $!";
+$out{'tcp.bind'} = result(bind($tcp, sockaddr_in(0, INADDR_LOOPBACK)));
+$out{'tcp.listen'} = result(listen($tcp, 1));
+# Whatever pair the workload can create, try to use it as a way to a service it must not reach.
+for my $kind ([stream => SOCK_STREAM], [dgram => SOCK_DGRAM], [seqpacket => SOCK_SEQPACKET]) {
+  my ($label, $type) = @$kind;
+  my ($left, $right);
+  if (!socketpair($left, $right, AF_UNIX, $type, 0)) { $out{"reach.$label.pair"} = result(0); next }
+  $out{"reach.$label.pair"} = 'ok';
+  syswrite($left, 'ping'); sysread($right, my $echo, 4); $out{"reach.$label.io"} = ($echo // '') eq 'ping' ? 'ok' : 'broken';
+  if ($label eq 'stream') {
+    # Ordinary send/recv keeps working; out-of-band data is what the filter refuses.
+    my ($normal, $urgent) = ('', '');
+    $out{'reach.stream.sendrecv'} = (send($left, 'pong', 0) && defined(recv($right, $normal, 4, 0)) && $normal eq 'pong') ? 'ok' : 'broken';
+    $out{'reach.stream.oob_send'} = result(defined send($left, '!', MSG_OOB));
+    $out{'reach.stream.oob_recv'} = result(defined recv($right, $urgent, 1, MSG_OOB));
+  }
+  for my $name (sort keys %names) {
+    $out{"reach.$label.connect.$name"} = connect($left, sockaddr_un($names{$name})) ? 'CONNECTED' : 'refused:' . ($!+0);
+    $out{"reach.$label.sendto.$name"} = send($left, 'x', 0, sockaddr_un($names{$name})) ? 'SENT' : 'refused:' . ($!+0);
+  }
+}
+# What a plain stream socket could do if the policy allowed it: proves the stream listeners are reachable at all.
+for my $name (grep { /stream/ } sort keys %names) {
+  my $plain;
+  $out{"socket.connect.$name"} = socket($plain, AF_UNIX, SOCK_STREAM, 0) ? (connect($plain, sockaddr_un($names{$name})) ? 'CONNECTED' : 'refused:' . ($!+0)) : 'no-socket';
+}
+print "$_=$out{$_}\n" for sort keys %out;
+`
+
+async function inContainer(command: string, env: Record<string, string> = {}, dockerOptions: string[] = []) {
+  const shell = `cat > /tmp/probe.pl
+perl /tmp/probe.pl serve > /tmp/served.txt 2>&1 &
+i=0; while [ ! -e /tmp/ready ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
+${command}
+touch /tmp/stop; wait; cat /tmp/served.txt`
+  const result = await docker(['run', '--rm', '-i', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+    '--user', '1000:1000', '--read-only', '--tmpfs', '/tmp:exec,mode=1777', ...dockerOptions, ...Object.entries(env).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
+    '--entrypoint', '/bin/sh', CONTAINER_IMAGE, '-c', shell], probe)
+  const values = new Map<string, string>()
+  for (const line of result.stdout.split('\n')) {
+    const match = /^(served )?([\w.]+)=(.*)$/.exec(line)
+    if (match) values.set(`${match[1] ? 'served.' : ''}${match[2]!}`, match[3]!)
+  }
+  return { ...result, values }
+}
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+const hex = (value: Buffer) => value.toString('hex')
+const filterEnv = { BPF: hex(linuxBindingFilter(arch)) }
+const implementations = [
+  { name: 'container guard', command: `${GUARD} perl /tmp/probe.pl probe`, env: {} },
+  { name: 'generated linuxBindingFilter', command: 'perl /tmp/probe.pl probe', env: filterEnv },
+]
+const reachNames = ['fs_stream', 'fs_dgram', 'abs_stream', 'abs_dgram']
+const expectedPolicy: Record<string, string> = {
+  'pair.unix.stream': 'ok', 'pair.unix.stream.flags': 'ok',
+  'pair.unix.dgram': 'EPERM', 'pair.unix.dgram.flags': 'EPERM', 'pair.unix.seqpacket': 'EPERM', 'pair.unix.raw': 'EPERM',
+  'pair.inet.stream': 'EPERM', 'pair.inet6.dgram': 'EPERM', 'pair.netlink.raw': 'EPERM',
+  'socket.unix.stream': 'EPERM', 'socket.unix.dgram': 'EPERM', 'socket.unix.seqpacket': 'EPERM',
+  'socket.inet.stream': 'ok', 'socket.inet6.stream': 'ok', 'socket.netlink.raw': 'EPERM', 'socket.packet.raw': 'EPERM',
+  'tcp.bind': 'EPERM', 'tcp.listen': 'EPERM',
+  'reach.stream.pair': 'ok', 'reach.stream.io': 'ok', 'reach.stream.sendrecv': 'ok',
+  'reach.stream.oob_send': 'EPERM', 'reach.stream.oob_recv': 'EPERM',
+  'reach.dgram.pair': 'EPERM', 'reach.seqpacket.pair': 'EPERM',
+}
+
+for (const implementation of implementations) {
+  test(`${implementation.name}: only anonymous AF_UNIX stream pairs are created; sockets, bind and listen stay denied`, { skip, timeout: 120_000 }, async () => {
+    const { values, stderr } = await inContainer(implementation.command, implementation.env)
+    for (const [name, expected] of Object.entries(expectedPolicy)) assert.equal(values.get(name), expected, `${name} ${stderr}`)
+  })
+  test(`${implementation.name}: a stream pair cannot reach any pathname or abstract listener, and no listener saw traffic`, { skip, timeout: 120_000 }, async () => {
+    const { values, stderr } = await inContainer(implementation.command, implementation.env)
+    const EISCONN = 106
+    for (const name of reachNames) {
+      for (const call of ['connect', 'sendto']) {
+        const outcome = values.get(`reach.stream.${call}.${name}`)
+        assert.match(outcome ?? '', /^refused:\d+$/, `${call} ${name} ${stderr}`)
+        // A stream listener is refused because the pair is already connected, not for some other reason.
+        if (name.endsWith('_stream')) assert.equal(outcome, `refused:${EISCONN}`, `${call} ${name}`)
+      }
+      assert.equal(values.get(`served.${name}`), '0', `listener ${name} was reached`)
+    }
+    for (const name of ['fs_stream', 'abs_stream']) assert.equal(values.get(`socket.connect.${name}`), 'no-socket', 'no plain Unix socket can be created to try')
+  })
+}
+
+test('the provisioned image carries the digest of the guard source this node trusts', { skip, timeout: 120_000 }, async () => {
+  const inspected = await docker(['image', 'inspect', '--format', `{{index .Config.Labels "${GUARD_LABEL}"}}`, CONTAINER_IMAGE])
+  assert.equal(inspected.stdout.trim(), GUARD_DIGEST, 'rebuild with packages/server/scripts/prepare-native-execution.sh')
+})
+
+test('control: without the filter a datagram pair does reach a pathname and an abstract listener', { skip, timeout: 120_000 }, async () => {
+  // Proves the probe discriminates, and why datagram, seqpacket and the other types stay denied.
+  const { values, stderr } = await inContainer('perl /tmp/probe.pl probe')
+  for (const name of ['fs_dgram', 'abs_dgram']) {
+    assert.equal(values.get(`reach.dgram.connect.${name}`), 'CONNECTED', stderr)
+    assert.equal(values.get(`reach.dgram.sendto.${name}`), 'SENT', stderr)
+    assert.ok(Number(values.get(`served.${name}`)) >= 1, `listener ${name} saw ${values.get(`served.${name}`)}`)
+  }
+  for (const name of ['fs_stream', 'abs_stream']) {
+    assert.equal(values.get(`socket.connect.${name}`), 'CONNECTED', `control must reach the stream listener ${name} with a plain socket`)
+    assert.ok(Number(values.get(`served.${name}`)) >= 1, `stream listener ${name} counted no connection`)
+  }
+  assert.equal(values.get('socket.unix.stream'), 'ok', 'control must be able to create the sockets the policy denies')
+  assert.equal(values.get('tcp.bind'), 'ok')
+})
+
+// The remaining denied syscalls, one by one. Docker's default profile would mask several of them with the same EPERM,
+// so these run unconfined: the BPF filter alone must produce EPERM, and the unfiltered control must not.
+const EPERM = 1
+const oobCalls = ['sendto', 'recvfrom', 'sendmmsg', 'recvmmsg', 'sendmsg', 'recvmsg']
+const rawNames = ['bind', 'listen', 'ptrace', 'process_vm_writev', 'unshare', 'setns', 'mount', 'io_uring_setup', 'io_uring_enter', 'io_uring_register', 'x32_or_unknown_abi', 'x32_socketpair']
+const unconfined = ['--security-opt', 'seccomp=unconfined']
+// With kernel.io_uring_disabled set the kernel itself answers EPERM, so the filter cannot be told apart from it there.
+const ioUringIsTestable = (name: string, values: Map<string, string>) => !name.startsWith('io_uring') || values.get('sysctl.io_uring_disabled') === '0'
+for (const implementation of implementations) {
+  test(`${implementation.name}: every other denied syscall and the x32/unknown ABI numbers fail with EPERM`, { skip, timeout: 120_000 }, async () => {
+    const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
+    for (const name of rawNames.filter(name => ioUringIsTestable(name, values))) assert.equal(values.get(`raw.${name}`), String(EPERM), `${name} ${stderr}`)
+  })
+  test(`${implementation.name}: MSG_OOB is refused on all six send/receive calls and other flags are not`, { skip, timeout: 120_000 }, async () => {
+    const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
+    const control = await controlRaw()
+    for (const call of oobCalls) {
+      assert.equal(values.get(`raw.oob_${call}`), String(EPERM), `oob_${call} ${stderr}`)
+      assert.equal(values.get(`raw.plain_${call}`), control.get(`raw.plain_${call}`), `plain_${call} behaves as without a filter`)
+      assert.notEqual(values.get(`raw.plain_${call}`), String(EPERM), `plain_${call}`)
+    }
+  })
+}
+const controlRaw = (() => { let cached: Promise<Map<string, string>> | undefined; return () => cached ??= inContainer('perl /tmp/probe.pl raw', {}, unconfined).then(result => result.values) })()
+test('control: without the filter none of those syscalls fails with EPERM', { skip, timeout: 120_000 }, async () => {
+  const { values, stderr } = await inContainer('perl /tmp/probe.pl raw', {}, unconfined)
+  for (const name of [...rawNames.filter(name => ioUringIsTestable(name, values)), ...oobCalls.map(call => `oob_${call}`)]) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
+})
+
+// Each file records its own pid and parent pid, so per-file subprocess isolation is observable.
+const suiteFile = (name: string) => `cat > /tmp/fx/${name}.test.mjs <<'EOF'
+import test from 'node:test'
+import { appendFileSync } from 'node:fs'
+test('${name}', () => { appendFileSync('/tmp/pids', process.pid + ' ' + process.ppid + '\\n') })
+EOF`
+const fixture = `mkdir -p /tmp/fx && cd /tmp/fx\n${suiteFile('a')}\n${suiteFile('b')}`
+const pipes = String.raw`const { spawnSync, execFileSync, spawn } = require('node:child_process')
+const sync = spawnSync('echo', ['piped'], { stdio: 'pipe' })
+const echoed = execFileSync('cat', { input: 'both-ways' }).toString()
+const child = spawn('sh', ['-c', 'echo async-out; echo async-err >&2'], { stdio: ['pipe', 'pipe', 'pipe'] })
+let out = '', err = ''
+child.stdout.on('data', d => out += d); child.stderr.on('data', d => err += d)
+child.on('close', code => console.log(JSON.stringify({ sync: String(sync.stdout).trim(), error: sync.error?.code ?? null, echoed, out: out.trim(), err: err.trim(), code })))`
+for (const [name, wrapper] of [['container guard', GUARD], ['generated linuxBindingFilter', 'perl /tmp/probe.pl exec']] as const) {
+  const env = wrapper === GUARD ? {} : filterEnv
+  test(`${name}: node spawns children with piped stdio`, { skip, timeout: 120_000 }, async () => {
+    const { stdout, stderr } = await inContainer(`${wrapper} node -e ${shellQuote(pipes)}`, env)
+    const line = stdout.split('\n').find(candidate => candidate.startsWith('{'))
+    assert.ok(line, `no result: ${stdout} ${stderr}`)
+    assert.deepEqual(JSON.parse(line), { sync: 'piped', error: null, echoed: 'both-ways', out: 'async-out', err: 'async-err', code: 0 })
+  })
+  test(`${name}: node --test runs a two-file suite with per-file subprocesses and no --test-isolation=none`, { skip, timeout: 120_000 }, async () => {
+    const { stdout, stderr } = await inContainer(`${fixture}\n${wrapper} node --test --test-reporter=tap\necho ==PIDS==; cat /tmp/pids`, env)
+    assert.match(stdout, /^# pass 2$/m, `${stdout} ${stderr}`)
+    assert.match(stdout, /^# fail 0$/m, `${stdout} ${stderr}`)
+    assert.doesNotMatch(stdout + stderr, /EPERM/)
+    const files = stdout.split('==PIDS==\n')[1]!.split('\n').filter(line => /^\d+ \d+$/.test(line)).map(line => line.split(' ').map(Number))
+    assert.equal(files.length, 2, `both files ran: ${stdout} ${stderr}`)
+    assert.notEqual(files[0]![0], files[1]![0], 'each file ran in its own process')
+    assert.equal(files[0]![1], files[1]![1], 'both are children of the one runner')
+    assert.ok(files.every(([pid, parent]) => pid !== parent))
+  })
+}
