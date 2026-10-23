@@ -10,7 +10,7 @@ import { containerRunner } from './container-runner.ts'
 import { TOOL_OUTPUT_BYTES, commandOutput, type SandboxPolicy, type CommandResult } from './sandbox-protocol.ts'
 
 const exec = promisify(execFile)
-export const CONTAINER_IMAGE = 'guanxi-native-execution:k4-v2'
+export const CONTAINER_IMAGE = 'guanxi-native-execution:k4-v3'
 
 /** Settlement includes confirmed namespace teardown; callers retain writer ownership until then. */
 export interface ExecutionOwner {
