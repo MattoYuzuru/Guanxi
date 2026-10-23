@@ -1,6 +1,6 @@
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { SideChatContextFacts, SideChatRespondRequest } from '@guanxi/contract'
-import { Badge, Button, ErrorState, Icon, IconButton, Input, Popover, PopoverContent, PopoverTitle, PopoverTrigger, SegmentedControl, Textarea } from '@guanxi/ui'
+import { Badge, Button, Composer, ErrorState, Icon, IconButton, Input, Popover, PopoverContent, PopoverTitle, PopoverTrigger, SegmentedControl } from '@guanxi/ui'
 import { Markdown } from '../../components/Markdown.tsx'
 import './side-chat.css'
 import { formatTime } from '../../lib/format.ts'
@@ -79,7 +79,11 @@ export function SideChatPanel({ sessionId, onSent, onClose }: {
   useEffect(() => {
     if (!focusRequest) return
     const active = document.activeElement as HTMLElement | null
-    if (!active || active === document.body || (active as HTMLButtonElement).disabled || !active.isConnected) (focusRequest.target === 'prompt' ? promptRef : statusRef).current?.focus()
+    // The composer's action stays mounted and flips between Ask and Cancel, so focus left on it (or
+    // on any control that just became aria-disabled) moves on like focus on a removed control.
+    const stranded = !active || active === document.body || (active as HTMLButtonElement).disabled || !active.isConnected
+      || active.getAttribute('aria-disabled') === 'true' || active.closest('[data-slot="composer-action"]') !== null
+    if (stranded) (focusRequest.target === 'prompt' ? promptRef : statusRef).current?.focus()
   }, [focusRequest])
   const requestFocus = (target: 'prompt' | 'status') => setFocusRequest(previous => ({ target, token: (previous?.token ?? 0) + 1 }))
 
@@ -108,10 +112,6 @@ export function SideChatPanel({ sessionId, onSent, onClose }: {
     const next = [...turns, { id: crypto.randomUUID(), role: 'user' as const, text: draft }]
     setTurns(next); setDraft('')
     void perform(next)
-  }
-  const promptKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229 || !canAsk) return
-    event.preventDefault(); ask()
   }
   const failWith = (action: Action, error: unknown, turnId?: string) => setFailure({ action, code: error instanceof SideChatRequestError ? error.code : 'agent_unavailable',
     ...(error instanceof SideChatRequestError && error.details ? { details: error.details } : {}), at: new Date().toISOString(), ...(turnId ? { turnId } : {}) })
@@ -220,14 +220,13 @@ export function SideChatPanel({ sessionId, onSent, onClose }: {
     </div>
 
     <div className="side-chat-ask">
-      <label htmlFor={`${id}-prompt`} className="sr-only">{t('sideChat.prompt')}</label>
-      <Textarea ref={promptRef} id={`${id}-prompt`} aria-describedby={`${id}-prompt-hint`} rows={2} placeholder={t('sideChat.prompt')} value={draft}
-        onChange={event => setDraft(event.target.value)} onKeyDown={promptKey} />
-      <span id={`${id}-prompt-hint`} className="sr-only">{t('sideChat.prompt.hint')}</span>
+      {/* The shared composer (D-207): Enter asks, Shift+Enter and IME composition add text, and the
+          action becomes Cancel while the question is in flight. */}
+      <Composer layout="docked" label={t('sideChat.prompt')} placeholder={t('sideChat.prompt')} value={draft} onValueChange={setDraft}
+        onSend={ask} running={asking} onStop={() => abort.current?.abort()} sendDisabled={saving || turnsInvalid}
+        sendLabel={t('sideChat.ask')} stopLabel={t('sideChat.cancel')} textareaRef={promptRef} textareaId={`${id}-prompt`} />
       <div className="side-chat-row">
         <p data-testid="side-chat-unsaved" className="side-chat-unsaved">{turns.length === 0 ? '' : unsaved > 0 ? t('sideChat.unsaved', { count: unsaved }) : t('sideChat.allSaved')}</p>
-        {asking && <Button size="sm" onClick={() => abort.current?.abort()}>{t('sideChat.cancel')}</Button>}
-        <Button size="sm" variant="primary" disabled={!canAsk} onClick={ask}>{t('sideChat.ask')}</Button>
       </div>
       <div className="side-chat-row side-chat-footer">
         <span id={`${id}-save-hint`} className="sr-only">{t('sideChat.save.hint')}</span>
