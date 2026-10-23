@@ -29,15 +29,15 @@ contract `index.ts` export list). Checkout `/Users/yuzuru/Projects/Guanxi-lanes/
 | --- | --- |
 | typecheck, lint:md, check:licenses, ui:check, `npm run lint` | pass (675 packages, 0 not allowed; suppression file unchanged) |
 | `npm test` (`check-i4oh2tvg`) | pass: codemods 6, gates 102, core 2504 (2 Linux-only skips), kernel 107, web 466 in 52 files, ui 49 + vitest, bench |
-| `npm run test:web:browser` | see "Final gate results" below |
-| `npm run ui:check:browser` | see below |
-| `npm run build` | see below |
+| `npm run test:web:browser` (`check-x8s_1a5w`) | pass 194/194, 3.4 min (exit 0; the receipt reads `source_changed` only because this hand-off file was written during the run) |
+| `npm run ui:check:browser` (`check-nq3sei6s`) | pass: G13, G14, G15-clipping, G16 and their seeds |
+| `npm run build` (`check-9x_nbggx`) | pass |
 
 ## New / regression envelope
 
-- **New:** server side-chat 17 (`side-chat.test.ts` 15, `side-chat-contract.test.ts` 2); web component
-  new-session 23, side-chat 25, shell-unseen 13, shell-seen 8, brand-mark 1; browser new-session 9,
-  unseen-sessions 5, side-chat 7. One existing component test adapted (native-agent hint id: same property,
+- **New:** server side-chat 17 (`side-chat.test.ts` 15, `side-chat-contract.test.ts` 2); web component and unit
+  new-session 23, side-chat 24 (incl. inspector rendering), shell-unseen 14, shell-seen 6, brand-mark 1; browser
+  new-session 9, unseen-sessions 5, side-chat 7. One existing component test adapted (native-agent hint id: same property,
   resolved through `aria-describedby`).
 - **Envelope:** the full suites above. Existing `native-agent/*`, session-log, shell and native-agent browser
   specs were run unchanged in the same gates.
