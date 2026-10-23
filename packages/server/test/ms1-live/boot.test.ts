@@ -57,6 +57,8 @@ test('configuration problems are boot errors raised before any file, database or
   await mustRefuse(start({ ...base, dataDir: join(root, 'd2'), ms1Live: settings, relay: { runtime: { maximumAgeMs: 1 }, reserves } }), 'option_conflict')
   await mustRefuse(start({ ...base, dataDir: join(root, 'd3'), ms1Live: settings, host: '0.0.0.0' }), 'listen_not_loopback')
   await mustRefuse(start({ ...base, dataDir: join(root, 'd4'), ms1Live: settings, host: '192.168.1.5' }), 'listen_not_loopback')
+  // One exact address: the Host allowlist, the forward's far end and the doctor all assume 127.0.0.1.
+  for (const [i, host] of ['localhost', '::1', '[::1]', '127.0.0.2'].entries()) await mustRefuse(start({ ...base, dataDir: join(root, `h${i}`), ms1Live: settings, host }), 'listen_not_loopback')
   await mustRefuse(start({ ...base, dataDir: join(root, 'd7'), ms1Live: settings, port: settings.listen.federationPort }), 'ports_collide')
   const lead = { adapter: 'claude-code' as const, bridge: '/x/bridge', bridgeVersion: '1.0.0', claudeExecutable: '/x/claude', billingAccount: 'b', model: 'default', domains: [],
     limits: { maxCaps: { cycles: 1, tokens: 1, moneyMicros: 1, wallMs: 1 }, maxDeadlineMs: 1, allowDetach: false } }
@@ -67,7 +69,7 @@ test('configuration problems are boot errors raised before any file, database or
   await chmod(settings.node.privateKeyFile, 0o600)
   await copyFile(settings.node.identityFile, settings.peer.identityFile)
   await mustRefuse(start({ ...base, dataDir: join(root, 'd6'), ms1Live: settings }), 'peer_is_self')
-  for (const name of ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9']) await noData(join(root, name))
+  for (const name of ['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9', 'h0', 'h1', 'h2', 'h3']) await noData(join(root, name))
 })
 
 test('a home boots with its pairing: one unattended executor connection created once and the same one after a restart, and unsigned federation requests refused', async t => {

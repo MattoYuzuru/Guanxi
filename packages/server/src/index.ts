@@ -248,7 +248,7 @@ export async function start(options: StartOptions = {}) {
   let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   // The pairing's only link is a loopback port forward: the node never listens elsewhere in this mode.
-  if (live && !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) await refuseLive('listen_not_loopback', 'host')
+  if (live && host !== '127.0.0.1') await refuseLive('listen_not_loopback', 'host')
   if (live && port === live.federationPort) await refuseLive('ports_collide', 'listen')
   // A live node holds keys, pins and relay ledgers: it lives beside its configuration unless told otherwise, and never in the owner's
   // default data directory, which a lane or a rehearsal could otherwise share with a real node by accident.
