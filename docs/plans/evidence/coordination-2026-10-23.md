@@ -43,6 +43,8 @@ targeted suites at merge.
 | F2-d relay inference on another node (signed observe/count/pin, executor-side exact counter) | Sonnet | in-lane P1 loaded window not enforced; cross-check P2 pin made inside the home transaction (unusable on a real executor) | 58 new, full npm |
 | LW external lead delegate, zero-token hibernation, exactly-once wake | Sonnet | crash blocking the wake forever (K5 boot reconciliation by proof), lead-set relay caps (owner ceilings), clock-jump false reboot (kernel boot id) | 99 + K5 211 |
 | U1 session features: new session, finished-unseen, ephemeral side chat | Sonnet | incomplete zero-write proof, side-chat spend outside session budgets, long-send idempotency | web 475, browser 194 |
+| NC1 notification center UI (status-strip entry, provenance on every row, idempotent actions) | Sonnet | polling without backoff, dead node behind the dev proxy not shown offline, joined strings | web 568, browser 215 |
+| Shared `trimZeros` bug (10% shown as "1%") found by the NC1 UI author | integrator | red-then-green unit test | web 477 |
 
 ## Root-caused gate failure
 
@@ -58,7 +60,8 @@ Later checkpoints: two more load-sensitive test races were root-caused and fixed
 (`recipes.test.tsx` focus asserted before the post-commit effect; a bench holder file read before
 its non-atomic write finished). The full sequence then passed at `5570b9e5` with LW, F2-d and the
 U1 session features (receipts `check-g5my6or6`, `check-64lwpi5t`, `check-ledmbynl`,
-`check-kgtvxcmj`).
+`check-kgtvxcmj`), and again at `e2b3a50c` with the notification center UI (`check-_ycff5z_`,
+`check-u_1t9nin`, `check-qlf_v93l` for build; ui:check:browser also passed).
 
 ## What this does and does not close
 
