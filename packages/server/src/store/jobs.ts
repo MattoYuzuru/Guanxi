@@ -1154,6 +1154,12 @@ export class JobStore {
     })
   }
 
+  /** Read-only lookup; createChat still owns fingerprint validation atomically. */
+  chatCommand(scope: string, key: string): ChatJobAssociation | null {
+    const job = this.jobByIdempotency(scope, key)
+    return job ? this.chatInput(job.id) : null
+  }
+
   private jobByIdempotency(scope: string, key: string): Job | null {
     const row = this.db
       .prepare('SELECT * FROM jobs WHERE idempotency_scope = ? AND idempotency_key = ?')

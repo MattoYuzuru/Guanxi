@@ -1319,3 +1319,26 @@ Sealing atomically uploads the handoff, ledger snapshot and git bundle to the ho
 All done evidence is invalidated on a new HEAD, and completion requires clean-checkout gates
 at the final HEAD. See [the R2 service](../../../../packages/server/src/relay/README.md) for
 runtime-meter admission, sandbox limits, probe transitions and fixture-only validation.
+
+## D-208 provider Chat routing (2026-10-23)
+
+Provider Chat uses K3 `complete()` inside the existing durable Chat execution owner and does
+not acquire the local Ollama hardware lease. Local Chat keeps its existing admission path.
+Disconnect, explicit Stop, replay and restart retain the durable Job semantics above.
+Both paths receive a localized harness identity prompt; provider compaction is explicitly
+unavailable. See [K3 boundaries](../../../../packages/server/src/connections/README.md#d-208-trusted-import-and-chat).
+
+### K3-chat review recovery and context corrections (2026-10-23)
+
+Startup reconciles interrupted Chat projections before plugin activation, but queues are
+scheduled only after Connections activation and optional trusted import. Import failure logs
+`provider_key_import_failed`, locks provider access and keeps the node booting. Queued provider
+jobs fail with actionable connection codes when credentials remain unavailable. Local legacy
+Chat does not depend on Connections or full vault registration; provider egress still does.
+
+Provider context uses catalog evidence or explicit unknown allocation/percentage, never local
+`numCtx`. Its UI omits the unavailable compaction action. Custom discovery retains endpoint-only
+stale/unknown evidence, with cancellation and bounded input; completion does not rediscover an
+already admitted selection. The shared orientation stays first and byte-stable, followed by
+one fixed English language instruction; the combined Chat prefix budget is 350 UTF-8 bytes.
+Its prompt default awaits an ADR-0025/B1 bench result; no model-quality result is claimed.

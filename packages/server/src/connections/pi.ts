@@ -23,21 +23,34 @@ export function assertApiKey(provider: string, key: string) {
   }
 }
 export interface PiTransport {
-  complete(model: Model<Api>, context: Context, options: SimpleStreamOptions): Promise<AssistantMessage>
+  complete(model: Model<Api>, context: Context, options: SimpleStreamOptions, onText?: (delta: string) => void): Promise<AssistantMessage>
 }
 export const piTransport: PiTransport = {
-  async complete(model, context, options) {
+  async complete(model, context, options, onText) {
     // The caller supplies only a catalog model, explicit API key and abort signal.
     if (model.api === 'google-generative-ai' && Object.entries(process.env).some(([name, value]) =>
       name.startsWith('GOOGLE_GENAI_USE_') && value && value.toLowerCase() !== 'false')) {
       throw new ConnectionError('policy_denied', 'Google SDK mode overrides must be unset for API-key connections')
     }
     const transcript = normalizeContext(context)
+    const consume = async (stream: import('@earendil-works/pi-ai').AssistantMessageEventStream) => {
+      for await (const event of stream) if (event.type === 'text_delta') onText?.(event.delta)
+      return stream.result()
+    }
     switch (model.api) {
-      case 'anthropic-messages': return (await import('@earendil-works/pi-ai/api/anthropic-messages')).streamSimple(model as Model<'anthropic-messages'>, transcript, options).result()
-      case 'openai-responses': return (await import('@earendil-works/pi-ai/api/openai-responses')).streamSimple(model as Model<'openai-responses'>, transcript, options).result()
-      case 'openai-completions': return (await import('@earendil-works/pi-ai/api/openai-completions')).streamSimple(model as Model<'openai-completions'>, transcript, options).result()
-      case 'google-generative-ai': return (await import('@earendil-works/pi-ai/api/google-generative-ai')).streamSimple(model as Model<'google-generative-ai'>, transcript, options).result()
+      case 'anthropic-messages': return consume((await import('@earendil-works/pi-ai/api/anthropic-messages')).streamSimple(model as Model<'anthropic-messages'>, transcript, options))
+      case 'openai-responses': return consume((await import('@earendil-works/pi-ai/api/openai-responses')).streamSimple(model as Model<'openai-responses'>, transcript, options))
+      case 'openai-completions': {
+        const wire = await import('@earendil-works/pi-ai/api/openai-completions')
+        // Discovery supplies IDs, not output/context limits. Let the owner endpoint
+        // apply its defaults rather than borrowing another model's catalog ceiling.
+        return consume(piModels(model.provider).includes(model)
+          ? wire.streamSimple(model as Model<'openai-completions'>, transcript, options)
+          : wire.stream(model as Model<'openai-completions'>, transcript, {
+            ...options, reasoningEffort: options.reasoning,
+          }))
+      }
+      case 'google-generative-ai': return consume((await import('@earendil-works/pi-ai/api/google-generative-ai')).streamSimple(model as Model<'google-generative-ai'>, transcript, options))
       default: throw new Error('Unsupported model wire protocol')
     }
   },

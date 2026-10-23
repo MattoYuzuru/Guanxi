@@ -557,8 +557,8 @@ function Overview({ timeline, summary }: { timeline: TimelineState; summary: Ses
       {meter.context ? (
         <Fact
           label={translate('inspector.stat.context')}
-          value={`${meter.context.data.usedTokens.toLocaleString()} / ${meter.context.data.allocatedTokens.toLocaleString()} (${Math.round(meter.context.data.percent)}%)`}
-          note={`${translate('inspector.stat.contextSource')} ${translate('inspector.stat.asOf', { time: time(meter.context.at) })}`}
+          value={`${meter.context.data.usedTokens.toLocaleString()} / ${meter.context.data.allocatedTokens?.toLocaleString() ?? translate('inspector.unknown')}${meter.context.data.percent === null ? '' : ` (${Math.round(meter.context.data.percent)}%)`}`}
+          note={`${meter.context.data.providerContext?.source ?? translate('inspector.stat.contextSource')} ${translate('inspector.stat.asOf', { time: meter.context.data.providerContext ? meter.context.data.providerContext.observedAt ? time(meter.context.data.providerContext.observedAt) : translate('inspector.unknown') : time(meter.context.at) })}`}
         />
       ) : (
         <Fact label={translate('inspector.stat.context')} value={translate('inspector.unknown')} note={translate('inspector.stat.contextUnknown')} mono={false} />

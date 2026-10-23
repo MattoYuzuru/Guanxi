@@ -1,4 +1,7 @@
 export const connectionEnglish = {
+  'connections.endpointHost': 'API host: {host}',
+  'chat.models.local': 'Ollama · this node',
+  'chat.models.unavailable': 'Provider models unavailable. Check the node and unlock Connections in Settings.',
   'connections.money': '{amount} {currency}',
   'connections.route': '{provider} · {kind}',
   'connections.provenance': ' · {provenance}',
@@ -66,6 +69,9 @@ export const connectionEnglish = {
   'connections.cost.none': 'No usage observations yet.',
 } as const
 export const connectionRussian: Record<keyof typeof connectionEnglish, string> = {
+  'connections.endpointHost': 'Хост API: {host}',
+  'chat.models.local': 'Ollama · этот узел',
+  'chat.models.unavailable': 'Модели провайдеров недоступны. Проверьте узел и разблокируйте подключения в настройках.',
   'connections.money': '{amount} {currency}',
   'connections.route': '{provider} · {kind}',
   'connections.provenance': ' · {provenance}',

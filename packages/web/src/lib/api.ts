@@ -1,3 +1,4 @@
+import { chatModelsResponse } from '@guanxi/contract'
 /**
  * Типизированный клиент. Все пути — только через ROUTES из контракта,
  * все ответы — прогоняются через zod-схемы контракта.
@@ -171,6 +172,12 @@ export function errorMessage(error: unknown): string {
 }
 
 const API_ERROR_KEYS = {
+  connection_not_found: 'connections.error.connection_not_found',
+  vault_locked: 'connections.error.vault_locked',
+  policy_denied: 'connections.error.policy_denied',
+  egress_unavailable: 'connections.error.egress_unavailable',
+  quota_exhausted: 'connections.error.quota_exhausted',
+  provider_failed: 'connections.error.provider_failed',
   ollama_unavailable: 'error.api.unavailable',
   model_not_found: 'error.api.notFound',
   job_not_found: 'error.api.notFound',
@@ -297,6 +304,7 @@ export const api = {
       signal,
     }),
 
+  chatModels: (signal?: AbortSignal) => request(ROUTES.threadModels(), chatModelsResponse, { signal }),
   listModels: (contextLength?: number, signal?: AbortSignal) =>
     request(ROUTES.models(), listModelsResponse, { query: { contextLength }, signal }),
 
