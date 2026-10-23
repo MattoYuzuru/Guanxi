@@ -23,12 +23,12 @@ const stubRuntime = (now: () => number): ExecutorRelayRuntime => ({ model: REF,
 const ask = (runId: string, over: Record<string, unknown> = {}) => ({ action: 'pin' as const, homeNodeId: 'home', executorNodeId: 'target', model: MODEL,
   runId, sessionId: `s-${runId}`, epoch: 1, challenge: `c-${runId}-${Math.random()}`, ...over })
 
-interface Pair { homeCtx: { identity: ReturnType<typeof keys>['identity']; readOnly: boolean; version: { major: number; minor: number } }; target: SimNode; home: () => SimNode; crash(maintenanceMs?: number): SimNode; streams(): string[]; down: { value: boolean }; sent: string[]; attempts: { value: number }; dir: string }
-function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinTtlMs?: number; maintenanceMs?: number } = {}): Pair {
+interface Pair { lease: { now: number }; restartTarget(): SimNode; homeCtx: { identity: ReturnType<typeof keys>['identity']; readOnly: boolean; version: { major: number; minor: number } }; target: SimNode; home: () => SimNode; crash(maintenanceMs?: number): SimNode; streams(): string[]; down: { value: boolean }; sent: string[]; attempts: { value: number }; dir: string }
+function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinTtlMs?: number; maintenanceMs?: number; persistentTarget?: boolean } = {}): Pair {
   const dir = mkdtempSync(join(tmpdir(), 'guanxi-reap-')), path = join(dir, 'home.sqlite'), down = { value: false }, sent: string[] = [], attempts = { value: 0 }
   const homeKeys = keys('home'), targetKeys = keys('target'), homeCtx = { identity: homeKeys.identity, readOnly: false, version: { major: 1, minor: 4 } }
   let home!: SimNode, target!: SimNode
-  const mono = () => 1_000_000
+  const lease = { now: 1_000_000 }, mono = () => lease.now, targetPath = o.persistentTarget ? join(dir, 'target.sqlite') : ':memory:'
   const channel = (from: () => SimNode, to: () => SimNode) => new FederationChannel({ local: from().keys.identity, privateKey: from().keys.privateKey, peer: to().keys.identity,
     clock: () => from().time, transport: async request => {
       const route = new URL(request.url).pathname.replace('/api/federation', '')
@@ -39,7 +39,8 @@ function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinT
     } })
   const tp: DispatchPolicy = { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: mono, channel: () => channel(() => target, () => home),
     relayLimits: { ...(o.maxPins ? { maxPinsPerPeer: o.maxPins } : {}), ...(o.pinTtlMs ? { pinTtlMs: o.pinTtlMs } : {}) }, relayPinMaintenanceMs: o.maintenanceMs ?? 0 }
-  target = new SimNode(targetKeys, ':memory:', { attempts: { governor: new ResourceGovernor(), maxReservationMs: 5000, leaseClock: mono }, dispatch: tp })
+  const openTarget = () => new SimNode(targetKeys, targetPath, { attempts: { governor: new ResourceGovernor(), maxReservationMs: 5000, leaseClock: mono }, dispatch: tp })
+  target = openTarget()
   tp.relayRuntime = stubRuntime(() => target.time)
   const open = (maintenanceMs = 0) => {
     const policy: DispatchPolicy = { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: mono, channel: () => channel(() => home, () => target), relayPinMaintenanceMs: maintenanceMs }
@@ -48,7 +49,8 @@ function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinT
   }
   home = open(); target.trust(home)
   t.after(() => { try { home.close() } catch { /* already closed */ } target.close(); rmSync(dir, { recursive: true, force: true }) })
-  return { homeCtx, target, home: () => home, dir, down, sent, attempts,
+  return { lease, get target() { return target }, restartTarget() { const time = target.time; target.close(); target = openTarget(); target.time = time; target.trust(home); return target },
+    homeCtx, home: () => home, dir, down, sent, attempts,
     crash(maintenanceMs = 0) { home.close(); home = open(maintenanceMs); return home },
     streams: () => (target.db.prepare('SELECT id FROM federation_streams ORDER BY id').all() as Array<{ id: string }>).map(row => row.id) }
 }
@@ -138,20 +140,20 @@ test('the executor lease: an expired pin is released on its own transaction, fre
   const p = pair(t, { maxPins: 1, pinTtlMs: 1000 }), live = { homeNodeId: 'home', executorNodeId: 'target', model: MODEL, run: { runId: 'a', sessionId: 's-a', fence: { attemptId: 'x', epoch: 1, token: 1 } } }
   await pinFromHome(p, 'a')
   await assert.rejects(pinFromHome(p, 'b'), /peer_refused/, 'the cap holds while the lease does')
-  p.target.time += 999
+  p.lease.now += 999
   assert.equal((await p.target.federation.receiveRelayObserve(p.homeCtx, { binding: live, challenge: 'c1' })).entry.kind, 'observe', 'inside the lease')
-  p.target.time += 999                                                     // 1998 ms after the pin, 999 after its use: renewed by use
+  p.lease.now += 999                                                     // 1998 ms after the pin, 999 after its use: renewed by use
   assert.equal((await p.target.federation.receiveRelayObserve(p.homeCtx, { binding: live, challenge: 'c2' })).entry.kind, 'observe', 'a valid use renews the lease')
-  p.target.time += 1001                                                    // the home never came back
+  p.lease.now += 1001                                                    // the home never came back
   await assert.rejects(p.target.federation.receiveRelayObserve(p.homeCtx, { binding: live, challenge: 'c3' }), /unknown_stream/, 'an expired pin serves no run')
   assert.deepEqual(p.streams(), [])
   assert.equal(p.target.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_leases').get()!.n, 0, 'its lease row is gone too')
   await pinFromHome(p, 'b')                                                // the cap is free again
   assert.deepEqual(p.streams(), ['relay:b'])
   // Asking again (the home's heartbeat) renews, and restores a lapsed pin.
-  p.target.time += 900; await p.home().federation.relayChannel('target').relayPin(ask('b')); p.target.time += 900
+  p.lease.now += 900; await p.home().federation.relayChannel('target').relayPin(ask('b')); p.lease.now += 900
   assert.equal(p.target.federation.sweepRelayPins(), 0); assert.deepEqual(p.streams(), ['relay:b'])
-  p.target.time += 200
+  p.lease.now += 200
   assert.equal(p.target.federation.sweepRelayPins(), 1); assert.deepEqual(p.streams(), [])
 })
 
@@ -191,13 +193,13 @@ test('a live session renews its lease by heartbeat, so an idle run outlives the 
   const pins = (f: typeof beating) => f.target.db.prepare("SELECT id FROM federation_streams WHERE id LIKE 'relay:%'").all().map(x => x.id)
   for (let i = 0; i < 4; i++) {
     const before = beating.sent.filter(s => s.path === '/attempts/runtime/pin').length
-    beating.target.time += 900                                           // idle: no observe, no count
+    beating.clock.mono += 900                                           // idle: no observe, no count
     await until(() => beating.sent.filter(s => s.path === '/attempts/runtime/pin').length > before, 3000)
     assert.deepEqual(pins(beating), ['relay:beat'], `still pinned after ${(i + 1) * 900} ms idle`)
   }
   const silent = await remoteFixture(t, { relayLimits: { pinTtlMs: 1000 } })
   await silent.relay('quiet')
-  silent.target.time += 1001
+  silent.clock.mono += 1001
   assert.equal(silent.target.federation.sweepRelayPins(), 1, 'the default heartbeat is 60 s of real time, far from this test')
 })
 
@@ -249,4 +251,31 @@ test('an executor that permanently refuses one journaled row does not block the 
   const before = p.attempts.value
   assert.deepEqual(await restarted.federation.reconcileRelayPins(), { released: 0, kept: 0, failed: 2 })
   assert.equal(p.attempts.value - before, 1, 'one request for two rows of a down executor')
+})
+
+test('the lease runs on the lease clock: a wall-clock jump lapses nothing, and the lease still ends by the lease clock', async t => {
+  const p = pair(t, { pinTtlMs: 1000 })
+  await pinFromHome(p, 'a')
+  p.target.time += 24 * 3_600_000                                        // the wall clock leaps a day (NTP step, resume)
+  assert.equal(p.target.federation.sweepRelayPins(), 0, 'the wall clock is not the lease clock')
+  assert.deepEqual(p.streams(), ['relay:a'])
+  p.lease.now += 1001
+  assert.equal(p.target.federation.sweepRelayPins(), 1)
+})
+
+test('an executor restart grants every relay pin a fresh lease, including lease-less ones, so homes can renew first', async t => {
+  const p = pair(t, { pinTtlMs: 1000, persistentTarget: true })
+  await pinFromHome(p, 'a')
+  p.target.federation.replicas.bind({ streamId: 'relay:legacy', kind: 'run', sessionId: 's-legacy', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
+  p.lease.now += 50_000                                                  // an outage far longer than the TTL: both leases are long expired
+  const restarted = p.restartTarget()
+  assert.equal(restarted.federation.sweepRelayPins(), 0, 'nothing is swept at boot')
+  assert.deepEqual(p.streams(), ['relay:a', 'relay:legacy'])
+  const expiries = restarted.db.prepare('SELECT expires_at FROM federation_relay_pin_leases ORDER BY stream_id').all().map(r => r.expires_at)
+  assert.deepEqual(expiries, [p.lease.now + 1000, p.lease.now + 1000], 'a grace of one TTL from the boot')
+  p.lease.now += 500
+  await p.home().federation.relayChannel('target').relayPin(ask('a'))    // the home renews inside the grace
+  p.lease.now += 600
+  assert.equal(restarted.federation.sweepRelayPins(), 1, 'only the pin nobody renewed lapses')
+  assert.deepEqual(p.streams(), ['relay:a'])
 })

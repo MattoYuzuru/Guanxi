@@ -53,6 +53,9 @@ export class Federation {
   readonly attemptDispatch: AttemptDispatch | null
   #options: FederationOptions
   private readonly now: () => number
+  /** F2-reap: the clock of relay pin leases. The monotonic-anchored lease clock of dispatch and offers, never the wall clock, so a
+   * clock step or a resume cannot lapse a live pin. */
+  private readonly leaseNow: () => number
   private closed = false
   private readonly lifetime = new AbortController()
   private readonly counting = new Map<string, number>()
@@ -65,6 +68,8 @@ export class Federation {
     if (!Number.isSafeInteger(this.configOpsPerRequest) || this.configOpsPerRequest < 1) throw new FederationError('invalid_config_budget')
     this.#options = options
     this.now = options.clock ?? Date.now
+    const wall = Date.now(), monotonic = performance.now()
+    this.leaseNow = options.dispatch?.leaseClock ?? (() => Math.floor(wall + performance.now() - monotonic))
     this.identity = nodeIdentitySchema.parse(options.identity)
     publicKey(this.identity.publicKey)
     // Validate that the host actually owns the pinned key, without serializing private bytes.
@@ -87,6 +92,7 @@ export class Federation {
     if (options.dispatch && !this.attemptOffers) throw new FederationError('attempts_required')
     this.attemptDispatch = options.dispatch ? new AttemptDispatch(options.db, options.runs, this.attemptOffers!, this.identity.id,
       this.identity.accountId, privateKey, options.dispatch, this.now) : null
+    if (options.dispatch) this.graceRelayPins()
     if (options.dispatch) this.startPinMaintenance(options.dispatch.relayPinMaintenanceMs ?? 60_000)
   }
   private assertOpen() { if (this.closed) throw new FederationError('closed', 503) }
@@ -340,13 +346,22 @@ export class Federation {
   }
   private leaseRelayPin(streamId: string): void {
     this.#options.db.prepare('INSERT INTO federation_relay_pin_leases VALUES (?,?) ON CONFLICT(stream_id) DO UPDATE SET expires_at=excluded.expires_at')
-      .run(streamId, this.now() + this.pinTtl())
+      .run(streamId, this.leaseNow() + this.pinTtl())
+  }
+  /** Boot grace (ADR-0018: a restart never makes a live holder lose to its own downtime). Every relay pin gets at least one full
+   * TTL from this boot, and a pin without a lease gets one, so the homes can renew before anything is swept. */
+  private graceRelayPins(): void {
+    const db = this.#options.db, until = this.leaseNow() + this.pinTtl()
+    this.transaction(() => {
+      db.prepare("INSERT OR IGNORE INTO federation_relay_pin_leases SELECT id,? FROM federation_streams WHERE id LIKE 'relay:%'").run(until)
+      db.prepare('UPDATE federation_relay_pin_leases SET expires_at=MAX(expires_at,?)').run(until)
+    })
   }
   /** Executor backstop: a relay pin whose lease lapsed (its home crashed or never returned) is released on this node's own
    * transaction. It removes a permission and grants none, so it cannot create a second holder of anything. A pin without a
-   * lease predates the lease and can only be a leaked one: a relay run does not survive its node. */
+   * lease (made after boot by a path other than the pin message) is released at once. */
   sweepRelayPins(): number {
-    const db = this.#options.db, now = this.now()
+    const db = this.#options.db, now = this.leaseNow()
     const lapsed = `FROM federation_streams WHERE id LIKE 'relay:%'
         AND NOT EXISTS (SELECT 1 FROM federation_replicas r WHERE r.stream_id=federation_streams.id)
         AND NOT EXISTS (SELECT 1 FROM federation_relay_pin_leases l WHERE l.stream_id=federation_streams.id AND l.expires_at>?)`
