@@ -91,7 +91,8 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   The image profile is `k4-v3`; the image is labelled with the sha256 of `guard.c` and the
   `Dockerfile`, and the node refuses any image without the current label (an older build, or another
   guard) with `container_runtime_unavailable` before creating a container. A host that has only an
-  older image must rebuild; old images are not used and are left in place.
+  older image must rebuild; old images are not used and are left in place. The label detects stale or
+  mismatched builds; it does not authenticate an image rebuilt by someone with Docker access.
   Commands select the inspected content-addressed image ID, not a mutable tag at execution.
   The absolute Docker CLI is captured and canonicalized at node boot; writable trees containing
   its replacement points refuse both arbitrary and fixed invocations. Installing Docker after

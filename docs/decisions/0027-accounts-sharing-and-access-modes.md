@@ -84,7 +84,8 @@ Level 3; NIST RBAC/ABAC; Zanzibar (USENIX ATC '19).
 **Status:** implemented · locally validated on Linux arm64 (kernel 6.8, Colima). On x64 the generated
 program is validated at instruction level and its numbers were read from amd64 kernel headers;
 `guard.c` was compiled for amd64 with `-Werror`, and its compiled program was compared with the
-generated one over 29 million argument combinations, but it was not run there.
+generated one over 29 million argument combinations (`packages/server/scripts/guard-differential.mjs`),
+but it was not run there.
 
 *Problem.* The workload seccomp filter denied `socketpair` outright, so every Node child with
 piped stdio failed with `EPERM` (libuv builds those pipes from `socketpair(AF_UNIX, SOCK_STREAM)`),
@@ -115,7 +116,9 @@ node holds the expected value (`GUARD_DIGEST`, kept honest by a test that hashes
 `execute()` reads the label in the same `docker image inspect` that selects the image id. A missing
 image, a missing label (any older build) or a different label fails closed with
 `container_runtime_unavailable` before any container is created, so a stale tag cannot run another
-policy.
+policy. The label is written by the provisioning script and is not authenticated: the gate detects
+stale or mismatched builds, not an image deliberately rebuilt with a forged label by someone who already
+has Docker access (root-equivalent on the host).
 
 *Security argument.*
 
