@@ -7,6 +7,7 @@ import {
   REDACTION_MARKER_CLOSE,
   REDACTION_MARKER_OPEN,
   REDACTION_MARKER_PREFIX,
+  parseSideChatSavedNote,
   promptTextOf,
   toolCallArgumentsTextOf,
   type SessionEvent,
@@ -151,8 +152,13 @@ export function eventDetail(event: SessionEvent): string | null {
       // Rendered per item by QueueBody; joining would hide item boundaries and
       // could put an unbounded legacy tail into one paragraph.
       return null
-    case 'agent.note':
-      return event.data.text
+    case 'agent.note': {
+      // A saved side chat is history the user chose to keep; show it as a transcript, not JSON.
+      const saved = parseSideChatSavedNote(event.data.text)
+      if (!saved) return event.data.text
+      return [translate('sideChat.inspector.saved', { count: saved.messages.length }),
+        ...saved.messages.map(message => `${translate(message.role === 'user' ? 'sideChat.role.user' : 'sideChat.role.assistant')}: ${message.text}`)].join('\n')
+    }
     case 'prompt':
       return promptTextOf(event)
     case 'assistant.message':

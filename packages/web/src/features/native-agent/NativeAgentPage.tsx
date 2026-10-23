@@ -6,6 +6,7 @@ import { Link, paths, navigate } from '../../lib/router.tsx'
 import { translate as t, getActiveLocale } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { NewSessionScreen } from '../new-session/NewSessionScreen.tsx'
+import { SideChatPanel } from '../side-chat/SideChatPanel.tsx'
 import { nativeApi } from './api.ts'
 
 export function NativeProgress({ progress, stop, remove }: { progress: AgentProgress; stop: () => void; remove: (id: string) => void }) {
@@ -73,6 +74,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
     <h1 className="text-18">{t('native.progress')}</h1>
     {error && <div role="alert"><p>{t(navigator.onLine ? 'native.error' : 'native.offline')}</p><Button onClick={() => setRevision(r => r + 1)}>{t('native.retry')}</Button></div>}
     {progress && <NativeProgress progress={progress} stop={() => void mutate(() => nativeApi.stop(progress.sessionId))} remove={id => void mutate(() => nativeApi.remove(progress.sessionId, id))} />}
+    {progress && <SideChatPanel sessionId={progress.sessionId} />}
     {progress && <NativeSessionActions progress={progress} busy={busy}
       remove={() => void mutate(async () => { await nativeApi.deleteSession(progress.sessionId); navigate(paths.agent()) })}
       retain={mode => void mutate(() => nativeApi.setRetention(progress.sessionId, mode))}

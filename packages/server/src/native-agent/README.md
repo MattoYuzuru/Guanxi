@@ -239,6 +239,39 @@ have no automatic expiry. Cross-session delegation references refuse deletion ra
 silently dropping another run's promise. Reasoning uses only K2 reasoning rows, with its seven-day
 maximum and the sooner parent TTL; it never enters provider history, outputs or cost metadata.
 
+## Ephemeral side chat (U1)
+
+**Status:** implemented and locally validated (2026-10-23); native sessions only. Decision:
+D-135, [ADR-0036](../../../../docs/decisions/0036-workspace-layout-and-experience-modes.md),
+screen W4. Code: [`side-chat.ts`](side-chat.ts), the `sideChat*` methods of `NativeAgents`, the three
+routes below and `packages/contract/src/side-chat.ts`. Tests: `test/native-agent/side-chat.test.ts`,
+`test/side-chat-contract.test.ts`.
+
+| Route | Effect on the session log |
+| --- | --- |
+| `POST /api/agent/:id/side-chat/respond` | none: stateless, tool-free, answers through the session's own K3 connection and model |
+| `POST /api/agent/:id/side-chat/save` | exactly one `agent.note` carrying the encoded transcript (history only), idempotent per `operationId` |
+| `POST /api/agent/:id/side-chat/send` | exactly one queued or started prompt whose id is derived from the `operationId`, idempotent across retries and restarts |
+
+- **Context.** Rendered from the `remote_agent` view of the log (prompts and assistant messages only; never
+  reasoning, tool calls, tool results or notes), up to the log head, declared untrusted data. The caller chooses
+  none, the whole session or the last N turns. Hosted models must satisfy `UTF-8 bytes <= window - maxTokens`
+  (a byte is at least one token, so this proves the fit); a local runtime uses its context setting as the bound.
+  An unprovable context is refused with `context_too_large` and its numbers, never cut.
+- **Writes.** `respond` adds no row to the node database and no file; K3 records its usual usage receipt in the
+  connection store under `runId` `side-chat:<requestId>` (metadata, no content). The test compares every table's
+  row count and the data directory's file list before and after completed, failed and canceled requests.
+- **Save** goes through the running turn's append FIFO when a turn is active (a failure there is returned, never
+  thrown into the FIFO, so it cannot abort the turn) and through the R1 home transaction otherwise. When the
+  session has no live writer the log may also record its own `writer.acquired` handover event; the note itself is
+  always exactly one event. The native replay ignores `agent.note`, so a saved side chat is never agent context.
+- **Send** reuses the existing FIFO. A caller-chosen queue item id is queued at most once, and a prompt event
+  with the derived message id is the durable receipt: a retry after a lost response or a restart reports
+  `already_sent`. Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
+  retryable `session_busy`. Origin is recorded as `queued`.
+- **Not covered.** Legacy Chat Jobs have no side-chat route (the web panel is mounted on native sessions only);
+  the answer is not streamed; the opened-in-browser transcript is not durable by design.
+
 ## CLI
 
 Start the node normally, then:

@@ -3,12 +3,14 @@ import { shellEnglish, shellRussian } from '../features/shell/messages.ts'
 import { connectionEnglish, connectionRussian } from '../features/connections/messages.ts'
 import { nativeEnglish, nativeRussian } from '../features/native-agent/messages.ts'
 import { newSessionEnglish, newSessionRussian } from '../features/new-session/messages.ts'
+import { sideChatEnglish, sideChatRussian } from '../features/side-chat/messages.ts'
 
 const english = {
   ...workspaceEnglish,
   ...shellEnglish,
   ...nativeEnglish,
   ...newSessionEnglish,
+  ...sideChatEnglish,
   ...connectionEnglish,
   'format.bytes.byte': 'B',
   'format.bytes.kibibyte': 'KB',
@@ -1859,6 +1861,7 @@ const russian: Messages = {
   ...connectionRussian,
   ...nativeRussian,
   ...newSessionRussian,
+  ...sideChatRussian,
   ...workspaceRussian,
   ...shellRussian,
   'format.bytes.byte': 'Б',

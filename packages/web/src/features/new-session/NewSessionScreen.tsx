@@ -249,9 +249,8 @@ export function NewSessionScreen() {
           {chips.map(chip => <li key={chip} className="rounded-control border border-divider bg-inset px-2 py-1 text-12">{chip}</li>)}
         </ul>}
 
-        {startFailure && <div ref={failureRef} tabIndex={-1} className="flex flex-col gap-2 focus-visible:outline-focus">
-          <p className="text-14">{t(startErrorKey(startFailure.code))}</p>
-          <ErrorState title={t('newSession.start.error')} source={t('newSession.start.source')} occurredAt={startFailure.at} timeMeaning="observed"
+        {startFailure && <div ref={failureRef} tabIndex={-1} className="focus-visible:outline-focus">
+          <ErrorState title={`${t('newSession.start.error')}. ${t(startErrorKey(startFailure.code))}`} source={t('newSession.start.source')} occurredAt={startFailure.at} timeMeaning="observed"
             details={startFailure.code} />
         </div>}
 
