@@ -77,7 +77,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
     <h1 ref={heading} tabIndex={-1} className="text-18 focus-visible:outline-focus">{t('native.progress')}</h1>
     {error && <div role="alert"><p>{t(navigator.onLine ? 'native.error' : 'native.offline')}</p><Button onClick={() => setRevision(r => r + 1)}>{t('native.retry')}</Button></div>}
     {progress && <NativeProgress progress={progress} stop={() => void mutate(() => nativeApi.stop(progress.sessionId))} remove={id => void mutate(() => nativeApi.remove(progress.sessionId, id))} />}
-    {progress && <SideChatPanel sessionId={progress.sessionId} />}
+    {progress && <SideChatPanel sessionId={progress.sessionId} onSent={() => setRevision(r => r + 1)} />}
     {progress && <NativeSessionActions progress={progress} busy={busy}
       remove={() => void mutate(async () => { await nativeApi.deleteSession(progress.sessionId); navigate(paths.agent()) })}
       retain={mode => void mutate(() => nativeApi.setRetention(progress.sessionId, mode))}

@@ -20,7 +20,7 @@ export function useShellController() {
   const [preferences, setPreferences] = useState(readShellPreferences)
   const [paletteOpen, updatePaletteOpen] = useState(false), [modelsRequested, setModelsRequested] = useState(false)
   const sessions = useShellSessions(location)
-  const unseen = useUnseenSessions(sessions.sessions, location, sessions.reads)
+  const unseen = useUnseenSessions(sessions.sessions, location, sessions.reads, !sessions.hasMore && !sessions.omitted && !sessions.error)
   const setPaletteOpen = useCallback((next: boolean) => {
     if (!next) sessions.cancelSearch()
     updatePaletteOpen(next)

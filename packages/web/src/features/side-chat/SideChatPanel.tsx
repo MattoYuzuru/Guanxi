@@ -22,19 +22,20 @@ type Announcement = { key: LocaleKey; values?: Record<string, string | number> }
 
 const digestOf = (turns: readonly Turn[]) => JSON.stringify(turns.map(turn => [turn.role, turn.text]))
 const ERROR_KEYS = ['validation_failed', 'session_not_found', 'session_unavailable', 'session_busy', 'egress_unavailable', 'context_too_large', 'connection_unavailable',
-  'quota_exhausted', 'model_failed', 'operation_conflict', 'cancelled', 'agent_unavailable'] as const
+  'quota_exhausted', 'model_failed', 'operation_conflict', 'cancelled', 'agent_unavailable', 'budget_exhausted', 'too_many_requests'] as const
 const SOURCE_KEYS = { respond: 'sideChat.source.respond', save: 'sideChat.source.save', send: 'sideChat.source.send' } as const satisfies Record<Action, LocaleKey>
 
 function failureText(failure: Failure): string {
   if (failure.code === 'unreachable') return t('sideChat.error.unreachable')
-  if (failure.code === 'context_too_large' && failure.details) {
+  if (failure.code === 'context_too_large' && failure.details && 'windowTokens' in failure.details) {
     return t('sideChat.error.context_too_large', { bytes: failure.details.bytes, bound: failure.details.boundBytes, window: failure.details.windowTokens,
       output: failure.details.outputTokens, source: failure.details.source })
   }
+  if (failure.code === 'too_large' && failure.details) return t('sideChat.error.too_large', { bytes: failure.details.bytes, bound: failure.details.boundBytes })
   return t((ERROR_KEYS as readonly string[]).includes(failure.code) ? `sideChat.error.${failure.code as (typeof ERROR_KEYS)[number]}` : 'sideChat.error.agent_unavailable')
 }
 
-export function SideChatPanel({ sessionId }: { sessionId: string }) {
+export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Called after the node accepted a Send to main, so the host can refresh the session's status. */ onSent?: () => void }) {
   useLocale()
   const [turns, setTurns] = useState<Turn[]>([]), [draft, setDraft] = useState('')
   const [mode, setMode] = useState<ContextMode>('session'), [lastTurns, setLastTurns] = useState('3')
@@ -129,6 +130,7 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
       setSends(previous => ({ ...previous, [turn.id]: { status: 'sent', delivery: receipt.delivery } }))
       setAnnouncement({ key: receipt.delivery === 'queued' ? 'sideChat.sent.queued' : receipt.delivery === 'started' ? 'sideChat.sent.started' : 'sideChat.sent.already' })
       requestFocus('status')
+      onSent?.()
     } catch (error) {
       setSends(previous => { const { [turn.id]: _dropped, ...rest } = previous; return rest })
       setAnnouncement(null)
@@ -197,7 +199,7 @@ export function SideChatPanel({ sessionId }: { sessionId: string }) {
 
     {failure && <div className="flex min-w-0 flex-col gap-2">
       <ErrorState title={`${t('sideChat.error.title')}. ${failureText(failure)}`} source={t(SOURCE_KEYS[failure.action])} occurredAt={failure.at} timeMeaning="observed" details={failure.code}
-        action={failure.code === 'context_too_large' || failure.code === 'validation_failed' ? undefined : <Button onClick={retry}>{t('sideChat.retry')}</Button>} />
+        action={failure.code === 'context_too_large' || failure.code === 'validation_failed' || failure.code === 'too_large' ? undefined : <Button onClick={retry}>{t('sideChat.retry')}</Button>} />
     </div>}
     <p ref={statusRef} role="status" tabIndex={-1} data-testid="side-chat-status" className="min-h-6 text-14 focus-visible:outline-focus">{announcement ? t(announcement.key, announcement.values) : ''}</p>
 
