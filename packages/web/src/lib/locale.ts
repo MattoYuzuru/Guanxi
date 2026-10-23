@@ -519,6 +519,7 @@ const english = {
   'runtime.queue.count': '{count} queued',
   'runtime.queue.position': 'Position {position}',
   'runtime.models.title': 'Loaded runtime models',
+  'runtime.models.source': 'Source',
   'runtime.models.count': '{count} loaded',
   'runtime.models.empty.short': 'Healthy empty model sample',
   'runtime.models.unavailable':
@@ -572,6 +573,9 @@ const english = {
   'runtime.host.devicesUnknown':
     'Accelerator device count is not reported by the current host adapter.',
   'runtime.nvidia.devices': 'NVIDIA devices',
+  'runtime.nvidia.state': 'State',
+  'runtime.host.platform': 'Platform',
+  'runtime.host.accelerator': 'Accelerator',
   'runtime.nvidia.available': 'NVIDIA telemetry available',
   'runtime.nvidia.partial': 'NVIDIA telemetry partial',
   'runtime.nvidia.unavailable': 'NVIDIA telemetry unavailable',
@@ -2356,6 +2360,7 @@ const russian: Messages = {
   'runtime.queue.count': 'В очереди: {count}',
   'runtime.queue.position': 'Позиция {position}',
   'runtime.models.title': 'Загруженные runtime-модели',
+  'runtime.models.source': 'Источник',
   'runtime.models.count': 'Загружено: {count}',
   'runtime.models.empty.short': 'Пустой успешный sample моделей',
   'runtime.models.unavailable':
@@ -2409,6 +2414,9 @@ const russian: Messages = {
   'runtime.host.devicesUnknown':
     'Текущий host adapter не сообщает количество accelerator devices.',
   'runtime.nvidia.devices': 'Устройства NVIDIA',
+  'runtime.nvidia.state': 'Состояние',
+  'runtime.host.platform': 'Платформа',
+  'runtime.host.accelerator': 'Ускоритель',
   'runtime.nvidia.available': 'Телеметрия NVIDIA доступна',
   'runtime.nvidia.partial': 'Телеметрия NVIDIA неполна',
   'runtime.nvidia.unavailable': 'Телеметрия NVIDIA недоступна',

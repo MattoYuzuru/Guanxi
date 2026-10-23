@@ -73,6 +73,28 @@ describe('Runtime Bar projection', () => {
     expect(screen.queryByRole('link', { name: /Job|операц/u })).toBeNull()
   })
 
+  it('lists facts as label and value pairs, never joined with commas, in flat sections (visual pass 5)', () => {
+    const view = renderRuntime()
+    const details = screen.getByRole('region', { name: 'Runtime и ресурсы' })
+    // Each fact value stands alone: no value carries a comma-joined list of other facts.
+    const values = [...details.querySelectorAll('dd .runtime-fact-value')].map(node => node.textContent ?? '')
+    expect(details.querySelectorAll('dd')).toHaveLength(values.length)
+    expect(values.length).toBeGreaterThan(10)
+    // Locale date-times ("02 авг., 15:00") are one value, not a joined list.
+    expect(values.filter(text => /, /u.test(text) && !/\d{1,2}:\d{2}/u.test(text))).toEqual([])
+    // Queue rows: a heading per waiter and a description list, no prose line of joined facts.
+    const queue = within(details).getByRole('list', { name: 'FIFO-очередь' })
+    const rows = within(queue).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    for (const row of rows) expect(row.querySelectorAll('dl')).toHaveLength(1)
+    // Sections are separated by hairlines, not nested bordered boxes.
+    const sections = [...details.querySelectorAll(':scope > section')]
+    expect(sections).toHaveLength(3)
+    expect(sections.every(section => section.classList.contains('runtime-section'))).toBe(true)
+    expect(details.querySelectorAll('.rounded-md')).toHaveLength(0)
+    void view
+  })
+
   it('shows prewarm purpose and lowest priority without claiming a durable Job owner', () => {
     renderRuntime(
       runtimeSnapshotFixture((snapshot) => {
@@ -240,8 +262,8 @@ describe('Runtime Bar projection', () => {
     expect(host.textContent).toContain('Старая оценка usable memory')
     expect(host.textContent).toContain('free pages, не safe capacity для новой модели')
     expect(host.textContent).toContain('compatibility estimate, не текущая доступность')
-    expect(host.textContent).toContain('Discrete VRAM:Неизвестно')
-    expect(host.textContent).not.toContain('Discrete VRAM:0')
+    expect(host.textContent).toContain('Discrete VRAMНеизвестно')
+    expect(host.textContent).not.toContain('Discrete VRAM0')
     expect(host.textContent).toContain('не сообщает количество accelerator devices')
   })
 
@@ -250,14 +272,14 @@ describe('Runtime Bar projection', () => {
     const devices = screen.getByRole('region', { name: 'Устройства NVIDIA' })
     expect(within(devices).getByText('NVIDIA RTX 4090')).toBeTruthy()
     expect(within(devices).getByText('NVIDIA Тестовая GPU')).toBeTruthy()
-    expect(devices.textContent).toContain('Индекс устройства у провайдера:2')
-    expect(devices.textContent).toContain('Индекс устройства у провайдера:7')
+    expect(devices.textContent).toContain('Индекс устройства у провайдера2')
+    expect(devices.textContent).toContain('Индекс устройства у провайдера7')
     expect(devices.textContent).toContain('GPU-…12345678')
     expect(devices.textContent).not.toContain('GPU-sensitive-first')
-    expect(devices.textContent).toMatch(/Текущая свободная VRAM устройства:0\s*Б/u)
+    expect(devices.textContent).toMatch(/Текущая свободная VRAM устройства0\s*Б/u)
     expect(devices.textContent).toContain('наблюдение из указанного источника')
     expect(devices.textContent).toContain('фиксированный запрос GPU через nvidia-smi')
-    expect(devices.textContent).toContain('Наблюдалось:')
+    expect(within(devices).getAllByText('Наблюдалось', { selector: 'dt' })).toHaveLength(2)
     expect(
       screen.getAllByText('Точная identity модели, runtime, контекста и железа неполна').length,
     ).toBe(2)
@@ -307,7 +329,7 @@ describe('Runtime Bar projection', () => {
     expect(screen.queryByRole('region', { name: 'NVIDIA devices' })).toBeNull()
   })
 
-  it('renders every returned NVIDIA device inside one contained list without a UI ceiling', () => {
+  it('renders every returned NVIDIA device inside one contained list without a UI ceiling', async () => {
     const snapshot = linuxNvidiaRuntimeSnapshot()
     const prototype = snapshot.host.nvidia.devices[0]!
     snapshot.host.nvidia.devices = Array.from({ length: 257 }, (_, index) => ({
@@ -320,7 +342,11 @@ describe('Runtime Bar projection', () => {
     const devices = screen.getByRole('region', { name: 'Устройства NVIDIA' })
     expect(within(devices).getAllByRole('listitem')).toHaveLength(257)
     expect(within(devices).getByText('NVIDIA device 256')).toBeTruthy()
-    expect(within(devices).getByRole('list').className).toContain('overflow-y-auto')
+    // The device list scrolls inside its own region (runtime.css) instead of a UI ceiling.
+    expect(within(devices).getByRole('list').classList.contains('runtime-scroll')).toBe(true)
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync(`${process.cwd()}/src/features/health/runtime.css`, 'utf8')
+    expect(/\.runtime-scroll\s*\{[^}]*overflow-y:\s*auto/u.test(css)).toBe(true)
   })
 
   it('keeps the confirmed NVIDIA sample unchanged when a later read fails, and leaks no error text', () => {

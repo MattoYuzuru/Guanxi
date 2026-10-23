@@ -91,9 +91,9 @@
           },
           {
             "name": "sidebar",
-            "type": "ReactNode",
+            "type": "ReactNode | ((layout: { rail: boolean; }) => ReactNode)",
             "required": true,
-            "description": "Host navigation. It should adapt itself to `visibility === 'rail'`; the chrome does not invent rail content."
+            "description": "Host navigation. It should adapt itself to the rail; the chrome does not invent rail content.\nA function receives the effective layout: a narrow shell's drawer is never a rail."
           },
           {
             "name": "sidebarLabel",
@@ -130,10 +130,14 @@
         "--font-family-sans",
         "--font-line-height-ui",
         "--font-text-size",
+        "--layer-dialog",
+        "--layer-scrim",
         "--layer-sticky",
         "--layout-container-2xs",
         "--motion-duration-fast",
         "--motion-easing-standard",
+        "--scrim-color",
+        "--scrim-opacity",
         "--spacing-2",
         "--spacing-4",
         "--spacing-40",
@@ -142,7 +146,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:7f5304d2999262574a259672de11accd432a969932ad4dca9df52c29dd69620d",
+      "sourceHash": "sha256:f64a4e72a54a2006e71b01f2b1b94844715191dcdeffd124c1220f3639f25f69",
       "snapshotHashes": {
         "default-dark": "sha256:d8cb99f4a94a3e153145d578218821a6bb3f24a95a6fae3465e4760b3ea249f9",
         "default-light": "sha256:be9060a69277f0ab395f857a7195d8bf0b4226ee1e62861f63b03094631209d7",
@@ -1926,6 +1930,12 @@
             "description": ""
           },
           {
+            "name": "keepMounted",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": "Keep the content mounted (hidden) while closed, so its children keep their state."
+          },
+          {
             "name": "side",
             "type": "Side | undefined",
             "required": false,
@@ -1979,7 +1989,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:601cd08cc8b48c9096aec4a54c8ff17e640a2c052bffd0576cf879af3255e069",
+      "sourceHash": "sha256:27105c9a66252e12632ba7c0cd34fa23cf05b277ec13a27b901a7b24d454c377",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:79454c0e3f4896c644f2083080421e64aa1d42eada91526ea9f4de2e325dacdd",
         "closed-dark": "sha256:1f17147eb4461f5549f300784e07b157f270b531d521bbae5dfb5f70a604fe93",
@@ -2572,7 +2582,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:a56b3780f9b2629dfa7d70b2aa99ca88b125463701dac859d1c714fce0080ebd",
+      "sourceHash": "sha256:4909eeb379890b1efdb815246fee0128ccfab048ef2fa31b3571ce99e06f7fb7",
       "snapshotHashes": {
         "badge-dark": "sha256:e95fea265ee1b76f963eb09d94f21f50b321572e4189ac8ada73f1479c62691a",
         "badge-light": "sha256:b933cd44835755a71947f8e8da57116400bf6bbf700c91223eb88a6f8f9acedc",

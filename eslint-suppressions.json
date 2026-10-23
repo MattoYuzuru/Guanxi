@@ -92,11 +92,6 @@
       "count": 1
     }
   },
-  "packages/web/src/features/health/RuntimeStatus.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 4
-    }
-  },
   "packages/web/src/features/inspector/InspectorPage.tsx": {
     "guanxi/reuse-primitives": {
       "count": 3

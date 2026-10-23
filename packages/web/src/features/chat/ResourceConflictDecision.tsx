@@ -11,6 +11,7 @@ import { ApiRequestError, api } from '../../lib/api.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
+import { RuntimeFact, RuntimeFacts } from '../health/RuntimeStatus.tsx'
 
 const CANCELLATION_POLL_INTERVAL_MS = 250
 const CANCELLATION_MAX_READS = 20
@@ -391,18 +392,18 @@ export function ResourceConflictDialog({
           )}
         </h3>
         {queued.length > 0 ? (
-          <ol className="mt-1 space-y-1.5">
+          <ol className="runtime-rows">
             {queued.map((waiter, index) => (
-              <li key={waiter.ticketId} className="min-w-0 border-l-2 border-control pl-2 text-2xs">
-                <p className="font-medium">
-                  {translate('runtime.queue.position').replace('{position}', String(index + 1))}
-                 , {operationLabel(waiter.operation)}
+              <li key={waiter.ticketId} className="runtime-row">
+                <p className="runtime-row-title">
+                  {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
+                  <span className="runtime-row-kind">{operationLabel(waiter.operation)}</span>
                 </p>
-                <p className="break-words font-mono text-secondary">{waiter.model.name}</p>
-                <p className="text-secondary">
-                  {ownerLabel(waiter.owner)}, {translate('runtime.context')}:{' '}
-                  {formatContextLength(waiter.requestedContext)}
-                </p>
+                <RuntimeFacts>
+                  <RuntimeFact label={translate('runtime.model')} value={waiter.model.name} mono />
+                  <RuntimeFact label={translate('runtime.owner')} value={ownerLabel(waiter.owner)} />
+                  <RuntimeFact label={translate('runtime.context')} value={formatContextLength(waiter.requestedContext)} />
+                </RuntimeFacts>
               </li>
             ))}
           </ol>
