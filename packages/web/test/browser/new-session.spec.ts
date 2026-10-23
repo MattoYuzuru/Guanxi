@@ -7,7 +7,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import {
   FIXTURE_CONNECTION, FIXTURE_LOCAL_CONNECTION, completedProgress, createSessionFeaturesFixture, fixtureConnection,
-  fixtureProject, installSessionFeaturesApi, type SessionFeaturesFixture,
+  fixtureProject, fixtureWorkspace, installSessionFeaturesApi, type SessionFeaturesFixture,
 } from './fixtures/session-features-api.ts'
 
 async function open(page: Page, fixture: SessionFeaturesFixture, path = '/agent') {
@@ -74,6 +74,7 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
   expect(fixture.requests.create).toHaveLength(0)
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/agent\/session-1$/u)
+  await expect(page.getByRole('heading', { level: 1 })).toBeFocused() // the route change moves focus to the new page's heading
   await expect(page.getByText('Fixture response', { exact: true })).toHaveCount(1)
   expect(fixture.requests.create).toEqual([{
     projectId: 'p', connectionId: FIXTURE_CONNECTION, model: 'fixture', mode: 'read-only', prompt: 'Inspect the repository\nSecond line',
@@ -186,6 +187,7 @@ test('loading, empty, error, offline and start-failure states are single, access
   await expect(page.getByRole('alert')).toHaveCount(1)
   await expect(page.getByText('GET /api/agent/projects', { exact: true })).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('egress_unavailable')
+  await expect(page.getByRole('alert')).toContainText('Session choices could not be loaded. The node is still preparing secret protection')
   expect(await seriousViolations(page), 'error').toEqual([])
 
   // Empty: one sentence and one primary action each.
@@ -224,8 +226,8 @@ test('local runtimes require a context size and the form blocks starting until i
   await page.getByLabel('Connection').selectOption(FIXTURE_LOCAL_CONNECTION)
   await page.getByLabel('Model ID').fill('llama')
   await expect(page.getByRole('button', { name: 'Start session' })).toBeDisabled()
-  await expect(page.getByText('Set the local runtime context.', { exact: true })).toHaveCount(1)
-  await form(page).locator('details > summary').click()
+  await expect(page.getByText('Set the local runtime context under Run options.', { exact: true })).toHaveCount(1)
+  await expect(form(page).locator('details')).toHaveAttribute('open', '') // the disclosure that holds the required field opened by itself
   await page.getByLabel('Local runtime context (tokens)').fill('0')
   await expect(page.getByLabel('Local runtime context (tokens)')).toHaveAttribute('aria-invalid', 'true')
   await expect(page.getByRole('button', { name: 'Start session' })).toBeDisabled()
@@ -261,11 +263,18 @@ test('recent projects persist per browser, are selectable and are never duplicat
   await expect(page.getByRole('region', { name: 'Recent projects' })).toHaveCount(0)
 })
 
-test('phone width and large text keep the screen inside the viewport with 24 px targets', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  const fixture = createSessionFeaturesFixture()
+test('phone width (320 px) and large text keep the screen inside the viewport with 24 px targets, even with long names', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  const longProject = 'A very long project name that keeps going and going without any break at all'
+  const fixture = createSessionFeaturesFixture({
+    projects: [fixtureProject('p', 'Alpha'), fixtureProject('long', longProject, ['w1'])],
+    workspaces: [fixtureWorkspace('w1', 'workspace-name-without-any-spaces-that-is-really-quite-long-indeed'), fixtureWorkspace('w2', 'Docs')],
+  })
+  await page.addInitScript(() => localStorage.setItem('guanxi.newSession.recentProjects.v1', JSON.stringify(['long', 'p'])))
   await open(page, fixture)
   await expect(form(page)).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Recent projects' }).getByRole('button')).toHaveCount(2)
+  await page.getByLabel('Project', { exact: true }).selectOption('long')
   await form(page).locator('details > summary').click()
   const check = async (label: string) => {
     const overflow = await page.evaluate(() => {
@@ -274,19 +283,19 @@ test('phone width and large text keep the screen inside the viewport with 24 px 
     })
     expect(overflow.document, `${label} document overflow`).toBeLessThanOrEqual(0)
     expect(overflow.host, `${label} route host overflow`).toBeLessThanOrEqual(1)
-    const small = await form(page).locator('button, select, summary, input:not([type="checkbox"]), textarea').evaluateAll(
+    const small = await page.locator('main').locator('button, select, summary, input:not([type="checkbox"]), textarea').evaluateAll(
       elements => elements.filter(element => {
         const box = element.getBoundingClientRect()
         return box.width > 0 && (box.height < 24 || box.width < 24)
       }).map(element => `${element.tagName} ${element.textContent?.trim().slice(0, 20)} ${Math.round(element.getBoundingClientRect().height)}`))
     expect(small, `${label} targets under 24 px`).toEqual([])
-    const outside = await form(page).locator('select, textarea, input').evaluateAll(
+    const outside = await page.locator('main').locator('button, select, textarea, input, summary').evaluateAll(
       elements => elements.filter(element => element.getBoundingClientRect().right > innerWidth + 1).length)
     expect(outside, `${label} controls past the right edge`).toBe(0)
   }
-  await check('phone')
+  await check('phone 320')
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
-  await check('phone at 200% text')
+  await check('phone 320 at 200% text')
   expect(await seriousViolations(page), 'phone at 200% text').toEqual([])
 })
 

@@ -97,7 +97,7 @@ describe('new-session screen states', () => {
     }))
     render(<NewSessionScreen />)
     const alert = await screen.findByRole('alert')
-    expect(within(alert).getByText('Session choices could not be loaded')).toBeTruthy()
+    expect(alert.textContent).toContain('Session choices could not be loaded. The node is still preparing secret protection')
     expect(within(alert).getByText('GET /api/agent/projects')).toBeTruthy()
     expect(alert.textContent).toContain('egress_unavailable')
     expect(screen.getAllByRole('alert')).toHaveLength(1)
@@ -123,31 +123,42 @@ describe('new-session screen states', () => {
     expect(calls.create).toHaveLength(0)
   })
 
-  it('keeps the last loaded choices with their age when a refresh finds the node unreachable', async () => {
+  it('keeps the last loaded choices with their age when a refresh finds the node unreachable, and recovers on Retry', async () => {
     const { calls, state } = install()
     render(<NewSessionScreen />)
     await ready(); await fillValid()
     expect(start().disabled).toBe(false)
+    // The browser regains a network while the node does not answer: the refresh finds it unreachable.
     state.network = 'down'
-    await act(async () => { window.dispatchEvent(new Event('offline')) })
-    // The browser's own offline signal alone already disables starting.
-    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
-    await act(async () => { window.dispatchEvent(new Event('offline')) })
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     const alert = await screen.findByRole('alert')
+    expect(alert.getAttribute('data-state')).toBe('node_unreachable')
     expect(alert.textContent).toMatch(/As of .+, /)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(field('Project').value).toBe('p')
     expect(start().disabled).toBe(true)
     expect(screen.getByText('Reconnect to the node.')).toBeTruthy()
     fireEvent.submit(screen.getByRole('form', { name: 'New session' }))
     expect(calls.create).toHaveLength(0)
-    // Back online reloads once and the panel disappears.
     state.network = undefined
     const before = calls.projects
-    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
-    await act(async () => { window.dispatchEvent(new Event('online')) })
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }))
     await waitFor(() => expect(screen.queryAllByRole('alert')).toHaveLength(0))
     expect(calls.projects).toBe(before + 1)
     expect(start().disabled).toBe(false)
+  })
+
+  it('does not call the node unreachable only because the browser reports no network', async () => {
+    const { calls } = install()
+    render(<NewSessionScreen />)
+    await ready(); await fillValid()
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    await act(async () => { window.dispatchEvent(new Event('offline')) })
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    expect(start().disabled).toBe(false)
+    fireEvent.click(start())
+    await waitFor(() => expect(calls.create).toHaveLength(1))
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true })
   })
 
   it('degrades to a visible message when only the folder list is missing and still starts', async () => {
@@ -238,6 +249,34 @@ describe('new-session start flow', () => {
     expect(start().disabled).toBe(false)
   })
 
+  it('says the outcome is unknown when the node never answers a start, keeps the inputs and never navigates', async () => {
+    const { calls, state } = install()
+    render(<NewSessionScreen />)
+    await ready(); await fillValid()
+    state.create = () => { throw new TypeError('Failed to fetch') }
+    fireEvent.click(start())
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('it is unknown whether the session started')
+    expect(alert.textContent).toContain('unreachable')
+    expect(alert.textContent).not.toContain('could not start the session. Check')
+    expect(window.location.pathname).toBe('/agent')
+    expect(calls.create).toHaveLength(1)
+    expect(field('What should the agent do?').value).toBe('Inspect')
+  })
+
+  it('does not navigate when the screen was left while the node was starting the session', async () => {
+    let release: (response: Response) => void = () => {}
+    const { calls } = install({ create: () => new Promise<Response>(resolve => { release = resolve }) as never })
+    const view = render(<NewSessionScreen />)
+    await ready(); await fillValid()
+    fireEvent.click(start())
+    await waitFor(() => expect(calls.create).toHaveLength(1))
+    view.unmount()
+    await act(async () => { release(Response.json({ sessionId: 'session-1' }, { status: 202 })) })
+    expect(window.location.pathname).toBe('/agent')
+    expect(readRecentProjects()).toEqual(['p'])
+  })
+
   it('shows changed options as chips only for non-default values with exact counts', async () => {
     install({ projects: [project('p', 'Alpha', ['w1'])], workspaces: [{ id: 'w1', name: 'Repo', rootPath: '/r', createdAt: '2026-10-21T00:00:00.000Z', lastUsedAt: null, exists: true }, { id: 'w2', name: 'Docs', rootPath: '/d', createdAt: '2026-10-21T00:00:00.000Z', lastUsedAt: null, exists: false }] })
     render(<NewSessionScreen />)
@@ -276,8 +315,9 @@ describe('new-session start flow', () => {
     expect(domains.getAttribute('aria-invalid')).toBeNull()
     expect(start().disabled).toBe(false)
     fireEvent.change(field('Connection'), { target: { value: LOCAL } })
+    await waitFor(() => expect(document.querySelector('details')!.open).toBe(true))
     expect(start().disabled).toBe(true)
-    expect(screen.getByText('Set the local runtime context.')).toBeTruthy()
+    expect(screen.getByText('Set the local runtime context under Run options.')).toBeTruthy()
     fireEvent.change(field('Local runtime context (tokens)'), { target: { value: '12.5' } })
     expect(field('Local runtime context (tokens)').getAttribute('aria-invalid')).toBe('true')
     expect(start().disabled).toBe(true)
@@ -299,9 +339,13 @@ describe('new-session start flow', () => {
     expect(save.disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Repo' }))
     expect(save.disabled).toBe(false)
+    expect(screen.getByText('Save the folder changes under Run options, or restore the folders.')).toBeTruthy()
+    expect(start().disabled).toBe(true)
     state.patch = () => Response.json({ code: 'root_unavailable' }, { status: 503 })
     fireEvent.click(save)
-    await screen.findByRole('alert')
+    const failure = await screen.findByRole('alert')
+    expect(failure.textContent).toContain('A project folder is unavailable')
+    expect(failure.textContent).not.toContain('could not start the session')
     expect(calls.patch).toEqual([{ workspaceIds: ['w1'] }])
   })
 })

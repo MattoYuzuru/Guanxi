@@ -10,7 +10,7 @@ interface Call { action: 'respond' | 'save' | 'send'; body: Record<string, unkno
 let calls: Call[]
 type Handler = (call: Call) => Response | Promise<Response>
 const OBSERVED = '2026-10-23T10:00:00.000Z'
-const answer = (text: string, extra: Record<string, unknown> = {}) => Response.json({ requestId: crypto.randomUUID(), text, context: { source: 'session.log', include: 'session', upToSeq: 12, observedAt: OBSERVED, turns: 2, excerpted: 0, bytes: 345, ...extra } })
+const answer = (text: string, extra: Record<string, unknown> = {}, truncated = false) => Response.json({ requestId: crypto.randomUUID(), text, truncated, context: { source: 'session.log', include: 'session', upToSeq: 12, observedAt: OBSERVED, turns: 2, excerpted: 0, bytes: 345, ...extra } })
 const failure = (code: string, status = 503, details?: unknown) => Response.json({ code, ...(details ? { details } : {}) }, { status })
 function install(handler: Handler = call => call.action === 'respond' ? answer('Side answer') : call.action === 'save'
   ? Response.json({ operationId: call.body.operationId, eventId: 'event-1', seq: 13, duplicate: false })
@@ -25,7 +25,7 @@ function install(handler: Handler = call => call.action === 'respond' ? answer('
   }))
 }
 const prompt = () => screen.getByLabelText('Ask about this session') as HTMLTextAreaElement
-const ask = async (text: string) => { fireEvent.change(prompt(), { target: { value: text } }); fireEvent.click(screen.getByRole('button', { name: 'Ask' })); await waitFor(() => expect(screen.queryByText('Waiting for the answer…')).toBeNull()) }
+const ask = async (text: string) => { fireEvent.change(prompt(), { target: { value: text } }); fireEvent.click(screen.getByRole('button', { name: 'Ask' })); await waitFor(() => expect(screen.getByTestId('side-chat-status').textContent).not.toBe('Waiting for the answer…')) }
 const turns = () => screen.getAllByTestId('side-chat-turn')
 let storageWrites: string[]
 beforeEach(() => {
@@ -74,6 +74,15 @@ describe('ephemeral labelling and storage', () => {
     install(() => answer('x', { include: 'none', turns: 0, bytes: 0, excerpted: 2 }))
     await ask('q2')
     expect(screen.getByText(/No session context was sent · observed.*Prompts read as bounded excerpts: 2/)).toBeTruthy()
+  })
+  it('says so when the model stopped at its output limit', async () => {
+    install(() => answer('cut', {}, true))
+    render(<SideChatPanel sessionId="s1" />)
+    await ask('q')
+    expect(screen.getAllByText('The answer stopped at the model\'s output limit and may be cut short.')).toHaveLength(1)
+    install()
+    await ask('q2')
+    expect(screen.getAllByText('The answer stopped at the model\'s output limit and may be cut short.')).toHaveLength(1)
   })
   it('refuses an invalid number of turns before any request', () => {
     render(<SideChatPanel sessionId="s1" />)
@@ -139,10 +148,11 @@ describe('failures and cancellation write nothing and keep the conversation', ()
     render(<SideChatPanel sessionId="s1" />)
     fireEvent.change(prompt(), { target: { value: 'slow' } })
     fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
-    await screen.findByText('Waiting for the answer…')
+    await waitFor(() => expect(screen.getByTestId('side-chat-status').textContent).toBe('Waiting for the answer…'))
     expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(1)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    await screen.findByText('Canceled. Nothing was written to the session.')
+    await waitFor(() => expect(screen.getByTestId('side-chat-status').textContent).toBe('Canceled. Nothing was written to the session.'))
+    expect(document.activeElement).toBe(prompt())
     expect(seen?.aborted).toBe(true)
     expect(turns()).toHaveLength(1)
     expect(screen.queryAllByRole('alert')).toHaveLength(0)
@@ -154,7 +164,7 @@ describe('failures and cancellation write nothing and keep the conversation', ()
     const view = render(<SideChatPanel sessionId="s1" />)
     fireEvent.change(prompt(), { target: { value: 'slow' } })
     fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
-    await screen.findByText('Waiting for the answer…')
+    await waitFor(() => expect(screen.getByTestId('side-chat-status').textContent).toBe('Waiting for the answer…'))
     view.unmount()
     expect(seen?.aborted).toBe(true)
   })
@@ -204,16 +214,22 @@ describe('Send to main', () => {
   it('posts exactly once per message, with one operation id each, and never saves', async () => {
     render(<SideChatPanel sessionId="s1" />)
     await ask('q')
-    const first = screen.getByRole('button', { name: 'Send message 1 to main' })
+    const first = screen.getByRole('button', { name: 'Send to main, message 1' })
     fireEvent.click(first); fireEvent.click(first)
     await screen.findByText('Sent to main once: queued behind the running turn.')
-    fireEvent.click(screen.getByRole('button', { name: 'Send message 2 to main' }))
-    await waitFor(() => expect(screen.getAllByText('Sent to main once: queued behind the running turn.')).toHaveLength(2))
+    expect(screen.getAllByTestId('side-chat-sent')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Send to main, message 2' }))
+    await waitFor(() => expect(screen.getAllByTestId('side-chat-sent')).toHaveLength(2))
+    // One persistent live region carries the announcement; the per-message marks are not live.
+    expect(screen.getAllByTestId('side-chat-status')).toHaveLength(1)
+    expect(screen.getByTestId('side-chat-status').getAttribute('role')).toBe('status')
+    expect(screen.getByTestId('side-chat-status').textContent).toBe('Sent to main once: queued behind the running turn.')
+    expect(screen.getAllByTestId('side-chat-sent').every(mark => mark.closest('[role="status"], [aria-live]') === null)).toBe(true)
     const sends = calls.filter(call => call.action === 'send')
     expect(sends).toHaveLength(2)
     expect(sends.map(call => call.body.text)).toEqual(['q', 'Side answer'])
     expect(new Set(sends.map(call => call.body.operationId)).size).toBe(2)
-    expect((screen.getByRole('button', { name: 'Send message 1 to main' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Send to main, message 1' }) as HTMLButtonElement).disabled).toBe(true)
     expect(calls.filter(call => call.action === 'save')).toHaveLength(0)
   })
   it('reuses the operation id when a failed send is retried', async () => {
@@ -221,9 +237,9 @@ describe('Send to main', () => {
     install(call => call.action === 'respond' ? answer('a') : fail ? failure('agent_unavailable') : Response.json({ operationId: call.body.operationId, messageId: crypto.randomUUID(), delivery: 'already_sent', duplicate: true }))
     render(<SideChatPanel sessionId="s1" />)
     await ask('q')
-    fireEvent.click(screen.getByRole('button', { name: 'Send message 2 to main' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send to main, message 2' }))
     await screen.findByRole('alert')
-    expect((screen.getByRole('button', { name: 'Send message 2 to main' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'Send to main, message 2' }) as HTMLButtonElement).disabled).toBe(false)
     fail = false
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await screen.findByText('Already sent to main earlier. Nothing new was posted.')
@@ -241,7 +257,13 @@ describe('discarding and reload warning', () => {
     const group = screen.getByRole('group', { name: 'Discard' })
     expect(within(group).getByText('Discard 2 unsaved messages? They cannot be recovered.')).toBeTruthy()
     expect(document.activeElement).toBe(within(group).getByRole('button', { name: 'Keep' }))
-    fireEvent.click(within(group).getByRole('button', { name: 'Keep' }))
+    expect(group.getAttribute('aria-describedby')).toBe(within(group).getByText('Discard 2 unsaved messages? They cannot be recovered.').id)
+    fireEvent.keyDown(group, { key: 'Escape' })
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Discard' })))
+    expect(screen.queryByRole('group', { name: 'Discard' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    fireEvent.click(within(screen.getByRole('group', { name: 'Discard' })).getByRole('button', { name: 'Keep' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Discard' })))
     expect(turns()).toHaveLength(2)
     expect(screen.queryByRole('group', { name: 'Discard' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }))

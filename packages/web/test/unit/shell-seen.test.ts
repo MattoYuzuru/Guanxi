@@ -54,6 +54,11 @@ describe('seen store', () => {
     window.localStorage.setItem(SEEN_SESSIONS_KEY, JSON.stringify({ baselineAt: 'not a date', seen: { a: 1 } }))
     expect(readSeenSessions(now)).toEqual({ baselineAt: now.toISOString(), seen: {} })
   })
+  it('writes the larger head of each session so one tab never lowers another tab\'s record', () => {
+    writeSeenSessions({ baselineAt: '2026-10-23T08:00:00.000Z', seen: { a: 5, b: 2 } })
+    writeSeenSessions({ baselineAt: '2026-10-23T08:00:00.000Z', seen: { a: 3, c: 1 } })
+    expect(readSeenSessions().seen).toEqual({ a: 5, b: 2, c: 1 })
+  })
   it('stays usable when storage is blocked', () => {
     vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => { throw new Error('blocked') })
     vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => { throw new Error('blocked') })

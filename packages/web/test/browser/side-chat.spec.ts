@@ -37,7 +37,7 @@ function withLog(log: MockLog): Partial<SessionFeaturesFixture> {
         log.respond++
         if (log.holdRespond) await log.holdRespond
         const question = body.messages?.at(-1)?.text ?? ''
-        await json({ requestId: body.requestId, text: `Answer to: ${question}`, context: { source: 'session.log', include: 'session', upToSeq: log.events.length, observedAt: '2026-10-23T10:00:00.000Z', turns: 1, excerpted: 0, bytes: 40 } })
+        await json({ requestId: body.requestId, text: `Answer to: ${question}`, truncated: false, context: { source: 'session.log', include: 'session', upToSeq: log.events.length, observedAt: '2026-10-23T10:00:00.000Z', turns: 1, excerpted: 0, bytes: 40 } })
       } else if (side[1] === 'save') {
         log.save++
         const known = log.saved.get(body.operationId!)
@@ -128,15 +128,17 @@ test('Save appends exactly one note, once; Send posts exactly one prompt, once; 
 
   const save = panel(page).getByRole('button', { name: 'Save to session log', exact: true })
   await save.click()
-  await expect(panel(page).getByText('Saved to the session log as event 4. Nothing was sent to the agent.', { exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('side-chat-status')).toHaveText('Saved to the session log as event 4. Nothing was sent to the agent.')
   await expect(save).toBeDisabled()
+  await expect(page.getByTestId('side-chat-status')).toBeFocused() // focus moved off the control the save disabled
   expect(await sessionLog(page)).toEqual({ lastSeq: 4, count: 4, byType: { ...before.byType, 'agent.note': 1 } })
   expect({ save: log.save, send: log.send }).toEqual({ save: 1, send: 0 })
   await expect(page.getByTestId('side-chat-unsaved')).toHaveText('Everything shown is saved to the session log.')
 
-  const send = panel(page).getByRole('button', { name: 'Send message 2 to main' })
+  const send = panel(page).getByRole('button', { name: 'Send to main, message 2' })
   await send.dblclick()
-  await expect(panel(page).getByText('Sent to main once: queued behind the running turn.', { exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('side-chat-status')).toHaveText('Sent to main once: queued behind the running turn.')
+  await expect(panel(page).getByTestId('side-chat-sent')).toHaveCount(1)
   await expect(send).toBeDisabled()
   expect(await sessionLog(page)).toEqual({ lastSeq: 5, count: 5, byType: { ...before.byType, 'agent.note': 1, prompt: 2 } })
   expect({ save: log.save, send: log.send, notes: log.events.filter(event => event.type === 'agent.note').length }).toEqual({ save: 1, send: 1, notes: 1 })
@@ -147,7 +149,7 @@ test('Save appends exactly one note, once; Send posts exactly one prompt, once; 
   await expect(page.getByTestId('side-chat-unsaved')).toHaveText('Unsaved messages: 2')
   await expect(save).toBeEnabled()
   await save.click()
-  await expect(panel(page).getByText('Saved to the session log as event 6. Nothing was sent to the agent.', { exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('side-chat-status')).toHaveText('Saved to the session log as event 6. Nothing was sent to the agent.')
   expect((await sessionLog(page)).byType['agent.note']).toBe(2)
   expect(log.saved.size).toBe(2)
   // Saved chats are discarded without a warning; the log keeps them across reload.
@@ -185,7 +187,7 @@ test('a failed Save keeps the chat and its retry reuses the operation: one note 
   await panel(page).getByRole('button', { name: 'Try again' }).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
   await panel(page).getByRole('button', { name: 'Try again' }).click()
-  await expect(panel(page).getByText('Already saved as event 4. Nothing new was written.', { exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('side-chat-status')).toHaveText('Already saved as event 4. Nothing new was written.')
   expect(log.save).toBe(3)
   expect((await sessionLog(page)).byType['agent.note']).toBe(1)
   await expect(panel(page).getByTestId('side-chat-turn')).toHaveCount(2)
@@ -199,10 +201,11 @@ test('Cancel aborts the question, keeps it, and the session log is untouched', a
   const before = await sessionLog(page)
   await page.getByLabel('Ask about this session').fill('Slow one')
   await page.getByRole('button', { name: 'Ask', exact: true }).click()
-  await expect(panel(page).getByText('Waiting for the answer…', { exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('side-chat-status')).toHaveText('Waiting for the answer…')
   await expect(panel(page).getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(1)
   await panel(page).getByRole('button', { name: 'Cancel', exact: true }).click()
-  await expect(panel(page).getByText('Canceled. Nothing was written to the session.', { exact: true })).toHaveCount(1)
+  await expect(page.getByTestId('side-chat-status')).toHaveText('Canceled. Nothing was written to the session.')
+  await expect(page.getByLabel('Ask about this session')).toBeFocused()
   await expect(panel(page).getByTestId('side-chat-turn')).toHaveCount(1)
   await expect(page.getByRole('alert')).toHaveCount(0)
   release()
@@ -223,7 +226,7 @@ test('keyboard: ask with Enter, reach every action by Tab, and the discard confi
   expect(log.respond).toBe(1)
   expect(await prompt.inputValue()).toBe('')
   const names: string[] = []
-  await panel(page).getByRole('button', { name: 'Send message 1 to main' }).focus()
+  await panel(page).getByRole('button', { name: 'Send to main, message 1' }).focus()
   for (let step = 0; step < 5; step++) {
     names.push(await page.evaluate(() => {
       const element = document.activeElement as HTMLInputElement | null
@@ -232,11 +235,16 @@ test('keyboard: ask with Enter, reach every action by Tab, and the discard confi
     await page.keyboard.press('Tab')
   }
   // The disabled Ask button (empty draft) is skipped; Save and Discard follow the composer.
-  expect(names).toEqual(['Send message 1 to main', 'Send message 2 to main', 'Ask about this session', 'Save to session log', 'Discard'])
+  expect(names).toEqual(['Send to main, message 1', 'Send to main, message 2', 'Ask about this session', 'Save to session log', 'Discard'])
   await panel(page).getByRole('button', { name: 'Discard', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(panel(page).getByRole('button', { name: 'Keep' })).toBeFocused()
+  await expect(panel(page).getByRole('group', { name: 'Discard' })).toHaveAccessibleDescription('Discard 2 unsaved messages? They cannot be recovered.')
+  await page.keyboard.press('Escape')
+  await expect(panel(page).getByRole('button', { name: 'Discard', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter') // Keep
+  await expect(panel(page).getByRole('button', { name: 'Discard', exact: true })).toBeFocused()
   await expect(panel(page).getByTestId('side-chat-turn')).toHaveCount(2)
   await panel(page).getByRole('button', { name: 'Discard', exact: true }).click()
   await panel(page).getByRole('button', { name: 'Discard unsaved messages' }).click()
@@ -254,8 +262,8 @@ test('every state has no critical or serious axe finding, in both themes and loc
     await page.getByLabel(ask_).fill('Question')
     await page.getByRole('button', { name: locale === 'en' ? 'Ask' : 'Спросить', exact: true }).click()
     await expect(panel(page).getByTestId('side-chat-turn')).toHaveCount(2)
-    await panel(page).getByRole('button', { name: locale === 'en' ? 'Send message 2 to main' : 'Отправить сообщение 2 в основной чат' }).click()
-    await expect(panel(page).getByRole('status').filter({ hasText: /\S/ })).not.toHaveCount(0)
+    await panel(page).getByRole('button', { name: locale === 'en' ? 'Send to main, message 2' : 'Отправить в основной чат, сообщение 2' }).click()
+    await expect(page.getByTestId('side-chat-status')).not.toHaveText('')
     expect(await serious(page), `${locale}/${theme} turns and receipt`).toEqual([])
     await panel(page).getByRole('button', { name: locale === 'en' ? 'Discard' : 'Сбросить', exact: true }).click()
     await expect(panel(page).getByRole('group')).toHaveCount(1)
@@ -274,7 +282,7 @@ test('errors are single and accessible; phone width and large text do not overfl
     }
     return inner(route, url, method)
   }
-  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setViewportSize({ width: 320, height: 800 })
   await page.getByLabel('Ask about this session').fill('Too much '.repeat(40))
   await page.getByRole('button', { name: 'Ask', exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
@@ -294,7 +302,7 @@ test('errors are single and accessible; phone width and large text do not overfl
     const small = await panel(page).locator('button, select, input, textarea').evaluateAll(elements => elements.filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && (box.height < 24 || box.width < 24) }).length)
     expect(small, `${label} targets under 24 px`).toBe(0)
   }
-  await fits('phone')
+  await fits('phone 320')
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   await fits('phone at 200% text')
   expect(await serious(page), 'phone at 200% text').toEqual([])

@@ -60,6 +60,40 @@ describe('useUnseenSessions', () => {
     view.rerender(<Probe sessions={[session('a', 'completed', 8)]} location="/agent/a" reads={3} />)
     expect(unseen()).toBe('')
   })
+  it('does not flag a watched session after two quick navigations or when the read after leaving failed', () => {
+    const running = [session('a', 'working', 5), session('b', 'working', 5)]
+    const view = render(<Probe sessions={running} location="/agent/a" reads={1} />)
+    // A to /projects to /settings before any read lands: the first departure is not forgotten.
+    view.rerender(<Probe sessions={running} location="/projects" reads={1} />)
+    view.rerender(<Probe sessions={running} location="/settings" reads={1} />)
+    view.rerender(<Probe sessions={[session('a', 'completed', 9), session('b', 'completed', 9)]} location="/settings" reads={2} />)
+    expect(unseen()).toBe('b')
+  })
+  it('keeps a departed session pending across a failed read and settles it with the next successful one', () => {
+    const view = render(<Probe sessions={[session('a', 'working', 5)]} location="/agent/a" reads={1} />)
+    view.rerender(<Probe sessions={[session('a', 'working', 5)]} location="/projects" reads={1} />)
+    // The read for /projects failed: the same stale list and read count, then another navigation.
+    view.rerender(<Probe sessions={[session('a', 'working', 5)]} location="/models" reads={1} />)
+    expect(unseen()).toBe('')
+    view.rerender(<Probe sessions={[session('a', 'completed', 8)]} location="/models" reads={2} />)
+    expect(unseen()).toBe('')
+  })
+  it('never paints the session on screen as unseen, even before its head is recorded', () => {
+    render(<Probe sessions={[session('a', 'completed', 4)]} location="/agent/a" reads={1} />)
+    expect(unseen()).toBe('')
+  })
+  it('takes the larger head from another tab and never lowers one it recorded', () => {
+    const view = render(<Probe sessions={[session('a', 'completed', 4)]} location="/projects" reads={1} />)
+    expect(unseen()).toBe('a')
+    act(() => {
+      writeSeenSessions({ baselineAt: BASELINE, seen: { a: 4 } })
+      window.dispatchEvent(new StorageEvent('storage', { key: SEEN_SESSIONS_KEY }))
+    })
+    expect(unseen()).toBe('')
+    writeSeenSessions({ baselineAt: BASELINE, seen: { a: 1 } })
+    expect(JSON.parse(window.localStorage.getItem(SEEN_SESSIONS_KEY)!).seen).toEqual({ a: 4 })
+    view.unmount()
+  })
   it('persists the shown heads across a remount', () => {
     const list = [session('a', 'completed', 4)]
     const first = render(<Probe sessions={list} location="/agent/a" reads={1} />)
@@ -89,13 +123,17 @@ describe('sidebar indicator', () => {
   })
   it('says "at least" while older pages are not loaded', () => {
     render(<ShellSidebar {...sidebarProps(sessions, ['a'], { hasMore: true })} />)
-    expect(screen.getByTestId('shell-unseen-count').textContent).toBe('Finished, not yet opened: at least 1 (more sessions are not loaded)')
+    expect(screen.getByTestId('shell-unseen-count').textContent).toBe('Finished, not yet opened: at least 1 (some sessions are not loaded or not available)')
+  })
+  it('says "at least" while some sessions are withheld or catching up, even with every page loaded', () => {
+    render(<ShellSidebar {...sidebarProps(sessions, ['a'], { omitted: true })} />)
+    expect(screen.getByTestId('shell-unseen-count').textContent).toContain('at least 1')
   })
   it('keeps the count reachable in the rail with an accessible name', () => {
     render(<ShellSidebar {...sidebarProps(sessions, ['a', 'b'], { rail: true })} />)
     const rail = screen.getByTestId('shell-unseen-rail')
     expect(rail.textContent).toContain('Finished, not yet opened: 2')
-    expect(rail.getAttribute('title')).toBe('Finished, not yet opened: 2')
+    expect(rail.getAttribute('title')).toBeNull() // the name is announced once, through the hidden text
   })
   it('renders in Russian', () => {
     setActiveLocale('ru')
