@@ -43,7 +43,7 @@ and by `ms1-live start` from `GUANXI_MS1_LIVE_CONFIG`). Unset, the boot is uncha
    against `thresholds`; `preflight` re-checks against the observed window).
 8. Default ports: owner API 4551/4552, federation 4561/4562. Node ids `ms1-<role>-<8 hex>`, account `owner`.
 
-## What each test proves (45 new, `packages/server/test/ms1-live/`)
+## What each test proves (46 new, `packages/server/test/ms1-live/`)
 
 | File | Tests | Proves (and fails when violated) |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ and by `ms1-live start` from `GUANXI_MS1_LIVE_CONFIG`). Unset, the boot is uncha
 | `identity.test.ts` | 4 | key 0600, no key in any other file or output; an identity is never replaced; key mode, foreign key, bad key, self-pairing, account, trust, missing/extra scopes, admin all refused |
 | `transport.test.ts` | 4 | one origin, signed request unchanged; only `/api/federation/` paths; redirect, silence and refusal are errors; per-class deadlines |
 | `doctor.test.ts` | 4 | each broken piece is named with a fix and exit 1 (key mode, peer file, account, scopes, ports, lead binaries, llama alias/health/loading/down); no key in output; exit-code and usage contract |
-| `boot.test.ts` | 12 | plain boot has no federation, no connection, `404` handshake, stock refusal; every configuration error is raised before any file exists; home boots idempotently; one data directory, one identity; executor with no llama-server stays up and honest; `localModel` attests exactly one model and the home none; command exit codes; federation listener serves only the signed API and the owner API does not serve federation; occupied federation port releases everything; connection conflict and unattended policy refused; executor restart reuses its connection and **close does not wait for a model hash**; a failed lead setup closes the node |
+| `boot.test.ts` | 13 | plain boot has no federation, no connection, `404` handshake, stock refusal; every configuration error is raised before any file exists; home boots idempotently; one data directory, one identity; executor with no llama-server stays up and honest; `localModel` attests exactly one model and the home none; command exit codes; federation listener serves only the signed API and the owner API does not serve federation; occupied federation port releases everything; connection conflict and unattended policy refused; executor restart reuses its connection and **close does not wait for a model hash**; a failed lead setup closes the node; relay host extras pass through |
 | `live.test.ts` | 4 | two real `ms1-live start` processes: preflight proves the link both ways and prints model, window, build, digest, counter source, observation time; a relay through the public route runs every call on the executor (signed pin/unpin, one offer and grant per completion, child ledgers equal the evaluated tokens call for call, no pin left, checkout gone, project untouched, a tripwire on `OLLAMA_HOST` never asked anything, no key in output or any database); idempotent key and public stop; the forward carries federation only |
 | `failures.test.ts` | 7 | wrong peer key, stranger at either end, executor down, dropped forward (and recovery without restart), llama-server down, wrong model, `evaluatedSkew` meter mismatch (`truncation_protocol`, nothing billed): each is refused or fails loudly with no run, session, checkout, completion or Ollama request |
 | `lead.test.ts` | 4 | the fixture ACP lead delegates through the production boot, sleeps, the plan runs on the executor, one wake; a second start does not start a second lead; the owner's limits and allow-list refuse three briefs; a lead that cannot be set up fails the start |
@@ -62,18 +62,22 @@ federation requests and can be cut, the topology of `ssh -L P:127.0.0.1:P`), a t
 
 ## Gates
 
-Mac, Node 26.9.0, shared lock resource `heavy`. Receipts are filled in the final commit.
+Mac, Node 26.9.0, shared lock resource `heavy`, clean tree at `9cea3bd2` (main merged twice: `6ead686f`).
 
 | Gate | Result |
 | --- | --- |
-| `npm run typecheck` | pending |
-| `npm run lint:md`, `npm run check:licenses` | pending |
-| `agent-dev … npm run test` | pending |
-| `agent-dev … npm run build` | pending |
+| `npm run typecheck` (all workspaces) | pass |
+| `npm run lint:md` | pass, 281 files, 758 links; `npm run check:licenses` pass, 675 packages, 0 not allowed; ESLint clean on every changed file |
+| `agent-dev … npm run test`, receipt `check-p_mbs9zr` | exit 0: `test:core` 2786 tests, 0 fail, 2 skipped (the two Linux-only opt-ins); ui, ui-gates, kernel, web, bench and codemod stages 0 fail |
+| `agent-dev … npm run build`, receipt `check-ic9kgtos` | exit 0 |
+| earlier, head `c1be7c8f` | test `check-egjfhg4_` failed 1 case (`relay/operational-relay.test.ts` "stop during checkout allocation": the known R2-op race, 5/5 alone; main has since fixed it in `ac42360b`); rerun `check-mnrl1dyz` green; build `check-vp4m0j6p` green |
 
-**New: 45** (config 6, identity 4, transport 4, doctor 4, boot 12, live 4, failures 7, lead 4). **Regression envelope:** the rest of the
-core run. The K4 gate sandbox (Colima) was running; the lane did not start or reset it. `live`, `failures` and `lead` need it and fail at
-once with a clear message otherwise.
+The UI gate G12 reads the base from the lane clone's local `main`, which is behind after merging main (it sees the owner's new approval key
+as added on the branch). The runs above therefore used `GUANXI_UI_G12_BASE=refs/remotes/origin/main`; no ref was moved.
+
+**New: 46** (config 6, identity 4, transport 4, doctor 4, boot 13, live 4, failures 7, lead 4). **Regression envelope:** the rest of the core
+run. The K4 gate sandbox (Colima) was running; the lane did not start or reset it. `live`, `failures` and `lead` need it and fail at once with
+a clear message otherwise.
 
 ## Independent verification
 
@@ -169,10 +173,17 @@ not asserted: replacing the home's no-Ollama model-inventory callback (the obser
 9. Test hygiene: fixed 1.5 s windows for "nothing follows" checks, `freePort` races, Colima required, about a minute for each of the three
    process-based files when the machine is idle.
 
+## Seam for the remote-relay judge
+
+`StartOptions.relayHost` (merged into the relay start host after the derived fields; the runtime, allocator, reserves, project resolution and
+node ports stay owned by `start()`) and `StartOptions.relayConfig` (merged into the relay plugin config) are typed as `Partial<Omit<…>>` of
+`RelayStartHost` and `RelayConfig`. When the judge lane adds `judge` to either type, a production boot, `ms1Live` included, passes it with
+no further change here. Tested for the pass-through (`boot.test.ts`); the judge itself is that lane's.
+
 ## Shared edits
 
 `packages/server/src/index.ts` (the `ms1Live` option, the federation-only listener, `abortStart` factored from one catch block, the
-`RelayRuntimeSource` condition `counter || observer?.open`, the returned `ms1Live`), `src/bin.ts`, `package.json` (script `ms1-live`),
+`RelayRuntimeSource` condition `counter || observer?.open`, `relayHost`/`relayConfig`, the returned `ms1Live`), `src/bin.ts`, `package.json` (script `ms1-live`),
 `docs/NAVIGATION.md` (one row). Everything else is new: `src/ms1-live/`, `scripts/ms1-live/`, `test/ms1-live/`, the runbook, this file and
 the plan. `relay/start.ts`, `relay/plugin.ts` and every federation, dispatch and runtime file are untouched.
 
