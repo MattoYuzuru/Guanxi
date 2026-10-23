@@ -84,7 +84,11 @@ fault class.
 | `npm run typecheck` | pass (all workspaces, no diagnostics) |
 | `npm run lint:md` | pass, 276 files, 742 links, 0 problems (re-run after final docs) |
 | `npm run check:licenses` | pass, 675 packages, 0 not allowed |
-| `agent-dev ... npm run test` | **exit 1**, receipt `check-a7f7yvz8`: server stage 2660 pass / 49 fail / 2 skipped; UI checks 6/6 and UI gates pass; kernel/web/ui/bench stages are not reached after the server failure |
+| `agent-dev ... npm run test` | **exit 1**, receipt `check-a7f7yvz8`: server stage 2660 pass / 49 fail / 2 skipped; UI checks 6/6 and UI gates pass; the remaining stages are split out below because the aggregate stops at the server failure |
+| `agent-dev ... npm run test:kernel` | **pass**, exit 0, receipt `check-2_rg1ym6` |
+| `agent-dev ... npm run test:web` | **pass**, 649 tests, receipt `check-ro3rk4cv` |
+| `agent-dev ... npm run test:ui` | **pass**, 49 tests, receipt `check-vs5t96g9` |
+| `agent-dev ... npm run test:bench` | **pass**, exit 0, receipt `check-g0zi2lof` |
 | `agent-dev ... npm run build` | **pass**, exit 0, receipt `check-oyzy8sms` |
 | Focused journal/cascade/replay/host tests | 56/56 pass after review fixes |
 
@@ -101,8 +105,9 @@ The shared `agent-dev` state directory is not writable from this sandbox (`~/.lo
 the heavy commands ran through `agent-dev` with `--state-dir /tmp/agent-dev-r3journal`, lane
 ports 5234/4434 and `GUANXI_DATA_DIR=$PWD/.lane-data`; this is not the shared lock. The other lanes' heavy suites were allowed to finish before the
 final run; the 49 failures reproduce on main. Receipt paths:
-`/private/tmp/agent-dev-r3journal/check-a7f7yvz8/result.json` and
-`/private/tmp/agent-dev-r3journal/check-oyzy8sms/result.json`.
+`/private/tmp/agent-dev-r3journal/check-a7f7yvz8/result.json`,
+`check-2_rg1ym6/result.json`, `check-ro3rk4cv/result.json`, `check-vs5t96g9/result.json`,
+`check-g0zi2lof/result.json` and `check-oyzy8sms/result.json`.
 
 ## Independent verification
 
