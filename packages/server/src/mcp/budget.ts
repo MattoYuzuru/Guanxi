@@ -122,9 +122,9 @@ export function countToolContext(context: McpToolContext, count: McpToolCounter)
 }
 
 /**
- * Builds the model-facing context. Full mode only when every description
- * fits. Search mode always has two meta-tools; when even their descriptions
- * do not fit, the descriptions are emptied so the budget guarantee holds.
+ * Builds the model-facing context. Full mode only when every serialized tool
+ * fits. Search mode has the two meta-tools; when even they do not fit, the
+ * context is empty with `mode: 'none'` so the budget guarantee holds.
  */
 export function toolContext(
   tools: readonly McpTool[],

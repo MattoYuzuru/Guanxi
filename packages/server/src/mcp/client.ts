@@ -336,7 +336,7 @@ export class McpClient {
     return this.rpc
   }
 
-  /** Kills the child and resolves only after the port's `exited` settles. */
+  /** Kills the process group and resolves only after the port's `exited` settles. */
   close(): Promise<void> {
     if (this.closing !== undefined) return this.closing
     const rpc = this.rpc
