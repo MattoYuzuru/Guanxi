@@ -80,6 +80,9 @@ sub install {
 install() if $ENV{BPF} && $mode ne 'serve';
 exec(@rest) or die "exec: $!" if $mode eq 'exec';
 if ($mode eq 'raw') {
+  # A host with kernel.io_uring_disabled set fails io_uring itself with EPERM, which would hide the filter.
+  my $disabled = 0; if (open(my $sysctl, '<', '/proc/sys/kernel/io_uring_disabled')) { $disabled = <$sysctl> + 0; close $sysctl }
+  print "sysctl.io_uring_disabled=$disabled\n";
   # Each call is chosen so that, without a filter, the kernel fails it with something other than EPERM
   # (EBADF, ENOTSOCK, ESRCH, EFAULT, ENOSYS) or succeeds. Prints the errno (0 = success).
   my $unused = "\0" x 64;
@@ -226,10 +229,12 @@ const EPERM = 1
 const oobCalls = ['sendto', 'recvfrom', 'sendmmsg', 'recvmmsg', 'sendmsg', 'recvmsg']
 const rawNames = ['bind', 'listen', 'ptrace', 'process_vm_writev', 'unshare', 'setns', 'mount', 'io_uring_setup', 'io_uring_enter', 'io_uring_register', 'x32_or_unknown_abi', 'x32_socketpair']
 const unconfined = ['--security-opt', 'seccomp=unconfined']
+// With kernel.io_uring_disabled set the kernel itself answers EPERM, so the filter cannot be told apart from it there.
+const ioUringIsTestable = (name: string, values: Map<string, string>) => !name.startsWith('io_uring') || values.get('sysctl.io_uring_disabled') === '0'
 for (const implementation of implementations) {
   test(`${implementation.name}: every other denied syscall and the x32/unknown ABI numbers fail with EPERM`, { skip, timeout: 120_000 }, async () => {
     const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
-    for (const name of rawNames) assert.equal(values.get(`raw.${name}`), String(EPERM), `${name} ${stderr}`)
+    for (const name of rawNames.filter(name => ioUringIsTestable(name, values))) assert.equal(values.get(`raw.${name}`), String(EPERM), `${name} ${stderr}`)
   })
   test(`${implementation.name}: MSG_OOB is refused on all six send/receive calls and other flags are not`, { skip, timeout: 120_000 }, async () => {
     const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
@@ -244,7 +249,7 @@ for (const implementation of implementations) {
 const controlRaw = (() => { let cached: Promise<Map<string, string>> | undefined; return () => cached ??= inContainer('perl /tmp/probe.pl raw', {}, unconfined).then(result => result.values) })()
 test('control: without the filter none of those syscalls fails with EPERM', { skip, timeout: 120_000 }, async () => {
   const { values, stderr } = await inContainer('perl /tmp/probe.pl raw', {}, unconfined)
-  for (const name of [...rawNames, ...oobCalls.map(call => `oob_${call}`)]) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
+  for (const name of [...rawNames.filter(name => ioUringIsTestable(name, values)), ...oobCalls.map(call => `oob_${call}`)]) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
 })
 
 // Each file records its own pid and parent pid, so per-file subprocess isolation is observable.

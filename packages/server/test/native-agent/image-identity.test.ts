@@ -48,6 +48,11 @@ test('an image labelled with another guard digest fails closed', async () => {
   assert.equal(outcome, 'container_runtime_unavailable')
   assert.equal(calls.length, 1)
 })
+test('inspect output with anything beyond "<id> <digest>" fails closed', async () => {
+  for (const answer of [`${id} ${GUARD_DIGEST} extra`, `${id} ${GUARD_DIGEST.toUpperCase()}`, `${GUARD_DIGEST} ${id}`, `${id}\n${GUARD_DIGEST}`]) {
+    assert.equal((await attempt(answer)).outcome, 'container_runtime_unavailable', answer)
+  }
+})
 test('a missing image fails closed', async () => {
   const { outcome } = await attempt('', 1)
   assert.equal(outcome, 'container_runtime_unavailable')
