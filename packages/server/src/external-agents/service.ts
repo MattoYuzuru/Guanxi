@@ -448,7 +448,10 @@ export class ExternalAgents {
                 status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
             : await client.prompt(binding.model, prompt, config.cwd, input.lead && { ...input.lead,
               ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) },
-            { ...(install.claudeEffort === undefined ? {} : { effort: install.claudeEffort }), ...(this.claudeVaultMode(install, row, key) ? { pin: true } : {}) })
+            { ...(install.claudeEffort === undefined ? {} : { effort: install.claudeEffort,
+              // What the agent was actually asked or found, as a fact with its source: a loaded session that reports no options keeps its own effort.
+              onEffort: (state: 'applied' | 'current' | 'kept_by_loaded_session') => this.observe(install, 'effort', state === 'kept_by_loaded_session' ? null : install.claudeEffort!,
+                state === 'applied' ? 'acp_set_config_option' : state === 'current' ? 'acp_session_option_current' : 'loaded_session_options_not_reported', state === 'kept_by_loaded_session' ? 'low' : 'high') }), ...(this.claudeVaultMode(install, row, key) ? { pin: true } : {}) })
           dispatchSignal.throwIfAborted()
           const safe = this.scrubber.scrub(output)
           handle.append({ type: 'assistant.message', data: { messageId, step: 0, text: safe.text } })

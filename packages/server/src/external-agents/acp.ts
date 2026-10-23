@@ -64,7 +64,7 @@ export class AcpClient {
     this.capabilities = object(result.agentCapabilities)
     return { ...result, observedVersion }
   }
-  async prompt(model: string, text: string, cwd: string, lead?: LeadTurn, settings: { effort?: string; pin?: boolean } = {}): Promise<AgentOutput> {
+  async prompt(model: string, text: string, cwd: string, lead?: LeadTurn, settings: { effort?: string; pin?: boolean; onEffort?: (state: 'applied' | 'current' | 'kept_by_loaded_session') => void } = {}): Promise<AgentOutput> {
     if (lead && object(this.capabilities.mcpCapabilities).http !== true) throw new ExternalAgentError('mcp_http_unsupported')
     // Programmatic settings are the bridge's highest-priority tier: they keep user/project/local files from moving the endpoint the
     // credential is sent to or from relaxing the permission mode (K5 answers every permission request with a refusal).
@@ -108,12 +108,14 @@ export class AcpClient {
     const effort = settings.effort
     if (effort !== undefined) {
       const level = options.find(o => o.id === 'effort')
-      if (!(mode === 'load' && !level)) {
+      if (mode === 'load' && !level) settings.onEffort?.('kept_by_loaded_session')
+      else {
         if (!level || level.type !== 'select' || typeof level.id !== 'string' || !optionValues(level.options).includes(effort)) throw new ExternalAgentError('effort_unavailable')
         if (level.currentValue !== effort) {
           const selected = object(await this.client.request('session/set_config_option', { sessionId, configId: level.id, value: effort }))
           if (!Array.isArray(selected.configOptions) || !selected.configOptions.some(o => object(o).id === level.id && object(o).currentValue === effort)) throw new ExternalAgentError('effort_selection_failed')
-        }
+          settings.onEffort?.('applied')
+        } else settings.onEffort?.('current')
       }
     }
     let textOutput = ''

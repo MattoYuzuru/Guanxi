@@ -187,6 +187,7 @@ test('an effort the agent acknowledges but does not apply refuses before the pro
   await f.scenario('claude-code', { tape: withEffort(f, ['low', 'medium'], 'medium') })
   await f.service().run(input)
   assert.equal((await effortFrames(f)).length, 0)
+  assert.equal(f.connections.store.get(owner, f.bindings[0]!.connectionId).facts.effort!.source.endsWith('acp_session_option_current'), true)
 })
 
 test('a resumed (loaded) lead session sets the effort when the agent reports its options and keeps its own when it does not', async t => {
@@ -197,10 +198,14 @@ test('a resumed (loaded) lead session sets the effort when the agent reports its
   const frames = await f.trace('claude-code')
   assert.equal(frames.filter(frame => frame.method === 'session/load').length, 1)
   assert.deepEqual((await effortFrames(f)).map(frame => frame.params.value), ['medium'])
+  const effortFact = () => f.connections.store.get(owner, f.bindings[0]!.connectionId).facts.effort!
+  assert.equal(effortFact().value, 'medium'); assert.equal(effortFact().source.endsWith('acp_set_config_option'), true)
   await f.scenario('claude-code', { lead })
   await f.service().run({ ...input, lead: leadTurn('lead-session-1') })
   assert.equal((await f.trace('claude-code')).filter(frame => frame.method === 'session/load').length, 1)
   assert.equal((await effortFrames(f)).length, 0, 'no option reported: the loaded session keeps the effort it was created with')
+  assert.equal(effortFact().value, null, 'and the node records that it could not apply the effort')
+  assert.equal(effortFact().source.endsWith('loaded_session_options_not_reported'), true)
   // A new session in the same position is refused instead: the agent must offer the level.
   await assert.rejects(f.service().run({ ...input, lead: leadTurn(null) }), /effort_unavailable/)
 })
