@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFile } from 'node:child_process'
-import { CONTAINER_IMAGE } from '../../src/native-agent/execution-owner.ts'
+import { CONTAINER_IMAGE, GUARD_DIGEST, GUARD_LABEL } from '../../src/native-agent/execution-owner.ts'
 import { linuxBindingFilter } from '../../src/native-agent/sandbox-protocol.ts'
 
 // Real-kernel checks of the workload seccomp policy, inside the execution image with the production
@@ -198,6 +198,11 @@ for (const implementation of implementations) {
     for (const name of ['fs_stream', 'abs_stream']) assert.equal(values.get(`socket.connect.${name}`), 'no-socket', 'no plain Unix socket can be created to try')
   })
 }
+
+test('the provisioned image carries the digest of the guard source this node trusts', { skip, timeout: 120_000 }, async () => {
+  const inspected = await docker(['image', 'inspect', '--format', `{{index .Config.Labels "${GUARD_LABEL}"}}`, CONTAINER_IMAGE])
+  assert.equal(inspected.stdout.trim(), GUARD_DIGEST, 'rebuild with packages/server/scripts/prepare-native-execution.sh')
+})
 
 test('control: without the filter a datagram pair does reach a pathname and an abstract listener', { skip, timeout: 120_000 }, async () => {
   // Proves the probe discriminates, and why datagram, seqpacket and the other types stay denied.
