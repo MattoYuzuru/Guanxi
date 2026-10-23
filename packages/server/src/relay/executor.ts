@@ -163,14 +163,20 @@ export class RelayExecutor {
       unobserved: [...judge.unobserved]
     }
   }
+  /** A fresh observation of the loaded runtime, before anything is counted. An exact count is valid only against a recent observation, and the
+   * previous call, gate or judge sample may have taken minutes: counting first would refuse a request the runtime can still serve. The window must
+   * be the one this cycle was planned for. Dispatch observes again itself, so the freshness rule there is unchanged. */
+  private async fresh(w: WindowObservation, signal: AbortSignal): Promise<void> {
+    const current = await this.model.observe(signal)
+    invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
+  }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal, responseSchema?: JsonSchema): Promise<Reply> {
     signal.throwIfAborted()
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const clean = this.scrubber.scrub(prompt)
+    await this.fresh(w, signal)
     const count = this.model.countAsync ? await this.model.countAsync(clean, signal) : this.model.count(clean)
     invariant(Number.isSafeInteger(count) && count >= 0 && count <= t.H, 'context_ceiling')
-    const current = await this.model.observe(signal)
-    invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
     const l = this.store.read(a.run_id), reason = this.caps(l)
     if (reason) { this.wrap(a, reason); throw new RelayError('cap_reached') }
     // K3 may expand late redactions; reserve the entire admissible input ceiling.
@@ -244,6 +250,7 @@ export class RelayExecutor {
         this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe_degraded', cycle: h.cycle }) } })
       }
       const expected = probes(sealed.ledger)
+      await this.fresh(w, signal)
       const { text: prompt } = await this.pack(PROBE_PROMPT,
         { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
@@ -293,6 +300,7 @@ export class RelayExecutor {
     try {
       const ledger = this.store.read(a.run_id)
       const notes = selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
+      await this.fresh(w, signal)
       const context = await this.pack('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
         { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
       if (context.dropped || context.cut) this.dropped(a, ledger.cycle, context.dropped, context.cut)
@@ -376,6 +384,7 @@ export class RelayExecutor {
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
+          await this.fresh(w, signal)
           const context = await this.pack(this.workText, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
           const used = await measure(context.text)
           if (context.dropped || context.cut) {
