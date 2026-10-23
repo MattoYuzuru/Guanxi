@@ -33,7 +33,9 @@ production workaround. No assertion was weakened to turn a failure green.
 
 ## New / regression envelope
 
-Pending final result counts. Focused runs already cover generated credentials, temporary SQLite
+**New:** 23 server/CLI cases, 4 web component cases and 1 mocked browser case.
+**Affected regression envelope:** 130 server/CLI (23 new / 107 existing), 54 web components
+(4 new / 50 existing), plus 9 existing operational-relay cases after the gate repair below. Focused runs already cover generated credentials, temporary SQLite
 and fake keychains/transports only. The DNS pin test talks to its own ephemeral loopback HTTP
 fixture, preserving Host without another DNS lookup. It does not call a provider.
 
@@ -68,8 +70,36 @@ A separate read-only reviewer inspected `1ee33db3..f8853379` under WORKFLOW §4.
 consent replay and pi-ai error-code defects above, confirmed both separate fixes and ran
 38/38 endpoint/chat cases on Node 26.9.0, zero skips. No remaining confirmed defect in that
 scope. It requested explicit LAN HTTP and mixed DNS-answer assertions; these are added.
-Final inspector unknown-state follow-up and final gate evidence are recorded below when ready.
+Inspector follow-up `c636e2e4` removes a fabricated percentage and renders provider source/time
+or Unknown in both facts and timeline; `adf2566c` asserts the exact unknown observation note.
+Reviewer closed this and the contract-validated browser fixture through `016f4770`.
+The G5 fix below was also independently checked: existing semantic token, no suppression growth.
 Heavy gates and live behavior were outside that review.
+
+## Gate repairs and failed attempts
+
+- First locked full attempt at `016f4770`: `check-8nw0i0tk`, exit 1, no timeout or source
+  change. G5 rejected the new ContextPanel `text-xs` use before core tests started.
+  Separate fix `2feba7d1` uses the existing `text-12` token. Direct `ui:check` then passed,
+  followed by repeated light gates and the 130/54 affected tests.
+- Second locked attempt at `2feba7d1`: `check-n3r_f3ab`, exit 1, no timeout or source change.
+  UI gates passed; core ran 2,740 cases: 2,737 passed, one failed, two platform skips.
+  MS1 passed. The only failure was operational-relay's allocation-cancel fixture: expected
+  `cleanup_unconfirmed`, observed `relay_stopped`. Later phases did not run.
+- The fixture counted entry into the allocator before filesystem ownership existed. On a
+  slow filesystem, cancellation could hit the pre-allocation abort check; `relay_stopped`
+  correctly described that path and the injected removal failure never ran. Independent
+  review confirmed this exact ordering. A temporary 50 ms pre-allocation scheduling probe
+  reproduced the same failure, then passed with the fix; the probe was removed.
+  The separate test fix waits for `runtime/scratch`, created after the ownership marker,
+  in both branches. Every outcome/count assertion and timeout stays unchanged; no relay
+  production code changes. Its complete 9-case file passes, zero skips. This is an
+  investigated synchronization defect, not a known-flake exemption.
+
+Receipts live under `/Users/yuzuru/.local/state/agent-dev/<check>/result.json`; each names its
+sibling redacted `output.log`. The pre-existing `.claude/skills/guanxi-ui` symlink makes source
+attestation/reusable receipts unavailable; execution results still record clean HEAD before
+and after plus `source_changed: false`. No symlink or unrelated owner file was changed.
 
 ## Migration, operator behavior and limits
 
@@ -94,7 +124,8 @@ Provider reasoning projection and actual provider compaction remain future slice
 
 Shared seams: contract connections/errors/context/ROUTES, CLI import/bin, legacy context/start,
 thread/project context projections, durable Chat owner/turn loop, inspector/context UI and locale
-keys, runtime lifecycle docs, OPEN_QUESTIONS. No PHASE_STATUS or NEXT_AGENT_PROMPT edit in a lane.
+keys, runtime lifecycle docs, OPEN_QUESTIONS, and the existing relay allocation-cancel fixture
+synchronization required to repair the full gate. No PHASE_STATUS or NEXT_AGENT_PROMPT edit in a lane.
 No copied third-party code. Exact MIT `undici` 8.9.0 is now a direct server dependency for pinned
 socket lookup; lockfile records the workspace declaration.
 
