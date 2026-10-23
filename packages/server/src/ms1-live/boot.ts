@@ -175,10 +175,37 @@ export class Ms1LiveNode {
     connections.localChat = (accountId, id, request, call) => id === guarded && !call.transport
       ? Promise.reject(new ConnectionError('policy_denied', 'This connection serves relay calls on the executor only'))
       : localChat(accountId, id, request, call)
-    if (this.hasLead) {
+    // An API-key lead is paid by an existing K3 connection that `prepareLeadKey` resolves; it never creates the subscription one.
+    if (this.hasLead && !this.leadUsesApiKey) {
       this.leadConnection = ensure(MS1_LEAD_CONNECTION, 'agent', () =>
         connections.create(owner, { name: MS1_LEAD_CONNECTION, kind: 'agent', provider: 'claude-code' as 'codex', auth: 'cli_login' }))
     }
+  }
+
+  /** The lead is paid by an Anthropic API key from the K3 vault (D-211) instead of the owner's subscription. */
+  get leadUsesApiKey(): boolean { return this.hasLead && this.settings.home!.lead!.auth === 'api_key' }
+  /** The dotenv file the configuration names for the lead's key, when it does (the explicit option and `GUANXI_PROVIDER_KEYS_FILE` come first). */
+  get providerKeysFile(): string | undefined { return this.leadUsesApiKey ? this.settings.home!.lead!.providerKeysFile : undefined }
+
+  /** API-key lead: unlock this node's vault and resolve the one K3 connection that pays. Called after the boot import and `prepare`.
+   * Throws `Ms1LiveError` with a code that names the fix and never a value; the key itself is not read here (K5 takes it from the vault
+   * at launch). */
+  async prepareLeadKey(connections: Connections): Promise<void> {
+    if (!this.leadUsesApiKey) return
+    const lead = this.settings.home!.lead!
+    // Resolve first: a node with no key refuses without ever touching the OS keychain.
+    const { connections: all, vault } = connections.snapshot(OWNER)
+    const named = lead.connection === undefined ? undefined : all.filter(c => c.id === lead.connection || c.name === lead.connection)
+    if (named && named.length === 0) throw new Ms1LiveError('lead_connection_not_found', 'home.lead.connection')
+    if (named && named.length > 1) throw new Ms1LiveError('lead_connection_ambiguous', 'home.lead.connection')
+    const candidates = named ?? all.filter(c => c.kind === 'model_api' && c.provider === 'anthropic' && c.auth === 'api_key' && c.secretRef)
+    if (candidates.length === 0) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
+    if (candidates.length > 1) throw new Ms1LiveError('lead_connection_ambiguous', 'home.lead.connection')
+    const chosen = candidates[0]!
+    if (chosen.kind !== 'model_api' || chosen.provider !== 'anthropic' || chosen.auth !== 'api_key' || chosen.baseUrl) throw new Ms1LiveError('lead_connection_invalid', 'home.lead.connection')
+    if (!chosen.secretRef) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
+    if (!vault.unlocked) { try { await connections.unlockVault(OWNER) } catch { throw new Ms1LiveError('lead_vault_locked', 'home.lead.auth') } }
+    this.leadConnection = chosen.id
   }
 
   /** Home: relay inference on the executor, through the existing relay plugin host. */
@@ -240,7 +267,8 @@ export class Ms1LiveNode {
     return {
       externalAgents: { nodeId: this.identity.id, ...(lead.runDeadlineMs ? { runDeadlineMs: lead.runDeadlineMs } : {}),
         installations: [{ adapter: 'claude-code', connectionId: this.leadConnection, ownerAccountId: OWNER, nodeId: this.identity.id,
-          billingAccount: lead.billingAccount, executable: lead.bridge, version: lead.bridgeVersion, claudeExecutable: lead.claudeExecutable }] },
+          billingAccount: lead.billingAccount, executable: lead.bridge, version: lead.bridgeVersion, claudeExecutable: lead.claudeExecutable,
+          ...(lead.effort ? { claudeEffort: lead.effort } : {}) }] },
       leads: { alwaysOn: true,
         relay: { consent: 'full-access', domains: lead.domains, ...(lead.pollMs ? { pollMs: lead.pollMs } : {}) },
         // The only executor a lead may name is the one this pairing serves: one connection, one model.

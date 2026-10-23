@@ -158,6 +158,8 @@ export interface StartOptions {
   webDir?: string
   devOrigins?: string[]
   providerKeysFile?: string
+  /** Test seam: the wrapping-key source of the K3 vault, in place of the OS keychain. */
+  connectionsKeychain?: () => Promise<import('./vault/keychain.ts').VaultKeychain>
   connectionsPolicy?: VaultPolicy
   indexSettings?: Partial<IndexSettings>
   federation?: Omit<FederationHostOptions, 'db'>
@@ -305,16 +307,20 @@ export async function start(options: StartOptions = {}) {
   try {
     await kernel.node.plugin(connectionsPlugin, {
       databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
+      ...(options.connectionsKeychain ? { keychain: options.connectionsKeychain } : {}),
       localHost: () => context.settings.get().ollamaHost,
       // Unattended relay calls are the point of the live pairing; K3 still needs each connection's own consent.
       policy: options.connectionsPolicy ?? (live ? { ownerDevice: true, nodeKeyOptIn: true } : undefined),
     })
-    const providerKeysFile = options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE
+    // An explicit option and `GUANXI_PROVIDER_KEYS_FILE` come first; an MS1 API-key lead's own file is the fallback.
+    const providerKeysFile = options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE ?? live?.providerKeysFile
+    let providerKeysFailed = false
     if (providerKeysFile) {
       try {
         const result = await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
         if (result.errors?.length) throw new Error('provider_key_import_failed')
       } catch {
+        providerKeysFailed = true
         context.connections!().lockVault('local')
         console.warn('provider_key_import_failed')
       }
@@ -327,6 +333,11 @@ export async function start(options: StartOptions = {}) {
       // The federation node loads here, not at kernel boot: an executor's dispatch needs the K3 registry (a local-runtime
       // connection) and a home's relay runtime needs the federation service. Plugin order changes only under this option.
       live.prepare(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!)
+      // An API-key lead needs the vault unlocked and its paying connection resolved; a failed import never falls back to an older key.
+      if (live.leadUsesApiKey) {
+        if (providerKeysFailed) throw new Ms1LiveError('lead_key_import_failed', 'home.lead.providerKeysFile')
+        await live.prepareLeadKey(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!)
+      }
       await kernel.node.plugin(createFederationPlugin({ ...live.federationHost(), db }))
       kernel = { ...kernel, federation: kernel.node.service<Federation>(FEDERATION_SERVICE) ?? null }
       if (!kernel.federation) throw new FederationError('federation_unavailable', 503)

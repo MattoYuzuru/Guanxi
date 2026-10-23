@@ -155,7 +155,7 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   const dataDir = text(parsed, 'data-dir'), listen = port(parsed, 'port')
   let server: Awaited<ReturnType<typeof start>>
   try { server = await start({ ms1Live: settings, ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}) }) } catch (error) {
-    if (error instanceof Ms1LiveError) { emit({ event: 'failed', code: error.code, field: error.field }); return 2 }
+    if (error instanceof Ms1LiveError) { emit({ event: 'failed', code: error.code, field: error.field, summary: describeConfigError(error) }); return 2 }
     const code = (error as NodeJS.ErrnoException | null)?.code
     emit({ event: 'failed', code: code === 'EADDRINUSE' ? 'port_in_use' : 'start_failed' })
     return 1
@@ -167,9 +167,14 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   if (live.hasLead) {
     try {
       const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
-      // Only paths and the argv of the vendor's own sign-in: the login itself happens in the vendor CLI, in its private config directory.
-      const login = await external.prepareLogin(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, live.leadConnectionId)
-      emit({ event: 'lead-login', hint: 'run this once, as is, in a terminal if the lead is not signed in', executable: login.executable, args: login.args, environment: login.environment })
+      if (settings.home!.lead!.auth === 'api_key') {
+        // Nothing to sign in to: the key comes from the K3 vault at launch. Ids and policy only, never the key.
+        emit({ event: 'lead-auth', mode: 'api_key', billing: 'api_usage', connectionId: live.leadConnectionId, ...(settings.home!.lead!.effort ? { effort: settings.home!.lead!.effort } : {}) })
+      } else {
+        // Only paths and the argv of the vendor's own sign-in: the login itself happens in the vendor CLI, in its private config directory.
+        const login = await external.prepareLogin(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, live.leadConnectionId)
+        emit({ event: 'lead-login', hint: 'run this once, as is, in a terminal if the lead is not signed in', executable: login.executable, args: login.args, environment: login.environment })
+      }
       if (prompt && project) {
         external.setProjectRoles(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, project, { lead: { backend: 'claude-code', connectionId: live.leadConnectionId, model: settings.home!.lead!.model, params: {} } })
         const leads = server.kernel.node.service<LeadHostService>(LEAD_SERVICE)!

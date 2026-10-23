@@ -60,7 +60,7 @@ test('configuration problems are boot errors raised before any file, database or
   // One exact address: the Host allowlist, the forward's far end and the doctor all assume 127.0.0.1.
   for (const [i, host] of ['localhost', '::1', '[::1]', '127.0.0.2'].entries()) await mustRefuse(start({ ...base, dataDir: join(root, `h${i}`), ms1Live: settings, host }), 'listen_not_loopback')
   await mustRefuse(start({ ...base, dataDir: join(root, 'd7'), ms1Live: settings, port: settings.listen.federationPort }), 'ports_collide')
-  const lead = { adapter: 'claude-code' as const, bridge: '/x/bridge', bridgeVersion: '1.0.0', claudeExecutable: '/x/claude', billingAccount: 'b', model: 'default', domains: [],
+  const lead = { adapter: 'claude-code' as const, bridge: '/x/bridge', bridgeVersion: '1.0.0', claudeExecutable: '/x/claude', billingAccount: 'b', model: 'default', auth: 'subscription' as const, domains: [],
     limits: { maxCaps: { cycles: 1, tokens: 1, moneyMicros: 1, wallMs: 1 }, maxDeadlineMs: 1, allowDetach: false } }
   await mustRefuse(start({ ...base, dataDir: join(root, 'd8'), ms1Live: { ...settings, home: { ...settings.home!, lead } }, externalAgents: { nodeId: 'n', installations: [] } }), 'option_conflict')
   await mustRefuse(start({ ...base, dataDir: join(root, 'd9'), ms1Live: { ...settings, model: 'fixture:cloud' } }), 'model_invalid')

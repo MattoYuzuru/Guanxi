@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process'
-import { accessSync, constants, statSync } from 'node:fs'
+import { accessSync, constants, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { apiPortFromEnv, dataDirFromEnv } from '../config/listen-env.ts'
+import { parseProviderKeyFile } from '../connections/dotenv.ts'
 import { LlamaServerClient } from '../runtime/llama-server/client.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { explainProbe, fail, ok, probeFederation, skip, step, warn, type Check } from './checks.ts'
@@ -23,6 +24,39 @@ export interface DoctorOptions {
 }
 const executable = (path: string): boolean => { try { accessSync(path, constants.X_OK); return statSync(path).isFile() } catch { return false } }
 const writableDir = (path: string): boolean => { try { accessSync(path, constants.W_OK); return statSync(path).isDirectory() } catch { return false } }
+
+/** The key file the lead's API-key mode imports at boot, judged without printing a value: where it comes from (the same order `start`
+ * uses: `GUANXI_PROVIDER_KEYS_FILE`, then the configuration), whether it parses, and whether `ANTHROPIC_API_KEY` is an API key (an OAuth
+ * token of the subscription family is refused). The vault is not opened here, so a connection named by `home.lead.connection` is judged at start. */
+function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['lead']>, env: Readonly<Record<string, string | undefined>>): Check[] {
+  const fromEnv = env['GUANXI_PROVIDER_KEYS_FILE'], file = fromEnv || lead.providerKeysFile
+  if (!file) return [warn('lead_key', 'lead_key_file_not_given', 'No key file is named for the API-key lead: its key must already be in this node\'s vault from an earlier import.',
+    'Set home.lead.providerKeysFile to your dotenv file (with ANTHROPIC_API_KEY=), or GUANXI_PROVIDER_KEYS_FILE, or run `guanxi connections import --file` first.')]
+  const where = fromEnv ? 'GUANXI_PROVIDER_KEYS_FILE' : 'home.lead.providerKeysFile'
+  if (!isAbsolute(file)) return [fail('lead_key', 'path_not_absolute', `${where} must be an absolute path.`)]
+  const checks: Check[] = []
+  let text: string
+  try {
+    const stat = statSync(file)
+    if (!stat.isFile()) throw new Error('not a file')
+    text = readFileSync(file, 'utf8')
+    if (stat.mode & 0o077) checks.push(warn('lead_key_mode', 'lead_key_file_mode', `The key file (${where}) is readable by other users.`, 'chmod 600 the file; it holds a live key.'))
+  } catch { return [fail('lead_key', 'lead_key_file_unreadable', `The key file named by ${where} cannot be read.`, 'Check the path and that this user can read the file.')] }
+  try {
+    const { entries, errors } = parseProviderKeyFile(text)
+    const names = errors.map(error => error.key)
+    const verdict = ((): Check => {
+    if (names.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', 'ANTHROPIC_API_KEY in the key file is not an Anthropic API key (it must start with sk-ant-api).',
+      'An OAuth or subscription token (sk-ant-oat...) is refused as an API key: create an API key in the Anthropic Console.')
+    if (!entries.some(entry => entry.provider === 'anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY.', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
+    if (names.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${names.join(', ')} in the key file is invalid, and an API-key lead does not start on a half-imported vault.`,
+      'Fix or remove those lines.')
+    return ok('lead_key', `An Anthropic API key (sk-ant-api...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault.`)
+    })()
+    return [...checks, verdict]
+  } catch { return [...checks, fail('lead_key', 'lead_key_file_invalid', 'The key file does not parse: it is malformed (duplicate name, unterminated quote, unquoted #) or holds no supported key.',
+    'See docs/operations/ms1-live-run.md section 7 and the connections README (D-208).')] }
+}
 
 /** Explains, from the files on this machine and loopback probes only, what is missing for this node to take part. Starts
  * nothing, writes nothing, and prints no key material. A warning means "not yet" or "worth knowing"; only a failure is a fault. */
@@ -143,6 +177,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
         checks.push(!isAbsolute(value) ? fail(id, 'path_not_absolute', `${what} must be an absolute path.`) : executable(value) ? ok(id, `${what} is executable at ${value}.`)
           : fail(id, 'executable_missing', `${what} is not an executable file at ${value}.`, id === 'lead_bridge' ? 'Install the bridge (see the runbook), then set lead.bridge to its absolute path.' : 'Set lead.claudeExecutable to the installed Claude Code CLI.'))
       }
+      checks.push(...(lead.auth === 'api_key' ? leadKeyChecks(lead, env) : [ ok('lead_auth', 'The lead signs in with the owner\'s subscription: `start` prints the sign-in command for K5\'s private config directory.')]))
     } else checks.push(skip('lead', 'No lead section: relay starts come from the public relay route.'))
   }
   return { ok: checks.every(check => check.status !== 'fail'), config: s.file, role: s.role, checks }
