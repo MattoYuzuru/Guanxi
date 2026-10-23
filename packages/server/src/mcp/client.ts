@@ -45,6 +45,11 @@ function positiveInteger(value: number, name: string): number {
   return value
 }
 
+function positiveNumber(value: number, name: string): number {
+  if (!Number.isFinite(value) || value <= 0) throw new TypeError(`${name} must be a finite positive number`)
+  return value
+}
+
 /** Validates the port contract before a spawn implementation sees it. */
 export function validateTransportSpec(spec: McpTransportSpec): void {
   if (typeof spec.command !== 'string' || !isAbsolute(spec.command)) {
@@ -190,12 +195,22 @@ export class McpClient {
   private closed = false
 
   constructor(options: McpClientOptions) {
-    this.server = options.server
+    this.server = {
+      ...options.server,
+      args: [...(options.server.args ?? [])],
+      env: { ...(options.server.env ?? {}) },
+    }
     this.spawnPort = options.spawn ?? spawnMcpProcess
-    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_MCP_REQUEST_TIMEOUT_MS
-    this.maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MCP_MAX_MESSAGE_BYTES
+    this.requestTimeoutMs = positiveNumber(
+      options.requestTimeoutMs ?? DEFAULT_MCP_REQUEST_TIMEOUT_MS,
+      'requestTimeoutMs',
+    )
+    this.maxMessageBytes = positiveInteger(
+      options.maxMessageBytes ?? DEFAULT_MCP_MAX_MESSAGE_BYTES,
+      'maxMessageBytes',
+    )
     this.maxToolPages = positiveInteger(options.maxToolPages ?? DEFAULT_MCP_MAX_TOOL_PAGES, 'maxToolPages')
-    this.allowedProtocolVersions = options.allowedProtocolVersions ?? []
+    this.allowedProtocolVersions = [...(options.allowedProtocolVersions ?? [])]
   }
 
   get serverId(): string {
@@ -311,7 +326,9 @@ export class McpClient {
   private async start(): Promise<McpInitializeResult> {
     let transport: McpTransport
     try {
-      transport = this.spawnPort(this.buildTransportSpec())
+      const spec = this.buildTransportSpec()
+      validateTransportSpec(spec)
+      transport = this.spawnPort(spec)
     } catch (error) {
       throw error instanceof McpError
         ? error
@@ -362,7 +379,8 @@ export class McpClient {
 }
 
 export interface McpClientManagerOptions {
-  projectPolicy: McpProjectPolicy
+  /** Omitted policy means MCP is off. */
+  projectPolicy?: McpProjectPolicy
   spawn?: McpSpawn
   requestTimeoutMs?: number
   maxMessageBytes?: number
@@ -392,8 +410,8 @@ export class McpClientManager {
   private closed = false
   private startTask: Promise<void> | undefined
 
-  constructor(options: McpClientManagerOptions) {
-    const mcp = options.projectPolicy.mcp
+  constructor(options: McpClientManagerOptions = {}) {
+    const mcp = options.projectPolicy?.mcp
     this.policyEnabled = mcp?.enabled === true
     this.configs = [...(mcp?.servers ?? [])]
     this.spawnPort = options.spawn ?? spawnMcpProcess

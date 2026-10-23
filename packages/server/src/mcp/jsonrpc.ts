@@ -119,7 +119,6 @@ export class JsonRpcConnection {
       pending.timer = setTimeout(() => {
         this.cancel(id, new McpError('mcp_timeout', `MCP request ${method} timed out after ${timeoutMs} ms`), 'timeout')
       }, timeoutMs)
-      pending.timer.unref()
 
       try {
         this.write({
