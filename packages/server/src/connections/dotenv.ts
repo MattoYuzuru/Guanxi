@@ -16,7 +16,7 @@ export function parseProviderKeys(text: string): ImportedProvider[] {
     for (const line of text.split(/\r?\n/)) {
       const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line)
       if (!match) continue
-      const [, name, raw] = match as [string, string, string]
+      const name = match[1]!, raw = match[2]!
       if (seen.has(name)) throw new Error('duplicate_key')
       seen.add(name)
       if (/^["'`]/.test(raw)) {
