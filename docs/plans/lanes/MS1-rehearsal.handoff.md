@@ -159,7 +159,22 @@ Both tripwires fail loudly when closed.
 
 ## Gates
 
-Filled in after the final run; see the end of this file.
+Mac, Node 26.9.0, shared lock resource `heavy`, clean tree at `971f364c` (this section is the only later, docs-only change).
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck` (all workspaces) | pass |
+| `npm run lint:md` | pass, 272 files |
+| `npm run check:licenses` | pass, 675 packages, 0 not allowed |
+| `npm run lint:js` | 0 errors, 4 pre-existing web warnings; ESLint on every changed file is clean |
+| `agent-dev … npm run test`, receipt `check-mgq_8cxn` | exit 0: `test:core` 2698 tests, 2696 pass, 0 fail, 2 skipped (the two pre-existing Linux-only opt-ins); kernel, web, ui, ui-gates, bench and codemod suites 0 fail |
+| `agent-dev … npm run build`, receipt `check-i8149b1f` | exit 0 |
+| `node --test test/ms1/rehearsal.test.ts` alone, three runs | 20/20 each, about 3 minutes (the full run above was 20/20 too, while other lanes were using the machine) |
+
+**New: 21** = `rehearsal.test.ts` 20 (happy path 1, deadline 1, cancel 1, refused briefs 1, judge blocker 1, kills 15) and
+`leads/children.test.ts` 1. **Regression envelope:** the other 2677 core cases plus the non-core suites. Main moved to
+`e2b3a50c` (the NC1 notification-center UI, web files and one server README line) after this branch was cut; it was not merged
+into the branch, nothing in it overlaps the files changed here.
 
 ## Independent verification
 
