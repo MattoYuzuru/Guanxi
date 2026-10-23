@@ -277,25 +277,25 @@ export class RelayJudgeCascade {
   ): void {
     const journal = this.input.journal
     if (!journal) return
-    const entry: JudgeJournalEntry = {
-      runId: a.run_id,
-      sessionId: this.relay.runs.get(a.run_id).session_id,
-      attemptId: a.id,
-      cycle: id.cycle,
-      phase: id.phase,
-      layer: id.layer as JudgeJournalLayer,
-      reason: id.reason,
-      requestKey: key,
-      packet: JSON.parse(packet.text) as unknown,
-      observation: this.observed?.observation ?? null,
-      policy: this.observed?.policy ?? null,
-      signals: this.observed?.signals ?? [],
-      state: request.state as JudgeJournalState,
-      result: request.payload,
-      startedAt,
-      finishedAt: this.relay.clock()
-    }
     try {
+      const entry: JudgeJournalEntry = {
+        runId: a.run_id,
+        sessionId: this.relay.runs.get(a.run_id).session_id,
+        attemptId: a.id,
+        cycle: id.cycle,
+        phase: id.phase,
+        layer: id.layer as JudgeJournalLayer,
+        reason: id.reason,
+        requestKey: key,
+        packet: JSON.parse(packet.text) as unknown,
+        observation: this.observed?.observation ?? null,
+        policy: this.observed?.policy ?? null,
+        signals: this.observed?.signals ?? [],
+        state: request.state as JudgeJournalState,
+        result: request.payload,
+        startedAt,
+        finishedAt: this.relay.clock()
+      }
       journal.record(entry)
     } catch {
       /* The judge outcome is already fenced and persisted. The local journal is best-effort

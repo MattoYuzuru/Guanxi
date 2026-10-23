@@ -485,3 +485,27 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
     f.close()
   }
 })
+
+test('a failing local journal never changes the completed judge verdict', async () => {
+  const f = fixture()
+  try {
+    const cascade = new RelayJudgeCascade(
+      f.relay,
+      cascadeInput({
+        journal: {
+          record() {
+            throw new Error('local journal unavailable')
+          }
+        }
+      })
+    )
+    cascade.bind(f.attempt)
+    await cascade.sample(f.attempt, 'cycle_start', new AbortController().signal)
+    const row = f.db
+      .prepare("SELECT state FROM relay_judge_requests WHERE layer='J2'")
+      .get()!
+    assert.equal(row.state, 'completed')
+  } finally {
+    f.close()
+  }
+})
