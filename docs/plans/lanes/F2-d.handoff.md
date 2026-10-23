@@ -151,3 +151,8 @@ An independent Opus cross-check accepted the lane with one P2 and P3 items. Each
 
 A mutation check applied during this round also caught a slip of mine: a `git checkout` restoring a mutated file erased an
 uncommitted edit (`sessionCosts`); the next commit restores it and the typecheck and the test caught it before the gates.
+
+Gates after the cross-check fixes, clean tree at the commit before this note: typecheck, ESLint on changed files, `lint:md`
+(0 errors) and `check:licenses` pass; `agent-dev … npm run test` receipt `check-lrhaubwj` passes (core 2545 tests, 2543 pass, 0 fail,
+2 skipped as before; other suites 0 fail); `agent-dev … npm run build` receipt `check-ndy1zwud` passes. New tests: 58 in total
+(10 added this round); regression envelope: the other 2487 core cases. No merge of main was needed.
