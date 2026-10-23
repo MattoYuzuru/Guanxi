@@ -239,7 +239,7 @@ describe('new-session start flow', () => {
     expect(screen.getByRole('alert').textContent).toContain('POST /api/agent')
     expect(screen.getByRole('alert').textContent).toContain(code)
     expect(document.body.textContent).toContain(copy)
-    expect(document.activeElement).toBe(title.closest('[tabindex="-1"]'))
+    await waitFor(() => expect(document.activeElement).toBe(title.closest('[tabindex="-1"]')))
     expect(title.textContent).toContain(copy) // the specific reason is inside the announced alert
     expect(field('What should the agent do?').value).toBe('Inspect')
     expect(field('Model ID').value).toBe('fixture')
