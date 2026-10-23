@@ -106,6 +106,8 @@ export interface McpServerConfig {
   args?: readonly string[]
   cwd: string
   env?: Readonly<Record<string, string>>
+  /** Protocol versions this server may negotiate in addition to the pinned one. */
+  allowedProtocolVersions?: readonly string[]
   /** Individual switch inside an enabled project policy. */
   enabled?: boolean
 }

@@ -437,7 +437,6 @@ export interface McpClientManagerOptions {
   requestTimeoutMs?: number
   maxMessageBytes?: number
   maxToolPages?: number
-  allowedProtocolVersions?: readonly string[]
 }
 
 export interface McpServerTool extends McpTool {
@@ -455,12 +454,12 @@ export class McpClientManager {
   private readonly requestTimeoutMs: number | undefined
   private readonly maxMessageBytes: number | undefined
   private readonly maxToolPages: number | undefined
-  private readonly allowedProtocolVersions: readonly string[] | undefined
   private readonly clients = new Map<string, McpClient>()
 
   private started = false
   private closed = false
   private startTask: Promise<void> | undefined
+  private startError: McpError | undefined
 
   constructor(options: McpClientManagerOptions = {}) {
     const mcp = options.projectPolicy?.mcp
@@ -470,7 +469,6 @@ export class McpClientManager {
     this.requestTimeoutMs = options.requestTimeoutMs
     this.maxMessageBytes = options.maxMessageBytes
     this.maxToolPages = options.maxToolPages
-    this.allowedProtocolVersions = options.allowedProtocolVersions
   }
 
   get enabled(): boolean {
@@ -481,13 +479,40 @@ export class McpClientManager {
     if (!this.policyEnabled) return
     if (this.closed) throw new McpError('mcp_closed', 'MCP manager is closed')
     if (this.started) return
+    if (this.startError !== undefined) throw this.startError
     if (this.startTask !== undefined) return this.startTask
-    this.startTask = this.startEnabled()
+    const task = this.startEnabled().catch((error: unknown) => {
+      const failure = error instanceof McpError
+        ? error
+        : new McpError('mcp_config', 'MCP server could not be started')
+      this.startError = failure
+      throw failure
+    })
+    this.startTask = task
     try {
-      await this.startTask
+      await task
     } finally {
       this.startTask = undefined
     }
+  }
+
+  /**
+   * Clears a cached start failure and tries every configured server again.
+   * This is the only recovery path before `close()`.
+   */
+  async retry(): Promise<void> {
+    if (!this.policyEnabled) return
+    if (this.closed) throw new McpError('mcp_closed', 'MCP manager is closed')
+    const starting = this.startTask
+    if (starting !== undefined) {
+      try {
+        await starting
+      } catch {
+        // The failed start is cleared and retried below.
+      }
+    }
+    this.startError = undefined
+    await this.start()
   }
 
   async listTools(serverId: string): Promise<McpTool[]> {
@@ -541,6 +566,7 @@ export class McpClientManager {
     const clients = [...this.clients.values()]
     this.clients.clear()
     this.started = false
+    this.startError = undefined
     await Promise.allSettled(clients.map(client => client.close()))
   }
 
@@ -562,7 +588,7 @@ export class McpClientManager {
           requestTimeoutMs: this.requestTimeoutMs,
           maxMessageBytes: this.maxMessageBytes,
           maxToolPages: this.maxToolPages,
-          allowedProtocolVersions: this.allowedProtocolVersions,
+          allowedProtocolVersions: config.allowedProtocolVersions,
         })
         this.clients.set(config.id, client)
         started.push(client)

@@ -326,7 +326,7 @@ it('refuses a different protocol version unless it is explicitly allowlisted', a
 
   const allowed = await createHarness(t, {
     mode: 'wrong-protocol',
-    manager: { allowedProtocolVersions: ['2025-01-01'] },
+    server: { allowedProtocolVersions: ['2025-01-01'] },
   })
   const tools = await allowed.manager.listTools('fake')
   assert.equal(tools.length, 5)
@@ -421,6 +421,39 @@ it('starts no process and refuses every tool operation when disabled', async (t)
   await expectCode(defaulted.listAllTools(), 'mcp_disabled')
   await expectCode(noPolicy.listAllTools(), 'mcp_disabled')
   assert.equal(calls.length, 0)
+})
+
+it('caches a failed start until an explicit retry', async (t) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'p1c-mcp-retry-')))
+  let attempts = 0
+  const spawnPort: McpSpawn = (spec) => {
+    attempts++
+    if (attempts === 1) throw new McpError('mcp_config', 'first start fails')
+    return spawnMcpProcess(spec)
+  }
+  const manager = new McpClientManager({
+    projectPolicy: {
+      mcp: {
+        enabled: true,
+        servers: [{ id: 'fake', command: process.execPath, cwd: root, args: [FIXTURE] }],
+      },
+    },
+    spawn: spawnPort,
+  })
+  t.after(async () => {
+    await manager.close()
+    await rm(root, { recursive: true, force: true })
+  })
+
+  const first = await expectCode(manager.listTools('fake'), 'mcp_config')
+  const second = await expectCode(manager.listTools('fake'), 'mcp_config')
+  assert.equal(attempts, 1, 'a cached failure must not spawn again')
+  assert.equal(second, first)
+
+  await manager.retry()
+  const tools = await manager.listTools('fake')
+  assert.equal(tools.length, 5)
+  assert.equal(attempts, 2)
 })
 
 it('rejects invalid client limits before spawning', () => {
