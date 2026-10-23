@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { RELAY_RUNTIME_PROBE } from '@guanxi/contract/federation'
 import { REMOTE_RELAY_COUNTER_SOURCE, REMOTE_RELAY_PROPS_SOURCE } from '../../src/relay/remote-runtime.ts'
 import { fakeRender, fakeTokens } from '../fixtures/fake-llama-server.ts'
-import { cli, createLiveWorld, until, type LiveWorld } from './live-world.ts'
+import { cli, createLiveWorld, until, type LiveWorld, pinLifecycle } from './live-world.ts'
 
 const num = (a: number, b: number) => a - b
 const TERMINAL = ['completed', 'failed', 'interrupted', 'input_required', 'canceled']
@@ -90,7 +90,7 @@ test('a relay started through the public route runs every model call on the exec
   // Inference ran on the second node: signed pin, observe, count, offer, dispatch, one per call.
   const posts = await w.fake.requests('/completion')
   assert.ok(posts.length >= 4, `many model calls (${posts.length})`)
-  assert.deepEqual(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/pin').map(r => r.action), ['pin', 'unpin'], 'pinned by a signed message, unpinned at the end')
+  assert.equal(pinLifecycle(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/pin').map(r => r.action)).ok, true, 'pinned by a signed message first, unpinned last, only re-pins between')
   assert.equal(w.toExecutor.paths('/attempts/dispatch').filter(r => r.path === '/attempts/dispatch').length, posts.length, 'one dispatch grant per completion')
   assert.equal(w.toExecutor.requests.filter(r => r.path === '/attempts/offers').length, posts.length, 'one offer per call')
   assert.ok(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/count').length >= posts.length, 'every dispatched string was counted by the executor first')
@@ -127,7 +127,7 @@ test('a plan run twice with the same key attaches to the first run and dispatche
   const status = await ended(w, 'live-stop', 60_000)
   assert.notEqual(status.status, 'completed')
   await until(() => w.executor.count('SELECT COUNT(*) AS n FROM federation_streams') === 0, 'the executor pin to be released', 30_000)
-  assert.deepEqual(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/pin').map(r => r.action), ['pin', 'unpin'])
+  assert.equal(pinLifecycle(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/pin').map(r => r.action)).ok, true)
   const calls = (await w.fake.requests('/completion')).length
   await new Promise(resolve => setTimeout(resolve, 1500))
   assert.equal((await w.fake.requests('/completion')).length, calls, 'no model call follows a stop')

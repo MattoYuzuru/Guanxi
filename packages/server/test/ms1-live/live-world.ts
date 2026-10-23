@@ -93,6 +93,13 @@ export class Tripwire {
   close() { this.server.closeAllConnections(); return new Promise<void>(resolve => this.server.close(() => resolve())) }
 }
 
+/** The relay pin messages the executor saw: a pin first, an unpin last, and only (re-)pins between them. Pin reaping re-sends the pin of a
+ * live run on a heartbeat, so a long run legitimately has several. */
+export function pinLifecycle(actions: Array<string | undefined>): { ok: boolean; pins: number } {
+  const middle = actions.slice(1, -1)
+  return { ok: actions.length >= 2 && actions[0] === 'pin' && actions.at(-1) === 'unpin' && middle.every(action => action === 'pin'), pins: actions.filter(action => action === 'pin').length }
+}
+
 type Event = Record<string, any> & { event: string }
 export class LiveNode {
   child!: ChildProcess

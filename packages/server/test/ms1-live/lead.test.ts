@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fakeTokens } from '../fixtures/fake-llama-server.ts'
-import { createLiveWorld, until, type LiveWorld } from './live-world.ts'
+import { createLiveWorld, until, type LiveWorld, pinLifecycle } from './live-world.ts'
 
 const HOUR = 3_600_000
 function brief(w: LiveWorld, overrides: Record<string, unknown> = {}) {
@@ -41,7 +41,7 @@ test('the lead delegates through the production boot, sleeps, and the plan runs 
   assert.equal(w.home.count("SELECT COUNT(*) AS n FROM durable_runs WHERE id LIKE 'rc-%' AND state='completed'"), posts.length, 'one remote child per call, all on the executor')
   assert.deepEqual(w.home.rows<{ input_tokens: number }>("SELECT input_tokens FROM run_costs WHERE entry_key LIKE 'remote-dispatch:%'").map(r => r.input_tokens).sort((a, b) => a - b),
     posts.map(post => fakeTokens(post.body.prompt, true)).sort((a, b) => a - b))
-  assert.deepEqual(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/pin').map(r => r.action), ['pin', 'unpin'])
+  assert.equal(pinLifecycle(w.toExecutor.requests.filter(r => r.path === '/attempts/runtime/pin').map(r => r.action)).ok, true)
   assert.deepEqual(w.executor.rows('SELECT id FROM federation_streams'), [])
   assert.deepEqual(w.tripwire.requests, [])
   // The lead is billed for its own turns only (delegating turn and resumed turn); the executor's tokens are never the lead's.
