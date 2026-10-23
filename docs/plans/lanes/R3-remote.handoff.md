@@ -82,7 +82,26 @@ row). Docs: a superseded note in `MS1-rehearsal.handoff.md` and `F2-d.handoff.md
 
 ## Gates (Mac, Node 26.9.0, shared lock resource `heavy`)
 
-GATES_PLACEHOLDER
+Clean tree at `9fb99f05` (the only later change is this gate table).
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck` (all workspaces) | pass |
+| ESLint on every changed `.ts` | pass, no output |
+| `npm run lint:md` | pass, 276 files, 746 links |
+| `npm run check:licenses` | pass, 675 packages, 0 not allowed |
+| `agent-dev … npm run test`, receipt `check-f4787n_g` | exit 0: core 2740 tests, 2738 pass, 0 fail, 2 skipped (the two pre-existing Linux-only opt-ins); kernel, web, ui, ui-gates, bench and codemod suites 0 fail; `source_changed` false |
+| `agent-dev … npm run build`, receipt `check-1tmxdfn_` | exit 0 |
+| `node --test test/ms1/rehearsal.test.ts`, before the review fixes and again with the relay suites after them | 23/23 (about 3.6 minutes); relay directory plus rehearsal 312 tests, 311 pass (the one failure is `sealing.test.ts` run from `packages/server`, see residual 7; it passes from the repository root) |
+
+An earlier full run (receipt `check-charojky`, head `fb971c57`) failed once: `trusted-start.test.ts` "public start runs the
+real K3 plus K4 tool/clean-gate path", the 5 s `until` in its container-gate wait, while two other lanes held the machine (7.5 s
+for a test that takes 1.7 to 4.5 s in other full runs). It passed alone (three reruns) and the wait was made a 30 s ceiling in
+`554b71f2`; the green run above is after that fix.
+
+**New: 42** = `judge-start.test.ts` 26, `judge-start-local.test.ts` 4, `judge-model.test.ts` 9 (5 to 14), `rehearsal.test.ts` 3
+judged kill points (the judge-blocker test was replaced one for one, so the file is 20 to 23). **Regression envelope:** the other
+2698 core cases and the non-core suites; the whole relay test directory and the rehearsal were also run directly.
 
 ## Residual risk (named, not closed)
 
