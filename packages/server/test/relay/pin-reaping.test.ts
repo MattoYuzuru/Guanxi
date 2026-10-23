@@ -23,9 +23,9 @@ const stubRuntime = (now: () => number): ExecutorRelayRuntime => ({ model: REF,
 const ask = (runId: string, over: Record<string, unknown> = {}) => ({ action: 'pin' as const, homeNodeId: 'home', executorNodeId: 'target', model: MODEL,
   runId, sessionId: `s-${runId}`, epoch: 1, challenge: `c-${runId}-${Math.random()}`, ...over })
 
-interface Pair { homeCtx: { identity: ReturnType<typeof keys>['identity']; readOnly: boolean; version: { major: number; minor: number } }; target: SimNode; home: () => SimNode; crash(maintenanceMs?: number): SimNode; streams(): string[]; down: { value: boolean }; sent: string[]; dir: string }
+interface Pair { homeCtx: { identity: ReturnType<typeof keys>['identity']; readOnly: boolean; version: { major: number; minor: number } }; target: SimNode; home: () => SimNode; crash(maintenanceMs?: number): SimNode; streams(): string[]; down: { value: boolean }; sent: string[]; attempts: { value: number }; dir: string }
 function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinTtlMs?: number; maintenanceMs?: number } = {}): Pair {
-  const dir = mkdtempSync(join(tmpdir(), 'guanxi-reap-')), path = join(dir, 'home.sqlite'), down = { value: false }, sent: string[] = []
+  const dir = mkdtempSync(join(tmpdir(), 'guanxi-reap-')), path = join(dir, 'home.sqlite'), down = { value: false }, sent: string[] = [], attempts = { value: 0 }
   const homeKeys = keys('home'), targetKeys = keys('target'), homeCtx = { identity: homeKeys.identity, readOnly: false, version: { major: 1, minor: 4 } }
   let home!: SimNode, target!: SimNode
   const mono = () => 1_000_000
@@ -33,6 +33,7 @@ function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinT
     clock: () => from().time, transport: async request => {
       const route = new URL(request.url).pathname.replace('/api/federation', '')
       if (route === '/attempts/runtime/pin') sent.push((await request.clone().json() as { action: string }).action)
+      attempts.value++
       if (down.value) throw new Error('executor unreachable')
       return to().app.request(request)
     } })
@@ -47,7 +48,7 @@ function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinT
   }
   home = open(); target.trust(home)
   t.after(() => { try { home.close() } catch { /* already closed */ } target.close(); rmSync(dir, { recursive: true, force: true }) })
-  return { homeCtx, target, home: () => home, dir, down, sent,
+  return { homeCtx, target, home: () => home, dir, down, sent, attempts,
     crash(maintenanceMs = 0) { home.close(); home = open(maintenanceMs); return home },
     streams: () => (target.db.prepare('SELECT id FROM federation_streams ORDER BY id').all() as Array<{ id: string }>).map(row => row.id) }
 }
@@ -231,4 +232,21 @@ test('a heartbeat already on the wire when the session is released cannot re-cre
   await new Promise(resolve => setTimeout(resolve, 300))                 // long enough for a misordered renewal to land
   assert.deepEqual(f.target.db.prepare("SELECT id FROM federation_streams WHERE id LIKE 'relay:%'").all(), [], 'the unpin was the last word')
   assert.equal(f.home.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_journal').get()!.n, 0)
+})
+
+test('an executor that permanently refuses one journaled row does not block the releasable rows behind it', async t => {
+  const p = pair(t), home = p.home()
+  // The oldest row names a model the executor does not serve: a definitive 409, never going to succeed.
+  home.federation.journalRelayPin('target', { runId: 'aaa-refused', sessionId: 's-refused', epoch: 1, model: 'other-model' })
+  await pinFromHome(p, 'good')
+  const restarted = p.crash()
+  assert.deepEqual(await restarted.federation.reconcileRelayPins(), { released: 1, kept: 0, failed: 1 }, 'the refused row fails, the good one is released in the same pass')
+  assert.deepEqual(p.streams(), [], 'relay:good is gone')
+  assert.deepEqual(journal(restarted), ['aaa-refused'], 'the refused row stays for the executor lease to backstop')
+  // A transport failure still ends the pass for that executor after one attempt (it is down, not refusing).
+  restarted.federation.journalRelayPin('target', { runId: 'zzz-1', sessionId: 's', epoch: 1, model: MODEL }); restarted.federation.retireRelayPin('zzz-1')
+  p.down.value = true
+  const before = p.attempts.value
+  assert.deepEqual(await restarted.federation.reconcileRelayPins(), { released: 0, kept: 0, failed: 2 })
+  assert.equal(p.attempts.value - before, 1, 'one request for two rows of a down executor')
 })

@@ -397,7 +397,13 @@ export class Federation {
         // A pin that became live in the meantime (it cannot: run ids are fresh) would be left alone by the settle below.
         if (!this.livePins.has(runId)) this.settleRelayPin(runId)
         result.released++
-      } catch { down.add(executor); result.failed++ } finally { clearTimeout(timer) }
+      } catch (error) {
+        // Only an unreachable executor ends the pass for it. A definitive refusal (another model, a stranger's pin, an executor
+        // without the runtime) concerns this row alone; the executor's lease frees that pin.
+        const refused = error instanceof FederationError && error.status < 500 && error.code !== 'relay_unpin_timeout'
+        if (!refused) down.add(executor)
+        result.failed++
+      } finally { clearTimeout(timer) }
     }
     return result
   }
