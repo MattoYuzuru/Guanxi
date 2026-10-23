@@ -83,3 +83,18 @@ Fixes on `claude/model-json-fences` (one fence removed, nothing else repaired; t
 sees past the first 8 KiB page of a long file. llama-server b11496 honours `json_schema` on `/completion` without changing
 `tokens_evaluated` (checked: an action schema with `const`/`enum`/`required`/`additionalProperties` produced exactly
 `{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}`); lane R2-json carries it through the relay.
+
+## First verified item on the real model (smoke-8)
+
+With constrained output (R2-json, `47e238c7`), the auto-checkpoint before `verify` (`claude/verify-autocheckpoint`, under
+review) and the gate command `node --test --test-isolation=none test/01-money.test.mjs`, the relay **finished ledger-lite I01 on
+Qwen3.8-27B**: 2 cycles, 18 minutes, 29 remote model calls (137 863 evaluated prompt tokens, 4 950 output tokens, one
+`remote-dispatch:` cost row each), state `finish`, start `completed`. The first gate failed an assertion (`-13` for `-1250`);
+the model fixed it and the next two gates passed 11/11. Only `src/01-money.mjs` changed (82 insertions, 2 deletions) in two
+harness checkpoints. Independently reproduced: a clean clone of the target repository plus the run's sealed git bundle at head
+`671b36fb` passes `node --test test/01-money.test.mjs` 11/11 with the default test isolation.
+
+Smoke-6 and smoke-7 had found the two blockers on the way: `verify` without a checkpoint stopped the run (`checkout_dirty`),
+and every gate failed with `spawn EPERM` because the K4 workload seccomp filter denies `socketpair`, which libuv uses for child
+stdio pipes; `node --test` runs each test file in a child process. `--test-isolation=none` is a plan-level workaround; lane
+K4-pipes is the fix.
