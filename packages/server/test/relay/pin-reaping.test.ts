@@ -163,6 +163,7 @@ test('the executor lease: an expired pin is released on its own transaction, fre
 test('the executor sweep removes a lease-less relay pin and leaves ordinary pins and replicated streams alone', async t => {
   const p = pair(t)
   const bind = (streamId: string) => p.target.federation.replicas.bind({ streamId, kind: 'run', sessionId: `s-${streamId}`, ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
+  p.target.federation.sweepRelayPins()                                   // the boot grace is spent on the first sweep; a lease-less pin made after it is not owed one
   bind('relay:legacy'); bind('ordinary-run')
   assert.equal(p.target.federation.sweepRelayPins(), 1)
   assert.deepEqual(p.streams(), ['ordinary-run'])

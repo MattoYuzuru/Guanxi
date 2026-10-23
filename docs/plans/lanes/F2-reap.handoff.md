@@ -64,7 +64,7 @@ object and my timer handles were an enumerable field; fixed by a `#private` fiel
   unpin does not) and refuses a pin of it (`relay_pin_released`). Tests: 5.5 s late heartbeat, aborted first pin, tombstone lapse.
   The earlier "ordering is enforced" claim was too strong and is corrected above.
 - **P2-3** leases ran on the wall clock with no restart grace. They now use `dispatch.leaseClock` (monotonic-anchored by default), and
-  Federation construction (with `dispatch`) extends every lease to `max(expires_at, now+TTL)` and gives lease-less relay pins one.
+  the first relay request or maintenance tick after construction (with `dispatch`) extends every lease to `max(expires_at, now+TTL)` and gives lease-less relay pins one.
   Tests: a wall jump of a day lapses nothing; restart after an outage 50x the TTL sweeps nothing and the home's renewal wins.
 - **P3** heartbeat test now asserts a sweep before the beat removes nothing and the lease expiry equals the renewed value; the reconcile
   timer is unref'd and `close()` ends a hung pass at once (test); `relayPinMaintenanceMs` and `pinRenewMs` reject values above

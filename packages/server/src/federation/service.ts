@@ -59,6 +59,7 @@ export class Federation {
    * clock step or a resume cannot lapse a live pin. */
   private readonly leaseNow: () => number
   private closed = false
+  private graced = false
   private readonly lifetime = new AbortController()
   private readonly counting = new Map<string, number>()
   /** F2-reap, home side: relay runs whose session in THIS process still needs its executor pin. Everything else in the journal is dead. This is in-process memory: exactly one
@@ -95,7 +96,6 @@ export class Federation {
     if (options.dispatch && !this.attemptOffers) throw new FederationError('attempts_required')
     this.attemptDispatch = options.dispatch ? new AttemptDispatch(options.db, options.runs, this.attemptOffers!, this.identity.id,
       this.identity.accountId, privateKey, options.dispatch, this.now) : null
-    if (options.dispatch) this.graceRelayPins()
     if (options.dispatch) this.startPinMaintenance(options.dispatch.relayPinMaintenanceMs ?? 60_000)
   }
   private assertOpen() { if (this.closed) throw new FederationError('closed', 503) }
@@ -363,6 +363,8 @@ export class Federation {
   /** Boot grace (ADR-0018: a restart never makes a live holder lose to its own downtime). Every relay pin gets at least one full
    * TTL from this boot, and a pin without a lease gets one, so the homes can renew before anything is swept. */
   private graceRelayPins(): void {
+    if (this.graced || !this.#options.dispatch) return
+    this.graced = true      // lazily, at the first relay request or maintenance tick: a host's lease clock may not exist yet at construction
     const db = this.#options.db, until = this.leaseNow() + this.pinTtl()
     this.transaction(() => {
       db.prepare("INSERT OR IGNORE INTO federation_relay_pin_leases SELECT id,? FROM federation_streams WHERE id LIKE 'relay:%'").run(until)
@@ -373,6 +375,7 @@ export class Federation {
    * transaction. It removes a permission and grants none, so it cannot create a second holder of anything. A pin without a
    * lease (made after boot by a path other than the pin message) is released at once. */
   sweepRelayPins(): number {
+    this.graceRelayPins()
     const db = this.#options.db, now = this.leaseNow()
     const lapsed = `FROM federation_streams WHERE id LIKE 'relay:%'
         AND NOT EXISTS (SELECT 1 FROM federation_replicas r WHERE r.stream_id=federation_streams.id)
