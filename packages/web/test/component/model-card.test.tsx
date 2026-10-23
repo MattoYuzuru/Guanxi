@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { localModelSchema } from '@guanxi/contract'
 import { ModelCard } from '../../src/features/models/ModelCard.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { formatBytes } from '../../src/lib/format.ts'
 import { factPairs } from '../helpers/facts.ts'
 
 const local = localModelSchema.parse({
@@ -32,9 +33,9 @@ describe('model card (visual pass)', () => {
     const { container } = render(<ModelCard data={{ kind: 'local', model: local }} />)
     const card = container.querySelector('article')!
     expect(card.querySelectorAll('.legacy-badge')).toHaveLength(0)
-    expect(factPairs(card)).toEqual(expect.arrayContaining([
-      ['Family', 'qwen2'], ['Parameters', '7.6B'], ['Quantization', 'Q4_K_M'], ['Context window', '32k'],
-    ]))
+    // At most four key facts on the card (visual pass 3); the family and the rest are in the details.
+    expect(factPairs(card)).toEqual([['Parameters', '7.6B'], ['Quantization', 'Q4_K_M'], ['Context window', '32k'], ['On disk', formatBytes(4_000_000_000)]])
+    expect(within(card).getAllByRole('button', { name: 'Model details' })).toHaveLength(1)
     expect(card.textContent).not.toMatch(/[Ѐ-ӿ]/u)
   })
 
@@ -43,7 +44,7 @@ describe('model card (visual pass)', () => {
     const { container } = render(<ModelCard data={{ kind: 'local', model: local }} />)
     const card = container.querySelector('article')!
     const links = within(card).getAllByRole('link')
-    expect(links.map((link) => link.textContent)).toEqual(['fixture:7b', 'Start Chat'])
+    expect(links.map((link) => link.textContent)).toEqual(['fixture:7b', 'Start chat'])
     expect(within(card).queryByRole('link', { name: 'Profile' })).toBeNull()
   })
 })
