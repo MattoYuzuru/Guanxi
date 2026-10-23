@@ -79,11 +79,6 @@ sub install {
 }
 install() if $ENV{BPF} && $mode ne 'serve';
 exec(@rest) or die "exec: $!" if $mode eq 'exec';
-if ($mode eq 'iouring') {
-  my $params = "\0" x 120; $! = 0; my $r = syscall(425, 4, $params);  # io_uring_setup, the same number on x64 and arm64
-  print "raw.io_uring_setup=", ($r == -1 ? $!+0 : 0), "\n";
-  exit 0;
-}
 if ($mode eq 'raw') {
   # Each call is chosen so that, without a filter, the kernel fails it with something other than EPERM
   # (EBADF, ENOTSOCK, ESRCH, EFAULT, ENOSYS) or succeeds. Prints the errno (0 = success).
@@ -99,6 +94,8 @@ if ($mode eq 'raw') {
     raw($kind . '_sendmmsg', ${numbers.sendmmsg}, 0, $unused, 1, $value); raw($kind . '_recvmmsg', ${numbers.recvmmsg}, 0, $unused, 1, $value, 0);
     raw($kind . '_sendmsg', ${numbers.sendmsg}, 0, $unused, $value); raw($kind . '_recvmsg', ${numbers.recvmsg}, 0, $unused, $value);
   }
+  # io_uring (IORING_OP_SOCKET would create sockets past the socket() rule): the same numbers on x64 and arm64.
+  raw(io_uring_setup => 425, 0, 0); raw(io_uring_enter => 426, -1, 0, 0, 0, 0, 0); raw(io_uring_register => 427, -1, 0, 0, 0);
   raw(x32_or_unknown_abi => 0x40000000); raw(x32_socketpair => 0x40000000 + ${numbers.socketpair}, 1, 1, 0, $unused);
   exit 0;
 }
@@ -222,7 +219,7 @@ test('control: without the filter a datagram pair does reach a pathname and an a
 // so these run unconfined: the BPF filter alone must produce EPERM, and the unfiltered control must not.
 const EPERM = 1
 const oobCalls = ['sendto', 'recvfrom', 'sendmmsg', 'recvmmsg', 'sendmsg', 'recvmsg']
-const rawNames = ['bind', 'listen', 'ptrace', 'process_vm_writev', 'unshare', 'setns', 'mount', 'x32_or_unknown_abi', 'x32_socketpair']
+const rawNames = ['bind', 'listen', 'ptrace', 'process_vm_writev', 'unshare', 'setns', 'mount', 'io_uring_setup', 'io_uring_enter', 'io_uring_register', 'x32_or_unknown_abi', 'x32_socketpair']
 const unconfined = ['--security-opt', 'seccomp=unconfined']
 for (const implementation of implementations) {
   test(`${implementation.name}: every other denied syscall and the x32/unknown ABI numbers fail with EPERM`, { skip, timeout: 120_000 }, async () => {
@@ -243,10 +240,6 @@ const controlRaw = (() => { let cached: Promise<Map<string, string>> | undefined
 test('control: without the filter none of those syscalls fails with EPERM', { skip, timeout: 120_000 }, async () => {
   const { values, stderr } = await inContainer('perl /tmp/probe.pl raw', {}, unconfined)
   for (const name of [...rawNames, ...oobCalls.map(call => `oob_${call}`)]) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
-})
-test('precondition: the container runtime default profile denies io_uring (it can otherwise create AF_UNIX sockets)', { skip, timeout: 120_000 }, async () => {
-  const { values, stderr } = await inContainer('perl /tmp/probe.pl iouring')
-  assert.equal(values.get('raw.io_uring_setup'), String(EPERM), stderr)
 })
 
 // Each file records its own pid and parent pid, so per-file subprocess isolation is observable.

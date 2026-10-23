@@ -32,9 +32,9 @@ function verdict(filter: Buffer, call: Call) {
 // Numbers and audit constants were read from the kernel headers of Debian bookworm (linux-libc-dev)
 // by compiling a probe for each architecture, not copied from memory.
 const abis = {
-  x64: { audit: 0xc000003e, socket: 41, socketpair: 53, denied: { bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165 }, connect: 42,
+  x64: { audit: 0xc000003e, socket: 41, socketpair: 53, denied: { bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165, io_uring_setup: 425, io_uring_enter: 426, io_uring_register: 427 }, connect: 42,
     flagsAt3: { sendto: 44, recvfrom: 45, sendmmsg: 307, recvmmsg: 299 }, flagsAt2: { sendmsg: 46, recvmsg: 47 } },
-  arm64: { audit: 0xc00000b7, socket: 198, socketpair: 199, denied: { bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40 }, connect: 203,
+  arm64: { audit: 0xc00000b7, socket: 198, socketpair: 199, denied: { bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40, io_uring_setup: 425, io_uring_enter: 426, io_uring_register: 427 }, connect: 203,
     flagsAt3: { sendto: 206, recvfrom: 207, sendmmsg: 269, recvmmsg: 243 }, flagsAt2: { sendmsg: 211, recvmsg: 212 } },
 } as const
 
