@@ -83,7 +83,8 @@ Level 3; NIST RBAC/ABAC; Zanzibar (USENIX ATC '19).
 
 **Status:** implemented · locally validated on Linux arm64 (kernel 6.8, Colima). On x64 the generated
 program is validated at instruction level and its numbers were read from amd64 kernel headers;
-`guard.c` was compiled for amd64 with `-Werror` but not run there.
+`guard.c` was compiled for amd64 with `-Werror`, and its compiled program was compared with the
+generated one over 29 million argument combinations, but it was not run there.
 
 *Problem.* The workload seccomp filter denied `socketpair` outright, so every Node child with
 piped stdio failed with `EPERM` (libuv builds those pipes from `socketpair(AF_UNIX, SOCK_STREAM)`),
@@ -95,11 +96,26 @@ container guard.
 
 *Decision.* The filter (container guard `guard.c` and `linuxBindingFilter()`, kept equal) allows
 `socketpair` only when the domain is `AF_UNIX` **and** `type & 0xf` is `SOCK_STREAM`; the
-`SOCK_CLOEXEC` and `SOCK_NONBLOCK` flags are masked off exactly as the kernel does. `socket()` stays
-limited to `AF_INET` and `AF_INET6`; `bind`, `listen`, `ptrace`, `process_vm_writev`, `unshare`,
-`setns` and `mount` stay denied; a foreign audit architecture kills the process and x32 or unknown
-syscall numbers are denied (the guard gained this x32 check). The execution image moved from
-`k4-v1` to `k4-v2`, so a host that did not rebuild fails closed with `container_runtime_unavailable`.
+`SOCK_CLOEXEC` and `SOCK_NONBLOCK` flags are masked off exactly as the kernel does. Because that
+gives the workload both ends of an `AF_UNIX` socket, the same filters also deny, with `EPERM`:
+
+- any `sendto`, `recvfrom`, `sendmmsg`, `recvmmsg` (flags in `args[3]`) or `sendmsg`, `recvmsg`
+  (flags in `args[2]`) whose low 32 flag bits include `MSG_OOB`;
+- `io_uring_setup`, `io_uring_enter` and `io_uring_register` (425 to 427 on x64 and arm64), so
+  `IORING_OP_SOCKET` cannot create sockets past the `socket()` rule and production no longer relies
+  on the container runtime's default seccomp profile.
+
+`socket()` stays limited to `AF_INET` and `AF_INET6`; `bind`, `listen`, `ptrace`,
+`process_vm_writev`, `unshare`, `setns` and `mount` stay denied; a foreign audit architecture kills
+the process and x32 or unknown syscall numbers are denied (the guard gained this x32 check).
+
+*Image identity.* The execution image is now `k4-v3`. The provisioning script labels it
+`org.guanxi.execution-guard-sha256` with the sha256 of `guard.c` followed by the `Dockerfile`; the
+node holds the expected value (`GUARD_DIGEST`, kept honest by a test that hashes the two files) and
+`execute()` reads the label in the same `docker image inspect` that selects the image id. A missing
+image, a missing label (any older build) or a different label fails closed with
+`container_runtime_unavailable` before any container is created, so a stale tag cannot run another
+policy.
 
 *Security argument.*
 
@@ -112,29 +128,31 @@ syscall numbers are denied (the guard gained this x32 check). The execution imag
    (pathname and abstract, stream and datagram) received anything. The same experiment with a
    **datagram** pair connects to both the pathname and the abstract datagram listener and delivers
    data, so datagram pairs, seqpacket (not needed) and every other type stay denied. This type check
-   is the load-bearing part of the decision, with an assertion that fails without it.
-3. Descriptor passing (`SCM_RIGHTS`) over a pair reaches only the other end, which is held by the
-   workload's own process tree. The pair gives it nothing a `pipe()` plus descriptors it already
-   holds did not. The trusted runner holds no end of a new pair. Descriptors inherited from the
-   parent (the workload's stdout and stderr are already Unix stream sockets to the runner, created
-   by libuv) are an existing property and are not changed.
-4. On Linux, sandbox-runtime's own filter documents that it blocks only `socket(AF_UNIX)` and
+   is load-bearing, with an assertion that fails without it.
+3. Out-of-band data is a new surface, not an existing one. Before this change the workload held at
+   most one end of any `AF_UNIX` socket (its stdout and stderr, whose other ends the runner holds).
+   A socketpair hands it both ends, the precondition for the Unix-domain `MSG_OOB` and
+   garbage-collector kernel bugs (the independent security review named CVE-2025-38236, CVE-2021-0920
+   and CVE-2024-26923; not re-verified here). `MSG_OOB` is therefore refused on every send and
+   receive path, as that review notes Chrome's sandbox does; on the test kernel an `MSG_OOB` send on a stream pair succeeds without the filter and is
+   `EPERM` with it, while ordinary `send`/`recv` and child pipes work.
+4. `SCM_RIGHTS` cannot be filtered by seccomp. Descriptor passing over a pair reaches only its other
+   end, which the workload's own process tree holds; the trusted runner holds no end of a new pair.
+   This is a named residual (below), bounded by that argument.
+5. On Linux, sandbox-runtime's own filter documents that it blocks only `socket(AF_UNIX)` and
    `io_uring_*` (read from its README, not re-measured), so the extra `socketpair` rule only
-   removed what that layer allowed.
-   Docker's default profile allows `socketpair` for ordinary containers and denies `io_uring_setup`
-   (observed `EPERM`); the guard relies on that default for io_uring, as before.
-5. Residual risks, named and not eliminated:
+   removed what that layer allowed. Docker's default profile allows `socketpair` for ordinary
+   containers; our filters no longer depend on it for `io_uring`.
+6. Residual risks, named and not eliminated:
+   - `SCM_RIGHTS` descriptor passing and garbage collection of in-flight descriptors remain
+     reachable between the workload's own processes. Only the `MSG_OOB` half of the Unix-domain
+     garbage-collector surface is closed; the rest of the AF_UNIX stream implementation is reachable.
    - `connect` on a stream-pair end looks up the target before it reports `EISCONN`, so the
      workload can tell whether a pathname or abstract name exists (`ENOENT`, `EACCES`,
      `ECONNREFUSED`, `EPROTOTYPE`). That discloses names only and opens no data channel; abstract
      names belong to the empty network namespace.
-   - The container path relies on the runtime's default seccomp profile to deny `io_uring_setup`
-     (`IORING_OP_SOCKET` could otherwise create an `AF_UNIX` socket, as it could before this change).
-     A kernel test asserts this precondition; a runtime without it fails that test.
-   - The kernel's AF_UNIX stream implementation (including `SCM_RIGHTS` garbage collection and
-     out-of-band data) is now reachable from the workload. That surface is exposed to any default
-     container and was already reachable through the runner's pipes; it is accepted and named, not
-     eliminated. Kernel hardening stays with the host.
+   - The Linux bubblewrap and `setpriv` path and sandbox-runtime's outer filter are not verified
+     on a real Linux host; the integrator runs them on Fedora.
 
 *Evidence.* [K4-pipes hand-off](../plans/lanes/K4-pipes.handoff.md); real-kernel tests in
 `packages/server/test/native-agent/seccomp-kernel.test.ts`, instruction-level tests in
