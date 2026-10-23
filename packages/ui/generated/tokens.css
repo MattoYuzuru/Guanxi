@@ -436,6 +436,12 @@
   --spacing-8: 8px;
   --target-minimum: 24px;
 }
+:root {
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-right: env(safe-area-inset-right, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-inset-left: env(safe-area-inset-left, 0px);
+}
 [data-theme="light"] {
   --color-background-accent: #285DD2;
   --color-background-accent: oklch(0.5147882529 0.1895554722 263.0586596753);

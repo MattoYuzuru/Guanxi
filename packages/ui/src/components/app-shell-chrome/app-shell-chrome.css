@@ -166,20 +166,19 @@
 }
 
 @container (max-width: 639px) {
-  .gx-app-shell-frame {
-    height: auto;
-    @apply min-h-full;
-  }
+  /* Phone (D-207): the navigation is a drawer, so the shell keeps its full height like the desktop.
+     The strip stays in view, main scrolls inside itself and a docked composer stays at the bottom. */
 
-  /* One row: the drawer toggle, the breadcrumb, the overflow and the palette icon. */
+  /* One row: the drawer toggle, the breadcrumb, the overflow and the palette icon, clear of the
+     device's top inset. */
   .gx-app-shell-status {
     flex-wrap: nowrap;
+    padding-top: max(var(--spacing-4), var(--safe-area-inset-top));
     padding-inline: var(--spacing-8);
   }
 
-  /* Phone: the sidebar and the pane span the shell edge to edge (the G14 phone geometry). */
+  /* Phone: the pane spans the shell edge to edge (the G14 phone geometry). */
   .gx-app-shell-body {
-    flex: none;
     flex-direction: column;
     gap: var(--spacing-8);
     padding: 0;
@@ -193,10 +192,6 @@
   .gx-app-shell-sidebar[data-visibility='expanded'],
   .gx-app-shell-sidebar[data-visibility='rail'] {
     @apply w-full;
-  }
-
-  .gx-app-shell-main {
-    overflow: visible;
   }
 }
 

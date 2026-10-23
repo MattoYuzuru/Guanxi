@@ -111,6 +111,9 @@
 }
 
 .native-session-scroll {
+  /* The containing block of the timeline's visually hidden live regions, so their overflow stays
+     inside this scroll region instead of making the page scroll past the docked composer. */
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -133,7 +136,8 @@
 
 .native-session-dock {
   flex: none;
-  padding: var(--spacing-8) var(--spacing-16) var(--spacing-16);
+  /* Docked under the timeline (D-207), clear of a phone's home indicator. */
+  padding: var(--spacing-8) var(--spacing-16) max(var(--spacing-16), var(--safe-area-inset-bottom));
 }
 
 .native-session-note {
