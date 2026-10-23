@@ -45,7 +45,7 @@ import {
   cx,
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
-import { formatInteger, formatRelativeTime, formatTime } from '../../lib/format.ts'
+import { displayModelSelection, formatInteger, formatRelativeTime, formatTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { PRODUCT_NAME } from '../../lib/brand.ts'
 import {
@@ -527,7 +527,7 @@ function ThreadPage({
               </Link>
             )}
             <div className="mt-0.5 flex items-center gap-2 text-2xs text-muted">
-              <span className="truncate font-mono">{chat.thread.model}</span>
+              <span className="truncate font-mono">{displayModelSelection(chat.thread.model)}</span>
               <ContextChip context={chat.context} />
             </div>
           </div>
@@ -590,7 +590,7 @@ function ThreadPage({
             onAutoApprove={setAutoApprove}
             onSend={resourceDecision.request}
             onStop={chat.stop}
-            model={chat.thread.model}
+            model={displayModelSelection(chat.thread.model)}
             context={<ContextChip context={chat.context} />}
           />
         </div>
@@ -1239,7 +1239,7 @@ function ThreadSidebar({
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
               <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-secondary">
-                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : thread.model}</span>
+                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : displayModelSelection(thread.model)}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>
             </Link>

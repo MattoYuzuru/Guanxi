@@ -23,3 +23,12 @@ describe('number formatting keeps integer zeros', () => {
     expect(formatBytes(2 * 1024 ** 3).startsWith(`2${NBSP}`)).toBe(true)
   })
 })
+
+describe('displayModelSelection', () => {
+  it('shows only the model id of a provider selection and leaves local names alone', async () => {
+    const { displayModelSelection } = await import('../../src/lib/format.ts')
+    expect(displayModelSelection('k3:11111111-1111-4111-8111-111111111111:deepseek-chat')).toBe('deepseek-chat')
+    expect(displayModelSelection('qwen3.5:9b')).toBe('qwen3.5:9b')
+    expect(displayModelSelection('k3:not-a-uuid:x')).toBe('k3:not-a-uuid:x')
+  })
+})
