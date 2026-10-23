@@ -1,7 +1,7 @@
 # R3 local judge observation journal hand-off
 
-**Status:** implemented; author gates passed, independent review findings fixed; final heavy
-test/build receipts PENDING.
+**Status:** implemented; independent review closed with no remaining blocking findings; focused
+and build gates pass; the full test gate has 49 inherited sandbox/process failures (see below).
 **Branch:** `deepseek/r3-observation-journal` · **Base:** `0ab58729`
 **Updated:** 2026-10-23 · **Environment:** local clone, Node 26.9.0, ports 5234/4434,
 `GUANXI_DATA_DIR=$PWD/.lane-data`; generated fixtures only. No live model, SSH, remote network,
@@ -84,13 +84,25 @@ fault class.
 | `npm run typecheck` | pass (all workspaces, no diagnostics) |
 | `npm run lint:md` | pass, 276 files, 742 links, 0 problems (re-run after final docs) |
 | `npm run check:licenses` | pass, 675 packages, 0 not allowed |
-| `agent-dev ... npm run test` | PENDING receipt |
-| `agent-dev ... npm run build` | PENDING receipt |
+| `agent-dev ... npm run test` | **exit 1**, receipt `check-a7f7yvz8`: server stage 2660 pass / 49 fail / 2 skipped; UI checks 6/6 and UI gates pass; kernel/web/ui/bench stages are not reached after the server failure |
+| `agent-dev ... npm run build` | **pass**, exit 0, receipt `check-oyzy8sms` |
 | Focused journal/cascade/replay/host tests | 56/56 pass after review fixes |
 
+The full test failures are environment-bound, not journal-bound:
+`ms1/rehearsal` 18, `indexing/service` 10, `indexing/index` 8,
+`external-agents/admission-reconcile` 4, `native-agent/agent` 3, `indexing/tools-lsp` 3,
+`relay/operational-relay` 1, `native-agent/sandbox` 1, `indexing/process` 1. They are process
+start-time/`ps`, Unix-socket, nested-sandbox and worker tests; the same failures reproduce on
+main `0ab58729` (spot-checked `admission-reconcile`, `native-agent/sandbox` + `indexing/process`,
+and `operational-relay`). No failure mentions the journal or cascade. This sandbox denies
+`ps`/nested-sandbox operations, so these tests could not be made green here.
+
 The shared `agent-dev` state directory is not writable from this sandbox (`~/.local/state`), so
-the heavy commands run through `agent-dev` with `--state-dir /tmp/agent-dev-r3journal` after the
-shared `heavy` lock is free; this is not the shared lock. PENDING exact note/receipt.
+the heavy commands ran through `agent-dev` with `--state-dir /tmp/agent-dev-r3journal`, lane
+ports 5234/4434 and `GUANXI_DATA_DIR=$PWD/.lane-data`; this is not the shared lock. The other lanes' heavy suites were allowed to finish before the
+final run; the 49 failures reproduce on main. Receipt paths:
+`/private/tmp/agent-dev-r3journal/check-a7f7yvz8/result.json` and
+`/private/tmp/agent-dev-r3journal/check-oyzy8sms/result.json`.
 
 ## Independent verification
 
@@ -114,7 +126,8 @@ did not run heavy gates. Findings fixed in `0b9f4e6d`:
 - **Mutation/async boundary:** the journal receives cloned values, and an async `record`
   rejection is consumed. Test 12.
 
-A narrow re-check of `0b9f4e6d` found two remaining blockers, fixed in `1a452096`:
+A narrow re-check of `0b9f4e6d` found two remaining blockers, fixed in `1a452096`; a second
+narrow re-check of `1a452096` closed both with no remaining blocking findings:
 
 - **Lazy purge of an existing table:** `journalIfPresent` constructs a store when the table
   already exists, so the load/periodic purge removes old rows even when no cascade executes on
