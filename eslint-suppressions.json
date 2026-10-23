@@ -12,13 +12,13 @@
       "count": 7
     },
     "guanxi/no-literal-styles": {
-      "count": 7
+      "count": 5
     },
     "guanxi/reuse-primitives": {
-      "count": 7
+      "count": 5
     },
     "guanxi/semantic-classes": {
-      "count": 21
+      "count": 6
     }
   },
   "packages/web/src/features/agent/ApprovalPrompt.tsx": {
@@ -63,7 +63,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 10
+      "count": 9
     }
   },
   "packages/web/src/features/chat/ChatRetentionInfo.tsx": {
@@ -94,7 +94,7 @@
   },
   "packages/web/src/features/health/RuntimeStatus.tsx": {
     "guanxi/semantic-classes": {
-      "count": 6
+      "count": 4
     }
   },
   "packages/web/src/features/inspector/InspectorPage.tsx": {
@@ -210,7 +210,7 @@
   },
   "packages/web/src/index.css": {
     "guanxi/no-literal-css": {
-      "count": 112
+      "count": 62
     }
   }
 }

@@ -1,0 +1,184 @@
+/* W1 native session (D-207): header, scrolling column, composer docked at the bottom. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.native-session {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  @apply h-full;
+}
+
+.native-session-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-width: 0;
+  padding: var(--spacing-8) var(--spacing-12) var(--spacing-8) var(--spacing-16);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.native-session-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-heading);
+}
+
+.native-session-title:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.native-session-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
+.native-session-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.native-session-column,
+.native-session-dock > * {
+  box-sizing: border-box;
+  @apply w-full;
+  max-width: var(--layout-container-3xl);
+  margin-inline: auto;
+}
+
+.native-session-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+  padding: var(--spacing-24) var(--spacing-16);
+}
+
+.native-session-dock {
+  flex: none;
+  padding: var(--spacing-8) var(--spacing-16) var(--spacing-16);
+}
+
+.native-session-note {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.native-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+
+.native-progress-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+.native-progress-state {
+  margin: 0;
+  font-weight: var(--font-weight-heading);
+}
+
+.native-progress-source {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+}
+
+.native-progress-status .gx-button {
+  margin-left: auto;
+}
+
+.native-progress-alert {
+  margin: 0;
+  padding: var(--spacing-8) var(--spacing-12);
+  border-left: var(--spacing-2) solid var(--color-border-danger);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-danger-subtle);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-13);
+}
+
+.native-card,
+.native-response {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  padding: var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-secondary);
+}
+
+.native-response {
+  border: 0;
+  padding-inline: 0;
+}
+
+.native-card-title {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.native-muted {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-13);
+}
+
+.native-plan,
+.native-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.native-plan li,
+.native-queue li {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  font-size: var(--font-size-13);
+}
+
+.native-plan li[data-status='active'] {
+  color: var(--color-text-accent);
+  font-weight: var(--font-weight-label);
+}
+
+.native-plan li[data-status='verification_requested'] {
+  color: var(--color-text-secondary);
+}
+
+.native-queue li span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.native-response-text {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-14);
+  line-height: var(--font-line-height-prose);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

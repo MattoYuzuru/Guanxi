@@ -1,8 +1,12 @@
 /*
- * Shell geometry. The only responsive rule is the existing workspace phone breakpoint
- * (639 px in packages/web/src/features/workspace/Workspace.tsx and workspace.css). It is a
- * container query here so the shell stacks for a phone viewport and for a narrow host frame
- * without a JavaScript viewport listener that would discard controlled state.
+ * Shell geometry (D-200, D-204). The chrome tone (canvas, step 2) fills the window; the status
+ * strip and the sidebar sit directly on it, and the main reading surface is a white pane that
+ * floats on the chrome with a hairline, the pane shadow and a 12 px radius. In max graphics the
+ * chrome may carry a shader; the sidebar then takes glass so its text keeps contrast.
+ *
+ * The only responsive rule is the existing workspace phone breakpoint (639 px). It is a container
+ * query so the shell stacks for a phone viewport and for a narrow host frame without a JavaScript
+ * viewport listener that would discard controlled state.
  */
 @reference '../../styles/tailwind-reference.css';
 
@@ -14,6 +18,7 @@
 }
 
 .gx-app-shell-frame {
+  position: relative;
   display: flex;
   flex-direction: column;
   @apply h-full w-full;
@@ -26,21 +31,22 @@
   line-height: var(--font-line-height-ui);
 }
 
-/* The status strip is glass and always present; the reading surface below it never is. */
+/* Borderless strip on the chrome: breadcrumb at the left, icon status and controls at the right. */
 .gx-app-shell-status {
+  position: relative;
+  z-index: var(--layer-sticky);
   display: flex;
   flex: none;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-8);
   min-width: 0;
+  min-height: var(--spacing-40);
   padding: var(--spacing-4) var(--spacing-8);
 }
 
 .gx-app-shell-status-content {
   display: flex;
   flex: 1 1 auto;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-8);
   min-width: 0;
@@ -51,30 +57,57 @@
   flex: none;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--spacing-4);
+  justify-content: flex-end;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+/* The palette entry reads as a quiet search field: icon and the shortcut keycaps. */
+.gx-app-shell-palette {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  box-sizing: border-box;
+  min-height: var(--target-minimum);
+  margin-left: var(--spacing-4);
+  padding: 0 var(--spacing-4) 0 var(--spacing-8);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-secondary);
+  color: var(--color-text-tertiary);
+  font: inherit;
+  cursor: pointer;
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-app-shell-palette:hover {
+  border-color: var(--color-border-primary);
+  color: var(--color-text-secondary);
 }
 
 .gx-app-shell-body {
   display: flex;
   flex: 1 1 auto;
+  gap: var(--spacing-4);
   min-width: 0;
   min-height: 0;
+  padding: 0 var(--spacing-8) var(--spacing-8);
 }
 
-/* Sidebar and status are the only glass surfaces; the main reading surface stays opaque. */
 .gx-app-shell-sidebar {
   display: flex;
   flex: none;
   flex-direction: column;
-  /* The 1 px glass border belongs to the 18 rem expanded and 48 px rail widths. Without this
-     local border-box, the border adds 2 px outside those widths and overflows a narrow host.
-     Keep the reset scoped here; approved primitives keep their own box model. */
+  /* The border-box keeps the 18 rem expanded and 48 px rail widths exact on a narrow host. */
   box-sizing: border-box;
   width: var(--layout-container-2xs);
   @apply max-w-full;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border-radius: var(--border-radius-panel);
 }
 
 .gx-app-shell-sidebar[hidden] {
@@ -85,13 +118,10 @@
   width: var(--spacing-48);
 }
 
-.gx-app-shell-sidebar-header {
+.gx-app-shell-sidebar-menu {
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--spacing-4);
-  min-width: 0;
-  padding: var(--spacing-4);
 }
 
 .gx-app-shell-sidebar-body {
@@ -100,22 +130,36 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: var(--spacing-4) var(--spacing-8) var(--spacing-8);
+  padding: var(--spacing-2) var(--spacing-4) var(--spacing-8);
   overflow: auto;
 }
 
 .gx-app-shell-sidebar[data-visibility='rail'] .gx-app-shell-sidebar-body {
-  padding: var(--spacing-4);
+  padding: var(--spacing-2) var(--spacing-4);
   overflow: hidden;
 }
 
+/* The floating reading pane. */
 .gx-app-shell-main {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  background-color: var(--color-background-primary);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-pane-shadow);
   color: var(--color-text-primary);
+}
+
+/* Max graphics: the chrome shows the shader, so the sidebar gets tinted glass for contrast. */
+:root[data-graphics='max'] .gx-app-shell-frame {
+  background-color: transparent;
+}
+
+:root[data-graphics='max'] .gx-app-shell-sidebar {
+  background-color: var(--material-background);
+  backdrop-filter: var(--material-backdrop);
 }
 
 @container (max-width: 639px) {
@@ -124,9 +168,20 @@
     @apply min-h-full;
   }
 
+  .gx-app-shell-status {
+    flex-wrap: wrap;
+    padding-inline: var(--spacing-8);
+  }
+
+  .gx-app-shell-status-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
   .gx-app-shell-body {
     flex: none;
     flex-direction: column;
+    padding: 0 var(--spacing-4) var(--spacing-4);
   }
 
   .gx-app-shell-sidebar[data-visibility='expanded'],
@@ -136,5 +191,11 @@
 
   .gx-app-shell-main {
     overflow: visible;
+  }
+}
+
+@media (forced-colors: active) {
+  .gx-app-shell-main {
+    border-color: CanvasText;
   }
 }

@@ -83,3 +83,9 @@
   height: var(--spacing-6);
   padding: 0;
 }
+
+/* An icon link to the current page (the inbox while it is open). */
+.gx-icon-button[aria-current='page'] {
+  background-color: var(--color-background-pressed);
+  color: var(--color-text-primary);
+}

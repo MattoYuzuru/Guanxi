@@ -5,10 +5,10 @@
  * workspace breakpoint as a container query, so a phone viewport and a narrow host frame use
  * the same rule and controlled state survives resizing.
  */
-import { PanelLeft } from 'lucide-react'
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { Button } from '../button/button.tsx'
+import { Icon } from '../icon/icon.tsx'
 import { IconButton } from '../icon-button/icon-button.tsx'
+import { Kbd } from '../kbd/kbd.tsx'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../menu/menu.tsx'
 import './app-shell-chrome.css'
 
@@ -39,8 +39,12 @@ export interface AppShellChromeProps {
   visibility: AppShellVisibility
   /** Host navigation. It should adapt itself to `visibility === 'rail'`; the chrome does not invent rail content. */
   sidebar: ReactNode
-  /** Persistent status items. The chrome adds Show (while hidden) and Palette actions. */
+  /** Persistent status items, shown at the left of the strip after the Show button. */
   status: ReactNode
+  /** Icon status items and chrome controls at the right of the strip, before the palette button. */
+  actions?: ReactNode
+  /** Keys of the palette shortcut as the platform writes them (for example `['⌘', 'K']`). */
+  paletteShortcut?: string[]
   /** Main, opaque reading surface. It stays mounted while the sidebar changes. */
   children: ReactNode
   /** Accessible name for the navigation region and its menu trigger. */
@@ -57,6 +61,8 @@ export function AppShellChrome({
   visibility,
   sidebar,
   status,
+  actions,
+  paletteShortcut,
   children,
   sidebarLabel,
   labels,
@@ -84,8 +90,8 @@ export function AppShellChrome({
     }
     if (visibility !== 'hidden' && previous === 'hidden' && returnFocusToSidebar.current) {
       returnFocusToSidebar.current = false
-      const target = menuTriggerRef.current ?? sidebarRef.current
-      target?.focus()
+      // The menu now lives in the strip; showing the sidebar moves focus into the sidebar itself.
+      sidebarRef.current?.focus()
     }
   }, [visibility])
 
@@ -104,7 +110,7 @@ export function AppShellChrome({
       key="sidebar"
       id={sidebarId}
       ref={sidebarRef}
-      className="gx-app-shell-sidebar gx-glass"
+      className="gx-app-shell-sidebar"
       data-slot="app-shell-sidebar"
       data-side={side}
       data-visibility={visibility}
@@ -120,29 +126,34 @@ export function AppShellChrome({
         if (next instanceof Node && !event.currentTarget.contains(next)) sidebarHadFocus.current = false
       }}
     >
-      <div className="gx-app-shell-sidebar-header">
-        <Menu>
-          <MenuTrigger
-            ref={menuTriggerRef}
-            render={<IconButton label={sidebarLabel} icon={<PanelLeft aria-hidden="true" />} size="sm" />}
-          />
-          <MenuContent>
-            {side === 'left' ? (
-              <MenuItem onClick={() => onSide('right')}>{labels.moveRight}</MenuItem>
-            ) : (
-              <MenuItem onClick={() => onSide('left')}>{labels.moveLeft}</MenuItem>
-            )}
-            {visibility === 'expanded' ? (
-              <MenuItem onClick={() => onVisibility('rail')}>{labels.collapse}</MenuItem>
-            ) : (
-              <MenuItem onClick={() => onVisibility('expanded')}>{labels.expand}</MenuItem>
-            )}
-            <MenuItem onClick={hide}>{labels.hide}</MenuItem>
-          </MenuContent>
-        </Menu>
-      </div>
       <div className="gx-app-shell-sidebar-body">{sidebar}</div>
     </aside>
+  )
+
+  // The sidebar menu sits in the status strip on the sidebar's side, so the strip is one row of
+  // chrome and the sidebar starts with navigation.
+  const sidebarMenu = visibility === 'hidden' ? null : (
+    <div className="gx-app-shell-sidebar-menu" data-slot="app-shell-sidebar-header">
+      <Menu>
+        <MenuTrigger
+          ref={menuTriggerRef}
+          render={<IconButton label={sidebarLabel} icon={<Icon name={side === 'left' ? 'sidebar' : 'sidebar-right'} />} />}
+        />
+        <MenuContent>
+          {side === 'left' ? (
+            <MenuItem onClick={() => onSide('right')}>{labels.moveRight}</MenuItem>
+          ) : (
+            <MenuItem onClick={() => onSide('left')}>{labels.moveLeft}</MenuItem>
+          )}
+          {visibility === 'expanded' ? (
+            <MenuItem onClick={() => onVisibility('rail')}>{labels.collapse}</MenuItem>
+          ) : (
+            <MenuItem onClick={() => onVisibility('expanded')}>{labels.expand}</MenuItem>
+          )}
+          <MenuItem onClick={hide}>{labels.hide}</MenuItem>
+        </MenuContent>
+      </Menu>
+    </div>
   )
 
   const mainPanel = (
@@ -159,17 +170,32 @@ export function AppShellChrome({
       data-visibility={visibility}
     >
       <div className="gx-app-shell-frame">
-        <div className="gx-app-shell-status gx-glass" data-slot="app-shell-status">
+        <div className="gx-app-shell-status" data-slot="app-shell-status">
+          {side === 'left' ? sidebarMenu : null}
+          {visibility === 'hidden' ? (
+            <IconButton
+              ref={showRef}
+              label={labels.show}
+              aria-controls={sidebarId}
+              onClick={show}
+              icon={<Icon name={side === 'left' ? 'sidebar' : 'sidebar-right'} />}
+            />
+          ) : null}
           <div className="gx-app-shell-status-content">{status}</div>
           <div className="gx-app-shell-status-actions">
-            {visibility === 'hidden' ? (
-              <Button ref={showRef} variant="secondary" size="sm" aria-controls={sidebarId} onClick={show}>
-                {labels.show}
-              </Button>
-            ) : null}
-            <Button variant="ghost" size="sm" onClick={onOpenPalette}>
-              {labels.palette}
-            </Button>
+            {actions}
+            <button
+              type="button"
+              className="gx-app-shell-palette gx-focusable"
+              data-slot="app-shell-palette"
+              aria-label={labels.palette}
+              title={labels.palette}
+              onClick={onOpenPalette}
+            >
+              <Icon name="search" size={14} />
+              {paletteShortcut && paletteShortcut.length > 0 ? <Kbd keys={paletteShortcut} aria-hidden="true" /> : null}
+            </button>
+            {side === 'right' ? sidebarMenu : null}
           </div>
         </div>
         <div className="gx-app-shell-body" data-slot="app-shell-body">

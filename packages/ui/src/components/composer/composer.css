@@ -22,13 +22,11 @@
   transition-timing-function: var(--motion-easing-standard);
 }
 
+/* Focus shows on the whole card: the accent border (5:1) and the soft halo, never an outline
+   ring around a prompt the user is reading. */
 .gx-composer:focus-within {
-  border-color: var(--color-border-control);
-}
-
-.gx-composer:has(.gx-composer-input:focus-visible) {
-  outline: var(--focus-ring-width) solid var(--color-ring-primary);
-  outline-offset: var(--focus-ring-offset);
+  border-color: var(--color-border-accent);
+  box-shadow: var(--focus-halo), var(--elevation-pane-shadow);
 }
 
 .gx-composer[data-disabled] {

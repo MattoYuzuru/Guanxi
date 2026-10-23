@@ -1,5 +1,6 @@
 import type { RuntimeSnapshot } from '@guanxi/contract'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { replaceEqualDeep } from '../../lib/stable.ts'
 
 export const RUNTIME_ACTIVE_POLL_INTERVAL_MS = 2_000
 export const RUNTIME_IDLE_POLL_INTERVAL_MS = 10_000
@@ -70,22 +71,24 @@ export function useRuntimePolling(
 
       const controller = new AbortController()
       requestRef.current = controller
-      const hasConfirmedSample = dataRef.current !== null
-      setState((previous) => ({
-        ...previous,
-        error: null,
-        loading: !hasConfirmedSample,
-        refreshing: hasConfirmedSample,
-      }))
+      // Quiet sampling (D-203): once a sample is on screen, a new read changes nothing visible
+      // until it lands; the last error stays until a sample replaces it, so nothing flickers.
+      if (dataRef.current === null) {
+        setState((previous) => (previous.loading ? previous : { ...previous, loading: true }))
+      }
 
       const pending = loaderRef.current(controller.signal).then(
         (data) => {
           if (!mounted || controller.signal.aborted) {
             throw new DOMException('Runtime refresh was aborted', 'AbortError')
           }
-          dataRef.current = data
-          setState({ data, error: null, loading: false, refreshing: false })
-          return data
+          const stable = dataRef.current === null ? data : replaceEqualDeep(dataRef.current, data)
+          dataRef.current = stable
+          setState((previous) =>
+            previous.data === stable && previous.error === null && !previous.loading && !previous.refreshing
+              ? previous
+              : { data: stable, error: null, loading: false, refreshing: false })
+          return stable
         },
         (error: unknown) => {
           if (!mounted || controller.signal.aborted) throw error

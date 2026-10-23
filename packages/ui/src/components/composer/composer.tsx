@@ -6,7 +6,7 @@
  * Enter sends, Shift+Enter adds a line, and IME composition never sends.
  */
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
-import { useLayoutEffect, useRef, type ComponentProps, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useImperativeHandle, useLayoutEffect, useRef, type ComponentProps, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { useUiText } from '../../i18n/context.tsx'
 import { cx } from '../../lib/cx.ts'
 import { Icon } from '../icon/icon.tsx'
@@ -41,6 +41,8 @@ export interface ComposerProps extends Omit<ComponentProps<'form'>, 'className' 
   describedBy?: string
   autoFocus?: boolean
   textareaId?: string
+  /** The text area element, for hosts that return focus to it (dialogs opened from Send). */
+  textareaRef?: Ref<HTMLTextAreaElement>
   sendLabel?: string
   stopLabel?: string
   className?: string
@@ -63,6 +65,7 @@ export function Composer({
   describedBy,
   autoFocus,
   textareaId,
+  textareaRef,
   sendLabel,
   stopLabel,
   className,
@@ -70,6 +73,7 @@ export function Composer({
 }: ComposerProps) {
   const t = useUiText()
   const area = useRef<HTMLTextAreaElement>(null)
+  useImperativeHandle(textareaRef, () => area.current as HTMLTextAreaElement, [])
   const canSend = !disabled && !sendDisabled && !running && value.trim().length > 0
 
   // Grow with the content up to the CSS max-height; no layout shift while typing one line.

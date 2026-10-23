@@ -14,6 +14,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
   type RefObject,
 } from 'react'
 import type {
@@ -32,6 +33,7 @@ import {
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
 } from '@guanxi/contract'
+import { Composer as PromptComposer, Icon, IconButton, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Switch } from '@guanxi/ui'
 import { Markdown } from '../../components/Markdown.tsx'
 import {
   Badge,
@@ -40,8 +42,6 @@ import {
   EmptyState,
   Select,
   Skeleton,
-  Textarea,
-  Toggle,
   cx,
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
@@ -541,18 +541,10 @@ function ThreadPage({
             {chat.thread.mode === 'agent' && (
               <WorkspaceChip workspace={workspace} onClick={() => setPickerOpen(true)} />
             )}
-            <Link
-              to={paths.inspector(chat.thread.id)}
-              className="flex h-6 items-center rounded-control border border-divider px-2 text-12 font-label text-secondary hover:bg-inset hover:text-foreground"
-            >
-              {translate('inspector.openTrace')}
-            </Link>
-            <Link
-              to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()}
-              className="flex h-6 items-center rounded-[5px] border border-control px-2 text-2xs font-medium hover:bg-inset"
-            >
-              {translate('chat.new')}
-            </Link>
+            <IconButton label={translate('inspector.openTrace')} icon={<Icon name="trace" />}
+              nativeButton={false} render={<Link to={paths.inspector(chat.thread.id)} />} />
+            <IconButton label={translate('chat.new')} icon={<Icon name="new" />} nativeButton={false}
+              render={<Link to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()} />} />
           </div>
         </header>
 
@@ -585,7 +577,7 @@ function ThreadPage({
           </div>
 
           {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
-          <Composer
+          <ChatComposer
             inputRef={composerRef}
             disabled={!health.ollama.running}
             decisionOpen={resourceDecision.decision !== null}
@@ -596,6 +588,8 @@ function ThreadPage({
             onAutoApprove={setAutoApprove}
             onSend={resourceDecision.request}
             onStop={chat.stop}
+            model={chat.thread.model}
+            context={<ContextChip context={chat.context} />}
           />
         </div>
       </section>
@@ -811,6 +805,7 @@ export function MessageView({ message }: { message: Message }) {
               {turnStatusLabel(message.turnStatus)}
             </Badge>
           )}
+          {message.role === 'assistant' && message.usage && <MessageUsage usage={message.usage} />}
         </div>
 
         {message.thinking && (
@@ -838,6 +833,22 @@ export function MessageView({ message }: { message: Message }) {
       </div>
     </article>
   )
+}
+
+/** Per-message facts behind an icon with an anchored popover (D-207), not a row of captions. */
+function MessageUsage({ usage }: { usage: NonNullable<Message['usage']> }) {
+  return <Popover>
+    <PopoverTrigger render={<IconButton size="sm" label={translate('chat.message.details')} icon={<Icon name="info" />} />} />
+    <PopoverContent align="start">
+      <PopoverTitle>{translate('chat.message.details')}</PopoverTitle>
+      <dl className="gx-popover-facts">
+        <dt>{translate('chat.message.promptTokens')}</dt><dd>{formatInteger(usage.promptTokens)}</dd>
+        <dt>{translate('chat.message.outputTokens')}</dt><dd>{formatInteger(usage.evalTokens)}</dd>
+        <dt>{translate('chat.message.speed')}</dt><dd>{translate('format.tokensPerSecond', { value: usage.tokensPerSecond.toFixed(1) })}</dd>
+        <dt>{translate('chat.message.cached')}</dt><dd>{formatInteger(usage.cachedTokens)}</dd>
+      </dl>
+    </PopoverContent>
+  </Popover>
 }
 
 function TurnOutcomeView({ message }: { message: Message }) {
@@ -1068,7 +1079,11 @@ export function StreamingMessage({
 
 /* ───────────────────────────── Композер ───────────────────────────────── */
 
-function Composer({
+/**
+ * The thread composer (D-207): the shared docked Composer with the auto-approve switch at its
+ * lower left and the model and context at its lower right; Send becomes Stop while streaming.
+ */
+function ChatComposer({
   inputRef,
   disabled,
   decisionOpen,
@@ -1079,6 +1094,8 @@ function Composer({
   onAutoApprove,
   onSend,
   onStop,
+  model,
+  context,
 }: {
   inputRef: RefObject<HTMLTextAreaElement | null>
   disabled: boolean
@@ -1092,6 +1109,8 @@ function Composer({
     intent: ChatSendIntent,
   ) => Promise<'conflict' | 'dispatched' | 'ignored'>
   onStop: () => Promise<void>
+  model: string
+  context: ReactNode
 }) {
   const [content, setContent] = useState('')
   const [sending, setSending] = useState(false)
@@ -1122,11 +1141,16 @@ function Composer({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Textarea
-        ref={inputRef}
+      <PromptComposer
+        textareaRef={inputRef as RefObject<HTMLTextAreaElement>}
         value={content}
-        rows={3}
-        disabled={disabled || isStreaming || decisionOpen}
+        onValueChange={setContent}
+        onSend={() => void submit()}
+        onStop={() => void onStop()}
+        running={isStreaming}
+        disabled={disabled || decisionOpen}
+        sendDisabled={sending}
+        label={translate('chat.composer.message')}
         placeholder={
           disabled
             ? translate('chat.composer.ollamaRequired')
@@ -1134,50 +1158,21 @@ function Composer({
               ? translate('chat.composer.agentPlaceholder')
               : translate('chat.composer.placeholder')
         }
-        aria-label={translate('chat.composer.message')}
-        onChange={(event) => setContent(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            void submit()
-          }
-        }}
-        className="min-h-20"
+        sendLabel={translate('chat.composer.send')}
+        stopLabel={translate('chat.composer.stop', { phase: phaseLabel(phase) })}
+        leading={agentMode ? (
+          <Switch
+            checked={autoApprove}
+            onCheckedChange={onAutoApprove}
+            disabled={isStreaming}
+            label={<span className="text-12">{translate('chat.composer.autoApprove')}</span>}
+          />
+        ) : undefined}
+        trailing={<>
+          <span className="max-w-3xs truncate font-mono text-12 text-secondary" title={model}>{model}</span>
+          {context}
+        </>}
       />
-
-      <div className="mt-1.5 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          {agentMode && (
-            <Toggle
-              checked={autoApprove}
-              onChange={onAutoApprove}
-              disabled={isStreaming}
-              label={translate('chat.composer.autoApprove')}
-              hint={translate('chat.composer.autoApproveHint')}
-            />
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden text-2xs text-muted sm:inline">
-            {translate('chat.composer.shortcut')}
-          </span>
-          {isStreaming ? (
-            <Button variant="danger" onClick={() => void onStop()}>
-              {translate('chat.composer.stop', { phase: phaseLabel(phase) })}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              onClick={() => void submit()}
-              loading={sending}
-              disabled={disabled || decisionOpen || !content.trim()}
-            >
-              {translate('chat.composer.send')}
-            </Button>
-          )}
-        </div>
-      </div>
     </div>
   )
 }

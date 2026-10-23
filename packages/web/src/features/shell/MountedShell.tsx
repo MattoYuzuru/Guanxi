@@ -1,35 +1,35 @@
 import type { Health } from '@guanxi/contract'
-import { AppShellChrome, Button, type AppShellLabels } from '@guanxi/ui'
+import { AppShellChrome, type AppShellLabels } from '@guanxi/ui'
 import type { ReactNode } from 'react'
-import { ErrorBoundary } from '../../components/ErrorBoundary.tsx'
 import { translate as t } from '../../lib/locale.ts'
 import { useRoute, type Route } from '../../lib/router.tsx'
-import type { ThemePreference } from '../../lib/theme.tsx'
 import { NotificationBell } from '../notifications/NotificationBell.tsx'
 import { NotificationsProvider } from '../notifications/NotificationsProvider.tsx'
-import { OllamaHealthNotice } from '../health/HealthGate.tsx'
-import { RuntimeStatus } from '../health/RuntimeStatus.tsx'
 import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
+import { ShellCustomise, ShellThemeToggle } from './ShellCustomise.tsx'
 import { ShellPalette } from './ShellPalette.tsx'
 import { ShellSidebar } from './ShellSidebar.tsx'
-import { ShellStatus } from './ShellStatus.tsx'
+import { ShellBreadcrumb, ShellStatusItems } from './ShellStatus.tsx'
 import { useShellController } from './useShellController.ts'
 
+/** The platform's palette shortcut keys; machine values, not translated. */
+function paletteKeys(): string[] {
+  const platform = typeof navigator === 'undefined' ? '' : navigator.platform || navigator.userAgent
+  return /Mac|iPhone|iPad/u.test(platform) ? ['\u2318', 'K'] : ['Ctrl', 'K']
+}
+
 /**
- * The single product host for the prepared shell. Route content is supplied by
- * App; this component owns shell preferences, the palette and the one sampled
- * Runtime projection. It intentionally imports no workspace or catalog module,
- * so their existing lazy boundaries stay intact.
+ * The single product host. Route content is supplied by App; this component owns shell
+ * preferences, the palette and the one sampled Runtime projection, shown as icon status items
+ * (D-202) instead of a runtime bar. It intentionally imports no workspace or catalog module, so
+ * their lazy boundaries stay intact. There is no Retry anywhere in the chrome: health, runtime,
+ * sessions and the inbox refresh quietly and recover by themselves (D-203).
  */
 export function MountedShell({
   health,
-  retrying,
-  onRetry,
   children,
 }: {
   health: Health
-  retrying: boolean
-  onRetry: () => void
   children: ReactNode
 }) {
   const shell = useShellController()
@@ -53,6 +53,7 @@ export function MountedShell({
         visibility={shell.preferences.visibility}
         sidebarLabel={t('shell.sidebar.label')}
         labels={labels}
+        paletteShortcut={paletteKeys()}
         sidebar={
           <ShellSidebar
             rail={shell.preferences.visibility === 'rail'}
@@ -64,23 +65,23 @@ export function MountedShell({
             loadingMore={shell.sessions.loadingMore}
             error={shell.sessions.error}
             omitted={shell.sessions.omitted}
-            observedAt={shell.sessions.observedAt}
             hasMore={shell.sessions.hasMore}
             onLoadMore={() => { void shell.sessions.loadMore() }}
-            onRefresh={shell.sessions.reload}
             onPin={shell.togglePin}
           />
         }
-        status={
+        status={<ShellBreadcrumb page={breadcrumb(route)} />}
+        actions={
           <>
-            <ShellStatus
-              breadcrumb={breadcrumb(route)}
-              workspace={shell.workspace}
+            <ShellStatusItems
               runtime={runtime.data}
               stale={runtime.error !== null && runtime.data !== null}
+              health={health}
               inbox={<NotificationBell />}
             />
-            <ShellThemeButton preference={shell.preference} onChange={shell.setPreference} />
+            <span aria-hidden="true" className="mx-1 h-4 w-px bg-hairline" />
+            <ShellCustomise preferences={shell.preferences} onPreferences={shell.setPreferences} />
+            <ShellThemeToggle />
           </>
         }
         onSide={(side) => shell.setPreferences((previous) => ({ ...previous, side }))}
@@ -90,13 +91,8 @@ export function MountedShell({
         onOpenPalette={() => shell.setPaletteOpen(true)}
       >
         {/* The phone flow lets the page scroll, so route content that cannot reflow stays
-            reachable by scrolling inside this host area, as the previous <main> did, instead of
-            widening the document. */}
+            reachable by scrolling inside this host area instead of widening the document. */}
         <div data-slot="shell-route-host" className="flex h-full min-h-0 min-w-0 flex-col overflow-x-auto">
-          <OllamaHealthNotice health={health} onRetry={onRetry} retrying={retrying} />
-          <ErrorBoundary scope="runtime">
-            <RuntimeStatus />
-          </ErrorBoundary>
           <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         </div>
       </AppShellChrome>
@@ -108,39 +104,6 @@ export function MountedShell({
       />
     </div>
     </NotificationsProvider>
-  )
-}
-
-/** Keeps the legacy quick theme path reachable from the persistent status strip. */
-function ShellThemeButton({
-  preference,
-  onChange,
-}: {
-  preference: ThemePreference
-  onChange: (next: ThemePreference) => void
-}) {
-  const label =
-    preference === 'dark'
-      ? t('theme.dark')
-      : preference === 'light'
-        ? t('theme.light')
-        : t('theme.system')
-  const next: ThemePreference =
-    preference === 'dark' ? 'light' : preference === 'light' ? 'system' : 'dark'
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="shrink-0"
-      title={t('app.theme.switch', { theme: label })}
-      aria-label={t('app.theme.current', { theme: label })}
-      onClick={() => onChange(next)}
-    >
-      <span aria-hidden="true">
-        {preference === 'dark' ? '◐' : preference === 'light' ? '◑' : '◒'}
-      </span>
-      <span className="hidden sm:inline">{label}</span>
-    </Button>
   )
 }
 

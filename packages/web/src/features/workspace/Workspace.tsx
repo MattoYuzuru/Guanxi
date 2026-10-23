@@ -10,7 +10,7 @@ import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { builtInLayout } from './defaults.ts'
-import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND, WORKSPACE_MODE_COMMAND } from './commands.ts'
+import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND } from './commands.ts'
 import { clearWorkspaceShellState, publishWorkspaceShellState } from './shell-state.ts'
 import { layoutSaveScope, layoutSaveScopes, layoutScopeForSave, type LayoutSaveScope } from './scopes.ts'
 import { paneRegistry } from './renderers.ts'
@@ -266,9 +266,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     setDocuments(previous => ({ ...previous, [mode]: next }))
     setGeneration(value => value + 1)
   }
-  function switchMode(next: ExperienceMode) {
-    if (next !== mode && documents[next]) void activateDocument(documents[next]!)
-  }
   function openMove(id?: string) {
     if (phone || operationBusy.current) return
     const next = id ?? engine.current?.activeBlock() ?? selected
@@ -364,10 +361,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       if (!phone) engine.current?.focus(id)
       focusPendingPane(id)
     }
-    const changeMode = (event: Event) => {
-      const next: unknown = (event as CustomEvent<{ mode?: unknown }>).detail?.mode
-      if (!loading && !loadError && (next === 'developer' || next === 'visual')) switchMode(next)
-    }
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
@@ -375,9 +368,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     }
     window.addEventListener(MOVE_BLOCK_COMMAND, command)
     window.addEventListener(REVEAL_BLOCK_COMMAND, reveal)
-    window.addEventListener(WORKSPACE_MODE_COMMAND, changeMode)
     window.addEventListener('keydown', keyboard)
-    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal); window.removeEventListener(WORKSPACE_MODE_COMMAND, changeMode); window.removeEventListener('keydown', keyboard) }
+    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal); window.removeEventListener('keydown', keyboard) }
   })
 
   useEffect(() => {
@@ -421,7 +413,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
     <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={loading || saving || switching} fields={[
-      { label: translate('workspaceLayout.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
       { label: translate('workspaceLayout.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
       { label: translate('workspaceLayout.saveScope'), value: saveScopes[mode] ?? layoutSaveScope(doc.scope), choices: layoutSaveScopes(query(mode)).map(id => ({ id, label: translate(`workspaceLayout.scope.${id}`) })), onChange: next => setSaveScopes(previous => ({ ...previous, [mode]: next as LayoutSaveScope })) },
       { label: translate('workspaceLayout.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName') : row.name })), onChange: id => {

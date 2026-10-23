@@ -8,7 +8,6 @@ import type {
   RuntimeAdmissionPriority,
   RuntimeSnapshot,
 } from '@guanxi/contract'
-import { Button, Spinner } from '../../components/ui.tsx'
 import {
   formatBytes,
   formatContextLength,
@@ -16,136 +15,24 @@ import {
   formatDuration,
 } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
-import { useRuntimeProjection } from './RuntimeContext.tsx'
 
-export interface RuntimeStatusViewProps {
-  data: RuntimeSnapshot | null
-  error: unknown
-  loading: boolean
-  refreshing: boolean
-  onRetry: () => void
-}
-
-export function RuntimeStatus() {
-  const runtime = useRuntimeProjection()
-
-  return (
-    <RuntimeStatusView
-      data={runtime.data}
-      error={runtime.error}
-      loading={runtime.loading}
-      refreshing={runtime.refreshing}
-      onRetry={runtime.retry}
-    />
-  )
-}
-
-export function RuntimeStatusView({
-  data,
-  error,
-  loading,
-  refreshing,
-  onRetry,
-}: RuntimeStatusViewProps) {
-  return (
-    <section
-      aria-labelledby="runtime-status-title"
-      className="runtime-bar z-20 shrink-0 border-b border-divider bg-inset px-3 py-2 max-sm:order-last max-sm:border-t max-sm:border-b-0 max-sm:shadow-[0_-8px_24px_oklch(0_0_0/0.18)]"
-    >
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h2 id="runtime-status-title" className="text-2xs font-semibold">
-            {translate('runtime.bar.title')}
-          </h2>
-          {data ? <CompactSummary snapshot={data} /> : null}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRetry}
-          loading={refreshing}
-          aria-label={translate('runtime.retry')}
-          className="min-h-11 shrink-0 sm:min-h-0"
-        >
-          {translate('runtime.retry.short')}
-        </Button>
-      </div>
-
-      {loading ? (
-        <div
-          className="mt-1 flex items-center gap-1.5 text-2xs text-secondary"
-          role="status"
-          aria-live="polite"
-        >
-          <Spinner size={12} />
-          {translate('runtime.checking')}
-        </div>
-      ) : null}
-
-      {refreshing && data ? (
-        <p className="mt-1 text-2xs text-secondary" role="status" aria-live="polite">
-          {translate('runtime.refreshing')}
-        </p>
-      ) : null}
-
-      {error ? (
-        <div className="mt-1 text-2xs text-danger" role="alert">
-          <p className="font-medium">
-            {data
-              ? translate('runtime.refresh.error.title')
-              : translate('runtime.error.title')}
-          </p>
-          <p className="text-secondary">
-            {data
-              ? translate('runtime.refresh.error.summary')
-              : translate('runtime.error.summary')}
-          </p>
-        </div>
-      ) : null}
-
-      {data ? (
-        <details className="runtime-bar-details mt-1 max-sm:max-h-[min(70dvh,36rem)] max-sm:overflow-y-auto">
-          <summary className="min-h-11 cursor-pointer py-2 text-2xs font-medium text-secondary sm:min-h-0 sm:py-0.5">
-            {translate('runtime.details')}
-          </summary>
-          <div className="mt-2 grid min-w-0 gap-2 pb-1 lg:grid-cols-3">
-            <AdmissionProjection snapshot={data} />
-            <ModelsProjection snapshot={data} />
-            <HostProjection host={data.host} />
-          </div>
-          <p className="mt-1 text-2xs text-secondary">
-            {translate('runtime.sampled')} · {formatDateTime(data.observedAt)}
-          </p>
-        </details>
-      ) : null}
-    </section>
-  )
-}
-
-function CompactSummary({ snapshot }: { snapshot: RuntimeSnapshot }) {
-  const active = snapshot.governor.activeLease
-  const modelState =
-    snapshot.models === null
-      ? sourceStateLabel(snapshot.source.state)
-      : snapshot.models.length === 0
-        ? translate('runtime.models.empty.short')
-        : translate('runtime.models.count').replace('{count}', String(snapshot.models.length))
-
-  return (
-    <p className="truncate text-2xs text-secondary">
-      {active
-        ? `${operationLabel(active.operation)} · ${active.model.name}`
-        : translate('runtime.admission.idle')}
-      {' · '}
-      {translate('runtime.queue.count').replace(
-        '{count}',
-        String(snapshot.governor.queued.length),
-      )}
-      {' · '}
-      {modelState}
-      {' · '}
-      {hostStateLabel(snapshot.host)}
+/**
+ * Runtime detail for the status strip's runtime popover (D-202, D-203): admission, observed models
+ * and host telemetry from the one shared quiet sample. No Retry and no "refreshing" caption: the
+ * sample updates in place, and a failed read keeps the last sample with one sentence that says so.
+ */
+export function RuntimeDetails({ snapshot, stale }: { snapshot: RuntimeSnapshot | null; stale: boolean }) {
+  if (!snapshot) {
+    return <p className="text-12 text-secondary" role="status">
+      {translate(stale ? 'runtime.error.summary' : 'runtime.checking')}
     </p>
+  }
+  return (
+    <section aria-label={translate('runtime.bar.title')} className="flex min-w-0 flex-col gap-2">
+      <AdmissionProjection snapshot={snapshot} />
+      <ModelsProjection snapshot={snapshot} />
+      <HostProjection host={snapshot.host} />
+    </section>
   )
 }
 

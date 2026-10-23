@@ -15,6 +15,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { FitLevel } from '@guanxi/contract'
+import { Button as UiButton, Icon, Switch } from '@guanxi/ui'
 import { translate, type LocaleKey } from '../lib/locale.ts'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -26,22 +27,6 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type ButtonSize = 'sm' | 'md'
 
-const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    'bg-accent text-accent-foreground hover:brightness-110 active:brightness-95 border border-transparent',
-  secondary:
-    'bg-surface text-foreground border border-control hover:bg-inset',
-  ghost:
-    'bg-transparent text-secondary border border-transparent hover:bg-inset hover:text-foreground',
-  danger:
-    'bg-transparent text-danger border border-danger/40 hover:bg-danger/10',
-}
-
-const BUTTON_SIZES: Record<ButtonSize, string> = {
-  sm: 'h-6 px-2 text-2xs gap-1 rounded-[5px]',
-  md: 'h-8 px-3 text-xs gap-1.5 rounded-md',
-}
-
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant
   size?: ButtonSize
@@ -49,6 +34,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: ReactNode
 }
 
+/**
+ * Legacy entry point kept for existing features; it renders the design-system Button (D-200), so
+ * every legacy screen gets the same control without a feature-by-feature rewrite.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
     variant = 'secondary',
@@ -58,28 +47,16 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     className,
     children,
     disabled,
+    type = 'button',
     ...rest
   },
   ref,
 ) {
   return (
-    <button
-      ref={ref}
-      type="button"
-      disabled={disabled || loading}
-      className={cx(
-        'inline-flex items-center justify-center font-medium whitespace-nowrap select-none',
-        'transition-[filter,background-color,color,border-color] duration-100',
-        'disabled:opacity-45 disabled:pointer-events-none',
-        BUTTON_VARIANTS[variant],
-        BUTTON_SIZES[size],
-        className,
-      )}
-      {...rest}
-    >
-      {loading ? <Spinner size={size === 'sm' ? 10 : 12} /> : icon}
+    <UiButton ref={ref} type={type} variant={variant} size={size} loading={loading} disabled={disabled} className={className} {...rest}>
+      {loading ? null : icon}
       {children}
-    </button>
+    </UiButton>
   )
 })
 
@@ -111,25 +88,8 @@ export function Badge({
   title?: string
   className?: string
 }) {
-  const tones: Record<string, string> = {
-    neutral: 'bg-inset text-secondary border-divider',
-    accent: 'bg-accent/10 text-secondary border-accent/30',
-    green: 'bg-[var(--color-fit-green)]/12 text-[var(--color-fit-green)] border-[var(--color-fit-green)]/30',
-    yellow:
-      'bg-[var(--color-fit-yellow)]/12 text-[var(--color-fit-yellow)] border-[var(--color-fit-yellow)]/30',
-    red: 'bg-[var(--color-fit-red)]/12 text-[var(--color-fit-red)] border-[var(--color-fit-red)]/30',
-    outline: 'bg-transparent text-muted border-divider',
-  }
-
   return (
-    <span
-      title={title}
-      className={cx(
-        'inline-flex items-center gap-1 rounded border px-1.5 py-px text-2xs leading-4 font-medium',
-        tones[tone],
-        className,
-      )}
-    >
+    <span title={title} data-tone={tone} className={cx('legacy-badge', className)}>
       {children}
     </span>
   )
@@ -220,36 +180,12 @@ export function Toggle({
   label: string
   hint?: string
 }) {
-  const id = useId()
-
+  const hintId = useId()
   return (
     <div className="flex items-start justify-between gap-4 py-1.5">
-      <div className="min-w-0">
-        <label htmlFor={id} className="block cursor-pointer text-xs font-medium">
-          {label}
-        </label>
-        {hint && <p className="mt-0.5 text-2xs text-muted">{hint}</p>}
-      </div>
-      <button
-        id={id}
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={cx(
-          'relative mt-0.5 h-4 w-7 shrink-0 rounded-full border transition-colors duration-150',
-          'disabled:opacity-45 disabled:pointer-events-none',
-          checked
-            ? 'border-transparent bg-accent'
-            : 'border-control bg-inset',
-        )}
-      >
-        <span
-          className={cx('absolute top-0.5 h-3 w-3 rounded-full shadow-sm transition-[left] duration-150', checked ? 'bg-accent-foreground' : 'bg-foreground')}
-          style={{ left: checked ? 14 : 2 }}
-        />
-      </button>
+      <Switch label={<span className="text-13 font-label">{label}</span>} checked={checked}
+        onCheckedChange={onChange} disabled={disabled} aria-describedby={hint ? hintId : undefined} />
+      {hint && <p id={hintId} className="m-0 max-w-xs text-12 text-muted">{hint}</p>}
     </div>
   )
 }
@@ -278,10 +214,7 @@ export function Field({
   )
 }
 
-const INPUT_CLASS =
-  'min-w-0 max-w-full w-full rounded-md border border-control bg-inset px-2 py-1.5 text-xs ' +
-  'placeholder:text-secondary focus:border-accent ' +
-  'disabled:opacity-50'
+const INPUT_CLASS = 'legacy-input'
 
 export const Input = forwardRef<
   HTMLInputElement,
@@ -519,12 +452,12 @@ export function Modal({
         aria-labelledby={labelledBy ?? (title ? headingId : undefined)}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className="anim-fade-up surface flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden rounded-xl shadow-[var(--shadow-card)] outline-none sm:max-h-[calc(100dvh-2rem)]"
+        className="legacy-modal flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden outline-none sm:max-h-[calc(100dvh-2rem)]"
         style={{ maxWidth: width }}
       >
         {title && (
-          <div className="flex items-center justify-between gap-3 border-b border-divider px-4 py-2.5">
-            <h2 id={headingId} className="text-sm font-semibold">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-2.5">
+            <h2 id={headingId} className="text-15 font-heading">
               {title}
             </h2>
             {dismissable && (
@@ -534,15 +467,14 @@ export function Modal({
                 onClick={onClose}
                 aria-label={closeLabel}
                 className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
-              >
-                ✕
-              </Button>
+                icon={<Icon name="close" />}
+              />
             )}
           </div>
         )}
         <div className="min-h-0 min-w-0 overflow-y-auto px-4 py-3">{children}</div>
         {footer && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-divider px-4 py-2.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-hairline px-4 py-2.5">
             {footer}
           </div>
         )}
@@ -655,19 +587,12 @@ export function Callout({
   children?: ReactNode
   action?: ReactNode
 }) {
-  const tones: Record<string, string> = {
-    neutral: 'border-divider bg-inset',
-    info: 'border-accent/30 bg-accent/5',
-    warning: 'border-[var(--color-fit-yellow)]/40 bg-[var(--color-fit-yellow)]/8',
-    danger: 'border-danger/40 bg-danger/8',
-  }
-
   return (
-    <div className={cx('rounded-lg border px-3 py-2', tones[tone])}>
+    <div data-tone={tone} className="legacy-callout">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {title && <div className="text-xs font-semibold">{title}</div>}
-          {children && <div className="mt-0.5 text-2xs text-secondary">{children}</div>}
+          {title && <div className="text-13 font-heading">{title}</div>}
+          {children && <div className="mt-0.5 text-12 text-secondary">{children}</div>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
@@ -685,10 +610,10 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
-      <p className="text-sm font-medium">{title}</p>
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+      <p className="m-0 text-14 font-label">{title}</p>
       {description && (
-        <p className="max-w-md text-xs text-muted">{description}</p>
+        <p className="m-0 max-w-md text-13 text-muted">{description}</p>
       )}
       {action && <div className="mt-1.5">{action}</div>}
     </div>
@@ -698,7 +623,7 @@ export function EmptyState({
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
-      className={cx('anim-pulse-soft rounded-md bg-inset', className)}
+      className={cx('rounded-control bg-inset', className)}
       aria-hidden
     />
   )

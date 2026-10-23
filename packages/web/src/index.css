@@ -85,7 +85,12 @@
     line-height: var(--font-line-height-ui);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    font-optical-sizing: auto;
     overscroll-behavior: none;
+  }
+
+  ::selection {
+    background-color: var(--color-background-accent-subtle);
   }
 
   * {
@@ -144,12 +149,13 @@
   /* transform ставит JS покадрово — transition тут дал бы двойное сглаживание. */
 }
 
-/* ───────────────────────── Markdown в сообщениях ──────────────────── */
+/* ──────────────────────── Markdown in messages (D-200) ─────────────────────── */
 
 .md {
-  font-size: 13.5px;
-  line-height: 1.62;
+  font-size: var(--font-size-14);
+  line-height: var(--font-line-height-prose);
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 .md > :first-child {
   margin-top: 0;
@@ -158,32 +164,31 @@
   margin-bottom: 0;
 }
 .md p {
-  margin: 0.5em 0;
+  margin: var(--spacing-8) 0;
 }
 .md h1,
 .md h2,
 .md h3,
 .md h4 {
-  margin: 1.1em 0 0.45em;
-  font-weight: 600;
-  line-height: 1.3;
+  margin: var(--spacing-20) 0 var(--spacing-8);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-heading-5-line-height);
+  text-wrap: balance;
 }
 .md h1 {
-  font-size: 1.32em;
+  font-size: var(--font-size-18);
 }
 .md h2 {
-  font-size: 1.18em;
+  font-size: var(--font-heading-5-size);
 }
-.md h3 {
-  font-size: 1.06em;
-}
+.md h3,
 .md h4 {
-  font-size: 1em;
+  font-size: var(--font-size-14);
 }
 .md ul,
 .md ol {
-  margin: 0.5em 0;
-  padding-left: 1.4em;
+  margin: var(--spacing-8) 0;
+  padding-left: var(--spacing-20);
 }
 .md ul {
   list-style: disc;
@@ -192,60 +197,67 @@
   list-style: decimal;
 }
 .md li {
-  margin: 0.2em 0;
+  margin: var(--spacing-4) 0;
+}
+.md li::marker {
+  color: var(--color-text-tertiary);
 }
 .md li > ul,
 .md li > ol {
-  margin: 0.2em 0;
+  margin: var(--spacing-4) 0;
 }
 .md a {
-  color: var(--color-background-accent);
+  color: var(--color-text-accent);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: var(--color-border-primary);
+  text-underline-offset: var(--spacing-2);
+}
+.md a:hover {
+  text-decoration-color: currentColor;
 }
 .md blockquote {
-  margin: 0.6em 0;
-  padding: 0.1em 0 0.1em 0.9em;
-  border-left: 3px solid var(--border-strong);
+  margin: var(--spacing-12) 0;
+  padding: var(--spacing-2) 0 var(--spacing-2) var(--spacing-12);
+  border-left: var(--spacing-2) solid var(--color-border-primary);
   color: var(--color-text-secondary);
 }
 .md hr {
-  margin: 1em 0;
+  margin: var(--spacing-16) 0;
   border: 0;
-  border-top: 1px solid var(--border);
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
 }
 .md code:not(pre code) {
-  font-family: var(--font-mono);
-  font-size: 0.88em;
-  padding: 0.12em 0.34em;
-  border-radius: 4px;
+  padding: var(--spacing-2) var(--spacing-4);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-inline);
   background: var(--color-background-tertiary);
-  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-13);
 }
 .md pre {
-  margin: 0.7em 0;
+  margin: var(--spacing-12) 0;
   padding: 0;
-  border-radius: 7px;
-  background: var(--color-background-tertiary);
-  border: 1px solid var(--border);
   overflow: hidden;
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-control);
+  background: var(--color-background-tertiary);
 }
 .md pre code {
   display: block;
-  padding: 10px 12px;
+  padding: var(--spacing-12);
   overflow-x: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: var(--font-code-size);
+  line-height: var(--font-code-line-height);
   tab-size: 2;
 }
-/* Блок кода: шапка с языком и кнопкой копирования. */
+/* Code block: a quiet header with the language and a copy button. */
 .md .code-block {
-  margin: 0.7em 0;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--color-background-tertiary);
+  margin: var(--spacing-12) 0;
   overflow: hidden;
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-control);
+  background: var(--color-background-tertiary);
 }
 .md .code-block pre {
   margin: 0;
@@ -257,56 +269,54 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 3px 6px 3px 10px;
-  border-bottom: 1px solid var(--border);
-  background: var(--color-background-tertiary);
+  gap: var(--spacing-8);
+  padding: var(--spacing-2) var(--spacing-6) var(--spacing-2) var(--spacing-12);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
 }
 .md .code-lang {
+  color: var(--color-text-tertiary);
   font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
   text-transform: lowercase;
-  letter-spacing: 0.02em;
 }
 .md .code-copy {
-  font-family: var(--font-sans);
-  font-size: 10.5px;
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: 4px;
-  border: 1px solid transparent;
+  min-height: var(--target-minimum);
+  padding: 0 var(--spacing-6);
+  border: var(--border-width-regular) solid transparent;
+  border-radius: var(--border-radius-inline);
   background: transparent;
   color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-12);
   cursor: pointer;
 }
 .md .code-copy:hover {
+  border-color: var(--color-border-secondary);
   background: var(--color-background-secondary);
-  border-color: var(--color-border-primary);
   color: var(--color-text-primary);
 }
 
 .md table {
-  margin: 0.7em 0;
-  border-collapse: collapse;
-  font-size: 0.94em;
   display: block;
+  margin: var(--spacing-12) 0;
   overflow-x: auto;
-  max-width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-13);
+  @apply max-w-full;
 }
 .md th,
 .md td {
-  border: 1px solid var(--border);
-  padding: 4px 9px;
+  padding: var(--spacing-4) var(--spacing-8);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
   text-align: left;
 }
 .md th {
   background: var(--color-background-tertiary);
-  font-weight: 600;
+  font-weight: var(--font-weight-heading);
 }
 .md img {
-  max-width: 100%;
-  border-radius: 6px;
+  @apply max-w-full;
+  border-radius: var(--border-radius-control);
 }
 
 /* Подсветка кода — свой набор токенов, чтобы не тянуть тему highlight.js. */
@@ -583,6 +593,115 @@
   :root:not([data-motion="full"]) *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* Legacy text fields share the design-system field look but stay in the components layer, so a
+   feature's width and spacing utilities still win over them. */
+@layer components {
+  .legacy-input {
+    box-sizing: border-box;
+    @apply w-full max-w-full;
+    min-width: 0;
+    min-height: var(--control-height);
+    padding: var(--spacing-4) var(--spacing-8);
+    border: var(--border-width-regular) solid var(--color-border-control);
+    border-radius: var(--border-radius-control);
+    background-color: var(--color-background-secondary);
+    box-shadow: var(--elevation-control-shadow);
+    color: var(--color-text-primary);
+    font-family: inherit;
+    font-size: var(--font-text-size);
+    line-height: var(--font-line-height-ui);
+  }
+  .legacy-input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+  .legacy-input:hover:not(:disabled) {
+    border-color: var(--color-text-tertiary);
+  }
+  .legacy-input:focus-visible {
+    border-color: var(--color-border-accent);
+    box-shadow: var(--focus-halo);
+  }
+  .legacy-input:disabled {
+    border-color: var(--color-border-secondary);
+    background-color: var(--color-background-disabled);
+    box-shadow: none;
+    color: var(--color-text-disabled);
+  }
+}
+
+/* Legacy primitives (components/ui.tsx) drawn with the D-200 tokens until features migrate. */
+.legacy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: 0 var(--spacing-6);
+  border: var(--border-width-regular) solid transparent;
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-tertiary);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+  line-height: var(--font-line-height-ui);
+  white-space: nowrap;
+}
+.legacy-badge[data-tone='accent'] {
+  background-color: var(--color-background-accent-subtle);
+  color: var(--color-text-accent);
+}
+.legacy-badge[data-tone='green'] {
+  background-color: var(--color-background-success-subtle);
+  color: var(--color-text-success);
+}
+.legacy-badge[data-tone='yellow'] {
+  background-color: var(--color-background-warning-subtle);
+  color: var(--color-text-warning);
+}
+.legacy-badge[data-tone='red'] {
+  background-color: var(--color-background-danger-subtle);
+  color: var(--color-text-danger);
+}
+.legacy-badge[data-tone='outline'] {
+  border-color: var(--color-border-secondary);
+  background-color: transparent;
+  color: var(--color-text-tertiary);
+}
+
+.legacy-callout {
+  padding: var(--spacing-8) var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-tertiary);
+}
+.legacy-callout[data-tone='info'] {
+  border-color: transparent;
+  background-color: var(--color-background-accent-subtle);
+}
+.legacy-callout[data-tone='warning'] {
+  border-color: transparent;
+  border-left: var(--spacing-2) solid var(--color-border-warning);
+  background-color: var(--color-background-warning-subtle);
+}
+.legacy-callout[data-tone='danger'] {
+  border-color: transparent;
+  border-left: var(--spacing-2) solid var(--color-border-danger);
+  background-color: var(--color-background-danger-subtle);
+}
+
+.legacy-modal {
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-glass);
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-2-shadow);
+}
+
+@media (forced-colors: active) {
+  .legacy-badge,
+  .legacy-callout,
+  .legacy-modal {
+    border-color: CanvasText;
   }
 }
 

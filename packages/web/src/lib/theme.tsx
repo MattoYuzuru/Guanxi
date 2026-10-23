@@ -33,6 +33,8 @@ type ThemeContextValue = {
   preference: ThemePreference
   resolved: 'light' | 'dark'
   setPreference: (next: ThemePreference) => void
+  /** D-205: swaps light and dark only, by setting the opposite of the theme on screen. */
+  toggle: () => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -65,8 +67,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolved: 'light' | 'dark' =
     preference === 'dark' || (preference === 'system' && systemDark) ? 'dark' : 'light'
 
+  const toggle = useCallback(() => setPreference(resolved === 'dark' ? 'light' : 'dark'), [resolved, setPreference])
+
   return (
-    <ThemeContext.Provider value={{ preference, resolved, setPreference }}>
+    <ThemeContext.Provider value={{ preference, resolved, setPreference, toggle }}>
       {children}
     </ThemeContext.Provider>
   )

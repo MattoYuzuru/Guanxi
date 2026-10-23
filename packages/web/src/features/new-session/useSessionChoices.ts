@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Connection, Project, Workspace } from '@guanxi/contract'
 import { api } from '../../lib/api.ts'
+import { DEFAULT_ASYNC_RETRY, retryDelay } from '../../lib/useAsync.ts'
 import { ZodError } from 'zod'
 import { connectionApi, ConnectionRequestError } from '../connections/api.ts'
 import { agentRequest, AgentRequestError } from '../native-agent/api.ts'
@@ -28,7 +29,8 @@ const failureKind = (error: unknown): ChoiceFailure['kind'] =>
 /**
  * Loads the three read-only sources of the new-session screen. Projects and connections
  * are required; the folder list is optional and reports a degraded state instead.
- * A failed refresh keeps the last good choices with their observation time.
+ * A failed refresh keeps the last good choices with their observation time, and a failure
+ * recovers by itself with a growing pause and on focus or reconnect (D-203): no Retry button.
  */
 export function useSessionChoices() {
   const [choices, setChoices] = useState<SessionChoices | null>(null)
@@ -37,6 +39,7 @@ export function useSessionChoices() {
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
   const hasChoices = useRef(false)
+  const failures = useRef(0)
   useEffect(() => {
     const abort = new AbortController()
     setLoading(true)
@@ -51,8 +54,10 @@ export function useSessionChoices() {
         const source: ChoiceSource = projects.status === 'rejected' ? 'projects' : 'connections'
         const reason = projects.status === 'rejected' ? projects.reason : (connections as PromiseRejectedResult).reason
         setFailure({ source, code: failureCode(reason), kind: failureKind(reason), at: new Date().toISOString() })
+        failures.current += 1
         return
       }
+      failures.current = 0
       hasChoices.current = true
       setChoices({
         projects: projects.value.projects,
@@ -65,6 +70,17 @@ export function useSessionChoices() {
     return () => abort.abort()
   }, [revision])
   const reload = useCallback(() => setRevision(value => value + 1), [])
+  // Automatic recovery: retry a failed read with a growing pause, and at once on focus or online.
+  useEffect(() => {
+    if (failure === null) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const later = () => { if (document.visibilityState !== 'hidden') timer = setTimeout(reload, retryDelay(Math.max(1, failures.current), DEFAULT_ASYNC_RETRY)) }
+    const now = () => { clearTimeout(timer); reload() }
+    later()
+    window.addEventListener('online', now)
+    window.addEventListener('focus', now)
+    return () => { clearTimeout(timer); window.removeEventListener('online', now); window.removeEventListener('focus', now) }
+  }, [failure, reload])
   const status: ChoiceStatus = loading && !hasChoices.current ? 'loading' : failure ? 'failed' : 'ready'
   return { status, choices, observedAt, failure, refreshing: loading && hasChoices.current, reload }
 }

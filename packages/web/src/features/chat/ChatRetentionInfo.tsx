@@ -6,6 +6,7 @@ import {
   type ChatRetentionProjection,
   type LeaveSessionChatResponse,
 } from '@guanxi/contract'
+import { Icon, IconButton } from '@guanxi/ui'
 import { Button, Callout, Modal, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
@@ -180,9 +181,7 @@ export function ChatRetentionInfo({
 
   return (
     <>
-      <Button ref={triggerRef} size="sm" variant="secondary" onClick={() => setOpen(true)}>
-        {translate('chat.retention.open')}
-      </Button>
+      <IconButton ref={triggerRef} label={translate('chat.retention.open')} icon={<Icon name="info" />} onClick={() => setOpen(true)} />
       <Modal
         open={open}
         onClose={() => setOpen(false)}

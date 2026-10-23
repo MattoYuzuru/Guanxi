@@ -35,6 +35,8 @@ export interface StatusItemProps extends Omit<ComponentProps<'div'>, 'className'
   /** Where the popover opens; the status strip uses `bottom` and `end` at its right edge. */
   side?: 'top' | 'bottom' | 'left' | 'right'
   align?: 'start' | 'center' | 'end'
+  /** A wider popover for detail lists (runtime admission and models). */
+  wide?: boolean
   className?: string
 }
 
@@ -50,6 +52,7 @@ export function StatusItem({
   onOpenChange,
   side = 'bottom',
   align = 'center',
+  wide = false,
   className,
   ...props
 }: StatusItemProps) {
@@ -88,7 +91,7 @@ export function StatusItem({
           </TooltipTrigger>
           <TooltipContent side={side}>{label}</TooltipContent>
         </Tooltip>
-        <PopoverContent side={side} align={align} className="gx-status-item-popover">
+        <PopoverContent side={side} align={align} className="gx-status-item-popover" data-size={wide ? 'wide' : undefined}>
           <PopoverTitle>{title ?? label}</PopoverTitle>
           {tone === 'unknown' && children === undefined ? (
             <p className="gx-status-item-empty">{t('ui.status.unknownValue')}</p>

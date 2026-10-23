@@ -42,6 +42,12 @@
       "props": {
         "AppShellChrome": [
           {
+            "name": "actions",
+            "type": "ReactNode",
+            "required": false,
+            "description": "Icon status items and chrome controls at the right of the strip, before the palette button."
+          },
+          {
             "name": "children",
             "type": "ReactNode",
             "required": true,
@@ -72,6 +78,12 @@
             "description": ""
           },
           {
+            "name": "paletteShortcut",
+            "type": "string[] | undefined",
+            "required": false,
+            "description": "Keys of the palette shortcut as the platform writes them (for example `['⌘', 'K']`)."
+          },
+          {
             "name": "side",
             "type": "AppShellSide",
             "required": true,
@@ -93,7 +105,7 @@
             "name": "status",
             "type": "ReactNode",
             "required": true,
-            "description": "Persistent status items. The chrome adds Show (while hidden) and Palette actions."
+            "description": "Persistent status items, shown at the left of the strip after the Show button."
           },
           {
             "name": "visibility",
@@ -104,17 +116,35 @@
         ]
       },
       "cssVariables": [
+        "--border-radius-control",
+        "--border-radius-panel",
+        "--border-width-regular",
         "--color-background-primary",
+        "--color-background-secondary",
+        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-primary",
+        "--color-text-secondary",
+        "--color-text-tertiary",
+        "--elevation-pane-shadow",
         "--font-family-sans",
         "--font-line-height-ui",
         "--font-text-size",
+        "--layer-sticky",
         "--layout-container-2xs",
+        "--material-backdrop",
+        "--material-background",
+        "--motion-duration-fast",
+        "--motion-easing-standard",
+        "--spacing-2",
         "--spacing-4",
+        "--spacing-40",
         "--spacing-48",
-        "--spacing-8"
+        "--spacing-6",
+        "--spacing-8",
+        "--target-minimum"
       ],
-      "sourceHash": "sha256:6e21bf26b48878b5f65a733cbb232ccabf7c394610a128f26cc6954cce995659",
+      "sourceHash": "sha256:32846edb910bb6def53c453d4b6437edbce91bde4b83d3db4941848ca6420657",
       "snapshotHashes": {
         "default-dark": "sha256:ec62c0cf85a5ec5f0cba22074b014ca9318dc6c8e1fa60b3c18e818ea98a9303",
         "default-light": "sha256:7f09f180a4b7b5159b9db12b97a1b570834699c96128cd2fd354184154197515",
@@ -241,12 +271,15 @@
         "warning-light-hc": "sha256:9c252578c3cafc07c71120c140486a98cf9e4789f1d5363b3648b4b5e5678fd5",
         "warning-light": "sha256:aa8bd8427a7df4b00f66634e21dff06b82f747376caeecb50606be0f3d5a70c2"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 2,
+        "files": [
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/new-session/NewSessionScreen.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -405,16 +438,15 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 15,
+        "count": 14,
         "files": [
+          "packages/web/src/components/ui.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
-          "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/notifications/NotificationsPage.tsx",
-          "packages/web/src/features/shell/MountedShell.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
-          "packages/web/src/features/shell/ShellStatus.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryCard.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx",
@@ -662,6 +694,12 @@
             "description": ""
           },
           {
+            "name": "textareaRef",
+            "type": "Ref<HTMLTextAreaElement> | undefined",
+            "required": false,
+            "description": "The text area element, for hosts that return focus to it (dialogs opened from Send)."
+          },
+          {
             "name": "trailing",
             "type": "ReactNode",
             "required": false,
@@ -691,11 +729,11 @@
         "--color-background-secondary",
         "--color-background-tertiary",
         "--color-background-warning",
+        "--color-border-accent",
         "--color-border-control",
         "--color-border-danger",
         "--color-border-primary",
         "--color-border-secondary",
-        "--color-ring-primary",
         "--color-text-danger",
         "--color-text-disabled",
         "--color-text-on-accent",
@@ -706,8 +744,7 @@
         "--elevation-control-shadow",
         "--elevation-inset-shadow",
         "--elevation-pane-shadow",
-        "--focus-ring-offset",
-        "--focus-ring-width",
+        "--focus-halo",
         "--font-line-height-prose",
         "--font-line-height-ui",
         "--font-size-12",
@@ -731,14 +768,18 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:f473d8a0036f383681246d9e3f848762ae733bb9db587a139d50a5ce650139d8",
+      "sourceHash": "sha256:7e2caa88d313c81cdd12e2e8fedf36ff967a059013e8064aa27f1ee89a70142f",
       "snapshotHashes": {},
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 3,
+        "files": [
+          "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/new-session/NewSessionScreen.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -882,7 +923,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:693f95ac4ffeb081c22d206381595557891cd162a0a841b3db7e37b73aed7b78",
+      "sourceHash": "sha256:064e1cd6d6afd764632b95ae600ad638bb8f37909258fdd7ac014f08a5daa760",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:0335cf31f025ef71e959b3418e679b990896a03a3c8d6aae9abde7c15bb59e37",
         "closed-dark": "sha256:4dfd8a3db4648747f3922cb505571961ed34f8d598e79957f1dd3cdfe7f250cb",
@@ -1180,12 +1221,22 @@
       ],
       "sourceHash": "sha256:f3eb09a21f102ae3cdc8b5e0dd1dff907275397b785b97071e3806fb6f8935c8",
       "snapshotHashes": {},
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 9,
+        "files": [
+          "packages/web/src/components/ui.tsx",
+          "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/new-session/SessionPickers.tsx",
+          "packages/web/src/features/notifications/NotificationBell.tsx",
+          "packages/web/src/features/shell/ShellCustomise.tsx",
+          "packages/web/src/features/shell/ShellSidebar.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -1221,6 +1272,18 @@
       ],
       "props": {
         "IconButton": [
+          {
+            "name": "badge",
+            "type": "number | boolean | undefined",
+            "required": false,
+            "description": "A count (capped at 99+) or `true` for a quiet dot; hidden from assistive technology, so put the fact in `label`."
+          },
+          {
+            "name": "badgeTone",
+            "type": "\"accent\" | \"warning\" | \"danger\" | undefined",
+            "required": false,
+            "description": ""
+          },
           {
             "name": "className",
             "type": "string | undefined",
@@ -1313,7 +1376,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:7e6ed7a48b87b3c821cbfacdbdf3c14766ddab906b9daa203b8e24a25bde3b31",
+      "sourceHash": "sha256:7233f882aaaf4055dd374085b4a88f4ddf01855023bcc9a6bb821c24dafdedfe",
       "snapshotHashes": {
         "default-dark-hc": "sha256:7ea8c164c7f418a0950d1ec2abbd7843584c66193fe6dee12e96fe6234dcb61a",
         "default-dark": "sha256:7ea8c164c7f418a0950d1ec2abbd7843584c66193fe6dee12e96fe6234dcb61a",
@@ -1348,8 +1411,15 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 6,
+        "files": [
+          "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/notifications/NotificationBell.tsx",
+          "packages/web/src/features/shell/ShellCustomise.tsx",
+          "packages/web/src/features/shell/ShellSidebar.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -1461,7 +1531,7 @@
       "usage": {
         "count": 5,
         "files": [
-          "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
@@ -1521,9 +1591,9 @@
       ],
       "sourceHash": "sha256:9a09f29b58aee11d7a3207234525f6a057f9d4aabdb1ec29e1acf15cfe7ff3c7",
       "snapshotHashes": {},
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
         "count": 0,
         "files": []
@@ -1669,8 +1739,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/new-session/SessionPickers.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -1853,7 +1925,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:5aa069a2296310df089e828723167cd1f55371e9709d7c1adc5c6f6387083fe8",
+      "sourceHash": "sha256:aa365d8149ba2694bc39febad3ae86a4a376736942d9d40984c97b19d1933012",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:c13d41083539c1aafac3112aca66419b1ea874c00d9803a9c9e38f10aefbeda2",
         "closed-dark": "sha256:803c9b7cdae14663ff359001e53b57e7359c7429ca0663be972c0def3b0e358d",
@@ -1864,12 +1936,17 @@
         "open-light-hc": "sha256:50b57ae74abcc81ff729e4d7f53f0048eb10a6e2a3e2f5bab20a6b7696834dfe",
         "open-light": "sha256:07c45cc83a8165495d437715983512f8462c209dfa62a89116f7981e0e57723f"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 4,
+        "files": [
+          "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/new-session/SessionPickers.tsx",
+          "packages/web/src/features/shell/ShellCustomise.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -1981,7 +2058,8 @@
       "folder": "src/components/segmented-control",
       "exports": [
         "SegmentedControl",
-        "SegmentedControlProps"
+        "SegmentedControlProps",
+        "SegmentedOption"
       ],
       "componentExports": [
         "SegmentedControl"
@@ -2064,14 +2142,16 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:e12ab4faf94310b2242bf74ec59b155689abeeaf757b2fc7834b8ec1727bc124",
+      "sourceHash": "sha256:1f32d1af637c1f3a6d21bff27e51625d9b60e2ce147ce375a67c112214bdad39",
       "snapshotHashes": {},
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/shell/ShellCustomise.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -2248,7 +2328,8 @@
       "folder": "src/components/status-item",
       "exports": [
         "StatusItem",
-        "StatusItemProps"
+        "StatusItemProps",
+        "StatusItemTone"
       ],
       "componentExports": [
         "StatusItem"
@@ -2342,10 +2423,17 @@
             "type": "ReactNode",
             "required": false,
             "description": "A short value shown next to the icon (\"16.8 GB\"); the value carries the weight."
+          },
+          {
+            "name": "wide",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": "A wider popover for detail lists (runtime admission and models)."
           }
         ]
       },
       "cssVariables": [
+        "--available-height",
         "--border-radius-control",
         "--border-radius-inline",
         "--border-width-regular",
@@ -2384,6 +2472,8 @@
         "--icon-size-16",
         "--icon-size-18",
         "--layout-container-2xs",
+        "--layout-container-lg",
+        "--layout-container-sm",
         "--motion-duration-fast",
         "--motion-easing-standard",
         "--spacing-12",
@@ -2392,14 +2482,16 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:a8dbbf9d06b218a3b1c6e624e672b426253c7d499ef538afcce9ca9ba726f783",
+      "sourceHash": "sha256:4b18158eb732e09cd1c63596eb8521b49fa9dc1fe0ed921d92dbb10cf3334f10",
       "snapshotHashes": {},
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/shell/ShellStatus.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -2588,12 +2680,16 @@
         "on-light-hc": "sha256:39bbe2593374de402811a035f24ed7788500c927fef8684ea2b938d871544546",
         "on-light": "sha256:c8cf46fb0209e32a6a15afd2f4b42c4ba390e9d2a767f41a85aeaba85a593ebc"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 3,
+        "files": [
+          "packages/web/src/components/ui.tsx",
+          "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/shell/ShellCustomise.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -2805,7 +2901,7 @@
       "usage": {
         "count": 4,
         "files": [
-          "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx",
           "packages/web/src/features/voice/GlossaryPreview.tsx"
@@ -2924,7 +3020,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:25cb932e424649f1f141531cd22a3f782cd1b83075836d8d709b097ee874bab3",
+      "sourceHash": "sha256:4f33e7dfaed74bbd3af98c5c5f9f456dbaebb1b57ac876303ee32bdc2aafb896",
       "snapshotHashes": {
         "error-dark-hc": "sha256:24a114b12782bdb99a8af5aa70ee9c663e5fa4c8500c9ac180f87cd9f84d9fc4",
         "error-dark": "sha256:58540644b5a259189b56e8afb1b4f7e4d63eaa549fa5aaa06701efb94e65df64",
@@ -3123,7 +3219,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:c12b51fb6249fb931eac5074d7378476b1ef2106b81c5180dc176123fd117adf",
+      "sourceHash": "sha256:ab7b9456120369c6e1b51d1fd6040bd966dbeb89ecd061a1b7869c641d2f0132",
       "snapshotHashes": {
         "default-dark": "sha256:9205498c663e6974e68ca800005bab18f1a0fcd6791c45d8bb1720fc3969b6ad",
         "default-light": "sha256:39cb94954dcb0b9779adea629517723b030874e2d0121c75f7550b2157cd8462",

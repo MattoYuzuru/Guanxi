@@ -5,7 +5,7 @@ import { navigate, paths, useLocation } from '../../lib/router.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
-import { requestBlockMove, requestBlockReveal, requestWorkspaceMode } from '../workspace/commands.ts'
+import { requestBlockMove, requestBlockReveal } from '../workspace/commands.ts'
 import { workspaceShellState } from '../workspace/shell-state.ts'
 import { readShellPreferences, writeShellPreferences } from './preferences.ts'
 import type { ShellCommand, ShellSessionSearch } from './ShellPalette.tsx'
@@ -27,7 +27,7 @@ export function useShellController() {
   }, [sessions.cancelSearch])
   const workspace = useSyncExternalStore(workspaceShellState.subscribe, workspaceShellState.snapshot)
   const { preference, setPreference } = useTheme()
-  const models = useAsync(signal => modelsRequested ? api.listModels(undefined, signal) : Promise.resolve({ models: [] }), [modelsRequested])
+  const models = useAsync(signal => modelsRequested ? api.listModels(undefined, signal) : Promise.resolve({ models: [] }), [modelsRequested], { revalidate: { onFocus: true } })
   useEffect(() => { writeShellPreferences(preferences) }, [preferences])
   useEffect(() => { if (paletteOpen) setModelsRequested(true) }, [paletteOpen])
   useEffect(() => {
@@ -57,18 +57,13 @@ export function useShellController() {
     ...sessions.sessions.map(session => ({ id: `session:${session.sessionId}`,
       label: t('shell.command.session', { title: session.title || t('shell.sessions.untitled') }),
       execute: () => navigate(sessionNavigationPath(session.navigation)) })),
-    { id: 'session-refresh', label: t('shell.sessions.refresh'), disabled: sessions.loading || sessions.loadingMore,
-      reason: sessions.error ? t('shell.sessions.error') : sessions.loading ? t('shell.sessions.loading') : sessions.omitted ? t('shell.sessions.omitted') : undefined,
-      execute: sessions.reload },
     ...(sessions.hasMore ? [{ id: 'session-more', label: t('shell.sessions.more'), disabled: sessions.loading || sessions.loadingMore,
       execute: () => { void sessions.loadMore() } }] : []),
     ...(models.data?.models ?? []).map(model => ({ id: `model:${model.name}`, label: t('shell.command.model', { name: model.name }),
       execute: () => navigate(paths.model(model.name)) })),
     ...((models.loading || models.refreshing) ? [{ id: 'model-loading', label: t('shell.models.loading'), disabled: true, execute() {} }] : []),
-    ...(models.error ? [{ id: 'model-retry', label: t('shell.models.retry'), reason: t('shell.models.error'), execute: models.reload }] : []),
-    ...(['developer', 'visual'] as const).map(mode => ({ id: `mode:${mode}`, label: t(`workspaceLayout.${mode}`),
-      disabled: !workspace.ready || workspace.busy, reason: !workspace.ready ? t('shell.workspace.required') : workspace.busy ? t('shell.workspace.busy') : undefined,
-      execute: () => requestWorkspaceMode(mode) })),
+    // A failed model read recovers by itself (useAsync retry); the entry only says why it is empty.
+    ...(models.error && !models.data?.models.length ? [{ id: 'model-unavailable', label: t('shell.models.error'), disabled: true, execute() {} }] : []),
     ...workspace.blocks.flatMap(block => [
       { id: `block:${block.id}`, label: t(block.hidden ? 'shell.command.showBlock' : 'shell.command.focusBlock', { title: block.label }),
         disabled: !workspace.ready || workspace.busy, reason: workspace.busy ? t('shell.workspace.busy') : undefined,
