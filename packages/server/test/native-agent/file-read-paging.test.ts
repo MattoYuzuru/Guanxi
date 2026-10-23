@@ -16,12 +16,12 @@ const shell: typeof sandboxCommand = (_policy, command) => new Promise(resolve =
   execFile('/bin/sh', ['-c', command], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => resolve(commandOutput(error ? Number((error as { code?: unknown }).code ?? 1) : 0, [stdout], [stderr], false)))
 })
 type Page = Partial<{ more: boolean; nextOffset: number; offset: number; code: number; stderr: string; truncated: boolean; stdout: string }> & { error?: string }
-async function setup(t: { after(fn: () => unknown): void }, extra: { pageBytes?: number; real?: boolean } = {}) {
+async function setup(t: { after(fn: () => unknown): void }, extra: { pageBytes?: number; real?: boolean; scrubber?: typeof scrubber } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-file-read-')), root = join(dir, 'root'), scratch = join(dir, 'scratch')
   await mkdir(root); await mkdir(scratch)
   t.after(() => rm(dir, { recursive: true, force: true }))
   const tools = nativeTools({ policy: { mode: 'read-only', roots: [root], scratch, attachments: [], protectedPaths: [], domains: [], runtimeBase: dir }, log: {} as never, handle: { sessionId: 'paging' } as never,
-    scrubber: scrubber as never, queue() {}, ...(extra.real ? {} : { executeCommand: shell }), ...(extra.pageBytes === undefined ? {} : { pageBytes: extra.pageBytes }) })
+    scrubber: (extra.scrubber ?? scrubber) as never, queue() {}, ...(extra.real ? {} : { executeCommand: shell }), ...(extra.pageBytes === undefined ? {} : { pageBytes: extra.pageBytes }) })
   const call = async (name: string, args: Record<string, unknown>) => {
     const result = await tools.find(tool => tool.name === name)!.execute('call', args as never) as { content: Array<{ text: string }>; details: { code?: string } | null; isError?: boolean }
     return { text: result.content.map(c => c.text).join(''), error: result.isError ? result.details?.code : undefined }
@@ -111,6 +111,40 @@ test('an offset that is not a byte position this tool returned is refused with a
   assert.deepEqual(await tiny.read({ path: join(tiny.root, 'x.txt') }), { error: 'page_too_small' })
 })
 
+test('a cursor is issued only when the text is the file\'s own bytes: redaction or an invalid byte refuses paging, and the whole remainder is always returned', async t => {
+  const redacting = { scrub: <T>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll('TOPSECRETVALUE', '[REDACTED]')) as T, isReady: () => true }
+  const secret = `${'a'.repeat(300)}TOPSECRETVALUE${'b'.repeat(300)}`
+  const whole = await setup(t, { scrubber: redacting }), paged = await setup(t, { scrubber: redacting, pageBytes: 400 })
+  await writeFile(join(whole.root, 's.txt'), secret); await writeFile(join(paged.root, 's.txt'), secret)
+  // Redaction changes a length, so a position in the redacted text is not a position in the file.
+  assert.equal((await whole.read({ path: join(whole.root, 's.txt') })).stdout, secret.replace('TOPSECRETVALUE', '[REDACTED]'))
+  assert.equal((await whole.read({ path: join(whole.root, 's.txt') })).more, false)
+  assert.deepEqual(await paged.read({ path: join(paged.root, 's.txt') }), { error: 'page_cursor_unavailable' })
+  // An invalid byte decodes to three bytes of text: pages before it are exact, the page that holds it has no honest cursor.
+  const bytes = Buffer.concat([Buffer.from('a'.repeat(300)), Buffer.from([0xff]), Buffer.from('b'.repeat(300))])
+  const bad = await setup(t, { pageBytes: 400 }), plain = await setup(t)
+  await writeFile(join(bad.root, 'b.bin'), bytes); await writeFile(join(plain.root, 'b.bin'), bytes)
+  const first = await bad.read({ path: join(bad.root, 'b.bin') })
+  assert.equal(first.more, true); assert.ok(!first.stdout!.includes('\uFFFD')); assert.equal(first.nextOffset, Buffer.byteLength(first.stdout!))
+  assert.equal(first.nextOffset, 300, 'the page ends in front of the invalid byte')
+  assert.deepEqual(await bad.read({ path: join(bad.root, 'b.bin'), offset: String(first.nextOffset) }), { error: 'invalid_offset' }, 'the bytes there are not a character, so file_read cannot continue across them')
+  assert.equal((await plain.read({ path: join(plain.root, 'b.bin') })).more, false)
+  // A file that really holds U+FFFD is readable from a cursor that points at it, and an offset inside a character is still refused.
+  const real = await setup(t)
+  await writeFile(join(real.root, 'r.txt'), `${'x'.repeat(60)}\uFFFDyyyyy`)
+  assert.deepEqual((await real.read({ path: join(real.root, 'r.txt'), offset: '60' })).stdout, '\uFFFDyyyyy')
+  assert.deepEqual(await real.read({ path: join(real.root, 'r.txt'), offset: '61' }), { error: 'invalid_offset' })
+  // A budget that cannot hold one character is an error, not an empty page that never advances.
+  const tiny = await setup(t, { pageBytes: 90 })
+  await writeFile(join(tiny.root, 'k.txt'), '界'.repeat(50))
+  assert.deepEqual(await tiny.read({ path: join(tiny.root, 'k.txt') }), { error: 'page_too_small' })
+  // A budget that leaves room for the envelope but not for one character must not return an empty page that never advances.
+  const kanji = new NativeOutputs(tiny.dir, 'kanji', scrubber as never), stored = JSON.parse(await kanji.bound('界'.repeat(30_000))) as { artifact: string; bytes: number }
+  const envelope = Buffer.byteLength(JSON.stringify({ artifact: stored.artifact, offset: 0, nextOffset: 0, bytes: stored.bytes, truncated: true, text: '' }))
+  await assert.rejects(kanji.read(stored.artifact, 0, envelope + 1), /page_too_small/)
+  assert.equal((JSON.parse(await kanji.read(stored.artifact, 0, envelope + 3)) as { nextOffset: number }).nextOffset, 3, 'one character is the smallest page')
+})
+
 test('the real sandbox serves the same pages: offset 0 reads the file, a later offset starts there', async t => {
   const f = await setup(t, { real: true, pageBytes: 4096 })
   const text = Array.from({ length: 600 }, (_, i) => `sandbox row ${i} 界\n`).join('')
@@ -118,4 +152,8 @@ test('the real sandbox serves the same pages: offset 0 reads the file, a later o
   const pages = await readAll(f.read, join(f.root, 'real.txt'), 200)
   assert.ok(pages.length >= 2); assert.equal(pages.map(p => p.stdout).join(''), text)
   assert.ok(pages.every(p => Buffer.byteLength(JSON.stringify(p)) <= 4096))
+  // The byte check that tells a real U+FFFD from a mid-character offset runs in the sandbox too.
+  await writeFile(join(f.root, 'fffd.txt'), `${'x'.repeat(10)}\uFFFDyy`)
+  assert.equal((await f.read({ path: join(f.root, 'fffd.txt'), offset: '10' })).stdout, '\uFFFDyy')
+  assert.deepEqual(await f.read({ path: join(f.root, 'fffd.txt'), offset: '11' }), { error: 'invalid_offset' })
 })

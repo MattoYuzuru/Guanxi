@@ -102,10 +102,16 @@ test('through K3 and the llama-server transport every probe and work step carrie
     const kind = purpose(post.body.prompt)
     // The field is exactly `json_schema`, after the four flags the server has always been sent.
     assert.deepEqual(Object.keys(post.body), kind === 'narrative' ? ['prompt', 'n_predict', 'stream', 'cache_prompt'] : ['prompt', 'n_predict', 'stream', 'cache_prompt', 'json_schema'], kind)
-    if (kind === 'probe') assert.deepEqual(post.body.json_schema, probeResponseSchema())
+    if (kind === 'probe') {
+      assert.deepEqual(post.body.json_schema, probeResponseSchema())
+      assert.deepEqual(Object.keys(post.body.json_schema.properties), ['ledgerHash', 'head', 'revision', 'nextItem', 'nextStatus'], 'keys are written in the order the prompt names them')
+    }
     if (kind === 'work') {
       assert.deepEqual(toolNames(post.body.json_schema), ['work.query', 'notes.search', 'tool_output_read', 'project_info', 'file_read', 'file_write', 'shell', 'search', 'repo_map', 'fetch', 'attachments', 'session_log_query'],
         'the grammar names exactly the tools the workspace serves, plus the two ledger queries')
+      const variants = post.body.json_schema.anyOf as Array<{ properties: Record<string, unknown> }>
+      assert.deepEqual(Object.keys(variants[0]!.properties), ['action', 'name', 'args'], 'a tool call names the tool before its arguments')
+      assert.deepEqual(Object.keys(variants.at(-6)!.properties), ['action', 'kind', 'text', 'items', 'expiresAt'])
       assert.ok(accepts(post.body.json_schema, { action: 'tool', name: 'file_read', args: { path: 'src/item.txt', offset: '0' } }))
       assert.equal(accepts(post.body.json_schema, { action: 'tool', name: 'plan', args: {} }), false)
     }

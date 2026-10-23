@@ -56,6 +56,7 @@ test('a response schema is sent as json_schema on /completion and nothing else c
   assert.deepEqual(second!.body, { prompt: rendered, n_predict: 60, stream: false, cache_prompt: false, json_schema: INTEGRATOR_SCHEMA })
   assert.deepEqual(Object.keys(second!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt', 'json_schema'])
   assert.deepEqual(Object.keys(first!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt'], 'no schema, no json_schema key (not even a null)')
+  assert.deepEqual(Object.keys(second!.body.json_schema.properties), ['action', 'name', 'args'], 'the schema keeps the order a grammar will write its keys in')
   assert.equal(constrained.promptTokens, plain.promptTokens, 'the schema does not change a prompt token')
   assert.equal(constrained.content, '{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}')
 })

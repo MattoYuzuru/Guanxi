@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { countedRequestSchema, localInferenceJobSchema, RELAY_RESPONSE_SCHEMA_BYTES, type SignedDispatchEvent, type SignedDispatchGrant } from '@guanxi/contract/federation'
-import { hash, signValue } from '../../src/federation/crypto.ts'
+import { FEDERATION_BODY_BYTES, hash, signValue } from '../../src/federation/crypto.ts'
 import { schemaDigest, type JsonSchema } from '../../src/relay/json-schema.ts'
 import { fakeRender, fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { remoteFixture, until, type Sent } from './remote-fixture.ts'
@@ -37,6 +37,10 @@ test('a response schema is part of the signed job, the counted chain, the execut
   const [post] = await f.completions()
   assert.deepEqual(post!.body, { prompt: rendered(prompt), n_predict: 1000, stream: false, cache_prompt: true, json_schema: SCHEMA })
   assert.deepEqual(Object.keys(post!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt', 'json_schema'])
+  // A grammar writes a reply's keys in the schema's own order, so the order must survive the signed job and the executor (`args` after `name`).
+  const sent = (post!.body as unknown as { json_schema: { properties: object; required: string[] } }).json_schema
+  assert.deepEqual(Object.keys(sent.properties), ['action', 'name', 'args'], 'property order is the sender\'s, not alphabetical')
+  assert.deepEqual(sent.required, ['action', 'name', 'args']); assert.deepEqual(Object.keys(sent), Object.keys(SCHEMA))
   const terminal = terminalOf(f, grant!.id)
   assert.equal(terminal.outcome, 'completed'); assert.equal(terminal.responseSchemaSha256, schemaDigest(SCHEMA)); assert.equal(terminal.renderedSha256, sha(rendered(prompt)))
   // Without a schema nothing of this appears anywhere.
@@ -143,4 +147,13 @@ test('a peer older than federation 1.6 cannot carry a schema in either direction
   await assert.rejects(f.target.federation.receiveDispatch({ ...f.homeCtx, version: { major: 1, minor: 5 } }, schemaGrant), /contract_feature_unavailable/)
   await assert.rejects(f.target.federation.receiveDispatch(f.homeCtx, schemaGrant), /contract_feature_unavailable/)
   assert.equal((await f.target.federation.receiveDispatch({ ...f.homeCtx, version: { major: 1, minor: 6 } }, schemaGrant)).id, schemaGrant.grant.id, 'at 1.6 the same grant is not refused for its version (an idempotent replay)')
+})
+
+test('the largest string the home will count leaves room for the largest schema a job may carry', async t => {
+  const f = await remoteFixture(t), r = await f.relay()
+  // Within a message of the signed-body limit once the schema is added: reported above every ceiling, never sent.
+  const over = 'x'.repeat(FEDERATION_BODY_BYTES - 32 * 1024 - 1000), before = f.sent.filter(s => s.path === '/attempts/runtime/count').length
+  assert.equal(await r.model.countAsync!(over), Number.MAX_SAFE_INTEGER)
+  assert.equal(f.sent.filter(s => s.path === '/attempts/runtime/count').length, before)
+  assert.equal(RELAY_RESPONSE_SCHEMA_BYTES, 64 * 1024)
 })

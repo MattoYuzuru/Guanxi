@@ -53,3 +53,20 @@ test('a call that outlasts the runtime observation age is not failed by a recoun
   assert.equal(reply.inputTruncated, false)
   assert.equal(reply.inputTokens, 100)
 })
+
+test('a provider (model_api) connection ignores the response schema: its request and call options are exactly what they were', async () => {
+  const seen: { context?: unknown; call?: Record<string, unknown> } = {}
+  const connections = {
+    snapshot: () => ({ connections: [{ id: 'fixture', kind: 'model_api' }] }),
+    complete: async (_scope: string, _id: string, context: unknown, call: Record<string, unknown> & { onPrepared?: (r: unknown) => void }) => {
+      call.onPrepared?.(context); seen.context = context; seen.call = call
+      return { content: [{ type: 'text', text: '{"ok":true}' }], usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } }, stopReason: 'stop' }
+    },
+  } as unknown as Connections
+  const model = new ConnectionRelayModel(connections, 'fixture', 'provider-model', { observe: async () => window, count: () => 10 })
+  const schema = { type: 'object', properties: { marker: { const: 'SCHEMA-MARKER' } } }
+  const reply = await model.call('prompt', { ...options, responseSchema: schema })
+  assert.equal(reply.text, '{"ok":true}')
+  assert.equal(JSON.stringify(seen).includes('SCHEMA-MARKER'), false, 'the schema is nowhere in the provider call')
+  assert.deepEqual(Object.keys(seen.call!).sort(), ['background', 'model', 'onPrepared', 'onStarted', 'options', 'requestId', 'runId', 'signal'])
+})
