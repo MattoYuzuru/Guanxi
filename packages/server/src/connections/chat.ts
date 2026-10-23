@@ -34,9 +34,13 @@ export function providerChatClient(connections: Connections, selection: { connec
     const chunk = (content: string, done: boolean): OllamaChatChunk => ({ model: request.model, created_at: new Date().toISOString(),
       message: { role: 'assistant', content }, done })
     const notify = (value: OllamaChatChunk) => { queue.push(value); wake() }
+    // Only the leading orientation is the cacheable system prompt. Compaction
+    // checkpoints may also have role=system; retain them in history, not this prefix.
+    const hasOrientation = request.messages[0]?.role === 'system'
+    const history = hasOrientation ? request.messages.slice(1) : request.messages
     const pending = connections.complete('local', selection.connectionId, {
-      systemPrompt: request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n'),
-      messages: request.messages.filter(message => message.role !== 'system').map(message => message.role === 'assistant'
+      systemPrompt: hasOrientation ? request.messages[0]!.content : '',
+      messages: history.map(message => message.role === 'assistant'
         ? { role: 'assistant' as const, content: [{ type: 'text' as const, text: message.content }], api: 'openai-completions' as const,
           provider: 'openai', model: selection.modelId, stopReason: 'stop' as const, timestamp: Date.now(),
           usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }

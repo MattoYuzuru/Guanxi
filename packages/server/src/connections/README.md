@@ -191,6 +191,8 @@ the product name from the brand module added. It states the local node/OS and th
 execution cwd, roots, tools, skills and available path/budget/AGENTS.md details. The English
 model-facing prefix is bounded to 300 UTF-8 bytes and independent of UI locale, project metadata
 and per-turn state. It stays byte-identical before history on every turn for prefix-cache reuse.
+When switching a locally compacted Chat to a provider, checkpoint summaries stay in user history
+after the orientation; they are never folded into the provider system prompt.
 Any future volatile facts belong at the end of the latest user turn, outside this prefix.
 Any expansion requires an ADR-0025 bench result; request assertions prove dispatch, not model
 quality, cache hits or benchmark non-inferiority. Per-project prompt editing remains future work.

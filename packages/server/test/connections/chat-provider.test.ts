@@ -346,7 +346,7 @@ test('fresh owner interrupts an executing provider association and retains outpu
 })
 
 
-test('real pi-ai compatible wire streams through fake fetch without invented model token ceilings', async t => {
+test('real pi-ai fake wire keeps compacted history outside the stable orientation without invented model token ceilings', async t => {
   const value = canary(), requests: { role: string; content: string }[][] = []
   const f = await setup(t, piTransport, async (url, init) => {
     if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'owner-model' }] })
@@ -361,7 +361,15 @@ test('real pi-ai compatible wire streams through fake fetch without invented mod
     ].map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
   })
   const id = await imported(f.service, value, 'https://api.example.invalid/v1')
-  const chat = chatFixture(f, t), thread = chat.create(chatModelSelection(id, 'owner-model'))
+  const chat = chatFixture(f, t), thread = chat.create('local-model')
+  const source = 'compacted source must not be dispatched'
+  const summary = 'Checkpoint at 2026-10-23T12:34:56Z /private/project quota=987'
+  const tail = 'retained local history'
+  chat.context.threads.addMessage({ threadId: thread.id, role: 'user', content: source })
+  chat.context.threads.addMessage({ threadId: thread.id, role: 'assistant', content: 'prior local reply' })
+  chat.context.threads.createContextCheckpoint({ threadId: thread.id, upToSeq: 1, expectedPreviousCheckpointId: null, summary })
+  chat.context.threads.addMessage({ threadId: thread.id, role: 'user', content: tail })
+  chat.context.threads.update(thread.id, { model: chatModelSelection(id, 'owner-model') })
   for (const locale of ['en', 'ru'] as const) {
     chat.context.settings.update({ locale })
     const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -375,11 +383,14 @@ test('real pi-ai compatible wire streams through fake fetch without invented mod
   for (const messages of requests) {
     assert.deepEqual(messages[0], { role: 'system', content: harnessSystemPrompt() })
     assert.equal(messages.filter(message => message.role === 'system').length, 1)
-    assert.equal(messages[1]!.role, 'user')
+    assert.deepEqual(messages[1], { role: 'user', content: summary })
+    assert.equal(messages.filter(message => message.content === summary).length, 1)
+    assert.deepEqual(messages[2], { role: 'user', content: tail })
+    assert.ok(!JSON.stringify(messages).includes(source))
     assert.ok(!JSON.stringify(messages).includes(value))
   }
   assert.deepEqual(Buffer.from(requests[0]![0]!.content), Buffer.from(requests[1]![0]!.content))
-  assert.equal(requests[1]!.length, 4)
+  assert.equal(requests[1]!.length, 6)
 })
 
 
