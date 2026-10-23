@@ -42,7 +42,8 @@ messages are signed (F1 channel) and fenced (run id + epoch).
    and pin, and by the same maintenance timer. An expired pin only removes a permission (counts refuse with
    `unknown_stream`); it grants nothing to anyone, so no second holder can appear. A live home partitioned longer than the
    TTL regains its pin with the next heartbeat (if under the cap).
-5. **Migration 42** (`federation_migrations`, append-only): the two tables. Existing relay pins have no lease and are
+5. **Migration 42**, append-only, in its own ledger `federation_relay_pin_migrations` (the existing tests pin `federation_migrations` to
+   exactly `[34]`): the two tables. Existing relay pins have no lease and are
    treated as expired (they can only be leaked ones: a relay run does not survive its node).
 
 ## Rejected
