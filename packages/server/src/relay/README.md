@@ -432,8 +432,21 @@ from a start's context; `relayRuntimeAttestor` attests it from a fresh observati
 the relay's own connection and model. A host that wants a different judge model on a stock Ollama relay builds
 `ConnectionJudgeModel` itself, without a binding. The role's `temperature` is not sent to a llama-server
 runtime (its client posts only the prompt and the output limit), so the samples of one boundary are drawn with the
-server's own sampling and the cascade's "agreement" is only that. `maxAgeMs` must exceed the wall time of a judge
-sample: the loaded window is observed once per request and checked again before each sample.
+server's own sampling and the cascade's "agreement" is only that.
+
+A judge on any relay runtime (a binding, or a local-only exact meter, which includes the stock Ollama relay) asks it in
+the form the relay's own calls use: `think:false`, a fresh runtime observation (`authorizeDispatch`) before the dispatch,
+and the request pinned exactly (model, options). A thinking model evaluates a request without `think:false` in another form
+than the one the exact counter rendered, which would be `judge_usage_invalid` after paid inference.
+
+**Age and time limits.** One admission (the attestation and the loaded window) serves every sample of a request. Past half of
+`maxAgeMs` it is observed again before the sample and again right after the dispatch authorization, so a runtime whose samples
+each take longer than `maxAgeMs` is not refused on its own admission's age; a refresh that finds another loaded window or
+another model identity is refused. Each refresh is one more observation (a signed round trip on a remote runtime). A sample
+also has a wall limit (`role.sampleTimeoutMs`, default `DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS`, 5 minutes) that aborts the same
+signal the owner's cancel does, so the runtime is stopped and acknowledged first and the verdict is `unavailable` with
+`judge_sample_timeout`; without it a stuck executor holds a cycle for the call deadline of its runtime (30 minutes a call).
+The relay `maxAgeMs` must still be longer than the observations themselves.
 
 **Billing.** A remote judge sample is one more per-call child run on the relay's session, so the
 executor-reported tokens land on that child's R1 ledger atomically with its terminal (F2-c), apart from the

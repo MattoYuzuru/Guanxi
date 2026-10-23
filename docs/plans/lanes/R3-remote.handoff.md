@@ -80,6 +80,35 @@ effects (pre-debit reaches `caps.tokens` earlier, `temperature` is not sent to l
 sample's wall time, the judge ledger tables may remain after a later refusal, local llama-server judge has no child
 row). Docs: a superseded note in `MS1-rehearsal.handoff.md` and `F2-d.handoff.md`.
 
+## Second review round (coordinator, Opus)
+
+Accepted the same-runtime count and dispatch and the billing; asked for the following, each in its own fix commit with a test
+that failed before it (the rest of this file describes the final state):
+
+- **P1** a refused asynchronous source left its promise without a handler, so a rejection ended the host process and wrote the
+  source's text to stderr. Consumed now; a child-process test (exit code, stdout, empty stderr) failed before.
+- **P2-2** the stock Ollama judge counted the `think:false` form and sent another, and skipped the dispatch authorization (with
+  a thinking model every sample was `judge_usage_invalid` after paid inference). With a binding or a local-only meter the judge
+  now sends `think:false`, authorizes the dispatch and pins the request like the transport path. The local fixture's counter and
+  fake server are think-sensitive now and an observation count shows the authorizations; both failed before.
+- **P2-3** the judge's output ceiling is 700 against a relay turn of 1000 (asserted on the remote executor's `n_predict`, which
+  accepts a limit other than the turn, and on the local request; the relay's own calls keep 1000).
+- **P2-4** one admission served every sample: a runtime slower than `maxAgeMs` per sample failed every J2 at the second sample.
+  The attestation and the window are re-observed past half the age (before the sample and after the authorization); other window
+  or identity is refused. Model-level test with a 1.5 s evaluation against a 1 s age failed before.
+- **P2-5** the judged kill points now check the F2-c books after recovery (at most one row per child and only with its completion,
+  none of the executor's reports on the relay run, the judge call's final outcome billed or unbilled), plus a judged kill inside
+  the F2-c transaction (`complete:before_commit`). The judge-off baseline (relay rows equal executor reports call for call) is a
+  short test again, because the judged default had removed it.
+- **P2-6** the "closed" note in `MS1-rehearsal.handoff.md` now says seam implemented, fixture-validated, production wiring open.
+- **P3** the judge context carries the relay store's clock (test failed before); a judge sample has a wall limit
+  (`role.sampleTimeoutMs`, default 5 minutes; a stuck executor stops at it, is acknowledged, the verdict is `unavailable`
+  with `judge_sample_timeout`; the field is optional in the brief schema, so existing brief hashes are unchanged); the vacuous
+  assertion was dropped.
+- **Noted, not changed:** the brief's `executorNodeId` and executor role are not compared with the start at admission; K3's
+  connection usage attributes judge calls to the relay run id (only R1 `run_costs` are kept apart); the judge packet carries gate
+  outputs, the same egress class as the relay's own prompts (scrubbed by the same scrubber).
+
 ## Gates (Mac, Node 26.9.0, shared lock resource `heavy`)
 
 Clean tree at `9fb99f05` (the only later change is this gate table).

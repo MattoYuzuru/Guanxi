@@ -145,10 +145,12 @@ nobody and no model call follows.
 
 ## The R3 judge gap: recorded, not closed
 
-> **Update (R3-remote, 2026-10-23): closed.** Both gaps below are closed by the lane in
-> [`R3-remote.handoff.md`](R3-remote.handoff.md): the public start takes a per-start judge source and the judge model
-> runs on the transport that counts. The rehearsal now runs with the judge on, and the two tripwires described here
-> were replaced by assertions of judge events on the remote relay. The text below is the record as of that lane's base.
+> **Update (R3-remote, 2026-10-23): seam implemented, fixture-validated; production wiring open.** The public start now takes a
+> per-start judge source and the judge model runs on the transport that counts
+> ([`R3-remote.handoff.md`](R3-remote.handoff.md)); the rehearsal runs with the judge on and the two tripwires below were replaced
+> by assertions. What is **not** closed: the production host passes no judge source (`ms1-live-host` owns `index.ts`), and nothing
+> maps the lead's delegation to the `RelayDelegationBrief` the cascade needs, so a relay started by the real host still has no judge
+> until that is written. The text below is the record as of the lane's base.
 
 The rehearsal runs **without a judge** and asserts it (no `judge` event in the relay session; a test that the judge model
 refuses a transport-carrying or async-counting meter and accepts a local one). Two separate gaps stand behind it:
