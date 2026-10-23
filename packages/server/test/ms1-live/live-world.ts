@@ -282,7 +282,7 @@ export class LiveWorld {
     })
     const env = (): NodeJS.ProcessEnv => {
       const base = { ...process.env, OLLAMA_HOST: `http://127.0.0.1:${this.tripwire.port}`, GUANXI_WEB_PORT: '5999' }
-      for (const key of ['GUANXI_API_PORT', 'GUANXI_DATA_DIR', 'PORT', 'HOST', 'GUANXI_MS1_LIVE_CONFIG']) delete (base as Record<string, unknown>)[key]
+      for (const key of ['GUANXI_API_PORT', 'GUANXI_DATA_DIR', 'PORT', 'HOST', 'GUANXI_MS1_LIVE_CONFIG', 'GUANXI_PROVIDER_KEYS_FILE']) delete (base as Record<string, unknown>)[key]
       return base
     }
     this.executor = new LiveNode('executor', this.execConfig, join(this.execDir, 'data'), execApi, execFed, env())

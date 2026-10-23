@@ -13,7 +13,7 @@
     "start": "node src/bin.ts",
     "ms1-live": "node scripts/ms1-live/ms1-live.ts",
     "build": "node scripts/build.mjs",
-    "test": "node --test 'test/**/*.test.ts'",
+    "test": "node --import ./test/setup/no-ambient-key-file.mjs --test 'test/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
