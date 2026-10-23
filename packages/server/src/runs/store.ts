@@ -83,6 +83,8 @@ export class RunStore implements HomeAuthority {
     }
   }
   private readonly options: RunStoreOptions
+  /** The host's explicit always-on assertion; `delegate` refuses `no_always_on_home` without it. */
+  get alwaysOnHome(): boolean { return this.options.alwaysOn === true }
 
   constructor(options: RunStoreOptions) {
     this.options = options
@@ -795,6 +797,11 @@ export class RunStore implements HomeAuthority {
     return this.rows(`SELECT currency,SUM(input_tokens) AS inputTokens,SUM(output_tokens) AS outputTokens,
       CASE WHEN COUNT(cost_microunits)=COUNT(*) THEN SUM(cost_microunits) ELSE NULL END AS costMicrounits
       FROM run_costs WHERE run_id=? GROUP BY currency`, runId)
+  }
+  /** Read-only view of the idempotent cost observations, for consumers that derive a baseline from the ledger. */
+  costEntries(runId: string): { key: string; attemptId: string; inputTokens: number; outputTokens: number; costMicrounits: number | null; currency: string }[] {
+    return this.rows(`SELECT entry_key AS key, attempt_id AS attemptId, input_tokens AS inputTokens, output_tokens AS outputTokens,
+      cost_microunits AS costMicrounits, currency FROM run_costs WHERE run_id=? ORDER BY entry_key`, runId)
   }
   close(): void {
     if (this.closed) return

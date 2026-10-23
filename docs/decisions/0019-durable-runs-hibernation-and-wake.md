@@ -112,8 +112,11 @@ providing `runs.durable`, with migrations 30–31 and transactional K2 `run.life
 Legacy Chat Jobs remain on their compatible state machine. The explicit executor seam owns
 first-model-call observation; the native K4 executor now consumes this API with fenced traces, cost accounting, budgets
 and explicit-input restart recovery (migration 32). No live-model validation is claimed. Remote attempts,
-federation handover, power assertions, full wake packets and external lead protocols remain
-proposed for their later stages. The design status above is not promoted as a whole.
+federation handover and power assertions remain proposed for their later stages. Decisions 5, 8 and 9
+have a fixture-validated single-node consumer for ACP external leads (LW,
+[leads](../../packages/server/src/leads/README.md)): the delegate tool, hibernation, the bounded wake
+packet, `session/load` or seeded resume and the `lead_unavailable` path, without a real vendor CLI.
+The design status above is not promoted as a whole.
 
 ## Evidence
 

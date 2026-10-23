@@ -88,6 +88,42 @@ export const quotaObservationSchema = z.object({
 export interface AgentOutput {
   text: string
   stopReason: string
+  /** Lead turns only: the latest cumulative usage the agent reported for its ACP session. */
+  usage?: LeadUsage | null
+}
+
+/** LW lead extension: an ACP turn that exposes a node-owned HTTP MCP tool, can load a saved
+ * session and can be hibernated cooperatively. Nothing here carries a credential from a vendor. */
+export interface LeadMcpServer {
+  type: 'http'
+  name: string
+  url: string
+  headers: { name: string; value: string }[]
+}
+/** Cumulative per ACP session, as reported by the agent; null means not reported. */
+export interface LeadUsage {
+  inputTokens: number | null
+  outputTokens: number | null
+  cost: { amount: number; currency: string } | null
+}
+export interface LeadSessionInfo {
+  acpSessionId: string
+  /** `seeded`: a resume was requested but a new session replaced it. */
+  mode: 'new' | 'load' | 'seeded'
+  loadSession: boolean
+}
+export interface LeadTurn {
+  mcpServers: readonly LeadMcpServer[]
+  resume: { acpSessionId: string } | null
+  /** Prompt used instead of the main one when a requested resume opens a new session. */
+  seededPrompt?: string
+  /** Aborting asks the agent to cancel its turn and return its final usage. */
+  hibernateSignal: AbortSignal
+  cancelGraceMs?: number
+  onSession(info: LeadSessionInfo): void
+  /** First `session/update` of the prompt, of any kind (including dropped thought chunks). */
+  onActivity(): void
+  onUsage(usage: LeadUsage): void
 }
 
 /** Durable same-node admission is local account coordination, never a vendor cap or lease. */
@@ -105,7 +141,18 @@ export interface AdmissionHolder {
   createdAt: string
   state: AdmissionState
 }
+/** Boot reconciliation facts (v3). They never authorize a signal on their own: see `reconcileAdmission`. */
+export interface AdmissionProcess {
+  ownerPid: number
+  /** Real boot identifier of the machine boot that wrote the holder; null when it could not be read (no reboot is then provable). */
+  bootId: string | null
+  phase: 'prepared' | 'spawning' | 'running'
+  groupId: number | null
+  groupStartedAt: number | null
+}
 export interface AdmissionRequest {
+  /** The node process that owns the holder; stored so a later boot can prove it dead. */
+  process?: { pid: number; bootId: string | null }
   instanceId: string
   owner: string
   adapter: AdapterId

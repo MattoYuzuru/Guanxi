@@ -1,5 +1,5 @@
 // Original offline fixture. Executed only from an executable copy in a temporary directory.
-import { readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
@@ -48,6 +48,91 @@ writeFileSync(join(root, 'environment.json'), JSON.stringify({
   gooseProvider: process.env.GOOSE_PROVIDER, gooseModel: process.env.GOOSE_MODEL, gooseDisableKeyring: process.env.GOOSE_DISABLE_KEYRING,
   gooseMode: process.env.GOOSE_MODE,
 }))
+// LW lead scenarios (`config.lead`): an ACP agent that calls the node's HTTP MCP tool, can load a
+// saved session and logs every protocol-visible fact to an append-only JSONL shared by all processes.
+const lead = config.lead
+const leadLog = (event, extra = {}) => lead && appendFileSync(join(root, 'lead-events.jsonl'), JSON.stringify({ pid: process.pid, event, ...extra }) + '\n')
+const leadEvents = () => existsSync(join(root, 'lead-events.jsonl')) ? readFileSync(join(root, 'lead-events.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : []
+let mcp = null
+let toolAbort = null
+let leadFinish = null
+const sessionUpdate = (sessionId, update) => send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update } })
+const usageFile = sessionId => join(root, `usage-${sessionId}.json`)
+const leadUsage = sessionId => {
+  // `usageByTurn[n]` is the CUMULATIVE usage reported by the n-th prompt this agent ever received (any process).
+  const turn = leadEvents().filter(e => e.event === 'prompt').length - 1
+  const scripted = (lead.usageByTurn ?? [])[turn]
+  if (scripted) return { currency: 'USD', ...scripted }  // an entry without `amount` reports no cost that turn
+  const base = existsSync(usageFile(sessionId)) ? JSON.parse(readFileSync(usageFile(sessionId), 'utf8')) : { inputTokens: 0, outputTokens: 0, amount: 0 }
+  const per = lead.usagePerTurn ?? { inputTokens: 0, outputTokens: 0, amount: 0 }
+  const next = { inputTokens: base.inputTokens + per.inputTokens, outputTokens: base.outputTokens + per.outputTokens, amount: base.amount + (per.amount ?? 0), currency: 'USD' }
+  writeFileSync(usageFile(sessionId), JSON.stringify(next))
+  return next
+}
+const reportUsage = sessionId => {
+  const total = leadUsage(sessionId)
+  if (total.amount !== undefined && (lead.usagePerTurn?.amount !== undefined || lead.usageByTurn)) sessionUpdate(sessionId, { sessionUpdate: 'usage_update', used: 1, size: 100, cost: { amount: total.amount, currency: total.currency } })
+  return lead.usageOmitted ? undefined : { totalTokens: total.inputTokens + total.outputTokens, inputTokens: total.inputTokens, outputTokens: total.outputTokens }
+}
+async function mcpCall(body, signal) {
+  const response = await fetch(mcp.url, { method: 'POST', signal, body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...Object.fromEntries(mcp.headers.map(h => [h.name, h.value])) } })
+  return { status: response.status, body: response.status === 202 ? null : await response.json() }
+}
+async function leadPrompt(frame) {
+  const sessionId = frame.params.sessionId
+  const text = frame.params.prompt[0].text
+  promptId = frame.id
+  leadLog('prompt', { sessionId, text })
+  const finish = (stopReason, extra = {}) => {
+    leadFinish = null
+    const usage = reportUsage(sessionId)
+    reply({ id: promptId }, { stopReason, ...(usage ? { usage } : {}) })
+    leadLog('turn_end', { sessionId, stopReason, ...extra })
+  }
+  leadFinish = finish
+  if (lead.hang) return
+  const calls = leadEvents().filter(e => e.event === 'tool_call').length
+  const resumed = text.includes('guanxi.wake/v1')
+  const brief = (lead.briefs ?? [])[calls]
+  if (resumed && lead.noiseFirst) {
+    // Bookkeeping updates are not model work and must not acknowledge the wake.
+    sessionUpdate(sessionId, { sessionUpdate: 'available_commands_update', availableCommands: [] })
+    leadLog('noise_sent')
+    await new Promise(resolve => setTimeout(resolve, 400))
+  }
+  if (!(lead.silentTool && brief) && !(lead.noUpdates && resumed)) {
+    sessionUpdate(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'PRIVATE_REASONING_FIXTURE' } })
+    sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: resumed ? 'resumed lead turn' : 'planning delegation' } })
+  }
+  // A careless agent that repeats its own MCP configuration (with the bearer header) in its answer.
+  if (lead.echoConfig) sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `config ${JSON.stringify(mcp)}` } })
+  if (resumed && lead.crashOnResume) { leadLog('crash', { sessionId }); process.exit(31) }
+  if (resumed && lead.resumeDelayMs) await new Promise(resolve => setTimeout(resolve, lead.resumeDelayMs))
+  if (!brief || (resumed && !lead.redelegate)) { finish('end_turn', { resumed }); return }
+  toolAbort = new AbortController()
+  try {
+    await mcpCall({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fixture-lead', version: '1' } } }, toolAbort.signal)
+    await mcpCall({ jsonrpc: '2.0', method: 'notifications/initialized' }, toolAbort.signal)
+    const listed = await mcpCall({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, toolAbort.signal)
+    leadLog('tool_list', { tools: listed.body.result.tools.map(t => t.name) })
+    leadLog('tool_call', { sessionId })
+    const firstCall = mcpCall({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'guanxi_delegate', arguments: brief } }, toolAbort.signal)
+    firstCall.catch(() => undefined)
+    if (lead.doubleCall) {
+      // Not tied to the cancel signal: the answer must arrive even while the first call is held.
+      const second = await mcpCall({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'guanxi_delegate', arguments: brief } }, new AbortController().signal)
+      leadLog('tool_second', { isError: second.body.result.isError === true, text: second.body.result.content[0].text })
+    }
+    const called = await firstCall
+    // Only reached when the node answers: either a tool error or (unexpectedly) a result.
+    leadLog('tool_answer', { status: called.status, isError: called.body?.result?.isError === true, text: called.body?.result?.content?.[0]?.text ?? null })
+    sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'tool answered' } })
+    finish('end_turn', { resumed })
+  } catch (error) {
+    if (!toolAbort.signal.aborted) { leadLog('tool_failed', { name: error?.name }); finish('end_turn') }
+  }
+}
 let initialized = false
 let authenticated = tape.adapter !== 'gemini-cli'
 let model = 'default'
@@ -79,6 +164,8 @@ lines.on('line', line => {
       if (config.scenario === 'unknown-response') send({ jsonrpc: '2.0', id: 'PRIVATE_REASONING_FIXTURE', result: {} })
       if (config.scenario === 'oversize') { process.stdout.write(JSON.stringify({ x: 'x'.repeat(16384) }) + '\n'); return }
       const init = structuredClone(tape.initialize)
+      if (lead) init.agentCapabilities = { loadSession: lead.loadSession === true, mcpCapabilities: { http: lead.mcpHttp !== false } }
+      leadLog('initialize', { loadSession: lead?.loadSession === true })
       if (config.scenario === 'wrong-version') {
         if (init.agentInfo) init.agentInfo.version = '999.0.0'
         else init.userAgent = 'codex_cli_rs/999.0.0'
@@ -93,8 +180,24 @@ lines.on('line', line => {
       authenticated = true; reply(frame, {}); return
     }
     if (frame.method === 'session/new') {
+      if (lead) {
+        mcp = frame.params.mcpServers.find(server => server.type === 'http') ?? null
+        const sessionId = `lead-session-${leadEvents().filter(e => e.event === 'session_new').length + 1}`
+        leadLog('session_new', { sessionId, servers: frame.params.mcpServers.length, authorized: !!mcp?.headers.some(h => h.name === 'Authorization' && /^Bearer [A-Za-z0-9_-]{32,}$/.test(h.value)) })
+        reply(frame, { ...structuredClone(tape.newSession), sessionId }); return
+      }
       if (!authenticated || frame.params.mcpServers.length !== 0) process.exit(17)
       reply(frame, tape.newSession); return
+    }
+    if (frame.method === 'session/load') {
+      leadLog('session_load_requested', { sessionId: frame.params.sessionId })
+      if (!lead || lead.loadSession !== true || lead.loadFails) { send({ jsonrpc: '2.0', id: frame.id, error: { code: -32602, message: 'unknown session' } }); return }
+      mcp = frame.params.mcpServers.find(server => server.type === 'http') ?? null
+      leadLog('session_load', { sessionId: frame.params.sessionId, servers: frame.params.mcpServers.length })
+      // History replay arrives before the response and must never become output of the new turn.
+      sessionUpdate(frame.params.sessionId, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'HISTORY-REPLAY-USER' } })
+      sessionUpdate(frame.params.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'HISTORY-REPLAY-ASSISTANT' } })
+      reply(frame, { configOptions: structuredClone(tape.newSession.configOptions) }); return
     }
     if (frame.method === 'session/set_config_option') {
       model = frame.params.value
@@ -102,6 +205,7 @@ lines.on('line', line => {
       configOptions[0].currentValue = model
       reply(frame, { configOptions }); return
     }
+    if (frame.method === 'session/prompt' && lead) { void leadPrompt(frame); return }
     if (frame.method === 'session/prompt') {
       if (model !== (config.expectedModel ?? (tape.adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture'))) process.exit(18)
       promptId = frame.id
@@ -149,7 +253,11 @@ lines.on('line', line => {
       for (const notification of tape.notifications) send(replace(notification))
       reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } }); return
     }
-    if (frame.method === 'session/cancel') return
+    if (frame.method === 'session/cancel') {
+      // `ignoreCancel`: an agent that never answers the cancel; the node's grace timeout and process kill must cope.
+      if (lead) { leadLog('cancel', { sessionId: frame.params.sessionId }); toolAbort?.abort(); if (!lead.ignoreCancel) leadFinish?.('cancelled'); leadFinish = null }
+      return
+    }
     if (frame.method === 'turn/interrupt') { reply(frame, {}); return }
     send({ id: frame.id, error: { code: -32601, message: 'Fixture method unavailable' } })
   } catch { process.exit(23) }
