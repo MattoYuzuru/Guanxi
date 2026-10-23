@@ -28,7 +28,7 @@ executed **and counted** by the **executor** node's operational llama-server, th
 ## Commits
 
 `0266b67c` plan · `d8a3a11f` feature · `5093aff2`, `a961a896` tests · `6dc32b08` docs/identity tag · `74ae5ca0` window test ·
-review fixes `dda21413` (production) with tests `6fe46d78`, `1613b896`, `4da1d657` · merge of main `6e03f94c` · this hand-off.
+review fixes `dda21413` (production) with tests `6fe46d78`, `1613b896`, `4da1d657` · merge of main `6e03f94c` · hand-off `c8b0d2f9`, `988ab23c` · cross-check fixes below.
 
 ## Gates (Mac, Node 26.9.0, shared lock resource `heavy`)
 
@@ -41,7 +41,7 @@ review fixes `dda21413` (production) with tests `6fe46d78`, `1613b896`, `4da1d65
 | `agent-dev … npm run test`, receipt `check-g7btc327`, head `6e03f94c` | pass: core 2535 tests, 2533 pass, 0 fail, 2 skipped (the two pre-existing Linux-only tests); kernel, web, ui, ui-gates, bench and codemod suites 0 fail. The hand-off file was created while it ran, so the receipt reports `source_changed`; it is an observed result, not a reusable certificate |
 | `agent-dev … npm run build`, receipt `check-rse4f65b` | pass, exit 0 |
 
-**New: 48** = `remote-runtime.test.ts` 36, `remote-relay.test.ts` 7 (public start end to end), `budget-async.test.ts` 2,
+**New: 58** (first round 48) = `remote-runtime.test.ts` 44, `remote-relay.test.ts` 9 (public start end to end), `budget-async.test.ts` 2,
 `llama-server/expected-transport.test.ts` 3. **Regression envelope:** the rest of the core run, 2487 cases including the 224 relay and
 llama-server cases, 242 federation, F2-a/b/c, K3 connections and R1 cases re-run directly (466/466, zero skips, before the merge of main).
 Two earlier selected runs: 405/405 after the feature commit. The `Atomics.wait` probe and the mutation runs above are in the new files.
@@ -89,8 +89,8 @@ a P3 list; all P1/P2 were fixed in `dda21413` with tests in `6fe46d78`, `1613b89
    F1 requires a private authenticated link (Tailscale/TLS) that this slice does not provide or test.
 2. **No model residency lease.** The executor's llama-server stays resident; the F2 reservation is only a per-call process-local
    governor permit. Observe and count are authorized by owner-device trust plus the pinned relay run, not by a session grant.
-3. **The executor-side run pin is host-provisioned.** `RemoteRelayRuntimeOptions.onBind` must create the explicit F1 pin;
-   propagation of run pins between nodes is not built. Without it every bound request is refused.
+3. **Pins** are made by the signed pin message (see the cross-check fixes below). A pin left behind when the executor cannot be
+   reached at `release()` keeps serving no run of that home, is bounded by the per-peer cap and is not reaped at executor boot.
 4. **Toolful remote steps are out of scope:** tools, workspace and gates stay on the home; the remote job is text-only.
 5. **Transport budget.** One signed message is 1 MiB, so a prompt larger than about that is reported above every ceiling and
    packed down; a 128k-token window of dense text or code can hit it.
@@ -114,3 +114,40 @@ and the two service READMEs.
 Real-binary smoke of the executor path on the Mac with a tiny GGUF, then the Fedora two-host run over the real private
 transport; pin propagation for relay runs; a residency lease for the resident model; pruning of finished child runs; then MS1
 measurements on top.
+
+## Independent cross-check fixes
+
+An independent Opus cross-check accepted the lane with one P2 and P3 items. Each fix has its own commit and a test that failed
+(or, where noted, was mutation-checked) before it.
+
+- **P2 pin seam (commit "pin the relay run through a signed, awaited pin message").** `onBind` was synchronous, ran inside the
+  home SQLite transaction and could only work because the fixture wrote the executor's replicas directly. Now the relay run id is
+  allocated before the transaction and `RelayStarts` awaits `prepareBind`: a signed `POST /attempts/runtime/pin` (and `unpin`)
+  whose executor-signed ack echoes the request. Creation then verifies the first attempt's epoch and makes no remote write.
+  A refused pin refuses the start with no run, session or checkout; a failed creation or `release()` unpins. The fixture no
+  longer writes any relay pin: the two-node tests prove the pin exists only through the message, is bound to the asking home, is
+  removed on release, and that a completed e2e run leaves none. Pins live in a `relay:` namespace (`RELAY_PIN_PREFIX`), so an
+  ordinary pinned run is never a relay parent (P3.3 "live relay run"). Limits are named policy, `DispatchPolicy.relayLimits`:
+  `maxPinsPerPeer` 16 and `maxConcurrentCountsPerPeer` 4, refused with 429 (the concurrent-count cap has its own test).
+- **P3.1 epoch wording.** R1 leases are always epoch 1, so the epoch recorded in a pin is a consistency check between pin and
+  attempt, not a security boundary. The protection is the home's database fence plus the F2-b renewal chain of each child. Plan,
+  READMEs and this hand-off now say so; the made-up-epoch-pin test became a pin/attempt consistency test (`bind` refuses a
+  different epoch).
+- **P3.2 TTL in the grant.** `holderTtlMs` is signed in the grant; the executor holder uses the smaller of it and its own TTL
+  (test: home 300 ms, executor 3000 ms, the holder is lost at the home's TTL). The home's cancel wait stays its own TTL.
+- **P3.4** An offer carrying `parent` is refused at offer time from a minor-3 peer or by an executor without the relay runtime
+  (test mutation-checked; the check landed with the pin commit).
+- **P3.5 ledgers.** There is no session-level total in R1, so none could sum them by accident. The sanctioned one is
+  `AttemptDispatch.sessionCosts(sessionId)`: `own` excludes relay children, `relayChildren` is returned apart; asserted in the
+  end-to-end test (a mutation that merges them fails it). Child runs are identified by their offer's `parent`, no schema change.
+- **P3.6** The README names the field `parent: {runId, epoch}`.
+- **P3.7 skew.** A test with the executor clock 2 s ahead and 2 s behind proves freshness uses the home's send time (mutation
+  to the executor's stamp fails it). A larger skew breaks the existing F2-a reservation expiry (compared on the home's wall
+  clock against a reservation capped by `maxReservationMs`), which predates F2-d.
+- **P3.8 oversized terminal.** An undeliverable terminal result (about 1 MiB of content) was retried forever while the home waited
+  out its 30-minute deadline. The executor now reports a failed terminal with reason `result_too_large` and the usage it spent;
+  the call fails in milliseconds (the test hung before the fix). `FEDERATION_BODY_BYTES` moved to `federation/crypto.ts`
+  (re-exported from `routes.ts`) to avoid an import cycle.
+
+A mutation check applied during this round also caught a slip of mine: a `git checkout` restoring a mutated file erased an
+uncommitted edit (`sessionCosts`); the next commit restores it and the typecheck and the test caught it before the gates.
