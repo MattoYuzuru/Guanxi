@@ -40,7 +40,16 @@ export const piTransport: PiTransport = {
     switch (model.api) {
       case 'anthropic-messages': return consume((await import('@earendil-works/pi-ai/api/anthropic-messages')).streamSimple(model as Model<'anthropic-messages'>, transcript, options))
       case 'openai-responses': return consume((await import('@earendil-works/pi-ai/api/openai-responses')).streamSimple(model as Model<'openai-responses'>, transcript, options))
-      case 'openai-completions': return consume((await import('@earendil-works/pi-ai/api/openai-completions')).streamSimple(model as Model<'openai-completions'>, transcript, options))
+      case 'openai-completions': {
+        const wire = await import('@earendil-works/pi-ai/api/openai-completions')
+        // Discovery supplies IDs, not output/context limits. Let the owner endpoint
+        // apply its defaults rather than borrowing another model's catalog ceiling.
+        return consume(piModels(model.provider).includes(model)
+          ? wire.streamSimple(model as Model<'openai-completions'>, transcript, options)
+          : wire.stream(model as Model<'openai-completions'>, transcript, {
+            ...options, reasoningEffort: options.reasoning === 'off' ? undefined : options.reasoning,
+          }))
+      }
       case 'google-generative-ai': return consume((await import('@earendil-works/pi-ai/api/google-generative-ai')).streamSimple(model as Model<'google-generative-ai'>, transcript, options))
       default: throw new Error('Unsupported model wire protocol')
     }

@@ -1,13 +1,14 @@
 # Model access (K3)
 
-**Status:** implemented; K2 scrubber integrated, locally validated with fake credentials · **Updated:** 2026-10-21
+**Status:** implemented; K2 scrubber integrated, locally validated with fake credentials · **Updated:** 2026-10-23
 
 `guanxi.connections` is a T0 kernel plugin requiring `egress.scrubber`, `ollama` and
 `governor`. It provides `connections.registry` (`Connections`) and
 `connections.egress-readiness` (`ready`, `assertReady()`); its vault is private.
-`start()` loads it after the legacy context. This slice does not reroute the
-legacy Chat or plaintext legacy search settings; K4 consumes the new model boundary and K5
-executes the registered subscription CLIs. Search and STT are service connection roles.
+`start()` loads it after the legacy context. D-208 connects provider Chat to this boundary;
+local Chat retains the existing Ollama path. Plaintext legacy search settings are unchanged.
+K4 consumes the model boundary and K5 executes the registered subscription CLIs.
+Search and STT are service connection roles.
 
 ## Boundaries
 
@@ -34,9 +35,15 @@ executes the registered subscription CLIs. Search and STT are service connection
   unload retains them in the long-lived scrubber; registration replaces by reference on reload.
   A fresh activation refuses model/artifact egress if registration is incomplete. Buffers are cleared where possible; JavaScript string erasure is not a
   guarantee.
-- `complete()` selects an immutable pi-ai catalog model, scrubs the complete context,
+- `complete()` selects a pi-ai catalog model or an ID discovered for an owner-pinned endpoint,
+  scrubs the complete context,
   injects the vault key at dispatch, scrubs the full response and records usage. It exposes
-  no login API, arbitrary headers, base URL override or environment credential fallback.
+  no login API, arbitrary headers, per-request base URL override or environment credential fallback.
+  D-208 explicitly relaxes the original prohibition on base URL overrides: an OpenAI model
+  connection may have an immutable `baseUrl`. HTTPS is required except literal loopback HTTP;
+  credentials, query strings and fragments are refused. Only that root's `/models` and
+  `/chat/completions` paths receive its key; redirects are refused. Changing an imported root
+  creates a separate connection, preserving the endpoint of existing Chats.
   Anthropic OAuth tokens are rejected globally, including under another provider's name.
   Anthropic's own connection additionally requires its API-key token family.
 - Google uses pi-ai's native SDK transport because that adapter rejects custom fetch. Its
@@ -137,3 +144,55 @@ registration contract and separately loadable adapters remain future integration
 this slice does not claim that target boundary is implemented. CLI packaging explicitly
 declares the native keychain dependency; the browser brand export remains compatible via
 the shared node-safe brand module in `@guanxi/contract`.
+
+
+## D-208 trusted import and Chat
+
+`StartOptions.providerKeysFile` or `GUANXI_PROVIDER_KEYS_FILE` names an owner-selected dotenv
+file. `guanxi connections import --file PATH [--data-dir PATH] [--json]` imports without an
+HTTP listener, model request or file-reading HTTP API. The Node dotenv parser treats the file
+as data, including literal variable/shell substitutions. Supported names: `OPENAI_API_KEY`,
+optional `OPENAI_API_URL` (API root including `/v1` when required), `DEEPSEEK_API_KEY`,
+`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`. Unknown and empty keys are ignored.
+No dotenv values enter `process.env` or act as ambient credential fallbacks.
+
+Import unlocks this process's interactive vault. Standalone CLI disposal locks it again;
+boot import leaves it unlocked for Chat. No unattended permission is granted. Migration 3 adds
+`dotenv_imports`, a dedicated identity per account/provider/root. Repeated identical input
+returns `unchanged`; new values rotate, preserving retired-key scrubbing. Values are registered
+before any imported connection metadata is persisted. CLI results expose connection IDs,
+provider names and created/rotated/unchanged facts only. Import errors use fixed summaries.
+Imports are serialized within one registry; simultaneous standalone processes may require a
+repeat after a SQLite/identity conflict. Restart the running node after a standalone import so
+its long-lived scrubber registers the new and retired keys before dispatch.
+
+An unlocked, keyed model connection contributes generic groups to `GET /api/threads/models`.
+The web picker combines these with the existing local-model projection. It quietly refreshes
+provider groups every 15 seconds and on focus, retaining the last successful projection.
+Discovery uses the root's `/models` when valid/nonempty, otherwise the pinned pi-ai catalog;
+both outcomes cache for 60 seconds and carry source, observation time and confidence. An API
+root advertises IDs only: unknown limits remain unasserted, the compatible wire uses backend
+defaults, and custom-endpoint monetary cost stays unknown rather than borrowing public prices.
+Normal provider usage receipts carry a pi-ai catalog estimate, source/time and confidence.
+
+Provider selections are opaque `k3:<connection UUID>:<encoded model ID>` strings in the existing
+Thread model field; old local names remain readable. Provider models are Chat-only. Their
+turns use K3 `complete()` under the existing `ChatJobExecutionOwner`, without taking the local
+hardware governor. Keys are scrubbed from command content before durable input/title storage
+and from complete provider context/output. Stream text withholds possible terminal secret
+prefixes across chunks; compatibility transports without streaming return one scrubbed reply.
+The existing durable Job/SSE owner retains subscriber-independent execution, locked-vault
+idempotent replay, explicit Stop and interrupted recovery without inference continuation.
+Provider reasoning text is not projected into legacy Chat; provider compaction is explicitly
+refused until a K3-aware compaction implementation exists.
+
+Both local and provider Chat prepend `agent/harness-prompt.ts`, localized by node UI settings:
+product name from the brand module, the local-node label, project display name only, and the
+harness's ownership of tools/permissions. This is a fixed default; per-project editing is
+future work. D-208 authorizes this default while ADR-0025 benchmark evidence is unavailable;
+request assertions are not evidence of model quality or benchmark non-inferiority.
+
+Rollback preserves migration 3, the sidecar and OS wrapping keys. Older binaries cannot consume
+new connection fields/provider model selections: do not downgrade a node with provider Chats.
+No live provider, owner dotenv or native keychain validation was performed for this lane.
+The operator-only smoke is `scripts/chat-provider-smoke.ts`; see the lane handoff for its command.

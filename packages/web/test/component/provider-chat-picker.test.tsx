@@ -41,3 +41,19 @@ it('keeps local choices when provider discovery fails', async () => {
   expect(await screen.findByRole('option', { name: 'local-model' })).toBeTruthy()
   expect(screen.getAllByRole('option', { name: 'local-model' })).toHaveLength(1)
 })
+
+
+it('switches from a selected provider to a visible local model before Agent creation', async () => {
+  vi.mocked(api.listModels).mockResolvedValue({ models: [{ name: 'local-model', capabilities: ['completion'], contextLimit: { state: 'unknown' }, fit: { level: 'unknown' } }] } as never)
+  const create = vi.spyOn(api, 'createThread').mockResolvedValue({ id: 'created-agent' } as never)
+  render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
+  const option = await screen.findByRole('option', { name: 'owner-model' })
+  fireEvent.change(option.closest('select')!, { target: { value: selection } })
+  const modes = screen.getAllByRole('button', { pressed: false })
+  fireEvent.click(modes[0]!)
+  await waitFor(() => expect(screen.queryByRole('option', { name: 'owner-model' })).toBeNull())
+  fireEvent.click(screen.getByRole('button', { name: 'Создать диалог' }))
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+  expect(create.mock.calls[0]![0].model).toBe('local-model')
+  expect(create.mock.calls[0]![0].mode).toBe('agent')
+})

@@ -167,7 +167,8 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   })
 
   useEffect(() => {
-    if (model) return
+    if (model && !(mode === 'agent' && parseChatModelSelection(model))) return
+    if (mode === 'agent' && parseChatModelSelection(model)) setModel('')
     if (availableModels.length === 0) {
       const first = providerGroups[0]?.models[0]?.selection
       if (first) setModel(first)
@@ -175,13 +176,13 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
     }
     const preferred = settings.data?.defaultModel
     setModel(
-      (preferred && availableModels.some((item) => item.name === preferred)
+      (preferred && !parseChatModelSelection(preferred) && availableModels.some((item) => item.name === preferred)
         ? preferred
         : availableModels.find((item) => !item.capabilities.includes('embedding'))?.name) ??
         availableModels[0]?.name ??
         '',
     )
-  }, [availableModels, providerGroups, model, settings.data?.defaultModel])
+  }, [availableModels, providerGroups, model, mode, settings.data?.defaultModel])
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
@@ -292,7 +293,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium">{translate('chat.create.model')}</span>
-            {models.loading ? (
+            {models.loading && providerGroups.length === 0 ? (
               <Skeleton className="h-8 w-full" />
             ) : (
               <Select
@@ -544,7 +545,7 @@ function ThreadPage({
               </Link>
             )}
             <div className="mt-0.5 flex items-center gap-2 text-2xs text-muted">
-              <span className="truncate font-mono">{chat.thread.model}</span>
+              <span className="truncate font-mono">{parseChatModelSelection(chat.thread.model)?.modelId ?? chat.thread.model}</span>
               <ContextChip context={chat.context} />
             </div>
           </div>
@@ -1261,7 +1262,7 @@ function ThreadSidebar({
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
               <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-secondary">
-                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : thread.model}</span>
+                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : parseChatModelSelection(thread.model)?.modelId ?? thread.model}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>
             </Link>

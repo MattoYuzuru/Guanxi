@@ -124,10 +124,11 @@ export class Connections {
       }
       this.store.db.exec('BEGIN IMMEDIATE')
       try {
-        for (const { entry, row, same } of prepared) {
+        const refs = prepared.map(({ entry, same }) => same ? null : this.#vault.put(accountId, entry.value))
+        for (const [index, { entry, row, same }] of prepared.entries()) {
           const connection = row ?? this.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
             provider: entry.provider, auth: 'api_key', ...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}) })
-          if (!same) this.saveImportedSecret(accountId, connection.id, entry.value)
+          if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
           if (!row) this.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)')
             .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)
           imported.push({ connectionId: connection.id, provider: entry.provider, action: !row ? 'created' : same ? 'unchanged' : 'rotated' })
@@ -137,8 +138,7 @@ export class Connections {
       } catch { this.store.db.exec('ROLLBACK'); throw new ConnectionError('validation_failed', 'Provider key import failed') }
     })
   }
-  private saveImportedSecret(accountId: string, id: string, value: string) {
-    const ref = this.#vault.put(accountId, value)
+  private saveImportedSecret(accountId: string, id: string, ref: string) {
     const connection = this.store.get(accountId, id)
     this.#vault.prepareUnattended(accountId, id, connection.unattended && this.#vault.unattendedAvailable, ref)
     this.store.setSecret(accountId, id, ref)
@@ -167,8 +167,8 @@ export class Connections {
       })
       const at = new Date().toISOString()
       const models = this.scrubber.scrub(result)
-      this.discovered.set(id, { at, models, source: `${new URL(connection.baseUrl).host}/models` })
-      return { models, source: `${new URL(connection.baseUrl).host}/models`, observedAt: at, confidence: 'medium' as const }
+      this.discovered.set(id, { at, models, source: `${connection.baseUrl.replace(/\/+$/, '')}/models` })
+      return { models, source: `${connection.baseUrl.replace(/\/+$/, '')}/models`, observedAt: at, confidence: 'medium' as const }
     } catch {
       // Cache fallback too: quiet background polling must not hammer a failing endpoint.
       const catalog = fallback()

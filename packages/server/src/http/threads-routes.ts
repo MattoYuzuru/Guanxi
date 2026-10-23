@@ -1,3 +1,4 @@
+import { chatIdempotencyScope } from '../jobs/chat-execution.ts'
 import { assertChatSelection, providerChatGroups } from '../connections/chat.ts'
 import { chatModelsResponse, parseChatModelSelection } from '@guanxi/contract'
 /**
@@ -556,8 +557,10 @@ export function threadsRoutes(app: AppContext): Hono {
     if (thread.workspaceId && !workspace) {
       return notFound(context, 'workspace_not_found', 'Рабочая директория не найдена')
     }
+    const replay = sendBody.idempotencyKey
+      ? app.jobs.chatCommand(chatIdempotencyScope(threadId), sendBody.idempotencyKey) : null
     try {
-      await assertChatSelection(app,
+      if (!replay) await assertChatSelection(app,
         thread.model,
         thread.options.numCtx,
         context.req.raw.signal,

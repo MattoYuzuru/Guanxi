@@ -30,3 +30,17 @@ start key, including preparation before a run ID exists. If acknowledgement is u
 after the client's explicit five-second wait, status is interrupted/cancellation_unconfirmed;
 the client does not claim cleanup. This command accepts only loopback HTTP node URLs. It never
 prints plan contents, tool output or reasoning. Relay has no UI in this slice.
+
+
+## Import provider keys (D-208)
+
+```bash
+guanxi connections import --file /absolute/path/to/owner.env --data-dir /absolute/path/to/node-data --json
+```
+
+This local command creates or rotates K3 vault connections without HTTP or provider calls.
+It prints references and action facts only. It requires access to this node's OS wrapping key.
+See [Connections](../server/src/connections/README.md#d-208-trusted-import-and-chat) for supported
+keys and endpoint rules. Restart an already running node after standalone import. Alternatively,
+start it with `GUANXI_PROVIDER_KEYS_FILE` naming the file; boot import leaves the vault unlocked
+for interactive Chat and never grants unattended consent.

@@ -9,7 +9,7 @@ import { connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, ch
 import { parseProviderKeys, importProviderKeysFile } from '../../src/connections/dotenv.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
 import { Connections } from '../../src/connections/service.ts'
-import { piModels, type PiTransport } from '../../src/connections/pi.ts'
+import { piModels, piTransport, type PiTransport } from '../../src/connections/pi.ts'
 import { Vault } from '../../src/vault/vault.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { SafeTextStream } from '../../src/connections/safe-stream.ts'
@@ -22,7 +22,7 @@ import { JobStore } from '../../src/store/jobs.ts'
 import { JobService } from '../../src/jobs/service.ts'
 import { SettingsStore } from '../../src/store/settings.ts'
 import { WorkspaceStore } from '../../src/store/workspaces.ts'
-import { ChatJobExecutionOwner } from '../../src/jobs/chat-execution.ts'
+import { ChatJobExecutionOwner, chatRequestFingerprint } from '../../src/jobs/chat-execution.ts'
 import { ApprovalGate } from '../../src/agent/approvals.ts'
 import { PrefillTracker } from '../../src/context/usage.ts'
 import { threadsRoutes } from '../../src/http/threads-routes.ts'
@@ -78,6 +78,9 @@ test('base URL rejects insecure, credential-bearing, query and non-OpenAI roots'
 })
 
 test('dotenv file import is idempotent, rotates, preserves retired scrubbing and hides canaries in every public surface', async t => {
+  const logs: string[] = []
+  for (const method of ['log', 'warn', 'error', 'info', 'debug'] as const)
+    t.mock.method(console, method, (...args: unknown[]) => { logs.push(args.map(String).join(' ')) })
   const f = await setup(t), first = canary(), second = canary()
   const file = join(f.dir, 'fixture.env')
   await writeFile(file, `OPENAI_API_KEY=${first}\nDEEPSEEK_API_KEY=${second}`)
@@ -91,7 +94,7 @@ test('dotenv file import is idempotent, rotates, preserves retired scrubbing and
   const rotated = await importProviderKeysFile(f.service, 'local', file)
   assert.deepEqual(rotated.imported.map(row => row.action), ['rotated', 'unchanged'])
   assert.equal(f.service.snapshot('local').connections.length, 2)
-  const surfaces = JSON.stringify([created, repeated, rotated, f.service.snapshot('local'), f.scrubber.scrub(`${first} ${second}`)])
+  const surfaces = JSON.stringify([logs, created, repeated, rotated, f.service.snapshot('local'), f.scrubber.scrub(`${first} ${second}`)])
   for (const secret of [first, second]) {
     assert.ok(!surfaces.includes(secret))
     for (const suffix of ['', '-wal']) assert.ok(!(await readFile(join(f.dir, `connections.sqlite${suffix}`))).includes(Buffer.from(secret)))
@@ -129,7 +132,7 @@ test('custom connection discovers models with explicit credentials, refuses redi
   const id = await imported(f.service, value, 'https://api.example.invalid/v1')
   const catalog = await f.service.chatModels('local', id)
   assert.deepEqual(catalog.models, ['owner-model'])
-  assert.equal(catalog.source, 'api.example.invalid/models')
+  assert.equal(catalog.source, 'https://api.example.invalid/v1/models')
   assert.ok(Number.isFinite(Date.parse(catalog.observedAt)))
   assert.deepEqual(calls, [{ url: 'https://api.example.invalid/v1/models', redirect: 'error', auth: `Bearer ${value}` }])
   await f.service.chatModels('local', id)
@@ -138,12 +141,15 @@ test('custom connection discovers models with explicit credentials, refuses redi
 })
 
 test('discovery failure falls back to catalog and locked/service/keyless connections are absent from picker', async t => {
-  const { service } = await setup(t)
+  let requests = 0
+  const { service } = await setup(t, undefined, async () => { requests++; throw new Error('offline') })
   const id = await imported(service, canary(), 'https://api.example.invalid/v1')
   service.create('local', { name: 'no key', kind: 'model_api', provider: 'deepseek', auth: 'api_key' })
   service.create('local', { name: 'service', kind: 'service', provider: 'brave', auth: 'api_key' })
   const groups = await providerChatGroups(service)
   assert.equal(groups.length, 1)
+  await service.chatModels('local', id)
+  assert.equal(requests, 1)
   assert.equal(groups[0]!.models[0]!.source, '@earendil-works/pi-ai@1.3.0')
   assert.ok(groups[0]!.models.some(model => model.selection === chatModelSelection(id, piModels('openai')[0]!.id)))
   assert.ok(chatModelsResponse.safeParse({ groups }).success)
@@ -210,14 +216,23 @@ test('durable fake-provider turn scrubs context, streams safely, saves usage and
   const messages = chat.context.threads.messages(thread.id)
   assert.equal(messages.filter(row => row.role === 'assistant').length, 1)
   assert.equal(messages.at(-1)!.turnStatus, 'completed')
+  const history = await (await chat.app.request(`/threads/${thread.id}`)).text()
+  assert.ok(!history.includes(value))
+  const durable = JSON.stringify(chat.context.db.prepare('SELECT input_json FROM chat_job_inputs').all())
+  assert.ok(!durable.includes(value))
+  assert.ok(!JSON.stringify(chat.context.jobs.eventsAfter(chat.context.db.prepare('SELECT id FROM jobs').get()!.id as string, 0, 100)).includes(value))
+  f.service.lockVault('local')
   assert.ok(!messages.at(-1)!.content.includes(value))
   const replay = await (await send()).text()
   assert.equal(calls, 1); assert.ok(!replay.includes(value)); assert.ok(replay.includes('REDACTED'))
+  const conflict = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, content: 'different' }) })
+  assert.equal(conflict.status, 409)
+  assert.equal(calls, 1)
   const costs = f.service.snapshot('local').costs
   assert.equal(costs.length, 1); assert.equal(costs[0]!.costUsd, 0.003)
   assert.match(costs[0]!.source, /catalog_estimate/)
   const groups = await chat.app.request('/threads/models')
-  assert.equal(chatModelsResponse.parse(await groups.json()).groups.length, 1)
+  assert.equal(chatModelsResponse.parse(await groups.json()).groups.length, 0)
 })
 
 test('custom models dispatch pinned chat-completions, scrub final reply and keep cost unknown', async t => {
@@ -262,7 +277,7 @@ test('local dispatch gets localized harness identity without project paths', asy
   assert.match(projectPrompt, /Project: "Project"/); assert.ok(!projectPrompt.includes('/private'))
 })
 
-test('provider Stop is durable and restart recovery never redispatches inference', async t => {
+test('provider Stop is durable and terminal recovery never redispatches inference', async t => {
   let started = false, calls = 0
   const f = await setup(t, { complete: async (_model, _context, options) => {
     started = true; calls++
@@ -278,4 +293,57 @@ test('provider Stop is durable and restart recovery never redispatches inference
   assert.equal(chat.context.threads.messages(thread.id).at(-1)!.turnStatus, 'cancelled')
   await recoverChatJobs(chat.context)
   assert.equal(calls, 1)
+})
+
+
+test('fresh owner interrupts an executing provider association and retains output without inference', async t => {
+  let calls = 0
+  const f = await setup(t, { complete: async (...args) => { calls++; return reply(...args) } })
+  const id = await imported(f.service), chat = chatFixture(f, t)
+  const thread = chat.create(chatModelSelection(id, piModels('openai')[0]!.id))
+  const input = { content: 'hello', attachments: [], autoApprove: null }
+  const association = chat.context.jobService.createChat({ threadId: thread.id, idempotencyScope: `chat:${thread.id}:send:v1`,
+    idempotencyKey: randomUUID(), requestFingerprint: chatRequestFingerprint(input), input, derivedTitle: 'hello' })
+  for (const [expectedStatus, status] of [['queued', 'reserving'], ['reserving', 'loading'], ['loading', 'prefill'], ['prefill', 'generating']] as const)
+    chat.context.jobService.transition({ jobId: association.job.id, expectedStatus, status, phase: status, metadata: {} })
+  for (const event of [
+    { type: 'start' as const, data: { messageId: association.assistantMessageId, model: thread.model, step: 0, status: 'pending' as const, jobId: association.job.id } },
+    { type: 'token' as const, data: { delta: 'retained partial' } },
+  ]) {
+    const current = chat.context.jobService.get(association.job.id)!
+    chat.context.jobService.appendSafeEvent({ jobId: current.id, expectedNextSequence: current.lastEventSequence + 1,
+      type: 'output', metadata: {}, output: { privacyClassification: 'private_chat', event } })
+  }
+  const freshOwner = new ChatJobExecutionOwner(chat.context)
+  const report = await recoverChatJobs({ ...chat.context, chatExecution: freshOwner })
+  assert.equal(report.interrupted, 1)
+  assert.equal(chat.context.jobService.get(association.job.id)!.status, 'interrupted')
+  assert.equal(chat.context.threads.messages(thread.id).at(-1)!.content, 'retained partial')
+  assert.equal(calls, 0)
+  await freshOwner.shutdown()
+})
+
+
+test('real pi-ai compatible wire streams through fake fetch without invented model token ceilings', async t => {
+  const value = canary(); let dispatched = false
+  const f = await setup(t, piTransport, async (url, init) => {
+    if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'owner-model' }] })
+    dispatched = true
+    assert.ok(new Headers(init?.headers).get('Authorization') === `Bearer ${value}`)
+    const body = JSON.parse(String(init?.body))
+    assert.equal(body.model, 'owner-model')
+    assert.equal(body.max_tokens, undefined); assert.equal(body.max_completion_tokens, undefined)
+    return new Response([
+      { id: 'fake', choices: [{ index: 0, delta: { role: 'assistant', content: 'fake streamed reply' }, finish_reason: null }] },
+      { id: 'fake', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 } },
+    ].map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+  })
+  const id = await imported(f.service, value, 'https://api.example.invalid/v1')
+  const chunks: string[] = []
+  const result = await f.service.complete('local', id, { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] }, {
+    model: 'owner-model', runId: 'real-wire', requestId: 'real-wire', onText: text => chunks.push(text),
+  })
+  assert.equal(dispatched, true)
+  assert.equal(chunks.join(''), 'fake streamed reply')
+  assert.equal(result.stopReason, 'stop')
 })
