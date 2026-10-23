@@ -723,3 +723,21 @@ test('an offer naming a relay parent is refused at offer time from an old peer o
   bare.target.federation.replicas.bind({ streamId: 'relay:relay', kind: 'run', sessionId: 'relay-session', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
   await assert.rejects(bare.target.federation.receiveAttemptOffer(bare.homeCtx, offer), /contract_feature_unavailable/)
 })
+
+test('freshness uses the home send time: an executor clock that is ahead or behind makes nothing stale or future', async t => {
+  for (const skew of [2_000, -2_000]) {
+    const f = await remoteFixture(t, { maximumAgeMs: 10_000 })
+    f.target.time = f.home.time + skew                  // fixed for the whole run: node clocks do not step backwards
+    const r = await f.relay()
+    let executorStamp: number | undefined
+    f.afters.push(async (path, response) => { if (path === '/attempts/runtime/observe') executorStamp = ((await response.clone().json()) as { entry: { observedAt: number } }).entry.observedAt })
+    const observed = await r.model.observe()
+    await until(() => executorStamp !== undefined)
+    assert.equal(executorStamp, f.home.time + skew, 'the executor stamped its own, skewed clock')
+    assert.equal(observed.observedAt, f.home.time, 'the home uses the instant it sent the request')
+    assert.equal((await r.call(`Skewed by ${skew}.`)).inputTokens, exact(`Skewed by ${skew}.`))
+    // Time that passes on the home still ages the observation, whatever the executor says.
+    f.home.time += 20_000; f.target.time = f.home.time + skew
+    assert.throws(() => r.model.count(`Skewed by ${skew}.`), /runtime_observation_stale/)
+  }
+})
