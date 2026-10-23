@@ -404,7 +404,7 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 9,
+        "count": 15,
         "files": [
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
@@ -414,7 +414,13 @@
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
           "packages/web/src/features/shell/ShellStatus.tsx",
-          "packages/web/src/features/side-chat/SideChatPanel.tsx"
+          "packages/web/src/features/side-chat/SideChatPanel.tsx",
+          "packages/web/src/features/voice/GlossaryEntryCard.tsx",
+          "packages/web/src/features/voice/GlossaryEntryForm.tsx",
+          "packages/web/src/features/voice/GlossaryHistory.tsx",
+          "packages/web/src/features/voice/GlossaryPage.tsx",
+          "packages/web/src/features/voice/GlossaryPreview.tsx",
+          "packages/web/src/features/voice/ToggleButton.tsx"
         ]
       },
       "since": "0.1.0"
@@ -748,10 +754,11 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 3,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
-          "packages/web/src/features/notifications/NotificationsPage.tsx"
+          "packages/web/src/features/notifications/NotificationsPage.tsx",
+          "packages/web/src/features/voice/GlossaryPage.tsx"
         ]
       },
       "since": "0.1.0"
@@ -866,11 +873,15 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 3,
+        "count": 7,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
           "packages/web/src/features/notifications/NotificationsPage.tsx",
-          "packages/web/src/features/side-chat/SideChatPanel.tsx"
+          "packages/web/src/features/side-chat/SideChatPanel.tsx",
+          "packages/web/src/features/voice/GlossaryEntryForm.tsx",
+          "packages/web/src/features/voice/GlossaryHistory.tsx",
+          "packages/web/src/features/voice/GlossaryPage.tsx",
+          "packages/web/src/features/voice/GlossaryPreview.tsx"
         ]
       },
       "since": "0.1.0"
@@ -1134,12 +1145,13 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 4,
+        "count": 5,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
-          "packages/web/src/features/side-chat/SideChatPanel.tsx"
+          "packages/web/src/features/side-chat/SideChatPanel.tsx",
+          "packages/web/src/features/voice/GlossaryEntryForm.tsx"
         ]
       },
       "since": "0.1.0"
@@ -2065,10 +2077,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 4,
         "files": [
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
-          "packages/web/src/features/side-chat/SideChatPanel.tsx"
+          "packages/web/src/features/side-chat/SideChatPanel.tsx",
+          "packages/web/src/features/voice/GlossaryEntryForm.tsx",
+          "packages/web/src/features/voice/GlossaryPreview.tsx"
         ]
       },
       "since": "0.1.0"

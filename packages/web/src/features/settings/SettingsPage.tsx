@@ -20,6 +20,7 @@ import { parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
 import { Glossary } from './Glossary.tsx'
+import { GlossarySettingsLink } from '../voice/GlossarySettingsLink.tsx'
 import { DeveloperSettings } from '../catalog/DeveloperSettings.tsx'
 import { ConnectionsSettings } from '../connections/ConnectionsPage.tsx'
 
@@ -419,6 +420,9 @@ export function SettingsPage() {
       </form>
       <div className="mt-4">
         <ConnectionsSettings />
+      </div>
+      <div className="mt-4">
+        <GlossarySettingsLink />
       </div>
       <div className="mt-4">
         <Glossary />

@@ -4,6 +4,7 @@ import { connectionEnglish, connectionRussian } from '../features/connections/me
 import { nativeEnglish, nativeRussian } from '../features/native-agent/messages.ts'
 import { newSessionEnglish, newSessionRussian } from '../features/new-session/messages.ts'
 import { sideChatEnglish, sideChatRussian } from '../features/side-chat/messages.ts'
+import { voiceGlossaryEnglish, voiceGlossaryRussian } from '../features/voice/messages.ts'
 import { notificationsEnglish, notificationsRussian } from '../features/notifications/messages.ts'
 
 const english = {
@@ -12,6 +13,7 @@ const english = {
   ...nativeEnglish,
   ...newSessionEnglish,
   ...sideChatEnglish,
+  ...voiceGlossaryEnglish,
   ...notificationsEnglish,
   ...connectionEnglish,
   'format.bytes.byte': 'B',
@@ -1864,6 +1866,7 @@ const russian: Messages = {
   ...nativeRussian,
   ...newSessionRussian,
   ...sideChatRussian,
+  ...voiceGlossaryRussian,
   ...notificationsRussian,
   ...workspaceRussian,
   ...shellRussian,
