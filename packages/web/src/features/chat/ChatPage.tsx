@@ -16,6 +16,7 @@ import {
   type FormEvent,
   type ReactNode,
   type RefObject,
+  useId,
 } from 'react'
 import type {
   ContextCheckpoint,
@@ -1138,6 +1139,7 @@ function ChatComposer({
 }) {
   const [content, setContent] = useState('')
   const [sending, setSending] = useState(false)
+  const autoApproveHintId = useId()
 
   const submit = async () => {
     const trimmed = content.trim()
@@ -1190,10 +1192,10 @@ function ChatComposer({
               checked={autoApprove}
               onCheckedChange={onAutoApprove}
               disabled={isStreaming}
-              aria-describedby="chat-auto-approve-hint"
+              aria-describedby={autoApproveHintId}
               label={<span className="text-12">{translate('chat.composer.autoApprove')}</span>}
             />
-            <span id="chat-auto-approve-hint" className="sr-only">{translate('chat.composer.autoApproveHint')}</span>
+            <span id={autoApproveHintId} className="sr-only">{translate('chat.composer.autoApproveHint')}</span>
           </span>
         ) : undefined}
         trailing={<>

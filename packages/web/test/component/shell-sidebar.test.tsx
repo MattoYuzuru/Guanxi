@@ -53,7 +53,12 @@ describe('shell navigation and session presentation', () => {
     expect(second.querySelector('.shell-status-dot')?.getAttribute('data-status')).toBe('waiting')
     expect(sessions.textContent).not.toContain('·')
     expect(within(sessions).getByText('Some pinned sessions are outside the loaded pages.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Unpin First' }))
+    // A toggle states its state once (P3): one name, pressed for the pinned row, not a changing label too.
+    const pins = screen.getAllByRole('button', { name: /^Pin / })
+    expect(pins.map(button => [button.getAttribute('aria-label'), button.getAttribute('aria-pressed')]))
+      .toEqual([['Pin First', 'true'], ['Pin Second', 'false']])
+    expect(screen.queryAllByRole('button', { name: /^Unpin / })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Pin First', pressed: true }))
     expect(values.onPin).toHaveBeenCalledExactlyOnceWith('s1')
     fireEvent.click(screen.getByRole('button', { name: 'Load more sessions' }))
     expect(values.onLoadMore).toHaveBeenCalledTimes(1)

@@ -100,8 +100,9 @@ export function ShellSidebar(props: ShellSidebarProps) {
                   {session.execution && <span>{` ${t('shell.status.source', { time: formatTime(session.execution.observedAt) })}`}</span>}
                   {props.unseen.has(session.sessionId) && <span>{` ${t('shell.unseen.row')}`}</span>}
                 </span>
-                <IconButton size="sm" className="shell-session-pin" pressed={isPinned} icon={<Icon name={isPinned ? 'unpin' : 'pin'} />}
-                  label={t(isPinned ? 'shell.sessions.unpin' : 'shell.sessions.pin', { title })}
+                {/* A toggle says its state once (P3): the pressed state, not a changing label as well. */}
+                <IconButton size="sm" className="shell-session-pin" pressed={isPinned} icon={<Icon name="pin" />}
+                  label={t('shell.sessions.pin', { title })}
                   onClick={() => props.onPin(session.sessionId)} />
               </li>
             })}
