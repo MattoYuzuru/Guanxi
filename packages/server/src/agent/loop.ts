@@ -1,3 +1,4 @@
+import { ConnectionError } from '../connections/errors.ts'
 /**
  * Агентный цикл: запрос к модели → вызовы инструментов → результаты обратно в модель.
  *
@@ -95,6 +96,7 @@ function cancellationReason(signal: AbortSignal): TurnStopReason {
 }
 
 function safeTurnFailure(error: unknown): { error: TurnError; stopReason: TurnStopReason } {
+  if (error instanceof ConnectionError) return { error: { code: 'upstream_error', message: error.message }, stopReason: 'provider_error' }
   if (error instanceof TerminalPersistenceError) {
     return {
       error: {

@@ -471,7 +471,7 @@ function ThreadPage({
     },
     [autoApprove, chat.send],
   )
-  const resourceDecision = useResourceConflictDecision(dispatchChat)
+  const resourceDecision = useResourceConflictDecision(dispatchChat, !parseChatModelSelection(chat.thread?.model ?? ''))
 
   const workspace =
     workspaces.data?.workspaces.find((item) => item.id === chat.thread?.workspaceId) ?? null
