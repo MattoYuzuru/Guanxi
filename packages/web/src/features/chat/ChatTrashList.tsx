@@ -58,8 +58,11 @@ export function ChatTrashList({
 
   // When the list recovers while its error had focus, focus returns to the heading.
   const errorHadFocus = useRef(false)
+  // Keyed on whether an error is shown, not on the error object: each failed re-read is a new
+  // object, and focus must move to the announcement once, not on every attempt (P2).
+  const listFailed = Boolean(trash.error)
   useEffect(() => {
-    if (!trash.error) return
+    if (!listFailed) return
     requestAnimationFrame(() => {
       const activeElement = document.activeElement
       if (
@@ -71,7 +74,7 @@ export function ChatTrashList({
         errorHadFocus.current = true
       }
     })
-  }, [trash.error])
+  }, [listFailed])
 
   useEffect(() => {
     if (!trash.data || trash.error) return

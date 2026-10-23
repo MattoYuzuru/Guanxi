@@ -6,7 +6,7 @@ import { act, render, renderHook, waitFor } from '@testing-library/react'
 import { memo, useRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { replaceEqualDeep } from '../../src/lib/stable.ts'
-import { DEFAULT_ASYNC_RETRY, retryDelay, useAsync } from '../../src/lib/useAsync.ts'
+import { DEFAULT_ASYNC_RETRY, QUIET_FAILURES_BEFORE_ERROR, retryDelay, useAsync } from '../../src/lib/useAsync.ts'
 import { APPEARANCE_KEY, applyAppearance, readAppearance } from '../../src/lib/appearance.tsx'
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
@@ -73,6 +73,36 @@ describe('useAsync', () => {
     expect(loader).toHaveBeenCalledTimes(2)
     expect(result.current.error).toBeNull()
     expect(result.current.data).toEqual({ ok: 1 })
+  })
+
+  it('a transient quiet failure while data is shown renders nothing; only consecutive failures surface (P2)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let fail = false, renders = 0
+    const loader = vi.fn(async () => { if (fail) throw new Error('blip'); return { rows: [{ id: 'a' }] } })
+    const { result } = renderHook(() => { renders += 1; return useAsync(loader, [], { revalidate: { intervalMs: 15_000 } }) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    const shown = result.current.data
+    const rendersWithData = renders
+    fail = true
+    // One failed quiet re-read, then a successful one: no error, no re-render, same data identity.
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    expect(loader).toHaveBeenCalledTimes(2)
+    expect(result.current.error).toBeNull()
+    expect(renders).toBe(rendersWithData)
+    fail = false
+    await act(async () => { await vi.advanceTimersByTimeAsync(DEFAULT_ASYNC_RETRY.baseMs) })
+    expect(result.current.error).toBeNull()
+    expect(result.current.data).toBe(shown)
+    expect(renders).toBe(rendersWithData)
+    // Consecutive failures surface once the threshold is reached, with the data kept on screen.
+    fail = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+    for (let failure = 1; failure < QUIET_FAILURES_BEFORE_ERROR; failure++) {
+      expect(result.current.error).toBeNull()
+      await act(async () => { await vi.advanceTimersByTimeAsync(retryDelay(failure, DEFAULT_ASYNC_RETRY)) })
+    }
+    expect(result.current.error).toBeInstanceOf(Error)
+    expect(result.current.data).toBe(shown)
   })
 
   it('retries at once when the browser comes back online', async () => {

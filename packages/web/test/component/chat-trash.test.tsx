@@ -1,3 +1,4 @@
+import { QUIET_FAILURES_BEFORE_ERROR } from '../../src/lib/useAsync.ts'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatTrashItem, RestoreChatResponse } from '@guanxi/contract'
@@ -205,6 +206,32 @@ describe('Chat Trash list', () => {
     expect(api.restoreChat).toHaveBeenCalledTimes(1)
   })
 
+  it('a transient background failure inserts nothing; a lasting one is announced once and never pulls focus back (P2)', async () => {
+    const list = vi.spyOn(api, 'listChatTrash').mockResolvedValueOnce({
+      lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
+    })
+    list.mockImplementation(async () => { throw new Error('node busy') })
+    render(<ChatTrashList projectId="project-a" />)
+    await screen.findByText(ITEM.title)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    for (let read = 3; read <= 1 + QUIET_FAILURES_BEFORE_ERROR; read++) {
+      await act(async () => { window.dispatchEvent(new Event('focus')) })
+      await waitFor(() => expect(list).toHaveBeenCalledTimes(read))
+    }
+    const alert = await screen.findByRole('alert')
+    await waitFor(() => expect(alert).toBe(document.activeElement))
+    expect(screen.getByText(ITEM.title)).toBeTruthy()
+    const restore = screen.getByRole('button', { name: 'Восстановить чат' })
+    restore.focus()
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2 + QUIET_FAILURES_BEFORE_ERROR))
+    await act(async () => { await new Promise(resolve => requestAnimationFrame(() => resolve(null))) })
+    expect(document.activeElement).toBe(restore)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+
   it('focuses an initial list error and recovers by itself', async () => {
     vi.spyOn(api, 'listChatTrash')
       .mockRejectedValueOnce(new Error('initial Trash failure'))
@@ -279,6 +306,8 @@ describe('Chat Trash list', () => {
         chats: [pending], hasMore: false,
       })
       .mockRejectedValueOnce(new Error('safe English deletion failure'))
+      .mockRejectedValueOnce(new Error('safe English deletion failure'))
+      .mockRejectedValueOnce(new Error('safe English deletion failure'))
       .mockResolvedValueOnce({
         lifecycleVersion: 1, deletionVersion: 1, scope: 'projectless', projectId: null,
         chats: [], hasMore: false, deletions: [committed], deletionsHaveMore: false,
@@ -288,7 +317,8 @@ describe('Chat Trash list', () => {
     expect(screen.getAllByText(/metadata deletion is pending server maintenance/u)).toHaveLength(1)
     expect(screen.getAllByText(/generic blob cleanup is not applicable/u)).toHaveLength(1)
     expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
-    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    // A background failure surfaces after {QUIET_FAILURES_BEFORE_ERROR} consecutive quiet reads (P2).
+    for (let read = 0; read < QUIET_FAILURES_BEFORE_ERROR; read++) await act(async () => { window.dispatchEvent(new Event('focus')) })
     const failure = await screen.findByText(/safe English deletion failure/u)
     await waitFor(() => expect(failure.closest('[tabindex="-1"]')).toBe(document.activeElement))
     expect(screen.getAllByText(pending.title)).toHaveLength(1)
@@ -297,7 +327,7 @@ describe('Chat Trash list', () => {
     expect(await screen.findAllByText(/Session Chat metadata deleted by server maintenance/u)).toHaveLength(1)
     expect(screen.queryAllByText(pending.title)).toHaveLength(0)
     expect(screen.getAllByText(/generic blob cleanup is not applicable/u)).toHaveLength(1)
-    expect(api.listChatTrash).toHaveBeenCalledTimes(3)
+    expect(api.listChatTrash).toHaveBeenCalledTimes(2 + QUIET_FAILURES_BEFORE_ERROR)
   })
 
   it('keeps elapsed metadata pending through refresh failure and removes it only after a sourced committed audit', async () => {
@@ -330,6 +360,8 @@ describe('Chat Trash list', () => {
         hasMore: false,
       })
       .mockRejectedValueOnce(new Error('safe deletion refresh failure'))
+      .mockRejectedValueOnce(new Error('safe deletion refresh failure'))
+      .mockRejectedValueOnce(new Error('safe deletion refresh failure'))
       .mockResolvedValueOnce({
         lifecycleVersion: 1,
         deletionVersion: 1,
@@ -345,7 +377,8 @@ describe('Chat Trash list', () => {
     expect(screen.queryAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(0)
 
     expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
-    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    // A background failure surfaces after {QUIET_FAILURES_BEFORE_ERROR} consecutive quiet reads (P2).
+    for (let read = 0; read < QUIET_FAILURES_BEFORE_ERROR; read++) await act(async () => { window.dispatchEvent(new Event('focus')) })
     const failure = await screen.findByText(/safe deletion refresh failure/u)
     await waitFor(() => expect(failure.closest('[tabindex="-1"]')).toBe(document.activeElement))
     expect(screen.getAllByText(pending.title)).toHaveLength(1)
@@ -357,6 +390,6 @@ describe('Chat Trash list', () => {
     expect(screen.queryAllByText(pending.title)).toHaveLength(0)
     expect(screen.getAllByText(/generic blob cleanup неприменим/u)).toHaveLength(1)
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Корзина' })).toBe(document.activeElement))
-    expect(api.listChatTrash).toHaveBeenCalledTimes(3)
+    expect(api.listChatTrash).toHaveBeenCalledTimes(2 + QUIET_FAILURES_BEFORE_ERROR)
   })
 })

@@ -25,6 +25,13 @@ export interface AsyncOptions {
 
 export const DEFAULT_ASYNC_RETRY = { baseMs: 2_000, maxMs: 60_000 } as const
 
+/**
+ * While data is on screen, a failed quiet re-read stays invisible (no state change, no re-render)
+ * until this many consecutive failures (D-203: no flicker, no layout jump for a transient blip).
+ * A failure with nothing on screen, or of an explicit run, surfaces at once.
+ */
+export const QUIET_FAILURES_BEFORE_ERROR = 3
+
 /** Delay before retry number `failures` (1-based): base, doubling, capped. */
 export function retryDelay(failures: number, retry: { baseMs: number; maxMs: number }): number {
   return Math.min(retry.maxMs, retry.baseMs * 2 ** Math.max(0, Math.min(failures - 1, 30)))
@@ -47,6 +54,8 @@ export function useAsync<T>(
     refreshing: false,
   })
   const [nonce, setNonce] = useState(0)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const hasDataRef = useRef(false)
   const loaderRef = useRef(loader)
   loaderRef.current = loader
@@ -90,6 +99,10 @@ export function useAsync<T>(
           if (stopped || request.signal.aborted) return
           hasDataRef.current = true
           failures = 0
+          // An equal read with nothing to clear schedules no update at all, so nothing renders.
+          const shown = stateRef.current
+          const unchanged = shown.data !== null && replaceEqualDeep(shown.data, data) === shown.data
+          if (unchanged && shown.error === null && !shown.loading && !shown.refreshing) { schedule(); return }
           setState((previous) => {
             const stable = previous.data === null ? data : replaceEqualDeep(previous.data, data)
             if (stable === previous.data && previous.error === null && !previous.loading && !previous.refreshing) return previous
@@ -100,7 +113,12 @@ export function useAsync<T>(
         (error) => {
           if (stopped || request.signal.aborted) return
           failures += 1
-          setState((previous) => ({ data: previous.data, error, loading: false, refreshing: false }))
+          const surface = !quiet || !hasDataRef.current || failures >= QUIET_FAILURES_BEFORE_ERROR
+          // A hidden failure must not even schedule an identical update: React may render once to bail out.
+          if (!surface && !stateRef.current.loading && !stateRef.current.refreshing) { schedule(); return }
+          setState((previous) => surface
+            ? { data: previous.data, error, loading: false, refreshing: false }
+            : previous.loading || previous.refreshing ? { ...previous, loading: false, refreshing: false } : previous)
           schedule()
         },
       )
