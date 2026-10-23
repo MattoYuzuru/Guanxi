@@ -37,11 +37,12 @@ test('config: the lead pays by subscription unless told otherwise, and the API-k
   assert.deepEqual([sub.auth, sub.connection, sub.providerKeysFile, sub.effort], ['subscription', undefined, undefined, undefined])
   const api = parseMs1LiveConfig(home({ auth: 'api_key', connection: 'anthropic (dotenv)', providerKeysFile: '/Users/x/keys.env', effort: 'medium' }), '/etc/x/ms1-live.json').home!.lead!
   assert.deepEqual([api.auth, api.connection, api.providerKeysFile, api.effort], ['api_key', 'anthropic (dotenv)', '/Users/x/keys.env', 'medium'])
-  refused(home({ connection: 'x' }), 'config_api_key_only', 'home.lead.connection')
-  refused(home({ auth: 'subscription', providerKeysFile: '/x/keys.env' }), 'config_api_key_only', 'home.lead.providerKeysFile')
+  refused(home({ connection: 'x' }), 'config_key_mode_only', 'home.lead.connection')
+  refused(home({ auth: 'subscription', providerKeysFile: '/x/keys.env' }), 'config_key_mode_only', 'home.lead.providerKeysFile')
   refused(home({ auth: 'api_key', providerKeysFile: 'keys.env' }), 'config_path_not_absolute', 'home.lead.providerKeysFile')
   refused(home({ auth: 'api_key', effort: 'maximum' }), 'config_invalid', 'home.lead.effort')
   refused(home({ auth: 'oauth' }), 'config_invalid', 'home.lead.auth')
+  assert.equal(parseMs1LiveConfig(home({ auth: 'oauth_token', providerKeysFile: '/x/keys.env' }), '/etc/x/ms1-live.json').home!.lead!.auth, 'oauth_token')
   refused(home({ auth: 'api_key', apiKey: 'sk-ant-api03-SECRETSECRETSECRET' }), 'config_unknown_key', 'home.lead')
 })
 
@@ -201,7 +202,7 @@ test('the command explains a lead without a key by code, field and summary, and 
   assert.equal(result.code, 2)
   const event = JSON.parse(result.out.split('\n').at(-1)!)
   assert.deepEqual([event.event, event.code, event.field], ['failed', 'lead_key_missing', 'home.lead.providerKeysFile'])
-  assert.match(event.summary, /No Anthropic API key is available/)
+  assert.match(event.summary, /No key or token is available/)
   await assert.rejects(fetch(`http://127.0.0.1:${api}/api/health`), 'the owner API listener is closed')
 })
 
@@ -242,4 +243,82 @@ test('start reads the key file from the same environment the command was given a
   const event = JSON.parse(out.join('\n').split('\n').at(-1)!)
   assert.equal(code, 2); assert.equal(event.code, 'lead_key_missing', 'the process environment\'s file was not read')
   assert.equal(keychainReads, 0)
+})
+
+// ---- D-212: the owner's `claude setup-token` subscription token -------------------------------------------------------------------
+
+const fakeToken = () => `sk-ant-oat01-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
+const asToken = (config: any) => { config.home.lead.auth = 'oauth_token' }
+
+test('oauth_token: doctor explains the mode, accepts the token under either name, and refuses an API key or a malformed token without printing a value', async t => {
+  const w = await pair(t)
+  const token = fakeToken()
+  w.settings(asToken)
+  const run = async () => {
+    const result = await cli(['doctor', '--config', join(w.home, 'ms1-live.json'), '--json'], { HOME: w.root })
+    assert.equal(result.out.includes(token), false); assert.equal(result.out.includes(token.slice(-20)), false)
+    const checks = (JSON.parse(result.out) as { checks: Array<{ id: string; status: string; code?: string; summary: string }> }).checks
+    return (id: string) => checks.find(check => check.id === id)
+  }
+  for (const text of [`CLAUDE_CODE_OAUTH_TOKEN=${token}\n`, `ANTHROPIC_API_KEY=${token}\n`]) {
+    writeKeys(w.keyFile, text)
+    const check = (await run())('lead_key')
+    assert.equal(check?.status, 'ok'); assert.match(check!.summary, /subscription token/); assert.match(check!.summary, /subscription\)/)
+  }
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${fakeKey()}\n`)
+  assert.equal((await run())('lead_key')?.code, 'lead_key_wrong_family')
+  writeKeys(w.keyFile, `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-api03-${'d'.repeat(40)}\n`)
+  assert.equal((await run())('lead_key')?.code, 'lead_key_invalid')
+  writeKeys(w.keyFile, `OPENAI_API_KEY=${'o'.repeat(40)}\n`)
+  assert.equal((await run())('lead_key')?.code, 'lead_key_missing')
+  // And the other way round: in api_key mode a subscription token is not a key, with the pointer to this mode.
+  w.settings()
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${token}\n`)
+  const mismatch = (await run())('lead_key')
+  assert.equal(mismatch?.code, 'lead_key_invalid')
+})
+
+test('oauth_token: start imports the token as a Claude Code connection only, wires K5 to it, and the token is in no file this node wrote', async t => {
+  const w = await pair(t)
+  const token = fakeToken()
+  const boot = (settings: Ms1LiveSettings) => start({ port: 0, host: '127.0.0.1', dataDir: join(w.root, 'data'), webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
+  for (const text of [`CLAUDE_CODE_OAUTH_TOKEN=${token}\n`, `ANTHROPIC_API_KEY=${token}\n`]) {
+    writeKeys(w.keyFile, text)
+    const server = await boot(w.settings(asToken))
+    const rows = server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections
+    assert.deepEqual(rows.map(row => [row.name, row.kind, row.provider, row.auth]).sort(), [['claude-code (dotenv)', 'agent', 'claude-code', 'cli_login'], ['ms1-executor', 'local_runtime', 'ollama', 'none']],
+      'no Anthropic API connection and no subscription-login connection: the token is not an API key')
+    const paying = rows.find(row => row.name === 'claude-code (dotenv)')!
+    assert.ok(paying.secretRef); assert.equal(server.ms1Live!.leadConnectionId, paying.id)
+    const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
+    assert.deepEqual(external.capabilities('local').map(c => [c.adapter, c.connectionId]), [['claude-code', paying.id]])
+    await assert.rejects(external.prepareLogin('local', 'local', paying.id), /api_or_local_required/)
+    await server.close()
+  }
+  for (const path of filesUnder(join(w.root, 'data'))) { const bytes = readFileSync(path); assert.equal(bytes.includes(token), false, path); assert.equal(bytes.includes(token.slice(-20)), false, path) }
+  // A restart with no file: the token imported earlier still pays.
+  writeKeys(w.keyFile, 'UNRELATED=1\n')
+  const again = await boot(w.settings(config => { asToken(config); delete config.home.lead.providerKeysFile }))
+  assert.ok(again.ms1Live!.leadConnectionId); await again.close()
+})
+
+test('oauth_token: an API key, a malformed token or an empty vault refuse the start by code, and the families are never exchanged', async t => {
+  const w = await pair(t)
+  let n = 0
+  const refuses = async (config: (c: any) => void, code: string) => {
+    const outcome = await start({ port: 0, host: '127.0.0.1', dataDir: join(w.root, `d${n++}`), webDir: w.root, devOrigins: [], ms1Live: w.settings(config), connectionsKeychain: keychain })
+      .then(server => server.close().then(() => 'started'), error => error)
+    assert.ok(outcome instanceof Ms1LiveError && outcome.code === code, `expected ${code}, got ${outcome instanceof Error ? outcome.message : outcome}`)
+  }
+  t.mock.method(console, 'warn', () => undefined)
+  keychainReads = 0
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${fakeKey()}\n`)
+  await refuses(asToken, 'lead_key_missing')
+  writeKeys(w.keyFile, `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-api03-${'e'.repeat(40)}\n`)
+  await refuses(asToken, 'lead_key_import_failed')
+  // The token under the API key's name in api_key mode is refused by K3 as an API key.
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${fakeToken()}\n`)
+  await refuses(config => { config.home.lead.auth = 'api_key' }, 'lead_key_import_failed')
+  rmSync(w.keyFile)
+  await refuses(config => { asToken(config); delete config.home.lead.providerKeysFile }, 'lead_key_missing')
 })

@@ -113,19 +113,20 @@ const homeSchema = z.object({
     limits: z.object({ maxCaps: caps, maxDeadlineMs: positive, allowDetach: z.boolean().default(false) }).strict(),
     /** How Claude Code is paid for (D-211). `subscription`: the owner's sign-in with the unmodified CLI in K5's private config directory
      * (the default, unchanged). `api_key`: the owner's Anthropic API key from the K3 vault, billed as API usage; the key reaches the bridge's
-     * environment only. */
-    auth: z.enum(['subscription', 'api_key']).default('subscription'),
-    /** `api_key` only. Name or id of the K3 `anthropic` API-key connection that pays. Omitted: the one such connection with a key (the one
+     * environment only. `oauth_token` (D-212): the owner's long-lived subscription token from `claude setup-token` (`sk-ant-oat...`), kept in the vault as a credential of
+     * the official CLI alone and injected as `CLAUDE_CODE_OAUTH_TOKEN`; billed to the owner's subscription, never usable for API calls. */
+    auth: z.enum(['subscription', 'api_key', 'oauth_token']).default('subscription'),
+    /** `api_key` / `oauth_token` only. Name or id of the K3 connection that pays (the `anthropic` API-key connection, or the `claude-code` token connection). Omitted: the one such connection with a key (the one
      * the dotenv import creates); several of them are refused as ambiguous. */
     connection: z.string().min(1).max(200).optional(),
-    /** `api_key` only. Absolute path of the owner's dotenv file (`ANTHROPIC_API_KEY=`): imported into this node's own vault at boot, as
+    /** `api_key` / `oauth_token` only. Absolute path of the owner's dotenv file (`ANTHROPIC_API_KEY=`; for `oauth_token`, `CLAUDE_CODE_OAUTH_TOKEN=` or an `sk-ant-oat` value under `ANTHROPIC_API_KEY`): imported into this node's own vault at boot, as
      * `GUANXI_PROVIDER_KEYS_FILE` does. That variable, when set, names the file instead. Only the path is configuration; the file stays the owner's. */
     providerKeysFile: absolutePath.optional(),
     /** Effort of the lead's Claude Code sessions, set through the bridge's `effort` option (D-210: medium). Omitted: the vendor's own default. */
     effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   }).strict().superRefine((value, ctx) => {
     for (const field of ['connection', 'providerKeysFile'] as const) {
-      if (value.auth !== 'api_key' && value[field] !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: 'api_key_only' })
+      if (value.auth === 'subscription' && value[field] !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: 'key_mode_only' })
     }
   }).optional(),
 }).strict()

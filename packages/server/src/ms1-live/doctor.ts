@@ -34,14 +34,24 @@ function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['l
     'Set home.lead.providerKeysFile to your dotenv file (with ANTHROPIC_API_KEY=), or GUANXI_PROVIDER_KEYS_FILE, or run `guanxi connections import --file` first.')]
   const where = fromEnv ? 'GUANXI_PROVIDER_KEYS_FILE' : 'home.lead.providerKeysFile'
   if (!isAbsolute(file)) return [fail('lead_key', 'path_not_absolute', `${where} must be an absolute path.`)]
-  const found = inspectProviderKeysFile(file)
+  const token = lead.auth === 'oauth_token'
+  const found = inspectProviderKeysFile(file, { oauthToken: token })
   if (found.kind === 'unreadable') return [fail('lead_key', 'lead_key_file_unreadable', `The key file named by ${where} cannot be read.`, 'Check the path and that this user can read the file.')]
   if (found.kind === 'invalid') return [fail('lead_key', 'lead_key_file_invalid', 'The key file does not parse: it is malformed (duplicate name, unterminated quote, unquoted #) or holds no supported key.',
     'See docs/operations/ms1-live-run.md section 7 and the connections README (D-208).')]
   const checks: Check[] = found.mode & 0o077 ? [warn('lead_key_mode', 'lead_key_file_mode', `The key file (${where}) is readable by other users.`, 'chmod 600 the file; it holds a live key.')] : []
   const verdict = ((): Check => {
+    if (token) {
+      if (found.invalid.some(name => ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'].includes(name))) return fail('lead_key', 'lead_key_invalid', 'The token in the key file is not a Claude Code subscription token (it must start with sk-ant-oat).',
+        'Run `claude setup-token` and put its token in CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY); an API key (sk-ant-api...) is not accepted in oauth_token mode.')
+      if (!found.providers.includes('claude-code')) return found.providers.includes('anthropic')
+        ? fail('lead_key', 'lead_key_wrong_family', 'The key file holds an Anthropic API key (sk-ant-api...), but home.lead.auth is "oauth_token".', 'Set home.lead.auth to "api_key" for that key, or put the `claude setup-token` token in the file.')
+        : fail('lead_key', 'lead_key_missing', 'The key file has no CLAUDE_CODE_OAUTH_TOKEN (or sk-ant-oat value under ANTHROPIC_API_KEY); `start` does not fall back to an older credential in the vault when a file is named.', 'Run `claude setup-token` and add the token to the file (quote a value that contains #).')
+      if (found.invalid.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${found.invalid.join(', ')} in the key file is invalid, and the lead does not start on a half-imported vault.`, 'Fix or remove those lines.')
+      return ok('lead_key', `A Claude Code subscription token (sk-ant-oat...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault for the official CLI only (billed to your subscription).`)
+    }
     if (found.invalid.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', 'ANTHROPIC_API_KEY in the key file is not an Anthropic API key (it must start with sk-ant-api).',
-      'An OAuth or subscription token (sk-ant-oat...) is refused as an API key: create an API key in the Anthropic Console.')
+      'A subscription token (sk-ant-oat...) is refused as an API key: create an API key in the Anthropic Console, or set home.lead.auth to "oauth_token" for that token.')
     if (!found.providers.includes('anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY (`start` does not fall back to an older key in the vault when a file is named).', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
     if (found.invalid.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${found.invalid.join(', ')} in the key file is invalid, and an API-key lead does not start on a half-imported vault.`,
       'Fix or remove those lines.')
@@ -169,7 +179,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
         checks.push(!isAbsolute(value) ? fail(id, 'path_not_absolute', `${what} must be an absolute path.`) : executable(value) ? ok(id, `${what} is executable at ${value}.`)
           : fail(id, 'executable_missing', `${what} is not an executable file at ${value}.`, id === 'lead_bridge' ? 'Install the bridge (see the runbook), then set lead.bridge to its absolute path.' : 'Set lead.claudeExecutable to the installed Claude Code CLI.'))
       }
-      checks.push(...(lead.auth === 'api_key' ? leadKeyChecks(lead, env) : [ ok('lead_auth', 'The lead signs in with the owner\'s subscription: `start` prints the sign-in command for K5\'s private config directory.')]))
+      checks.push(...(lead.auth !== 'subscription' ? leadKeyChecks(lead, env) : [ ok('lead_auth', 'The lead signs in with the owner\'s subscription: `start` prints the sign-in command for K5\'s private config directory.')]))
     } else checks.push(skip('lead', 'No lead section: relay starts come from the public relay route.'))
   }
   return { ok: checks.every(check => check.status !== 'fail'), config: s.file, role: s.role, checks }

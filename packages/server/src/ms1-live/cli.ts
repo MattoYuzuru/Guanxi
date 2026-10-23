@@ -170,9 +170,11 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   if (live.hasLead) {
     try {
       const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
-      if (settings.home!.lead!.auth === 'api_key') {
-        // Nothing to sign in to: the key comes from the K3 vault at launch. Ids and policy only, never the key.
-        emit({ event: 'lead-auth', mode: 'api_key', billing: 'api_usage', connectionId: live.leadConnectionId, ...(settings.home!.lead!.effort ? { effort: settings.home!.lead!.effort } : {}) })
+      const lead = settings.home!.lead!
+      if (lead.auth !== 'subscription') {
+        // Nothing to sign in to: the credential comes from the K3 vault at launch. Ids, policy and where the file was named, never a value.
+        const source = env['GUANXI_PROVIDER_KEYS_FILE'] ? 'GUANXI_PROVIDER_KEYS_FILE' : lead.providerKeysFile ? 'home.lead.providerKeysFile' : 'vault'
+        emit({ event: 'lead-auth', mode: lead.auth, billing: lead.auth === 'api_key' ? 'api_usage' : 'subscription', keySource: source, connectionId: live.leadConnectionId, ...(lead.effort ? { effort: lead.effort } : {}) })
       } else {
         // Only paths and the argv of the vendor's own sign-in: the login itself happens in the vendor CLI, in its private config directory.
         const login = await external.prepareLogin(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, live.leadConnectionId)

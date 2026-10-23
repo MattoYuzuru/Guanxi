@@ -315,11 +315,11 @@ export async function start(options: StartOptions = {}) {
     // An explicit option and `GUANXI_PROVIDER_KEYS_FILE` come first; an MS1 API-key lead's own file is the fallback.
     // An explicit option (even an empty one: none) replaces the process environment; the live configuration's file is the last resort.
     const providerKeysFile = (options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE) || live?.providerKeysFile
-    let providerKeysFailed = false, anthropicImported: string | undefined
+    let providerKeysFailed = false, leadKeyImported: string | undefined
     if (providerKeysFile) {
       try {
-        const result = await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
-        anthropicImported = result.imported.find(item => item.provider === 'anthropic')?.connectionId
+        const result = await importProviderKeysFile(context.connections!(), 'local', providerKeysFile, { oauthToken: live?.leadUsesToken === true })
+        leadKeyImported = result.imported.find(item => item.provider === live?.leadKeyProvider)?.connectionId
         if (result.errors?.length) throw new Error('provider_key_import_failed')
       } catch {
         providerKeysFailed = true
@@ -336,12 +336,12 @@ export async function start(options: StartOptions = {}) {
       // connection) and a home's relay runtime needs the federation service. Plugin order changes only under this option.
       // An API-key lead needs a key it was actually given: a failed import, or a named file without ANTHROPIC_API_KEY, never falls back to an
       // older key in the vault (only the absence of any file does: the key is then the one imported earlier).
-      if (live.leadUsesApiKey) {
+      if (live.leadUsesVaultKey) {
         if (providerKeysFailed) throw new Ms1LiveError('lead_key_import_failed', 'home.lead.providerKeysFile')
-        if (providerKeysFile && anthropicImported === undefined) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
+        if (providerKeysFile && leadKeyImported === undefined) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
       }
       live.prepare(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!)
-      if (live.leadUsesApiKey) await live.prepareLeadKey(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, anthropicImported)
+      if (live.leadUsesVaultKey) await live.prepareLeadKey(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, leadKeyImported)
       await kernel.node.plugin(createFederationPlugin({ ...live.federationHost(), db }))
       kernel = { ...kernel, federation: kernel.node.service<Federation>(FEDERATION_SERVICE) ?? null }
       if (!kernel.federation) throw new FederationError('federation_unavailable', 503)
