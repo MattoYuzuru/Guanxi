@@ -193,8 +193,8 @@ journal and creates no journal table. The sink is the single `request()` evaluat
 row per actually evaluated J1.5 checker/J2/J3 request, not per model sample and not for a
 duplicate request that reuses a stored result.
 
-`judge-journal.ts` owns independent additive ledger **42** (`relay_journal_migrations`), so
-`user_version` and ledgers 34–41 are untouched. A row holds run/session/attempt ids, cycle,
+`judge-journal.ts` owns independent additive ledger **43** (`relay_journal_migrations`), so
+`user_version`, ledger 42 (F2-reap) and every earlier ledger are untouched. A row holds run/session/attempt ids, cycle,
 phase, layer, reason, request key, the exact scrubbed evidence packet the judge received
 (paths included), the detached host `JudgeObservation` and signal policy, the J0/J1 signals, the
 terminal state and result (sample verdicts, checker result or a fixed unavailable/invalid code),

@@ -27,10 +27,10 @@ import {
   type JudgeSignalPolicy
 } from './judge-signals.ts'
 
-/** Independent additive ledger 42; main user_version and ledgers 34-41 stay untouched. */
-export const JUDGE_JOURNAL_MIGRATION_42 = `
+/** Independent additive ledger 43; user_version, ledger 42 (F2-reap) and every earlier ledger stay untouched. */
+export const JUDGE_JOURNAL_MIGRATION_43 = `
 CREATE TABLE relay_journal_migrations(version INTEGER PRIMARY KEY);
-INSERT INTO relay_journal_migrations VALUES(42);
+INSERT INTO relay_journal_migrations VALUES(43);
 CREATE TABLE relay_judge_journal(
   id INTEGER PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES durable_runs(id) ON DELETE CASCADE,
@@ -53,7 +53,7 @@ CREATE TABLE relay_judge_journal(
   finished_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL
 );
-CREATE INDEX relay_judge_journal_run ON relay_judge_journal(run_id, cycle, started_at);
+CREATE INDEX relay_judge_journal_run ON relay_judge_journal(run_id, attempt_id, cycle, started_at);
 CREATE INDEX relay_judge_journal_session ON relay_judge_journal(session_id, expires_at);
 CREATE INDEX relay_judge_journal_expiry ON relay_judge_journal(expires_at);
 CREATE TRIGGER relay_judge_journal_immutable BEFORE UPDATE ON relay_judge_journal
@@ -359,10 +359,10 @@ export class JudgeJournalStore implements JudgeJournal {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_journal_migrations'").get()) {
-        this.db.exec(JUDGE_JOURNAL_MIGRATION_42)
+        this.db.exec(JUDGE_JOURNAL_MIGRATION_43)
       }
       const versions = this.db.prepare('SELECT version FROM relay_journal_migrations').all()
-      if (versions.length !== 1 || versions[0]!.version !== 42) {
+      if (versions.length !== 1 || versions[0]!.version !== 43) {
         invalid('unexpected schema version')
       }
       this.db.exec('COMMIT')

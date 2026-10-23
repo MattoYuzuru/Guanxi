@@ -7,7 +7,7 @@ import { Hono } from 'hono'
 import { byteHash, canonical, probes, render } from '../../src/relay/handoff.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
 import {
-  JUDGE_JOURNAL_MIGRATION_42,
+  JUDGE_JOURNAL_MIGRATION_43,
   JudgeJournalStore,
   journalIfPresent,
   journalReplayRun,
@@ -345,7 +345,7 @@ test('default executor journal writes one completed row per J2 boundary with the
     assert.equal(observations.length, 2)
     assert.equal(
       f.db.prepare('SELECT version FROM relay_journal_migrations').get()!.version,
-      42
+      43
     )
     assert.equal(f.db.prepare('PRAGMA user_version').get()!.user_version, 33)
     assert.equal(f.db.prepare('SELECT version FROM relay_migrations').get()!.version, 35)
@@ -354,7 +354,7 @@ test('default executor journal writes one completed row per J2 boundary with the
       () => f.db.prepare("UPDATE relay_judge_journal SET state='invalid'").run(),
       /append only/
     )
-    assert.match(JUDGE_JOURNAL_MIGRATION_42, /ON DELETE CASCADE/)
+    assert.match(JUDGE_JOURNAL_MIGRATION_43, /ON DELETE CASCADE/)
   } finally {
     f.close()
   }
