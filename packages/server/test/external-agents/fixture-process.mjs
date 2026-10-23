@@ -43,7 +43,7 @@ if (config.readVendor) {
   vendorRead = readFileSync(join(process.env.CODEX_HOME, 'auth.json'), 'utf8').length > 0
 }
 writeFileSync(join(root, 'environment.json'), JSON.stringify({
-  names: Object.keys(process.env), vendorRead, argv: process.argv.slice(2),
+  names: Object.keys(process.env), vendorRead, argv: process.argv.slice(2), subprocessScrub: process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB ?? null,
   // Whether the key is the one the test stored in the vault; the value itself is never written anywhere.
   anthropicKeyMatches: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY === config.anthropicKey, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CLAUDE_CODE_EXECUTABLE: process.env.CLAUDE_CODE_EXECUTABLE,

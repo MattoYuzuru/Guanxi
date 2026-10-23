@@ -269,6 +269,9 @@ export class ExternalAgents {
       if (row.kind !== 'model_api' || row.provider !== 'anthropic' || row.baseUrl) throw new ExternalAgentError('claude_api_connection_required')
       if (!key) throw new ExternalAgentError('claude_api_key_required')
       env.ANTHROPIC_API_KEY = key
+      // Observed with CLI 2.1.287 and no network: with this variable the CLI starts its MCP stdio subprocesses without ANTHROPIC_API_KEY (and
+      // without CLAUDE_CONFIG_DIR), and the ACP bridge 0.94.0 still initialises and opens a session. Only the CLI process itself holds the key.
+      env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'
     } else if (['claude-code', 'codex', 'copilot'].includes(install.adapter)) {
       if (row.kind !== 'agent' || row.provider !== install.adapter || row.auth !== 'cli_login' || key) throw new ExternalAgentError('subscription_connection_required')
     } else {

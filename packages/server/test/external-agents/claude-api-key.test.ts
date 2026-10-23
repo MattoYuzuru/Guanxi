@@ -39,6 +39,8 @@ test('API key mode: the key reaches the bridge environment only, and is absent f
   assert.equal(env.names.includes('ANTHROPIC_API_KEY'), true)
   assert.equal(env.anthropicKeyMatches, true)
   assert.deepEqual(env.argv, [])
+  // The CLI's own subprocesses (MCP stdio servers, hooks, tools) are launched without the key (observed with the real CLI 2.1.287).
+  assert.equal(env.subprocessScrub, '1')
   // The CLI probe saw the key through its environment too, and nothing else of a vendor login.
   const probe = JSON.parse(await readFile(join(f.dir, 'claude-code', 'auth-env.json'), 'utf8'))
   assert.equal(probe.hasKey, true)
@@ -91,6 +93,7 @@ test('subscription mode is unchanged: no key variable, only claude.ai is accepte
   await f.service().run(input)
   const env = await f.environment('claude-code')
   assert.equal(env.names.includes('ANTHROPIC_API_KEY'), false)
+  assert.equal(env.subprocessScrub, null, 'the subscription launch is unchanged')
   const facts = f.connections.store.get(owner, f.bindings[0]!.connectionId).facts
   assert.equal(facts.subscription_login?.value, true); assert.equal(facts.billing?.value, null); assert.equal(facts.api_key_login, undefined)
   await f.scenario('claude-code', { claudeAuth: { loggedIn: true, authMethod: 'api_key' } })
