@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import type { Health, InstalledModelDescriptor } from '@guanxi/contract'
+import { legacyInstalledModelDescriptor, type Health, type InstalledModelDescriptor } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { api } from '../../src/lib/api.ts'
@@ -15,7 +15,7 @@ const HEALTH: Health = {
   appVersion: 'test',
   application: { state: 'reachable', source: 'application_http', observedAt: OBSERVED_AT },
   ollama: {
-    installed: true, running: true, state: 'reachable', source: 'ollama_api_version',
+    installed: true, installSource: 'runtime_response', running: true, state: 'reachable', source: 'ollama_api_version',
     observedAt: OBSERVED_AT, version: '0.12.6', host: 'http://fixture.invalid', installHint: null,
   },
   hardware: {
@@ -51,6 +51,9 @@ function descriptor(
     },
     capabilities,
     freshness,
+    // No runtime fingerprint and no overrides: what the schema defaults give such a response.
+    runtime: legacyInstalledModelDescriptor.runtime,
+    overrides: [],
   }
 }
 
@@ -146,7 +149,7 @@ describe('installed model evidence projection', () => {
       reason: null,
       observedAt: OBSERVED_AT,
       declarations: [{
-        capabilities: ['completion'] as const, source: 'ollama_api_tags' as const,
+        capabilities: ['completion' as const], source: 'ollama_api_tags' as const,
         observedAt: OBSERVED_AT, confidence: 'declared' as const, basis,
       }],
     }

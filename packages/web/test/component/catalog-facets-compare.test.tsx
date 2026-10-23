@@ -20,7 +20,7 @@ const HEALTH: Health = {
   ok: true, appVersion: 'test',
   application: { state: 'reachable', source: 'application_http', observedAt: AT },
   ollama: {
-    installed: true, running: true, state: 'reachable', source: 'ollama_api_version',
+    installed: true, installSource: 'runtime_response', running: true, state: 'reachable', source: 'ollama_api_version',
     observedAt: AT, version: '0.12.6', host: 'http://fixture.invalid', installHint: null,
   },
   hardware: {
@@ -152,7 +152,7 @@ describe('catalog query transport and filter projection', () => {
       signal: AbortSignal
       resolve: (value: ListCatalogResponse) => void
     }> = []
-    vi.spyOn(api, 'listCatalog').mockImplementation((params, signal) =>
+    vi.spyOn(api, 'listCatalog').mockImplementation((params = {}, signal) =>
       new Promise((resolve) => requests.push({ q: params.q, signal: signal!, resolve })),
     )
     render(<LauncherPage health={HEALTH} />)

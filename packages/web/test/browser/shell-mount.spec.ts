@@ -412,7 +412,7 @@ test('static is the default: no canvas, opaque chrome', async ({ page }) => {
 })
 
 test.describe('with motion allowed', () => {
-  test.use({ reducedMotion: 'no-preference' })
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } })
   test('Max graphics adds one non-interactive canvas behind the chrome, and the panes stay opaque', async ({ page }) => {
     await installShellApi(page, createFixture())
     await page.goto('/agent')

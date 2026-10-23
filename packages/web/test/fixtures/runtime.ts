@@ -1,17 +1,20 @@
-import {
-  runtimeSnapshotSchema,
-  type RuntimeGovernorSnapshot,
-  type RuntimeModelObservation,
-  type RuntimeSnapshot,
-} from '@guanxi/contract'
+import { runtimeSnapshotSchema, type RuntimeSnapshot } from '@guanxi/contract'
+import type { z } from 'zod'
+
+/**
+ * The fixture is built as wire input and parsed by the real schema, so fields the schema defaults
+ * (lease priority, observation keys) may be absent here exactly as they may be on the wire.
+ */
+export type RuntimeSnapshotInput = z.input<typeof runtimeSnapshotSchema>
+type GovernorInput = RuntimeSnapshotInput['governor']
+type LeaseInput = NonNullable<GovernorInput['activeLease']>
+type ModelInput = NonNullable<RuntimeSnapshotInput['models']>[number]
 
 export const RUNTIME_OBSERVED_AT = '2026-08-02T12:00:00.000Z'
 
 export function runtimeActiveLease(
-  owner: RuntimeGovernorSnapshot['activeLease'] extends infer Lease
-    ? NonNullable<Lease>['owner']
-    : never = { kind: 'job', jobId: 'job-fixture' },
-): NonNullable<RuntimeGovernorSnapshot['activeLease']> {
+  owner: LeaseInput['owner'] = { kind: 'job', jobId: 'job-fixture' },
+): LeaseInput {
   return {
     leaseId: 'lease-active',
     ticketId: 'ticket-active',
@@ -30,7 +33,7 @@ export function runtimeWaiter(
     kind: 'operation',
     operationId: `operation-${index}`,
   },
-): RuntimeGovernorSnapshot['queued'][number] {
+): GovernorInput['queued'][number] {
   return {
     ticketId: `ticket-waiter-${index}`,
     owner,
@@ -44,9 +47,9 @@ export function runtimeWaiter(
 }
 
 export function runtimeModel(
-  ownerState: RuntimeModelObservation['ownerState'] = 'active_lease',
-  fitState: RuntimeModelObservation['currentFit']['state'] = 'observed',
-): RuntimeModelObservation {
+  ownerState: ModelInput['ownerState'] = 'active_lease',
+  fitState: ModelInput['currentFit']['state'] = 'observed',
+): ModelInput {
   const active = ownerState === 'active_lease'
   return {
     name: active ? 'fixture:latest' : 'external-possible:latest',
@@ -98,9 +101,9 @@ export function runtimeModel(
 }
 
 export function runtimeSnapshotFixture(
-  mutate?: (snapshot: RuntimeSnapshot) => void,
+  mutate?: (snapshot: RuntimeSnapshotInput) => void,
 ): RuntimeSnapshot {
-  const snapshot: RuntimeSnapshot = {
+  const snapshot: RuntimeSnapshotInput = {
     observedAt: RUNTIME_OBSERVED_AT,
     source: {
       state: 'available',

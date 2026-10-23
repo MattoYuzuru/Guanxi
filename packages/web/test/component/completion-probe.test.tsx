@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { legacyInstalledModelDescriptor } from '@guanxi/contract'
 import type {
   CompletionProbeEvidence,
   CompletionProbeResponse,
@@ -58,6 +59,9 @@ function model(): ModelDetail {
         state: 'fresh', source: 'provider', observedAt: AT,
         validatedAt: AT, expiresAt: '2026-08-03T00:15:00.000Z', offline: false,
       },
+      // No runtime fingerprint and no overrides: what the schema defaults give such a response.
+      runtime: legacyInstalledModelDescriptor.runtime,
+      overrides: [],
     },
     isCloud: false,
     fit,

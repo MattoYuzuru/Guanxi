@@ -156,7 +156,7 @@ it('shows only the immutable API host for a compatible connection', () => {
   setActiveLocale('en')
   const view = render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, provider: 'openai',
     baseUrl: 'https://api.example.invalid:9443/private-api/v1',
-  }] }} retry={() => {}} mutate={mutate} />)
+  }] }} mutate={mutate} />)
   expect(screen.getByText('API host: api.example.invalid:9443')).toBeTruthy()
   expect(view.container.textContent).not.toContain('/private-api/v1')
 })

@@ -323,8 +323,7 @@ describe('resource conflict decision', () => {
   it('requires explicit retry after cancel failure and keeps one dispatch/key', async () => {
     const loader = vi.fn(async () => runtimeSnapshotFixture())
     let cancelCalls = 0
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(typeof input === 'string' ? input : input.toString(), 'http://fixture')
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
         cancelCalls += 1
         return cancelCalls === 1

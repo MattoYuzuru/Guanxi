@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { CatalogSourceHealth, Health, RuntimeCurrentFitReason } from '@guanxi/contract'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { RuntimeDetails } from '../../src/features/health/RuntimeStatus.tsx'
 import { ShellStatusItems } from '../../src/features/shell/ShellStatus.tsx'
 import { CatalogSourceNotice } from '../../src/features/launcher/LauncherPage.tsx'
@@ -24,6 +24,7 @@ function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
     },
     ollama: {
       installed: state !== 'unavailable',
+      installSource: state !== 'unavailable' ? 'runtime_response' : null,
       running: state === 'reachable',
       state,
       source: 'ollama_api_version',
@@ -201,7 +202,7 @@ describe('Runtime Bar projection', () => {
   it('labels current residency as observed without promising future admission', () => {
     renderRuntime(runtimeSnapshotFixture((snapshot) => {
       snapshot.models = [runtimeModel('active_lease', 'observed')]
-      snapshot.decisions = [snapshot.decisions[0]]
+      snapshot.decisions = snapshot.decisions.slice(0, 1)
     }))
 
     expect(screen.getByText('Только текущая загруженная конфигурация/residency')).toBeTruthy()
@@ -223,7 +224,7 @@ describe('Runtime Bar projection', () => {
         const model = runtimeModel('active_lease', 'unknown')
         if (model.currentFit.state === 'unknown') model.currentFit.reason = reason
         snapshot.models = [model]
-        snapshot.decisions = [snapshot.decisions[0]]
+        snapshot.decisions = snapshot.decisions.slice(0, 1)
       }))
       expect(view.container.textContent).toContain(label)
       expect(view.container.textContent).not.toContain(reason)
@@ -269,7 +270,7 @@ describe('Runtime Bar projection', () => {
       ['available' as const, 'Телеметрия NVIDIA доступна'],
       ['partial' as const, 'Телеметрия NVIDIA неполна'],
       ['unavailable' as const, 'Телеметрия NVIDIA недоступна'],
-    ]
+    ] as const
     for (const [state, label] of cases) {
       const view = renderRuntime(linuxNvidiaRuntimeSnapshot(state))
       expect(view.container.textContent).toContain(label)

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CatalogModel, Settings } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { applySettingsPatch } from '../helpers/settings.ts'
 import { z } from 'zod'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { Glossary } from '../../src/features/settings/Glossary.tsx'
@@ -237,14 +238,14 @@ describe('locale catalogs', () => {
       </LocaleProvider>,
     )
     await waitFor(() => expect(
-      screen.getAllByRole('heading', { name: 'Without a Project', exact: true }),
+      screen.getAllByRole('heading', { name: 'Without a Project' }),
     ).toHaveLength(2))
 
     resolveSettings(SETTINGS)
     await waitFor(() => expect(
-      screen.getAllByRole('heading', { name: 'Без проекта', exact: true }),
+      screen.getAllByRole('heading', { name: 'Без проекта' }),
     ).toHaveLength(2))
-    expect(screen.queryByRole('heading', { name: 'Without a Project', exact: true })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Without a Project' })).toBeNull()
   })
 
   it('refilters memoized Project icons after delayed settings bootstrap', async () => {
@@ -334,9 +335,7 @@ describe('Settings language and glossary', () => {
     const getSettings = vi.spyOn(api, 'getSettings').mockResolvedValue(SETTINGS)
     const listModels = vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     const updateSettings = vi.spyOn(api, 'updateSettings').mockImplementation(async (patch) => ({
-      ...SETTINGS,
-      ...patch,
-      locale: patch.locale ?? SETTINGS.locale,
+      ...applySettingsPatch(SETTINGS, patch),
       localeSource: 'user_setting',
     }))
 

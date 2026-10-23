@@ -89,7 +89,7 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
     }
 
     window.fetch = async (input) => {
-      const rawUrl = typeof input === 'string' ? input : input.url
+      const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const url = new URL(rawUrl, window.location.origin)
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === sessionPageRoute) {

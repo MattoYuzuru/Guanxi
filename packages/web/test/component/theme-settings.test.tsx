@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { applySettingsPatch } from '../helpers/settings.ts'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { LocaleProvider } from '../../src/lib/locale-context.tsx'
@@ -41,7 +42,7 @@ describe('one theme source of truth (P2)', () => {
   it('a theme chosen with the chrome toggle survives a Settings save and is mirrored to the node', async () => {
     vi.spyOn(api, 'getSettings').mockResolvedValue(SETTINGS)
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
-    const update = vi.spyOn(api, 'updateSettings').mockImplementation(async (patch) => ({ ...SETTINGS, ...patch } as Settings))
+    const update = vi.spyOn(api, 'updateSettings').mockImplementation(async (patch) => applySettingsPatch(SETTINGS, patch))
     render(<LocaleProvider><ThemeProvider><Toggle /><SettingsPage /></ThemeProvider></LocaleProvider>)
     await screen.findByRole('button', { name: 'Save' })
 
