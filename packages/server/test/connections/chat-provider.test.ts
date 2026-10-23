@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -198,7 +198,7 @@ test('durable fake-provider turn scrubs context, streams safely, saves usage and
   } })
   const id = await imported(f.service, value), chat = chatFixture(f, t)
   const thread = chat.create(chatModelSelection(id, piModels('openai')[0]!.id))
-  const body = { content: `Do not leak ${value}`, idempotencyKey: 'same-turn' }
+  const body = { content: `Do not leak ${value}`, idempotencyKey: randomUUID() }
   const send = () => chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const response = await send()
   const reader = response.body!.getReader()

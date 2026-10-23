@@ -541,7 +541,8 @@ export function threadsRoutes(app: AppContext): Hono {
 
     const thread = app.threads.get(threadId)
     if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
-    const sendBody = parsed.data
+    let sendBody = parsed.data
+    try { if (app.connections) sendBody = app.connections().scrubChat(sendBody) } catch (error) { return fail(context, error) }
 
     const active = app.jobs.activeChatJobForThread(threadId)
     if (active && (!sendBody.idempotencyKey || active.job.idempotencyKey !== sendBody.idempotencyKey)) {

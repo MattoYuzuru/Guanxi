@@ -312,7 +312,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
             {models.error !== null && (
               <p className="mt-1 text-2xs text-danger">{errorMessage(models.error)}</p>
             )}
-            {providerModels.error !== null && availableModels.length === 0 && !providerSelected && <p role="status" className="mt-1 text-2xs text-muted">{translate('chat.models.unavailable')}</p>}
+            {providerModels.error !== null && availableModels.length === 0 && !providerSelected && <p role="status" className="mt-1 text-12 text-muted">{translate('chat.models.unavailable')}</p>}
             {selectedModel && mode === 'chat' ? (
               <p className="mt-1 text-2xs text-muted" role="status" aria-live="polite">
                 {prewarmLabel(prewarm)}

@@ -57,7 +57,7 @@ export interface LocalChatTransport {
 export class Connections {
   private imports: Promise<unknown> = Promise.resolve()
   private closed = false
-  private readonly discovered = new Map<string, { at: string; models: string[] }>()
+  private readonly discovered = new Map<string, { at: string; models: string[]; source: string }>()
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
   #vault: Vault
@@ -151,7 +151,7 @@ export class Connections {
     if (!connection.baseUrl) return fallback()
     const cached = this.discovered.get(id)
     if (cached && Date.now() - Date.parse(cached.at) < 60_000) return {
-      models: cached.models, source: `${new URL(connection.baseUrl).host}/models`, observedAt: cached.at, confidence: 'medium' as const,
+      models: cached.models, source: cached.source, observedAt: cached.at, confidence: 'medium' as const,
     }
     try {
       const result = await this.#vault.inject(accountId, id, false, async key => {
@@ -167,12 +167,20 @@ export class Connections {
       })
       const at = new Date().toISOString()
       const models = this.scrubber.scrub(result)
-      this.discovered.set(id, { at, models })
+      this.discovered.set(id, { at, models, source: `${new URL(connection.baseUrl).host}/models` })
       return { models, source: `${new URL(connection.baseUrl).host}/models`, observedAt: at, confidence: 'medium' as const }
     } catch {
       // Cache fallback too: quiet background polling must not hammer a failing endpoint.
-      return fallback()
+      const catalog = fallback()
+      this.discovered.set(id, { at: catalog.observedAt, models: catalog.models, source: catalog.source })
+      return catalog
     }
+  }
+  /** Chat commands cross this boundary before durable input or title persistence. */
+  scrubChat<T>(value: T): T {
+    this.assertOpen()
+    this.#vault.assertScrubbingReady('local')
+    return this.scrubber.scrub(value)
   }
   async assertChatModel(accountId: string, id: string, modelId: string) {
     const connection = this.store.get(accountId, id)
