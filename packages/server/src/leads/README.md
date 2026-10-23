@@ -66,7 +66,8 @@ lead `interrupted` by a restart.
 
 `packet.ts` is pure: structured fields whitelisted from the child report (outcome, item statuses, gate
 results with clipped output, head, diffstat, handoff reference, child costs, open questions, drill-down ids)
-and never a trace. The budget is 4000 tokens counted as `ceil(utf8 bytes / 3)`, a conservative bound, not a
+and never a trace. The reporter hands over one gate result per item, the newest at the current head, in plan
+order: the relay ledger's evidence is a log of gate runs and the relay re-proves every item when its plan closes. The budget is 4000 tokens counted as `ceil(utf8 bytes / 3)`, a conservative bound, not a
 model tokenizer. Reductions run in a fixed order and each is listed in `truncated`. Text is scrubbed before
 clipping and the finished packet is scrubbed and parsed again. `relayStartsChildReporter` reads the relay
 ledger of the relay run started for a child through `RelayService.read` only.
@@ -163,6 +164,8 @@ Removing the plugin keeps the tables. Rollback: stop the node, unload the plugin
 `test/leads/*` use the K5 fixture ACP agent over real child processes and real HTTP, a fake child executor and
 injected clocks (up to 24 h of simulated time), plus a `SIGKILL` worker that kills the process at every
 transaction boundary of delegation, resolution/wake/acknowledgement and cancel with a scripted agent.
+The MS1 local rehearsal (`test/ms1/`) composes this service with the public relay start, R1, F2-d and F2-c across two
+loopback nodes and a real SIGKILL at each boundary; see its [hand-off](../../../../docs/plans/lanes/MS1-rehearsal.handoff.md).
 Fixture replay is local client validation; real Claude Code behaviour on `session/cancel`, `session/load`,
 usage reporting and billing is unverified. The relay adapter is covered with a fake public relay start; a real
 child additionally needs the operational relay (`operationalRelay`) to admit the start.
