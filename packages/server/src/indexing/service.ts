@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process'
-import { indexProcess, stopIndexProcess, grammarDirectories } from './process.ts'
+import { indexProcess, stopIndexProcess, grammarDirectories, type IndexWorkerPriority } from './process.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, realpath, mkdtemp, writeFile, rm, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -26,6 +26,8 @@ export interface IndexServiceOptions {
   headroomPollMs?: number
   headroom?: () => Promise<HeadroomObservation>
   onIndexEvent?: (event: IndexEvent) => void
+  /** Test-only override; the product always indexes at background priority. */
+  workerPriority?: IndexWorkerPriority
 }
 export type IndexEvent = { type: 'build' | 'publish' | 'skip' | 'untrack'; root: string }
 export class ProjectIndex {
@@ -125,7 +127,7 @@ export class ProjectIndex {
     const runtime = await this.runtime
     this.checkCancellation(signal)
     const dataDir = await realpath(this.options.dataDir)
-    const worker = await indexProcess(join(runtime, this.captured[0]!.name), root, dataDir)
+    const worker = await indexProcess(join(runtime, this.captured[0]!.name), root, dataDir, this.options.workerPriority)
     this.workers.add(worker)
     const combined = AbortSignal.any([this.abort.signal, ...(signal ? [signal] : [])])
     try {

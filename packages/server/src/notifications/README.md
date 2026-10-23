@@ -147,9 +147,9 @@ the 13 existing NC1-a rule tests as the regression envelope.
 
 ### Still later
 
-Plugin/boot wiring, HTTP routes and the `packages/contract` schema, the web/desktop
-notification center, real ports for R1 wakes and run pause/resume and K3 role rebinding,
-run-policy automatic reactions with undo, quiet hours, OS/push delivery and the other
+Plugin/boot wiring, HTTP routes and the `packages/contract` schema landed in MS2 (below). The
+web/desktop notification center, real ports for R1 wakes and run pause/resume and K3 role
+rebinding, run-policy automatic reactions with undo, quiet hours, OS/push delivery and the other
 attention kinds remain later NC1 work. NC1 is not complete.
 
 ## NC1-c: delivery planning, quiet hours and channel settings
@@ -260,8 +260,193 @@ producer tests. Each slice's hand-off records its own new / regression split.
 ## Still later
 
 - Settings persistence and the notification-settings UI; per-platform OS adapters; Web Push.
-- Plugin/boot wiring, HTTP routes and `packages/contract` schemas (MS2 wiring lane).
+- Delivery planning has no route or contract yet (the inbox routes landed in MS2, below).
 - Wiring the producers to K5 quota events and K3 balance probe results; Codex window-length
   evidence; local metering for providers without quota APIs; an automatic Claude producer.
 
 NC1 is not complete.
+
+## MS2: plugin, REST routes and wire contract
+
+**Status:** implemented, locally validated · **Updated:** 2026-10-23 · **Scope:** MS2 backend wiring
+
+`plugin.ts` provides `guanxi.notifications` (T0, service `notifications.inbox`). It opens
+`<dataDir>/notifications.sqlite` on load, registers one close effect and starts no timer, interval
+or ingestion. `start()` loads it with the other T0 plugins and mounts `routes.ts` at
+`/api/notifications`. `inbox.ts` (`NotificationInbox`) is the facade routes and kernel callers
+share; `inbox.ingest` is the NC1-b `NotificationService`, so a quota producer feeds facts through
+the kernel service, never over HTTP. `wire.ts` maps stored rows to `@guanxi/contract`
+(`packages/contract/src/notifications.ts`) and drops the account id, idempotency key and window
+instance key.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/notifications?state=&limit=&before=` | Newest first. `state` is a comma list, `limit` 1..200 (default 50), `before` a `nextCursor`. |
+| `GET /api/notifications/actions` | Per action: `available`, `not_configured` or `not_exposed`. |
+| `GET /api/notifications/:id` | One notification. |
+| `POST /api/notifications/:id/read` | Body `{}`. Idempotent; an acted row stays acted. |
+| `POST /api/notifications/:id/snooze` | `{ untilMs }`, strictly in the future. |
+| `POST /api/notifications/:id/actions` | `{ action, args }` with a required `Idempotency-Key` header. |
+
+Boundary rules, each pinned by a test in `packages/server/test/ms2-*.test.ts`:
+
+- **Content-free arguments.** The executable actions are `open`, `accept_recommendation`,
+  `wake_leads`, `switch_connection`, `pause_runs`, `resume_runs` and `snooze`. Arguments are
+  identifiers (`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`), small enums and integers; unknown keys are
+  refused. `add_prompt`, `choose_action` and `raise_budget` carry prompts, free text or money
+  intent, so they are `not_exposed` on the wire and `inbox.execute` refuses them even when a host
+  port exists.
+- **Honest ports.** `open` and `snooze` are built in: their only effect is the inbox state the
+  store commits. Every other action answers `501 not_configured` before any reservation row is
+  written, so the notification stays actionable and nothing is faked. Kernel-level embedders may
+  pass `ports` to the plugin and those actions then become `available`; `start()` exposes none,
+  so in the shipped node every action except `open` and `snooze` answers 501 until a later slice
+  supplies its port.
+- **`wake_leads` is not wired.** R1 `RunStore.signal(attempt, key, 'quota')` needs a fenced child
+  `Attempt` and wakes that child's parent. The run store keeps no index from a connection to the
+  runs that depend on it, so no exact, safe seam exists for ADR-0033's "wake the leads that depend
+  on this connection". It stays `not_configured` until a run-to-connection dependency exists.
+  `switch_connection`, `pause_runs` and `resume_runs` wait for K3 role rebinding and run policy.
+- **Crash recovery.** Built-in ports have no effect outside the store, so a key left `started` is
+  replayed. Any other action needs the host's `hasCompleted` probe; without one the answer is
+  `409 action_outcome_unknown` and nothing is replayed.
+- **Snooze without a timer.** `list`, `get`, `read` and `actions` first move snoozed rows whose
+  deadline passed back to `unread`. A read takes the write lock only when a row is actually due.
+  Replaying a finished `snooze` key answers `duplicate` even after its time has passed.
+- **Results are flat.** A port result reaches the wire as flat scalars only (strings cut at 200
+  characters); nested values are dropped.
+
+Every failure is `{ "code": ... }` only: `validation_failed` 400, `json_required` 415,
+`origin_denied` and `loopback_only` 403, `body_too_large` 413, `idempotency_key_required` 400,
+`notification_not_found` 404 (also for another account's id), `action_not_offered`,
+`notification_acted`, `action_in_progress`, `idempotency_conflict` and `action_outcome_unknown`
+409, `invalid_snooze_time` 422, `port_failed` 502, `not_configured` 501,
+`notifications_unavailable` 503, `internal_error` 500. No message, id or argument is echoed.
+These routes never emit another body shape; the catch-all for unknown `/api/*` paths in `start()`
+keeps its older `{ code, message, details }` shape. The shared guard (`http/local-guard.ts`) requires a loopback peer, a same-origin or configured dev
+`Origin`, `application/json` on mutations and a 2 MiB body budget.
+
+`accountId` is the fixed local owner (`'local'`) and is passed explicitly to every store call, so
+a U3 `can()` check is one call per handler. U3 is not wired.
+
+Evidence: `ms2-notifications-routes.test.ts` (24 tests), the notification parts of
+`ms2-plugins.test.ts`, `ms2-contract.test.ts` and `ms2-guard.test.ts`.
+
+Still later: the notification center UI, OS and push delivery, quota producers calling `ingest`,
+the `wake_leads`, `switch_connection`, `pause_runs` and `resume_runs` ports, run-policy reactions.
+
+## NC1-e: OS notification adapters
+
+**Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-e
+
+This section supersedes the per-platform OS adapter item in "Still later" for macOS and Linux;
+Windows toast and Web Push remain later work.
+
+`os-adapter.ts` delivers the content-free NC1-b `osPayload` through a desktop notification.
+`createOsNotifier({ platform, runner, appName, resolveBinary })` returns an `OsNotifier` with
+`notify({ title, tag })`, or `{ unavailable }`. Results are
+`{ delivered: true, code: 'delivered' }`, `{ delivered: false, code: 'payload_invalid' }` or
+`{ delivered: false, code: 'os_notify_failed' }`. The tag is never displayed or passed to a
+process; callers use it for de-duplication.
+
+### Payload boundary
+
+Validation accepts exactly the two own keys `title` and `tag`; any other own key (enumerable,
+non-enumerable or symbol) is refused before a value is read, while inherited properties are
+ignored and never read. `title` is trimmed, must be 1–120 characters after trimming and may not
+contain C0/C1 controls or U+2028/U+2029; `tag` must be a string with the same control-character
+restriction and has no display-length cap. A malformed payload never reaches a runner, and no
+payload text is logged.
+
+### Platform commands
+
+- macOS: `/usr/bin/osascript` receives three constant `-e` lines (`on run argv`,
+  `display notification (item 1 of argv) with title (item 2 of argv)`, `end run`) followed by
+  `--`, the payload title and the app name. The message is the payload title, the notification
+  title is the app name, and no payload text is interpolated into AppleScript.
+- Linux: `resolveBinary('notify-send')` must return a non-empty absolute path, otherwise the
+  notifier is `{ unavailable: 'notify_send_missing' }` (null, empty or a throwing lookup) or
+  `{ unavailable: 'notify_send_path_invalid' }` (relative or NUL-containing). The command is
+  `notify-send --app-name <appName> -- <title>`; there is no body.
+- Windows and every other platform return `{ unavailable: 'platform_unsupported' }`; Windows
+  toast is later work. An empty, control-bearing or overlong app name returns
+  `{ unavailable: 'app_name_invalid' }`.
+
+### Runner
+
+The default runner is `execFile` with no shell, a 64 KiB output buffer and the adapter's 5 s
+timeout, enforced with SIGKILL so a child that ignores SIGTERM cannot outlive the limit and
+later report success. Success requires exit code 0 with no signal; a non-zero exit, any signal,
+a timeout, a spawn error or a thrown runner maps to `os_notify_failed`, and the runner's
+message is never returned or logged. Tests inject a fake runner except for one darwin-only
+`/usr/bin/true` smoke that proves the default runner can execute an absolute binary without
+opening a notification.
+
+### NC1-e test evidence
+
+```bash
+nice -n 10 node --test packages/server/test/notifications/*.test.ts
+nice -n 10 npx tsc --noEmit -p packages/server
+```
+
+The command runs 99 tests: 13 NC1-e tests and the 86 NC1-a…d tests as the regression envelope.
+`tsc` reports no diagnostics.
+
+## NC1-f: delivery dispatch and opt-in OS delivery at boot
+
+**Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-f
+
+This section supersedes the NC1-e plug-in wiring residual for the OS channel. Settings
+persistence and the settings UI, Web Push, Windows toast and the host scheduler remain later
+work.
+
+### Opt-in configuration
+
+`NotificationsConfig.delivery` is optional. When it is absent, ingestion behaves as before: no
+`notification_deliveries` rows and no adapter call. When it is present, `settings(accountId)`
+supplies the NC1-c `DeliverySettings`; `os` is an `OsNotifier` or `{ unavailable }`.
+
+`start()` exposes `StartOptions.notificationDelivery`. With `{ os: true }` it builds
+`createOsNotifier` for the current platform with the central brand product name; without the
+option the plugin loads with no delivery. The boot default settings use the system IANA zone,
+`['in_app', 'os']`, no quiet hours, no critical bypass and no muted kinds. `runner`, `platform`
+and `resolveBinary` are optional host/test seams; production uses
+`createDefaultCommandRunner` and a PATH lookup.
+
+### Migration and dispatch
+
+v2 creates `notification_deliveries(notification_id, channel, deliver_at, status, code,
+attempted_at)` with primary key `(notification_id, channel)`, a status check
+`pending|delivered|failed|unavailable` and a `(status, deliver_at)` index. v1 is untouched.
+
+After `inbox.ingest.ingestQuotaFact` commits, `dispatcher.ts` plans each returned inserted row
+with the account settings and writes one row per planned channel in a separate transaction.
+`in_app` is recorded `delivered` with code `in_app` (the notification row is the delivery).
+`push` is recorded `unavailable` with code `push_not_configured`. `os` is `pending`, or
+`unavailable` with the adapter's reason when no adapter exists. A due `os` row is attempted
+immediately with `osPayload(notification)`: `delivered` or `failed` with the adapter's code; a
+thrown adapter becomes `failed`/`os_notify_failed`. Terminal rows are never retried.
+
+The primary key makes planning idempotent; the terminal update is guarded by
+`WHERE status='pending'`, and due passes are serialised in process. A second dispatch,
+`deliverDue` or re-ingest therefore cannot call the adapter twice for one row in normal
+operation. Deferred quiet-hours rows keep `attempted_at` null until the host calls
+`inbox.deliverDue(now)`. That call delivers every `pending` row with `deliver_at <= now`, is
+idempotent and returns `{ delivered, failed, unavailable, pending }`. The plugin starts no
+timer; the host owns the scheduler that calls `deliverDue`.
+
+No payload text or adapter message is logged or stored: rows keep a status and a code. The
+per-row primary key and the guarded terminal transition make repeated planning safe, but a
+crash between the notifier returning and the terminal update can still repeat one OS
+notification; a delivery claim/lease is later work.
+
+### NC1-f test evidence
+
+```bash
+nice -n 10 node --test packages/server/test/notifications/*.test.ts packages/server/test/ms2-*.test.ts
+nice -n 10 npx tsc --noEmit -p packages/server
+npx markdownlint-cli2 packages/server/src/notifications/README.md docs/plans/lanes/NC1-f.handoff.md
+```
+
+The required command runs 186 tests: 11 new dispatcher tests, the 99 existing notification
+tests and the 76 MS2 tests. `tsc` reports no diagnostics.

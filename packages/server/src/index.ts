@@ -16,11 +16,12 @@ import { federationRoutes } from './federation/routes.ts'
 import { FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
 import type { Federation } from './federation/service.ts'
 import { FederationError } from './federation/crypto.ts'
-import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { accessSync, constants, existsSync } from 'node:fs'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { PRODUCT_NAME } from '@guanxi/contract'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_PORT_ENV, DEFAULT_WEB_PORT } from './config/listen-env.ts'
@@ -41,6 +42,17 @@ import { projectIndexPlugin } from './indexing/plugin.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 import { externalAgentPlugin } from './external-agents/plugin.ts'
+import { LOCAL_ACCOUNT_ID } from './http/local-guard.ts'
+import { notificationsPlugin, NOTIFICATIONS_SERVICE } from './notifications/plugin.ts'
+import type { NotificationInbox } from './notifications/inbox.ts'
+import { notificationRoutes } from './notifications/routes.ts'
+import type { DeliverySettings } from './notifications/delivery.ts'
+import { createDefaultCommandRunner, createOsNotifier, type CommandRunner } from './notifications/os-adapter.ts'
+import { voicePlugin, VOICE_SERVICE, type VoiceGlossary } from './voice/plugin.ts'
+import { glossaryRoutes } from './voice/routes.ts'
+import { workPlugin, WORK_SERVICE } from './work/plugin.ts'
+import type { WorkLedger } from './work/ledger.ts'
+import { workRoutes } from './work/routes.ts'
 import type { ExternalPolicy } from './external-agents/types.ts'
 
 export { RELEASE_BUILD } from './release.ts'
@@ -144,6 +156,45 @@ export interface StartOptions {
   /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
    * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
   operationalRelay?: OperationalRelayOptions
+  /**
+   * Explicit opt-in to OS notification delivery. Off by default: without it ingestion writes
+   * notification rows only. `runner`, `platform` and `resolveBinary` are host/test seams; the
+   * production defaults are the current platform and the `execFile` runner.
+   */
+  notificationDelivery?: {
+    os: boolean
+    runner?: CommandRunner
+    platform?: NodeJS.Platform
+    resolveBinary?: (name: string) => string | null
+  }
+}
+
+/** PATH lookup with no shell; the adapter still validates the returned absolute path. */
+function resolveNotificationBinary(name: string): string | null {
+  for (const directory of (process.env['PATH'] ?? '').split(':')) {
+    if (directory.length === 0) continue
+    const candidate = join(directory, name)
+    if (!isAbsolute(candidate)) continue
+    try {
+      accessSync(candidate, constants.X_OK)
+      return candidate
+    } catch {
+      // Keep searching the remaining PATH entries.
+    }
+  }
+  return null
+}
+
+/** No settings persistence/UI yet: the boot default enables the in-app row and the OS channel. */
+function defaultNotificationDeliverySettings(): DeliverySettings {
+  return {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    channelsByKind: {},
+    defaults: ['in_app', 'os'],
+    quietHours: null,
+    criticalBypassesQuietHours: false,
+    mutedKinds: [],
+  }
 }
 
 export async function start(options: StartOptions = {}) {
@@ -217,6 +268,33 @@ export async function start(options: StartOptions = {}) {
         return { projectId: id, roots, source: 'native-project-roots+workspace-store', observedAt: Date.now() }
       },
     } })
+    // MS2: three independent sidecars. Loading opens a database and starts nothing else.
+    // A damaged sidecar disables only its own feature: its service stays unregistered and its routes
+    // answer 503 `*_unavailable`; chat, models and every other route keep working.
+    const sidecar = (name: string) => join(dirname(dbPath), name)
+    const optional = async (name: string, load: () => Promise<unknown>) => {
+      try { await load() } catch (error) {
+        process.stderr.write(`guanxi: ${name} sidecar unavailable (${error instanceof Error ? error.name : 'error'})\n`)
+      }
+    }
+    const deliveryOption = options.notificationDelivery
+    const notificationDelivery = deliveryOption?.os === true
+      ? {
+          settings: () => defaultNotificationDeliverySettings(),
+          os: createOsNotifier({
+            platform: deliveryOption.platform ?? process.platform,
+            runner: deliveryOption.runner ?? createDefaultCommandRunner(),
+            appName: PRODUCT_NAME,
+            resolveBinary: deliveryOption.resolveBinary ?? resolveNotificationBinary,
+          }),
+        }
+      : undefined
+    await optional('notifications', () => kernel.node.plugin(notificationsPlugin, {
+      databasePath: sidecar('notifications.sqlite'),
+      ...(notificationDelivery === undefined ? {} : { delivery: notificationDelivery }),
+    }))
+    await optional('voice', () => kernel.node.plugin(voicePlugin, { databasePath: sidecar('voice.sqlite') }))
+    await optional('work', () => kernel.node.plugin(workPlugin, { databasePath: sidecar('work.sqlite') }))
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
@@ -253,6 +331,14 @@ export async function start(options: StartOptions = {}) {
     if (!service) throw new RelayError('relay_closed')
     return service.publicStarts
   }, options.devOrigins ?? devOriginsFromEnv(process.env)))
+
+  const localOrigins = options.devOrigins ?? devOriginsFromEnv(process.env)
+  server.route('/api/notifications', notificationRoutes(
+    () => kernel.node.service<NotificationInbox>(NOTIFICATIONS_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
+  server.route('/api/voice/glossary', glossaryRoutes(
+    () => kernel.node.service<VoiceGlossary>(VOICE_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
+  server.route('/api/work', workRoutes(
+    () => kernel.node.service<WorkLedger>(WORK_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
 
   if (options.federation) server.route('/api/federation', federationRoutes(() => {
     const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
