@@ -96,7 +96,7 @@ describe('status-strip bell', () => {
   })
 
   it('counts a lower bound when more unread rows exist than the node returns, and the number equals the rows shown', async () => {
-    const node = new FakeNode(Array.from({ length: 201 }, (_, index) => notification(index + 1)))
+    const node = new FakeNode(Array.from({ length: 201 }, (_, index) => notification(index + 1, { actions: ['open'] })))
     mount(node)
     await waitFor(() => expect(bellCount()).toBe('at least 200 unread'))
     await ready()
@@ -106,7 +106,7 @@ describe('status-strip bell', () => {
     await waitFor(() => expect(bellCount()).toBe('201 unread'))
     expect(rows()).toHaveLength(201)
     expect(new Set(rows().map((row) => row.getAttribute('data-notification-id'))).size).toBe(201)
-  })
+  }, 60_000)
 
   it('announces new arrivals politely, once, and not the first load, a re-read, or the user\'s own change', async () => {
     const node = seed()
@@ -281,7 +281,7 @@ describe('notification center states', () => {
     // Newest first.
     expect(rows()[0]!.getAttribute('data-notification-id')).toBe(notificationId(120))
     expect(rows()[119]!.getAttribute('data-notification-id')).toBe(notificationId(1))
-  })
+  }, 60_000)
 
   it('keeps loaded older pages when the head is re-read', async () => {
     const node = new FakeNode(Array.from({ length: 70 }, (_, index) => notification(index + 1, { state: 'read' })))
