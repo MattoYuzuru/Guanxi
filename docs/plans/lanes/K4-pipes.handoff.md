@@ -130,7 +130,22 @@ the repo (committed), `kernel.io_uring_disabled` hosts (probe skips those names)
 
 ## Gates
 
-Filled in below after the final frozen run.
+All on source `68bc4849` (clean tree, source unchanged during each run), Node 26.9.0:
+
+| Gate | Result |
+| --- | --- |
+| `npm run typecheck --workspace @guanxi/server` | clean |
+| `npx eslint` on all changed `.ts` and `.mjs` files | exit 0 |
+| `npm run lint:md` | 0 markdownlint errors, 293 files, 0 link problems |
+| `npm run check:licenses` | 0 not allowed (no dependency or copied code added) |
+| `agent-dev ... --resource heavy -- npm run test` | `ok: true`, exit 0; receipt `~/.local/state/agent-dev/check-cl_xbcs4/result.json`; server suite 2982 tests, 2980 pass, 0 fail, 2 skipped (the two Linux-only tests: sandbox worker nice level, long-TMPDIR proxy startup) |
+| `agent-dev ... --resource heavy -- npm run build` | `ok: true`, exit 0; receipt `~/.local/state/agent-dev/check-wj72kqb6/result.json` |
+| `node packages/server/scripts/guard-differential.mjs` (arm64, amd64) | 28,988,928 cases, 0 differences each |
+
+Targeted direct runs on the lane machine: `seccomp.test.ts` 15/15, `seccomp-kernel.test.ts` 15/15
+(0 skipped, against the locally built `k4-v3`), `image-identity.test.ts` 8/8, full
+`sandbox.test.ts` 33/33. An earlier full run in this round was stopped because a code fix landed
+while it ran; it is not credited.
 
 ## Residual risks
 
