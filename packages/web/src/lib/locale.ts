@@ -1261,9 +1261,9 @@ const english = {
   'models.override.conflict.provider_unavailable':
     'Ollama was unavailable, so the current installation could not be confirmed.',
   'models.override.conflict.digest_expectation_mismatch':
-    'The installed digest changed since this page was loaded. Reload the model and decide again.',
+    'The installed digest changed since this page was loaded.',
   'models.override.conflict.runtime_expectation_mismatch':
-    'The Ollama version changed since this page was loaded. Reload the model and decide again.',
+    'The Ollama version changed since this page was loaded.',
   'models.override.conflict.persistence_failed':
     'The assertion could not be saved, so nothing was recorded.',
   'models.override.export': 'Your assertions as JSON',
@@ -3098,9 +3098,9 @@ const russian: Messages = {
   'models.override.conflict.provider_unavailable':
     'Ollama недоступна, поэтому текущую установку не удалось подтвердить.',
   'models.override.conflict.digest_expectation_mismatch':
-    'Установленный digest изменился после загрузки страницы. Перечитайте модель и примите решение заново.',
+    'Установленный digest изменился после загрузки страницы.',
   'models.override.conflict.runtime_expectation_mismatch':
-    'Версия Ollama изменилась после загрузки страницы. Перечитайте модель и примите решение заново.',
+    'Версия Ollama изменилась после загрузки страницы.',
   'models.override.conflict.persistence_failed':
     'Утверждение не удалось сохранить, поэтому ничего не записано.',
   'models.override.export': 'Ваши утверждения в JSON',

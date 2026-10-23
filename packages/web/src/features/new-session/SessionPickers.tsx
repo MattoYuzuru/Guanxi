@@ -148,6 +148,7 @@ export function RunOptions({ project, workspaces, selectedRoots, onRoots, rootsD
               {workspaces.map(workspace => {
                 const included = selectedRoots.includes(workspace.id)
                 return <li key={workspace.id} className="max-w-full"><Button size="sm" variant={included ? 'primary' : 'secondary'} aria-pressed={included}
+                  className="h-auto! max-w-full whitespace-normal! break-all py-1 text-left"
                   onClick={() => onRoots(included ? selectedRoots.filter(rootId => rootId !== workspace.id) : [...selectedRoots, workspace.id])}>
                   {included ? <Icon name="check" /> : <Icon name="folder" />}{workspace.exists ? workspace.name : t('newSession.folders.missing', { name: workspace.name })}</Button></li>
               })}

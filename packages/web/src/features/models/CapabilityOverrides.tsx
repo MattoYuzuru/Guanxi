@@ -34,7 +34,8 @@ type Intent =
   | { kind: 'remove'; capability: ModelCapability }
 
 type Feedback =
-  | { kind: 'outcome'; outcome: ModelCapabilityOverrideOutcome }
+  /** `reread`: the model was already re-read after this outcome (identity drift); no second re-read. */
+  | { kind: 'outcome'; outcome: ModelCapabilityOverrideOutcome; reread?: boolean }
   | { kind: 'error'; message: string }
   | { kind: 'export'; state: 'copied' | 'downloaded' | 'failed' }
 
@@ -68,9 +69,13 @@ function exactIdentity(model: ModelDetail): ExactIdentity | null {
 export function CapabilityOverrides({
   model,
   onRefresh,
+  carriedOutcome = null,
 }: {
   model: ModelDetail
-  onRefresh: () => void
+  /** Re-reads the model; a drift outcome is passed along so it survives the remount. */
+  onRefresh: (carried?: ModelCapabilityOverrideOutcome) => void
+  /** A drift conflict from before the re-read, still shown so the user knows nothing changed. */
+  carriedOutcome?: ModelCapabilityOverrideOutcome | null
 }) {
   const [overrides, setOverrides] = useState<ModelCapabilityOverride[]>(
     model.descriptor.overrides,
@@ -78,7 +83,9 @@ export function CapabilityOverrides({
   const [draft, setDraft] = useState<ModelCapability>(CAPABILITIES[0]!)
   const [intent, setIntent] = useState<Intent | null>(null)
   const [pending, setPending] = useState(false)
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [feedback, setFeedback] = useState<Feedback | null>(
+    carriedOutcome ? { kind: 'outcome', outcome: carriedOutcome, reread: true } : null,
+  )
   const addRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const removeRefs = useRef(new Map<ModelCapability, HTMLButtonElement | null>())
@@ -448,16 +455,16 @@ function Feedback({
   onRefresh,
 }: {
   feedback: Feedback
-  onRefresh: () => void
+  onRefresh: (carried?: ModelCapabilityOverrideOutcome) => void
 }) {
   // Identity drift means the shown model is stale: re-read it at once instead of asking the user
   // to press Reload (D-203). Once per conflict outcome.
-  const drifted = feedback.kind === 'outcome' && feedback.outcome.state === 'conflict'
+  const drifted = feedback.kind === 'outcome' && !feedback.reread && feedback.outcome.state === 'conflict'
     && (feedback.outcome.reason === 'digest_expectation_mismatch' || feedback.outcome.reason === 'runtime_expectation_mismatch')
     ? feedback.outcome : null
   const refreshRef = useRef(onRefresh)
   refreshRef.current = onRefresh
-  useEffect(() => { if (drifted) refreshRef.current() }, [drifted])
+  useEffect(() => { if (drifted) refreshRef.current(drifted) }, [drifted])
   if (feedback.kind === 'export') {
     if (feedback.state === 'failed') {
       return (

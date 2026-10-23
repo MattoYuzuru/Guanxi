@@ -5,7 +5,7 @@
  * explicit on-demand request, so suggestions never become a hidden whitelist.
  */
 import { useMemo, useState } from 'react'
-import type { FitVerdict, Health, ModelDetail, RunningModel } from '@guanxi/contract'
+import type { FitVerdict, Health, ModelCapabilityOverrideOutcome, ModelDetail, RunningModel } from '@guanxi/contract'
 import { DEFAULT_CHAT_NUM_CTX } from '@guanxi/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -42,6 +42,9 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
     [name, requestedContext],
   )
 
+  // A drift conflict from the override region survives the re-read (which remounts the profile).
+  const [carriedOutcome, setCarriedOutcome] = useState<ModelCapabilityOverrideOutcome | null>(null)
+
   if (detail.loading) return <ModelSkeleton />
 
   if (detail.error || !detail.data) {
@@ -68,7 +71,8 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
       health={health}
       requestedContext={requestedContext}
       onRequestContext={setRequestedContext}
-      onRefresh={detail.reload}
+      onRefresh={(carried) => { setCarriedOutcome(carried ?? null); detail.reload() }}
+      carriedOutcome={carriedOutcome}
       onStartChat={(contextLength) =>
         navigate(
           `${paths.chat()}?model=${encodeURIComponent(name)}&numCtx=${contextLength}`,
@@ -84,13 +88,15 @@ function ModelProfile({
   onStartChat,
   onRequestContext,
   onRefresh,
+  carriedOutcome,
   requestedContext,
 }: {
   model: ModelDetail
   health: Health
   onStartChat: (contextLength: number) => void
   onRequestContext: (contextLength: number) => void
-  onRefresh: () => void
+  onRefresh: (carried?: ModelCapabilityOverrideOutcome) => void
+  carriedOutcome: ModelCapabilityOverrideOutcome | null
   requestedContext?: number
 }) {
   /* Слайдер ходит по тем окнам, для которых сервер прислал вердикт. */
@@ -221,7 +227,7 @@ function ModelProfile({
 
           {/* Deliberately its own region: a user assertion is not provider or runtime evidence. */}
           <Panel title={translate('models.override.title')}>
-            <CapabilityOverrides model={model} onRefresh={onRefresh} />
+            <CapabilityOverrides model={model} onRefresh={onRefresh} carriedOutcome={carriedOutcome} />
           </Panel>
 
           <Panel title={translate('model.architecture')}>
