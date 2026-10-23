@@ -64,8 +64,11 @@ export class AcpClient {
     this.capabilities = object(result.agentCapabilities)
     return { ...result, observedVersion }
   }
-  async prompt(model: string, text: string, cwd: string, lead?: LeadTurn, settings: { effort?: string } = {}): Promise<AgentOutput> {
+  async prompt(model: string, text: string, cwd: string, lead?: LeadTurn, settings: { effort?: string; pin?: boolean } = {}): Promise<AgentOutput> {
     if (lead && object(this.capabilities.mcpCapabilities).http !== true) throw new ExternalAgentError('mcp_http_unsupported')
+    // Programmatic settings are the bridge's highest-priority tier: they keep user/project/local files from moving the endpoint the
+    // credential is sent to or from relaxing the permission mode (K5 answers every permission request with a refusal).
+    const pinned = settings.pin ? { _meta: { claudeCode: { options: { settings: { env: { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' }, permissions: { defaultMode: 'default' }, apiKeyHelper: '' } } } } } : {}
     const mcpServers = (lead?.mcpServers ?? []).map(server => ({ type: 'http' as const, name: server.name, url: server.url,
       headers: server.headers.map(header => ({ name: header.name, value: header.value })) }))
     let session: Record<string, unknown> | undefined
@@ -74,7 +77,7 @@ export class AcpClient {
     if (lead?.resume && this.capabilities.loadSession === true) {
       try {
         // History replayed by the agent arrives before this response, while no session is selected.
-        session = object(await this.client.request('session/load', { sessionId: lead.resume.acpSessionId, cwd, mcpServers }))
+        session = object(await this.client.request('session/load', { sessionId: lead.resume.acpSessionId, cwd, mcpServers, ...pinned }))
         sessionId = lead.resume.acpSessionId
         mode = 'load'
       } catch (error) {
@@ -83,7 +86,7 @@ export class AcpClient {
       }
     }
     if (!session) {
-      session = object(await this.client.request('session/new', { cwd, mcpServers } satisfies NewSessionRequest))
+      session = object(await this.client.request('session/new', { cwd, mcpServers, ...pinned } satisfies NewSessionRequest))
       if (typeof session.sessionId !== 'string' || !session.sessionId) throw new ExternalAgentError('protocol_failed')
       sessionId = session.sessionId
       if (lead?.seededPrompt !== undefined) mode = 'seeded'
@@ -104,7 +107,7 @@ export class AcpClient {
     // reports no options keeps the effort it was created with, like its model.
     const effort = settings.effort
     if (effort !== undefined) {
-      const level = options.find(o => o.id === 'effort' || o.category === 'thought_level')
+      const level = options.find(o => o.id === 'effort')
       if (!(mode === 'load' && !level)) {
         if (!level || level.type !== 'select' || typeof level.id !== 'string' || !optionValues(level.options).includes(effort)) throw new ExternalAgentError('effort_unavailable')
         if (level.currentValue !== effort) {

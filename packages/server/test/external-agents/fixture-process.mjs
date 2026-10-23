@@ -34,7 +34,7 @@ if (process.argv.slice(2).join(' ') === 'auth status') {
   }
   // Like the real CLI (2.1.287): an `ANTHROPIC_API_KEY` in the environment is the active credential. Names only, never values.
   writeFileSync(join(root, 'auth-env.json'), JSON.stringify({ names: Object.keys(process.env), hasKey: !!process.env.ANTHROPIC_API_KEY }))
-  send(config.claudeAuth ?? (process.env.ANTHROPIC_API_KEY ? { loggedIn: true, authMethod: 'api_key' } : { loggedIn: true, authMethod: 'claude.ai' }))
+  send(config.claudeAuth ?? (process.env.ANTHROPIC_API_KEY ? { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' } : { loggedIn: true, authMethod: 'claude.ai' }))
   process.exit(0)
 }
 let vendorRead = false

@@ -7,7 +7,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
 import { CodexClient } from './codex.ts'
-import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
+import { canonicalExecutable, isolatedEnvironment, vendorSettingsPresent, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
   type ClaudeAuthProbe, type ProcessCleanup } from './process.ts'
 import { ExternalStore } from './store.ts'
 import { ADAPTERS, API_ENV } from './profiles.ts'
@@ -344,6 +344,9 @@ export class ExternalAgents {
           config = await isolatedEnvironment(this.root, throwaway ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
           this.assertActive(dispatchSignal)
           this.payment(install, row, key, config.env, binding.model)
+          // Claude's own settings files can redirect a credential (`env.ANTHROPIC_BASE_URL`) or relax permissions; this directory is Guanxi's,
+          // so a file there is not the owner's. Existence only: nothing is opened.
+          if (this.claudeApiKeyMode(install, row) && await vendorSettingsPresent(config.configDirectory)) throw new ExternalAgentError('claude_settings_present')
           if (install.adapter === 'claude-code') {
             if (!install.claudeExecutable) throw new ExternalAgentError('claude_binary_required')
             const claude = await canonicalExecutable(install.claudeExecutable)
@@ -365,7 +368,7 @@ export class ExternalAgents {
             if (this.claudeApiKeyMode(install, row)) {
               // Only the key this launch injected may satisfy the probe: any other method (a leftover login, a helper, a token)
               // means the CLI would bill something else than the connection the owner chose.
-              const keyed = auth.status.loggedIn && auth.status.authMethod === 'api_key'
+              const keyed = auth.status.loggedIn && auth.status.authMethod === 'api_key' && auth.status.apiKeySource === 'ANTHROPIC_API_KEY'
               this.observe(install, 'api_key_login', keyed, 'claude_auth_status')
               this.observe(install, 'billing', keyed ? 'api_usage' : null, keyed ? 'anthropic_api_key_connection' : 'api_key_not_in_effect', keyed ? 'high' : 'medium')
               if (!keyed) throw new ExternalAgentError('claude_api_key_not_in_effect')
@@ -422,7 +425,7 @@ export class ExternalAgents {
                 status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
             : await client.prompt(binding.model, prompt, config.cwd, input.lead && { ...input.lead,
               ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) },
-            install.claudeEffort === undefined ? undefined : { effort: install.claudeEffort })
+            { ...(install.claudeEffort === undefined ? {} : { effort: install.claudeEffort }), ...(this.claudeApiKeyMode(install, row) ? { pin: true } : {}) })
           dispatchSignal.throwIfAborted()
           const safe = this.scrubber.scrub(output)
           handle.append({ type: 'assistant.message', data: { messageId, step: 0, text: safe.text } })
