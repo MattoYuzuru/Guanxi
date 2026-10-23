@@ -12,7 +12,7 @@ import {
 import type { RelayStore } from './store.ts'
 import type { CheckerSpec, RelayDelegationBrief } from './delegation-brief.ts'
 import type { JudgeModel } from './judge-model.ts'
-import type { RelayJudgeSummary } from './judge-host.ts'
+import { JUDGE_UNKNOWN_FACTS, type JudgeUnknownFact, type RelayJudgeSummary } from './judge-host.ts'
 import { observeUntilAbort } from './judge-await.ts'
 
 const resultSchema = z
@@ -59,7 +59,7 @@ const summarySchema = z
         })
         .strict()
     ),
-    unknownFacts: z.array(z.enum(['heartbeat', 'lease', 'deadline', 'disk', 'tokenBudget']))
+    unknownFacts: z.array(z.enum(JUDGE_UNKNOWN_FACTS as [JudgeUnknownFact, ...JudgeUnknownFact[]]))
   })
   .strict()
 export type JudgeResult = z.infer<typeof resultSchema>

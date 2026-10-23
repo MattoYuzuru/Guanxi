@@ -13,6 +13,7 @@ import { REDACTION_MARKER_OPEN } from '../../src/egress/types.ts'
 import { REMOTE_RELAY_COUNTER_SOURCE, REMOTE_RELAY_PROPS_SOURCE } from '../../src/relay/remote-runtime.ts'
 import { fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { ConnectionJudgeModel } from '../../src/relay/judge-model.ts'
+import { JUDGE_PROMPT } from '../relay/judge-fixture.ts'
 import { integrity, legalState } from './invariants.ts'
 import { createWorld, HOUR, MINUTE, START, until, World, type Gap } from './world.ts'
 
@@ -120,9 +121,12 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.equal(admitted.meter.source, REMOTE_RELAY_COUNTER_SOURCE); assert.equal(admitted.meter.measurement, 'exact_rendered_request')
   assert.equal(w.count("SELECT COUNT(*) AS n FROM run_attempts WHERE run_id=? AND state IN ('delivered','started')", relay), 0)
 
-  // 3. Remote token usage is in the child ledgers (F2-c), exactly the tokens the executor evaluated.
+  // 3. Remote token usage is in the child ledgers (F2-c), exactly the tokens the executor evaluated. The J2 judge's samples are remote
+  // calls too: each one is a child run with its own row, apart from the relay's own calls.
+  const isJudge = (post: { body: { prompt: string } }) => post.body.prompt.startsWith(`<|user|>\n${JUDGE_PROMPT}`)
+  const judgePosts = posts.filter(isJudge), relayPosts = posts.filter(post => !isJudge(post))
   const children = w.rows<{ id: string; state: string }>("SELECT id,state FROM durable_runs WHERE id LIKE 'rc-%'")
-  assert.equal(children.length, posts.length, 'one child run per remote call')
+  assert.equal(children.length, posts.length, 'one child run per remote call, judge or relay')
   assert.ok(children.every(child => child.state === 'completed'))
   const childRows = children.flatMap(child => w.costs(child.id)) as Array<{ entry_key: string; input_tokens: number }>
   assert.equal(childRows.length, children.length, 'exactly one cost row per remote call')
@@ -130,7 +134,9 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.deepEqual(childRows.map(row => row.input_tokens).sort(num), posts.map(post => fakeTokens(post.body.prompt, true)).sort(num), 'the ledgers hold the evaluated counts, call for call')
   const relayRows = w.costs(relay) as Array<{ entry_key: string; input_tokens: number }>
   assert.ok(relayRows.every(row => !row.entry_key.startsWith('remote-dispatch:')))
-  assert.equal(sum(relayRows), sum(childRows), 'the relay run\'s cap accounting and the executor reports agree (and are never summed together)')
+  assert.equal(sum(relayRows), relayPosts.reduce((n, post) => n + fakeTokens(post.body.prompt, true), 0),
+    'the relay run\'s cap accounting holds its own calls only: the judge\'s samples are not added to it (and never summed with the child ledgers)')
+  assert.equal(sum(childRows) - sum(relayRows), judgePosts.reduce((n, post) => n + fakeTokens(post.body.prompt, true), 0), 'the children hold the judge\'s tokens in addition')
 
   // 5. Six simulated hours passed in cycles; hardly any real time did.
   assert.equal(checks.length, 5, 'a gap before each of cycles 2 to 6')
@@ -177,7 +183,8 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.ok(packet.gates.every((gate: { ok: boolean; head: string }) => gate.ok && ledger.head.startsWith(gate.head.replace(/…$/, ''))), 'every gate is for the final head (the packet shortens it)')
   assert.ok(ledger.head.startsWith(String(packet.head).replace(/…$/, ''))); assert.equal(packet.handoff.ref, `relay:${relay}`)
   assert.ok(Math.ceil(Buffer.byteLength(packetRow) / 3) <= 4000, 'the packet fits its token budget')
-  assert.deepEqual(packet.metrics, { cycles: 6, tokens: relayRows.reduce((n, row) => n + row.input_tokens + (row as unknown as { output_tokens: number }).output_tokens, 0), moneyMicros: 0 }, 'the packet reports the relay run\'s own accounting')
+  // The relay's caps see the judge only through the cascade's pre-debit (13000 tokens per sample), never through the children.
+  assert.deepEqual(packet.metrics, { cycles: 6, tokens: relayRows.reduce((n, row) => n + row.input_tokens + (row as unknown as { output_tokens: number }).output_tokens, 0) + judgePosts.length * 13000, moneyMicros: 0 }, 'the packet reports the relay run\'s own accounting, with the judge\'s reserve')
   assert.deepEqual(packet.child.costs, [], 'the lead\'s promise child is a mirror and holds no tokens')
   for (const forbidden of [w.dir, w.project, 'Bearer ', 'PRIVATE_REASONING_FIXTURE', 'model.gguf', 'sandbox-worker'])
     assert.ok(!packetRow.includes(forbidden), `the packet carries no ${forbidden}`)
@@ -190,9 +197,20 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.ok(!JSON.stringify(posts).includes(w.canary), 'nor in any prompt the executor evaluated')
   await assert.rejects(exec('/usr/bin/grep', ['-rlF', w.canary, w.homeDir]), (error: { code?: number }) => error.code === 1, 'nor in any file of the home node (database, WAL, agent logs)')
 
-  // Recorded blocker, asserted so that it cannot close silently: no judge looked at this remote relay (see the judge test below).
+  // R3: the judge observed this remote relay. The signals layer needs no model; J2 ran on the executor through the relay's own session.
   const relaySession = String(w.one('SELECT session_id FROM durable_runs WHERE id=?', relay)!['session_id'])
-  assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE session_id=? AND payload LIKE '%judge%'", relaySession), 0, 'no judge signal or verdict exists for the remote relay')
+  const notes = w.rows<{ payload: string }>("SELECT payload FROM session_events WHERE session_id=? AND type='agent.note' ORDER BY seq", relaySession)
+    .map(row => { try { return JSON.parse((JSON.parse(row.payload) as { text: string }).text) as Record<string, any> } catch { return {} as Record<string, any> } })
+  const signals = notes.filter(note => note['relay'] === 'judge_signals')
+  assert.deepEqual(signals.map(note => [note['cycle'], note['phase']]), [1, 2, 3, 4, 5, 6].flatMap(cycle => [[cycle, 'cycle_start'], [cycle, 'pre_seal']]), 'a signals observation at both boundaries of every cycle')
+  assert.ok(signals.every(note => note['unknownFacts'].includes('heartbeat') && note['unknownFacts'].includes('lease')), 'what the collector does not observe is unknown, not healthy')
+  assert.equal(judgePosts.length, 6 * 2 * 2, 'two J2 samples at each of the two boundaries of the six cycles, each evaluated by the executor')
+  const verdicts = w.rows<{ layer: string; state: string; cycle: number; phase: string }>('SELECT layer,state,cycle,phase FROM relay_judge_requests WHERE run_id=? ORDER BY cycle,phase', relay)
+  assert.equal(verdicts.length, 12); assert.ok(verdicts.every(row => row.layer === 'J2' && row.state === 'completed'), 'a verdict for every boundary')
+  assert.equal(notes.filter(note => note['relay'] === 'judge_result' && note['state'] === 'completed').length, 12)
+  assert.equal(ledger.judge.requests.length > 0, true, 'the ledger snapshot references the judge requests')
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE session_id=? AND payload LIKE '%judge%'", lead), 0, 'the lead\'s own session never carries judge events')
+  assert.ok(!packetRow.includes('judge_'), 'and the wake packet carries none')
 
   // The end state: every run closed, nothing alive anywhere.
   for (const id of [lead, relay, w.rows<{ child_id: string }>('SELECT child_id FROM promises WHERE parent_id=?', lead)[0]!.child_id]) assert.equal(w.state(id), 'completed', id)
@@ -262,6 +280,27 @@ test('the owner cancels the lead between two relay cycles: the relay run and its
   w.db(legalState); w.db(integrity)
 })
 
+// ---- The judge-off baseline ---------------------------------------------------------------------------------------------------
+
+test('with the judge off, the relay run\'s own accounting equals the executor\'s reports call for call, and nothing of the judge exists', async t => {
+  const w = await createWorld(t, { items: 2, gapMs: 75 * MINUTE, judge: false })
+  const home = await w.boot()
+  const started = await w.startLead(home); await started.first
+  await until(() => w.state(started.runId) === 'completed', 'the lead to finish', 240_000)
+  const relay = w.relayStarts()[0]!.run_id
+  const posts = await w.fake.requests('/completion')
+  const children = w.rows<{ id: string }>("SELECT id FROM durable_runs WHERE id LIKE 'rc-%'")
+  const childRows = children.flatMap(child => w.costs(child.id)) as Array<{ input_tokens: number }>
+  const relayRows = w.costs(relay) as Array<{ input_tokens: number }>
+  assert.equal(children.length, posts.length); assert.equal(childRows.length, children.length)
+  assert.equal(relayRows.length, posts.length, 'one relay row per call')
+  assert.equal(sum(relayRows), sum(childRows), 'the two views agree on the tokens that were evaluated (and are never summed together)')
+  assert.deepEqual(relayRows.map(row => row.input_tokens).sort(num), posts.map(post => fakeTokens(post.body.prompt, true)).sort(num))
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'relay_judge%'"), 0, 'no judge ledger')
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE payload LIKE '%judge%'"), 0, 'no judge event anywhere')
+  w.db(legalState); w.db(integrity)
+})
+
 // ---- The owner's limits bind the lead inside the composition ------------------------------------------------------------
 
 test('the owner\'s limits and executor allow-list bind the lead in the composed node: a refused brief hibernates nothing and starts no relay', async t => {
@@ -290,16 +329,20 @@ test('the owner\'s limits and executor allow-list bind the lead in the composed 
   assert.equal(w.count('SELECT COUNT(*) AS n FROM lead_delegations'), 0)
 })
 
-// ---- The recorded MS1 blocker: the R3 judge cannot observe a remote relay ------------------------------------------------
+// ---- R3: the judge model counts and dispatches on the runtime that serves the relay ---------------------------------------
 
-test('recorded MS1 blocker: the R3 judge model refuses the meter of a remote or llama-server relay, and the public relay start has no judge seam', () => {
+test('the judge model accepts the meter of a remote or llama-server relay only bound to its own runtime, and still refuses an inconsistent one', () => {
   // This is the shape of the executor's meter in every test above: it carries the transport that counted, and an async count.
   const remoteMeter = { countIsExact: true, localOnly: true, transport: { id: 'llama-server', host: 'federation://ms1-executor' }, countAsync: async () => 1,
     count: () => 1, observe: async () => ({}) }
-  assert.throws(() => new ConnectionJudgeModel({} as never, 'local', remoteMeter as never, {} as never, async () => null, 1000), /judge_config_invalid/,
-    'if this stops throwing, the judge can observe a remote relay: wire it into RelayStarts, run the rehearsal with it, and remove this blocker from the MS1 hand-off')
+  const binding = { connectionId: 'executor-connection', model: 'fixture' }
+  const build = (meter: object, runtime?: typeof binding) => new ConnectionJudgeModel({} as never, 'local', meter as never, {} as never, async () => null, 1000, Date.now, runtime)
+  assert.doesNotThrow(() => build(remoteMeter, binding), 'consistent: counted and dispatched by the one runtime the relay uses')
+  assert.throws(() => build(remoteMeter), /judge_config_invalid/, 'a transport meter with no named runtime')
+  assert.throws(() => build({ ...remoteMeter, transport: undefined }, binding), /judge_config_invalid/, 'counted by a remote runtime, dispatched on the local one')
+  assert.throws(() => build({ ...remoteMeter, countIsExact: false }, binding), /judge_config_invalid/, 'no exact source')
   const local = { countIsExact: true, localOnly: true, count: () => 1, observe: async () => ({}) }
-  assert.doesNotThrow(() => new ConnectionJudgeModel({} as never, 'local', local as never, {} as never, async () => null, 1000), 'a local Ollama meter is accepted, so the refusal above is about the remote seam')
+  assert.doesNotThrow(() => build(local), 'a local Ollama meter is accepted as before')
 })
 
 // ---- 7. A SIGKILL at 15 named home-side boundaries, then recovery from disk ------------------------------------------------
@@ -321,6 +364,11 @@ interface Crash {
   /** The executor pinned a relay run that died with the home (F2-d residual 3). Since F2-reap the restarted home releases it by a
    * signed, fenced unpin: the expectation after recovery is zero pins and an empty journal, and the live run's pin is never confused. */
   stalePin?: boolean
+  /** The judge is on for this case. The 15 original cases run without it so that their call-by-call arithmetic stays as it was. */
+  judge?: boolean
+  /** The final F2-c outcome of the first remote call (the judge's) after recovery: `billed` is completed with its one row, `unbilled`
+   * is not completed with none. Never a row without the completion, never two rows. */
+  judgeChild?: 'billed' | 'unbilled'
   /** What the disk says at the instant of the kill: proof that the process died on the boundary the name claims. */
   atKill(w: World, lead: string): void | Promise<void>
 }
@@ -386,6 +434,42 @@ const crashes: Crash[] = [
       assert.equal(children.flatMap(child => w.costs(child.id)).length, 7, 'completion and usage landed together')
       assert.equal(w.costs(relayOf(w)!.run_id).length, 6, 'the relay run had not yet heard of it: the two ledgers are separate views and are never summed')
     } },
+  // The same kill points with the R3 judge on. The first remote call of a judged relay is the J2 sample at the first cycle_start, so
+  // nth 1 is a judge call. A killed judge call is never replayed: recovery loses the relay run (R2) and dispatches nothing.
+  { name: 'judge sample, terminal ingest before it commits', label: 'net:terminal:before_ingest', nth: 1, judge: true, judgeChild: 'unbilled', recovery: 'fails', done: [], stalePin: true,
+    atKill(w) {
+      const [child, ...others] = remoteChildren(w)
+      assert.ok(child && others.length === 0 && child.state !== 'completed', 'one remote call, the judge\'s, not completed')
+      assert.equal(w.costs(child!.id).length, 0, 'the answer the executor evaluated is not on the home\'s books')
+      assert.deepEqual(w.rows('SELECT layer,state FROM relay_judge_requests'), [{ layer: 'J2', state: 'dispatched' }], 'the request was dispatched and has no outcome')
+      assert.equal(w.costs(relayOf(w)!.run_id).length, 0)
+    } },
+  { name: 'judge sample, terminal ingest committed but unanswered', label: 'net:terminal:after_ingest', nth: 1, judge: true, judgeChild: 'billed', recovery: 'fails', done: [], stalePin: true,
+    atKill(w) {
+      const [child, ...others] = remoteChildren(w)
+      assert.ok(child && others.length === 0 && child.state === 'completed')
+      assert.equal(w.costs(child!.id).length, 1, 'the judge call is billed to its child')
+      assert.equal(w.costs(relayOf(w)!.run_id).length, 0, 'and not to the relay run')
+      assert.deepEqual(w.rows('SELECT layer,state FROM relay_judge_requests'), [{ layer: 'J2', state: 'dispatched' }])
+    } },
+  // Inside the one transaction that records the receipt, the usage and the completion of a remote call (F2-c); the first R1 `complete`
+  // of a judged relay is the judge call's, as it is the first remote call.
+  { name: 'judge sample, terminal ingest inside the transaction', label: 'complete:before_commit', nth: 1, judge: true, judgeChild: 'unbilled', recovery: 'fails', done: [], stalePin: true,
+    atKill(w) {
+      const [child, ...others] = remoteChildren(w)
+      assert.ok(child && others.length === 0 && child.state !== 'completed', 'the completion rolled back')
+      assert.equal(w.costs(child!.id).length, 0, 'and took the judge call\'s usage row with it')
+      assert.deepEqual(w.rows('SELECT layer,state FROM relay_judge_requests'), [{ layer: 'J2', state: 'dispatched' }])
+    } },
+  { name: 'between relay cycles, judged', label: 'gap:2', nth: 1, judge: true, recovery: 'fails', done: ['i1', 'i2'], stalePin: true,
+    async atKill(w) {
+      const relay = relayOf(w)!
+      assert.equal(w.count('SELECT COUNT(*) AS n FROM relay_seals WHERE run_id=?', relay.run_id), 2, 'two cycles sealed')
+      assert.equal(w.ledger(relay.run_id).pendingCall, null, 'no call in flight')
+      const states = w.rows<{ state: string }>('SELECT state FROM relay_judge_requests WHERE run_id=?', relay.run_id)
+      assert.equal(states.length, 4); assert.ok(states.every(row => row.state === 'completed'), 'both cycles were judged, two boundaries each')
+      assert.ok(remoteChildren(w).every(child => child.state === 'completed'))
+    } },
   { name: 'relay finished, mirror not yet ended', label: 'mirror:complete:completed:before', nth: 1, recovery: 'completes',
     atKill(w, lead) {
       assert.equal(relayOf(w)?.status, 'completed')
@@ -407,7 +491,7 @@ const crashes: Crash[] = [
 
 for (const crash of crashes) {
   test(`crash at ${crash.name} (${crash.label}): SIGKILL, restart on the same data, exactly one wake and every item outcome once`, async t => {
-    const w = await createWorld(t, { items: ITEMS.length, gapMs: 75 * MINUTE })
+    const w = await createWorld(t, { items: ITEMS.length, gapMs: 75 * MINUTE, judge: crash.judge ?? false })
     const dying = await w.boot({ crash: { label: crash.label, nth: crash.nth } })
     const started = await w.startLead(dying).catch(() => ({ runId: '', first: Promise.resolve({}) }))
     void started.first.catch(() => undefined)
@@ -420,6 +504,8 @@ for (const crash of crashes) {
     await crash.atKill(w, lead)
     const pinsAtKill = pinsOf(w).length
 
+    // A killed judge call is not replayed by recovery: the executor evaluates nothing more.
+    const evaluated = crash.judge ? await w.fake.count('/completion') : 0
     const home = await w.boot({ restart: true })
     if (crash.resume) {
       await until(() => w.state(lead) === 'interrupted', 'the lead to be reported interrupted', 300_000)
@@ -482,6 +568,24 @@ for (const crash of crashes) {
     assert.equal(w.count('SELECT COUNT(*) AS n FROM federation_relay_pin_journal'), 0, 'and the home\'s journal is empty')
     assert.equal(w.target.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_leases').get()!['n'], 0, 'with no orphan lease row')
 
+    if (crash.judge) {
+      assert.equal(await w.fake.count('/completion'), evaluated, 'recovery dispatched no model call, judge or relay')
+      assert.equal(w.count("SELECT COUNT(*) AS n FROM relay_judge_requests WHERE state='completed'"), crash.label === 'gap:2' ? 4 : 0, 'no verdict was invented for a call that was lost')
+      // After recovery, the F2-c books of the judge's calls are what they were at the kill, or complete: one row at most per child,
+      // a row only with its completion, and none of it on the relay run.
+      const children = remoteChildren(w)
+      for (const child of children) {
+        const rows = w.costs(child.id).length
+        assert.ok(rows <= 1, `${child.id} has at most one cost row`)
+        assert.equal(rows === 1, child.state === 'completed', `${child.id}: a row exists exactly when the call completed (${child.state})`)
+      }
+      assert.ok(w.costs(relay!.run_id).every(row => !String(row['entry_key']).startsWith('remote-dispatch:')), 'no executor report on the relay run')
+      if (crash.judgeChild) {
+        const first = children[0]!
+        assert.equal(first.state === 'completed', crash.judgeChild === 'billed', `the judge call's final state is ${first.state}`)
+        assert.equal(w.costs(first.id).length, crash.judgeChild === 'billed' ? 1 : 0)
+      }
+    }
     assert.deepEqual(await w.agentProcesses(), [], 'no agent process survives recovery')
     w.db(legalState); w.db(integrity)
     t.diagnostic(`outcome=${packet.outcome} items=${packet.items.map((item: { status: string }) => item.status).join(',')} relay=${relay?.status ?? 'none'} wakePrompts=${prompts} pins=${pins.length} atKill=${pinsAtKill} sim=${(w.now - START) / HOUR}h`)

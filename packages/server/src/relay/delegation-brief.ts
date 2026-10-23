@@ -15,7 +15,10 @@ export const judgeRoleSchema = z
     maxOutputTokens: positive,
     temperature: z.number().finite(),
     tokenReserve: positive,
-    moneyReserveMicros: nonnegative
+    moneyReserveMicros: nonnegative,
+    /** Wall limit of one sample, from dispatch to the settled answer; absent means the judge model's own default. A stuck
+     * executor would otherwise hold a cycle for the whole call deadline of its runtime. */
+    sampleTimeoutMs: positive.optional()
   })
   .strict()
   .refine(

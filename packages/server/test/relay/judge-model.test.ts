@@ -14,6 +14,7 @@ import { egressScrubberPlugin } from '../../src/egress/plugin.ts'
 import type { EgressScrubber } from '../../src/egress/types.ts'
 import {
   ConnectionJudgeModel,
+  DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS,
   type InstalledJudgeAttestation
 } from '../../src/relay/judge-model.ts'
 import type { JudgeRole } from '../../src/relay/delegation-brief.ts'
@@ -333,4 +334,193 @@ test('queued governor window expiry refuses at final preparation while inventory
   } finally {
     lease.release()
   }
+})
+
+// ---- R3-remote: a meter that names a runtime transport ---------------------------------------------------------------------
+
+const noScrubber = {} as EgressScrubber, noConnections = {} as Connections
+const transport = { id: 'llama-server', host: 'federation://executor', usageSource: 'federation:llama-server:/completion', remote: { nodeId: 'executor' },
+  chat: async () => { throw new Error('not dispatched here') } }
+const transportMeter = { countIsExact: true as const, localOnly: true, transport, count: () => 1, countAsync: async () => 1,
+  observe: async () => ({ tokens: 16000, framingTokens: 0, source: 'fixture:loaded', observedAt: now, confidence: 'high' as const }) }
+const binding = { connectionId: 'relay-connection', model: 'fixture' }
+const build = (meter: unknown, runtime?: { connectionId: string; model: string }) =>
+  new ConnectionJudgeModel(noConnections, account, meter as never, noScrubber, async () => null, 1000, () => now, runtime)
+
+test('a transport meter is accepted only bound to the one connection and model its runtime serves; a stock meter is unchanged', () => {
+  assert.doesNotThrow(() => build(transportMeter, binding), 'consistent: counted and served by the same runtime')
+  assert.doesNotThrow(() => build({ ...transportMeter, countAsync: undefined }, binding), 'a local llama-server counts synchronously and is dispatched through its transport')
+  assert.doesNotThrow(() => build({ countIsExact: true, observe: transportMeter.observe, count: () => 1 }), 'a stock Ollama meter needs no binding')
+  assert.throws(() => build(transportMeter), /judge_config_invalid/, 'a transport with no named runtime')
+  assert.throws(() => build(transportMeter, { connectionId: '', model: 'fixture' }), /judge_config_invalid/)
+  assert.throws(() => build(transportMeter, { connectionId: 'c', model: 'bad model!' }), /judge_config_invalid/)
+  assert.throws(() => build({ ...transportMeter, transport: undefined }, binding), /judge_config_invalid/, 'counted asynchronously by a runtime the dispatch would not use')
+  assert.throws(() => build({ countIsExact: true, observe: transportMeter.observe, count: () => 1, countAsync: async () => 1 }), /judge_config_invalid/)
+  assert.throws(() => build({ ...transportMeter, countIsExact: false }, binding), /judge_config_invalid/, 'no exact source')
+  assert.throws(() => build({ ...transportMeter, countIsExact: undefined }, binding), /judge_config_invalid/)
+})
+test('a role that is not served by the runtime that counts is refused at admission, before any attestation or call', async () => {
+  let attested = 0
+  const model = new ConnectionJudgeModel(noConnections, account, transportMeter as never, noScrubber, async () => { attested++; return null }, 1000, () => now, binding)
+  const role = { connectionId: 'relay-connection', model: 'fixture', windowTokens: 16000, maxInputTokens: 12000, maxOutputTokens: 1000, temperature: 0, tokenReserve: 13000, moneyReserveMicros: 0 }
+  const signal = new AbortController().signal
+  for (const other of [{ connectionId: 'another-connection' }, { model: 'another-model' }, { model: 'fixture:cloud' }])
+    await assert.rejects(model.admit({ accountId: account, role: { ...role, ...other }, signal }), /judge_config_invalid/)
+  assert.equal(attested, 0)
+  // The string sent to the runtime is the one the relay itself sends: another spelling of the same model is not the binding.
+  for (const spelling of [' FIXTURE ', 'fixture:latest']) await assert.rejects(model.admit({ accountId: account, role: { ...role, model: spelling }, signal }), /judge_config_invalid/)
+  assert.equal(attested, 0)
+  assert.equal(await model.admit({ accountId: account, role, signal }), false, 'the bound role reaches attestation (which declined)')
+  assert.equal(attested, 1)
+})
+test('a binding also holds for a stock meter: the role cannot name another connection or model', async () => {
+  const stock = new ConnectionJudgeModel(noConnections, account, { countIsExact: true, observe: transportMeter.observe, count: () => 1 } as never, noScrubber, async () => null, 1000, () => now, binding)
+  const role = { connectionId: 'relay-connection', model: 'fixture', windowTokens: 16000, maxInputTokens: 12000, maxOutputTokens: 1000, temperature: 0, tokenReserve: 13000, moneyReserveMicros: 0 }
+  const signal = new AbortController().signal
+  await assert.rejects(stock.admit({ accountId: account, role: { ...role, model: 'other' }, signal }), /judge_config_invalid/)
+  assert.equal(await stock.admit({ accountId: account, role, signal }), false)
+})
+
+// ---- R3-remote: the judge dispatches through the transport that counts, on real K3 ----------------------------------------
+
+/** A llama-server-shaped meter and transport on loopback: the count and the evaluation are the same runtime's. */
+function runtimeMeter(f: Awaited<ReturnType<typeof setup>>, options: { async?: boolean; evaluated?: (counted: number) => number; counted?: number } = {}) {
+  const calls: string[] = [], known = new Map<string, number>(), requests: Array<Record<string, unknown>> = []
+  const size = (text: string) => options.counted ?? Buffer.byteLength(text)
+  const meter = {
+    countIsExact: true as const, localOnly: true,
+    observe: async () => ({ tokens: 16000, framingTokens: 0, source: 'fixture:loaded-rendered', observedAt: now, confidence: 'high' as const }),
+    authorizeDispatch: async () => { calls.push('authorize') },
+    count: (text: string) => { calls.push('count'); const n = options.async ? known.get(text) : size(text); if (n === undefined) throw new Error('uncounted string'); return n },
+    ...(options.async ? { countAsync: async (text: string) => { calls.push('countAsync'); known.set(text, size(text)); return size(text) } } : {}),
+    transport: { id: 'llama-server', host: 'http://127.0.0.1:8099', usageSource: 'fixture:llama-server',
+      async chat(request: Record<string, unknown>, _signal: AbortSignal, onDispatched: () => void, dispatch: { authorizeDispatch(): Promise<void>; prepare(): Record<string, any> }) {
+        calls.push('chat'); await dispatch.authorizeDispatch()
+        const first = dispatch.prepare(); requests.push(first); onDispatched()
+        const counted = known.get(first.messages[0].content) ?? size(first.messages[0].content)
+        return { model: String(request['model']), created_at: new Date(now).toISOString(), done: true, done_reason: 'stop', message: { role: 'assistant', content: '{"ok":true}' },
+          prompt_eval_count: options.evaluated ? options.evaluated(counted) : counted, eval_count: 7 }
+      } },
+  }
+  return { meter, calls, requests, role: { ...f.role }, binding: { connectionId: f.role.connectionId, model: f.role.model } }
+}
+const never: typeof globalThis.fetch = async () => { throw new Error('the Ollama path must not be used') }
+
+for (const asynchronous of [false, true]) {
+  test(`a ${asynchronous ? 'remote (asynchronously counted)' : 'local llama-server'} meter: count, authorization and dispatch all go through the meter's own runtime, never Ollama`, async t => {
+    const f = await setup(t, never), r = runtimeMeter(f, { async: asynchronous })
+    f.scrubber.register('secret://judge-fixture', 'synthetic-judge-secret')
+    const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+    const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+    assert.equal(await model.admit(input), true)
+    assert.equal(await model.sample({ ...input, runId: 'run', requestId: 'sample-0', prompt: 'quoted synthetic-judge-secret', check: () => {} }), '{"ok":true}')
+    assert.deepEqual(r.calls, asynchronous ? ['countAsync', 'chat', 'authorize', 'count'] : ['chat', 'authorize', 'count'], JSON.stringify(r.calls))
+    const [request] = r.requests
+    assert.equal(request!['think'], false); assert.equal(request!['stream'], false); assert.equal(request!['model'], r.role.model)
+    assert.deepEqual(request!['options'], { num_ctx: 16000, num_predict: 1000, temperature: 0 })
+    assert.equal(JSON.stringify(request).includes('synthetic-judge-secret'), false, 'scrubbed before it reaches the runtime')
+    assert.equal(f.connections.snapshot(account).costs.length, 1, 'K3 recorded the usage with the transport\'s source')
+    assert.equal(f.governor.snapshot().activeLease, null)
+  })
+}
+test('a runtime that evaluates other tokens than were counted gives the judge no result', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true, evaluated: n => n + 1 })
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  await model.admit(input)
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 's', prompt: 'fixture', check: () => {} }), /judge_usage_invalid/)
+})
+test('an input the runtime counts above the judge\'s ceiling is refused before the runtime is asked to evaluate it', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true, counted: 12001 })
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  await model.admit(input)
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 's', prompt: 'fixture', check: () => {} }), /judge_context_ceiling/)
+  assert.deepEqual(r.calls, ['countAsync'], 'counted, then nothing: no authorization and no dispatch')
+})
+test('a transport meter cannot reach a role on another connection or model through K3', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true })
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  for (const other of [{ model: 'another-model' }, { connectionId: 'another-connection' }]) {
+    const role = { ...r.role, ...other }
+    await assert.rejects(model.admit({ accountId: account, role, signal: new AbortController().signal }), /judge_config_invalid/)
+    // A role that was never admitted cannot be sampled either.
+    await assert.rejects(model.sample({ accountId: account, role, signal: new AbortController().signal, runId: 'run', requestId: 's', prompt: 'x', check: () => {} }))
+  }
+  assert.deepEqual(r.calls, [])
+})
+
+test('the request K3 hands back is pinned: a scrubber that rewrites the model name stops the judge before the runtime is asked anything', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true })
+  // K3 scrubs the final request. A registered value equal to the model name rewrites `model`, and the judge must not dispatch that.
+  f.scrubber.register('secret://model-name', r.role.model)
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  await model.admit(input)
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 's', prompt: 'fixture', check: () => {} }))
+  assert.deepEqual(r.requests, [], 'the runtime was never handed a request')
+  assert.deepEqual(r.calls.filter(call => call === 'count'), [], 'and nothing was counted for dispatch')
+})
+
+// ---- R3-remote: one admission serves every sample, and a slow runtime outlasts its age --------------------------------------
+
+/** A runtime whose every evaluation takes `ms` of the model's clock (a remote llama-server at a few tokens per second). */
+function slowRuntime(f: Awaited<ReturnType<typeof setup>>, ms: number) {
+  const clock = { t: now }, observed: number[] = []
+  const r = runtimeMeter(f, { async: true })
+  r.meter.observe = async () => { observed.push(clock.t); return { tokens: 16000, framingTokens: 0, source: 'fixture:loaded-rendered', observedAt: clock.t, confidence: 'high' as const } }
+  const chat = r.meter.transport.chat
+  r.meter.transport.chat = async (...args: Parameters<typeof chat>) => { const out = await chat(...args); clock.t += ms; return out }
+  const attest = async () => ({ ...f.fact, observedAt: clock.t })
+  return { ...r, clock, observed, attest }
+}
+test('samples that outlast maxAgeMs are re-observed, not refused on the age of the admission', async t => {
+  const f = await setup(t, never), r = slowRuntime(f, 1500)
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, r.attest, 1000, () => r.clock.t, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  assert.equal(await model.admit(input), true)
+  for (let n = 0; n < 3; n++) assert.equal(await model.sample({ ...input, runId: 'run', requestId: `slow-${n}`, prompt: `fixture ${n}`, check: () => {} }), '{"ok":true}')
+  assert.equal(r.requests.length, 3, 'three evaluations on one admission, each 1.5 s long against a 1 s age')
+  assert.deepEqual(r.observed, [now, now + 1500, now + 3000], 'observed at admission and again, once, at each later sample: never more often than needed')
+})
+test('a refresh that finds another loaded window or another model identity is a refusal, not a refresh', async t => {
+  for (const change of ['window', 'identity'] as const) {
+    const f = await setup(t, never), r = slowRuntime(f, 1500)
+    let digest = f.fact.digest
+    const attest = async () => ({ ...f.fact, digest, observedAt: r.clock.t })
+    const observe = r.meter.observe
+    const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, attest, 1000, () => r.clock.t, r.binding)
+    const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+    await model.admit(input)
+    await model.sample({ ...input, runId: 'run', requestId: 'first', prompt: 'fixture', check: () => {} })
+    if (change === 'window') r.meter.observe = async () => ({ ...(await observe()), tokens: 8000 }); else digest = 'b'.repeat(64)
+    await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 'second', prompt: 'fixture 2', check: () => {} }), change === 'window' ? /judge_window_unknown/ : /judge_local_unavailable/)
+    assert.equal(r.requests.length, 1, 'the second evaluation never started')
+  }
+})
+
+test('a stuck runtime is stopped at the sample\'s wall limit and acknowledged before the judge reports judge_sample_timeout', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true })
+  let settled = false
+  r.meter.transport.chat = async (_request: Record<string, unknown>, signal: AbortSignal, onDispatched: () => void, dispatch: { prepare(): Record<string, any> }) => {
+    dispatch.prepare(); onDispatched()
+    await new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => setTimeout(() => { settled = true; reject(signal.reason) }, 30), { once: true }))
+    throw new Error('unreachable')
+  }
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const role = { ...r.role, sampleTimeoutMs: 80 }, input = { accountId: account, role, signal: new AbortController().signal }
+  await model.admit(input)
+  const began = Date.now()
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 'stuck', prompt: 'fixture', check: () => {} }), /judge_sample_timeout/)
+  assert.ok(settled, 'the runtime\'s own cancel had settled when the judge answered')
+  assert.ok(Date.now() - began < 2000)
+  assert.equal(f.governor.snapshot().activeLease, null)
+  // The owner's cancel is not a timeout.
+  const owner = new AbortController(), pending = model.sample({ ...input, signal: owner.signal, runId: 'run', requestId: 'canceled', prompt: 'fixture 2', check: () => {} })
+  setTimeout(() => owner.abort(new Error('owner stop')), 20)
+  await assert.rejects(pending, error => !/judge_sample_timeout/.test(String(error)))
+})
+test('the default sample limit is far below a remote call\'s deadline, and a role may set its own', () => {
+  assert.ok(DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS > 0 && DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS <= 10 * 60_000)
+  assert.throws(() => new ConnectionJudgeModel(noConnections, account, { countIsExact: true, observe: transportMeter.observe, count: () => 1 } as never, noScrubber, async () => null, 1000, () => now, undefined, { sampleTimeoutMs: 0 }), /judge_config_invalid/)
 })
