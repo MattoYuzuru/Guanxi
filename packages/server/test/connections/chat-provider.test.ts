@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Hono } from 'hono'
-import { PRODUCT_NAME, contextStateSchema, connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
+import { PRODUCT_NAME, ROUTES, contextStateSchema, connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
 import { parseProviderKeys, importProviderKeysFile } from '../../src/connections/dotenv.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
 import { Connections } from '../../src/connections/service.ts'
@@ -558,4 +558,8 @@ test('discovery refuses oversized bodies, lists and IDs and contract rejects ove
   const model = { selection: 'fixture', modelId: 'x'.repeat(257), source: 'fixture', observedAt: new Date().toISOString(), confidence: 'medium' }
   assert.equal(chatModelsResponse.safeParse({ groups: [{ id: 'fixture', label: 'fixture', kind: 'provider', models: [model] }] }).success, false)
   assert.equal(chatModelsResponse.safeParse({ groups: [{ id: 'fixture', label: 'fixture', kind: 'provider', models: Array(1025).fill({ ...model, modelId: 'fixture' }) }] }).success, false)
+})
+
+test('provider picker route belongs to the shared wire contract', () => {
+  assert.equal(ROUTES.threadModels(), '/api/threads/models')
 })

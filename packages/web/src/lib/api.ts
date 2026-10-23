@@ -298,7 +298,7 @@ export const api = {
       signal,
     }),
 
-  chatModels: (signal?: AbortSignal) => request('/api/threads/models', chatModelsResponse, { signal }),
+  chatModels: (signal?: AbortSignal) => request(ROUTES.threadModels(), chatModelsResponse, { signal }),
   listModels: (contextLength?: number, signal?: AbortSignal) =>
     request(ROUTES.models(), listModelsResponse, { query: { contextLength }, signal }),
 
