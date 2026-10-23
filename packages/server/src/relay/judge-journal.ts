@@ -166,7 +166,9 @@ function journalExpiry(
     | undefined
   if (!row || row.policy !== 'ttl') return base
   const activity = Date.parse(row.activity ?? row.created ?? '')
-  return Number.isFinite(activity) ? Math.min(base, activity + retentionMs) : base
+  return Number.isFinite(activity)
+    ? Math.min(base, activity + DEFAULT_REASONING_RETENTION_MS)
+    : base
 }
 
 function pickStep(row: JudgeJournalRow): boolean {
@@ -401,6 +403,21 @@ export class JudgeJournalStore implements JudgeJournal {
          ORDER BY cycle, started_at, id`
       )
       .all(runId, now) as unknown as JudgeJournalRow[]
+    for (const row of rows) {
+      for (const value of [
+        row.run_id,
+        row.session_id,
+        row.attempt_id,
+        row.phase,
+        row.layer,
+        row.reason,
+        row.request_key
+      ]) {
+        if (this.scrubber.scrub(value) !== value) {
+          invalid('stored identity contains a registered secret')
+        }
+      }
+    }
     return rows.map((row) => ({
       ...row,
       packet: this.scrubJson(row.packet),
@@ -423,6 +440,13 @@ export class JudgeJournalStore implements JudgeJournal {
   purgeSession(sessionId: string): number {
     return Number(this.db.prepare('DELETE FROM relay_judge_journal WHERE session_id=?').run(sessionId).changes)
   }
+}
+
+/** Construct the store only when this database already has the journal table. The relay plugin
+ * uses this to purge rows left by an earlier run even when no judge executes on this start. */
+export function journalIfPresent(db: Db, scrubber: EgressScrubber): JudgeJournalStore | null {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_judge_journal'").get()) return null
+  return new JudgeJournalStore(db, { scrubber })
 }
 
 export function readJournalReplay(

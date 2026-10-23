@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { Hono } from 'hono'
 import { byteHash, canonical, render } from '../../src/relay/handoff.ts'
@@ -8,6 +9,7 @@ import { RelayExecutor } from '../../src/relay/executor.ts'
 import {
   JUDGE_JOURNAL_MIGRATION_42,
   JudgeJournalStore,
+  journalIfPresent,
   journalReplayRun,
   readJournalCorpus,
   readJournalReplay,
@@ -29,6 +31,7 @@ import { DEFAULT_REASONING_RETENTION_MS } from '../../src/session-log/log.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { fixture, plan, reserves, caps } from './fixture.ts'
 
+const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const CANARY_PATH = '/r3-journal-canary/private/notes-7f3a.md'
 const CANARY_SECRET = 'r3-journal-canary-secret-91c7f4e2'
 
@@ -341,20 +344,47 @@ test('session, run and expiry purges delete rows; run deletion cascades; duplica
     assert.equal(store.purgeExpired(ttlExpiry - 1), 0)
     assert.equal(store.purgeExpired(ttlExpiry), 1)
 
-    // The configured retention is the parent window, not a coincidental equal constant.
+    // A custom base retention still uses the fixed 7-day parent cap and a recent TTL parent.
+    const recent = new Date(now - 1 * 24 * 60 * 60 * 1_000).toISOString()
+    f.db
+      .prepare(
+        `INSERT INTO threads(
+           id, title, mode, model, num_ctx, temperature, think, created_at, updated_at,
+           retention_policy, retention_policy_source, retention_policy_updated_at,
+           last_user_activity_at, last_user_activity_source
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      .run('thread-ttl2', 'ttl', 'agent', 'fixture', 4096, 0.7, 'auto', created, created,
+        'ttl', 'default', created, recent, 'chat_created')
+    f.db
+      .prepare('INSERT INTO sessions(id,kind,thread_id,created_at,last_seq) VALUES(?,?,?,?,0)')
+      .run('session-ttl2', 'agent', 'thread-ttl2', created)
     const short = new JudgeJournalStore(f.db, {
       scrubber: f.scrubber,
       clock: f.relay.clock,
       retentionMs: 2 * 24 * 60 * 60 * 1_000
     })
-    const shortRun = f.store.create({ id: 'run-ttl2', sessionId: 'session-ttl' })
+    const shortRun = f.store.create({ id: 'run-ttl2', sessionId: 'session-ttl2' })
     short.record(journalEntry(shortRun.id, shortRun.session_id, 'request-ttl2', now))
-    const shortExpiry = Date.parse(activity) + 2 * 24 * 60 * 60 * 1_000
+    const shortExpiry = now + 2 * 24 * 60 * 60 * 1_000
     assert.equal(
       f.db.prepare("SELECT expires_at FROM relay_judge_journal WHERE request_key='request-ttl2'").get()!.expires_at,
       shortExpiry
     )
     assert.equal(short.purgeExpired(shortExpiry), 1)
+
+    const long = new JudgeJournalStore(f.db, {
+      scrubber: f.scrubber,
+      clock: f.relay.clock,
+      retentionMs: 30 * 24 * 60 * 60 * 1_000
+    })
+    const longRun = f.store.create({ id: 'run-ttl3', sessionId: 'session-ttl' })
+    long.record(journalEntry(longRun.id, longRun.session_id, 'request-ttl3', now))
+    const parentCap = Date.parse(activity) + DEFAULT_REASONING_RETENTION_MS
+    assert.equal(
+      f.db.prepare("SELECT expires_at FROM relay_judge_journal WHERE request_key='request-ttl3'").get()!.expires_at,
+      parentCap
+    )
 
     const cascaded = f.store.create()
     store.record(journalEntry(cascaded.id, cascaded.session_id, 'request-f', now))
@@ -548,13 +578,21 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
     for (const file of [
       'packages/server/src/leads/packet.ts',
       'packages/server/src/leads/service.ts',
+      'packages/server/src/leads/children.ts',
       'packages/server/src/relay/handoff.ts',
+      'packages/server/src/relay/start.ts',
+      'packages/server/src/relay/routes.ts',
+      'packages/server/src/relay/operational.ts',
       'packages/server/src/remote-attempts/dispatch.ts',
       'packages/server/src/federation/channel.ts',
       'packages/server/src/federation/service.ts',
-      'packages/server/src/session-log/routes.ts'
+      'packages/server/src/federation/replicas.ts',
+      'packages/server/src/session-log/log.ts',
+      'packages/server/src/session-log/routes.ts',
+      'packages/bench/src/corpus.ts',
+      'packages/bench/src/report.ts'
     ]) {
-      const source = await readFile(join(process.cwd(), file), 'utf8')
+      const source = await readFile(join(REPO_ROOT, file), 'utf8')
       assert.doesNotMatch(source, /relay_judge_journal|judge-journal|JudgeJournal/, file)
     }
 
@@ -567,7 +605,7 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
       'packages/server/src/relay/executor.ts',
       'packages/server/src/relay/plugin.ts'
     ]) {
-      const source = await readFile(join(process.cwd(), file), 'utf8')
+      const source = await readFile(join(REPO_ROOT, file), 'utf8')
       assert.doesNotMatch(source, /console\.|process\.stdout|process\.stderr/, file)
     }
   } finally {
@@ -867,6 +905,45 @@ test('an asynchronous journal rejection is contained like a synchronous failure'
       f.db.prepare("SELECT state FROM relay_judge_requests WHERE layer='J2'").get()!.state,
       'completed'
     )
+  } finally {
+    f.close()
+  }
+})
+
+test('an existing journal table is found and purged without a cascade; identity secrets are refused', () => {
+  const f = fixture()
+  try {
+    assert.equal(journalIfPresent(f.db, f.scrubber), null)
+    const now = f.relay.clock()
+    const store = new JudgeJournalStore(f.db, {
+      scrubber: f.scrubber,
+      clock: () => now,
+      retentionMs: 1
+    })
+    const run = f.store.create()
+    store.record(journalEntry(run.id, run.session_id, 'existing', now))
+    const found = journalIfPresent(f.db, f.scrubber)
+    assert.ok(found)
+    assert.equal(found!.purgeExpired(now + 2), 1)
+
+    const secret = 'r3-identity-secret-0b8f2a'
+    f.scrubber.register('secret://fixture/r3-identity', secret)
+    const identity = journalEntry(run.id, run.session_id, 'identity', now)
+    identity.attemptId = `attempt-${secret}`
+    assert.throws(() => store.record(identity), /identity contains a registered secret/)
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM relay_judge_journal WHERE request_key='identity'").get()!.n,
+      0
+    )
+
+    const lateRun = f.store.create()
+    const lateId = 'late-identity-77ab10'
+    const late = journalEntry(lateRun.id, lateRun.session_id, 'late-identity', now)
+    late.attemptId = lateId
+    store.record(late)
+    f.db.prepare("UPDATE durable_runs SET state='completed' WHERE id=?").run(lateRun.id)
+    f.scrubber.register('secret://fixture/r3-late-identity', lateId)
+    assert.throws(() => store.readRun(lateRun.id, now), /stored identity contains a registered secret/)
   } finally {
     f.close()
   }

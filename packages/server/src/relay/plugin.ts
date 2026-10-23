@@ -16,7 +16,7 @@ import { RelayStarts, type RelayStartHost } from './start.ts'
 import type { EtaInput } from './eta.ts'
 import type { RelayJudgeInput } from './judge-host.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
-import { JudgeJournalStore, type JudgeJournal } from './judge-journal.ts'
+import { JudgeJournalStore, journalIfPresent, type JudgeJournal } from './judge-journal.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
 const JOURNAL_PURGE_INTERVAL_MS = 10 * 60 * 1_000
@@ -54,11 +54,13 @@ export const relayPlugin = definePlugin<RelayConfig>({
     // created on the first cascaded execution, so a node without a judge creates no table; the
     // periodic purge then removes expired rows.
     let journal: JudgeJournalStore | null = null
+    const knownJournal = (): JudgeJournalStore | null =>
+      (journal ??= journalIfPresent(config.db, scrubber))
     const journalStore = (): JudgeJournalStore =>
-      (journal ??= new JudgeJournalStore(config.db, { scrubber }))
+      knownJournal() ?? (journal = new JudgeJournalStore(config.db, { scrubber }))
     const purgeJournal = () => {
       try {
-        journal?.purgeExpired()
+        knownJournal()?.purgeExpired()
       } catch {
         // The next tick retries; a local sidecar purge never stops the relay.
       }
