@@ -149,3 +149,21 @@ test('a dead, slow or malformed server is a count failure, a later healthy serve
   await odd.close(); assert.throws(() => odd.count('x'), /runtime_count_invalid/)
   assert.ok(url)
 })
+
+test('the default transport waits for completion headers as long as the client deadline, not undici\'s 300 s default', async t => {
+  const { llamaServerDispatcherTimeouts } = await import('../../src/runtime/llama-server/client.ts')
+  for (const [request, completion] of [[15_000, 30 * 60_000], [60_000, 1_000]] as const) {
+    const timeouts = llamaServerDispatcherTimeouts(request, completion)
+    assert.ok(timeouts.headersTimeout > Math.max(request, completion) && timeouts.bodyTimeout > Math.max(request, completion))
+  }
+  assert.ok(llamaServerDispatcherTimeouts(15_000, 30 * 60_000).headersTimeout > 300_000, 'longer than undici\'s default headers timeout')
+  // A completion whose headers arrive only when generation ends still succeeds through the default transport.
+  const server = createServer((_req, res) => { setTimeout(() => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ content: 'late', tokens_evaluated: 3, tokens_predicted: 1, stop_type: 'eos', truncated: false }))
+  }, 1_200) })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => server.close())
+  const client = new LlamaServerClient({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, completionTimeoutMs: 5_000 })
+  const done = await client.complete('prompt', 1, AbortSignal.timeout(10_000))
+  assert.equal(done.content, 'late'); assert.equal(done.promptTokens, 3)
+})

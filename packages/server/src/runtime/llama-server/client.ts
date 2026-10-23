@@ -1,3 +1,4 @@
+import { Agent } from 'undici'
 import { z } from 'zod'
 
 /** Loopback-only client for one llama.cpp `llama-server` instance (ADR-0031 Tier 1 runtime).
@@ -55,6 +56,12 @@ export function loopbackOrigin(baseUrl: string): string {
   return url.origin
 }
 
+/** undici timeouts for llama-server requests: never shorter than the client's own deadlines. */
+export function llamaServerDispatcherTimeouts(requestTimeoutMs: number, completionTimeoutMs: number): { headersTimeout: number; bodyTimeout: number } {
+  const longest = Math.max(requestTimeoutMs, completionTimeoutMs) + 5_000
+  return { headersTimeout: longest, bodyTimeout: longest }
+}
+
 export class LlamaServerClient {
   readonly baseUrl: string
   private readonly transport: typeof fetch
@@ -63,9 +70,16 @@ export class LlamaServerClient {
   private readonly cachePrompt: boolean
   constructor(options: LlamaServerClientOptions) {
     this.baseUrl = loopbackOrigin(options.baseUrl)
-    this.transport = options.fetch ?? globalThis.fetch
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000
     this.completionTimeoutMs = options.completionTimeoutMs ?? 30 * 60_000
+    if (options.fetch) this.transport = options.fetch
+    else {
+      // A non-streamed completion sends its headers only when generation ends. Node's fetch (undici) gives up waiting for
+      // headers after 300 s by default, so every call longer than five minutes failed on a real executor (a 4096-token turn
+      // takes ~13 min at ~5 tokens/s). Our own deadline (completionTimeoutMs) stays the authority.
+      const dispatcher = new Agent(llamaServerDispatcherTimeouts(this.requestTimeoutMs, this.completionTimeoutMs))
+      this.transport = ((url: string | URL | Request, init?: RequestInit) => globalThis.fetch(url, { ...init, dispatcher } as unknown as RequestInit)) as typeof fetch
+    }
     this.cachePrompt = options.cachePrompt ?? true
     for (const ms of [this.requestTimeoutMs, this.completionTimeoutMs]) {
       if (!Number.isSafeInteger(ms) || ms <= 0) throw new LlamaServerError('llama_server_refused')
