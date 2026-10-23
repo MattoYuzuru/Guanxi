@@ -698,3 +698,15 @@ test('a pin for one epoch does not serve another: bind refuses a different attem
   await prepared.prepareBind!({ runId: run.id, sessionId: run.session_id, epoch: attempt.epoch + 6 }, controller.signal)
   assert.throws(() => prepared.bind!(attempt), /runtime_identity_changed/)
 })
+
+test('the grant carries the home holder TTL and the executor never outlives it, whatever its own TTL is', async t => {
+  const f = await remoteFixture(t, { fake: { completionDelayMs: 3000 }, ttlMs: 300, safetyMs: 50, targetTtlMs: 3000 }), r = await f.relay()
+  const call = r.call('Shorter home TTL.').catch((error: unknown) => error)
+  await until(async () => (await f.fake.count('/completion')) === 1)
+  const [grant] = grants(f.sent)
+  assert.equal(grant!.holderTtlMs, 300, 'the home states the TTL its cancel wait is sized for')
+  f.clock.mono += 400                      // past the home's TTL, well inside the executor's own
+  await until(() => f.target.federation.attemptDispatch!.state(grant!.id).status === 'lost', 3000)
+  r.controller.abort()
+  assert.ok((await call) instanceof Error)
+})

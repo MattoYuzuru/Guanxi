@@ -31,7 +31,7 @@ export interface DispatchPolicy {
 }
 export type TerminalEvent = Extract<DispatchEvent['event'], { kind: 'terminal' }>
 interface HomeRow { id: string; offer: string; job: string; attempt: string; grant: string | null }
-interface Holder { grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
+interface Holder { ttlMs: number; grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
   timer?: ReturnType<typeof setTimeout>; renewTimer?: ReturnType<typeof setTimeout>; refresh?: Promise<void> }
 const ZERO = '0'.repeat(64)
 
@@ -122,7 +122,7 @@ export class AttemptDispatch {
         receipt.homeNodeId !== this.node || receipt.executorNodeId !== offer.executorNodeId || receipt.runId !== offer.runId || canonical(receipt.fence) !== canonical(offer.fence)) throw new FederationError('reservation_lost')
       const job = localInferenceJobSchema.parse(JSON.parse(row.job))
       if (job.deadline <= this.clock()) throw new FederationError('dispatch_deadline')
-      const grant = { id, offer, reservationId: receipt.reservation.id, job, jobHash: hash(job), dispatchAuthorized: true as const }
+      const grant = { id, offer, reservationId: receipt.reservation.id, holderTtlMs: this.policy.ttlMs, job, jobHash: hash(job), dispatchAuthorized: true as const }
       const signed = signedDispatchGrantSchema.parse({ grant, signature: signValue(this.#privateKey, grant) })
       if (row.grant && row.grant !== canonical(signed)) throw new FederationError('dispatch_conflict')
       db.prepare('UPDATE remote_dispatch_home SET grant=? WHERE id=?').run(canonical(signed), id)
@@ -250,7 +250,7 @@ export class AttemptDispatch {
       const sent = this.time(), wallSent = this.clock()
       const renewed = await this.untilAbort(this.policy.channel(h.grant.grant.offer.homeNodeId).renewDispatch(this.ref(h.grant)), h.controller.signal)
       this.guard(h); validate()
-      if (renewed.id !== h.grant.grant.id || renewed.ttlMs > this.policy.ttlMs) throw new FederationError('dispatch_renewal')
+      if (renewed.id !== h.grant.grant.id || renewed.ttlMs > h.ttlMs) throw new FederationError('dispatch_renewal')
       const deadline = sent + renewed.ttlMs - this.policy.safetyMs, wallDeadline = Math.min(h.grant.grant.job.deadline, wallSent + renewed.ttlMs - this.policy.safetyMs)
       if (this.time() >= deadline || this.clock() >= wallDeadline) throw new FederationError('dispatch_expired')
       h.deadline = deadline; h.wallDeadline = wallDeadline; this.arm(h)
@@ -282,8 +282,11 @@ export class AttemptDispatch {
     if (!this.policy.connections) throw new FederationError('local_executor_unavailable')
     const old = this.db.prepare('SELECT grant FROM remote_dispatch_holders WHERE id=?').get(g.id)
     if (old) { if (old.grant !== canonical(signed)) throw new FederationError('dispatch_conflict'); return this.state(g.id) }
-    const h: Holder = { grant: signed, controller: new AbortController(), deadline: this.time() + this.policy.ttlMs - this.policy.safetyMs,
-      wallDeadline: Math.min(g.job.deadline, this.clock() + this.policy.ttlMs - this.policy.safetyMs) }
+    // The home sized its cancel wait for its own TTL, so this holder never lives longer than the granted one.
+    const ttlMs = Math.min(this.policy.ttlMs, g.holderTtlMs ?? this.policy.ttlMs)
+    if (ttlMs <= this.policy.safetyMs * 2) throw new FederationError('dispatch_policy')
+    const h: Holder = { ttlMs, grant: signed, controller: new AbortController(), deadline: this.time() + ttlMs - this.policy.safetyMs,
+      wallDeadline: Math.min(g.job.deadline, this.clock() + ttlMs - this.policy.safetyMs) }
     // Persist consumption before any await/effect. A crash cannot reuse this reservation.
     this.offers.consume(g.offer.homeNodeId, g.offer.id, g.reservationId, () => {
       validate(); this.db.prepare("INSERT INTO remote_dispatch_holders VALUES (?,?,'accepted')").run(g.id, canonical(signed))
