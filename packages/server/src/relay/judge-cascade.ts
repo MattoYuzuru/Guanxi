@@ -14,6 +14,7 @@ import type { CheckerSpec, RelayDelegationBrief } from './delegation-brief.ts'
 import type { JudgeModel } from './judge-model.ts'
 import { JUDGE_UNKNOWN_FACTS, type JudgeUnknownFact, type RelayJudgeSummary } from './judge-host.ts'
 import { observeUntilAbort } from './judge-await.ts'
+import { parseModelJson } from './model-json.ts'
 import type {
   JudgeJournal,
   JudgeJournalContext,
@@ -201,7 +202,7 @@ export class RelayJudgeCascade {
   private parse(text: string, refs: string[]): JudgeResult {
     let value: JudgeResult
     try {
-      value = resultSchema.parse(JSON.parse(text))
+      value = resultSchema.parse(parseModelJson(text))
     } catch {
       throw new RelayError('judge_invalid_output')
     }

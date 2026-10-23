@@ -11,7 +11,7 @@ export const window: WindowObservation = { tokens: 16000, framingTokens: 32, sou
 export const reserves = { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 }
 export const caps: Caps = { cycles: 10, tokens: 1000000, wallMs: 3600000, moneyMicros: null }
 export const plan: Plan = { revision: 'r1', base: 'a'.repeat(40), goal: 'Implement the fixture task.', items: [{ id: 'one', title: 'fixture item', dependsOn: [], acceptance: ['true'], protectedPaths: ['tests'] }], protectedPaths: ['.github'] }
-export function fixture(options: { path?: string; eta?: EtaInput; fault?: (point: string) => void; runFault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; actions?: (prompt: string, calls: number) => string | Promise<string>; narrativeFails?: boolean; probeFails?: boolean; caps?: Partial<Caps>; exact?: boolean; count?: (text: string) => number; reserves?: Partial<Reserves>; limits?: Partial<RelayLimits> } = {}) {
+export function fixture(options: { path?: string; eta?: EtaInput; fault?: (point: string) => void; runFault?: import('../../src/runs/store.ts').RunStoreOptions['fault']; logFault?: import('../../src/session-log/log.ts').SessionLogOptions['fault']; actions?: (prompt: string, calls: number) => string | Promise<string>; narrativeFails?: boolean; probeFails?: boolean; /** Wrap probe and action replies in a Markdown JSON fence, as real chat models often do. */ fence?: boolean; caps?: Partial<Caps>; exact?: boolean; count?: (text: string) => number; reserves?: Partial<Reserves>; limits?: Partial<RelayLimits> } = {}) {
   const f = runFixture(options.path, { fault: options.runFault, logFault: options.logFault })
   const relay = new RelayStore(f.db, f.store, f.scrubber, () => 1800000000000, options.fault)
   const run = f.store.create(), attempt = f.store.start(run.id)
@@ -34,6 +34,7 @@ export function fixture(options: { path?: string; eta?: EtaInput; fault?: (point
         const latest = f.db.prepare('SELECT ledger FROM relay_seals WHERE run_id=? ORDER BY cycle DESC LIMIT 1').get(run.id) as { ledger: string } | undefined
         text = options.probeFails ? '{}' : canonical(probes(latest ? JSON.parse(latest.ledger) : relay.read(run.id)))
       } else text = options.actions ? await options.actions(prompt, ++workCalls) : canonical({ action: workCalls++ === 0 ? 'verify' : 'handoff', ...(workCalls === 1 ? { item: 'one' } : {}) })
+      if (options.fence && !prompt.startsWith('Write a fresh')) text = '```json\n' + text + '\n```'
       return { text, inputTokens: model.count(prompt), outputTokens: Math.min(200, opts.maxOutput), moneyMicros: 1, inputTruncated: false, outputLimited: false }
     },
   }

@@ -9,6 +9,7 @@ import type { RelayWorkspace } from './workspace.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, requestAsync, thresholds, upperTokens, wallDeadline, type AsyncMeasure, type Measure, type RequestParts, type RequestResult } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
+import { parseModelJson } from './model-json.ts'
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation, type JudgeSignalPolicy } from './judge-signals.ts'
 import { JudgeJournalStore, lazyJournal } from './judge-journal.ts'
@@ -236,7 +237,7 @@ export class RelayExecutor {
       const { text: prompt } = await this.pack('Answer these five critical ledger probes as JSON: ledgerHash, head, revision, nextItem, nextStatus. All fields are required; do not execute work.',
         { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
-      try { correct = !damaged && canonical(JSON.parse((await this.call(a, 'probe', prompt, w, t, signal)).text)) === canonical(expected) }
+      try { correct = !damaged && canonical(parseModelJson((await this.call(a, 'probe', prompt, w, t, signal)).text)) === canonical(expected) }
       catch (e) { if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed'].includes(e.code)) throw e }
       this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe', retry, correct, damaged }) } })
       if (correct) return canonical({ narrative: h.narrative, notes: h.notes })
@@ -378,7 +379,7 @@ export class RelayExecutor {
             if (++invalidActions >= this.limits.invalidActions) break
             continue
           }
-          const action = actionSchema.safeParse((() => { try { return JSON.parse(reply.text) } catch { return null } })())
+          const action = actionSchema.safeParse((() => { try { return parseModelJson(reply.text) } catch { return null } })())
           if (!action.success) { this.store.change(a, 'invalid_action', s => { s.errors++ }); this.turns.push('Invalid action; return valid JSON.'); if (++invalidActions >= this.limits.invalidActions) break; continue }
           const x = action.data
           if (x.action === 'handoff' || x.action === 'finish') break
