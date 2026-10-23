@@ -49,6 +49,9 @@ export function NativeProgress({ progress, remove }: { progress: AgentProgress; 
 export function NativeSessionActions({ progress, busy, remove, retain, leave }: {
   progress: AgentProgress; busy: boolean; remove(): void; retain(mode: 'keep' | 'ttl' | 'session'): void; leave(): void
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { nativeDeleteDescription: `${idBase}-native-delete-description` }
   return <section aria-label={t('native.retention')} className="flex flex-col gap-2 text-12">
     {progress.retention && <>
       <p className="m-0 font-label">{t(`native.retention.${progress.retention.state}`)}</p>
@@ -59,8 +62,8 @@ export function NativeSessionActions({ progress, busy, remove, retain, leave }: 
       </div>
       {progress.retention.mode === 'session' && progress.retention.state === 'active' && <Button size="sm" disabled={busy} onClick={leave}>{t('native.leave')}</Button>}
     </>}
-    <p id="native-delete-description" className="m-0 text-muted">{t('native.deleteDescription')}</p>
-    <Button size="sm" variant="danger" aria-describedby="native-delete-description" loading={busy}
+    <p id={ids.nativeDeleteDescription} className="m-0 text-muted">{t('native.deleteDescription')}</p>
+    <Button size="sm" variant="danger" aria-describedby={ids.nativeDeleteDescription} loading={busy}
       disabled={progress.status === 'running' || progress.error === 'cleanup_unconfirmed'} onClick={remove}>{t('native.delete')}</Button>
   </section>
 }

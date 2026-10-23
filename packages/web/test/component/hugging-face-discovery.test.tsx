@@ -446,16 +446,14 @@ describe('Marketplace Hugging Face discovery section', () => {
     render(<HuggingFaceDiscovery contextLength={8_192} />)
     const input = screen.getByRole('searchbox', { name: 'Поиск репозиториев Hugging Face' })
     // The label and the hint are programmatically associated, not merely adjacent.
-    expect(input.getAttribute('aria-describedby')).toBe('hf-search-hint')
-    expect(document.getElementById('hf-search-hint')?.textContent)
+    expect(document.getElementById(input.getAttribute('aria-describedby')!)?.textContent)
       .toMatch(/До явной отправки запрос не уходит/u)
 
     const status = document.querySelector('[role="status"][aria-live="polite"]')
     expect(status).toBeTruthy()
 
-    const section = document.querySelector('section[aria-labelledby="hf-discovery-heading"]')
-    expect(section).toBeTruthy()
-    expect(document.getElementById('hf-discovery-heading')?.textContent).toBe('Hugging Face')
+    const section = screen.getByRole('region', { name: 'Hugging Face' })
+    expect(document.getElementById(section.getAttribute('aria-labelledby')!)?.textContent).toBe('Hugging Face')
   })
 
   it('opens the selectable GGUF file list by default and keeps it keyboard-operable', async () => {

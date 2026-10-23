@@ -72,7 +72,9 @@ test('native delete is keyboard accessible at mobile width and submits exactly o
   const button = page.getByRole('button', { name: 'Удалить сессию', exact: true })
   await expect(button).toHaveCount(1)
   await expect(button).toBeEnabled()
-  await expect(button).toHaveAttribute('aria-describedby', 'native-delete-description')
+  // A generated id (useId) links the button to its description.
+  const described = await button.getAttribute('aria-describedby')
+  expect(await page.evaluate(id => document.getElementById(id!)?.textContent ?? '', described)).toMatch(/Безвозвратно удаляет сессию/u)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await button.focus(); await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/agent$/)

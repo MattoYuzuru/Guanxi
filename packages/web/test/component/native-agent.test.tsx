@@ -135,7 +135,9 @@ it.each(['en', 'ru'] as const)('delete uses the contract once, describes discard
   render(<NativeAgentPage sessionId="session" />)
   fireEvent.click(await screen.findByRole('button', { name: locale === 'en' ? 'Session info' : 'О сессии' }))
   const button = await screen.findByRole('button', { name: locale === 'en' ? 'Delete session' : 'Удалить сессию' })
-  expect(button.getAttribute('aria-describedby')).toBe('native-delete-description')
+  // The description is referenced by a generated id (useId), so assert the relation.
+  expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent)
+    .toMatch(locale === 'en' ? /Permanently removes this session/ : /Безвозвратно удаляет сессию/)
   expect(screen.getByText(locale === 'en' ? /Permanently removes this session/ : /Безвозвратно удаляет сессию/)).toBeTruthy()
   fireEvent.click(button)
   await screen.findByRole('alert')

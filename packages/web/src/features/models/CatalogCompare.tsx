@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useId, useEffect, useMemo, useRef, useState } from 'react'
 import type { CatalogModel, CatalogVariant } from '@guanxi/contract'
 import { Button, Modal } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength, formatDateTime } from '../../lib/format.ts'
@@ -35,6 +35,9 @@ export function CatalogCompare({
   onRemove: (target: string) => void
   onSwap: () => void
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { catalogCompareDescription: `${idBase}-catalog-compare-description` }
   const [open, setOpen] = useState(false)
   const openRef = useRef<HTMLButtonElement>(null)
   const swapRef = useRef<HTMLButtonElement>(null)
@@ -78,7 +81,7 @@ export function CatalogCompare({
         open={open && selected.length === 2}
         onClose={() => setOpen(false)}
         title={translate('catalog.compare.title')}
-        describedBy="catalog-compare-description"
+        describedBy={ids.catalogCompareDescription}
         returnFocusRef={openRef}
         initialFocusRef={swapRef}
         closeLabel={translate('catalog.compare.close')}
@@ -94,7 +97,7 @@ export function CatalogCompare({
           </>
         }
       >
-        <p id="catalog-compare-description" className="mb-3 text-xs text-secondary">
+        <p id={ids.catalogCompareDescription} className="mb-3 text-xs text-secondary">
           {translate('catalog.compare.description')}
         </p>
         <div className="grid min-w-0 gap-3 md:grid-cols-2" aria-label={translate('catalog.compare.region')}>
