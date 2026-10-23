@@ -43,6 +43,23 @@ test('props, health, render, tokenize and completion parse the documented shapes
   await assert.rejects(client.complete('x', 0, new AbortController().signal), refused)
 })
 
+/** The schema the integrator posted to a real llama.cpp b11496 /completion (const, enum, required, additionalProperties). */
+const INTEGRATOR_SCHEMA = { type: 'object', properties: { action: { const: 'tool' }, name: { enum: ['file_read', 'shell'] },
+  args: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false } }, required: ['action', 'name', 'args'], additionalProperties: false }
+test('a response schema is sent as json_schema on /completion and nothing else changes: same flags, same evaluated tokens', async t => {
+  const fake = await startFakeLlama({ replies: ['{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}'] }); t.after(() => fake.close())
+  const client = new LlamaServerClient({ baseUrl: fake.url, cachePrompt: false }), rendered = fakeRender('hello', { template: 'chat' }, false)
+  const plain = await client.complete(rendered, 60, new AbortController().signal)
+  const constrained = await client.complete(rendered, 60, new AbortController().signal, undefined, INTEGRATOR_SCHEMA)
+  const [first, second] = await fake.requests('/completion')
+  // Exactly the body the real server was shown by the integrator, key for key.
+  assert.deepEqual(second!.body, { prompt: rendered, n_predict: 60, stream: false, cache_prompt: false, json_schema: INTEGRATOR_SCHEMA })
+  assert.deepEqual(Object.keys(second!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt', 'json_schema'])
+  assert.deepEqual(Object.keys(first!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt'], 'no schema, no json_schema key (not even a null)')
+  assert.equal(constrained.promptTokens, plain.promptTokens, 'the schema does not change a prompt token')
+  assert.equal(constrained.content, '{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}')
+})
+
 test('malformed, oversized, non-JSON and redirected answers are protocol or availability failures without leaking text', async t => {
   const fake = await startFakeLlama(); t.after(() => fake.close())
   const client = new LlamaServerClient({ baseUrl: fake.url })

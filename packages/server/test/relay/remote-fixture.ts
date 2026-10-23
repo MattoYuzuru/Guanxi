@@ -10,6 +10,7 @@ import { OllamaClient } from '../../src/ollama/client.ts'
 import { BalanceProbes } from '../../src/probes/balances.ts'
 import type { DispatchPolicy } from '../../src/remote-attempts/dispatch.ts'
 import { ConnectionRelayModel } from '../../src/relay/model.ts'
+import type { JsonSchema } from '../../src/relay/json-schema.ts'
 import { RelayRuntimeSource } from '../../src/relay/runtime.ts'
 import { RemoteRelayRuntime } from '../../src/relay/remote-runtime.ts'
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
@@ -114,11 +115,11 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
     prepared.bind!(attempt)
     const model = new ConnectionRelayModel(h.connections, homeConnection.id, 'fixture', prepared.meter)
     const window = await model.observe(controller.signal)
-    const call = async (prompt: string, extra: { signal?: AbortSignal; maxInput?: number; maxOutput?: number; prime?: boolean; onStarted?: () => void } = {}) => {
+    const call = async (prompt: string, extra: { signal?: AbortSignal; maxInput?: number; maxOutput?: number; prime?: boolean; onStarted?: () => void; responseSchema?: JsonSchema } = {}) => {
       const signal = extra.signal ?? controller.signal
       if (extra.prime !== false) await model.countAsync!(prompt, signal)
       return model.call(prompt, { runId: run.id, requestId: randomUUID(), maxOutput: extra.maxOutput ?? 1000, maxInput: extra.maxInput ?? 14800, window, signal,
-        onStarted: () => { extra.onStarted?.(); home.runs.modelStarted(attempt) } })
+        onStarted: () => { extra.onStarted?.(); home.runs.modelStarted(attempt) }, ...(extra.responseSchema ? { responseSchema: extra.responseSchema } : {}) })
     }
     return { run, attempt, prepared, model, window, call, controller }
   }

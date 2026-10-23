@@ -26,7 +26,8 @@ export interface FakeLlamaState {
   tokenizeDelayMs: number
   completionDelayMs: number
   /** Replies for successive `/completion` calls; the last repeats. A `{ js }` entry is a
-   * self-contained function source `(prompt, call) => string`, evaluated inside the server thread. */
+   * self-contained function source `(prompt, call, body) => string`, evaluated inside the server thread; `body` is the parsed
+   * request body, so a reply can depend on whether a `json_schema` arrived. */
   replies: Array<string | { js: string }>
   /** Respond with this body on `/props` (malformed answer fixtures). */
   propsOverride: unknown
@@ -48,7 +49,7 @@ export interface FakeLlama {
   close(): Promise<void>
 }
 /** Serialise a function as a `replies` entry. It must not capture variables. */
-export const reply = (fn: (prompt: string, call: number) => string): { js: string } => ({ js: fn.toString() })
+export const reply = (fn: (prompt: string, call: number, body: any) => string): { js: string } => ({ js: fn.toString() })
 
 export const BOS = 1
 export function fakeTokens(text: string, addSpecial = true): number {
@@ -90,7 +91,7 @@ async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (
       const n = completions++
       if (state.completionDelayMs) await wait(state.completionDelayMs)
       const entry = state.replies[Math.min(n, state.replies.length - 1)]!
-      const content = typeof entry === 'string' ? entry : (0, eval)(`(${entry.js})`)(body.prompt, n) as string
+      const content = typeof entry === 'string' ? entry : (0, eval)(`(${entry.js})`)(body.prompt, n, body) as string
       return send(response, 200, { content, tokens_evaluated: fakeTokens(body.prompt, true) + state.evaluatedSkew, tokens_predicted: fakeTokens(content, false),
         stop_type: state.stopType, truncated: state.truncated, stopped_limit: false, tokens_cached: 0 })
     }

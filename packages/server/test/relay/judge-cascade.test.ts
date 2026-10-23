@@ -4,7 +4,7 @@ import type { RelayJudgeSummary, RelayJudgeInput } from '../../src/relay/judge-h
 import { RelayExecutor } from '../../src/relay/executor.ts'
 import { RelayStore } from '../../src/relay/store.ts'
 import { JudgeStore } from '../../src/relay/judge-store.ts'
-import { RelayJudgeCascade, type RelayCascadeInput } from '../../src/relay/judge-cascade.ts'
+import { RelayJudgeCascade, judgeResultJsonSchema, type RelayCascadeInput } from '../../src/relay/judge-cascade.ts'
 import {
   copyBrief,
   nightKey,
@@ -217,6 +217,21 @@ test('selector precedence hard filters and absent/future/stale calibration never
     'auto'
   )
 })
+test('every judge sample asks for the verdict schema (the one that validates it), unless the structured-output switch is off', async () => {
+  for (const [name, limits, expected] of [['default', DEFAULT_RELAY_LIMITS, judgeResultJsonSchema], ['switch off', { ...DEFAULT_RELAY_LIMITS, structuredOutput: false }, undefined]] as const) {
+    const f = fixture(), asked: unknown[] = []
+    try {
+      const configured = input(brief(), { model: { admit: async () => true, sample: async (i) => { asked.push(i.responseSchema); return valid() } } })
+      await new RelayExecutor(f.relay, f.model, f.workspace, reserves, f.scrubber, limits, undefined, undefined, configured).run(f.attempt)
+      assert.ok(asked.length >= 2, name)
+      assert.ok(asked.every(schema => schema === undefined ? expected === undefined : JSON.stringify(schema) === JSON.stringify(expected)), name)
+    } finally { f.close() }
+  }
+  // Direct cascade use: an explicit false wins over the default, and the verdict schema is the converted resultSchema.
+  assert.deepEqual(judgeResultJsonSchema.required, ['taxonomy', 'verdict', 'evidenceRefs', 'diagnosisHint'])
+  assert.equal(judgeResultJsonSchema.additionalProperties, false)
+})
+
 test('actual executor boundaries create fresh samples, stable sealed refs and requested wake only', async () => {
   const f = fixture(),
     seen: string[] = []

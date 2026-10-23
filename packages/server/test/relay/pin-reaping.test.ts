@@ -348,10 +348,10 @@ test('a federation closed under a starting relay refuses the start cleanly and l
   assert.equal(await bind(), 'runtime_meter_unavailable', 'and no stale pending state turns the next attempt into relay_policy_invalid')
 })
 
-test('an executor refuses relay pins from a home older than the lease protocol, and the handshake offers 1.5', async t => {
+test('an executor refuses relay pins from a home older than the lease protocol, and the handshake offers 1.6 (R2-json)', async t => {
   const p = pair(t), old = { ...p.homeCtx, version: { major: 1, minor: 4 } }, fresh = { ...p.homeCtx, version: { major: 1, minor: 5 } }
   await assert.rejects(async () => p.target.federation.receiveRelayPin(old, ask('old')), /contract_feature_unavailable/, 'a home without the heartbeat would lose its pin mid-run')
   assert.deepEqual(p.streams(), [])
   assert.equal(p.target.federation.receiveRelayPin(fresh, ask('new')).entry.runId, 'new')
-  assert.equal(FEDERATION_VERSION.minor, 5)
+  assert.equal(FEDERATION_VERSION.minor, 6)
 })

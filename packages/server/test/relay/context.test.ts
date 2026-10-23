@@ -82,7 +82,7 @@ test('a dropped older turn emits context_dropped and becomes the boundary', asyn
   const f = fixture({ count: tokenCount, reserves: { stepMedian: 100 }, actions: () => {
     const call = ++n
     if (call > 3) return canonical({ action: 'handoff' })
-    return canonical({ action: 'tool', name: 'echo', args: { output: 'x'.repeat(2700) } })
+    return canonical({ action: 'tool', name: 'echo', args: { output: 'x'.repeat(2600) } })
   } })
   try {
     await f.executor.run(f.attempt)

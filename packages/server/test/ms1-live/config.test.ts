@@ -25,6 +25,12 @@ test('a valid home and executor configuration parse, with every path absolute an
   assert.equal(e.executor!.llamaServer.baseUrl, 'http://127.0.0.1:8090')
 })
 
+test('home.structuredOutput defaults to on, can be turned off, and takes nothing but a boolean', () => {
+  assert.equal(parseMs1LiveConfig(home(), '/etc/x/ms1-live.json').home!.structuredOutput, true)
+  assert.equal(parseMs1LiveConfig(home({ home: { alwaysOn: true, reserves, structuredOutput: false } }), '/etc/x/ms1-live.json').home!.structuredOutput, false)
+  refused(home({ home: { alwaysOn: true, reserves, structuredOutput: 'no' } }), 'config_invalid', 'home.structuredOutput')
+})
+
 test('the configuration is strict: unknown keys, wrong roles and missing sections are refused by field, never echoing the value', () => {
   refused(home({ privateKey: '-----BEGIN PRIVATE KEY-----SECRETSECRETSECRET' }), 'config_unknown_key', null)
   refused(home({ node: { identityFile: 'a', privateKeyFile: 'b', privateKeyPem: 'SECRETSECRET' } }), 'config_unknown_key', 'node')
