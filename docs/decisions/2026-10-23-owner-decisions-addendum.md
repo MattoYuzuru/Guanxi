@@ -1,6 +1,6 @@
 # Owner decisions — 2026-10-23 addendum (UI redesign, models in chat, MS1 lead)
 
-**Status:** accepted · **Date:** 2026-10-23 · **Decisions:** D-200–D-210
+**Status:** accepted · **Date:** 2026-10-23 · **Decisions:** D-200–D-211
 **Extends:** [2026-10-23](2026-10-23-owner-decisions.md); where they differ, this record wins over it and over
 [`docs/design/`](../design/README.md).
 **Source:** the owner's review of the running product (`localhost:5173`) in the Guanxi development chat,
@@ -19,5 +19,6 @@
 | D-208 | Models in chat | Chat can select provider models (DeepSeek, OpenAI and others K3 supports), not only Ollama. The node imports provider keys from an owner-designated dotenv file into the K3 vault (values never pass through prompts, logs or clients); an OpenAI-compatible connection may carry an owner-set base URL. Local chat gets a harness system prompt so a model knows it runs inside Guanxi. |
 | D-209 | Fleet map | Proposed feature, accepted for design: a rendered (bounded, not free-pan) map of devices and sessions — device nodes with type icons (laptop, desktop, server, phone), state colour, the lead/home marked, animated links showing real traffic; clicking a node opens a panel with its sessions (open any session's chat view, including a delegated sub-agent's prompt and thinking under D-113 rules) and its loaded models. Views: one session, one project, all devices. |
 | D-210 | MS1 lead | The MS1 lead is Claude Sonnet 5.5 at medium effort through K5 (Claude Code), replacing the planning-quota note in D-197. The owner approved the DS2 Touch ID signer setup; Guanxi sends the steps. |
+| D-211 | MS1 lead on an API key | The owner's subscription sign-in into K5's private Claude config directory did not take, so the MS1 lead (D-210: Claude Sonnet 5.5, medium effort) may run Claude Code on the owner's Anthropic API key, imported by K3 from the owner's dotenv file into the vault and billed as API usage. Scope: planning and final review only. The subscription path stays the default and unchanged; the key reaches only the agent process environment and never a log, event, argument or configuration file. |
 
 The Electron desktop build (U2) remains the path to a macOS DMG; TypeScript stays.
