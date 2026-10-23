@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { parseEnv } from 'node:util'
 import { connectionBaseUrlSchema, type Connection } from '@guanxi/contract'
@@ -58,4 +59,21 @@ export async function importProviderKeysFile(connections: Connections, accountId
     if (error instanceof ConnectionError) throw error
     throw new ConnectionError('validation_failed', 'Provider key import failed')
   }
+}
+
+/** Diagnostics for an owner-designated key file (the MS1 doctor): which providers it would import and which supported names are invalid,
+ * plus its file mode. Never a value, and nothing is imported. */
+export function inspectProviderKeysFile(file: string):
+  { kind: 'unreadable' } | { kind: 'invalid' } | { kind: 'ok'; providers: string[]; invalid: string[]; mode: number } {
+  let text: string, mode: number
+  try {
+    const stat = statSync(file)
+    if (!stat.isFile()) return { kind: 'unreadable' }
+    mode = stat.mode
+    text = readFileSync(file, 'utf8')
+  } catch { return { kind: 'unreadable' } }
+  try {
+    const { entries, errors } = parseProviderKeyFile(text)
+    return { kind: 'ok', providers: entries.map(entry => entry.provider), invalid: errors.map(error => error.key), mode }
+  } catch { return { kind: 'invalid' } }
 }

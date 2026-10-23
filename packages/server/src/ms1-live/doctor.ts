@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process'
-import { accessSync, constants, readFileSync, statSync } from 'node:fs'
+import { accessSync, constants, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { apiPortFromEnv, dataDirFromEnv } from '../config/listen-env.ts'
-import { parseProviderKeyFile } from '../connections/dotenv.ts'
+import { inspectProviderKeysFile } from '../connections/dotenv.ts'
 import { LlamaServerClient } from '../runtime/llama-server/client.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { explainProbe, fail, ok, probeFederation, skip, step, warn, type Check } from './checks.ts'
@@ -34,28 +34,20 @@ function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['l
     'Set home.lead.providerKeysFile to your dotenv file (with ANTHROPIC_API_KEY=), or GUANXI_PROVIDER_KEYS_FILE, or run `guanxi connections import --file` first.')]
   const where = fromEnv ? 'GUANXI_PROVIDER_KEYS_FILE' : 'home.lead.providerKeysFile'
   if (!isAbsolute(file)) return [fail('lead_key', 'path_not_absolute', `${where} must be an absolute path.`)]
-  const checks: Check[] = []
-  let text: string
-  try {
-    const stat = statSync(file)
-    if (!stat.isFile()) throw new Error('not a file')
-    text = readFileSync(file, 'utf8')
-    if (stat.mode & 0o077) checks.push(warn('lead_key_mode', 'lead_key_file_mode', `The key file (${where}) is readable by other users.`, 'chmod 600 the file; it holds a live key.'))
-  } catch { return [fail('lead_key', 'lead_key_file_unreadable', `The key file named by ${where} cannot be read.`, 'Check the path and that this user can read the file.')] }
-  try {
-    const { entries, errors } = parseProviderKeyFile(text)
-    const names = errors.map(error => error.key)
-    const verdict = ((): Check => {
-    if (names.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', 'ANTHROPIC_API_KEY in the key file is not an Anthropic API key (it must start with sk-ant-api).',
+  const found = inspectProviderKeysFile(file)
+  if (found.kind === 'unreadable') return [fail('lead_key', 'lead_key_file_unreadable', `The key file named by ${where} cannot be read.`, 'Check the path and that this user can read the file.')]
+  if (found.kind === 'invalid') return [fail('lead_key', 'lead_key_file_invalid', 'The key file does not parse: it is malformed (duplicate name, unterminated quote, unquoted #) or holds no supported key.',
+    'See docs/operations/ms1-live-run.md section 7 and the connections README (D-208).')]
+  const checks: Check[] = found.mode & 0o077 ? [warn('lead_key_mode', 'lead_key_file_mode', `The key file (${where}) is readable by other users.`, 'chmod 600 the file; it holds a live key.')] : []
+  const verdict = ((): Check => {
+    if (found.invalid.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', 'ANTHROPIC_API_KEY in the key file is not an Anthropic API key (it must start with sk-ant-api).',
       'An OAuth or subscription token (sk-ant-oat...) is refused as an API key: create an API key in the Anthropic Console.')
-    if (!entries.some(entry => entry.provider === 'anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY (`start` does not fall back to an older key in the vault when a file is named).', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
-    if (names.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${names.join(', ')} in the key file is invalid, and an API-key lead does not start on a half-imported vault.`,
+    if (!found.providers.includes('anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY (`start` does not fall back to an older key in the vault when a file is named).', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
+    if (found.invalid.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${found.invalid.join(', ')} in the key file is invalid, and an API-key lead does not start on a half-imported vault.`,
       'Fix or remove those lines.')
     return ok('lead_key', `An Anthropic API key (sk-ant-api...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault.`)
-    })()
-    return [...checks, verdict]
-  } catch { return [...checks, fail('lead_key', 'lead_key_file_invalid', 'The key file does not parse: it is malformed (duplicate name, unterminated quote, unquoted #) or holds no supported key.',
-    'See docs/operations/ms1-live-run.md section 7 and the connections README (D-208).')] }
+  })()
+  return [...checks, verdict]
 }
 
 /** Explains, from the files on this machine and loopback probes only, what is missing for this node to take part. Starts
