@@ -3,7 +3,7 @@ import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCom
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema, dispatchCancelSchema,
   type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
-  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_RUNTIME_PROBE, RELAY_PIN_PREFIX, relayRuntimePinSchema, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_PIN_LEASE_MINOR, RELAY_RUNTIME_PROBE, RELAY_PIN_PREFIX, relayRuntimePinSchema, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -61,7 +61,8 @@ export class Federation {
   private closed = false
   private readonly lifetime = new AbortController()
   private readonly counting = new Map<string, number>()
-  /** F2-reap, home side: relay runs whose session in THIS process still needs its executor pin. Everything else in the journal is dead. */
+  /** F2-reap, home side: relay runs whose session in THIS process still needs its executor pin. Everything else in the journal is dead. This is in-process memory: exactly one
+   * Federation may own a database (the home lease admits one writer), or its sibling would unpin this one's live runs. */
   private readonly livePins = new Set<string>()
   private reconciling: Promise<RelayPinReconciliation> | undefined
   readonly #maintenance: Array<ReturnType<typeof setTimeout>> = []
@@ -320,6 +321,7 @@ export class Federation {
   receiveRelayPin(context: PeerContext, raw: unknown) {
     const request = relayRuntimePinSchema.parse(raw)
     this.relayRuntime(context, { homeNodeId: request.homeNodeId, executorNodeId: request.executorNodeId, model: request.model, run: null })
+    if (context.version.minor < RELAY_PIN_LEASE_MINOR) throw new FederationError('contract_feature_unavailable', 426)   // an older home never renews a lease
     const streamId = RELAY_PIN_PREFIX + request.runId, db = this.#options.db
     this.transaction(() => {
       if (request.action === 'pin') {

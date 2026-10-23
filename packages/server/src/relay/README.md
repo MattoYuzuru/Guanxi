@@ -384,7 +384,10 @@ executor leases each pin (`relayLimits.pinTtlMs`, 10 minutes by default), renewe
 session's heartbeat (`pinRenewMs`, 60 s, the same idempotent signed pin). A lapsed or lease-less relay pin is deleted on the
 executor's own transaction, lazily before every relay request and by its maintenance timer. A lapsed pin only removes a
 permission, so a home that is alive but partitioned for longer than the TTL simply re-pins with its next heartbeat, if the
-cap allows. The home cannot see the executor's TTL: keep `pinRenewMs` well under `pinTtlMs`, and note that an executor clock jump
+cap allows. Federation **1.5** gates this: an executor refuses (`426`) pin and unpin messages from a home that declares an older
+minor, because such a home never renews. A released run id is tombstoned on the executor for one TTL, so a pin or heartbeat that is
+slower than the home's own 5 s bound cannot re-create a pin after its unpin. Leases run on the lease clock (the monotonic-anchored
+`dispatch.leaseClock`), and an executor restart grants every relay pin one fresh TTL before anything can be swept. The home cannot see the executor's TTL: keep `pinRenewMs` well under `pinTtlMs`, and note that an executor clock jump
 or suspend longer than the TTL lapses a live run's pin (the run's next call is `runtime_identity_unknown`, the next heartbeat
 re-pins). A journal row for an executor that refuses permanently (another model, no relay runtime, no longer trusted) is retried
 every pass and never given up; the executor's lease still frees its pin. Tests: `test/relay/pin-reaping.test.ts` and the pin lines of `test/ms1/rehearsal.test.ts`.

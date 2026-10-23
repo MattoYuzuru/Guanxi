@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { FEDERATION_VERSION } from '@guanxi/contract/federation'
 import { FederationChannel } from '../../src/federation/channel.ts'
 import type { DispatchPolicy } from '../../src/remote-attempts/dispatch.ts'
 import type { ExecutorRelayRuntime } from '../../src/remote-attempts/relay-runtime.ts'
@@ -196,7 +197,10 @@ test('a live session renews its lease by heartbeat, so an idle run outlives the 
   for (let i = 0; i < 4; i++) {
     const before = beating.sent.filter(s => s.path === '/attempts/runtime/pin').length
     beating.clock.mono += 900                                           // idle: no observe, no count
+    // Not lapsed-and-restored: the pin is still there before the beat arrives, and the lease it has was renewed, not recreated.
+    assert.equal(beating.target.federation.sweepRelayPins(), 0, 'a sweep right now removes nothing')
     await until(() => beating.sent.filter(s => s.path === '/attempts/runtime/pin').length > before, 3000)
+    await until(() => Number(beating.target.db.prepare('SELECT expires_at FROM federation_relay_pin_leases').get()?.expires_at) === beating.clock.mono + 1000, 3000)
     assert.deepEqual(pins(beating), ['relay:beat'], `still pinned after ${(i + 1) * 900} ms idle`)
   }
   const silent = await remoteFixture(t, { relayLimits: { pinTtlMs: 1000 } })
@@ -341,4 +345,12 @@ test('a federation closed under a starting relay refuses the start cleanly and l
   const bind = () => prepared.prepareBind!({ runId: 'closed-run', sessionId: 'closed-session', epoch: 1 }, controller.signal).then(() => 'bound', (error: { code?: string }) => error.code)
   assert.equal(await bind(), 'runtime_meter_unavailable', 'a typed relay refusal, not the raw federation error')
   assert.equal(await bind(), 'runtime_meter_unavailable', 'and no stale pending state turns the next attempt into relay_policy_invalid')
+})
+
+test('an executor refuses relay pins from a home older than the lease protocol, and the handshake offers 1.5', async t => {
+  const p = pair(t), old = { ...p.homeCtx, version: { major: 1, minor: 4 } }, fresh = { ...p.homeCtx, version: { major: 1, minor: 5 } }
+  await assert.rejects(async () => p.target.federation.receiveRelayPin(old, ask('old')), /contract_feature_unavailable/, 'a home without the heartbeat would lose its pin mid-run')
+  assert.deepEqual(p.streams(), [])
+  assert.equal(p.target.federation.receiveRelayPin(fresh, ask('new')).entry.runId, 'new')
+  assert.equal(FEDERATION_VERSION.minor, 5)
 })

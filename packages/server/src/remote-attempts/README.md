@@ -130,7 +130,7 @@ no price is invented.
 
 ## Relay inference on another node (F2-d)
 
-Protocol **1.4** and the capability `remote-relay-runtime-v1` let a **home** node run the R2 relay
+Protocol **1.4** and the capability `remote-relay-runtime-v1` (pin leases need **1.5**, see the relay README) let a **home** node run the R2 relay
 (lead, workspace, tools and acceptance gates stay there) while every model call is executed and
 counted by the **executor** node's operational llama-server (R2-op `LlamaServerRuntime`). Only an
 executor whose host passed `dispatch.relayRuntime` advertises it. Nothing else of that runtime is
