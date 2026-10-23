@@ -121,7 +121,11 @@ Gates after the fixes are listed under "Gates after cross-check fixes" below.
 
 ## Gates after cross-check fixes
 
-Filled in by the final run of this round; see the report. Residuals added by this round: K3 under-accounting for
+Light: typecheck, `lint`, `lint:md`, `ui:check` pass (suppression file unchanged). Targeted: server side-chat 22 and
+contract 2, web 475 in 52 files. Heavy: `npm test` pass (`check-afzg1qfi`: core 2504+ incl. the new server cases, web
+475, 2 Linux-only skips) and `npm run test:web:browser` pass 194/194 (`check-0kqd5m3z`, source unchanged).
+`ui:check:browser` and `build` were not re-run: this round changed no catalog component or CSS and only added
+server/web logic and tests (last passing receipts `check-nq3sei6s`, `check-9x_nbggx`). Residuals added by this round: K3 under-accounting for
 a request canceled after billing; production sidecars not covered by the zero-write test.
 
 ## Next
