@@ -427,7 +427,9 @@ test('a live mismatched supervisor quarantines instead of falling through to a s
     `setInterval(()=>{},1000)`
   const supervisor = spawn(process.execPath, ['-e', holderScript, groupFile], { detached: true, stdio: 'ignore' })
   try {
-    await waitFor(() => typeof supervisor.pid === 'number' && existsSync(groupFile))
+    // The holder process writes the file non-atomically: existence alone can observe an empty file.
+    const parsed = () => { try { return typeof readJson(groupFile).client === 'number' } catch { return false } }
+    await waitFor(() => typeof supervisor.pid === 'number' && existsSync(groupFile) && parsed())
     const clientPid = readJson(groupFile).client as number
     const pgid = supervisor.pid!
     writeFileSync(recordPath, JSON.stringify({
