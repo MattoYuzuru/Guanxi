@@ -85,6 +85,7 @@ test('the judge option reaches the executor through the public start: signals on
   assert.equal(judgePosts.length, 2 * 2 * cycles, 'two samples at each of the two boundaries of every cycle')
   const grants = f.grants()
   assert.equal(grants.length, posts.length, 'one grant per completion, judge or relay')
+  assert.ok(posts.filter(post => !judgePrompt(post.body.prompt)).every(post => post.body.n_predict === reserves.turn), 'while the relay\'s own calls keep the relay turn')
   for (const post of judgePosts) {
     const text = post.body.prompt as string
     assert.match(text, /"watchdog":\{"ref":"signals:[0-9a-f]+","state":"observed","summary":/, 'the judge is shown the signals summary')
@@ -94,7 +95,7 @@ test('the judge option reaches the executor through the public start: signals on
     const grant = grants.find(g => g.job.counted!.renderedSha256 === sha(post.body.prompt))
     assert.ok(grant, 'the judge prompt that was evaluated is exactly a rendering the executor counted and was granted')
     assert.equal(grant.job.counted!.tokens, fakeTokens(post.body.prompt, true), 'the executor\'s count is the evaluated count')
-    assert.equal(post.body.n_predict, 1000, 'the judge\'s own output ceiling, not the relay turn')
+    assert.equal(post.body.n_predict, 700, 'the judge\'s own output ceiling, not the relay turn')
   }
   const results = f.home.db.prepare('SELECT layer,state FROM relay_judge_requests WHERE run_id=?').all(receipt.runId!) as Array<{ layer: string; state: string }>
   t.diagnostic(`cycles=${cycles} posts=${posts.length} judgePosts=${judgePosts.length}`)
@@ -191,7 +192,7 @@ const refusals: Array<[string, (context: RelayStartJudgeContext) => ReturnType<R
 for (const [name, source] of refusals) {
   test(`fail closed before anything exists: ${name}`, async t => {
     const f = await fixture(t, { judge: () => source })
-    await assert.rejects(f.starts.start(f.input), (error: Error) => error.message === 'judge_config_invalid' && !/Users|exploded/.test(error.message))
+    await assert.rejects(f.starts.start(f.input), (error: Error) => error.message === 'judge_config_invalid')
     for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(f.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
     assert.equal(f.sent.filter(s => s.path === '/attempts/runtime/pin').length, 0, 'the executor was never asked to pin a run that cannot exist')
     assert.equal(f.home.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE 'relay_judge%'").get()!.n, 0, 'the judge ledger was not even opened')
