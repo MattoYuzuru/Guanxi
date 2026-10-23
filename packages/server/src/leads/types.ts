@@ -54,6 +54,15 @@ export type LeadNotice =
   /** The child lost its executor after real work began; it is not replayed and the lead waits for its deadline. */
   | { kind: 'child_interrupted'; runId: string; childRunId: string }
 
+/** Owner ceilings for what a lead may ask a delegated run to do. Immutable boot policy, never lead input. */
+export interface LeadLimits {
+  /** All four required: a lead cannot ask for "no cap". */
+  maxCaps: { cycles: number; tokens: number; moneyMicros: number; wallMs: number }
+  maxDeadlineMs: number
+  /** Default false: the owner's cancel always cancels the child. */
+  allowDetach?: boolean
+}
+
 export type LeadOutcome = 'hibernated' | 'completed' | 'yielded' | 'unavailable' | 'input_required' | 'failed' | 'canceled'
 export interface LeadTurnResult { runId: string; wakeSeq: number | null; outcome: LeadOutcome; code: string | null }
 

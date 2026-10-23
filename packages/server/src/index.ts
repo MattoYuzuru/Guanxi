@@ -161,7 +161,7 @@ export interface StartOptions {
     { child: ChildStarter; relay?: undefined } |
     /** Delegated plans run through this node's public relay start; consent and domains are owner choices
      * the lead can never make for itself. */
-    { child?: undefined; relay: { consent: 'full-access'; domains?: readonly string[]; pollMs?: number }; validateExecutor: NonNullable<LeadPluginConfig['validateExecutor']> })
+    { child?: undefined; relay: { consent: 'full-access'; domains?: readonly string[]; pollMs?: number }; validateExecutor: NonNullable<LeadPluginConfig['validateExecutor']>; limits: NonNullable<LeadPluginConfig['limits']> })
   /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
    * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
   operationalRelay?: OperationalRelayOptions
@@ -173,6 +173,8 @@ export async function start(options: StartOptions = {}) {
   // Plan acceptance commands written by a lead run as relay gates under the owner's consent: the owner's policy must name
   // which executors a lead may use.
   if (options.leads?.relay && !options.leads.validateExecutor) throw new Error('leads.relay requires validateExecutor')
+  // An uncapped Full-access relay run must never be the lead's choice: the owner's ceilings are mandatory with the relay.
+  if (options.leads?.relay && !options.leads.limits) throw new Error('leads.relay requires limits')
   if (options.relay && options.operationalRelay) throw new RelayError('relay_policy_invalid')
   const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   let actualPort = port

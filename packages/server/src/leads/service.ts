@@ -10,7 +10,7 @@ import { TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Wake } from
 import { buildWakePacket, DEFAULT_PACKET_TOKENS, renderWakePacket } from './packet.ts'
 import { LeadStore, type LeadDelegation, type LeadSession } from './store.ts'
 import { LeadToolServer, type ToolResult } from './tool-server.ts'
-import { LeadError, canonical, code, digestOf, leadInvariant, type ChildReporter, type ChildStarter, type LeadNotice,
+import { LeadError, canonical, code, digestOf, leadInvariant, type ChildReporter, type LeadLimits, type ChildStarter, type LeadNotice,
   type LeadOutcome, type LeadTurnResult } from './types.ts'
 
 export interface LeadServiceOptions {
@@ -21,7 +21,9 @@ export interface LeadServiceOptions {
   child: ChildStarter
   reporter?: ChildReporter
   /** Host policy for the executor a lead may name; throw a stable code to refuse before hibernation. */
-  validateExecutor?: (executor: LeadDelegateInput['executor'], ownerAccountId: string) => void
+  validateExecutor?: (executor: LeadDelegateInput['executor'], ownerAccountId: string, brief: Readonly<LeadDelegateInput>) => void
+  /** Owner ceilings on caps, deadline and detach; without them the lead's brief is taken as given. */
+  limits?: LeadLimits
   /** D-142: the lead connection's billing fact, shown as data with its source and age. */
   billing?: (ownerAccountId: string, connectionId: string) => unknown
   notify?: (notice: LeadNotice) => void
@@ -89,6 +91,11 @@ export class LeadService {
     this.runs = options.runs
     this.scrubber = options.scrubber
     this.store = new LeadStore(options.db)
+    const limits = options.limits
+    if (limits) {
+      const positive = (value: number) => Number.isSafeInteger(value) && value > 0
+      leadInvariant(positive(limits.maxDeadlineMs) && Object.values(limits.maxCaps).length === 4 && Object.values(limits.maxCaps).every(positive), 'invalid_input')
+    }
     this.tools = options.tools ?? new LeadToolServer()
     this.ownsTools = options.tools === undefined
   }
@@ -248,6 +255,19 @@ export class LeadService {
 
   // ---- delegation --------------------------------------------------------------------------
 
+  /** Names the first field of the brief that exceeds the owner's ceilings; names only, never values. */
+  private limitViolation(brief: LeadDelegateInput): string | null {
+    const limits = this.o.limits
+    if (!limits) return null
+    for (const key of ['cycles', 'tokens', 'moneyMicros', 'wallMs'] as const) {
+      const value = brief.caps[key]
+      if (value === null || value > limits.maxCaps[key]) return `caps.${key}`
+    }
+    if (brief.deadlineMs > limits.maxDeadlineMs) return 'deadlineMs'
+    if (!limits.allowDetach && brief.onCancel === 'detach') return 'onCancel'
+    if (!limits.allowDetach && brief.onDeadline === 'detach') return 'onDeadline'
+    return null
+  }
   private async delegateCall(runId: string, turn: Turn, session: LeadSession, raw: unknown): Promise<ToolResult> {
     const refuse = (text: string): ToolResult => ({ kind: 'result', isError: true, text: this.scrubber.scrub(text) })
     if (turn.delegating) return refuse('delegation_already_requested')
@@ -258,7 +278,9 @@ export class LeadService {
     const brief = parsed.data
     if (canonical(this.scrubber.scrub(brief)) !== canonical(brief)) return refuse('content_withheld')
     if (!this.runs.alwaysOnHome) return refuse('no_always_on_home')
-    try { this.o.validateExecutor?.(brief.executor, session.owner_account_id) } catch (error) { return refuse(code(error)) }
+    const over = this.limitViolation(brief)
+    if (over) return refuse(`delegation_exceeds_policy: ${over}`)
+    try { this.o.validateExecutor?.(brief.executor, session.owner_account_id, brief) } catch (error) { return refuse(code(error)) }
     const deadline = this.now() + brief.deadlineMs
     if (!Number.isSafeInteger(deadline)) return refuse('invalid_brief: deadlineMs')
     const key = `lead:${turn.attempt.id}`
@@ -286,8 +308,11 @@ export class LeadService {
     this.ensureRetained(attempt)
     if (observed) this.recordUsage(attempt, observed)
     this.fault('delegate:cost_recorded')
+    // Under owner ceilings the owner's cancel always reaches the child, whatever an older intent row says.
+    const ownerCancels = this.o.limits !== undefined && !this.o.limits.allowDetach
     const promise = this.runs.delegate(attempt, { key, deadline: row.deadline,
-      deadlinePolicy: row.on_deadline === 'wrap_up' ? 'cancel_wrap_up' : 'detach', cancelPolicy: row.on_cancel })
+      deadlinePolicy: row.on_deadline === 'wrap_up' || ownerCancels ? 'cancel_wrap_up' : 'detach',
+      cancelPolicy: ownerCancels ? 'cancel' : row.on_cancel })
     this.fault('delegate:committed')
     this.markDelegated(runId, key, promise, observed?.text ?? '')
     this.fault('delegate:marked')

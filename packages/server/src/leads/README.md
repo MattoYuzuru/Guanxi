@@ -97,8 +97,14 @@ stays the lead's promise as a **mirror** kept in step with the relay run:
 The lead chooses the plan, its acceptance commands, caps and the executor connection and model. Consent
 (`full-access`) and allowed domains are the owner's, set at boot in `leads.relay`, and `leads.relay` refuses to load
 without `validateExecutor`, the owner's allow-list of executors. The acceptance commands a lead writes run as the
-relay's gates under that consent: trust in the lead is trust in those commands. Caps may all be null; the lead's
-`deadlineMs` is the ceiling.
+relay's gates under that consent: trust in the lead is trust in those commands.
+
+The owner also bounds what the lead may ask for. `leads.relay` requires `limits` (also available with a custom
+child): `maxCaps` with all four caps required, `maxDeadlineMs`, and `allowDetach` (default false). Before the lead
+is stopped, `guanxi_delegate` refuses a brief with a null or larger cap, a longer deadline, or `onCancel` or
+`onDeadline` set to `detach` as `delegation_exceeds_policy: <field>` (field names only, never values); the lead can
+correct it in the same turn. Without `allowDetach` the owner's cancel always cancels the child, whatever the
+stored intent says. `validateExecutor(executor, owner, brief)` receives the whole brief.
 
 ## Cost and billing (D-142)
 
