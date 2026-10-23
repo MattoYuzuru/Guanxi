@@ -496,3 +496,26 @@ test('a late error event on the tool listener does not take the node down', asyn
   const inner = (server as unknown as { server: { emit(event: string, error: Error): boolean } }).server
   assert.doesNotThrow(() => inner.emit('error', new Error('accept failure')))
 })
+
+test('an agent that echoes its MCP configuration never leaves the per-turn bearer token in the session log or the database', async t => {
+  const f = await leadFixture(t, { lead: { echoConfig: true } })
+  const { runId, first } = f.start()
+  await first
+  f.children.complete()
+  f.lead().pump()
+  await f.lead().idle()
+  assert.equal(f.runs().get(runId).state, 'completed')
+  assert.equal(f.tokens.length, 2)
+  let echoed = 0
+  for (const session of f.kernel.sessionLog!.list().sessions) {
+    for (const event of f.kernel.sessionLog!.readAll(session.sessionId, 'person')) {
+      const text = JSON.stringify(event.data)
+      for (const token of f.tokens) assert.ok(!text.includes(token), `${event.type} must not carry a bearer token`)
+      if (event.type === 'assistant.message' && text.includes('config ')) echoed++
+    }
+  }
+  assert.ok(echoed >= 1, 'the fixture really did echo its configuration')
+  const dump = (f.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[])
+    .map(table => { try { return JSON.stringify(f.db.prepare(`SELECT * FROM "${table.name}"`).all(), (_k, v) => (v instanceof Uint8Array ? Buffer.from(v).toString('latin1') : v)) } catch { return '' } }).join('\n')
+  for (const token of f.tokens) assert.ok(!dump.includes(token))
+})

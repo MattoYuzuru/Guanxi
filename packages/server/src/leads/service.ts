@@ -194,6 +194,11 @@ export class LeadService {
     const result = (async (): Promise<LeadTurnResult> => {
       const session = this.store.session(runId)!
       const grant = this.tools.grant({ runId, attemptId: attempt.id, wakeSeq: turn.wakeSeq }, input => this.delegateCall(runId, turn, session, input))
+      // The agent holds the token only after its session request was written, so the scrubber may know it from then on:
+      // an agent that repeats its own configuration cannot put the capability into the session log. Registering earlier
+      // would redact the Authorization header of that very request.
+      const tokenRef = `secret://lead/turn/${attempt.id}` as const
+      const token = grant.header.value.slice('Bearer '.length)
       const timer = setInterval(() => guard(() => { this.runs.renew(attempt) }), this.o.renewMs ?? 15_000)
       timer.unref()
       try {
@@ -205,12 +210,12 @@ export class LeadService {
           lead: { mcpServers: [{ type: 'http', name: 'guanxi', url, headers: [grant.header] }], resume: turn.resume,
             ...(turn.seededPrompt === undefined ? {} : { seededPrompt: turn.seededPrompt }),
             hibernateSignal: live.hibernate.signal, ...(this.o.cancelGraceMs === undefined ? {} : { cancelGraceMs: this.o.cancelGraceMs }),
-            onSession: info => guard(() => this.onSession(turn, session, info, observed)),
+            onSession: info => guard(() => { this.scrubber.register(tokenRef, token); this.onSession(turn, session, info, observed) }),
             onActivity: () => guard(() => this.markActivity(turn)),
             onUsage: usage => { observed.usage = usage } } })
         observed.text = output.text
         observed.usage = output.usage ?? observed.usage
-      } catch (error) { failure = error } finally { clearInterval(timer); grant.revoke() }
+      } catch (error) { failure = error } finally { clearInterval(timer); grant.revoke(); this.scrubber.unregister(tokenRef) }
       if (abortCode && !live.userCancel) failure = new LeadError(abortCode)
       return this.settle(turn, live, observed, failure)
     })().catch((error): LeadTurnResult => {

@@ -105,6 +105,8 @@ async function leadPrompt(frame) {
     sessionUpdate(sessionId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'PRIVATE_REASONING_FIXTURE' } })
     sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: resumed ? 'resumed lead turn' : 'planning delegation' } })
   }
+  // A careless agent that repeats its own MCP configuration (with the bearer header) in its answer.
+  if (lead.echoConfig) sessionUpdate(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: `config ${JSON.stringify(mcp)}` } })
   if (resumed && lead.crashOnResume) { leadLog('crash', { sessionId }); process.exit(31) }
   if (resumed && lead.resumeDelayMs) await new Promise(resolve => setTimeout(resolve, lead.resumeDelayMs))
   if (!brief || (resumed && !lead.redelegate)) { finish('end_turn', { resumed }); return }
