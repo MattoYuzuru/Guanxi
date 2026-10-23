@@ -84,6 +84,7 @@ this document runs and the node boots exactly as before.
 | `home.reserves` | ADR-0020 reserves in tokens of one window; `preflight` checks them against the observed window |
 | `home.checkoutRoot` | optional; default `<data dir>/relay-checkouts` |
 | `home.lead` | optional: the Claude Code lead (section 7); its binary paths must be absolute |
+| `home.judge` | optional: the R3 judge of every relay this home starts (section 5); absent means no judge |
 | `executor.llamaServer.baseUrl` | the attached llama-server, on the executor's loopback |
 
 The first observation of a model on an executor hashes the whole GGUF (7.5 s for the 11.77 GB file on the Fedora node, once; a
@@ -95,26 +96,36 @@ holder is renewed all along; `callDeadlineMs` defaults to 30 minutes).
 ## 4. Start order
 
 ```bash
-# 1. Fedora: llama-server up (/health answers ok), then
-$G doctor --config ~/ms1/exec/ms1-live.json
-$G start  --config ~/ms1/exec/ms1-live.json --data-dir ~/ms1/exec/data --json     # wait for {"event":"warm","state":"ready"}
+# 1. Fedora: llama-server up (/health answers ok), then, BEFORE the node starts (it shares the single slot with a relay):
+$G doctor    --config ~/ms1/exec/ms1-live.json --data-dir ~/ms1/exec/data
+$G preflight --config ~/ms1/exec/ms1-live.json --completion                        # the first real one-token generation
+$G start     --config ~/ms1/exec/ms1-live.json --data-dir ~/ms1/exec/data --json   # wait for {"event":"warm","state":"ready"}
 # 2. Mac: the forwards, federation ports only (keep it running; -N only forwards)
 ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
   -L 127.0.0.1:4562:127.0.0.1:4562 -R 127.0.0.1:4561:127.0.0.1:4561 fedora
 # 3. Mac: Colima running, then the home, kept awake for the whole run
 caffeinate -dimsu $G start --config ~/ms1/home/ms1-live.json --data-dir ~/ms1/home/data --json
-# 4. Mac, then Fedora
+# 4. Mac, then Fedora (no --completion now: the executor node is running)
 $G preflight --config ~/ms1/home/ms1-live.json
-$G preflight --config ~/ms1/exec/ms1-live.json --completion
+$G preflight --config ~/ms1/exec/ms1-live.json
 ```
+
+Both nodes take `--data-dir` (or `GUANXI_DATA_DIR`); without either they use `<config dir>/data`, and **live mode refuses `~/.guanxi`**.
+Pass the same `--data-dir` to `doctor`. The bind address is exactly `127.0.0.1`.
+
+Before the first start, check that the forwards are what they should be. On Fedora, `sshd` must keep `GatewayPorts no` (the default,
+`sshd -T | grep -i gatewayports`), and once the forward is up `ss -ltn` must show the home's federation port bound to
+`127.0.0.1` only (`127.0.0.1:4561`, never `0.0.0.0:4561` or `*:4561`); on the Mac the same for `4562`. A wildcard bind would offer the
+signed API to the network.
 
 `doctor` reads files and probes loopback only; it explains what is missing (`fix:` lines). `preflight` (home) sends a signed
 handshake, a signed observation and a signed exact count of a fixed probe through the executor and prints model, window, build,
 digest, counter source and the observation time; it also checks `home.reserves` against the observed window. `preflight`
 (executor) checks the llama-server through the same class the relay uses, the reverse link, and with `--completion` runs **one
-real one-token generation** and compares the evaluated prompt tokens with the count: that is the first real-binary check of the
-`/props`, `/apply-template`, `/tokenize` and `/completion` field names, still unverified (R2-op residual 1). If it fails with
-`truncation_protocol`, set `executor.llamaServer.cachePrompt: false` and report the build.
+real one-token generation** and compares the evaluated prompt tokens with the count (the 2026-10-23 evidence closed the field
+names for b11496; this re-checks them from the executor's own process). It **refuses while the node's federation port answers**
+(`completion_while_running`): the slot is single, so never run it during a run. If it fails with `truncation_protocol`, set
+`executor.llamaServer.cachePrompt: false` and report the build.
 
 Exit codes of every command: `0` ok, `1` a check or the run failed (a doctor with an invalid configuration included), `2` usage
 or a configuration that cannot be loaded. `--json` makes stdout one JSON document (`start`: one object per line).
@@ -137,6 +148,16 @@ node packages/cli/src/bin.ts relay exec --url $H --request plan.json --key run-1
                                                                                     # consent "full-access", domains, plan, caps
 ```
 
+**The judge (`home.judge`).** Present, it gives every relay start of this home (public route and lead alike) an R3 judge. `signals` is
+the deterministic J0/J1 layer read from the relay ledger (what the ledger cannot see is reported unknown, never healthy). `cascade`
+adds J2 samples taken by the executor's own model through the pairing: its connection is `ms1-executor` and its model the served
+one (J3 needs a second model and is off). Each sample is a real call on the executor's single slot, so it queues with the relay's
+calls, and it is **pre-debited from `caps.tokens`** (`maxInputTokens + maxOutputTokens` per sample, two samples at two boundaries of
+every cycle by default): size the caps for it. `maxInputTokens + maxOutputTokens` must fit the observed window (32768 here; the
+defaults are 8192 and 1024); `preflight` checks it and a start that cannot fit is refused (`judge_config_invalid`) before anything
+exists. The brief the cascade needs is built from the start itself, not from a lead's delegation brief. D-199 journal rows stay on
+the home.
+
 Each model call is a child run on the home (`rc-*`) with one `remote-dispatch:` cost row holding the executor's evaluated tokens.
 The relay run keeps its own cap accounting; never add the two.
 
@@ -148,8 +169,10 @@ The relay run keeps its own cap accounting; never add the two.
    flight ends `interrupted`, its ledger is kept, the lead must re-delegate.
 3. Stop the ssh forward, then the executor (`Ctrl-C`), then llama-server (your service manager).
 
-A pin can stay on the executor when it was unreachable at a stop or crash (`maxPinsPerPeer` is 16, then new relays are refused);
-reaping is another lane's work. Inspect it with `sqlite3 <exec data>/guanxi.db "SELECT id FROM federation_streams"`.
+Pins are now reaped (F2-reap): the home journals each pin before it is sent, re-sends a signed `unpin` for every journal row at start
+and every 60 s, and the executor leases each pin (10 minutes, renewed by the live run's 60-second heartbeat). A long run therefore
+shows repeated signed `pin` messages, and a crashed run's pin disappears by itself within a lease. Inspect with
+`sqlite3 <exec data>/guanxi.db "SELECT id FROM federation_streams"`; `maxPinsPerPeer` (16) still bounds what can be held.
 
 ## 7. The Claude Code lead (D-197)
 
@@ -201,14 +224,22 @@ Nothing prints, logs or stores a key; a private workspace's contents are not log
 
 ## 9. What the forward exposes
 
-The forward carries the **federation listener** only. It serves `/api/federation/*` and answers every other path `404`; it checks
-the `Host` header; every request must be signed by the pinned peer key (audience, body hash, nonce, 60-second window), so a
-process on the other host that can reach the forwarded loopback port gets `401 unauthenticated` and nothing else. The owner API,
+The forward carries the **federation listener** only. It serves `/api/federation/*` (device enrollment, the one unsigned route that
+writes state, answers `404` there too) and answers every other path `404`; it checks the `Host` header and accepts only counted
+dispatch grants; every other request must be signed by the pinned peer key (audience, body hash, nonce, 60-second window), so a
+process on the other host that can reach the forwarded loopback port gets `401 unauthenticated` (or `404`) and nothing else. The
+server reads an unsigned request body before it checks the signature (a pre-existing property of the federation routes, capped at 1 MiB). The owner API,
 which has no signature and acts as you, is on a different port that is never forwarded; keep it that way, and keep both hosts
 single-user (anyone who can log in to the executor can connect to its loopback ports, including the forwarded home federation
 port). The keys are what authenticate; `peer-offer.json` is public and carries no secret.
 
-## 10. When something is wrong
+## 10. Sleep and power
+
+A Mac that sleeps ends the run. `caffeinate -dimsu` keeps it awake only while it is on AC (`-s` is ignored on battery), and **closing the
+lid still sleeps it** unless an external display and power are attached. After any sleep, re-run the `ssh -N …` forward (it dies with
+the network), check `preflight`, and expect the run to have ended `interrupted`.
+
+## 11. When something is wrong
 
 | You see | It means | Do |
 | --- | --- | --- |

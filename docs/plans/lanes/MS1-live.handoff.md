@@ -43,17 +43,19 @@ and by `ms1-live start` from `GUANXI_MS1_LIVE_CONFIG`). Unset, the boot is uncha
    against `thresholds`; `preflight` re-checks against the observed window).
 8. Default ports: owner API 4551/4552, federation 4561/4562. Node ids `ms1-<role>-<8 hex>`, account `owner`.
 
-## What each test proves (46 new, `packages/server/test/ms1-live/`)
+## What each test proves (59 new, `packages/server/test/ms1-live/`)
 
 | File | Tests | Proves (and fails when violated) |
 | --- | --- | --- |
-| `config.test.ts` | 6 | strict schema; errors name a field, never a value (a pasted key is not echoed); only `http://` loopback with a port; lead needs all four caps, exact version, absolute binaries; env unset means plain boot; the template parses and its reserves fit 32768 |
+| `config.test.ts` | 7 | strict schema; errors name a field, never a value (a pasted key is not echoed); only `http://` loopback with a port; lead needs all four caps, exact version, absolute binaries; env unset means plain boot; the template parses and its reserves fit 32768 |
 | `identity.test.ts` | 4 | key 0600, no key in any other file or output; an identity is never replaced; key mode, foreign key, bad key, self-pairing, account, trust, missing/extra scopes, admin all refused |
 | `transport.test.ts` | 4 | one origin, signed request unchanged; only `/api/federation/` paths; redirect, silence and refusal are errors; per-class deadlines |
 | `doctor.test.ts` | 4 | each broken piece is named with a fix and exit 1 (key mode, peer file, account, scopes, ports, lead binaries, llama alias/health/loading/down); no key in output; exit-code and usage contract |
-| `boot.test.ts` | 13 | plain boot has no federation, no connection, `404` handshake, stock refusal; every configuration error is raised before any file exists; home boots idempotently; one data directory, one identity; executor with no llama-server stays up and honest; `localModel` attests exactly one model and the home none; command exit codes; federation listener serves only the signed API and the owner API does not serve federation; occupied federation port releases everything; connection conflict and unattended policy refused; executor restart reuses its connection and **close does not wait for a model hash**; a failed lead setup closes the node; relay host extras pass through |
+| `boot.test.ts` | 20 | plain boot has no federation, no connection, `404` handshake, stock refusal; every configuration error is raised before any file exists; home boots idempotently; one data directory, one identity; executor with no llama-server stays up and honest; `localModel` attests exactly one model and the home none; command exit codes; federation listener serves only the signed API and the owner API does not serve federation; occupied federation port releases everything; connection conflict and unattended policy refused; executor restart reuses its connection and **close does not wait for a model hash**; a failed lead setup closes the node; relay host extras pass through |
 | `live.test.ts` | 4 | two real `ms1-live start` processes: preflight proves the link both ways and prints model, window, build, digest, counter source, observation time; a relay through the public route runs every call on the executor (signed pin/unpin, one offer and grant per completion, child ledgers equal the evaluated tokens call for call, no pin left, checkout gone, project untouched, a tripwire on `OLLAMA_HOST` never asked anything, no key in output or any database); idempotent key and public stop; the forward carries federation only |
 | `failures.test.ts` | 7 | wrong peer key, stranger at either end, executor down, dropped forward (and recovery without restart), llama-server down, wrong model, `evaluatedSkew` meter mismatch (`truncation_protocol`, nothing billed): each is refused or fails loudly with no run, session, checkout, completion or Ollama request |
+| `judge.test.ts` | 4 | `home.judge` on the production boot: no section means no judge; signals only emit judge events at every boundary with unknown stays unknown; a cascade takes counted J2 samples on the executor with the configured ceiling; a sample that cannot fit the window is refused before anything exists |
+| `pins.test.ts` | 1 | the pin-lifecycle helper (first pin, last unpin, re-pins between) |
 | `lead.test.ts` | 4 | the fixture ACP lead delegates through the production boot, sleeps, the plan runs on the executor, one wake; a second start does not start a second lead; the owner's limits and allow-list refuse three briefs; a lead that cannot be set up fails the start |
 
 `live-world.ts` is the harness: executor and home as real child processes, `Forward` (a TCP pipe `[::1]:P` to `127.0.0.1:P` that logs
@@ -160,12 +162,13 @@ not asserted: replacing the home's no-Ollama model-inventory callback (the obser
    `--mmproj` or draft models, nor verify `--jinja` beyond the template round trip; `doctor` checks that the model file is readable by
    the node's user (attach hashes it locally).
 2. **The Mac must not sleep.** `alwaysOn` is an assertion; leases run on a clock that does not count suspend. Nothing here arranges power.
-3. **Stale pins** after a crash or an unreachable unpin are not reaped (`claude/stale-pin-reaping`); `maxPinsPerPeer` is 16.
-4. **No judge for a remote relay** (`claude/remote-relay-judge`): R3's gates cannot be claimed for MS1 yet. The public start still builds
-   no judge.
+3. **Pins** are reaped on main (F2-reap: journal, reconciliation every 60 s, a 10-minute lease renewed by the live run's heartbeat); this
+   branch merged it and its tests tolerate the re-pins. Not exercised here over a real link; `maxPinsPerPeer` (16) still bounds a peer.
+4. **The judge** is wired (`home.judge`) but untried against a real model: J2 samples queue on the executor's single slot behind the
+   relay's calls, are pre-debited from `caps.tokens`, and J3 is off. R3's night wake rate and ETA coverage gates are not claimed.
 5. **A relay does not survive its node** (ADR-0020): a restart ends it `interrupted`; the lead must re-delegate.
 6. **Trust boundary.** Both hosts must be single-user: a local user of the executor can reach the forwarded home federation port (signed
-   API only: unsigned requests get `401`) and the executor's own loopback ports. TLS is not used; the ssh link is the private
+   API only: unsigned requests get `401`, enrollment `404`) and the executor's own loopback ports. TLS is not used; the ssh link is the private
    authenticated link F1 asks for.
 7. **The real lead is untested:** bridge name and version, the sign-in in the private config directory, the macOS keychain, billing.
 8. A single `ms1-live start` runs one lead start per invocation and cannot resume or cancel a lead (no HTTP surface, LW); stopping the
@@ -173,9 +176,29 @@ not asserted: replacing the home's no-Ollama model-inventory callback (the obser
 9. Test hygiene: fixed 1.5 s windows for "nothing follows" checks, `freePort` races, Colima required, about a minute for each of the three
    process-based files when the machine is idle.
 
+## Review round 2 (Opus, no P1; main merged: reaping, judge, provider chat, R3 journal)
+
+Each item is its own commit with a test that failed before it (the pin-assertion item is test-only).
+
+- **P2-1** device enrollment is not served on the federation listener (an unsigned `POST /device/code` wrote a row): `404`, tested.
+- **P2-2** shutdown no longer waits on the federation listener before stopping the runtime: `live.close()` starts first, open
+  federation connections are dropped after 1.5 s; tested with a signed observe in flight during an 8 GiB hash.
+- **P2-3** live mode never defaults to `~/.guanxi`: `<config dir>/data` unless `--data-dir` / `GUANXI_DATA_DIR`, and the default home
+  directory is refused (`data_dir_default`); `doctor` takes `--data-dir` and sizes checkouts under it (P3-7).
+- **P2-4** `home.judge`: signals for every live relay, optionally a J2 cascade on the relay's own connection and model (brief built from
+  the start, J3 off), sized against the observed window and pre-debited from `caps.tokens`; `preflight` checks the sizes; tested end to
+  end (signal events, counted judge samples, refusal when it cannot fit). The lead's `lead_delegations.brief` is not consulted (the start
+  input already binds exactly the plan and caps the cascade requires).
+- **P3** pin assertions tolerate heartbeat re-pins; bind host exactly `127.0.0.1`; an MS1 node refuses uncounted dispatch grants and its
+  connection refuses a plain local chat (a native agent could otherwise have used the home's own Ollama through it); `start()` returns a
+  read-only view, not the node; `relayHost` is stripped of start-owned keys at runtime; `preflight --completion` refuses while the node
+  answers; runbook: `GatewayPorts`, `ss -ltn`, sleep and power, reaping, judge. Item 10 (unsigned bodies are read before the signature
+  check) is a pre-existing property of the federation routes, noted in the runbook.
+
 ## Seam for the remote-relay judge
 
-`StartOptions.relayHost` (merged into the relay start host after the derived fields; the runtime, allocator, reserves, project resolution and
+The judge lane's `RelayStartHost.judge` is on main and the live boot now supplies it from `home.judge` (above); a caller's
+`relayHost.judge` still replaces it. `StartOptions.relayHost` (merged into the relay start host after the derived fields; the runtime, allocator, reserves, project resolution and
 node ports stay owned by `start()`) and `StartOptions.relayConfig` (merged into the relay plugin config) are typed as `Partial<Omit<…>>` of
 `RelayStartHost` and `RelayConfig`. When the judge lane adds `judge` to either type, a production boot, `ms1Live` included, passes it with
 no further change here. Tested for the pass-through (`boot.test.ts`); the judge itself is that lane's.
