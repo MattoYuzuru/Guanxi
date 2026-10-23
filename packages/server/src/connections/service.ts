@@ -179,9 +179,9 @@ export class Connections {
     }
   }
   /** Chat commands cross this boundary before durable input or title persistence. */
-  scrubChat<T>(value: T): T {
+  scrubChat<T>(value: T, requireReady = true): T {
     this.assertOpen()
-    this.#vault.assertScrubbingReady('local')
+    if (requireReady) this.#vault.assertScrubbingReady('local')
     return this.scrubber.scrub(value)
   }
   async assertChatModel(accountId: string, id: string, modelId: string) {

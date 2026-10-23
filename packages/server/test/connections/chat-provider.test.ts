@@ -404,3 +404,22 @@ test('secret-bearing API roots are rejected without plaintext metadata, mapping 
   assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM vault_secrets').get()!.n, 0)
   for (const suffix of ['', '-wal']) assert.ok(!(await readFile(join(f.dir, `connections.sqlite${suffix}`))).includes(Buffer.from(value)))
 })
+
+test('local sends reach Ollama with an unregistered vault row or missing K3 service', async t => {
+  const f = await setup(t)
+  f.store.db.prepare('INSERT INTO vault_secrets VALUES(?,?,?)').run(`secret://local/${randomUUID()}`, 'local', 'unregistered')
+  assert.throws(() => f.vault.assertScrubbingReady('local'))
+  let calls = 0
+  const chat = chatFixture(f, t, { async *chatStream(request) {
+    calls++
+    yield { model: request.model, created_at: new Date().toISOString(), message: { role: 'assistant', content: 'ok' }, done: true }
+  } })
+  for (const missing of [false, true]) {
+    if (missing) chat.context.connections = () => { throw new Error('K3 missing') }
+    const thread = chat.create('local-model')
+    const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'hello' }) })
+    assert.equal(response.status, 200)
+    await response.text()
+  }
+  assert.equal(calls, 2)
+})

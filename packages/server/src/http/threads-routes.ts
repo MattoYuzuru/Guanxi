@@ -543,7 +543,13 @@ export function threadsRoutes(app: AppContext): Hono {
     const thread = app.threads.get(threadId)
     if (!thread) return notFound(context, 'thread_not_found', 'Тред не найден')
     let sendBody = parsed.data
-    try { if (app.connections) sendBody = app.connections().scrubChat(sendBody) } catch (error) { return fail(context, error) }
+    const provider = thread.model.startsWith('k3:')
+    try {
+      if (app.connections) sendBody = app.connections().scrubChat(sendBody, provider)
+    } catch (error) {
+      // Local Chat must survive missing K3 and incomplete vault registration.
+      if (provider) return fail(context, error)
+    }
 
     const active = app.jobs.activeChatJobForThread(threadId)
     if (active && (!sendBody.idempotencyKey || active.job.idempotencyKey !== sendBody.idempotencyKey)) {
