@@ -183,10 +183,11 @@ test('a failed Save keeps the chat and its retry reuses the operation: one note 
   await panel(page).getByRole('button', { name: 'Save to session log', exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('node_unreachable')
-  await expect(page.getByRole('alert')).toContainText('retrying it cannot duplicate it')
-  await panel(page).getByRole('button', { name: 'Try again' }).click()
+  await expect(page.getByRole('alert')).toContainText('saving or sending it again cannot duplicate it')
+  await expect(panel(page).getByRole('button', { name: /retry|try again/iu })).toHaveCount(0)
+  await panel(page).getByRole('button', { name: 'Save to session log', exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
-  await panel(page).getByRole('button', { name: 'Try again' }).click()
+  await panel(page).getByRole('button', { name: 'Save to session log', exact: true }).click()
   await expect(page.getByTestId('side-chat-status')).toHaveText('Already saved as event 4. Nothing new was written.')
   expect(log.save).toBe(3)
   expect((await sessionLog(page)).byType['agent.note']).toBe(1)
@@ -288,7 +289,7 @@ test('errors are single and accessible; phone width and large text do not overfl
   await expect(page.getByRole('alert')).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('context_too_large')
   await expect(panel(page)).toContainText('700000 bytes against a bound of 616000 bytes')
-  await expect(panel(page).getByRole('button', { name: 'Try again' })).toHaveCount(0)
+  await expect(panel(page).getByRole('button', { name: /retry|try again|ask again/iu })).toHaveCount(0)
   expect(await serious(page), 'error').toEqual([])
   const fits = async (label: string) => {
     const measured = await page.evaluate(() => {

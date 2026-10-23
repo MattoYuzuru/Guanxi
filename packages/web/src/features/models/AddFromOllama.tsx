@@ -224,7 +224,7 @@ export function AddFromOllama({
             <>
               <Button variant="ghost" onClick={close}>{translate('models.addOllama.close')}</Button>
               <Button variant="primary" onClick={() => void startPull(state.preview)}>
-                {translate('models.addOllama.retry')}
+                {translate('models.addOllama.pull')}
               </Button>
             </>
           ) : state.kind === 'success' ? (

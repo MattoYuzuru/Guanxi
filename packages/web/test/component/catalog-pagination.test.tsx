@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CatalogModel, Health, ListCatalogResponse } from '@guanxi/contract'
 import { CATALOG_DEFAULT_PAGE_SIZE, listModelsResponse } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -413,7 +413,7 @@ describe('bounded catalog paging', () => {
     await waitFor(() => expect(carousel()).not.toBeNull())
   })
 
-  it('replaces the cards with a skeleton for page, query, explicit refresh and retry', async () => {
+  it('replaces the cards with a skeleton for page and query, and recovers a failed read quietly', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     let gate: Promise<void> | null = null
     let failNext = false
@@ -453,22 +453,22 @@ describe('bounded catalog paging', () => {
     release()
     await waitFor(() => expect(carousel()).not.toBeNull())
 
-    release = hold()
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
-    await waitFor(() => expect(carousel()).toBeNull())
-    release()
-    await waitFor(() => expect(carousel()).not.toBeNull())
-
+    // D-203: no Refresh or Retry button. A failed read keeps its error on screen, with no
+    // skeleton flash and no stale cards, until a quiet recovery read replaces it.
+    expect(screen.queryAllByRole('button', { name: /^(Обновить|Повторить)$/u })).toHaveLength(0)
     failNext = true
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
-    await screen.findByText('Каталог недоступен')
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск по каталогу моделей' }), {
+      target: { value: 'synthetic-2' },
+    })
+    await screen.findByText('Каталог недоступен', undefined, { timeout: 2_000 })
+    expect(carousel()).toBeNull()
     release = hold()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
-    // The error is gone and no stale cards are shown while the retry is pending.
-    await waitFor(() => expect(screen.queryByText('Каталог недоступен')).toBeNull())
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(screen.getByText('Каталог недоступен')).toBeTruthy()
     expect(carousel()).toBeNull()
     release()
     await waitFor(() => expect(carousel()).not.toBeNull())
+    expect(screen.queryByText('Каталог недоступен')).toBeNull()
   })
 
   it('keeps legacy full responses compatible while bounding their client DOM page', () => {

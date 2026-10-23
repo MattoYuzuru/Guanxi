@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CatalogModel, Settings } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -310,7 +310,7 @@ const TARGET_GLOSSARY_KEYS = [
 ] as const
 
 describe('Settings language and glossary', () => {
-  it('shows an initial Settings load failure and retries through the authoritative loader', async () => {
+  it('shows an initial Settings load failure and recovers by itself through the authoritative loader', async () => {
     const getSettings = vi.spyOn(api, 'getSettings')
       .mockRejectedValueOnce(new Error('safe settings load failure'))
       .mockResolvedValueOnce(SETTINGS)
@@ -324,8 +324,10 @@ describe('Settings language and glossary', () => {
     )
 
     expect(await screen.findByText('safe settings load failure')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByLabelText('Язык')).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
+    expect(screen.getByText(/Guanxi tries again by itself/u)).toBeTruthy()
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(await screen.findByLabelText('Язык', undefined, { timeout: 5_000 })).toBeTruthy()
     expect(getSettings).toHaveBeenCalledTimes(2)
   })
 

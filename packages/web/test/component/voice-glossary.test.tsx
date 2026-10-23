@@ -94,7 +94,7 @@ describe('states', () => {
     expect(screen.queryByTestId('glossary-count')).toBeTruthy()
   })
 
-  it('reports a rejected list with source, time, code and a Retry that recovers with exactly one more request', async () => {
+  it('reports a rejected list with source, time and code, then recovers by itself with exactly one more request', async () => {
     install(seedBasic)
     node.fail.set('GET /', { status: 503, code: 'glossary_unavailable', once: true })
     render(<GlossaryPage />)
@@ -107,13 +107,14 @@ describe('states', () => {
     expect(alert.querySelector('time')).toBeTruthy()
     expect(screen.queryAllByRole('article')).toHaveLength(0)
     expect(node.count('GET', '/')).toBe(1)
-    fireEvent.click(button('Retry'))
+    expect(screen.queryAllByRole('button', { name: /^(Retry|Reload)/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(screen.queryAllByRole('article')).toHaveLength(3))
     expect(alerts()).toHaveLength(0)
     expect(node.count('GET', '/')).toBe(2)
   })
 
-  it('names node_unreachable when nothing was ever loaded, with a Retry', async () => {
+  it('names node_unreachable when nothing was ever loaded, and recovers by itself', async () => {
     install(seedBasic)
     node.down = true
     render(<GlossaryPage />)
@@ -123,7 +124,8 @@ describe('states', () => {
     expect(screen.queryAllByRole('article')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'New entry' }).hasAttribute('disabled')).toBe(true)
     node.down = false
-    fireEvent.click(button('Retry'))
+    expect(screen.queryAllByRole('button', { name: /^(Retry|Reload)/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(screen.queryAllByRole('article')).toHaveLength(3))
     expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(0)
   })
@@ -145,7 +147,8 @@ describe('states', () => {
     expect(screen.getByRole('button', { name: 'New entry' }).hasAttribute('disabled')).toBe(true)
     expect(mutationCount()).toBe(0)
     node.down = false
-    fireEvent.click(button('Retry'))
+    expect(screen.queryAllByRole('button', { name: /^(Retry|Reload)/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(0))
     expect(screen.getByRole('button', { name: 'Edit Hono' }).hasAttribute('disabled')).toBe(false)
   })
@@ -725,7 +728,8 @@ describe('consistency', () => {
     const focusedBefore = document.activeElement
     ;(document.activeElement as HTMLElement | null)?.blur()
     node.fail.delete('GET /')
-    fireEvent.click(button('Retry'))
+    expect(screen.queryAllByRole('button', { name: /^(Retry|Reload)/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4, name: 'Elsewhere' })).toHaveLength(1))
     expect(document.activeElement).not.toBe(screen.getByRole('heading', { level: 4, name: 'Elsewhere' }))
     expect(focusedBefore).not.toBeNull()
@@ -779,14 +783,15 @@ describe('history', () => {
     expect(node.count('GET', '/gl_pr/history')).toBe(2)
   })
 
-  it('reports a history failure once, with its source, and recovers with Retry', async () => {
+  it('reports a history failure once, with its source, and recovers by itself', async () => {
     await open()
     node.fail.set('GET /:id/history', { status: 500, code: 'internal_error', once: true })
     fireEvent.click(button('History of Hono'))
     await waitFor(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]?.textContent).toContain('The history could not be loaded')
     expect(alerts()[0]?.textContent).toContain('GET /api/voice/glossary/:id/history')
-    fireEvent.click(within(screen.getByTestId('glossary-history')).getByRole('button', { name: 'Retry' }))
+    expect(screen.queryAllByRole('button', { name: /^(Retry|Reload)/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await screen.findByRole('list', { name: 'History of Hono' })
     expect(alerts()).toHaveLength(0)
     expect(node.count('GET', '/gl_hono/history')).toBe(2)
@@ -915,7 +920,7 @@ describe('preview', () => {
     await waitFor(() => expect(count.textContent).toBe('No replacement applies to this text.'))
   })
 
-  it('fails visibly, once, and recovers with Retry', async () => {
+  it('fails visibly, once, and recovers by itself', async () => {
     await open()
     node.fail.set('POST /apply-preview', { status: 500, code: 'internal_error', once: true })
     type(within(preview()).getByLabelText('Dictated text'), 'хоно')
@@ -923,7 +928,8 @@ describe('preview', () => {
     expect(alerts()[0]?.textContent).toContain('The preview could not be computed')
     expect(alerts()[0]?.textContent).toContain('POST /api/voice/glossary/apply-preview')
     expect(screen.queryAllByTestId('glossary-preview-output')).toHaveLength(0)
-    fireEvent.click(within(preview()).getByRole('button', { name: 'Retry' }))
+    expect(screen.queryAllByRole('button', { name: /^(Retry|Reload)/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(screen.queryAllByTestId('glossary-preview-output')).toHaveLength(1))
     expect(alerts()).toHaveLength(0)
     expect(previewRequests()).toHaveLength(2)

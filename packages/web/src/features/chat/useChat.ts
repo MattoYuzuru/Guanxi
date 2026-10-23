@@ -183,7 +183,9 @@ export function useChat(threadId: string | null, projectId: string | null = null
   )
 
   const load = useCallback(async (id: string, signal: AbortSignal) => {
-    setState((previous) => ({ ...previous, loading: true, loadError: null }))
+    // A recovery read after a failure stays quiet: the error stays on screen until a read
+    // succeeds, so automatic retries never flash a skeleton (D-203).
+    setState((previous) => (previous.loadError ? previous : { ...previous, loading: true, loadError: null }))
     try {
       const data = await readThread(id, signal)
       if (signal.aborted) return

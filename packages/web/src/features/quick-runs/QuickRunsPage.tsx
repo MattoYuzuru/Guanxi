@@ -13,6 +13,7 @@ import {
 import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -82,12 +83,9 @@ export function QuickRunsPage() {
       ) : null}
       {projects.error ? (
         <div className="mt-2" role="alert">
-          <Callout
-            tone="warning"
-            title={translate('quickRuns.projects.error')}
-            action={<Button size="sm" onClick={projects.reload}>{translate('quickRuns.retry')}</Button>}
-          >
+          <Callout tone="warning" title={translate('quickRuns.projects.error')}>
             {errorMessage(projects.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         </div>
       ) : null}
@@ -116,7 +114,6 @@ function QuickRunScopePanel({
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [focusActionErrorId, setFocusActionErrorId] = useState<string | null>(null)
-  const retryPolicies = useRef(new Map<string, RetentionPolicy>())
   const creatingRef = useRef(false)
   const updatingRef = useRef<string | null>(null)
   const errorHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -127,11 +124,15 @@ function QuickRunScopePanel({
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
     : translate('quickRuns.scope.projectless'), [locale, projects, scope])
 
+  // A recovery read after a failure keeps the error on screen until it succeeds (D-203).
+  const loadFailed = useRef(false)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setLoadError(null)
-    setQuickRuns(null)
+    if (!loadFailed.current) {
+      setLoading(true)
+      setLoadError(null)
+      setQuickRuns(null)
+    }
     api.listQuickRuns(scopeQuery(scope), controller.signal).then(
       (response) => {
         if (controller.signal.aborted) return
@@ -141,21 +142,26 @@ function QuickRunScopePanel({
           response.projectId !== expectedProjectId ||
           response.quickRuns.some((quickRun) => !matchesScope(quickRun, scope))
         ) {
+          loadFailed.current = true
           setLoadError(translate('quickRuns.scopeMismatch'))
           setLoading(false)
           return
         }
+        loadFailed.current = false
+        setLoadError(null)
         setQuickRuns(response.quickRuns)
         setLoading(false)
       },
       (error) => {
         if (controller.signal.aborted) return
+        loadFailed.current = true
         setLoadError(errorMessage(error))
         setLoading(false)
       },
     )
     return () => controller.abort('quick-run-scope-changed')
   }, [reload, scope])
+  useAutoRecover(loadError, () => setReload((value) => value + 1))
 
   useEffect(() => {
     if (loadError) requestAnimationFrame(() => errorHeadingRef.current?.focus())
@@ -232,10 +238,8 @@ function QuickRunScopePanel({
       if (updated.id !== quickRun.id || !matchesScope(updated, scope)) {
         throw new Error(translate('quickRuns.scopeMismatch'))
       }
-      retryPolicies.current.delete(quickRun.id)
       setQuickRuns((current) => current?.map((item) => item.id === updated.id ? updated : item) ?? null)
     } catch (error) {
-      retryPolicies.current.set(quickRun.id, policy)
       setActionErrors((current) => ({ ...current, [quickRun.id]: errorMessage(error) }))
       setFocusActionErrorId(quickRun.id)
     } finally {
@@ -260,9 +264,7 @@ function QuickRunScopePanel({
           {translate('quickRuns.error.title')}
         </h2>
         <p className="mt-1 break-words text-xs text-secondary">{loadError}</p>
-        <Button className="mt-3" onClick={() => setReload((value) => value + 1)}>
-          {translate('quickRuns.retry')}
-        </Button>
+        <p className="mt-2 text-12 text-secondary">{translate('common.recovering')}</p>
       </section>
     )
   }
@@ -367,16 +369,7 @@ function QuickRunScopePanel({
                       className="mt-3 outline-none"
                     >
                       <p className="break-words text-2xs text-danger">{actionError}</p>
-                      <Button
-                        className="mt-1"
-                        size="sm"
-                        onClick={() => {
-                          const policy = retryPolicies.current.get(quickRun.id)
-                          if (policy) void updateRetention(quickRun, policy)
-                        }}
-                      >
-                        {translate('quickRuns.retention.retry')}
-                      </Button>
+                      <p className="mt-1 text-12 text-muted">{translate('quickRuns.retention.again')}</p>
                     </div>
                   ) : null}
                 </article>

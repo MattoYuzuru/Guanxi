@@ -9,7 +9,7 @@ const connection: Connection = {
   provider: 'deepseek', auth: 'api_key', unattended: false, secretRef: null, facts: {}, balance: null, createdAt: '2026-10-20T00:00:00.000Z',
 }
 const empty: ConnectionSnapshot = { connections: [], costs: [], vault: { unlocked: false, unattendedAvailable: false } }
-const args = { snapshot: empty, retry: () => undefined, mutate: async () => undefined }
+const args = { snapshot: empty, mutate: async () => undefined }
 export const Empty = { args }
 export const Loading = { args: { ...args, snapshot: null, loading: true } }
 export const Error = { args: { ...args, snapshot: null, error: true } }

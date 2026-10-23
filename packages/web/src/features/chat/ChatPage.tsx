@@ -54,6 +54,7 @@ import {
 } from '../../lib/contextLength.ts'
 import { Link, paths, useNavigate } from '../../lib/router.tsx'
 import { useAsync, useLocalStorage } from '../../lib/useAsync.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { ApprovalPrompt } from '../agent/ApprovalPrompt.tsx'
 import { ToolCallCard } from '../agent/ToolCallCard.tsx'
 import { WorkspaceChip, WorkspacePicker } from '../agent/WorkspacePicker.tsx'
@@ -217,7 +218,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
         <p className="mt-2 break-words text-xs text-secondary">
           {errorMessage(projectContext.error)}
         </p>
-        <Button className="mt-3" onClick={projectContext.reload}>{translate('projects.retry')}</Button>
+        <p className="mt-3 text-12 text-secondary">{translate('common.recovering')}</p>
       </div>
     )
   }
@@ -429,6 +430,7 @@ function ThreadPage({
 }) {
   const inWorkspace = useContext(WorkspaceChatContext)
   const chat = useChat(threadId, projectId)
+  useAutoRecover(chat.loadError, chat.reload)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const loadErrorHeadingRef = useRef<HTMLHeadingElement>(null)
   const workspaces = useAsync(
@@ -496,7 +498,7 @@ function ThreadPage({
           {errorMessage(chat.loadError)}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" onClick={chat.reload}>{translate('projects.retry')}</Button>
+          <p className="m-0 text-12 text-secondary">{translate('common.recovering')}</p>
           {projectId && <Link to={paths.projects()} className="text-xs text-accent underline">{translate('projects.chats.back')}</Link>}
         </div>
       </div>

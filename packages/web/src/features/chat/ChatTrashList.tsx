@@ -10,6 +10,9 @@ import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 
+/** Quiet re-read period of a mounted Trash list. */
+export const TRASH_REFRESH_MS = 30_000
+
 export function ChatTrashList({
   projectId,
   onRestored,
@@ -36,22 +39,25 @@ export function ChatTrashList({
       signal,
     ),
     [projectId],
+    // Stays current by itself (D-203): a quiet re-read on focus and on an interval, so a pending
+    // hard deletion's outcome appears without a Refresh button.
+    { revalidate: { onFocus: true, intervalMs: TRASH_REFRESH_MS } },
   )
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoreError, setRestoreError] = useState<string | null>(null)
-  const [retryChat, setRetryChat] = useState<ChatTrashItem | null>(null)
   const [restoredIds, setRestoredIds] = useState<ReadonlySet<string>>(() => new Set())
   const restoringRef = useRef(false)
   const sectionRef = useRef<HTMLElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const listErrorRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const deletionRefreshRef = useRef(false)
 
   useEffect(() => {
     if (restoreError) requestAnimationFrame(() => errorRef.current?.focus())
   }, [restoreError])
 
+  // When the list recovers while its error had focus, focus returns to the heading.
+  const errorHadFocus = useRef(false)
   useEffect(() => {
     if (!trash.error) return
     requestAnimationFrame(() => {
@@ -62,34 +68,29 @@ export function ChatTrashList({
         sectionRef.current?.contains(activeElement)
       ) {
         listErrorRef.current?.focus()
+        errorHadFocus.current = true
       }
     })
   }, [trash.error])
 
   useEffect(() => {
     if (!trash.data || trash.error) return
+    if (errorHadFocus.current) {
+      errorHadFocus.current = false
+      requestAnimationFrame(() => headingRef.current?.focus())
+    }
     const visibleIds = new Set(trash.data.chats.map(({ chatId }) => chatId))
     setRestoredIds((current) => {
       const unresolved = new Set([...current].filter((chatId) => visibleIds.has(chatId)))
       return unresolved.size === current.size ? current : unresolved
     })
-    if (deletionRefreshRef.current) {
-      deletionRefreshRef.current = false
-      requestAnimationFrame(() => headingRef.current?.focus())
-    }
   }, [trash.data, trash.error])
-
-  const refreshDeletion = () => {
-    deletionRefreshRef.current = true
-    trash.reload()
-  }
 
   const restore = async (chat: ChatTrashItem) => {
     if (restoringRef.current) return
     restoringRef.current = true
     setRestoringId(chat.chatId)
     setRestoreError(null)
-    setRetryChat(null)
     try {
       const result = await api.restoreChat(chat.chatId, {
         lifecycleVersion: CHAT_LIFECYCLE_VERSION,
@@ -103,7 +104,6 @@ export function ChatTrashList({
       requestAnimationFrame(() => headingRef.current?.focus())
     } catch (error) {
       setRestoreError(errorMessage(error))
-      setRetryChat(chat)
     } finally {
       restoringRef.current = false
       setRestoringId(null)
@@ -114,6 +114,7 @@ export function ChatTrashList({
   const deletionPending = chats.some(
     (chat) => chat.reason === 'session_left' && chat.hardDeletion.state === 'pending_maintenance',
   )
+
   return (
     <section
       ref={sectionRef}
@@ -131,19 +132,12 @@ export function ChatTrashList({
           {translate('chat.trash.loading')}
         </p>
       ) : null}
-      {trash.refreshing ? (
-        <p role="status" className="mt-2 text-2xs text-muted">
-          {translate('chat.trash.refreshingDeletion')}
-        </p>
-      ) : null}
       {trash.error ? (
         <div ref={listErrorRef} tabIndex={-1} className="mt-2 outline-none" role="alert">
           <p className="break-words text-2xs text-danger">
             {translate('chat.trash.loadError')}: {errorMessage(trash.error)}
           </p>
-          <Button className="mt-1" size="sm" onClick={trash.reload}>
-            {translate('chat.trash.retryList')}
-          </Button>
+          <p className="mt-1 text-12 text-muted">{translate('common.recovering')}</p>
         </div>
       ) : null}
       {restoreError ? (
@@ -151,11 +145,6 @@ export function ChatTrashList({
           <Callout tone="danger" title={translate('chat.trash.restoreError')}>
             <span className="break-words">{restoreError}</span>
           </Callout>
-          {retryChat ? (
-            <Button className="mt-1" size="sm" onClick={() => void restore(retryChat)}>
-              {translate('chat.trash.retryRestore')}
-            </Button>
-          ) : null}
         </div>
       ) : null}
       {!trash.loading && !trash.error && chats.length === 0 ? (
@@ -209,15 +198,7 @@ export function ChatTrashList({
         </ol>
       ) : null}
       {deletionPending ? (
-        <Button
-          className="mt-2"
-          size="sm"
-          loading={trash.refreshing}
-          disabled={trash.refreshing}
-          onClick={refreshDeletion}
-        >
-          {translate('chat.trash.refreshDeletion')}
-        </Button>
+        <p role="status" className="mt-2 text-12 text-muted">{translate('chat.trash.watchingDeletion')}</p>
       ) : null}
       {(trash.data?.deletions?.length ?? 0) > 0 ? (
         <div className="mt-3" aria-live="polite">

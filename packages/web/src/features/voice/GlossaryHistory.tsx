@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { GlossaryHistoryResponse, StoredGlossaryEntryWire } from '@guanxi/contract'
-import { Button, ErrorState } from '@guanxi/ui'
+import { ErrorState } from '@guanxi/ui'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { glossaryApi } from './api.ts'
 import { Tag } from './Tag.tsx'
 import { changedFields, classify, failureMessage, type ChangedField, type Failure } from './model.ts'
@@ -37,15 +38,17 @@ export function GlossaryHistory({ entry, panelId }: { entry: StoredGlossaryEntry
     )
     return () => abort.abort()
   }, [entry.id, entry.revision, attempt])
+  // A failed read recovers by itself; the failure stays shown until revisions replace it (D-203).
+  useAutoRecover(state.failure, () => setAttempt((value) => value + 1))
 
   const { revisions, failure, loading } = state
   const ordered = revisions === null ? null : [...revisions].sort((a, b) => b.revision - a.revision)
   return <section id={panelId} aria-labelledby={`${panelId}-title`} aria-busy={loading} className="flex min-w-0 flex-col gap-2 rounded-control border border-divider bg-inset p-3" data-testid="glossary-history">
     <h5 id={`${panelId}-title`} className="min-w-0 break-words text-14 font-heading">{t('voiceGlossary.history.title', { name: entry.entry.canonical })}</h5>
-    {ordered === null && loading && <p role="status" className="text-12 text-secondary">{t('voiceGlossary.history.loading')}</p>}
+    {ordered === null && loading && !failure && <p role="status" className="text-12 text-secondary">{t('voiceGlossary.history.loading')}</p>}
     {failure && <ErrorState title={t('voiceGlossary.history.error')} source={t('voiceGlossary.source.history')} occurredAt={failure.at} timeMeaning="observed"
-      details={failure.code} action={<Button size="sm" onClick={() => setAttempt((value) => value + 1)} loading={loading}>{t('voiceGlossary.retry')}</Button>} />}
-    {failure && <p className="text-12 text-secondary">{t(failureMessage(failure.code, 'read'))}</p>}
+      details={failure.code} />}
+    {failure && <p className="text-12 text-secondary">{t(failureMessage(failure.code, 'read'))} {t('voiceGlossary.recovering')}</p>}
     {ordered && <ol aria-labelledby={`${panelId}-title`} className="flex min-w-0 flex-col gap-2">
       {ordered.map((revision) => {
         const previous = ordered.find((candidate) => candidate.revision < revision.revision && candidate.entry !== null)

@@ -212,19 +212,18 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
   await expect(disclosure).toBeFocused()
   await expect(section.getByText('llama-2-7b.Q4_K_M.gguf')).toBeVisible()
 
-  // A rate-limited answer is distinguishable and retryable.
+  // A rate-limited answer is distinguishable and repeatable from Search itself (D-203: no Retry).
   await search.fill('rate-limited')
   await search.press('Enter')
   const alert = section.getByRole('alert')
   await expect(alert).toContainText(/ограничивает частоту запросов/u)
-  const retry = section.getByRole('button', { name: 'Повторить' })
-  await expect(retry).toBeVisible()
-  await retry.press('Enter')
+  await expect(section.getByRole('button', { name: /Повторить/u })).toHaveCount(0)
+  await search.press('Enter')
   await expect(alert).toContainText(/ограничивает частоту запросов/u)
 
   // Primary touch targets in this section meet the documented 44 px minimum.
   const targets = await section.evaluate((root) => {
-    const names = ['Искать', 'Повторить', 'Загрузить следующую страницу', 'Выбрать']
+    const names = ['Искать', 'Загрузить следующую страницу', 'Выбрать']
     const found: Array<{ label: string; height: number }> = []
     for (const element of root.querySelectorAll('button')) {
       const label = (element.textContent ?? '').trim()
@@ -837,8 +836,8 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   expect(requests.filter((request) => request.path === '/api/models/catalog')).toHaveLength(
     catalogCallsBeforeDownload,
   )
-  const retry = section.getByRole('button', { name: 'Повторить скачивание' })
-  await retry.press('Enter')
+  const downloadAgain = section.getByRole('button', { name: 'Скачать точный GGUF' })
+  await downloadAgain.press('Enter')
   const completed = section.getByText('Staging artifact скачан и проверен')
   await expect(completed).toBeVisible()
   await expect(section.getByText(new RegExp(digest, 'u'))).toBeVisible()
@@ -889,7 +888,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(failedImport).toBeFocused()
   expect(await modelCalls()).toBe(modelsBeforeImport)
 
-  await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await expect(target).toBeFocused()
   await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')
@@ -906,7 +905,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(section.getByText('Установлено и проверено runtime')).toHaveCount(0)
   expect(await modelCalls()).toBe(modelsBeforeImport)
 
-  await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await expect(target).toBeFocused()
   await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')

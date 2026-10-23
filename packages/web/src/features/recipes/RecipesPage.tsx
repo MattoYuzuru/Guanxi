@@ -15,6 +15,7 @@ import {
 import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
 import { ApiRequestError, api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -150,12 +151,9 @@ export function RecipesPage() {
       {projects.loading ? <p role="status" className="mt-1 text-2xs">{translate('recipes.projects.loading')}</p> : null}
       {projects.error ? (
         <div className="mt-2" role="alert">
-          <Callout
-            tone="warning"
-            title={translate('recipes.projects.error')}
-            action={<Button size="sm" onClick={projects.reload}>{translate('recipes.retry')}</Button>}
-          >
+          <Callout tone="warning" title={translate('recipes.projects.error')}>
             {errorMessage(projects.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         </div>
       ) : null}
@@ -199,11 +197,17 @@ function RecipeScopePanel({
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
     : translate('recipes.scope.projectless'), [locale, projects, scope])
 
+  // Reads of the scope already on screen are quiet (D-203): a recovery after a failure or a
+  // reload after a revision conflict keeps the list and any error until the answer lands.
+  const shownScope = useRef<string | null>(null)
+  const scopeKey = JSON.stringify(scope)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setLoadError(null)
-    setRecipes(null)
+    if (shownScope.current !== scopeKey) {
+      setLoading(true)
+      setLoadError(null)
+      setRecipes(null)
+    }
     api.listRecipes(query(scope), controller.signal).then(
       (response) => {
         if (controller.signal.aborted) return
@@ -214,18 +218,22 @@ function RecipeScopePanel({
         ) {
           setLoadError(translate('recipes.scopeMismatch'))
         } else {
+          setLoadError(null)
           setRecipes(response.recipes)
         }
+        shownScope.current = scopeKey
         setLoading(false)
       },
       (error) => {
         if (controller.signal.aborted) return
+        shownScope.current = scopeKey
         setLoadError(errorMessage(error))
         setLoading(false)
       },
     )
     return () => controller.abort('recipe-scope-changed')
-  }, [reload, scope])
+  }, [reload, scope, scopeKey])
+  useAutoRecover(loadError, () => setReload((value) => value + 1))
 
   useEffect(() => {
     if (loadError) requestAnimationFrame(() => errorRef.current?.focus())
@@ -318,7 +326,7 @@ function RecipeScopePanel({
         <div className="mt-4" role="alert">
           <h3 ref={errorRef} tabIndex={-1} className="text-sm font-semibold outline-none">{translate('recipes.error.title')}</h3>
           <p className="mt-1 break-words text-xs text-danger">{loadError}</p>
-          <Button className="mt-2" size="sm" onClick={() => setReload((value) => value + 1)}>{translate('recipes.retry')}</Button>
+          <p className="mt-2 text-12 text-secondary">{translate('common.recovering')}</p>
         </div>
       ) : recipes?.length === 0 ? (
         <div className="mt-4"><EmptyState title={translate('recipes.empty.title')} description={translate('recipes.empty.description')} /></div>
@@ -403,8 +411,8 @@ function RecipeCard({
       referencedProject !== expectedProject
     ) return
     const controller = new AbortController()
+    // A recovery lookup keeps its error shown until it succeeds (D-203).
     setSnapshotLoading(true)
-    setSnapshotError(null)
     api.getRecipeJobSnapshot(
       recipe.id,
       initialSnapshotReference.recipeRevision,
@@ -416,6 +424,7 @@ function RecipeCard({
     ).then(
       (projection) => {
         if (controller.signal.aborted) return
+        setSnapshotError(null)
         setSnapshotProjection(projection)
         setSnapshotLoading(false)
       },
@@ -427,6 +436,10 @@ function RecipeCard({
     )
     return () => controller.abort('recipe-snapshot-reference-changed')
   }, [initialSnapshotReference, recipe.id, scope, snapshotReadAttempt])
+  // A failed lookup of a remembered snapshot recovers by itself; a failed create keeps its own
+  // Confirm button (same Job intent), so neither has a Retry button.
+  useAutoRecover(snapshotError !== null && snapshotKey === null && initialSnapshotReference ? snapshotError : null,
+    () => setSnapshotReadAttempt((attempt) => attempt + 1))
 
   const scoped = <T extends object>(body: T) => scope.scope === 'project'
     ? { ...body, scope: 'project' as const, projectId: scope.projectId }
@@ -473,6 +486,8 @@ function RecipeCard({
       if (nextError instanceof ApiRequestError && nextError.code === 'recipe_revision_conflict') {
         setConflict(true)
         setError(translate('recipes.conflict'))
+        // The shown revision is stale: read the current one at once (D-203: no Reload button).
+        onReload()
       } else {
         setError(errorMessage(nextError))
       }
@@ -570,7 +585,7 @@ function RecipeCard({
       {error ? (
         <div ref={errorRef} tabIndex={-1} role="alert" className="mt-3 outline-none">
           <p className="text-xs text-danger">{error}</p>
-          {conflict ? <Button className="mt-2" size="sm" onClick={onReload}>{translate('recipes.conflict.reload')}</Button> : null}
+          {conflict ? <p className="mt-1 text-12 text-secondary">{translate('recipes.conflict.reloaded')}</p> : null}
         </div>
       ) : null}
       <div className="mt-4 border-t border-divider pt-3">
@@ -607,7 +622,7 @@ function RecipeCard({
             </div>
           </div>
         ) : null}
-        {snapshotLoading && !confirmSnapshot ? (
+        {snapshotLoading && !confirmSnapshot && !snapshotError ? (
           <p role="status" className="mt-2 text-xs">{translate('recipes.snapshot.loading')}</p>
         ) : null}
         {snapshotError ? (
@@ -618,18 +633,8 @@ function RecipeCard({
             className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus"
           >
             <p className="break-words text-xs text-danger">{snapshotError}</p>
-            {snapshotKey ? (
-              <Button className="mt-2" size="sm" onClick={() => void createSnapshot()}>
-                {translate('recipes.snapshot.retry')}
-              </Button>
-            ) : initialSnapshotReference ? (
-              <Button
-                className="mt-2"
-                size="sm"
-                onClick={() => setSnapshotReadAttempt((attempt) => attempt + 1)}
-              >
-                {translate('recipes.snapshot.retryRead')}
-              </Button>
+            {!snapshotKey && initialSnapshotReference ? (
+              <p className="mt-1 text-12 text-secondary">{translate('common.recovering')}</p>
             ) : null}
           </div>
         ) : null}

@@ -11,6 +11,7 @@ import { Button, Callout, Modal, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { ChatReasoningArtifacts } from './ChatReasoningArtifacts.tsx'
 
 type PolicyMode = ChatRetentionPolicy['mode']
@@ -37,7 +38,6 @@ export function ChatRetentionInfo({
   const [retryKind, setRetryKind] = useState<'load' | 'save' | 'leave' | null>(null)
   const savingRef = useRef(false)
   const leavingRef = useRef(false)
-  const retryPolicyRef = useRef<ChatRetentionPolicy | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const confirmLeaveRef = useRef<HTMLButtonElement>(null)
@@ -52,11 +52,14 @@ export function ChatRetentionInfo({
     if (leaveResult) requestAnimationFrame(() => leaveResultRef.current?.focus())
   }, [leaveResult])
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
-    setRetryKind(null)
-    setProjection(null)
+  const load = useCallback(async (signal?: AbortSignal, quiet = false) => {
+    // A recovery read keeps the error on screen until it succeeds (D-203).
+    if (!quiet) {
+      setLoading(true)
+      setError(null)
+      setRetryKind(null)
+      setProjection(null)
+    }
     try {
       const next = await api.getChatRetention(chatId, signal)
       if (next.chatId !== chatId || next.projectId !== projectId) {
@@ -65,6 +68,8 @@ export function ChatRetentionInfo({
       setProjection(next)
       setSelected(next.policy.mode)
       setLeaveResult(null)
+      setError(null)
+      setRetryKind(null)
     } catch (reason) {
       if (signal?.aborted) return
       setError(errorMessage(reason))
@@ -74,12 +79,19 @@ export function ChatRetentionInfo({
     }
   }, [chatId, projectId])
 
+  const recovery = useRef<AbortController | null>(null)
   useEffect(() => {
     if (!open) return
     const controller = new AbortController()
     void load(controller.signal)
-    return () => controller.abort('retention-info-closed')
+    return () => { controller.abort('retention-info-closed'); recovery.current?.abort('retention-info-closed') }
   }, [open, load])
+  // A failed read recovers by itself; a failed save or leave keeps its own button (D-203).
+  useAutoRecover(open && retryKind === 'load' ? error : null, () => {
+    recovery.current?.abort('retention-recovery-replaced')
+    recovery.current = new AbortController()
+    void load(recovery.current.signal, true)
+  })
 
   const savePolicy = async (policy: ChatRetentionPolicy) => {
     if (savingRef.current || !projection) return
@@ -95,7 +107,6 @@ export function ChatRetentionInfo({
       if (next.chatId !== chatId || next.projectId !== projectId) {
         setError(translate('chat.retention.scopeMismatch'))
         setProjection(null)
-        retryPolicyRef.current = null
         setRetryKind('load')
         return
       }
@@ -104,10 +115,8 @@ export function ChatRetentionInfo({
       setReasoningRevision((revision) => revision + 1)
       setConfirmLeave(false)
       setLeaveResult(null)
-      retryPolicyRef.current = null
     } catch (reason) {
       setError(errorMessage(reason))
-      retryPolicyRef.current = policy
       setRetryKind('save')
     } finally {
       savingRef.current = false
@@ -123,13 +132,6 @@ export function ChatRetentionInfo({
     void savePolicy(policy)
   }
 
-  const retry = () => {
-    if (retryKind === 'load') void load()
-    if (retryKind === 'save' && retryPolicyRef.current) {
-      void savePolicy(retryPolicyRef.current)
-    }
-    if (retryKind === 'leave') void leaveSession()
-  }
 
   const openLeaveConfirmation = () => {
     setConfirmLeave(true)
@@ -203,12 +205,8 @@ export function ChatRetentionInfo({
             <div ref={errorRef} tabIndex={-1} className="min-w-0 outline-none" role="alert">
               <Callout tone="danger" title={translate('chat.retention.error')}>
                 <span className="break-words">{error}</span>
+                {retryKind === 'load' ? <span className="mt-1 block">{translate('common.recovering')}</span> : null}
               </Callout>
-              {retryKind ? (
-                <Button className="mt-2" size="sm" onClick={retry}>
-                  {translate('chat.retention.retry')}
-                </Button>
-              ) : null}
             </div>
           ) : null}
           {projection ? (

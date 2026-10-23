@@ -47,8 +47,8 @@ export const sideChatEnglish = {
   'sideChat.source.respond': 'POST /api/agent/…/side-chat/respond',
   'sideChat.source.save': 'POST /api/agent/…/side-chat/save',
   'sideChat.source.send': 'POST /api/agent/…/side-chat/send',
-  'sideChat.retry': 'Try again',
-  'sideChat.error.unreachable': 'The node is unreachable (node_unreachable). Your messages are still here. If a save or send was in flight, its result is unknown; retrying it cannot duplicate it.',
+  'sideChat.askAgain': 'Ask again',
+  'sideChat.error.unreachable': 'The node is unreachable (node_unreachable). Your messages are still here. If a save or send was in flight, its result is unknown; saving or sending it again cannot duplicate it.',
   'sideChat.error.validation_failed': 'The node rejected the request. Check the message and the context choice.',
   'sideChat.error.session_not_found': 'This session no longer exists.',
   'sideChat.error.session_unavailable': 'This session is in Trash or being removed, so it cannot be read or changed.',
@@ -63,7 +63,7 @@ export const sideChatEnglish = {
   'sideChat.error.model_failed': 'The model did not answer. Nothing was written to the session.',
   'sideChat.error.operation_conflict': 'This action was already used with different content. Change something and try again.',
   'sideChat.error.cancelled': 'The request was canceled.',
-  'sideChat.error.agent_unavailable': 'The node could not complete the request. Check its state and retry.',
+  'sideChat.error.agent_unavailable': 'The node could not complete the request. Check its state, then ask again.',
 } as const
 
 export const sideChatRussian: Record<keyof typeof sideChatEnglish, string> = {
@@ -115,8 +115,8 @@ export const sideChatRussian: Record<keyof typeof sideChatEnglish, string> = {
   'sideChat.source.respond': 'POST /api/agent/…/side-chat/respond',
   'sideChat.source.save': 'POST /api/agent/…/side-chat/save',
   'sideChat.source.send': 'POST /api/agent/…/side-chat/send',
-  'sideChat.retry': 'Повторить',
-  'sideChat.error.unreachable': 'Узел недоступен (node_unreachable). Ваши сообщения на месте. Если сохранение или отправка были в пути, их результат неизвестен; повтор не создаст дубликата.',
+  'sideChat.askAgain': 'Спросить снова',
+  'sideChat.error.unreachable': 'Узел недоступен (node_unreachable). Ваши сообщения на месте. Если сохранение или отправка были в пути, их результат неизвестен; повторное сохранение или отправка не создаст дубликата.',
   'sideChat.error.validation_failed': 'Узел отклонил запрос. Проверьте сообщение и выбор контекста.',
   'sideChat.error.session_not_found': 'Этой сессии больше нет.',
   'sideChat.error.session_unavailable': 'Сессия в корзине или удаляется, поэтому её нельзя читать и менять.',
@@ -131,5 +131,5 @@ export const sideChatRussian: Record<keyof typeof sideChatEnglish, string> = {
   'sideChat.error.model_failed': 'Модель не ответила. В сессию ничего не записано.',
   'sideChat.error.operation_conflict': 'Это действие уже выполнялось с другим содержимым. Измените что-нибудь и повторите.',
   'sideChat.error.cancelled': 'Запрос отменён.',
-  'sideChat.error.agent_unavailable': 'Узел не смог выполнить запрос. Проверьте его состояние и повторите.',
+  'sideChat.error.agent_unavailable': 'Узел не смог выполнить запрос. Проверьте его состояние и спросите снова.',
 }

@@ -64,8 +64,7 @@ export function LauncherPage({ health }: { health: Health }) {
   const [compareRows, setCompareRows] = useState<CatalogComparisonRow[]>([])
   const [compareNotice, setCompareNotice] = useState<string | null>(null)
   const [catalogPullActive, setCatalogPullActive] = useState(false)
-  const [reloadToken, setReloadToken] = useState(0)
-  // Bumped after an install. Unlike reloadToken it is not part of the query basis:
+  // Bumped after an install. It is not part of the query basis:
   // an install changes installation facts, not the accepted query or page.
   const [installedRevision, setInstalledRevision] = useState(0)
   // The catalog view basis whose post-install refresh keeps the current cards mounted.
@@ -75,7 +74,6 @@ export function LauncherPage({ health }: { health: Health }) {
     debouncedQuery,
     debouncedFilters,
     contextLength,
-    reloadToken,
   ])
   const pageBasisRef = useRef(acceptedQueryBasis)
   const catalogRequestPage = pageBasisRef.current === acceptedQueryBasis ? catalogPage : 1
@@ -112,9 +110,12 @@ export function LauncherPage({ health }: { health: Health }) {
     catalogViewBasisRef.current = catalogViewBasis
   }, [catalogViewBasis])
 
+  // Installed models stay current by themselves (D-203): a quiet re-read on focus and every 30 s,
+  // so a model pulled elsewhere appears without a Refresh button.
   const local = useAsync(
     (signal) => api.listModels(contextLength, signal),
-    [contextLength, reloadToken, installedRevision],
+    [contextLength, installedRevision],
+    { revalidate: { onFocus: true, intervalMs: 30_000 } },
   )
   const catalog = useAsync(
     (signal) => api.listCatalog({
@@ -124,10 +125,10 @@ export function LauncherPage({ health }: { health: Health }) {
       page: catalogRequestPage,
       pageSize: CATALOG_DEFAULT_PAGE_SIZE,
     }, signal),
-    [debouncedQuery, debouncedFilters, contextLength, catalogRequestPage, reloadToken, installedRevision],
+    [debouncedQuery, debouncedFilters, contextLength, catalogRequestPage, installedRevision],
   )
-  // Only the refresh that onInstalled started stays in place; a basis change,
-  // an explicit refresh or a retry still replaces the cards with a skeleton.
+  // Only the refresh that onInstalled started stays in place; a basis change still replaces
+  // the cards with a skeleton. Automatic recovery after an error is quiet.
   const replacingCatalog = catalog.loading
     || (catalog.refreshing && inPlaceCatalogBasis !== catalogViewBasis)
   const catalogSettled = catalog.data !== null && !replacingCatalog && !catalog.error
@@ -336,30 +337,14 @@ export function LauncherPage({ health }: { health: Health }) {
         <SectionHeader
           title={translate('launcher.installed.title')}
           count={local.data?.models.length}
-          refreshing={local.refreshing}
-          action={
-            <Button variant="ghost" size="sm" onClick={() => {
-              invalidateCatalogBasis()
-              setReloadToken((v) => v + 1)
-            }}>
-              {translate('launcher.refresh')}
-            </Button>
-          }
         />
 
         {local.loading ? (
           <CarouselSkeleton />
         ) : local.error ? (
-          <Callout
-            tone="danger"
-            title={translate('launcher.installed.error')}
-            action={
-              <Button size="sm" onClick={local.reload}>
-                {translate('launcher.retry')}
-              </Button>
-            }
-          >
+          <Callout tone="danger" title={translate('launcher.installed.error')}>
             {errorMessage(local.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         ) : localItems.length === 0 ? (
           <EmptyState
@@ -376,7 +361,6 @@ export function LauncherPage({ health }: { health: Health }) {
         <SectionHeader
           title={translate('launcher.catalog.title')}
           count={catalogProjection.totalItems}
-          refreshing={catalog.refreshing}
           action={
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               <AddFromOllama
@@ -432,19 +416,9 @@ export function LauncherPage({ health }: { health: Health }) {
           {replacingCatalog ? (
             <CarouselSkeleton />
           ) : catalog.error ? (
-            <Callout
-              tone="danger"
-              title={translate('launcher.catalog.error')}
-              action={
-                <Button size="sm" onClick={() => {
-                  invalidateCatalogBasis()
-                  catalog.reload()
-                }}>
-                  {translate('launcher.retry')}
-                </Button>
-              }
-            >
+            <Callout tone="danger" title={translate('launcher.catalog.error')}>
               {errorMessage(catalog.error)}
+              <span className="mt-1 block">{translate('common.recovering')}</span>
             </Callout>
           ) : catalogProjection.outOfRange ? (
             <EmptyState
@@ -732,12 +706,10 @@ export function CatalogSourceNotice({
 function SectionHeader({
   title,
   count,
-  refreshing,
   action,
 }: {
   title: string
   count?: number
-  refreshing?: boolean
   action?: React.ReactNode
 }) {
   return (
@@ -749,7 +721,6 @@ function SectionHeader({
             {localizedModelCount(count)}
           </span>
         )}
-        {refreshing && <span className="anim-pulse-soft text-2xs text-muted">…</span>}
       </div>
       {action}
     </div>

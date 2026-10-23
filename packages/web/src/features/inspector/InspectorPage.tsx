@@ -38,6 +38,7 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { inspectorApi } from './api.ts'
 import {
   EMPTY_TIMELINE,
@@ -132,7 +133,7 @@ function SessionList() {
         </div>
       )}
       {sessions.error != null && (
-        <LoadError error={sessions.error} route={SESSION_ROUTES.sessions()} onRetry={sessions.reload} title={translate('inspector.list.error')} />
+        <LoadError error={sessions.error} route={SESSION_ROUTES.sessions()} title={translate('inspector.list.error')} />
       )}
       {sessions.data && (sessions.data.withheld > 0 || sessions.data.catchingUp > 0) && (
         <div className="flex flex-col gap-1 text-12 text-secondary" role="status">
@@ -173,8 +174,11 @@ function SessionList() {
   )
 }
 
-/** What failed, where and when, with copyable details and the next action (LAYOUT §1). */
-function LoadError({ error, route, onRetry, title }: { error: unknown; route: string; onRetry: () => void; title: string }) {
+/**
+ * What failed, where and when, with copyable details (LAYOUT §1). The read recovers by itself
+ * (D-203), so the only action is copying the details.
+ */
+function LoadError({ error, route, title }: { error: unknown; route: string; title: string }) {
   const [at] = useState(() => new Date().toISOString())
   const message = errorMessage(error)
   const details = `${title}\n${message}\n${route}\n${at}`
@@ -184,16 +188,14 @@ function LoadError({ error, route, onRetry, title }: { error: unknown; route: st
         tone="danger"
         title={title}
         action={
-          <div className="flex flex-wrap items-center gap-1">
-            <CopyButton text={details} label={translate('inspector.error.details')} />
-            <Button size="sm" onClick={onRetry}>{translate('inspector.retry')}</Button>
-          </div>
+          <CopyButton text={details} label={translate('inspector.error.details')} />
         }
       >
         <p className="text-13">{message}</p>
         <p className="mt-1 text-12 text-muted">
           {translate('inspector.error.when', { time: time(at), route })}
         </p>
+        <p className="mt-1 text-12 text-muted">{translate('common.recovering')}</p>
       </Callout>
     </div>
   )
@@ -216,12 +218,16 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
   const listRef = useRef<HTMLOListElement>(null)
   const followRef = useRef(true)
 
+  const failedRef = useRef(false)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setLoadError(null)
-    setTimeline(EMPTY_TIMELINE)
-    setUnseen(0)
+    // A recovery read after a failure keeps the error on screen until it succeeds (D-203).
+    if (!failedRef.current) {
+      setLoading(true)
+      setLoadError(null)
+      setTimeline(EMPTY_TIMELINE)
+      setUnseen(0)
+    }
     void (async () => {
       try {
         const [head, events] = await Promise.all([
@@ -229,6 +235,9 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
           inspectorApi.allEvents(sessionId, controller.signal),
         ])
         if (controller.signal.aborted) return
+        failedRef.current = false
+        setLoadError(null)
+        setUnseen(0)
         setSummary(head)
         const initial = mergeEvents(EMPTY_TIMELINE, events)
         setTimeline(initial)
@@ -267,12 +276,18 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
         if (!controller.signal.aborted) setLive({ state: 'stopped', at: new Date().toISOString(), opened })
       } catch (error) {
         if (controller.signal.aborted) return
+        failedRef.current = true
         setLoadError(error)
         setLoading(false)
       }
     })()
     return () => controller.abort()
   }, [sessionId, nonce])
+
+  // A missing or incompatible trace will not appear by asking again; anything else recovers by itself.
+  const recoverable = loadError !== null && !(loadError instanceof ApiRequestError
+    && (loadError.code === 'session_not_found' || loadError.code === 'session_event_version_unsupported'))
+  useAutoRecover(recoverable ? loadError : null, () => setNonce((value) => value + 1))
 
   // After a reload, focus returns to the page heading.
   useEffect(() => {
@@ -336,7 +351,7 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
         ) : (
           <>
             <h1 id="inspector-error-title" className="sr-only">{translate('inspector.error.title')}</h1>
-            <LoadError error={loadError} route={SESSION_ROUTES.session(sessionId)} onRetry={reload} title={translate('inspector.error.title')} />
+            <LoadError error={loadError} route={SESSION_ROUTES.session(sessionId)} title={translate('inspector.error.title')} />
           </>
         )}
       </section>
@@ -887,7 +902,7 @@ function Spans({ sessionId, lastSeq }: { sessionId: string; lastSeq: number }) {
   const spans = useAsync((signal) => inspectorApi.spans(sessionId, signal), [sessionId, debounced])
   if (spans.loading) return <Skeleton className="h-24 w-full" />
   if (spans.error != null) {
-    return <LoadError error={spans.error} route={SESSION_ROUTES.spans(sessionId)} onRetry={spans.reload} title={translate('inspector.spans.error')} />
+    return <LoadError error={spans.error} route={SESSION_ROUTES.spans(sessionId)} title={translate('inspector.spans.error')} />
   }
   const list = spans.data?.spans ?? []
   if (list.length === 0) return <EmptyState title={translate('inspector.spans.empty')} />

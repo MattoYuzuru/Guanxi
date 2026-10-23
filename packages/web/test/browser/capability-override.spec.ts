@@ -281,10 +281,11 @@ test('user capability overrides stay separate, truthful, keyboard and layout saf
   expect(mutations).toHaveLength(2)
   expect(mutations[1]?.method).toBe('DELETE')
 
+  // D-203: identity drift re-reads the model by itself (no Reload button); the re-read is not
+  // a mutation.
   const beforeReload = mutations.length
-  await page.getByRole('button', { name: 'Перечитать модель' }).click()
+  await expect(page.getByRole('button', { name: 'Перечитать модель' })).toHaveCount(0)
   await expect(page.getByText('sha256:replaced').first()).toBeVisible()
-  // The explicit reload re-reads the model; it is not itself a mutation.
   expect(mutations).toHaveLength(beforeReload)
 
   // A reloaded exact identity that no longer matches shows no stale assertion.

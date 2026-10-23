@@ -9,6 +9,10 @@ import { Button, Callout, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
+
+/** Quiet re-read period of the open reasoning list. */
+export const REASONING_REFRESH_MS = 30_000
 
 function scopeQuery(projectId: string | null): ListReasoningArtifactsQuery {
   return projectId === null
@@ -49,15 +53,19 @@ export function ChatReasoningArtifacts({
     if (actionError) requestAnimationFrame(() => actionErrorRef.current?.focus())
   }, [actionError])
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
-    setError(null)
+  const load = useCallback(async (signal?: AbortSignal, quiet = false) => {
+    // A recovery read keeps the error on screen until it succeeds (D-203).
+    if (!quiet) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       const next = await api.listReasoningArtifacts(chatId, scopeQuery(projectId), signal)
       if (next.chatId !== chatId || next.projectId !== projectId) {
         throw new Error(translate('chat.reasoning.scopeMismatch'))
       }
       setData(next)
+      setError(null)
     } catch (reason) {
       if (!signal?.aborted) {
         setData(null)
@@ -68,11 +76,27 @@ export function ChatReasoningArtifacts({
     }
   }, [chatId, projectId, retentionRevision])
 
+  const recovery = useRef<AbortController | null>(null)
   useEffect(() => {
     const controller = new AbortController()
     void load(controller.signal)
-    return () => controller.abort('reasoning-info-closed')
+    return () => { controller.abort('reasoning-info-closed'); recovery.current?.abort('reasoning-info-closed') }
   }, [load])
+  // The list stays current by itself (D-203): a quiet re-read on focus and every 30 s while it
+  // is open (server cleanup removes artifacts in the background), and a failed read recovers with
+  // a growing pause. None of these change loading flags.
+  const quietLoad = useCallback(() => {
+    recovery.current?.abort('reasoning-recovery-replaced')
+    recovery.current = new AbortController()
+    void load(recovery.current.signal, true)
+  }, [load])
+  useAutoRecover(error, quietLoad)
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState !== 'hidden') quietLoad() }
+    const timer = setInterval(tick, REASONING_REFRESH_MS)
+    window.addEventListener('focus', tick)
+    return () => { clearInterval(timer); window.removeEventListener('focus', tick) }
+  }, [quietLoad])
 
   const read = async (artifactId: string) => {
     const artifact = await api.getReasoningArtifact(
@@ -128,9 +152,6 @@ export function ChatReasoningArtifacts({
           <h3 id="chat-reasoning-title" className="text-sm font-semibold">
             {translate('chat.reasoning.title')}
           </h3>
-          <Button size="sm" variant="secondary" disabled={loading} onClick={() => void load()}>
-            {translate('chat.reasoning.refresh')}
-          </Button>
         </div>
         {data ? (
           <p className="mt-1 break-words text-xs text-secondary">
@@ -148,10 +169,8 @@ export function ChatReasoningArtifacts({
         <div ref={errorRef} tabIndex={-1} role="alert" className="outline-none">
           <Callout tone="danger" title={translate('chat.reasoning.error')}>
             <span className="break-words">{error}</span>
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
-          <Button className="mt-2" size="sm" onClick={() => void load()}>
-            {translate('chat.reasoning.retry')}
-          </Button>
         </div>
       ) : null}
       {actionError ? (

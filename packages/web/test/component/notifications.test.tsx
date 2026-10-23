@@ -177,7 +177,7 @@ describe('notification center states', () => {
     expect(rows()).toHaveLength(3)
   })
 
-  it('explains an empty inbox with one action, per filter', async () => {
+  it('explains an empty inbox per filter, with Show all as the only action and no Refresh', async () => {
     const node = new FakeNode([])
     mount(node)
     await ready()
@@ -185,14 +185,15 @@ describe('notification center states', () => {
     expect(within(empty).getByText('No unread notifications.')).toBeTruthy()
     fireEvent.click(within(empty).getByRole('button', { name: 'Show all notifications' }))
     await waitFor(() => expect(screen.getByText(/No notifications yet/u)).toBeTruthy())
-    expect(within(screen.getByTestId('notifications-empty')).getAllByRole('button')).toHaveLength(1)
+    expect(within(screen.getByTestId('notifications-empty')).queryAllByRole('button')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^(Refresh|Try again|Check again)$/u })).toHaveLength(0)
     for (const [filter, text] of [['read', 'No notifications are marked read.'], ['snoozed', 'No notifications are snoozed.'], ['acted', 'No notification has been acted on.']] as const) {
       fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${filter === 'acted' ? 'Acted on' : filter}$`, 'iu') }))
       await waitFor(() => expect(screen.getByText(text)).toBeTruthy())
     }
   })
 
-  it('shows an error with source, time, details and a retry that recovers', async () => {
+  it('shows an error with source, time and details, then recovers by itself', async () => {
     const node = seed()
     node.failNext(/^GET \/api\/notifications$/u, { status: 503, body: { code: 'notifications_unavailable' } })
     mount(node)
@@ -203,7 +204,9 @@ describe('notification center states', () => {
     expect(error.textContent).toContain('GET /api/notifications')
     expect(error.textContent).toContain('notifications_unavailable')
     expect(bellCount()).toBe('No current data')
-    fireEvent.click(within(error).getByRole('button', { name: 'Try again' }))
+    expect(screen.queryAllByRole('button', { name: /^(Refresh|Try again|Check again)$/u })).toHaveLength(0)
+    expect(screen.getByTestId('notifications-recovering').textContent).toContain('Guanxi reads the inbox again by itself')
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await ready()
     expect(rows()).toHaveLength(3)
     expect(screen.queryByTestId('notifications-error')).toBeNull()
@@ -220,7 +223,8 @@ describe('notification center states', () => {
     expect(screen.queryByTestId('notifications-empty')).toBeNull()
     expect(rows()).toHaveLength(0)
     node.unreachable = false
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(screen.queryAllByRole('button', { name: /^(Refresh|Try again|Check again)$/u })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(rows()).toHaveLength(3))
     expect(screen.queryByTestId('notifications-offline')).toBeNull()
   })
@@ -231,7 +235,7 @@ describe('notification center states', () => {
     await ready()
     await waitFor(() => expect(enabledActionButtons(rowOf(1)).length).toBeGreaterThan(0))
     node.unreachable = true
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     const banner = await screen.findByTestId('notifications-offline')
     expect(banner.textContent).toMatch(/as of .*, .*/u)
     expect(rows()).toHaveLength(3)
@@ -243,10 +247,10 @@ describe('notification center states', () => {
         expect(reasonOf(item)).toContain('Offline: actions need the node.')
       }
     }
-    expect((screen.getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryAllByRole('button', { name: /^(Refresh|Try again|Check again)$/u })).toHaveLength(0)
     expect(node.count(/^POST /u)).toBe(0)
     node.unreachable = false
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(screen.queryByTestId('notifications-offline')).toBeNull())
     expect(enabledActionButtons(rowOf(1)).length).toBeGreaterThan(0)
   })
@@ -256,7 +260,7 @@ describe('notification center states', () => {
     mount(node)
     await ready()
     node.failNext(/^GET \/api\/notifications$/u, { status: 500, body: { code: 'internal_error' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     const stale = await screen.findByTestId('notifications-stale')
     expect(stale.textContent).toContain('internal_error')
     expect(stale.getAttribute('role')).toBe('alert')
@@ -292,7 +296,7 @@ describe('notification center states', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load older notifications' }))
     await waitFor(() => expect(rows()).toHaveLength(70))
     node.rows.push(notification(71, { state: 'read' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(rows()).toHaveLength(71))
     expect(rows()[0]!.getAttribute('data-notification-id')).toBe(notificationId(71))
   })
@@ -440,7 +444,9 @@ describe('actions follow what the node reports', () => {
     release()
     await waitFor(() => expect(reasonOf(button(rowOf(1), 'Open'))).toContain('Could not check which actions this node supports (internal_error)'))
     expect((button(rowOf(1), 'Open') as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(button(rowOf(1), 'Check again'))
+    // D-203: no Check again button; the failed availability check is asked again by itself.
+    expect(within(rowOf(1)).queryAllByRole('button', { name: /check again/iu })).toHaveLength(0)
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect((button(rowOf(1), 'Open') as HTMLButtonElement).disabled).toBe(false))
   })
 
@@ -484,14 +490,20 @@ describe('actions follow what the node reports', () => {
     expect(failure.textContent).not.toContain('reuses the same request key')
     expect(rowOf(1).getAttribute('data-state')).toBe('unread')
     expect(node.effects['wake_leads']).toBeUndefined()
-    fireEvent.click(within(failure).getByRole('button', { name: 'Try again' }))
+    // No Try again: once the node reports the action available again, its own button runs it.
+    expect(within(failure).queryAllByRole('button', { name: /try again|retry/iu })).toHaveLength(0)
+    node.availability['wake_leads'] = 'available'
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect((button(rowOf(1), 'Wake leads') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(button(rowOf(1), 'Wake leads'))
     await waitFor(() => expect(node.count(/^POST .*\/actions$/u)).toBe(2))
     // A 501 also re-reads what the node can run: the cached "available" was wrong.
     expect(node.count(/^GET .*\/actions$/u)).toBeGreaterThanOrEqual(2)
     const keys = node.requests.filter((record) => record.method === 'POST').map((record) => record.idempotencyKey)
     expect(keys).toHaveLength(2)
     expect(new Set(keys).size).toBe(2)
-    expect(bellCount()).toBe('1 unread')
+    // The second, new intent ran once against the now configured action.
+    await waitFor(() => expect(node.effects['wake_leads']).toBe(1))
   })
 
   it('reuses the Idempotency-Key when the answer was lost, and the effect runs once', async () => {
@@ -505,7 +517,8 @@ describe('actions follow what the node reports', () => {
     expect(failure.textContent).toContain('node is unreachable')
     expect(failure.textContent).toContain('reuses the same request key')
     expect(node.effects['pause_runs']).toBe(1) // the node did it; only the answer was lost
-    fireEvent.click(within(failure).getByRole('button', { name: 'Try again' }))
+    expect(within(failure).queryAllByRole('button', { name: /try again|retry/iu })).toHaveLength(0)
+    fireEvent.click(button(rowOf(1), 'Pause runs'))
     await waitFor(() => expect(screen.getByTestId('notifications-status').textContent).toBe('Pause runs: it had already been done, so nothing new happened.'))
     const posts = node.requests.filter((record) => record.method === 'POST')
     expect(posts).toHaveLength(2)
@@ -522,7 +535,7 @@ describe('actions follow what the node reports', () => {
     ['409 action_in_progress', { status: 409, body: { code: 'action_in_progress' } }],
     ['409 action_outcome_unknown', { status: 409, body: { code: 'action_outcome_unknown' } }],
     ['an unparseable proxy answer', { status: 502, body: 'bad gateway' }],
-  ])('retries after %s with the same key', async (_name, failure) => {
+  ])('repeats from its own button after %s with the same key', async (_name, failure) => {
     const node = new FakeNode([notification(1)], allWireAvailable())
     mount(node)
     await ready()
@@ -531,7 +544,8 @@ describe('actions follow what the node reports', () => {
     fireEvent.click(button(rowOf(1), 'Wake leads'))
     const alert = await within(rowOf(1)).findByTestId('notification-failure')
     expect(alert.textContent).toContain('reuses the same request key')
-    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    expect(within(alert).queryAllByRole('button', { name: /try again|retry/iu })).toHaveLength(0)
+    fireEvent.click(button(rowOf(1), 'Wake leads'))
     await waitFor(() => expect(node.effects['wake_leads']).toBe(1))
     const keys = node.requests.filter((record) => record.method === 'POST').map((record) => record.idempotencyKey)
     expect(keys).toEqual(['key-000001', 'key-000001'])
@@ -547,7 +561,8 @@ describe('actions follow what the node reports', () => {
     const alert = await within(rowOf(1)).findByTestId('notification-failure')
     expect(alert.textContent).toContain('attempted and failed on the node')
     expect(alert.textContent).not.toContain('reuses the same request key')
-    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    expect(within(alert).queryAllByRole('button', { name: /try again|retry/iu })).toHaveLength(0)
+    fireEvent.click(button(rowOf(1), 'Wake leads'))
     await waitFor(() => expect(node.effects['wake_leads']).toBe(1))
     const keys = node.requests.filter((record) => record.method === 'POST').map((record) => record.idempotencyKey)
     expect(keys).toEqual(['key-000001', 'key-000002'])
@@ -586,7 +601,7 @@ describe('actions follow what the node reports', () => {
     await waitFor(() => expect((button(rowOf(1), 'Pause runs') as HTMLButtonElement).disabled).toBe(false))
     node.failNext(/^GET \/api\/notifications\/ntf_/u, { status: 500, body: { code: 'internal_error' } })
     fireEvent.click(button(rowOf(1), 'Pause runs'))
-    await waitFor(() => expect(status()).toBe('Done, but the updated notification could not be loaded. Refresh to see its state.'))
+    await waitFor(() => expect(status()).toBe('Done, but the updated notification could not be loaded yet. Its state appears with the next read.'))
     expect(node.effects['pause_runs']).toBe(1)
   })
 
@@ -640,7 +655,7 @@ describe('mark read and snooze', () => {
     await waitFor(() => expect(document.activeElement).toBe(rowOf(1)))
   })
 
-  it('a failed Mark read stays visible on the row with the code, and can be retried', async () => {
+  it('a failed Mark read stays visible on the row with the code, and Mark read can be pressed again', async () => {
     const node = seed()
     mount(node)
     await ready()
@@ -651,7 +666,8 @@ describe('mark read and snooze', () => {
     expect(alert.textContent).toContain('internal_error')
     expect(rowOf(1).getAttribute('data-state')).toBe('unread')
     expect(bellCount()).toBe('3 unread')
-    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    expect(within(alert).queryAllByRole('button', { name: /try again|retry/iu })).toHaveLength(0)
+    fireEvent.click(button(rowOf(1), 'Mark read'))
     await waitFor(() => expect(bellCount()).toBe('2 unread'))
     expect(node.count(/^POST .*\/read$/u)).toBe(2)
   })
@@ -662,7 +678,7 @@ describe('mark read and snooze', () => {
     await ready()
     const release = node.hold(/^GET \/api\/notifications$/u)
     const stale = node.rows.map((row) => ({ ...row }))
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     // The held read was taken before the row changed.
     release()
     fireEvent.click(button(rowOf(1), 'Mark read'))
@@ -813,16 +829,16 @@ describe('review fixes', () => {
     flag.mockRestore()
   })
 
-  it('a retry in flight does not blink the offline banner or the disabled actions, and announces nothing new', async () => {
+  it('a recovery read in flight does not blink the offline banner or the disabled actions, and announces nothing new', async () => {
     const node = seed()
     mount(node)
     await ready()
     node.unreachable = true
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await screen.findByTestId('notifications-offline')
     node.unreachable = false
     const release = node.hold(/^GET \/api\/notifications$/u)
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }))
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(node.count(/^GET \/api\/notifications$/u)).toBeGreaterThanOrEqual(3))
     expect(screen.getByTestId('notifications-offline')).toBeTruthy() // still shown while the retry is in flight
     expect((button(rowOf(1), 'Mark read') as HTMLButtonElement).disabled).toBe(true)

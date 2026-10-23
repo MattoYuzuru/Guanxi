@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
-test('scoped Trash restores once with retry and survives hard reload at narrow forced-color zoom', async ({ page }) => {
+test('scoped Trash restores once, repeats from Restore, recovers by itself and survives hard reload at narrow forced-color zoom', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-11T12:00:00.000Z'
@@ -190,9 +190,12 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' })).toHaveCount(3)
   await expect(projectlessTrash.getByRole('button', { name: 'Восстановить чат' }).last()).toBeDisabled()
 
-  const deletionRefresh = projectlessTrash.getByRole('button', { name: 'Обновить статус удаления' })
-  await deletionRefresh.focus()
-  const adaptiveStyles = await deletionRefresh.evaluate((button) => {
+  // D-203: no Refresh deletion status button; a pending deletion is watched quietly.
+  await expect(projectlessTrash.getByRole('button', { name: /^(Обновить|Повторить)/u })).toHaveCount(0)
+  await expect(projectlessTrash.getByText(/результат появится здесь сам/u)).toHaveCount(1)
+  const sampleControl = projectlessTrash.getByRole('button', { name: 'Восстановить чат' }).first()
+  await sampleControl.focus()
+  const adaptiveStyles = await sampleControl.evaluate((button) => {
     const buttonStyle = getComputedStyle(button)
     return {
       transitionProperty: buttonStyle.transitionProperty,
@@ -217,13 +220,14 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   expect(itemStyles.borderWidth).not.toBe('0px')
 
   deletionRefreshArmed = true
-  await deletionRefresh.press('Enter')
+  // Regaining focus re-reads the Trash quietly; this read fails (armed above).
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   const deletionFailure = projectlessTrash.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(deletionFailure).toBeVisible()
   await expect(deletionFailure.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()
   await expect(projectlessTrash.getByText(sessionElapsed.title)).toHaveCount(1)
   await expect(projectlessTrash.getByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveCount(0)
-  await projectlessTrash.getByRole('button', { name: 'Повторить загрузку Корзины' }).press('Enter')
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(projectlessTrash.getByText(sessionElapsed.title)).toHaveCount(0)
   await expect(projectlessTrash.getByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveCount(1)
   await expect(projectlessTrash.getByRole('heading', { name: 'Корзина' })).toBeFocused()
@@ -234,7 +238,9 @@ test('scoped Trash restores once with retry and survives hard reload at narrow f
   const error = projectTrash.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()
-  await projectTrash.getByRole('button', { name: 'Повторить восстановление' }).press('Enter')
+  // The failed restore keeps its own Restore button; no separate Retry.
+  await expect(projectTrash.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  await restore.press('Enter')
   await expect.poll(() => restoreCalls).toBe(2)
   expect(restoreBodies).toEqual([{ lifecycleVersion: 1 }, { lifecycleVersion: 1 }])
   await expect(projectCard.getByRole('link', { name: /T{20}/u })).toHaveCount(1)

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { installFrameOrderSwitch, setFramesBeforePendingCommits } from './fixtures/frame-order.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
-test('attachment retry/reload stays exact, scoped, accessible and download-once', async ({ page }) => {
+test('attachment recovery/reload stays exact, scoped, accessible and download-once', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await installFrameOrderSwitch(page)
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
@@ -162,8 +162,13 @@ test('attachment retry/reload stays exact, scoped, accessible and download-once'
   const listError = page.getByRole('heading', { name: 'Не удалось загрузить вложения' })
   await expect(listError).toBeFocused()
   await expect(page.getByText('Не удалось сохранить запрос в локальное хранилище.')).toHaveCount(1)
-  await page.getByRole('button', { name: 'Повторить', exact: true }).press('Enter')
-  await expect(page.getByText('В этой области нет вложений')).toHaveCount(1)
+  // D-203: no Retry button; the failed read recovers by itself. Regaining focus asks again at
+  // once (StrictMode may leave one more armed failure, so focus is repeated until it lands).
+  await expect(page.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  await expect(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(page.getByText('В этой области нет вложений')).toHaveCount(1, { timeout: 1_000 })
+  }).toPass()
   await expect(page.getByText(/Стандартная storage policy сервера/u)).toHaveCount(1)
   await expect(page.getByText(/не capability модели/u)).toHaveCount(1)
 
@@ -177,16 +182,17 @@ test('attachment retry/reload stays exact, scoped, accessible and download-once'
   })
   const upload = page.getByRole('button', { name: 'Загрузить вложение' })
   // Upload completion must move focus only after React commits it, even when a frame
-  // runs first: to the retry button after the failure, to the file input after success.
+  // runs first: to the upload button after the failure, to the file input after success.
   await setFramesBeforePendingCommits(page, true)
   await upload.evaluate((button) => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
   })
   await expect.poll(() => postCalls).toBe(1)
-  const retry = page.getByRole('button', { name: 'Повторить тот же upload intent' })
-  await expect(retry).toBeFocused()
-  await retry.press('Enter')
+  // The failed upload keeps its own button (same intent), focused; no separate Retry.
+  await expect(page.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  await expect(upload).toBeFocused()
+  await upload.press('Enter')
   await expect.poll(() => postCalls).toBe(2)
   expect(intents[0]).toMatch(/^[0-9a-f-]{36}$/u)
   expect(intents[1]).toBe(intents[0])

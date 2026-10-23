@@ -56,7 +56,7 @@ afterEach(() => {
 })
 
 describe('QuickRunsPage', () => {
-  it('distinguishes loading, focused error/retry and exact empty state', async () => {
+  it('distinguishes loading, focused error with automatic recovery and exact empty state', async () => {
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     const second = deferred<{
       quickRunVersion: 1
@@ -74,7 +74,9 @@ describe('QuickRunsPage', () => {
     await waitFor(() => expect(error).toBe(document.activeElement))
     expect(screen.getByRole('alert').textContent).toContain('safe Quick Run list failure')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    // D-203: no Retry button; the failed read is repeated by itself (here on focus).
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     await act(async () => second.resolve({
       quickRunVersion: 1,
       scope: 'projectless',
@@ -131,7 +133,7 @@ describe('QuickRunsPage', () => {
     animationFrame.mockRestore()
   })
 
-  it('coalesces retention mutation, focuses failure and retries the exact policy without Save', async () => {
+  it('coalesces retention mutation, focuses failure and repeats the exact policy from its own mode button without Save', async () => {
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     vi.spyOn(api, 'listQuickRuns').mockResolvedValue({
       quickRunVersion: 1,
@@ -155,7 +157,8 @@ describe('QuickRunsPage', () => {
     expect(alert.textContent).toContain('safe retention mutation failure')
     await waitFor(() => expect(alert).toBe(document.activeElement))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить изменение retention' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Сессия' }))
     await waitFor(() => expect(api.updateQuickRunRetention).toHaveBeenCalledTimes(2))
     expect(api.updateQuickRunRetention).toHaveBeenNthCalledWith(1, ID, {
       quickRunVersion: 1,

@@ -100,7 +100,7 @@ export function PullControl({
         </p>
         <div className="flex gap-1.5">
           <Button variant="secondary" size="md" className="flex-1" onClick={start}>
-            {translate('model.pull.retry')}
+            {translate('model.install')}
           </Button>
           <Button variant="ghost" size="md" onClick={() => setError(null)}>
             {translate('model.pull.hide')}

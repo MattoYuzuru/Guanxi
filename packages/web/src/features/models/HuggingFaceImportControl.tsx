@@ -376,7 +376,7 @@ function ImportTerminal({
       )}
       {!success ? (
         <Button size="sm" variant="secondary" onClick={onRetry} className="mt-2 min-h-11 sm:min-h-0">
-          {translate('hf.import.retry')}
+          {translate('hf.import.action')}
         </Button>
       ) : null}
     </div>
