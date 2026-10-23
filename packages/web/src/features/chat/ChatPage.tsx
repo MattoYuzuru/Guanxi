@@ -544,8 +544,8 @@ function ThreadPage({
               <WorkspaceChip workspace={workspace} onClick={() => setPickerOpen(true)} />
             )}
             <IconButton label={translate('inspector.openTrace')} icon={<Icon name="trace" />}
-              nativeButton={false} render={<Link to={paths.inspector(chat.thread.id)} />} />
-            <IconButton label={translate('chat.new')} icon={<Icon name="new" />} nativeButton={false}
+              nativeButton={false} role="link" render={<Link to={paths.inspector(chat.thread.id)} />} />
+            <IconButton label={translate('chat.new')} icon={<Icon name="new" />} nativeButton={false} role="link"
               render={<Link to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()} />} />
           </div>
         </header>

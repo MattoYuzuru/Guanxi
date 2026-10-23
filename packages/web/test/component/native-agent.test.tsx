@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { NativeAgentPage, NativeProgress } from '../../src/features/native-agent/NativeAgentPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
@@ -13,7 +13,8 @@ it.each(['en', 'ru'] as const)('progress renders exact plan/queue counts with pr
   render(<NativeProgress progress={progress} stop={stop} remove={remove} />)
   expect(screen.getAllByRole('listitem')).toHaveLength(2)
   expect(screen.getByText(locale === 'en' ? /Verification requested/ : /Требуется проверка/)).toBeTruthy()
-  expect(screen.getByText(locale === 'en' ? /Session log · observed/ : /Журнал сессии · наблюдение/)).toBeTruthy()
+  expect(screen.getByText(locale === 'en' ? /Session log, observed/ : /Журнал сессии, наблюдение/)).toBeTruthy()
+  expect(document.body.textContent).not.toContain(' · ')
   fireEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Stop session' : 'Остановить сессию' }))
   fireEvent.click(screen.getByRole('button', { name: locale === 'en' ? 'Remove queued prompt' : 'Убрать запрос из очереди' }))
   expect(stop).toHaveBeenCalledTimes(1); expect(remove).toHaveBeenCalledExactlyOnceWith('q')
@@ -31,17 +32,22 @@ it('new session defaults to Read-only, exposes zero-root scratch state and submi
   }))
   render(<NativeAgentPage sessionId={null} />)
   await waitFor(() => expect(screen.queryByText('Loading session choices…')).toBeNull())
-  fireEvent.change(screen.getByLabelText('Project'), { target: { value: 'p' } })
-  fireEvent.change(screen.getByLabelText('Connection'), { target: { value: '11111111-1111-4111-8111-111111111111' } })
-  const hint = screen.getByText(/Loopback hosts require a port/)
+  // The only project and the only connection are preselected (D-207: a new session opens in the current project).
+  expect(screen.getByRole('button', { name: 'Project: No folder' })).toBeTruthy()
+  expect(screen.getByText('No folders, scratch only')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Run options' }))
+  const hint = await screen.findByText(/Loopback hosts require a port/)
   expect(hint.textContent).toContain('localhost:3000')
   expect(screen.getByLabelText('Network allowlist (comma-separated hosts)').getAttribute('aria-describedby')?.split(' ')).toContain(hint.id)
-  expect(screen.getByText('No folders · scratch only')).toBeTruthy()
-  expect((screen.getByLabelText('Access mode') as HTMLSelectElement).value).toBe('read-only')
-  fireEvent.change(screen.getByLabelText('Access mode'), { target: { value: 'full-access' } })
-  expect(screen.getByText(/On macOS they require a local Linux container runtime/)).toBeTruthy()
-  fireEvent.change(screen.getByLabelText('Access mode'), { target: { value: 'read-only' } })
-  fireEvent.change(screen.getByLabelText('Model ID'), { target: { value: 'fixture' } })
+  expect(screen.getByRole('button', { name: 'Access: Read-only' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Access: Read-only' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Full access' }))
+  expect(await screen.findByText(/On macOS they require a local Linux container runtime/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Access: Full access' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Read-only' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Access: Read-only' })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: 'Choose a model' }))
+  fireEvent.change(await screen.findByLabelText('Model ID'), { target: { value: 'fixture' } })
   fireEvent.change(screen.getByLabelText('What should the agent do?'), { target: { value: 'Inspect' } })
   fireEvent.click(screen.getByRole('button', { name: 'Start session' }))
   await waitFor(() => expect(requests).toHaveLength(1))
@@ -53,12 +59,36 @@ it.each(['en', 'ru'] as const)('unavailable shell runtime has a localized reason
   expect(screen.getByRole('alert').textContent).toContain(locale === 'en' ? 'Shell execution is disabled' : 'Оболочка отключена')
   expect(screen.getByRole('alert').textContent).toContain('Colima')
 })
-it('failed/offline choices announce a recoverable error and prevent dispatch', async () => {
+it('failed/offline choices announce a self-recovering state, offer no Retry and prevent dispatch', async () => {
   setActiveLocale('en'); vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline') }))
   render(<NativeAgentPage sessionId={null} />)
-  await screen.findByRole('alert')
-  expect((screen.getByRole('button', { name: 'Start session' }) as HTMLButtonElement).disabled).toBe(true)
-  expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy()
+  const status = await waitFor(() => { const node = document.querySelector('[data-state="node_unreachable"]'); if (!node) throw new Error('not yet'); return node })
+  expect(status.getAttribute('role')).toBe('status')
+  expect(status.textContent).toContain('Guanxi reconnects by itself')
+  const start = screen.getByRole('button', { name: 'Start session' })
+  expect(start.getAttribute('aria-disabled')).toBe('true')
+  expect(screen.queryAllByRole('button', { name: /Retry/ })).toHaveLength(0)
+})
+
+it('a failed progress read keeps the last state, offers no Retry and recovers by itself', async () => {
+  setActiveLocale('en')
+  let fail = false, reads = 0
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    if (String(url) === '/api/agent/session') { reads++; if (fail) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
+    throw new Error('Unexpected request')
+  }))
+  render(<NativeAgentPage sessionId="session" />)
+  await screen.findByRole('region', { name: 'Session progress' })
+  // A running session re-reads quietly every 500 ms; the next read fails.
+  fail = true
+  await screen.findByText(/Guanxi reconnects by itself/, undefined, { timeout: 2_000 })
+  expect(screen.getByText('Response')).toBeTruthy()
+  expect(screen.queryAllByRole('button', { name: /Retry/ })).toHaveLength(0)
+  const before = reads
+  fail = false
+  await act(async () => { window.dispatchEvent(new Event('online')) })
+  await waitFor(() => expect(screen.queryByText(/Guanxi reconnects by itself/)).toBeNull())
+  expect(reads).toBeGreaterThan(before)
 })
 
 it.each(['en', 'ru'] as const)('session errors are visible and localized in %s', locale => {
@@ -99,6 +129,7 @@ it.each(['en', 'ru'] as const)('delete uses the contract once, describes discard
     throw new Error('Unexpected request')
   }))
   render(<NativeAgentPage sessionId="session" />)
+  fireEvent.click(await screen.findByRole('button', { name: locale === 'en' ? 'Session info' : 'О сессии' }))
   const button = await screen.findByRole('button', { name: locale === 'en' ? 'Delete session' : 'Удалить сессию' })
   expect(button.getAttribute('aria-describedby')).toBe('native-delete-description')
   expect(screen.getByText(locale === 'en' ? /Permanently removes this session/ : /Безвозвратно удаляет сессию/)).toBeTruthy()
@@ -121,7 +152,9 @@ it.each(['running', 'quarantine'] as const)('delete is disabled for %s sessions'
     throw new Error('Unexpected request')
   }))
   render(<NativeAgentPage sessionId="session" />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Session info' }))
   expect((await screen.findByRole('button', { name: 'Delete session' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByRole('link', { name: 'Open trace' }).getAttribute('href')).toBe('/inspector/session')
 })
 
 it('a Send to main refreshes the session status so a stopped session shows its new turn and polling resumes', async () => {
@@ -136,13 +169,13 @@ it('a Send to main refreshes the session status so a stopped session shows its n
   }))
   render(<NativeAgentPage sessionId="session" />)
   await screen.findByRole('region', { name: 'Session progress' })
-  expect(screen.getByText('Completed')).toBeTruthy()
+  expect(screen.getAllByRole('status').some(node => node.textContent === 'Completed')).toBe(true)
   const readsBefore = reads
   fireEvent.change(screen.getByLabelText('Ask about this session'), { target: { value: 'q' } })
   fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
   await screen.findByText('Side answer')
   fireEvent.click(screen.getByRole('button', { name: 'Send to main, message 2' }))
-  await screen.findByText('Running')
+  await waitFor(() => expect(screen.getAllByRole('status').some(node => node.textContent === 'Running')).toBe(true))
   expect(reads).toBe(readsBefore + 1)
   expect(screen.getByRole('button', { name: 'Stop session' })).toBeTruthy()
 })

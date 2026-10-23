@@ -92,7 +92,11 @@ describe('Project Chat focus ordering', () => {
     act(() => model.focus())
     fireEvent.submit(create.closest('form')!)
     expect(api.createProjectChat).toHaveBeenCalledTimes(1)
-    expect(create.hasAttribute('disabled')).toBe(true)
+    // A loading design-system Button stays focusable (aria-disabled + aria-busy) instead of disabled.
+    expect(create.hasAttribute('disabled') || create.getAttribute('aria-disabled') === 'true').toBe(true)
+    expect(create.getAttribute('aria-busy')).toBe('true')
+    fireEvent.submit(create.closest('form')!)
+    expect(api.createProjectChat).toHaveBeenCalledTimes(1)
     expect(model).toBe(document.activeElement)
     expect(frames.pending()).toBe(1)
     await frames.flush()
