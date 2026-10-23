@@ -84,10 +84,8 @@ on an acted row with a 200 no-op and validates `limit` and `state`; two weak ass
 
 ## Residual risk and deferred
 
-- **Shared defect found, not fixed:** `formatPercent` and `formatBytes` in `packages/web/src/lib/format.ts` print whole
-  numbers wrongly because `trimZeros` strips the zero of "10" (so `formatPercent(10)` is "1%", `formatPercent(100)` is
-  "1%", 10 KB prints as "1 KB"). The center uses its own `percentText`. One-line fix: trim only when the string has a `.`.
-  It changes visible output elsewhere, so the integrator should decide and add tests.
+- The shared `trimZeros` defect I found was fixed on `main` (`bbcb6baf`); the center keeps its own `percentText`, now
+  `Intl.NumberFormat` with `style: 'percent'`.
 - **Server-side gaps, documented not changed:** no unread-count endpoint (the badge is the loaded Unread rows, "at least
   200" above the cap); no push or stream (a 30 s poll, plus focus, online and offline events, while the document is
   visible); no filter by kind, project or "waiting for you"; no mark-all-read; no recommendation list on the wire, so
@@ -107,3 +105,25 @@ on an acted row with a 200 no-op and validates `limit` and `state`; two weak ass
 Integrator merges, runs the gates on `main`, folds this file into `PHASE_STATUS.md`, and decides on the `format.ts` fix.
 Follow-ups: real action ports (R1 and K3 seams), an unread-count or event stream on the node, notification settings UI,
 toasts and the glossary editor and work board lanes.
+
+## Fix-forward round (Opus cross-check, after the merge as `e2b3a50c`)
+
+Merged `main` (`bbcb6baf` included) first; separate commits `c2ed2d5b`, `c67fc8cd`, `871734fb`, each with tests written
+failing first (10 of the new cases failed before the fix; the unmount cases already held and stay as guards).
+
+- **P2-1 polling:** `NotificationsProvider` now chains timeouts: base 30 s, doubling per consecutive failed read up to
+  `NOTIFICATIONS_POLL_MAX_MS` (300 s, prop `maxPollMs`), reset on a successful read, ticks while hidden read nothing
+  (`visibilitychange` to visible reads at once), one timer at most, cleared on unmount, and an in-flight read after unmount
+  schedules nothing. Fake-timer tests: backoff schedule and cap, reset, hidden, unmount, unmount during a read.
+- **P2-2 dead node behind a proxy:** a 5xx whose body has no parseable `{ code }` is classified offline. Deviation from the
+  message: 502 or 503 with a parseable code stay server answers (`notifications_unavailable` and `port_failed` are the node
+  talking, and a test pins both); only an unparseable 5xx, which is what a dead upstream produces, is offline.
+- **P3-1** `dispose` sets a flag; follow-up reads and re-reads after a mutation start nothing after it; `resume()` for a
+  remount. **P3-2** the action POST has a 30 s timeout (`ACTION_TIMEOUT_MS`) reported as `timeout`, outcome unknown, key
+  kept; `api.execute` takes an optional `AbortSignal`. **P3-3** kept keys of a notification are dropped once it reads back
+  `acted`. **P3-4** percent through `Intl.NumberFormat`; the joined strings in the bell, the page header line and the row
+  moved into single locale templates (`notifications.bell.arrival`, `bell.staleSummary`, `provenance`,
+  `provenance.actions`, `failed.at`), guarded by a source scan test. **P3-5** zero loaded unread with more on the node
+  reads "more unread on the node".
+- Gates after the round: typecheck, lint (inherited 4 warnings), lint:md, ui:check pass; targeted vitest 144 in 12 files
+  (web unit and notification component files); heavy `test:web:browser` pass 215/215 (`check-51t5k9ub`, head `871734fb`).
