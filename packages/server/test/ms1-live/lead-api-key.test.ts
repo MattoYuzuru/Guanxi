@@ -322,3 +322,17 @@ test('oauth_token: an API key, a malformed token or an empty vault refuse the st
   rmSync(w.keyFile)
   await refuses(config => { asToken(config); delete config.home.lead.providerKeysFile }, 'lead_key_missing')
 })
+
+test('after start the vault is unlocked for the lead, and a vault that cannot be unlocked refuses the start as lead_vault_locked', async t => {
+  const w = await pair(t)
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${fakeKey()}\n`)
+  const dataDir = join(w.root, 'data')
+  const first = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: w.settings(), connectionsKeychain: keychain })
+  assert.equal(first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').vault.unlocked, true)
+  await first.close()
+  // The wrapping key becomes unreadable (a locked keychain): the stored key cannot be used, and the start says so instead of booting a lead that fails later.
+  const locked = async (): Promise<VaultKeychain> => ({ key: () => { throw new Error('keychain locked') } })
+  const outcome = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: w.settings(config => { delete config.home.lead.providerKeysFile }), connectionsKeychain: locked })
+    .then(server => server.close().then(() => 'started'), error => error)
+  assert.ok(outcome instanceof Ms1LiveError && outcome.code === 'lead_vault_locked', `got ${outcome instanceof Error ? `${outcome.name}: ${outcome.message}` : outcome}`)
+})
