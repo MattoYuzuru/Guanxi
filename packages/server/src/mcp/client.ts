@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process'
 import { isAbsolute } from 'node:path'
 import { PRODUCT_NAME } from '@guanxi/contract'
+import { MCP_LOAD_TOOL_NAME, MCP_SEARCH_TOOL_NAME } from './budget.ts'
 import { JsonRpcConnection } from './jsonrpc.ts'
 import {
   DEFAULT_MCP_MAX_MESSAGE_BYTES,
@@ -174,15 +175,28 @@ function parseInitializeResult(value: unknown): McpInitializeResult {
   return result
 }
 
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]{1,128}$/
+const RESERVED_TOOL_NAMES: ReadonlySet<string> = new Set([MCP_SEARCH_TOOL_NAME, MCP_LOAD_TOOL_NAME])
+
+function assertToolName(name: string): void {
+  if (!TOOL_NAME_PATTERN.test(name)) {
+    throw new McpError('mcp_protocol', 'MCP tools/list returned an invalid tool name')
+  }
+  if (RESERVED_TOOL_NAMES.has(name)) {
+    throw new McpError('mcp_protocol', 'MCP tools/list returned a reserved tool name')
+  }
+}
+
 function parseToolPage(value: unknown): { tools: McpTool[]; nextCursor: string | undefined } {
   if (!isRecord(value) || !Array.isArray(value.tools)) {
     throw new McpError('mcp_protocol', 'MCP tools/list result has no tools array')
   }
   const tools: McpTool[] = []
   for (const raw of value.tools) {
-    if (!isRecord(raw) || typeof raw.name !== 'string' || raw.name.length === 0) {
+    if (!isRecord(raw) || typeof raw.name !== 'string') {
       throw new McpError('mcp_protocol', 'MCP tools/list returned a tool without a name')
     }
+    assertToolName(raw.name)
     const tool: McpTool = { name: raw.name }
     if (typeof raw.title === 'string') tool.title = raw.title
     if (typeof raw.description === 'string') tool.description = raw.description
@@ -262,11 +276,18 @@ export class McpClient {
     await this.connect()
     const rpc = this.requireRpc()
     const tools: McpTool[] = []
+    const seen = new Set<string>()
     let cursor: string | undefined
     for (let page = 0; page < this.maxToolPages; page++) {
       const raw = await rpc.request('tools/list', cursor === undefined ? {} : { cursor })
       const parsed = parseToolPage(raw)
-      tools.push(...parsed.tools)
+      for (const tool of parsed.tools) {
+        if (seen.has(tool.name)) {
+          throw new McpError('mcp_protocol', 'MCP tools/list returned a duplicate tool name')
+        }
+        seen.add(tool.name)
+        tools.push(tool)
+      }
       if (parsed.nextCursor === undefined) return tools
       cursor = parsed.nextCursor
     }

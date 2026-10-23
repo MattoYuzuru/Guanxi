@@ -21,7 +21,9 @@ function option(name, fallback) {
 
 const mode = option('mode', 'normal')
 const logPath = option('log', null)
+const toolName = option('tool-name', null)
 const slowTimers = new Map()
+let loopPage = 0
 
 function log(message) {
   if (logPath === null) return
@@ -111,7 +113,12 @@ function listTools(id, params) {
     return
   }
   if (mode === 'loop') {
-    result(id, { tools: [pageOne[0]], nextCursor: 'again' })
+    // Unique names keep the pagination test focused on the page limit.
+    result(id, { tools: [{ ...pageOne[0], name: `loop_${loopPage++}` }], nextCursor: 'again' })
+    return
+  }
+  if (mode === 'duplicate-tools') {
+    result(id, { tools: [pageOne[0], pageOne[0]] })
     return
   }
   const cursor = params.cursor
@@ -120,7 +127,10 @@ function listTools(id, params) {
     else failure(id, -32602, `unknown cursor: ${cursor}`)
     return
   }
-  result(id, { tools: pageOne, nextCursor: 'page-2' })
+  const tools = toolName === null
+    ? pageOne
+    : pageOne.map((tool, index) => index === 0 ? { ...tool, name: toolName } : tool)
+  result(id, { tools, nextCursor: 'page-2' })
 }
 
 function callTool(id, params) {

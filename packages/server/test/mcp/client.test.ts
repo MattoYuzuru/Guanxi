@@ -175,6 +175,22 @@ it('completes the pinned handshake before listing every tool page', async (t) =>
   assert.equal(harness.calls.length, 1)
 })
 
+it('validates tool names, duplicates and reserved names', async (t) => {
+  for (const name of ['a'.repeat(128), 'tool.name-1_2']) {
+    const harness = await createHarness(t, { server: { args: [FIXTURE, '--tool-name', name] } })
+    const tools = await harness.manager.listTools('fake')
+    assert.equal(tools[0]?.name, name)
+  }
+
+  for (const name of ['', 'bad name', 'bad/name', 'x'.repeat(129), 'mcp_search_tools', 'mcp_load_tool']) {
+    const harness = await createHarness(t, { server: { args: [FIXTURE, '--tool-name', name] } })
+    await expectCode(harness.manager.listTools('fake'), 'mcp_protocol')
+  }
+
+  const duplicate = await createHarness(t, { mode: 'duplicate-tools' })
+  await expectCode(duplicate.manager.listTools('fake'), 'mcp_protocol')
+})
+
 it('returns structured tool results and JSON-RPC errors without interpretation', async (t) => {
   const harness = await createHarness(t)
   const echo = await harness.manager.callTool('fake', 'echo', { message: 'hello', nested: { ok: true } })
