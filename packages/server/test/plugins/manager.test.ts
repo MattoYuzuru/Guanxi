@@ -663,6 +663,26 @@ test('same-version reinstall is a no-op for identical integrity, refuses changed
   assert.deepEqual(plugins.bootSet(), [first.path])
 })
 
+test('same-version reinstall repairs a missing installed directory', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const source = await writePlugin(join(base, 'source'))
+  const plugins = manager(pluginsDir)
+  const first = await plugins.install(source)
+  await rm(first.path, { recursive: true, force: true })
+  assert.equal(await exists(first.path), false)
+  assert.deepEqual(plugins.list().map(entry => entry.version), ['1.0.0'], 'the lock still names the version')
+
+  const repaired = await plugins.install(source)
+  assert.equal(repaired.version, '1.0.0')
+  assert.equal(await exists(repaired.path), true, 'a missing directory is reinstalled')
+  assert.equal(
+    await readFile(join(repaired.path, 'index.js'), 'utf8'),
+    "export const version = '1.0.0'\n",
+  )
+  assert.deepEqual(plugins.bootSet(), [repaired.path])
+})
+
 test('a crash at every install point recovers to a lockfile whose directories exist and boot', async t => {
   const base = await tempBase(t)
   const first = await writePlugin(join(base, 'v1'), { version: '1.0.0' })

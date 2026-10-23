@@ -833,6 +833,17 @@ export class PluginManager {
     }
   }
 
+  /** True when the locked directory exists and its bytes still match the lock. */
+  private installedDirectoryMatches(entry: LockedPlugin): boolean {
+    try {
+      const path = join(this.pluginsDir, entry.directory)
+      if (!lstatSync(path).isDirectory()) return false
+      return sameIntegrity(entry.integrity, computeDirectoryIntegritySync(path))
+    } catch {
+      return false
+    }
+  }
+
   /**
    * Remove leftovers of an interrupted install: `.staging`, our own stale state
    * temporary files, enabled ids without a lock entry, and every
@@ -1180,14 +1191,18 @@ export class PluginManager {
       const previous = state.plugins.get(manifest.id)
 
       if (previous && previous.version === version) {
-        if (sameIntegrity(previous.integrity, inspected.integrity)) {
+        if (!sameIntegrity(previous.integrity, inspected.integrity)) {
+          throw new PluginManagerError(
+            'version_exists',
+            `plugin "${manifest.id}@${version}" is already installed with different content; install a new version to upgrade`,
+            { pluginId: manifest.id, expected: previous.integrity, actual: inspected.integrity },
+          )
+        }
+        // A no-op only when the locked directory still exists and matches; a
+        // missing directory falls through to a normal reinstall that repairs it.
+        if (this.installedDirectoryMatches(previous)) {
           return this.publicEntry(previous, state.enabled.has(manifest.id))
         }
-        throw new PluginManagerError(
-          'version_exists',
-          `plugin "${manifest.id}@${version}" is already installed with different content; install a new version to upgrade`,
-          { pluginId: manifest.id, expected: previous.integrity, actual: inspected.integrity },
-        )
       }
 
       if (previous) {
