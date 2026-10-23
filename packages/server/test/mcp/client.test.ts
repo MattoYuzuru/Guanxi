@@ -223,6 +223,33 @@ it('returns structured tool results and JSON-RPC errors without interpretation',
   assert.deepEqual(second.structuredContent, { message: 'second', delayMs: 10 })
 })
 
+it('accepts only arguments that round-trip as a plain JSON object', async (t) => {
+  const harness = await createHarness(t)
+  await harness.manager.listTools('fake')
+  const callsBefore = (await messages(harness.log)).filter(message => message.method === 'tools/call').length
+
+  const invalid: unknown[] = [
+    new Date(),
+    new Map([['key', 'value']]),
+    { when: new Date() },
+    { missing: undefined },
+    { notFinite: Number.NaN },
+    { callback: () => undefined },
+  ]
+  for (const args of invalid) {
+    await expectCode(
+      harness.manager.callTool('fake', 'echo', args as Record<string, unknown>),
+      'mcp_invalid_arguments',
+    )
+  }
+  const callsAfter = (await messages(harness.log)).filter(message => message.method === 'tools/call').length
+  assert.equal(callsAfter, callsBefore, 'non-JSON arguments must not reach the server')
+
+  const valid = { message: 'round trip', nested: { list: [1, 'two', null, true] } }
+  const result = await harness.manager.callTool('fake', 'echo', valid)
+  assert.deepEqual(result.structuredContent, valid)
+})
+
 it('sends notifications/cancelled and rejects mcp_timeout on a per-request timeout', async (t) => {
   const harness = await createHarness(t)
   const error = await expectCode(

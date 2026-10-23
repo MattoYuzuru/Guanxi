@@ -9,6 +9,7 @@
  */
 import { spawn } from 'node:child_process'
 import { isAbsolute } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { PRODUCT_NAME } from '@guanxi/contract'
 import { MCP_LOAD_TOOL_NAME, MCP_SEARCH_TOOL_NAME } from './budget.ts'
 import { JsonRpcConnection } from './jsonrpc.ts'
@@ -39,6 +40,17 @@ const BASE_ENVIRONMENT: Readonly<Record<string, string>> = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** True only when the value survives a JSON round-trip without losing type or data. */
+function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false
+  try {
+    const roundTripped: unknown = JSON.parse(JSON.stringify(value))
+    return isRecord(roundTripped) && isDeepStrictEqual(roundTripped, value)
+  } catch {
+    return false
+  }
 }
 
 function positiveInteger(value: number, name: string): number {
@@ -309,13 +321,8 @@ export class McpClient {
     if (typeof name !== 'string' || name.length === 0) {
       throw new McpError('mcp_invalid_tool', 'MCP tool name must be a non-empty string')
     }
-    if (!isRecord(args)) {
-      throw new McpError('mcp_invalid_arguments', 'MCP tool arguments must be a JSON object')
-    }
-    try {
-      JSON.stringify(args)
-    } catch {
-      throw new McpError('mcp_invalid_arguments', 'MCP tool arguments must be JSON-serializable')
+    if (!isPlainJsonObject(args)) {
+      throw new McpError('mcp_invalid_arguments', 'MCP tool arguments must be a plain JSON object')
     }
     await this.connect()
     const raw = await this.requireRpc().request('tools/call', { name, arguments: args }, options)
