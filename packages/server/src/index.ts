@@ -338,6 +338,8 @@ export async function start(options: StartOptions = {}) {
     // `relayHost` is typed without the fields start owns, but a JavaScript caller is not held to types.
     const { runtime: _r, allocate: _a, reserves: _v, project: _p, nodePorts: _n, ...hostExtras } = (options.relayHost ?? {}) as Record<string, unknown>
     await kernel.node.plugin(relayPlugin, { ...options.relayConfig, db, startHost: {
+      // The pairing's judge (`home.judge`) is the default; a `relayHost.judge` given by the caller replaces it.
+      ...(live?.judgeSource() ? { judge: live.judgeSource() } : {}),
       ...hostExtras,
       ...(relayOptions ? { reserves: relayOptions.reserves, allocate: relayOptions.allocate,
         // A runtime that binds per start (F2-d) has an observer with `open` instead of a counter. In live mode there is no

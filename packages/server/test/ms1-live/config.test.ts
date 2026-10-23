@@ -101,3 +101,14 @@ test('the template that init writes parses, and its reserves fit a 32768-token w
     chmodSync(join(dir, 'home'), 0o700)
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('home.judge is optional and strict: signals default to named policy, the cascade has its own sizes, and an unknown key or a ratio of 1 is refused', () => {
+  assert.equal(parseMs1LiveConfig(home(), '/x/c.json').home!.judge, undefined, 'no section, no judge')
+  const signals = parseMs1LiveConfig(home({ home: { alwaysOn: true, reserves, judge: {} } }), '/x/c.json').home!.judge!
+  assert.deepEqual(signals.signals, { heartbeatStallMs: 60_000, noProgressCycles: 3, repeatedFailureCycles: 3, editRevertCycles: 3, repeatedDeadEnds: 3, tokenBlowupRatio: 2 }); assert.equal(signals.cascade, undefined)
+  const cascade = parseMs1LiveConfig(home({ home: { alwaysOn: true, reserves, judge: { cascade: {} } } }), '/x/c.json').home!.judge!.cascade!
+  assert.deepEqual(cascade, { samples: 2, maxInputTokens: 8192, maxOutputTokens: 1024, sampleTimeoutMs: 120_000, estimateMs: 900_000 })
+  refused(home({ home: { alwaysOn: true, reserves, judge: { model: 'other' } } }), 'config_unknown_key', 'home.judge')
+  refused(home({ home: { alwaysOn: true, reserves, judge: { cascade: { samples: 4 } } } }), 'config_invalid', 'home.judge.cascade.samples')
+  refused(home({ home: { alwaysOn: true, reserves, judge: { signals: { tokenBlowupRatio: 1 } } } }), 'config_invalid', 'home.judge.signals.tokenBlowupRatio')
+})

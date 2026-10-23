@@ -14,6 +14,12 @@ import { main } from '../../src/ms1-live/cli.ts'
 import { startFakeLlama, type FakeLlama, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
 import { ms1Script } from '../ms1/llama-script.ts'
 
+/** The prompt every J2/J3 sample starts with (the cascade's rubric), and the strict verdict a fake judge answers. */
+export const JUDGE_PROMPT = '<|user|>\nAssess harness evidence only'
+const VERDICT = JSON.stringify({ taxonomy: 'progress', verdict: 'consistent', evidenceRefs: ['plan'], diagnosisHint: 'Evidence agrees.' })
+/** The rehearsal's fake model, plus a valid verdict for a judge prompt. */
+export const ms1AndJudgeScript = { js: `(prompt, call) => prompt.startsWith(${JSON.stringify(JUDGE_PROMPT)}) ? ${JSON.stringify(VERDICT)} : (${(ms1Script as { js: string }).js})(prompt, call)` }
+
 const exec = promisify(execFile)
 const SCRIPT = fileURLToPath(new URL('../../scripts/ms1-live/ms1-live.ts', import.meta.url))
 const FIXTURES = new URL('../external-agents/', import.meta.url)
@@ -167,6 +173,8 @@ export interface LiveOptions {
   /** The executor's peer file holds another node in place of the home. */
   wrongHome?: boolean
   start?: boolean
+  /** Add `home.judge`: `signals` only, or with the J2 `cascade` (its output ceiling differs from the relay turn on purpose). */
+  judge?: 'signals' | 'cascade' | { cascade: { maxInputTokens: number; maxOutputTokens: number } }
 }
 export const LEAD_LIMITS = { maxCaps: { cycles: 40, tokens: 2_000_000, moneyMicros: 500_000, wallMs: 12 * 3_600_000 }, maxDeadlineMs: 24 * 3_600_000, allowDetach: false }
 
@@ -225,7 +233,7 @@ export class LiveWorld {
     this.base = await this.git(['rev-parse', 'HEAD'])
     const modelPath = join(this.dir, 'model.gguf')
     writeFileSync(modelPath, 'GGUF-ms1-live-weights')
-    this.fake = await startFakeLlama({ alias: 'fixture', modelPath, nCtx: 16000, replies: [ms1Script], ...this.options.fake })
+    this.fake = await startFakeLlama({ alias: 'fixture', modelPath, nCtx: 16000, replies: [this.options.judge ? ms1AndJudgeScript : ms1Script], ...this.options.fake })
     this.closers.push(() => this.fake.close())
     await this.tripwire.listen(); this.closers.push(() => this.tripwire.close())
     const [homeApi, homeFed, execApi, execFed] = [await freePort(), await freePort(), await freePort(), await freePort()]
@@ -258,6 +266,10 @@ export class LiveWorld {
     const reserves = { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 }
     // Each side reaches the other through the `[::1]` forward, never through the peer's own address.
     this.patch(this.execConfig, config => { config.link = link; config.peer.url = this.toHome.url })
+    if (this.options.judge) this.patch(this.homeConfig, config => {
+      const judge = this.options.judge!
+      config.home.judge = judge === 'signals' ? {} : { cascade: typeof judge === 'string' ? { maxInputTokens: 8000, maxOutputTokens: 700, sampleTimeoutMs: 60_000 } : judge.cascade }
+    })
     if (this.options.lead) this.writeLeadFixture()
     this.patch(this.homeConfig, config => {
       config.link = link; config.peer.url = this.toExecutor.url
@@ -333,6 +345,12 @@ export class LiveWorld {
     return this.home.api('POST', '/api/relay', this.relayInput(key, items, overrides))
   }
   async relayStatus(key: string) { return (await this.home.api('GET', `/api/relay/starts/${key}`)).body }
+  /** The relay's own audit notes in a session (`relay` names the kind), parsed. */
+  notes(sessionId: string): Array<Record<string, any>> {
+    return this.home.rows<{ payload: string }>("SELECT payload FROM session_events WHERE session_id=? AND type='agent.note' ORDER BY seq", sessionId)
+      .map(row => { try { return JSON.parse((JSON.parse(row.payload) as { text: string }).text) as Record<string, any> } catch { return {} as Record<string, any> } })
+      .filter(note => typeof note['relay'] === 'string')
+  }
   ledger(runId: string): any { return JSON.parse(String(this.home.one('SELECT snapshot FROM relay_runs WHERE run_id=?', runId)?.['snapshot'])) }
   async close() {
     for (const close of [...this.closers].reverse()) { try { await Promise.race([close(), new Promise(resolve => setTimeout(resolve, 15_000).unref())]) } catch { /* best effort */ } }

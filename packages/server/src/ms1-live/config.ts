@@ -71,6 +71,26 @@ const homeSchema = z.object({
   callDeadlineMs: positive.optional(),
   reservationMs: positive.optional(),
   pollMs: positive.optional(),
+  /** R3: the judge of every relay this home starts. Absent means no judge (as before). `signals` is the deterministic J0/J1 layer, read
+   * from the relay ledger; `cascade` adds J2 samples taken by the executor's own model through the pairing (one model, one
+   * connection: there is no J3, which needs a second model). Judge samples are real calls on the executor's single slot and are
+   * pre-debited from `caps.tokens`. */
+  judge: z.object({
+    signals: z.object({
+      heartbeatStallMs: positive.default(60_000), noProgressCycles: positive.default(3), repeatedFailureCycles: positive.default(3),
+      editRevertCycles: positive.default(3), repeatedDeadEnds: positive.default(3), tokenBlowupRatio: z.number().finite().gt(1).default(2),
+    }).strict().default({}),
+    cascade: z.object({
+      samples: z.union([z.literal(2), z.literal(3)]).default(2),
+      /** Tokens of evidence per sample and of its answer; together they must fit the observed window (checked by `preflight`). */
+      maxInputTokens: positive.default(8192),
+      maxOutputTokens: positive.default(1024),
+      /** Wall limit of one sample. */
+      sampleTimeoutMs: positive.default(120_000),
+      /** The judge's estimate of the time one plan item needs. */
+      estimateMs: positive.default(900_000),
+    }).strict().optional(),
+  }).strict().optional(),
   lead: z.object({
     adapter: z.literal('claude-code'),
     /** Absolute path of the operator-installed ACP bridge (`@agentclientprotocol/claude-agent-acp`). */
@@ -131,6 +151,7 @@ export const ms1LiveConfigSchema = z.object({
   if (value.link.safetyMs >= value.link.holderTtlMs / 2) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['link', 'safetyMs'], message: 'safety_too_large' })
 })
 export type Ms1LiveFile = z.infer<typeof ms1LiveConfigSchema>
+export type Ms1LiveJudge = NonNullable<NonNullable<Ms1LiveFile['home']>['judge']>
 export type Ms1LiveLead = NonNullable<NonNullable<Ms1LiveFile['home']>['lead']>
 
 /** A parsed configuration with every path absolute. Holds paths only: no key, no token. */

@@ -13,11 +13,13 @@ import { OwnedCheckoutAllocator } from '../relay/checkout.ts'
 import { RemoteRelayRuntime } from '../relay/remote-runtime.ts'
 import type { RelayRuntimePolicy } from '../relay/runtime.ts'
 import type { RelayStartHost } from '../relay/start.ts'
+import type { RelayDelegationBrief } from '../relay/delegation-brief.ts'
+import { ledgerJudgeInput, relayJudgeModel, type RelayStartJudgeContext, type RelayStartJudgeSource } from '../relay/judge-start.ts'
 import type { Reserves } from '../relay/types.ts'
 import type { RunStore } from '../runs/store.ts'
 import { LlamaServerHost } from '../runtime/llama-server/process.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
-import { MS1_EXECUTOR_CONNECTION, MS1_LEAD_CONNECTION, Ms1LiveError, type Ms1LiveSettings } from './config.ts'
+import { MS1_EXECUTOR_CONNECTION, MS1_LEAD_CONNECTION, Ms1LiveError, type Ms1LiveJudge, type Ms1LiveSettings } from './config.ts'
 import { readCredentials, type PairedCredentials } from './identity.ts'
 import { loopbackTransport } from './transport.ts'
 
@@ -187,6 +189,45 @@ export class Ms1LiveNode {
       ...(home.reservationMs ? { reservationMs: home.reservationMs } : {}), ...(home.pollMs ? { pollMs: home.pollMs } : {}) })
     const allocator = new OwnedCheckoutAllocator({ root: home.checkoutRoot ?? join(dataDir, 'relay-checkouts') })
     return { runtime: Object.freeze({ maximumAgeMs: home.maximumAgeMs, observer: remote }), reserves: Object.freeze({ ...home.reserves }), allocate: allocator.allocate }
+  }
+
+  /** Home: the judge of each relay start, from `home.judge`; undefined (no judge) when the section is absent.
+   *
+   * Signals are read from the relay ledger (J0/J1; what the ledger cannot see is published as unknown). The cascade is J2 only, on the
+   * relay's own connection and the served model: the executor serves one model, so a J3 on another cannot be attested. Its brief is
+   * built here from the start itself (plan, caps, observed window, `home.reserves`), the one document that binds exactly this start;
+   * a lead's own delegation brief is not consulted. A sample that cannot fit the observed window refuses the start, loudly. */
+  judgeSource(): RelayStartJudgeSource | undefined {
+    const home = this.settings.home, judge = home?.judge
+    if (this.role !== 'home' || !home || !judge) return undefined
+    return (context: Readonly<RelayStartJudgeContext>) => ({
+      signals: ledgerJudgeInput(judge.signals, context.clock),
+      ...(judge.cascade ? { cascade: {
+        brief: this.judgeBrief(context, judge.cascade, home.reserves),
+        model: relayJudgeModel(context, { accountId: OWNER, maxAgeMs: home.maximumAgeMs, sampleTimeoutMs: judge.cascade.sampleTimeoutMs }),
+      } } : {}),
+    })
+  }
+  private judgeBrief(context: Readonly<RelayStartJudgeContext>, cascade: NonNullable<Ms1LiveJudge['cascade']>, reserves: Reserves): RelayDelegationBrief {
+    const window = context.runtime.fact.contextTokens, { input } = context
+    if (cascade.maxInputTokens + cascade.maxOutputTokens > window) throw new Ms1LiveError('judge_exceeds_window', 'home.judge.cascade')
+    return {
+      version: 1, objective: input.plan.goal, definitionOfDone: ['every plan item passes its acceptance command'], plan: structuredClone(input.plan),
+      estimatesMs: Object.fromEntries(input.plan.items.map(item => [item.id, cascade.estimateMs])),
+      identity: { accountId: OWNER, homeNodeId: this.identity.id, executorNodeId: this.peer.id },
+      constraints: { roots: [...context.policy.project.roots], commands: input.plan.items.map(item => item.acceptance.join(' ')), network: 'none',
+        protectedPaths: [...input.plan.protectedPaths], localOnly: true },
+      resources: { windowTokens: window, keepAlive: 'the executor llama-server stays resident', reserves: { ...reserves } },
+      caps: { ...input.caps },
+      roles: { executor: { connectionId: input.connectionId, model: input.model },
+        j2: { connectionId: input.connectionId, model: input.model, windowTokens: window, maxInputTokens: cascade.maxInputTokens, maxOutputTokens: cascade.maxOutputTokens,
+          temperature: 0, tokenReserve: cascade.maxInputTokens + cascade.maxOutputTokens, moneyReserveMicros: 0, sampleTimeoutMs: cascade.sampleTimeoutMs },
+        j3: null, fallbacks: [], onQuotaLow: 'stop' },
+      judges: { samples: cascade.samples, checker: null,
+        j3: { enabled: false, maxCallsPerRun: 0, maxCallsPerNight: 0, override: null, tokenCapPerNight: 0, moneyCapPerNightMicros: 0 } },
+      wake: { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, nightStartsHour: 20, completionHour: 8, completion: 'defer', failure: 'immediate' },
+      report: { format: 'ms1-live', evidenceRefs: [] },
+    }
   }
 
   /** Home: the K5 installation and the lead service options, from the owner's configuration alone. */

@@ -104,6 +104,18 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
         }
       }))
     }
+    const cascade = settings.home!.judge?.cascade
+    if (counted.status === 'ok' && settings.home!.judge) {
+      await run(step('judge', async () => {
+        if (!cascade) return ok('judge', 'The judge reads signals from the relay ledger (J0/J1); there is no model layer.')
+        const need = cascade.maxInputTokens + cascade.maxOutputTokens
+        if (need > found.contextTokens) return fail('judge', 'judge_exceeds_window', `A judge sample needs ${need} tokens (${cascade.maxInputTokens} in, ${cascade.maxOutputTokens} out); the observed window is ${found.contextTokens}.`,
+          'Lower home.judge.cascade.maxInputTokens or maxOutputTokens: every relay start would otherwise be refused.')
+        const perCycle = 2 * cascade.samples * need
+        return ok('judge', `Judge samples fit the ${found.contextTokens}-token window; each cycle pre-debits ${perCycle} tokens from caps.tokens (${cascade.samples} samples at two boundaries).`,
+          { sampleTokens: need, perCycleTokens: perCycle, window: found.contextTokens })
+      }))
+    }
     if (options.completion) checks.push(skip('completion', 'Only an executor runs a generation: use --completion on the executor.'))
     return finish(settings, checks, found, clock)
   }
