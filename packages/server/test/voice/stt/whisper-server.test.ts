@@ -662,6 +662,19 @@ describe('request and transport failures', () => {
     )
   })
 
+  it('maps HTTP 400 from /inference to audio_invalid without echoing the body', async (t) => {
+    const fake = await startFakeWhisperServer({
+      inference: { status: 400, body: { error: 'audio decode secret' } },
+    })
+    t.after(() => fake.close())
+    await assert.rejects(adapter(fake).transcribe(request()), (error: unknown) => {
+      assert.ok(error instanceof SttError)
+      assert.equal(error.code, 'stt_audio_invalid')
+      assert.equal(String(error).includes('secret'), false)
+      return true
+    })
+  })
+
   it('refuses a redirect instead of following it to another loopback server', async (t) => {
     const target = await startFakeWhisperServer()
     t.after(() => target.close())

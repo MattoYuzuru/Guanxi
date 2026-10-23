@@ -398,6 +398,8 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
     )
     // node:http does not follow redirects; keep the old transport's refusal classification.
     if (status >= 300 && status < 400) throw new SttError('stt_unavailable')
+    // whisper-server answers 400 when it cannot decode the supplied audio bytes.
+    if (status === 400) throw new SttError('stt_audio_invalid')
     if (status === 503) throw new SttError('stt_unavailable')
     if (status !== 200) throw new SttError('stt_protocol')
 
