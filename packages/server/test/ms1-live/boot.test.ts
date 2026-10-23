@@ -287,3 +287,28 @@ test('the pairing\'s connection serves relay calls through a transport only: a p
   const other = connections.create('local', { name: 'my ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: false })
   await assert.rejects(connections.localChat('local', other.id, request, { runId: 'r', requestId: 'q' }), (error: unknown) => (error as { code?: string }).code !== 'policy_denied')
 })
+
+test('closing an executor with a signed observe in flight during a model hash does not wait for the hash', async t => {
+  const { mkdirSync, truncateSync, writeFileSync } = await import('node:fs')
+  const { startFakeLlama } = await import('../fixtures/fake-llama-server.ts')
+  const { FederationChannel } = await import('../../src/federation/channel.ts')
+  const { readCredentials } = await import('../../src/ms1-live/identity.ts')
+  const { loopbackTransport } = await import('../../src/ms1-live/transport.ts')
+  const { root, settings, other } = await pairing(t, 'executor')
+  mkdirSync(join(root, 'model'), { recursive: true })
+  const modelPath = join(root, 'model', 'big.gguf'); writeFileSync(modelPath, ''); truncateSync(modelPath, 8 * 1024 ** 3)
+  const fake = await startFakeLlama({ alias: 'qwen3.8-27b-iq3s', modelPath, nCtx: 16000 })
+  t.after(() => fake.close())
+  const live = { ...settings, executor: { llamaServer: { baseUrl: fake.url } } }
+  const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: live })
+  // The home's signed observe, exactly as the relay sends it, arrives while the file is being hashed.
+  const home = readCredentials(other)
+  const channel = new FederationChannel({ local: home.local.identity, privateKey: home.local.privateKey, peer: home.peer,
+    transport: loopbackTransport({ base: `http://127.0.0.1:${settings.listen.federationPort}`, timeoutMs: 60_000, messageTimeoutMs: 60_000 }) })
+  const observing = channel.relayObserve({ binding: { homeNodeId: home.local.identity.id, executorNodeId: home.peer.id, model: live.model, run: null }, challenge: 'c1' }).then(() => 'answered', () => 'refused')
+  await new Promise(resolve => setTimeout(resolve, 400))
+  const began = Date.now()
+  await server.close()
+  assert.ok(Date.now() - began < 2500, `closing took ${Date.now() - began} ms: it waited for the hash and the open request`)
+  assert.equal(await observing, 'refused', 'the in-flight request was ended, not answered from a closed node')
+})

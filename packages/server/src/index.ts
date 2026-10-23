@@ -509,6 +509,11 @@ export async function start(options: StartOptions = {}) {
         if (federationInstance) federationInstance.close(() => resolveClose())
         else resolveClose()
       })
+      // MS1 live: an inbound observe or count may be waiting on a model-file hash. Stopping the runtime ends that work (the request
+      // is answered with a refusal), and whatever is still open after a short grace is dropped: a close must not last as long as the
+      // slowest request the peer happened to send.
+      const liveClosing = live?.close().catch(() => undefined)
+      if (federationInstance) setTimeout(() => (federationInstance as unknown as { closeAllConnections?: () => void } | undefined)?.closeAllConnections?.(), 1500).unref()
       let shutdownError: unknown = null
       try {
         await context.maintenance?.close()
@@ -526,6 +531,7 @@ export async function start(options: StartOptions = {}) {
         context.sessionLog?.closeSubscriptions()
         await listenerClosed
         await federationClosed
+        await liveClosing
         // Unload plugins before the database they may use is closed. Each
         // plugin cleanup is bounded by the kernel's step timeout; the HTTP
         // listener close above is not bounded (it waits for open responses).
