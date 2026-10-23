@@ -8,7 +8,19 @@
  * are never executed here; an explicit approval is only recorded in the lock.
  */
 import { randomBytes } from 'node:crypto'
-import { constants, lstatSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import {
   lstat,
   mkdir,
@@ -156,6 +168,8 @@ export interface BootSkip {
 }
 
 export interface RecoveryReport {
+  /** Set when another manager holds the exclusive lock; nothing was removed. */
+  readonly skipped?: 'plugins_busy'
   /** True when a `.staging` directory was removed. */
   readonly removedStaging: boolean
   /** Unreferenced `<id>@<version>` directory names, sorted. */
@@ -241,6 +255,12 @@ interface ManagerState {
   readonly snapshot: StateSnapshot
 }
 
+interface ExclusiveLockInfo {
+  /** Null when the file is not our JSON, for example a hand-written marker. */
+  readonly token: string | null
+  readonly mtimeMs: number
+}
+
 interface InstallRollbackContext {
   readonly snapshot: StateSnapshot | undefined
   readonly stagingDir: string | null
@@ -259,6 +279,26 @@ const EMPTY_RECOVERY: RecoveryReport = {
   removedStaging: false,
   removedDirectories: [],
   removedTemporaryFiles: [],
+}
+const BUSY_RECOVERY: RecoveryReport = { ...EMPTY_RECOVERY, skipped: 'plugins_busy' }
+
+function lockBody(token: string): string {
+  return `${JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() })}
+`
+}
+
+function lockInfoFromBytes(bytes: Buffer, mtimeMs: number): ExclusiveLockInfo {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'))
+  } catch {
+    parsed = undefined
+  }
+  const record: Record<string, unknown> = isRecord(parsed) ? parsed : {}
+  return {
+    token: typeof record['token'] === 'string' ? record['token'] : null,
+    mtimeMs,
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -795,35 +835,34 @@ export class PluginManager {
 
   /**
    * Remove leftovers of an interrupted install: `.staging`, our own stale state
-   * temporary files, and every `<id>@<version>` directory that the lock does
-   * not reference. Returns what was removed. No-op when `pluginsDir` is absent.
+   * temporary files, enabled ids without a lock entry, and every
+   * `<id>@<version>` directory that the lock does not reference. Returns what
+   * was removed. No-op when `pluginsDir` is absent; skipped while another
+   * manager holds the exclusive lock so an in-flight install is never swept.
    */
   recover(): RecoveryReport {
     const report = this.recoverSync()
-    this.recovered = true
+    if (report.skipped === undefined) this.recovered = true
     return report
   }
 
   private ensureRecovered(): void {
     if (this.recovered) return
-    if (!this.holdsExclusiveLock && this.exclusiveLockExists()) return
-    this.recover()
-  }
-
-  private exclusiveLockExists(): boolean {
-    try {
-      lstatSync(this.exclusiveLockPath)
-      return true
-    } catch {
-      return false
+    if (this.holdsExclusiveLock) {
+      // We already own the lock: sweep before this mutation touches anything.
+      this.sweepLocked()
+      this.recovered = true
+      return
     }
+    this.recover()
   }
 
   /**
    * Hold `<pluginsDir>/.lock` for one mutation. O_EXCL is the mutex; the JSON
    * body carries a random token so a manager never removes another process's
-   * lock. A lock older than 30 minutes is treated as stale, removed once and
-   * retried; otherwise a concurrent mutation fails with `plugins_busy`.
+   * lock. A lock whose pid is dead or that is older than 30 minutes is treated
+   * as stale, removed once and retried; otherwise a concurrent mutation fails
+   * with `plugins_busy`.
    */
   private async withExclusiveLock<T>(operation: () => Promise<T>): Promise<T> {
     const createdPluginsDir = !(await pathExists(this.pluginsDir))
@@ -854,10 +893,7 @@ export class PluginManager {
           0o600,
         )
         try {
-          await handle.writeFile(
-            `${JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() })}
-`,
-          )
+          await handle.writeFile(lockBody(token))
           await handle.sync()
         } finally {
           await handle.close()
@@ -870,9 +906,12 @@ export class PluginManager {
             `${this.exclusiveLockPath}: cannot create the plugin lock (${String(error)})`,
           )
         }
-        if (attempt === 0 && (await this.exclusiveLockIsStale())) {
-          await unlink(this.exclusiveLockPath).catch(() => undefined)
-          continue
+        if (attempt === 0) {
+          const observed = await this.readExclusiveLockInfo()
+          if (observed !== null && this.lockInfoIsStale(observed)) {
+            await this.removeStaleExclusiveLock()
+            continue
+          }
         }
         throw new PluginManagerError(
           'plugins_busy',
@@ -882,26 +921,115 @@ export class PluginManager {
     }
   }
 
-  private async exclusiveLockIsStale(): Promise<boolean> {
+  /** Synchronous form used by recovery, which must not yield while sweeping. */
+  private acquireExclusiveLockSync(token: string): boolean {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let handle: number | undefined
+      try {
+        handle = openSync(
+          this.exclusiveLockPath,
+          constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+          0o600,
+        )
+        writeFileSync(handle, lockBody(token))
+        fsyncSync(handle)
+        closeSync(handle)
+        handle = undefined
+        return true
+      } catch (error) {
+        if (handle !== undefined) closeSync(handle)
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw new PluginManagerError(
+            'invalid_state',
+            `${this.exclusiveLockPath}: cannot create the plugin lock (${String(error)})`,
+          )
+        }
+        const observed = this.readExclusiveLockInfoSync()
+        if (attempt === 0 && observed !== null && this.lockInfoIsStale(observed)) {
+          this.removeStaleExclusiveLockSync()
+          continue
+        }
+        return false
+      }
+    }
+    return false
+  }
+
+  private lockInfoIsStale(info: ExclusiveLockInfo): boolean {
+    return Date.now() - info.mtimeMs > LOCK_STALE_MS
+  }
+
+  private readExclusiveLockInfoSync(): ExclusiveLockInfo | null {
+    try {
+      const stat = lstatSync(this.exclusiveLockPath)
+      return lockInfoFromBytes(readFileSync(this.exclusiveLockPath), stat.mtimeMs)
+    } catch {
+      return null
+    }
+  }
+
+  private async readExclusiveLockInfo(): Promise<ExclusiveLockInfo | null> {
     try {
       const stat = await lstat(this.exclusiveLockPath)
-      return Date.now() - stat.mtimeMs > LOCK_STALE_MS
+      return lockInfoFromBytes(await readFile(this.exclusiveLockPath), stat.mtimeMs)
     } catch {
-      return false
+      return null
+    }
+  }
+
+  private async removeStaleExclusiveLock(): Promise<void> {
+    await unlink(this.exclusiveLockPath).catch(() => undefined)
+  }
+
+  private removeStaleExclusiveLockSync(): void {
+    try {
+      unlinkSync(this.exclusiveLockPath)
+    } catch {
+      // Best-effort: another contender may have removed it already.
     }
   }
 
   private async releaseExclusiveLock(token: string): Promise<void> {
     try {
-      const bytes = await readFile(this.exclusiveLockPath)
-      const parsed: unknown = JSON.parse(bytes.toString('utf8'))
-      if (isRecord(parsed) && parsed['token'] === token) await unlink(this.exclusiveLockPath)
+      const info = await this.readExclusiveLockInfo()
+      if (info?.token === token) await unlink(this.exclusiveLockPath)
+    } catch {
+      // A stale lock may already be gone; release stays best-effort.
+    }
+  }
+
+  private releaseExclusiveLockSync(token: string): void {
+    try {
+      const info = this.readExclusiveLockInfoSync()
+      if (info?.token === token) unlinkSync(this.exclusiveLockPath)
     } catch {
       // A stale lock may already be gone; release stays best-effort.
     }
   }
 
   private recoverSync(): RecoveryReport {
+    if (this.holdsExclusiveLock) return BUSY_RECOVERY
+    if (!this.directoryExistsSync(this.pluginsDir)) return EMPTY_RECOVERY
+    const token = randomBytes(16).toString('hex')
+    if (!this.acquireExclusiveLockSync(token)) return BUSY_RECOVERY
+    try {
+      return this.sweepLocked()
+    } finally {
+      this.releaseExclusiveLockSync(token)
+    }
+  }
+
+  private directoryExistsSync(path: string): boolean {
+    try {
+      return lstatSync(path).isDirectory()
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false
+      throw new PluginManagerError('invalid_state', `${path}: cannot read the plugins directory (${String(error)})`)
+    }
+  }
+
+  private sweepLocked(): RecoveryReport {
     let names: string[]
     try {
       names = readdirSync(this.pluginsDir)

@@ -607,6 +607,37 @@ test('recover removes staging, stale temporary state, and unreferenced plugin di
   assert.deepEqual(fresh.list().map(entry => entry.version), ['1.0.0'])
 })
 
+test('recovery skips while the exclusive lock is held and keeps the in-flight directory', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const source = await writePlugin(join(base, 'source'))
+  const installed = await manager(pluginsDir).install(source)
+  const inFlight = join(pluginsDir, 'guanxi.test-plugin@2.0.0')
+  await mkdir(inFlight, { recursive: true })
+  await writeFile(join(inFlight, 'index.js'), 'another process is still installing\n')
+  const lockPath = join(pluginsDir, '.lock')
+  await writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: process.pid, token: 'other-process', createdAt: new Date().toISOString() })}\n`,
+  )
+
+  const observer = manager(pluginsDir)
+  const report = observer.recover()
+  assert.equal(report.skipped, 'plugins_busy')
+  assert.deepEqual(report.removedDirectories, [])
+  assert.equal(await exists(inFlight), true, 'recover keeps an in-flight directory')
+  assert.deepEqual(observer.list().map(entry => entry.version), ['1.0.0'])
+  assert.equal(await exists(inFlight), true, 'list keeps an in-flight directory')
+  assert.deepEqual(observer.bootSet(), [installed.path])
+  assert.equal(await exists(inFlight), true, 'bootSet keeps an in-flight directory')
+
+  await rm(lockPath)
+  const swept = observer.recover()
+  assert.equal(swept.skipped, undefined)
+  assert.deepEqual(swept.removedDirectories, ['guanxi.test-plugin@2.0.0'])
+  assert.equal(await exists(inFlight), false)
+})
+
 test('same-version reinstall is a no-op for identical integrity, refuses changed content', async t => {
   const base = await tempBase(t)
   const pluginsDir = join(base, 'plugins')
