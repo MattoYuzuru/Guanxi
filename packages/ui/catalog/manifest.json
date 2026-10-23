@@ -146,7 +146,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:04c660d668344dbe3d0bcbc1f1c7ae7c76c1cabcb35f25437a6fd0c22610096a",
+      "sourceHash": "sha256:bfbb0c3d63fa1ca3c0838d0fc77326c94832ba4a14a3cd8ef9503e5e0a16605a",
       "snapshotHashes": {
         "default-dark": "sha256:d8cb99f4a94a3e153145d578218821a6bb3f24a95a6fae3465e4760b3ea249f9",
         "default-light": "sha256:be9060a69277f0ab395f857a7195d8bf0b4226ee1e62861f63b03094631209d7",
@@ -1973,7 +1973,6 @@
         "--color-ring-primary",
         "--color-text-primary",
         "--color-text-secondary",
-        "--color-text-tertiary",
         "--focus-ring-offset",
         "--focus-ring-width",
         "--font-heading-5-line-height",
@@ -1989,7 +1988,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:737d788ec9cd4491c4299c755966adb25909a7c6fc120c8cc58d31c8a61f64f1",
+      "sourceHash": "sha256:95d6a51f5088fb4f47b7e8ae7c3d916bbe7a267bfd32c2d25f5ef92721f53aa9",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:79454c0e3f4896c644f2083080421e64aa1d42eada91526ea9f4de2e325dacdd",
         "closed-dark": "sha256:1f17147eb4461f5549f300784e07b157f270b531d521bbae5dfb5f70a604fe93",
@@ -2582,14 +2581,14 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:dcec89335011d28d2b560e1d87915f683d7373b56e8a6fb3ab9292600e10dd11",
+      "sourceHash": "sha256:a81d646852a35500d5d957a2b3f8c1f6c549ab3068780027c7ac31c9040ce451",
       "snapshotHashes": {
         "badge-dark": "sha256:e95fea265ee1b76f963eb09d94f21f50b321572e4189ac8ada73f1479c62691a",
         "badge-light": "sha256:b933cd44835755a71947f8e8da57116400bf6bbf700c91223eb88a6f8f9acedc",
         "default-dark": "sha256:c37493ac34fd0072cc2f8470e27d59f1e16095680537db0da84958b731d4b030",
         "default-light": "sha256:0a5d5a8ca18551de11a6ac174c0149996247e369b9b1b1fff637b41c79ed45d3",
-        "open-dark": "sha256:97ee850c2e2d0abe91f812da32a94d6e06b33483d6a26ea3045fdd370f9b5e2c",
-        "open-light": "sha256:484c71efbac1cb83ad4f9cb78b0b3335f1f3902f6d57eb52b6a4a91b80a2eb6b",
+        "open-dark": "sha256:5d4c872b75a72fa6610d086b6fab410acc13e6722b1c2408916fbbc770354021",
+        "open-light": "sha256:8ad43b2110fd7f521359bab53936560f1b4cf680e1714ef8750028bdd463bf7a",
         "unknown-dark": "sha256:80726baaae68a18f4db9e1c90f7257d38c34a1316b50224f25c33b7fe8affafd",
         "unknown-light": "sha256:21cfaa8e9cb734880b78c8fe1433b45eb0ab5e7c4cc2e6213e75684d3ee41641",
         "value-dark": "sha256:2a7df57ebbb3b0fd1ad3659cf9028fc3eb496068596cdf7ce72f71ba327c9e31",

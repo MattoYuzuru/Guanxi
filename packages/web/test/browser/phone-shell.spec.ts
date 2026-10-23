@@ -80,3 +80,17 @@ for (const theme of ['light', 'dark'] as const) {
     expect((await new AxeBuilder({ page }).analyze()).violations.map(violation => violation.id)).toEqual([])
   })
 }
+
+test.describe('status popovers over the page', () => {
+  test.use({ viewport: { width: 1280, height: 800 }, hasTouch: false, isMobile: false })
+  for (const theme of ['light', 'dark'] as const) {
+    test(`the memory popover and its source footnote pass axe colour contrast (${theme})`, async ({ page }) => {
+      await open(page, theme)
+      await page.getByRole('button', { name: /^Memory/u }).click()
+      const footnote = page.locator('.gx-popover-footnote:visible')
+      await expect(footnote).toHaveCount(1)
+      const results = await new AxeBuilder({ page }).include('.gx-popover').withRules(['color-contrast']).analyze()
+      expect(results.violations.flatMap(violation => violation.nodes.map(node => node.target.join(' ')))).toEqual([])
+    })
+  }
+})
