@@ -251,6 +251,15 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
     A real `claude -p` run offline with a fake key or token wrote the credential's last 20 characters nowhere in its config or home
     directory; a full stream-json turn was not observed. **Switching `auth` changes the config directory, so saved lead sessions of the
     other mode are not found:** a lead resumed after a switch is seeded into a new session (`seeded`); change the mode only between leads.
+  - **`claude_settings_present`.** A launch is refused when a settings file exists in the CLI's private directory or its `work/.claude`: Guanxi
+    wrote none, so it came from the CLI itself (a `/config` change, a plugin) or from you. `start` prints the directory as
+    `configDirectory` in `lead-auth`. Look at the file, then remove what is there (`config/settings.json`, `config/settings.local.json`,
+    `work/.claude/settings.json`, `work/.claude/settings.local.json`, `home/.claude/settings.json`, `home/.claude/settings.local.json`
+    under that directory; a dangling symlink counts), and start again. The guard is a plain existence check made just before the launch
+    (not atomic with it), and Guanxi never opens or edits these files.
+  - **Limits of the guard and the pin (open).** Managed (system-wide) settings sit above the pin and are not checked. The `claude auth
+    status` probe runs before the pin applies (it only reads status). The settings check and the launch are two steps, so a file created in
+    between is not caught.
   - **Money.** `limits.maxCaps.moneyMicros` caps the work the lead *delegates*; the lead's own tokens are not under it. In `api_key` mode
     the real ceiling for the lead is a spend limit on the Anthropic Console workspace that owns the key. In `oauth_token` mode the
     subscription's own limits apply (K5 learns them only from what the CLI reports). `runDeadlineMs` bounds one lead turn.

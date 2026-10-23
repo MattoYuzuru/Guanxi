@@ -180,7 +180,9 @@ In both: the environment is built from nothing, so no ambient key or token passe
 `CLAUDE_CODE_OAUTH_TOKEN` the same observation showed the CLI does not pass it to an MCP stdio server with or without the variable. Bash tool
 and hooks were not observed in either mode, so that is an open risk; a vendor settings file in the config directory or in `work/.claude` refuses the launch
 (`claude_settings_present`, existence only) and the endpoint and permission mode are pinned in the bridge's programmatic settings tier.
-The persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); Guanxi never writes the
+Residual limits of the guard and pin: managed (system) settings sit above the pin and are not checked; the `auth status` probe runs before
+the pin applies; the settings check is not atomic with the launch. `configDirectory()` returns the directory to clean when `claude_settings_present`
+refuses a launch. The persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); Guanxi never writes the
 credential there, and switching mode switches directory. Another author is refused (`host_tools_owner_only` for the API key, K3's `cannot
 pay` for the token) and there is no login to prepare (`api_or_local_required`). `claudeEffort` (`low`..`max`) sets the bridge's `effort`
 config option after the model switch, refusing `effort_unavailable` when the bridge does not offer that level, with an `effort` fact (its

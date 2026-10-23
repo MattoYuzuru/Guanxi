@@ -73,6 +73,19 @@ P2-5 tests no longer read the process's key file or the OS keychain. P3: effort 
 `lead_vault_locked` tests; an end-to-end lead turn through `setUpLead` in both modes; `keySource` in `lead-auth`; mode-switch note
 in the runbook.
 
+## Second review round (coordinator, no P1) — what was done
+
+- The scrub claim was narrowed to what was observed (API key: MCP stdio children lose it; token: the CLI does not pass it to MCP servers
+  with or without the variable; Bash tool and hooks untested in both).
+- The settings guard uses `lstat` (a dangling symlink refuses); the token pin asserts the permission mode; a Codex, OpenCode or Goose
+  installation bound to the token connection is refused before any launch.
+- `doctor` names the failing variable and the family it saw as a label (`sk-ant-api`, `sk-ant-oat`, `sk-ant-<other>`, `not sk-ant`; never
+  other characters), names a duplicate (`lead_key_duplicate`) and the line to remove, and in token mode no longer points at
+  `guanxi connections import` (which cannot import the token); the refusal wording covers both modes.
+- `lead-auth` prints `configDirectory`; the runbook explains clearing a settings file after `claude_settings_present`.
+- A suite-level guard (`node --import test/setup/no-ambient-key-file.mjs` in both test scripts, plus `suite-guard.test.ts`) removes
+  `GUANXI_PROVIDER_KEYS_FILE` from every server test process; `live-world` also strips it for the nodes it spawns.
+
 ## Evidence
 
 Added tests: `test/external-agents/claude-api-key.test.ts`, `test/external-agents/claude-oauth-token.test.ts` and
@@ -94,4 +107,6 @@ that produced this branch. Regression envelope: the whole external-agents, conne
 5. Switching `auth` switches the config directory: saved lead sessions of the other mode are not found (the lead is seeded into a new
    session). Change the mode only between leads.
 6. Any invalid line in the named key file refuses the lead (strict by design).
-7. The token's expiry and revocation are the vendor's; a rejected token surfaces as a failed turn, not as a Guanxi check.
+7. Guard limits: managed (system) settings sit above the pin and are not checked; the `auth status` probe runs before the pin applies;
+   the settings check is not atomic with the launch.
+8. The token's expiry and revocation are the vendor's; a rejected token surfaces as a failed turn, not as a Guanxi check.
