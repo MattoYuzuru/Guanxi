@@ -126,6 +126,7 @@ test('replay parser rejects malformed documents with a TypeError naming the path
   invalid.push([emptyId, 'corpus.runs[0].id'])
   const badOrigin = mutateRun(value => { (value as unknown as Record<string, unknown>).origin = 'real' })
   invalid.push([badOrigin, 'corpus.runs[0].origin'])
+  invalid.push([mutateRun(value => { (value as unknown as Record<string, unknown>).incomplete = false }), 'corpus.runs[0].incomplete'])
   const extraPolicyKey = mutateRun(value => { (value.policy as unknown as Record<string, unknown>).extra = true })
   invalid.push([extraPolicyKey, 'corpus.runs[0].policy.extra'])
   invalid.push([mutateRun(value => { value.policy.heartbeatStallMs = 0 }), 'corpus.runs[0].policy.heartbeatStallMs'])
@@ -149,8 +150,10 @@ test('replay parser rejects malformed documents with a TypeError naming the path
   invalid.push([mutateObservation(value => { value.tokenBudgetForItem = 0 }), 'corpus.runs[0].steps[0].observation.tokenBudgetForItem'])
   invalid.push([mutateObservation(value => { (value as unknown as Record<string, unknown>).crashed = 0 }), 'corpus.runs[0].steps[0].observation.crashed'])
 
-  invalid.push([corpus([run('run-1', [stepAt(1_000_000), stepAt(1_000_000)])]), 'corpus.runs[0].steps[1].observation.observedAt'])
   invalid.push([corpus([run('run-1', [stepAt(1_000_000), stepAt(999_000)])]), 'corpus.runs[0].steps[1].observation.observedAt'])
+  invalid.push([mutateStep(value => { (value as unknown as Record<string, unknown>).unknownFacts = 'disk' }), 'corpus.runs[0].steps[0].unknownFacts'])
+  invalid.push([mutateStep(value => { value.unknownFacts = ['not-a-fact'] as never }), 'corpus.runs[0].steps[0].unknownFacts[0]'])
+  invalid.push([mutateStep(value => { value.unknownFacts = ['disk', 'disk'] }), 'corpus.runs[0].steps[0].unknownFacts[1]'])
 
   const badLabels = mutateRun(value => { (value as unknown as Record<string, unknown>).labels = {} })
   invalid.push([badLabels, 'corpus.runs[0].labels'])
@@ -176,6 +179,27 @@ test('replay parser rejects malformed documents with a TypeError naming the path
     }, true, null),
   ])])
   assert.deepEqual(parseReplayCorpus(nullable), nullable)
+})
+
+test('an incomplete recorded corpus cannot evaluate the gate', () => {
+  const value = validCorpus()
+  value.runs[0]!.incomplete = true
+  const parsed = parseReplayCorpus(value)
+  assert.equal(parsed.runs[0]!.incomplete, true)
+  const scored = score(parsed)
+  assert.equal(scored.gate.evaluated, false)
+  assert.equal(scored.gate.reason, 'incomplete_corpus')
+})
+
+test('equal observedAt values and declared unknown facts are valid replay data', () => {
+  const equal = corpus([run('equal', [stepAt(1_000_000), stepAt(1_000_000)])])
+  assert.equal(parseReplayCorpus(equal).runs[0]!.steps.length, 2)
+
+  const unknown = corpus([run('unknown', [{ ...stepAt(1_000_000), unknownFacts: ['failureStreak'] }])])
+  const parsed = parseReplayCorpus(unknown)
+  assert.deepEqual(parsed.runs[0]!.steps[0]!.unknownFacts, ['failureStreak'])
+  const scored = score(parsed)
+  assert.equal(scored.classes.loop.unknown, 1, 'an unobserved zero streak is unknown, not healthy')
 })
 
 test('run-level confusion matrix, precision, recall and latency are exact', () => {

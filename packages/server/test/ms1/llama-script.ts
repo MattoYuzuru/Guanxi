@@ -8,6 +8,8 @@ import { reply } from '../fixtures/fake-llama-server.ts'
  * reopens them all), hand off. After the first cycle the executor opens each cycle with five ledger probes;
  * the answer is read back from the handoff in the prompt. A narrative request gets a short fixed sentence. */
 export const ms1Script = reply((prompt: string) => {
+  // R3 J2: a strict, valid verdict that cites an evidence id every packet carries.
+  if (prompt.startsWith('<|user|>\nAssess harness evidence only')) return '{"taxonomy":"progress","verdict":"consistent","evidenceRefs":["plan"],"diagnosisHint":"Evidence agrees."}'
   if (prompt.startsWith('<|user|>\nWrite a fresh')) return 'Continue with the next open item.'
   if (prompt.startsWith('<|user|>\nAnswer these five')) {
     const hash = /"ledgerHash":"([0-9a-f]{64})"/.exec(prompt)![1]

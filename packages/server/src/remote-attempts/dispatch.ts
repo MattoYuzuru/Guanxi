@@ -26,8 +26,11 @@ export interface DispatchPolicy {
   leaseClock?: () => number
   /** F2-d executor role: this node's operational llama-server, reachable only through signed F2 messages. */
   relayRuntime?: ExecutorRelayRuntime
-  /** Named executor-side limits for the relay runtime; defaults are 4 concurrent counts and 16 pinned relay runs per peer. */
-  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number }
+  /** Named executor-side limits for the relay runtime; defaults are 4 concurrent counts, 16 pinned relay runs per peer and a
+   * 10 minute pin lease (F2-reap: renewed by every valid observe/count and by the home's heartbeat re-pin). */
+  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number; pinTtlMs?: number }
+  /** Period of the relay pin maintenance (executor: expired pins; home: reconciliation of journaled pins). Default 60 s, 0 disables the timer. */
+  relayPinMaintenanceMs?: number
 }
 export interface CostTotal { currency: string; inputTokens: number; outputTokens: number; costMicrounits: number | null }
 export type TerminalEvent = Extract<DispatchEvent['event'], { kind: 'terminal' }>

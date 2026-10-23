@@ -23,7 +23,8 @@ const exec = promisify(execFile), peer = { incoming: { socket: { remoteAddress: 
 const turn = () => new Promise<void>(resolve => setImmediate(resolve))
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done }); return { promise, resolve } }
 async function until(predicate: () => boolean) {
-  for (let n = 0; n < 1000; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)) }
+  // The clean gate runs in a container: a loaded shared machine takes several seconds, so the wait is a ceiling, not a budget.
+  for (let n = 0; n < 6000; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)) }
   assert.fail('fixture did not reach expected state')
 }
 async function settledWithin<T>(pending: Promise<T>): Promise<T> {

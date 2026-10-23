@@ -16,6 +16,7 @@ import { GitRelayWorkspace } from './workspace.ts'
 import { ConnectionRelayModel } from './model.ts'
 import { RelayExecutor } from './executor.ts'
 import { RelayStore } from './store.ts'
+import { prepareStartJudge, type RelayStartJudgeSource } from './judge-start.ts'
 import { RelayRuntimeSource, abortableRead, type PreparedRelayRuntime } from './runtime.ts'
 import { canonical, hash } from './handoff.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Reserves, type RelayLimits } from './types.ts'
@@ -34,6 +35,8 @@ export interface RelayStartHost {
   nodePorts(): number[]
   limits?: Partial<RelayLimits>
   clock?: () => number
+  /** R3: builds the judge of each start (signals, cascade or both). Absent means no judge, as before. */
+  judge?: RelayStartJudgeSource
 }
 interface Row { key: string; input_hash: string; run_id: string; session_id: string; policy: string;
   runtime: string; status: RelayStartStatus['status']; error: string | null }
@@ -43,7 +46,7 @@ const codes = new Set(['runtime_meter_unavailable', 'relay_workspace_unavailable
   'relay_local_model_required', 'runtime_observation_stale', 'runtime_identity_unknown', 'runtime_identity_changed',
   'runtime_counter_mismatch', 'runtime_count_invalid', 'runtime_request_changed', 'relay_project_unavailable', 'relay_project_changed',
   'relay_checkout_invalid', 'relay_policy_invalid', 'relay_idempotency_conflict', 'relay_stopped', 'content_withheld',
-  'cleanup_unconfirmed', 'stale_lease', 'writer_busy', 'egress_not_ready', 'relay_closed', 'relay_not_found'])
+  'cleanup_unconfirmed', 'stale_lease', 'writer_busy', 'egress_not_ready', 'relay_closed', 'relay_not_found', 'judge_config_invalid'])
 export function relayStartCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : error instanceof Error ? error.message : ''
   return codes.has(code) ? code : 'relay_start_failed'
@@ -169,6 +172,18 @@ export class RelayStarts {
         queue: () => { throw new RelayError('relay_queue_unavailable') } })
       await runtime.meter.observe(signal)
       check(); runtime.validate()
+      // The guarded meter is the one the relay's own calls use and the one a judge counts and dispatches through; the
+      // fence it checks is read when a call is made, so it can be built before the run exists.
+      const meter = { ...runtime.meter,
+        async authorizeDispatch(signal?: AbortSignal) { guard(); await runtime.meter.authorizeDispatch?.(signal); guard() },
+        validatePrepared(request: OllamaChatRequest) { runtime.meter.validatePrepared?.(request); guard() },
+      }
+      // R3: the judge is admitted, and the executor (which opens the additive judge ledger) is built, before the signed
+      // pin or the run exist, so a judge that cannot be admitted refuses the start with nothing to undo.
+      const judge = prepareStartJudge(this.host.judge, { input, policy, meter, runtime: { fact: runtime.fact, meterFact: runtime.meterFact },
+        clock: this.store.clock, connections: this.connections, scrubber: this.scrubber })
+      const executor = new RelayExecutor(this.store, new ConnectionRelayModel(this.connections, input.connectionId, input.model, meter), workspace,
+        policy.reserves, this.scrubber, this.host.limits as RelayLimits, undefined, judge?.signals, judge?.cascade)
       // A remote executor needs the relay run pinned by a signed message before it will answer for it. That is a remote
       // write, so it happens here, awaited and abortable, never inside the creation transaction; the first attempt of a
       // fresh run key is epoch 1, which the transaction below verifies. A refusal, or any later failure, unpins.
@@ -194,13 +209,6 @@ export class RelayStarts {
         attempt = a
       })
       entry.attempt = attempt!
-      const meter = { ...runtime.meter,
-        async authorizeDispatch(signal?: AbortSignal) { guard(); await runtime.meter.authorizeDispatch?.(signal); guard() },
-        validatePrepared(request: OllamaChatRequest) { runtime.meter.validatePrepared?.(request); guard() },
-      }
-      const executor = new RelayExecutor(this.store, new ConnectionRelayModel(this.connections, input.connectionId, input.model, meter), workspace,
-        policy.reserves, this.scrubber, this.host.limits as RelayLimits)
-      // Integration seam: the optional T0 R3 cascade follows judgeSignals when that module merges.
       entry.executor = executor
       const owner = owned; owned = undefined
       entry.lifetime = (async () => {

@@ -22,6 +22,8 @@ import { federationRoutes } from '../../src/federation/routes.ts'
 import { relayStartsChildReporter, relayStartsChildStarter } from '../../src/leads/children.ts'
 import { createLeadPlugin, LEAD_SERVICE, type LeadHostService } from '../../src/leads/plugin.ts'
 import { OwnedCheckoutAllocator } from '../../src/relay/checkout.ts'
+import { ledgerJudgeInput, relayJudgeModel, type RelayStartJudgeSource } from '../../src/relay/judge-start.ts'
+import { signalPolicy, startBrief } from '../relay/judge-fixture.ts'
 import { RemoteRelayRuntime } from '../../src/relay/remote-runtime.ts'
 import { RelayRuntimeSource, type RelayRuntimeSession } from '../../src/relay/runtime.ts'
 import { RelayStarts } from '../../src/relay/start.ts'
@@ -56,6 +58,8 @@ export interface HomeConfig {
   executorName: string
   /** A value registered with the egress scrubber, which a gate prints: it must never be found at rest or in the packet. */
   canary: string
+  /** R3: every relay start carries the signals layer and a J2 cascade on the executor's own runtime. */
+  judge: boolean
 }
 type Parent = { cmd: string; [key: string]: unknown }
 
@@ -100,7 +104,8 @@ async function main() {
   const kernel = await bootServerKernel(undefined, { db,
     federation: { identity: cfg.home.identity, privateKey: cfg.home.privateKey, peers: [cfg.target], clock,
       attempts: { maxReservationMs: 5000, leaseClock: clock },
-      dispatch: { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => homeChannel() } },
+      // F2-reap: the restarted home reconciles its journaled pins by itself, shortly after boot and then every 500 ms.
+      dispatch: { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => homeChannel(), relayPinMaintenanceMs: 500 } },
     // `leaseClock` defaults to the injected clock, so simulated time moves wall time and leases together.
     runs: { alwaysOn: true, clock, ownerTtlMs: cfg.ttlMs, maxAttemptTtlMs: cfg.ttlMs, tickMs: 250,
       fault: (operation, point) => { if (['before_begin', 'before_commit', 'committed'].includes(point)) fault(`${operation}:${point}`) } } })
@@ -166,12 +171,18 @@ async function main() {
       return session
     }
   }
-  const remote = new GappedRemote({ federation, runs, executorNodeId: cfg.target.id, model: cfg.model, clock, pollMs: 20 })
+  const remote = new GappedRemote({ federation, runs, executorNodeId: cfg.target.id, model: cfg.model, clock, pollMs: 20, pinRenewMs: 3_600_000 })
   const source = new RelayRuntimeSource(connections, () => { throw new Error('Ollama models must not be consulted') },
     { maximumAgeMs: 10_000, observer: remote }, clock)
   const allocator = new OwnedCheckoutAllocator({ root: cfg.checkouts })
+  // R3: the signals layer needs no model; J2 counts and runs on the executor through the relay's own meter and session.
+  const judge: RelayStartJudgeSource = context => ({
+    signals: ledgerJudgeInput(signalPolicy, context.clock),
+    cascade: { brief: startBrief(context.input, { accountId: cfg.owner, executorNodeId: cfg.target.id }),
+      model: relayJudgeModel(context, { accountId: cfg.owner, maxAgeMs: 10_000 }) },
+  })
   const starts = new RelayStarts(db, runs, kernel.sessionLog!, connections, kernel.scrubber, relayStore, {
-    runtime: source, reserves: cfg.reserves, clock, nodePorts: () => [],
+    runtime: source, reserves: cfg.reserves, clock, nodePorts: () => [], ...(cfg.judge ? { judge } : {}),
     project: async id => ({ projectId: id, roots: [cfg.project], source: 'ms1 fixture project', observedAt: sim.now }),
     allocate: (policy, signal) => allocator.allocate(policy, signal) })
 

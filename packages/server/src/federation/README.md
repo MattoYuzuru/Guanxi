@@ -210,6 +210,11 @@ are left for K4. The migration runs transactionally only on opt-in, including it
 Failed DDL leaves no partial tables or ledger entry and can be retried. Reopening preserves
 the op-log, HLC, pins, nonce replay protection, command outbox and receipts.
 
+F2-reap adds migration **42**, tracked by its own `federation_relay_pin_migrations` ledger (so `federation_migrations` keeps
+exactly `[34]`): `federation_relay_pin_journal` (the home's record of relay pins it asked an executor to make) and
+`federation_relay_pin_leases` (the executor's expiry per `relay:` pin). Both are additive and created with the other
+federation tables; see the [relay README](../relay/README.md#remote-relay-runtime-f2-d) for how they are used.
+
 Back up the stopped node's SQLite database together with WAL before upgrade. Disabling
 federation leaves its tables intact and restores the previous local-only runtime. Prefer a
 forward fix; restoring the pre-upgrade backup is the rollback for schema trouble. Never drop
