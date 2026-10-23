@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import type { RelayMeterFact, RelayRuntimeFact, RelayStartInput } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
 import type { EgressScrubber } from '../egress/types.ts'
-import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { copyBrief } from './delegation-brief.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
 import { prepareJudgeSignals, type RelayJudgeInput } from './judge-host.ts'
@@ -52,7 +51,8 @@ export function prepareStartJudge(source: RelayStartJudgeSource | undefined, con
   let judge: unknown
   try { judge = source(context) } catch { return refused() }
   if (judge === undefined || judge === null) return undefined
-  if (!isRecord(judge) || Object.keys(judge).some(key => key !== 'signals' && key !== 'cascade')) return refused()
+  // A promise is not a judge: an asynchronous source would otherwise look like an empty one and silently opt the start out.
+  if (!isRecord(judge) || typeof (judge as { then?: unknown }).then === 'function' || Object.keys(judge).some(key => key !== 'signals' && key !== 'cascade')) return refused()
   const { signals, cascade } = judge as { signals?: RelayJudgeInput; cascade?: RelayCascadeInput }
   try {
     if (signals !== undefined) prepareJudgeSignals(signals)
@@ -63,6 +63,12 @@ export function prepareStartJudge(source: RelayStartJudgeSource | undefined, con
       const brief = copyBrief(cascade.brief, context.input.plan)
       if (hash(brief.caps) !== hash(context.input.caps)) return refused()
       if (typeof cascade.model.admit !== 'function' || typeof cascade.model.sample !== 'function') return refused()
+      // A runtime that counts and serves through its own transport serves one connection and one model: a role on any other
+      // would never be admitted, so the start is refused now instead of degrading at every boundary.
+      if (context.meter.transport) {
+        for (const role of [brief.roles.j2, brief.roles.j3])
+          if (role && (role.connectionId !== context.input.connectionId || role.model !== context.input.model)) return refused()
+      }
     }
   } catch { return refused() }
   if (!signals && !cascade) return undefined
@@ -77,6 +83,8 @@ export function prepareStartJudge(source: RelayStartJudgeSource | undefined, con
 export function ledgerJudgeInput(policy: JudgeSignalPolicy, clock: () => number): RelayJudgeInput {
   return {
     policy,
+    // The required fields below are zero or empty only because the ledger has no such fact: published as unknown to the judge.
+    unobserved: ['failureStreak', 'editRevert', 'deadEnds', 'pathEdits', 'crash', 'itemTokens'],
     collect: async ({ ledger }) => ({
       observedAt: clock(), heartbeatAt: null, lease: null,
       deadlineAt: ledger.caps.wallMs === null ? null : ledger.startedAt + ledger.caps.wallMs,
@@ -96,7 +104,7 @@ export function relayRuntimeAttestor(context: Pick<RelayStartJudgeContext, 'inpu
   const { input, meter, runtime } = context
   const identity = createHash('sha256').update(canonical([runtime.fact.model, runtime.fact.digest, runtime.fact.runtimeVersion, runtime.fact.contextTokens])).digest('hex')
   return async ({ role, signal }) => {
-    if (role.connectionId !== input.connectionId || normalizeOllamaModelReference(role.model) !== normalizeOllamaModelReference(input.model)) return null
+    if (role.connectionId !== input.connectionId || role.model !== input.model) return null
     const window = await meter.observe(signal)
     return { accountId, connectionId: role.connectionId, model: role.model, placement: 'installed-local', digest: identity,
       source: window.source, observedAt: window.observedAt, confidence: 'high', unattended: true }

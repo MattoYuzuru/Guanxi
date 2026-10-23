@@ -6,6 +6,10 @@ import type { JudgeObservation, JudgeSignalPolicy, JudgeSignal } from './judge-s
  * fresh handoff narrative. */
 export type JudgePhase = 'cycle_start' | 'pre_seal'
 export type JudgeUnknownFact = 'heartbeat' | 'lease' | 'deadline' | 'disk' | 'tokenBudget'
+  | 'failureStreak' | 'editRevert' | 'deadEnds' | 'pathEdits' | 'crash' | 'itemTokens'
+/** Every name a collector may declare unobserved (see `RelayJudgeInput.unobserved`). */
+export const JUDGE_UNKNOWN_FACTS: readonly JudgeUnknownFact[] = ['heartbeat', 'lease', 'deadline', 'disk', 'tokenBudget',
+  'failureStreak', 'editRevert', 'deadEnds', 'pathEdits', 'crash', 'itemTokens']
 
 export interface RelayJudgeAttempt {
   id: string
@@ -35,10 +39,14 @@ export interface RelayJudgeCollectInput {
 export interface RelayJudgeInput {
   policy: JudgeSignalPolicy
   collect(input: RelayJudgeCollectInput): Promise<JudgeObservation>
+  /** Facts this collector does not observe although the observation shape has a required field for them (a streak or a
+   * list that is reported as zero or empty). They are published as unknown, never as healthy. */
+  unobserved?: readonly JudgeUnknownFact[]
 }
 
 export interface PreparedRelayJudge {
   readonly policy: Readonly<JudgeSignalPolicy>
+  readonly unobserved: readonly JudgeUnknownFact[]
   collect(input: RelayJudgeCollectInput): Promise<JudgeObservation>
 }
 
@@ -100,17 +108,22 @@ export function prepareJudgeSignals(input: RelayJudgeInput): PreparedRelayJudge 
   if (!isRecord(input)) invalidConfig()
   const collect = input.collect
   if (typeof collect !== 'function') invalidConfig()
-  return Object.freeze({ policy: copyPolicy(input.policy), collect: collect.bind(input) as RelayJudgeInput['collect'] })
+  const unobserved = input.unobserved === undefined ? [] : input.unobserved
+  if (!Array.isArray(unobserved) || unobserved.some(name => !JUDGE_UNKNOWN_FACTS.includes(name))) invalidConfig()
+  return Object.freeze({ policy: copyPolicy(input.policy), unobserved: Object.freeze([...unobserved]),
+    collect: collect.bind(input) as RelayJudgeInput['collect'] })
 }
 
 /** Absent optional observation fields are unknown, not healthy. The names are fixed so an
  * empty signal list can never be read as proof of health. */
-export function judgeUnknownFacts(observation: JudgeObservation): JudgeUnknownFact[] {
+export function judgeUnknownFacts(observation: JudgeObservation, unobserved: readonly JudgeUnknownFact[] = []): JudgeUnknownFact[] {
   const unknown: JudgeUnknownFact[] = []
   if (observation.heartbeatAt === null) unknown.push('heartbeat')
   if (observation.lease === null) unknown.push('lease')
   if (observation.deadlineAt === null) unknown.push('deadline')
   if (observation.disk === null) unknown.push('disk')
   if (observation.tokenBudgetForItem === null) unknown.push('tokenBudget')
+  // Declared by the collector, in the fixed order of the names, once each.
+  for (const name of JUDGE_UNKNOWN_FACTS) if (unobserved.includes(name) && !unknown.includes(name)) unknown.push(name)
   return unknown
 }

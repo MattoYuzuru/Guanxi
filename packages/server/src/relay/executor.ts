@@ -131,7 +131,7 @@ export class RelayExecutor {
     } catch {
       throw new RelayError('judge_observation_invalid')
     }
-    const summary: RelayJudgeSummary = {attempt, cycle, phase, signals, unknownFacts: judgeUnknownFacts(observation)}
+    const summary: RelayJudgeSummary = {attempt, cycle, phase, signals, unknownFacts: judgeUnknownFacts(observation, judge.unobserved)}
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({
       relay: 'judge_signals', phase, cycle, signals, unknownFacts: summary.unknownFacts,
     }) } })

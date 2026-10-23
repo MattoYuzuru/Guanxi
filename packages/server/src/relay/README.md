@@ -397,38 +397,51 @@ optional checker). Nothing of it is wire input. `RelayConfig.judge` is the plugi
 when the start host has no `judge` of its own (`startHostWithJudge`). No source, or a source that returns
 nothing, leaves that start exactly as before: no judge event, no judge call, no judge ledger.
 
-**Fail closed before anything exists.** The source runs after the runtime is admitted and before the signed
-pin, the run or its session exist (the allocated checkout is released like any other refusal). The signals
-policy, the brief (`copyBrief` against the start's plan, caps equal to the start's caps) and the model shape
-are validated there, and the executor, which opens the additive judge ledger 38, is built there. Any failure,
-including a source that throws, refuses the start with the one public code `judge_config_invalid`.
+**Fail closed before the pin and the run exist.** The source runs after the runtime is admitted and the checkout is
+allocated, and before the signed pin, the run or its session exist (the checkout is released like any other
+refusal). The signals policy, the brief (`copyBrief` against the start's plan, caps equal to the start's caps), the
+model shape and, for a runtime that counts through its own transport, the brief's J2/J3 roles (they must be the
+relay's own connection and model) are validated there, and the executor, which opens the additive judge ledger 38,
+is built there. Any failure, including a source that throws or returns a promise, refuses the start with the one
+public code `judge_config_invalid`. The judge ledger tables are additive and may remain after a later refusal
+(pin, abort); a run, session or pin never do.
 
 **Signals.** `ledgerJudgeInput(policy, clock)` is a ready collector that reports what the relay ledger holds
 (cycle, no-progress streak, wall deadline) and leaves heartbeat, lease, disk and the per-item token budget
-unknown, never healthy. The ledger tracks no repeated-failure, edit-revert, dead-end or protected-path
-facts, so those are reported as zero or empty and this collector can raise only `no_progress` and
-`deadline`; a host that observes more supplies its own collector. A collector that fails keeps its existing
-rule (fixed `judge_observation_unavailable`, run `input_required`, ledger retained).
+unknown, never healthy. The ledger has no repeated-failure, edit-revert, dead-end, crash, protected-path or
+per-item token facts; the observation shape requires a value for them, so they are zero or empty and the collector
+declares them in `RelayJudgeInput.unobserved`, which adds `failureStreak`, `editRevert`, `deadEnds`, `pathEdits`,
+`crash` and `itemTokens` to the `unknownFacts` of every published observation and of the J2 packet. This
+collector can raise only `no_progress` and `deadline`; a host that observes more supplies its own collector. A
+collector that fails keeps its existing rule (fixed `judge_observation_unavailable`, run `input_required`,
+ledger retained).
 
 **Judge model on a transport meter.** `ConnectionJudgeModel` takes a `runtime` binding
 `{ connectionId, model }`. A meter that carries a `transport` (llama-server, remote node) is accepted only
-with that binding, and the judge then names that connection and model or is refused at admission
-(`judge_config_invalid`). The judge never leaves the runtime that counts: the prompt is pre-counted with the
+with that binding. With a binding, whatever the meter, the judge role must be exactly that connection and that
+model string (the string the relay itself sends); another spelling or runtime is `judge_config_invalid` at
+admission. The judge never leaves the runtime that counts: the prompt is pre-counted with the
 meter's `countAsync` when it has one (the remote count is a signed round trip, and `meter.count` is then a
 lookup of that answer), the request is dispatched through `meter.transport` itself with `think:false`, the
-meter's `authorizeDispatch` re-observes the runtime first, `onPrepared` pins the exact request (model, options,
-shape) and the count, and the result must echo the counted input tokens. A meter with `countAsync` and no
+meter's `authorizeDispatch` re-observes the runtime first, `onPrepared` pins the exact request K3 hands back (model,
+options, shape) and the count, and the result must echo the counted input tokens. A meter with `countAsync` and no
 transport (counted by one runtime, dispatched on another), a transport without a binding or an inexact
 meter is `judge_config_invalid`. `meter.validatePrepared` is not used for the judge: it pins `num_predict`
 to the relay turn, and the judge has its own output ceiling. `relayJudgeModel(context, ...)` builds this model
 from a start's context; `relayRuntimeAttestor` attests it from a fresh observation of the runtime, and only for
-the relay's own connection and model. The role's `temperature` is not sent to a transport runtime.
+the relay's own connection and model. A host that wants a different judge model on a stock Ollama relay builds
+`ConnectionJudgeModel` itself, without a binding. The role's `temperature` is not sent to a llama-server
+runtime (its client posts only the prompt and the output limit), so the samples of one boundary are drawn with the
+server's own sampling and the cascade's "agreement" is only that. `maxAgeMs` must exceed the wall time of a judge
+sample: the loaded window is observed once per request and checked again before each sample.
 
 **Billing.** A remote judge sample is one more per-call child run on the relay's session, so the
 executor-reported tokens land on that child's R1 ledger atomically with its terminal (F2-c), apart from the
 relay run's own rows and from the lead. The relay run's `run_costs` never include judge calls. The relay caps
 see the judge only through the cascade's existing pre-debit (`tokenReserve` per sample, never settled to
-actuals); the wake packet's token metric therefore includes that reserve. The two views are never summed.
+actuals), so a judged relay reaches `caps.tokens` earlier than the same relay without a judge, and the wake
+packet's token metric includes that reserve. The two views are never summed. A judge on a local relay (Ollama or a
+local llama-server) has no child run: its usage is K3's usage record plus the same pre-debit.
 
 **Degradation.** Unchanged cascade rules: an unavailable, invalid or inconsistent judge gives a verdict row
 (`unavailable`, `invalid`), never an item marked done and never a stopped run. A cancel during a judge call

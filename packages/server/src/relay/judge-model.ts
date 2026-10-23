@@ -93,15 +93,11 @@ export class ConnectionJudgeModel implements JudgeModel {
       'judge_config_invalid'
     )
   }
-  /** The role must be served by the runtime that counts for this meter. */
+  /** With a runtime binding, the role must be exactly the connection and model that runtime serves: the string that is sent
+   * is the string the relay itself sends, and the transport's counter is the one that counted it. */
   private bound(role: JudgeRole): void {
-    if (!this.meter.transport) return
-    const runtime = this.runtime!
-    invariant(
-      role.connectionId === runtime.connectionId &&
-        normalizeOllamaModelReference(role.model) === normalizeOllamaModelReference(runtime.model),
-      'judge_config_invalid'
-    )
+    if (!this.runtime) return
+    invariant(role.connectionId === this.runtime.connectionId && role.model === this.runtime.model, 'judge_config_invalid')
   }
   private fact(input: JudgeModelInput, fact: InstalledJudgeAttestation): void {
     invariant(
