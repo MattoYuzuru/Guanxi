@@ -180,16 +180,24 @@ test('a loading, unreachable or mismatched server refuses admission before any r
 })
 
 test('stop during checkout allocation cancels and leaves nothing; an uncleanable allocation is cleanup_unconfirmed, never relay_stopped', async t => {
+  // The call counter precedes filesystem ownership. Wait for scratch, which is
+  // created after the owner marker, so cancellation actually exercises cleanup.
+  const owned = async (f: Awaited<ReturnType<typeof fixture>>) => {
+    const [name] = await f.holdings()
+    return !!name && await readdir(join(f.checkouts, name, 'runtime', 'scratch')).then(() => true, () => false)
+  }
   const slow = join(await mkdtemp(join(process.cwd(), '.lane-data', 'slow-git-')), 'git')
   await writeFile(slow, '#!/bin/sh\nexec /bin/sleep 20\n'); await chmod(slow, 0o755)
   t.after(() => rm(join(slow, '..'), { recursive: true, force: true }))
   const clean = await fixture(t, { git: slow }), pending = clean.starts.start(clean.input), rejected = assert.rejects(pending, /relay_stopped/)
   await until(() => clean.allocations() === 1)
+  await until(() => owned(clean))
   assert.equal((await clean.starts.stop(clean.input.key)).status, 'canceled'); await rejected
   assert.deepEqual(await clean.holdings(), []); assert.equal((await clean.fake.requests('/completion')).length, 0)
   for (const table of ['durable_runs', 'sessions']) assert.equal(clean.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0)
   const stuck = await fixture(t, { git: slow, remove: async () => { throw new Error('synthetic EBUSY') } }), failing = stuck.starts.start(stuck.input), failed = assert.rejects(failing, /cleanup_unconfirmed/)
   await until(() => stuck.allocations() === 1)
+  await until(() => owned(stuck))
   const stopped = await stuck.starts.stop(stuck.input.key); await failed
   assert.equal(stopped.status, 'failed'); assert.equal(stopped.error, 'cleanup_unconfirmed')
   assert.equal((await stuck.holdings()).length, 1, 'the allocation that could not be removed is retained for the owner')
