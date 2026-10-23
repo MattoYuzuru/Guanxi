@@ -335,8 +335,10 @@ export async function start(options: StartOptions = {}) {
       if (wiring) { externalAgents = wiring.externalAgents; leads = wiring.leads }
     }
     const relayOptions = options.relay ?? operationalRelay?.relay ?? liveRelay ?? undefined
+    // `relayHost` is typed without the fields start owns, but a JavaScript caller is not held to types.
+    const { runtime: _r, allocate: _a, reserves: _v, project: _p, nodePorts: _n, ...hostExtras } = (options.relayHost ?? {}) as Record<string, unknown>
     await kernel.node.plugin(relayPlugin, { ...options.relayConfig, db, startHost: {
-      ...options.relayHost,
+      ...hostExtras,
       ...(relayOptions ? { reserves: relayOptions.reserves, allocate: relayOptions.allocate,
         // A runtime that binds per start (F2-d) has an observer with `open` instead of a counter. In live mode there is no
         // local fallback at all: the model inventory callback refuses, so a stale remote can never become an Ollama call.

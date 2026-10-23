@@ -329,3 +329,16 @@ test('live mode never falls back to ~/.guanxi: without a data directory it uses 
   assert.equal(existsSync(join(root, 'home', 'data', 'guanxi.db')), true, 'the node lives beside its configuration')
   assert.equal(existsSync(join(fakeHome, '.guanxi')), false, 'and not in the default home directory')
 })
+
+test('relayHost cannot replace what start owns, even from untyped code: runtime, allocator, reserves, project resolution and node ports are stripped', async t => {
+  const root = await dir(t)
+  const sentinel = { sentinel: true }
+  const server = await start({ port: 0, host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [],
+    relayHost: { limits: { gateTimeoutMs: 4321 }, runtime: sentinel, allocate: sentinel, reserves: sentinel, project: sentinel, nodePorts: sentinel } as never })
+  t.after(() => server.close())
+  const { RELAY_SERVICE } = await import('../../src/relay/plugin.ts')
+  const host = (server.kernel.node.service<{ publicStarts: object }>(RELAY_SERVICE)!.publicStarts as unknown as { host: Record<string, unknown> & { limits: { gateTimeoutMs: number } } }).host
+  assert.equal(host.limits.gateTimeoutMs, 4321, 'a permitted extra passes')
+  assert.equal(host['runtime'], undefined); assert.equal(host['allocate'], undefined); assert.equal(host['reserves'], undefined)
+  assert.notEqual(host['project'], sentinel); assert.notEqual(host['nodePorts'], sentinel)
+})
