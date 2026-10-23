@@ -1,8 +1,10 @@
 # K3-chat handoff — D-208
 
-Status: implemented and locally validated with fake providers; all required local gates passed.
+Status: correction implemented and focused checks passed with fake providers; the follow-up full
+suite failed one external-agent reconciliation test. Integration remains gated on a green full run.
 Branch: `claude/chat-provider-models`. Base/main: `631cd5c8`.
-Tested code candidate: `23adfcbe`. No push, merge, live provider, real dotenv, SSH or owner-data access.
+Follow-up tested code candidate: `25721046` (original passing candidate: `23adfcbe`).
+No push, merge, live provider, real dotenv, SSH or owner-data access.
 
 ## Delivered
 
@@ -20,12 +22,84 @@ Tested code candidate: `23adfcbe`. No push, merge, live provider, real dotenv, S
   local hardware permit and prewarm, supports pi-ai text streaming with cross-chunk scrubbing,
   records usage/catalog estimate, and preserves disconnect, Stop, locked replay and interrupted
   recovery semantics. Custom endpoint prices/limits stay unknown; its wire uses backend defaults.
-- Short English/Russian harness prompt follows node locale: central brand, local-node label,
-  project display name only, harness tools/permissions. Per-project editing is deferred.
+- Chat reuses the English ADR-0021 light orientation with central brand identity and truthful
+  no-tools facts, independent of locale/project metadata. See the integrator correction below.
 - Settings displays only a compatible connection's API host.
 
 See [Connections](../../../packages/server/src/connections/README.md#d-208-trusted-import-and-chat)
 and the [plan](K3-chat.plan.md) for defaults and boundaries.
+
+## Integrator correction — ADR-0021 baseline
+
+The earlier brief's localized identity prose is superseded. This is the existing ADR-0021 §8
+light-orientation baseline from `native-agent/orientation.ts`, **not a new prompt**. Only
+`PRODUCT_NAME` from the brand module is added. Plain Chat states local node/OS, no execution
+cwd/roots/tools/skills, and unavailable path/budget/AGENTS.md details. The native-agent variant
+retains its existing bytes. Any expansion requires an ADR-0025 bench result; no quality,
+non-inferiority or actual cache-hit result is claimed.
+
+`agent/harness-prompt.ts` delegates to that single source. The 300 UTF-8-byte guard remains,
+and the English model-facing prefix has no locale, project names, paths, secrets, timestamps,
+quotas or counters. It is first before history and byte-identical across turns and locale
+changes. Future volatile facts belong at the end of the latest user turn, outside the prefix.
+
+Fix commits: `df3a12e6` removes localized prose and per-turn prompt injection; `25721046` keeps
+compaction history outside the provider system prompt. A locally compacted Chat switched to a
+provider retains its checkpoint once in user history before the unsummarized tail; compacted
+source messages stay excluded. Provider-side compaction itself remains deferred.
+
+### Follow-up evidence — new / regression envelope
+
+- **New:** one bounded-English/brand/no-execution unit test. Two existing dispatch cases are
+  strengthened: local request ordering and actual pi-ai OpenAI-compatible wire over fake fetch.
+  Both assert system-byte equality across two turns with an English-to-Russian locale change.
+  The wire case also checks exact sole system content, checkpoint count/order, retained tail,
+  excluded compacted source, secret-canary exclusion and no invented token ceiling.
+- **Affected envelope:** 69/69 passed, no skips, across `connections/chat-provider.test.ts`,
+  `native-agent/agent.test.ts` and `native-agent/sandbox.test.ts` at `df3a12e6`: one new case /
+  68 existing cases. After the compaction fix, all 17 chat-provider cases passed again at
+  `25721046`; native-agent production/test files did not change in that fix.
+- `npm run typecheck` passed again at `25721046`, all workspaces. ESLint passed for every
+  changed TypeScript file. Markdown/link checks passed, including the final hand-off.
+- Separate read-only reviewer found no issues in the orientation correction, then independently
+  confirmed the checkpoint aggregation defect: the adapter joined all historical system messages
+  into its system prompt. The separate fix `25721046` closes it with direct fake-wire assertions;
+  the reviewer confirmed closure with no further findings. No live access or heavy review checks.
+
+### Follow-up full gate — failed, recovery required
+
+The requested command ran with Node 26, ports 5236/4436 and isolated `.lane-data`:
+
+```bash
+/Users/yuzuru/.local/bin/agent-dev run --cwd /Users/yuzuru/Projects/Guanxi-lanes/chatmodels --node 26 --resource heavy --lock-timeout 3600 -- npm run test
+```
+
+Receipt: `/Users/yuzuru/.local/state/agent-dev/check-j5b0cybf/result.json`; sibling `output.log`.
+It reports `ok: false`, exit 1, no timeout, clean HEAD
+`25721046b3280144bbfc080f9971b5c108723d82` before/after and `source_changed: false`.
+The pre-existing unsupported `.claude/skills/guanxi-ui` symlink still prevents reusable source
+attestation. The run passed UI fast/codemod/gate tests, then failed exactly one server/CLI case:
+`external-agents/admission-reconcile.test.ts:53`, “a dead owner's running group is killed only
+when its start time proves it is ours, then the holder is released”. It expected an empty holder
+list but observed `cleanup_unconfirmed` / `group_timeout`. Two Linux-only cases were skipped on
+macOS. Later kernel/web/UI/bench phases did not run; no whole-suite pass is claimed.
+
+The full reconciliation file passed 9/9 in an immediate isolated Node 26 rerun. No file in that
+subsystem changed in this correction. A timing hypothesis remains unproven: the fixture creates
+an orphan, awaits another child's exit, then records `Date.now()`; the provenance probe accepts
+only a five-second difference from the process's real start time. This is an investigated
+failure, not a known-flake exemption. The same reason also covers an unreadable process probe
+or unconfirmed group termination; the log does not distinguish these causes. Independent
+read-only review confirmed that this test does not exercise the correction's prompt path.
+No unrelated production fix, weaker assertion or timeout
+increase was made. An earlier queued full command was stopped before launching tests to apply
+the independently verified compaction fix; it supplies no gate evidence.
+
+Recovery / next unfinished work: the integrator or K5 owner should reproduce the reconciliation
+failure under the full envelope, verify process-start provenance/fixture timing and fix any
+confirmed defect separately, then rerun the exact locked full command above. Review of this
+prompt correction can proceed; integration still requires a green full gate. No web source
+changed in this follow-up, so browser/build evidence below belongs to the original delivery.
 
 ## Migration and recovery
 
@@ -39,7 +113,8 @@ an identity/SQLite conflict. No plaintext digest or key fingerprint is exposed.
 
 ## Evidence — new
 
-24 new tests: 16 server, 2 CLI, 5 picker and 1 Settings-host assertion.
+Original delivery: 24 new tests (16 server, 2 CLI, 5 picker and 1 Settings-host assertion).
+Follow-up evidence is counted separately above.
 
 - Dotenv literal substitutions/quotes/comments, ignored unknown keys, idempotence, rotation,
   same-process concurrency, root identity, fixed errors and generated canary scans across
@@ -48,8 +123,9 @@ an identity/SQLite conflict. No plaintext digest or key fingerprint is exposed.
   exclusion, pinned compatible dispatch, escaped target refusal and unknown custom prices.
 - Split/overlapping key redaction, fake provider durable SSE after disconnect, one assistant/receipt,
   locked-vault replay and conflicting replay, explicit Stop, fresh-owner interrupted recovery.
-- Localized local prompt and dispatched provider harness identity/scrubbed context; real pi-ai wire
-  over fake fetch streams without borrowing an unrelated model's output ceiling.
+- Local/provider prompt dispatch and scrubbed context; these prompt assertions are superseded
+  by the stronger English baseline checks above. Real pi-ai wire over fake fetch streams without
+  borrowing an unrelated model's output ceiling.
 - Provider-only picker, local fallback, no provider prewarm, Agent switch payload, quiet refresh,
   same-name connection group counts/ancestry, Settings host without API-root path.
 
@@ -59,7 +135,7 @@ packages/cli/test/connections-import.test.ts` (18/18); web Vitest picker + Conne
 Combined targeted evidence: 24 new / 71 existing regression tests. These use generated fake keys,
 throwaway stores/keychains and fake transports; no live authentication or provider quality is implied.
 
-## Evidence — regression envelope and gates
+## Evidence — original regression envelope and gates
 
 All commands used Node 26, web/API ports 5236/4436 and the isolated `.lane-data` directory.
 
@@ -140,8 +216,11 @@ text or claim model-reported identity is independent attestation.
   dispatch. Next slice: K3-aware compaction, optional reasoning projection and per-project prompts.
 - Local-node identity defaults to the local label; federated identity customization is future work.
   Legacy Chat timing fields retain their older projection, not provider latency measurements.
-- ADR-0025 benchmark/non-inferiority evidence is unavailable; D-208 authorizes the fixed prompt
-  default. No quality, production validation, full UI visual approval or invoice reconciliation.
+- The Chat orientation is the ADR-0021 baseline, not a new D-208 prompt. Any expansion requires
+  an ADR-0025 bench result. No quality, benchmark non-inferiority, cache-hit measurement,
+  production validation, full UI visual approval or invoice reconciliation is claimed.
+- The follow-up full gate failed external-agent reconciliation; see its receipt and recovery
+  steps above. Isolated success does not replace that failed envelope.
 - UI redesign integration must preserve the generic groups/selection contract. Existing legacy
   Select receives data grouping only; no catalog component/review status or CSS was changed.
   Catalog search found `select` still draft, so no new product use was introduced.
@@ -152,8 +231,11 @@ Shared seams: contract connections; CLI bin/export; server index/context, legacy
 thread/project routes/admission, Job lookup, vault comparison and runtime lifecycle docs;
 web legacy Select, ChatPage/resource-conflict hook, API client and Connections host/locale strings.
 No PHASE_STATUS/NEXT_AGENT_PROMPT, unrelated lane, generated asset, license or dependency edits.
+The correction also shares the native-agent orientation source; its native variant is unchanged.
 
 Commits before handoff: `6f89f3d0` plan; `947baf32` implementation; `d269779b` provider admission;
 `2fc52628` tests; `cb5abc1b` input/fallback fixes; `d7244005` review fixes, wire assertions/docs/smoke;
 `b6a15eb1` secret-bearing root fix; `4fc72aa5` quiet refresh; `388f210c` group identity;
 `7fb16210` Settings-host test; `23adfcbe` migration regression fixture. Final docs-only commit contains this evidence file.
+Follow-up: `df3a12e6` ADR-0021 correction, `25721046` checkpoint-prefix fix, followed by a separate
+hand-off-only commit recording the focused passes and failed full gate.
