@@ -11,7 +11,7 @@ import { boundary, bounded, request, requestAsync, thresholds, upperTokens, wall
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation, type JudgeSignalPolicy } from './judge-signals.ts'
-import { JudgeJournalStore } from './judge-journal.ts'
+import { JudgeJournalStore, lazyJournal } from './judge-journal.ts'
 import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput, type RelayJudgeSummary } from './judge-host.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
@@ -37,8 +37,10 @@ export class RelayExecutor {
     this.cascade = cascade
       ? new RelayJudgeCascade(store, {
           ...cascade,
+          // The journal constructor opens a write transaction and migrates. Keep it off the
+          // executor/start assembly path; the cascade's existing record containment applies.
           journal: cascade.journal === undefined
-            ? new JudgeJournalStore(store.db, { scrubber, clock: store.clock })
+            ? lazyJournal(() => new JudgeJournalStore(store.db, { scrubber, clock: store.clock }))
             : cascade.journal
         })
       : undefined

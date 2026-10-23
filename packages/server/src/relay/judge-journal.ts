@@ -71,6 +71,37 @@ export interface JudgeJournalContext {
 /** Small boundary owned by the cascade. No SQLite type crosses into the cascade. */
 export interface JudgeJournal {
   record(entry: JudgeJournalEntry): void | Promise<void>
+  /** Best-effort completeness marker after a write failure. */
+  incomplete?(runId: string): void
+}
+
+/** Construct the real sink only when the first row is recorded. `BEGIN IMMEDIATE`, DDL and a
+ * schema-version check must never run while a relay start or executor is being assembled; a
+ * foreign ledger value, a busy database or an open transaction disables this local sidecar and
+ * leaves the judged relay (and its already-fenced verdict) untouched. Construction is tried once:
+ * a persistent failure is a null journal, not a retry on every boundary. */
+export function lazyJournal(create: () => JudgeJournal | null): JudgeJournal {
+  let inner: JudgeJournal | null | undefined
+  const resolve = (): JudgeJournal | null => {
+    if (inner !== undefined) return inner
+    try {
+      inner = create()
+    } catch {
+      inner = null
+    }
+    return inner
+  }
+  return {
+    record(entry) {
+      const target = resolve()
+      if (!target) return
+      return target.record(entry)
+    },
+    incomplete(runId) {
+      const target = resolve()
+      if (target?.incomplete) target.incomplete(runId)
+    }
+  }
 }
 
 export interface JudgeJournalEntry {

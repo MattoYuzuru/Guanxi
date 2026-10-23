@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { Hono } from 'hono'
-import { byteHash, canonical, render } from '../../src/relay/handoff.ts'
+import { byteHash, canonical, probes, render } from '../../src/relay/handoff.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
 import {
   JUDGE_JOURNAL_MIGRATION_42,
@@ -25,7 +25,7 @@ import { buildWakePacket } from '../../src/leads/packet.ts'
 import type { ChildReport } from '../../src/leads/types.ts'
 import { signedDispatchGrantSchema } from '@guanxi/contract/federation'
 import { sessionLogRoutes } from '../../src/session-log/routes.ts'
-import { cascadeWithJournal } from '../../src/relay/plugin.ts'
+import { cascadeWithJournal, relayPlugin, type RelayService } from '../../src/relay/plugin.ts'
 import { sessionExportSchema } from '@guanxi/contract'
 import { DEFAULT_REASONING_RETENTION_MS } from '../../src/session-log/log.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
@@ -117,6 +117,70 @@ function cascadeInput(overrides: Partial<RelayCascadeInput> = {}): RelayCascadeI
     model: { admit: async () => true, sample: async () => validResult() },
     ...overrides
   }
+}
+
+/** Drive the real plugin's `execute` service with a fixture local runtime, so the default
+ * executor journal is exercised through the path a public start uses. */
+function pluginService(f: ReturnType<typeof fixture>): RelayService {
+  let work = 0
+  const connections = {
+    snapshot: () => ({ connections: [{ id: 'fixture-connection', kind: 'local_runtime' }] }),
+    localChat: async (
+      _scope: string,
+      _connectionId: string,
+      request: { messages: { content: string }[] }
+    ) => {
+      const prompt = request.messages[0]!.content
+      let text: string
+      if (prompt.startsWith('Answer these five')) {
+        const latest = f.db
+          .prepare('SELECT ledger FROM relay_seals WHERE run_id=? ORDER BY cycle DESC LIMIT 1')
+          .get(f.run.id) as { ledger: string } | undefined
+        text = canonical(probes(latest ? JSON.parse(latest.ledger) : f.relay.read(f.run.id)))
+      } else if (prompt.startsWith('Write a fresh')) {
+        text = 'fixture narrative'
+      } else {
+        work++
+        text = canonical(
+          work === 1 ? { action: 'verify', item: 'one' } : { action: 'handoff' }
+        )
+      }
+      return {
+        message: { role: 'assistant', content: text },
+        prompt_eval_count: f.model.count(prompt),
+        eval_count: 10,
+        done_reason: 'stop'
+      }
+    }
+  }
+  const provided = new Map<string, unknown>()
+  const services: Record<string, unknown> = {
+    'runs.durable': { store: f.store },
+    'connections.registry': connections,
+    'session.log': f.log,
+    'egress.scrubber': f.scrubber
+  }
+  relayPlugin.apply(
+    {
+      service: (name: string) => services[name],
+      provide: (name: string, service: unknown) => provided.set(name, service),
+      effect: () => undefined
+    } as never,
+    { db: f.db }
+  )
+  return provided.get('agent.relay') as RelayService
+}
+
+async function executeThroughPlugin(f: ReturnType<typeof fixture>): Promise<void> {
+  const service = pluginService(f)
+  await service.execute(f.attempt, {
+    connectionId: 'fixture-connection',
+    model: 'fixture-model',
+    meter: f.model,
+    workspace: f.workspace,
+    reserves,
+    cascade: cascadeInput()
+  })
 }
 
 function observationAt(observedAt: number, patch: Partial<JudgeObservation> = {}): JudgeObservation {
@@ -897,6 +961,38 @@ test('readRun orders journal rows by attempt ordinal before cycle and phase', ()
     assert.deepEqual(
       rows.map((item) => item.attempt_ordinal),
       [1, 2]
+    )
+  } finally {
+    f.close()
+  }
+})
+
+test('a foreign journal migration value disables the sidecar without failing the judged relay', async () => {
+  const f = fixture()
+  try {
+    f.db.exec(
+      'CREATE TABLE relay_journal_migrations(version INTEGER PRIMARY KEY); INSERT INTO relay_journal_migrations VALUES(99)'
+    )
+    await executeThroughPlugin(f)
+    assert.equal(
+      f.db.prepare("SELECT state FROM durable_runs WHERE id=?").get(f.run.id)!.state,
+      'completed'
+    )
+    assert.equal(
+      f.db.prepare("SELECT state FROM relay_judge_requests WHERE run_id=? AND layer='J2'").get(f.run.id)!
+        .state,
+      'completed',
+      'the fenced verdict is unchanged'
+    )
+    assert.equal(
+      f.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_judge_journal'").get(),
+      undefined,
+      'construction never reached the table DDL'
+    )
+    assert.equal(
+      f.db.prepare('SELECT version FROM relay_journal_migrations').get()!.version,
+      99,
+      'the foreign ledger is left untouched'
     )
   } finally {
     f.close()

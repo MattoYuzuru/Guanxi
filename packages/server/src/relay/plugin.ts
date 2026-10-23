@@ -17,7 +17,7 @@ import type { EtaInput } from './eta.ts'
 import type { RelayJudgeInput } from './judge-host.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
 import { startHostWithJudge, type RelayStartJudgeSource } from './judge-start.ts'
-import { JudgeJournalStore, journalIfPresent, type JudgeJournal } from './judge-journal.ts'
+import { JudgeJournalStore, journalIfPresent, lazyJournal, type JudgeJournal } from './judge-journal.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
 const JOURNAL_PURGE_INTERVAL_MS = 10 * 60 * 1_000
@@ -58,8 +58,8 @@ export const relayPlugin = definePlugin<RelayConfig>({
     let journal: JudgeJournalStore | null = null
     const knownJournal = (): JudgeJournalStore | null =>
       (journal ??= journalIfPresent(config.db, scrubber))
-    const journalStore = (): JudgeJournalStore =>
-      knownJournal() ?? (journal = new JudgeJournalStore(config.db, { scrubber }))
+    const journalStore = (): JudgeJournal =>
+      lazyJournal(() => knownJournal() ?? (journal = new JudgeJournalStore(config.db, { scrubber })))
     const purgeJournal = () => {
       try {
         knownJournal()?.purgeExpired()
