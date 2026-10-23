@@ -100,7 +100,7 @@ function requestedUrl(options: CliOptions): { url: string; port: number } {
 const args = process.argv.slice(2)
 if (args[0] === 'connections' && args[1] === 'import') {
   const result = await connectionsImport(args.slice(2))
-  console.log(args.includes('--json') ? JSON.stringify(result) : result.ok ? 'Provider keys imported' : result.error)
+  console.log(args.includes('--json') ? JSON.stringify(result) : result.ok ? 'Provider keys imported' : [result.error, ...('errors' in result ? result.errors ?? [] : []).map(item => `${item.key}:${item.code}`)].join('; '))
   process.exit(result.ok ? 0 : 1)
 }
 if (args[0] === 'relay'  && args[1] === 'exec') {

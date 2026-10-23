@@ -19,3 +19,13 @@ test('connections import suppresses raw importer errors and invalid argument val
     assert.ok(!JSON.stringify(result).includes(value))
   }
 })
+
+
+test('partial provider import returns a failed result with per-key codes and successful references', async () => {
+  const result = await connectionsImport(['--file', '/tmp/fixture.env'], async () => ({
+    imported: [{ connectionId: 'fixture-id', provider: 'deepseek', action: 'created' }],
+    errors: [{ key: 'OPENAI_API_KEY', code: 'invalid_provider_key' as const }],
+  }))
+  assert.equal(result.ok, false)
+  assert.ok('imported' in result)
+})

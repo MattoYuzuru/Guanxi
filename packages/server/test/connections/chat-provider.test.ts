@@ -115,7 +115,10 @@ test('failed file reads and invalid endpoint errors never include file contents 
   const { service, dir } = await setup(t), value = canary()
   const file = join(dir, 'invalid.env')
   await writeFile(file, `OPENAI_API_KEY=${value}\nOPENAI_API_URL=https://${value}@example.invalid`)
-  for (const path of [file, join(dir, value)]) {
+  const invalid = await importProviderKeysFile(service, 'local', file)
+  assert.deepEqual(invalid.errors, [{ key: 'OPENAI_API_KEY', code: 'invalid_provider_key' }])
+  assert.ok(!JSON.stringify(invalid).includes(value))
+  for (const path of [join(dir, value)]) {
     await assert.rejects(importProviderKeysFile(service, 'local', path), error => {
       assert.ok(!String(error).includes(value)); return true
     })
@@ -591,4 +594,13 @@ test('send request cancellation reaches custom model discovery', async t => {
   await entered
   try { controller.abort(); assert.equal(observed!.aborted, true) }
   finally { release(); await (await pending).text() }
+})
+
+test('invalid OpenAI root reports its key while other provider keys still import', async t => {
+  const f = await setup(t), value = canary(), file = join(f.dir, 'partial.env')
+  await writeFile(file, `OPENAI_API_KEY=${value}\nOPENAI_API_URL=invalid-root\nDEEPSEEK_API_KEY=${canary()}`)
+  const result = await importProviderKeysFile(f.service, 'local', file)
+  assert.deepEqual(result.imported.map(row => row.provider), ['deepseek'])
+  assert.deepEqual(result.errors, [{ key: 'OPENAI_API_KEY', code: 'invalid_provider_key' }])
+  assert.ok(!JSON.stringify(result).includes(value))
 })

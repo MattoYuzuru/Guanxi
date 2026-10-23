@@ -9,7 +9,7 @@ const keys = { OPENAI_API_KEY: 'openai', DEEPSEEK_API_KEY: 'deepseek', ANTHROPIC
   OPENROUTER_API_KEY: 'openrouter', GOOGLE_API_KEY: 'google' } as const
 export interface ImportedProvider { provider: Connection['provider']; value: string; baseUrl?: string; allowPrivate?: boolean }
 /** Node's dotenv parser treats shell substitutions and ${variables} as literal data. */
-export function parseProviderKeys(text: string): ImportedProvider[] {
+export function parseProviderKeyFile(text: string) {
   try {
     text = text.replace(/^\uFEFF/, '')
     const seen = new Set<string>()
@@ -26,23 +26,33 @@ export function parseProviderKeys(text: string): ImportedProvider[] {
     }
     const data = parseEnv(text)
     const entries: ImportedProvider[] = []
+    const errors: { key: string; code: 'invalid_provider_key' }[] = []
     for (const [name, provider] of Object.entries(keys)) {
       const value = data[name]
       if (!value) continue
+      try {
       assertApiKey(provider, value)
       const baseUrl = provider === 'openai' && data.OPENAI_API_URL
         ? connectionBaseUrlSchema.parse(data.OPENAI_API_URL).replace(/\/+$/, '') : undefined
       entries.push({ provider, value, ...(baseUrl ? { baseUrl, allowPrivate: data.GUANXI_PROVIDER_ALLOW_PRIVATE === '1' } : {}) })
+      } catch { errors.push({ key: name, code: 'invalid_provider_key' }) }
     }
-    if (!entries.length) throw new Error('no_supported_key')
-    return entries
+    if (!entries.length && !errors.length) throw new Error('no_supported_key')
+    return { entries, errors }
   } catch { throw new ConnectionError('validation_failed', 'Provider key file is invalid') }
+}
+/** Strict convenience parser; import reports valid/invalid providers independently. */
+export function parseProviderKeys(text: string): ImportedProvider[] {
+  const result = parseProviderKeyFile(text)
+  if (result.errors.length) throw new ConnectionError('validation_failed', 'Provider key file is invalid')
+  return result.entries
 }
 /** Trusted local path only. There is deliberately no HTTP route for file import. */
 export async function importProviderKeysFile(connections: Connections, accountId: string, file: string) {
   try {
-    const entries = parseProviderKeys(await readFile(file, 'utf8'))
-    return await connections.importKeys(accountId, entries)
+    const { entries, errors } = parseProviderKeyFile(await readFile(file, 'utf8'))
+    const result = entries.length ? await connections.importKeys(accountId, entries) : { imported: [] }
+    return { ...result, ...(errors.length ? { errors } : {}) }
   } catch (error) {
     if (error instanceof ConnectionError) throw error
     throw new ConnectionError('validation_failed', 'Provider key import failed')

@@ -16,6 +16,7 @@ export async function connectionsImport(args: string[], run = importLocalProvide
       } else throw new Error('invalid_arguments')
     }
     if (!file) throw new Error('invalid_arguments')
-    return { ok: true as const, json, ...await run(dataDir, file) }
+    const result = await run(dataDir, file)
+    return { ok: !result.errors?.length, json, ...result, error: result.errors?.length ? 'provider_key_import_failed' : undefined }
   } catch { return { ok: false as const, error: 'provider_key_import_failed' } }
 }
