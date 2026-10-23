@@ -64,20 +64,22 @@ federation requests and can be cut, the topology of `ssh -L P:127.0.0.1:P`), a t
 
 ## Gates
 
-Mac, Node 26.9.0, shared lock resource `heavy`, clean tree at `9cea3bd2` (main merged twice: `6ead686f`).
+Mac, Node 26.9.0, shared lock resource `heavy`, clean tree at `b7330de4` (main merged three times, last `0ba3ad78`: reaping, judge, provider
+chat, R3 journal).
 
 | Gate | Result |
 | --- | --- |
 | `npm run typecheck` (all workspaces) | pass |
-| `npm run lint:md` | pass, 281 files, 758 links; `npm run check:licenses` pass, 675 packages, 0 not allowed; ESLint clean on every changed file |
-| `agent-dev … npm run test`, receipt `check-p_mbs9zr` | exit 0: `test:core` 2786 tests, 0 fail, 2 skipped (the two Linux-only opt-ins); ui, ui-gates, kernel, web, bench and codemod stages 0 fail |
-| `agent-dev … npm run build`, receipt `check-ic9kgtos` | exit 0 |
-| earlier, head `c1be7c8f` | test `check-egjfhg4_` failed 1 case (`relay/operational-relay.test.ts` "stop during checkout allocation": the known R2-op race, 5/5 alone; main has since fixed it in `ac42360b`); rerun `check-mnrl1dyz` green; build `check-vp4m0j6p` green |
+| `npm run lint:md` | pass, 288 files, 768 links; `check:licenses` and ESLint on changed files pass |
+| `node --test test/ms1-live/*.test.ts test/ms1/rehearsal.test.ts` | 84 pass, 0 fail (59 new live tests, the 20-case rehearsal and its helpers) |
+| `agent-dev … npm run test`, receipt `check-5zhg3qd4` | exit 0: `test:core` 2895 tests, 0 fail, 2 skipped; ui, ui-gates, kernel, web, bench and codemod stages 0 fail |
+| `agent-dev … npm run build`, receipt `check-hhsxgx9l` | exit 0 |
+| earlier (head `9cea3bd2`, before the second review) | test `check-p_mbs9zr`, build `check-ic9kgtos`; at `c1be7c8f` test `check-egjfhg4_` failed 1 case (the R2-op allocation race, fixed on main in `ac42360b`), rerun `check-mnrl1dyz` green |
 
 The UI gate G12 reads the base from the lane clone's local `main`, which is behind after merging main (it sees the owner's new approval key
 as added on the branch). The runs above therefore used `GUANXI_UI_G12_BASE=refs/remotes/origin/main`; no ref was moved.
 
-**New: 46** (config 6, identity 4, transport 4, doctor 4, boot 13, live 4, failures 7, lead 4). **Regression envelope:** the rest of the core
+**New: 59** (config 7, identity 4, transport 4, doctor 4, boot 20, live 4, failures 7, lead 4, judge 4, pins 1). **Regression envelope:** the rest of the core
 run. The K4 gate sandbox (Colima) was running; the lane did not start or reset it. `live`, `failures` and `lead` need it and fail at once with
 a clear message otherwise.
 
