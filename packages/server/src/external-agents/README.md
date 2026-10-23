@@ -145,11 +145,22 @@ a still-unknown group becomes `group_timeout`, not a confirmed release.
 Confirmed group cleanup is a POSIX process-group boundary for ordinary same-user descendants
 that stay in the group. A descendant that escaped with `setsid`/`setpgid`, or Windows process
 semantics, is outside that proof: Windows returns `unsupported_platform` and retains the holder.
-A Windows Job Object is a separate future design. No numeric PID/PGID is stored, read back from
-SQLite or accepted from a request; signals only target the in-memory child's group. Responses are
+A Windows Job Object is a separate future design. A run's signals target its in-memory child's group; the only stored
+process facts are the v3 boot-reconciliation evidence described under Storage, never accepted from a request. Responses are
 node-owned kernel calls; no HTTP subscriber owns them.
 There is no automatic resume, durable inference continuation or retry. K2 holds the transcript;
 R1/R2 integration is a later consumer, not a second run state machine.
+
+## Lead turns (LW)
+
+`RolePrompt.lead` lets the trusted [external lead service](../leads/README.md) run an ACP turn that
+exposes a node-owned loopback HTTP MCP tool, loads a saved session when the agent advertised
+`loadSession` (replayed history is ignored), reports first activity and cumulative usage, and can be
+hibernated cooperatively: `session/cancel`, a bounded wait for the cancelled response, then the usual
+process-group cleanup before the admission holder is released. Without `lead` every path above is
+unchanged. An agent without `mcpCapabilities.http` fails `mcp_http_unsupported` and Codex fails
+`lead_adapter_unsupported`. Set `runDeadlineMs` above the longest expected lead turn. A node killed
+mid-turn leaves the holder occupied and may leave an orphan agent group (see the admission section).
 
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a
@@ -213,11 +224,23 @@ and v2 admission holders. The v1 SQL, tables and row `1` are preserved; v2 appen
 database creates v1 and v2 together, an existing v1 appends only v2, and reopening v2 is a
 no-op. The sidecar's `PRAGMA user_version` and the main `guanxi.db` migration slots are untouched.
 The admission row has no PID/PGID, argv, environment, credential, email, organization or expiry
-column; `created_at` is diagnostic only and never a predicate.
+column; `created_at` is diagnostic only and never a predicate. Append-only v3 adds the separate
+`k5_admission_process` table (owner pid, machine boot time, spawn phase, group id and its start time) as evidence for
+the boot reconciliation below; it never authorizes a signal by itself.
 
-On startup there is no holder sweep, wall-clock expiry, PID probe or inference retry. A crash or
-`cleanup_unconfirmed` row stays occupied across restart, so new work for that group is refused
-until a separately designed audited administrative break exists; this slice provides none.
+There is no wall-clock expiry or inference retry. **Boot reconciliation** (LW cross-check): when a service starts, every
+dispatch first waits for `admissionReady()`, which looks at holders created by another service instance and acts only
+on proof. A holder whose owner pid is dead (signal 0 says gone; a live or unsignalable owner, including another
+instance in this process, keeps it) is released if it never reached a spawn (`prepared`). Before any owner check, a holder
+written under a different machine boot identifier (macOS `kern.bootsessionuuid`, Linux `boot_id`, read with a fixed
+executable and no shell; never a wall-clock difference, which an NTP step or a VM resume would fake) is released without
+signalling anything, because every old process is gone and a reused owner pid is someone else. An unreadable id proves no
+reboot and leaves the probing path below in charge; it stays `cleanup_unconfirmed` if a spawn may have happened unrecorded (`spawning`) or the group
+cannot be identified. A recorded group that is already gone releases the holder; a live one is SIGKILLed only when its
+pid has a start time within five seconds of the recorded spawn (a reused pid would not), and the holder is released only
+after ESRCH is observed. A holder without v3 facts (written by an older build) is never touched. Anything unprovable
+stays occupied until an audited administrative break, which is still not provided. A node killed mid-turn can leave a
+detached agent group running a billable turn until the next start reconciles it.
 Removing the plugin leaves the sidecar and vendor directories intact and never logs out a user.
 An older K5 binary ignores v2 and would bypass admission: quiesce all K5 processes before
 rollback, do not run old and new K5 concurrently on one sidecar, and do not use a schema

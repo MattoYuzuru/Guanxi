@@ -7,14 +7,14 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
 import { CodexClient } from './codex.ts'
-import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus,
+import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
   type ClaudeAuthProbe, type ProcessCleanup } from './process.ts'
 import { ExternalStore } from './store.ts'
 import { ADAPTERS, API_ENV } from './profiles.ts'
 import { admissionPolicyDigest } from './admission.ts'
 import { claudeRateLimits, codexRateLimits } from './quota.ts'
 import { ExternalAgentError, resolveRole, bindingSchema, rolesSchema, type ExternalPolicy, type AgentInstallation,
-  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId, type AdmissionHolder, type AdmissionKind } from './types.ts'
+  type Roles, type Role, type RoleBinding, type QuotaObservation, type AdapterId, type AdmissionHolder, type AdmissionKind, type LeadTurn } from './types.ts'
 
 /** API-key adapters that can run host tools. The deny configuration below is not a sandbox and
  * its runtime enforcement is the vendor's; a non-owner prompt is refused before process launch.
@@ -42,6 +42,8 @@ export interface RolePrompt {
   prompt: string
   signal?: AbortSignal
   background?: boolean
+  /** LW: expose a node-owned MCP tool, resume a saved session and allow cooperative hibernation. */
+  lead?: LeadTurn
 }
 export class ExternalAgents {
   private readonly connections: Connections
@@ -55,6 +57,11 @@ export class ExternalAgents {
   private readonly active = new Map<string, number>()
   private readonly instanceId = randomUUID()
   private closed = false
+  /** One-time boot reconciliation of holders left by a previous process; every dispatch waits for it. */
+  private reconciled: Promise<void> = Promise.resolve()
+  private reconcileDone = false
+  /** This machine boot's identifier once read (null: unreadable, so no reboot can be proven). */
+  private bootId: string | null = null
   private readonly configuredAt = new Date().toISOString()
   constructor(connections: Connections, log: SessionLog, scrubber: EgressScrubber, root: string, store: ExternalStore, policy: ExternalPolicy) {
     this.connections = connections; this.log = log; this.scrubber = scrubber; this.root = root; this.store = store
@@ -76,6 +83,36 @@ export class ExternalAgents {
       if (set.size > 1) throw new ExternalAgentError('adapter_owner_conflict')
     }
     this.policy = Object.freeze({ ...policy, installations: Object.freeze(installations) })
+    this.reconciled = this.reconcileAdmission().catch(() => undefined)
+    this.tasks.add(this.reconciled)
+    void this.reconciled.finally(() => this.tasks.delete(this.reconciled))
+  }
+  /** Resolves when boot reconciliation of holders left by a previous process has finished (never rejects). */
+  admissionReady(): Promise<void> { return this.reconciled }
+  /** Same-node boot reconciliation (LW cross-check P2-1). A holder left by a process that is now PROVEN dead must not
+   * block the account forever, but the K5 rule stands: occupancy is released only once the old agent group is
+   * confirmed gone. Owner alive (this process's other instance, or any process we cannot signal) keeps the holder;
+   * a different machine boot or a holder that never reached a spawn is released; a recorded group is killed only when
+   * its start time proves it is the child we spawned; anything unprovable stays `cleanup_unconfirmed`. */
+  private async reconcileAdmission(): Promise<void> {
+    try { await this.reconcileHolders() } finally { this.reconcileDone = true }
+  }
+  private async reconcileHolders(): Promise<void> {
+    if (process.platform === 'win32') return
+    this.bootId = await readBootId()
+    for (const { holder, process: facts } of this.store.foreignHolders(this.instanceId)) {
+      if (!facts) continue
+      // A different boot identifier is the only reboot proof (never a wall-clock difference), and it comes first: after a
+      // reboot a reused owner pid belongs to an unrelated process and every old child is gone.
+      if (this.bootId !== null && facts.bootId !== null && this.bootId !== facts.bootId) { this.store.releaseProven(holder.holderId); continue }
+      if (facts.ownerPid === process.pid) continue
+      if (processMayBeAlive(facts.ownerPid)) continue
+      if (facts.phase === 'prepared') { this.store.releaseProven(holder.holderId); continue }
+      if (facts.phase === 'spawning' || facts.groupId === null || facts.groupStartedAt === null) { this.store.markUnconfirmed(holder.holderId, 'group_timeout'); continue }
+      const state = await probeOrphanGroup(facts.groupId, facts.groupStartedAt)
+      if (state === 'gone' || (state === 'ours' && await killOrphanGroup(facts.groupId))) this.store.releaseProven(holder.holderId)
+      else this.store.markUnconfirmed(holder.holderId, 'group_timeout')
+    }
   }
   private ready() {
     if (this.closed) throw new ExternalAgentError('agent_unavailable')
@@ -98,7 +135,7 @@ export class ExternalAgents {
     return this.store.acquire({
       instanceId: this.instanceId, owner: install.ownerAccountId, adapter: install.adapter,
       billingAccount: install.billingAccount, kind, policyDigest: admissionPolicyDigest(install),
-      ceiling: install.concurrency ?? 1,
+      ceiling: install.concurrency ?? 1, process: { pid: process.pid, bootId: this.bootId },
     })
   }
   private finishHolder(holder: AdmissionHolder, cleanup: ProcessCleanup) {
@@ -253,11 +290,13 @@ export class ExternalAgents {
   }
   run(input: RolePrompt) { return this.track(() => this.execute(input)) }
   private async execute(input: RolePrompt) {
+    if (!this.reconcileDone) await this.reconciled
     const resolved = this.resolve(input.ownerAccountId, input.projectId, input.role, input.sessionRoles)
     const binding = bindingSchema.parse(resolved.binding)
     const install = this.installation(input.ownerAccountId, binding.connectionId, binding.backend)
     if (input.actorAccountId !== input.ownerAccountId && HOST_TOOL_ADAPTERS.has(install.adapter)) throw new ExternalAgentError('host_tools_owner_only')
     if (typeof input.prompt !== 'string' || !input.prompt.trim()) throw new ExternalAgentError('empty_prompt')
+    if (input.lead && (install.adapter === 'codex' || ADAPTERS[install.adapter].protocol !== 'acp-v1')) throw new ExternalAgentError('lead_adapter_unsupported')
     if (binding.params.temperature !== undefined || binding.params.maxTokens !== undefined ||
       (install.adapter !== 'codex' && binding.params.reasoning !== undefined)) throw new ExternalAgentError('unsupported_parameter')
     const runDeadlineMs = this.policy.runDeadlineMs ?? 300_000
@@ -316,7 +355,9 @@ export class ExternalAgents {
           handle.append({ type: 'prompt', data: { origin: input.actorAccountId === input.ownerAccountId ? 'typed' : 'remote', messageId, text: prompt, attachmentCount: 0 } })
           this.assertActive(dispatchSignal)
           spawnAttempted = true
+          this.store.markSpawning(holder)
           process = new AgentProcess(executable, ADAPTERS[install.adapter].args, config.env, config.cwd, this.scrubber, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
+          if (process.child.pid) this.store.markRunning(holder, process.child.pid, Date.now())
           if (install.adapter === 'codex') {
             const codex = new CodexClient(process); client = codex
             codex.on((method, params) => {
@@ -349,7 +390,8 @@ export class ExternalAgents {
             ? await client.prompt(binding.model, prompt, config.cwd, binding.params.reasoning, plan => handle!.append({ type: 'agent.plan', data: { items: plan.map(
               (item): { text: string; status: 'pending' | 'active' | 'verification_requested' } => ({ text: item.step,
                 status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
-            : await client.prompt(binding.model, prompt, config.cwd)
+            : await client.prompt(binding.model, prompt, config.cwd, input.lead && { ...input.lead,
+              ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) })
           dispatchSignal.throwIfAborted()
           const safe = this.scrubber.scrub(output)
           handle.append({ type: 'assistant.message', data: { messageId, step: 0, text: safe.text } })
@@ -391,6 +433,7 @@ export class ExternalAgents {
     return this.track(() => this.connections.dispatchAgent(owner, connectionId, actor, false,
       { signal: AbortSignal.any([this.abort.signal, ...(signal ? [signal] : []), AbortSignal.timeout(this.policy.requestTimeoutMs ?? 300_000)]) }, async (row, key, dispatchSignal) => {
         this.assertActive(dispatchSignal)
+        if (!this.reconcileDone) await this.reconciled
         const granted = this.acquire(install, 'login')
         const group = this.group(install)
         this.active.set(group, (this.active.get(group) ?? 0) + 1)
@@ -406,7 +449,9 @@ export class ExternalAgents {
           this.payment(install, row, key, config.env, 'default')
           this.assertActive(dispatchSignal)
           spawnAttempted = true
+          this.store.markSpawning(granted.holder)
           process = new AgentProcess(executable, ADAPTERS.codex.args, config.env, config.cwd, this.scrubber, dispatchSignal, this.policy.frameBytes ?? 8 * 1024 * 1024)
+          if (process.child.pid) this.store.markRunning(granted.holder, process.child.pid, Date.now())
           client = new CodexClient(process)
           await client.initialize(install.version)
           this.assertActive(dispatchSignal)

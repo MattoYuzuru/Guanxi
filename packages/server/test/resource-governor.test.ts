@@ -381,7 +381,9 @@ describe('ResourceGovernor composition inventory', () => {
     // direct construction for contexts built without a kernel.
     assert.match(context, /const governor = options\.governor \?\? new ResourceGovernor\(\)/)
     const index = readFileSync(`${sourceRoot}/index.ts`, 'utf8')
-    assert.match(index, /kernel = await bootServerKernel\(undefined, \{ db, federation: options\.federation \}\)/)
+    // The call may carry further trusted host options (for example the always-on assertion of opt-in leads),
+    // but it still boots the kernel on the node database with the federation policy.
+    assert.match(index, /kernel = await bootServerKernel\(undefined, \{ db, federation: options\.federation(?:,|\s)/)
     assert.match(index, /governor: kernel\.governor,/)
     assert.match(context, /chatExecution: new ChatJobExecutionOwner\(base\)/)
     assert.match(chat, /operation: 'chat'/)

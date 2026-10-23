@@ -112,9 +112,10 @@ An `interrupted` lead with an unacknowledged wake may resume on the next explici
 claim without a separate run retry. This retries the wake handler under a fresh fence; an
 acknowledged wake never resumes implicitly (L6).
 
-Remote attempts/grace, federation, power assertions, full wake-packet/handoff artifacts,
-external lead protocols and fallback connections are later integrations, not implemented R1
-claims. R1 stores outcome/reference metadata only and never loads a full trace into a lead.
+Remote attempts/grace, federation and power assertions are later integrations, not implemented R1
+claims. R1 stores outcome/reference metadata only and never loads a full trace into a lead. The wake
+packet, the ACP external-lead protocol, resume and the named fallback connection are consumers of this
+API in the [external leads service](../leads/README.md).
 
 ## Resources and costs
 

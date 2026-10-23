@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import type { EgressScrubber } from '../egress/types.ts'
+import type { AdmissionProcess } from './types.ts'
 import { rolesSchema, quotaObservationSchema, type Roles, type QuotaObservation, type AdapterId, type Fact,
   type AdmissionRequest, type AdmissionGrant, type AdmissionHolder, type AdmissionOccupancy, type AdmissionCleanupReason,
   ExternalAgentError } from './types.ts'
@@ -35,6 +36,19 @@ const MIGRATION_V2 = `
             ON k5_admission(owner, adapter, billing_account, state);
           INSERT INTO k5_migrations VALUES (2);`
 
+/** Append-only v3: boot reconciliation facts in their own table so the v2 holder table keeps its exact shape.
+ * A PID here is evidence for a dead-owner proof, never a handle: nothing is signalled without an identity check. */
+const MIGRATION_V3 = `
+          CREATE TABLE k5_admission_process (
+            holder_id TEXT PRIMARY KEY,
+            owner_pid INTEGER NOT NULL,
+            boot_id TEXT,
+            phase TEXT NOT NULL CHECK (phase IN ('prepared', 'spawning', 'running')),
+            group_id INTEGER,
+            group_started_at INTEGER
+          );
+          INSERT INTO k5_migrations VALUES (3);`
+
 interface AdmissionRow {
   holder_id: string
   instance_id: string
@@ -63,6 +77,7 @@ export class ExternalStore {
     try {
       if (!this.db.prepare('SELECT version FROM k5_migrations WHERE version=1').get()) this.db.exec(MIGRATION_V1)
       if (!this.db.prepare('SELECT version FROM k5_migrations WHERE version=2').get()) this.db.exec(MIGRATION_V2)
+      if (!this.db.prepare('SELECT version FROM k5_migrations WHERE version=3').get()) this.db.exec(MIGRATION_V3)
       this.db.exec('COMMIT')
     } catch (error) {
       try { this.db.exec('ROLLBACK') } catch { /* Closing the handle below is the rollback boundary. */ }
@@ -186,6 +201,8 @@ export class ExternalStore {
         VALUES(?,?,?,?,?,?,?,?,?,NULL)`)
         .run(holder.holderId, holder.instanceId, holder.owner, holder.adapter, holder.billingAccount, holder.kind,
           holder.policyDigest, holder.createdAt, holder.state)
+      if (request.process) this.db.prepare("INSERT INTO k5_admission_process (holder_id,owner_pid,boot_id,phase) VALUES (?,?,?,'prepared')")
+        .run(holder.holderId, request.process.pid, request.process.bootId)
       this.db.exec('COMMIT'); begun = false
       return { holder, admittedRuns: request.kind === 'run' ? runRows.length + 1 : 0 }
     } catch (error) {
@@ -199,6 +216,7 @@ export class ExternalStore {
     try {
       const result = this.db.prepare("DELETE FROM k5_admission WHERE holder_id=? AND instance_id=? AND state='held'")
         .run(holder.holderId, holder.instanceId)
+      if (Number(result.changes) > 0) this.db.prepare('DELETE FROM k5_admission_process WHERE holder_id=?').run(holder.holderId)
       return { released: Number(result.changes) > 0 }
     } catch { throw new ExternalAgentError('admission_release_failed') }
   }
@@ -209,6 +227,35 @@ export class ExternalStore {
         WHERE holder_id=? AND instance_id=? AND state='held'`).run(reason, holder.holderId, holder.instanceId)
       return { marked: Number(result.changes) > 0 }
     } catch { throw new ExternalAgentError('admission_release_failed') }
+  }
+  /** Written immediately before the first spawn: a holder in this phase may own a child nobody recorded. */
+  markSpawning(holder: Pick<AdmissionHolder, 'holderId'>) {
+    this.db.prepare("UPDATE k5_admission_process SET phase='spawning' WHERE holder_id=?").run(holder.holderId)
+  }
+  /** The spawned child's group (its pid) and its start time, the identity evidence for a later orphan check. */
+  markRunning(holder: Pick<AdmissionHolder, 'holderId'>, groupId: number, startedAt: number) {
+    this.db.prepare("UPDATE k5_admission_process SET phase='running', group_id=?, group_started_at=? WHERE holder_id=?").run(groupId, startedAt, holder.holderId)
+  }
+  /** Holders created by another service instance, with their process facts (null for a pre-v3 holder). */
+  foreignHolders(instanceId: string): { holder: AdmissionHolder; process: AdmissionProcess | null }[] {
+    const rows = this.db.prepare(`SELECT a.holder_id,a.instance_id,a.owner,a.adapter,a.billing_account,a.kind,a.policy_digest,a.created_at,a.state,
+        p.owner_pid,p.boot_id,p.phase,p.group_id,p.group_started_at
+      FROM k5_admission a LEFT JOIN k5_admission_process p ON p.holder_id=a.holder_id WHERE a.instance_id<>? ORDER BY a.created_at`).all(instanceId) as unknown as
+      (AdmissionRow & { owner_pid: number | null; boot_id: string | null; phase: AdmissionProcess['phase'] | null; group_id: number | null; group_started_at: number | null })[]
+    return rows.map(row => ({
+      holder: { holderId: row.holder_id, instanceId: row.instance_id, owner: row.owner, adapter: row.adapter as AdapterId, billingAccount: row.billing_account,
+        kind: row.kind, policyDigest: row.policy_digest, createdAt: row.created_at, state: row.state },
+      process: row.owner_pid == null ? null : { ownerPid: Number(row.owner_pid), bootId: row.boot_id == null ? null : String(row.boot_id), phase: row.phase!,
+        groupId: row.group_id == null ? null : Number(row.group_id), groupStartedAt: row.group_started_at == null ? null : Number(row.group_started_at) },
+    }))
+  }
+  /** Delete a holder whose owner and children are PROVEN gone. Exact id; never reached on a guess. */
+  releaseProven(holderId: string) {
+    this.db.prepare('DELETE FROM k5_admission WHERE holder_id=?').run(holderId)
+    this.db.prepare('DELETE FROM k5_admission_process WHERE holder_id=?').run(holderId)
+  }
+  markUnconfirmed(holderId: string, reason: AdmissionCleanupReason) {
+    this.db.prepare("UPDATE k5_admission SET state='cleanup_unconfirmed', cleanup_reason=? WHERE holder_id=?").run(reason, holderId)
   }
   occupancy(owner: string, adapter: AdapterId, billingAccount: string): AdmissionOccupancy {
     try {
