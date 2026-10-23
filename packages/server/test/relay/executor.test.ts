@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fixture, plan, window, reserves } from './fixture.ts'
+import type { Plan } from '../../src/relay/types.ts'
 import { canonical, hash, render, selectNotes, validateHandoff, probes } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
 import { DEFAULT_RELAY_LIMITS, RelayError } from '../../src/relay/types.ts'
@@ -327,17 +328,39 @@ test('a cancel racing seal preparation ends the run cleanly without stale_lease'
   } finally { f.close() }
 })
 
-test('verify with uncommitted work checkpoints once and runs the gate instead of stopping the run (real-model behaviour)', async () => {
+/** A workspace whose tree is dirty until a checkpoint (which moves the head), like the real git workspace. */
+function dirtyWorkspace(f: ReturnType<typeof fixture>, options: { stuck?: boolean } = {}) {
+  let dirty = true, checkpoints = 0
+  const checkpoint = f.workspace.checkpoint.bind(f.workspace), verify = f.workspace.verify.bind(f.workspace)
+  f.workspace.checkpoint = async (...args) => { checkpoints++; await checkpoint(...args); if (!options.stuck) dirty = false }
+  f.workspace.validate = async () => { if (dirty) throw new RelayError('checkout_dirty') }
+  f.workspace.verify = async (...args) => { if (dirty) throw new RelayError('checkout_dirty'); return verify(...args) }
+  return { checkpoints: () => checkpoints }
+}
+const notes = (f: ReturnType<typeof fixture>) => f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => String(e.data.text))
+const errors = (f: ReturnType<typeof fixture>) => f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'error').map(e => String(e.data.code))
+
+test('verify with uncommitted work checkpoints once, tells the model and runs the gate on the new head', async () => {
   const f = fixture(); try {
-    let dirty = true, checkpoints = 0
-    const verify = f.workspace.verify.bind(f.workspace)
-    f.workspace.checkpoint = async () => { checkpoints++; dirty = false }
-    f.workspace.verify = async (...args) => { if (dirty) throw new RelayError('checkout_dirty'); return verify(...args) }
+    const w = dirtyWorkspace(f)
     const l = await f.executor.run(f.attempt)
     assert.equal(l.items.one, 'done')
-    assert.equal(checkpoints, 1)
-    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => String(e.data.text))
-    assert.equal(notes.filter(t => t.includes('"relay":"auto_checkpoint"')).length, 1)
+    assert.equal(w.checkpoints(), 1)
+    assert.equal(notes(f).filter(t => t.includes('"relay":"auto_checkpoint"') && t.includes('"reason":"verify"')).length, 1)
+    assert.equal(l.evidence.at(-1)!.head, 'b'.repeat(40))
+    assert.ok(f.log.readAll(f.run.session_id, 'person').some(e => e.type === 'tool.result' || e.type === 'agent.note'), 'trace present')
+    assert.ok(f.prompts.some(p => p.includes('"autoCheckpoint":true')), 'the next work prompt shows the model that a checkpoint was made')
+  } finally { f.close() }
+})
+
+test('a tree still dirty after the auto checkpoint stops once with its own code (no loop)', async () => {
+  const f = fixture(); try {
+    const w = dirtyWorkspace(f, { stuck: true })
+    await f.executor.run(f.attempt).catch(() => undefined)
+    assert.equal(w.checkpoints(), 1)
+    assert.notEqual(f.relay.read(f.run.id).items.one, 'done')
+    assert.ok(errors(f).includes('checkout_dirty_after_checkpoint'))
+    assert.equal(f.relay.read(f.run.id).head, 'b'.repeat(40))
   } finally { f.close() }
 })
 
@@ -345,11 +368,48 @@ test('verify still stops the run for an unverifiable tree other than uncommitted
   const f = fixture(); try {
     let checkpoints = 0
     f.workspace.checkpoint = async () => { checkpoints++ }
-    f.workspace.verify = async () => { throw new RelayError('protected_path') }
+    f.workspace.validate = async () => { throw new RelayError('protected_path') }
     await f.executor.run(f.attempt).catch(() => undefined)
     assert.notEqual(f.relay.read(f.run.id).items.one, 'done')
     assert.equal(checkpoints, 0, 'no checkpoint is forced for a reason other than uncommitted work')
-    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => String(e.data.text))
-    assert.equal(notes.filter(t => t.includes('"relay":"auto_checkpoint"')).length, 0)
+    assert.ok(errors(f).includes('protected_path'))
+  } finally { f.close() }
+})
+
+test('verifying an item re-verifies its dependencies first at the current head', async () => {
+  const two: Plan = { ...plan, items: [plan.items[0]!, { id: 'two', title: 'second', dependsOn: ['one'], acceptance: ['true'], protectedPaths: [] }] }
+  const verified: string[] = []
+  const f = fixture({ plan: two, actions: (_p, n) => canonical(n === 1 ? { action: 'checkpoint' } : n === 2 ? { action: 'verify', item: 'two' } : { action: 'handoff' }) }); try {
+    const verify = f.workspace.verify.bind(f.workspace)
+    f.workspace.verify = async (p, item, ...rest) => { verified.push(item); return verify(p, item, ...rest) }
+    const l = await f.executor.run(f.attempt)
+    assert.deepEqual(verified.slice(0, 2), ['one', 'two'], 'the dependency gate ran before the item, in one action')
+    assert.equal(l.items.one, 'done'); assert.equal(l.items.two, 'done')
+  } finally { f.close() }
+})
+
+test('verify of an item already done at this head, or of an unknown id, is answered without a gate or a stop', async () => {
+  const f = fixture({ actions: (_p, n) => canonical(n === 1 ? { action: 'verify', item: 'one' } : n === 2 ? { action: 'verify', item: 'one' } : n === 3 ? { action: 'verify', item: 'nope' } : { action: 'handoff' }) }); try {
+    let gates = 0
+    const verify = f.workspace.verify.bind(f.workspace)
+    f.workspace.verify = async (...args) => { gates++; return verify(...args) }
+    const l = await f.executor.run(f.attempt)
+    assert.equal(l.items.one, 'done')
+    assert.ok(f.prompts.some(p => p.includes('"alreadyDone":true')))
+    assert.ok(f.prompts.some(p => p.includes('"refused":"unknown_item"')))
+    assert.deepEqual(errors(f), [])
+    assert.ok(gates >= 1)
+  } finally { f.close() }
+})
+
+test('uncommitted work at a handoff is checkpointed before the seal instead of stopping the run', async () => {
+  const f = fixture({ actions: () => canonical({ action: 'handoff' }) }); try {
+    const w = dirtyWorkspace(f)
+    await f.executor.run(f.attempt)
+    assert.equal(w.checkpoints(), 1)
+    assert.equal(notes(f).filter(t => t.includes('"relay":"auto_checkpoint"') && t.includes('"reason":"handoff"')).length, 1)
+    assert.ok(!errors(f).some(code => code.startsWith('checkout_dirty')), 'the dirty tree did not stop the run')
+    assert.ok(f.db.prepare('SELECT COUNT(*) AS n FROM relay_seals WHERE run_id=?').get(f.run.id)!.n as number >= 1, 'a seal was written')
+    assert.equal(f.relay.read(f.run.id).head, 'b'.repeat(40))
   } finally { f.close() }
 })

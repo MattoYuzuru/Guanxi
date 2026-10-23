@@ -408,7 +408,13 @@ the default heuristic covers `test`/`tests`/`spec`/`specs`/`__tests__`, `*.test.
 `test_*.py`/`conftest.py`, manifests and lockfiles (`package.json`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`),
 jest/vitest/playwright/pytest configuration, CircleCI/Travis/Azure/Buildkite/GitLab/Jenkins and `Makefile`. **The planner must
 list any other file the acceptance command depends on**; the default is a heuristic, not a proof of isolation. A dirty checkout
-cannot seal or run a gate.
+cannot seal or run a gate, so the executor commits uncommitted work through the same harness checkpoint (and its
+refusals) before a `verify` action or a handoff, records an `auto_checkpoint` note and tells the model
+(`autoCheckpoint: true`). Untracked build or test output that is not ignored is committed too, and under a protected path it
+stops the run as `protected_path`. A tree still dirty right after that checkpoint stops once as
+`checkout_dirty_after_checkpoint`. Gate evidence is bound to a head and a new head reopens every item, so `verify` re-runs the
+gates of an item's not-done dependencies first, in dependency order; an unknown id or an item already done at this head is
+answered to the model instead of stopping the run.
 
 Gates materialize raw objects without archive attributes, `.git` or untracked files, restore planner-owned
 protected paths from the base revision and run acceptance argv in K4 Read-only mode.
