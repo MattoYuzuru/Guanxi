@@ -19,6 +19,7 @@ import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
 import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
+import { GlossaryPage } from './features/voice/GlossaryPage.tsx'
 import { InspectorPage } from './features/inspector/InspectorPage.tsx'
 import { NativeAgentPage } from './features/native-agent/NativeAgentPage.tsx'
 import { UiLocaleProvider } from '@guanxi/ui'
@@ -80,6 +81,7 @@ export function App() {
         {route.name === 'attachments' && <AttachmentsPage />}
         {route.name === 'settings' && <SettingsPage />}
         {route.name === 'developerComponents' && <DeveloperCatalogPage />}
+        {route.name === 'voiceGlossary' && <GlossaryPage />}
         {route.name === 'projects' && <ProjectsPage />}
         {route.name === 'inspector' && <InspectorPage sessionId={route.sessionId} />}
         {route.name === 'notFound' && (

@@ -163,6 +163,8 @@ function breadcrumb(route: Route): string {
       return t('app.navigation.settings')
     case 'developerComponents':
       return t('shell.catalog')
+    case 'voiceGlossary':
+      return t('voiceGlossary.navigation')
     case 'inspector':
       return t('inspector.navigation')
     case 'notFound':

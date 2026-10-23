@@ -63,6 +63,7 @@ export type Route =
   | { name: 'projects' }
   | { name: 'settings' }
   | { name: 'developerComponents' }
+  | { name: 'voiceGlossary' }
   | { name: 'inspector'; sessionId: string | null }
   | { name: 'notFound'; path: string }
 
@@ -100,6 +101,7 @@ export function parseRoute(pathWithSearch: string): Route {
     }
   }
   if (first === 'settings' && rest.length === 0) return { name: 'settings' }
+  if (first === 'settings' && rest.length === 2 && rest[0] === 'voice' && rest[1] === 'glossary') return { name: 'voiceGlossary' }
   if (first === 'settings' && rest.length === 2 && rest[0] === 'developer' && rest[1] === 'components') {
     return { name: 'developerComponents' }
   }
@@ -127,6 +129,7 @@ export const paths = {
   },
   settings: () => '/settings',
   developerComponents: () => '/settings/developer/components',
+  voiceGlossary: () => '/settings/voice/glossary',
   inspector: (sessionId?: string | null) =>
     sessionId ? `/inspector/${encodeURIComponent(sessionId)}` : '/inspector',
 }

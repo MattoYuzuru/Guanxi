@@ -50,6 +50,7 @@ export function useShellController() {
       { id: 'recipes', label: t('recipes.navigation'), path: paths.recipes() },
       { id: 'attachments', label: t('attachments.navigation'), path: paths.attachments() },
       { id: 'inspector', label: t('inspector.navigation'), path: paths.inspector() },
+      { id: 'voice-glossary', label: t('voiceGlossary.navigation'), path: paths.voiceGlossary() },
       { id: 'components', label: t('shell.catalog'), path: paths.developerComponents() },
     ].map(item => ({ id: item.id, label: item.label, execute: () => navigate(item.path) })),
     ...sessions.sessions.map(session => ({ id: `session:${session.sessionId}`,
