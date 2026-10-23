@@ -257,3 +257,33 @@ test('device enrollment is not served on the federation listener: an unsigned ca
   // The signed API is still there: an unsigned request is refused by authentication, not by routing.
   assert.equal((await fetch(`${federation}/api/federation/handshake`)).status, 401)
 })
+
+test('an MS1 node accepts only counted dispatch grants: an uncounted (plain chat) job is refused before authentication, a counted one reaches it', async t => {
+  const { root, settings } = await pairing(t, 'executor')
+  const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: settings })
+  t.after(() => server.close())
+  const url = `http://127.0.0.1:${settings.listen.federationPort}/api/federation/attempts/dispatch`
+  const post = (body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+  const job = { kind: 'local_inference', model: 'm', context: 100, outputTokens: 10, deadline: 1, messages: [{ role: 'user', content: 'hi' }] }
+  for (const body of [{ grant: { job } }, { grant: {} }, {}, 'not json', { grant: { job: { ...job, counted: null } } }]) {
+    const response = await post(body)
+    assert.deepEqual([response.status, await response.json()], [403, { code: 'uncounted_refused' }], JSON.stringify(body))
+  }
+  const counted = await post({ grant: { job: { ...job, counted: { contentSha256: 'a'.repeat(64), renderedSha256: 'b'.repeat(64), tokens: 5, digest: 'd', contextTokens: 100 } } } })
+  assert.equal(counted.status, 401, 'a counted grant is judged by authentication')
+})
+
+test('the pairing\'s connection serves relay calls through a transport only: a plain local chat on it is refused instead of silently using the node\'s own Ollama', async t => {
+  const { root, settings } = await pairing(t)
+  const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: settings })
+  t.after(() => server.close())
+  const connections = server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
+  const request = { model: 'ms1-guard-probe', messages: [{ role: 'user' as const, content: 'hi' }], options: { num_ctx: 1000, num_predict: 10 } }
+  await assert.rejects(connections.localChat('local', server.ms1Live!.connectionId, request, { runId: 'r', requestId: 'q' }),
+    (error: unknown) => (error as { code?: string }).code === 'policy_denied', 'refused before any Ollama request')
+  await assert.rejects(connections.localChat('local', server.ms1Live!.connectionId, request, { runId: 'r', requestId: 'q', background: true }),
+    (error: unknown) => (error as { code?: string }).code === 'policy_denied')
+  // Another local-runtime connection of the owner is untouched by the guard.
+  const other = connections.create('local', { name: 'my ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: false })
+  await assert.rejects(connections.localChat('local', other.id, request, { runId: 'r', requestId: 'q' }), (error: unknown) => (error as { code?: string }).code !== 'policy_denied')
+})

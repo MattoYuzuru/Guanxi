@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import type { NodeIdentity } from '@guanxi/contract/federation'
+import { ConnectionError } from '../connections/errors.ts'
 import type { Connections } from '../connections/service.ts'
 import type { ExternalPolicy } from '../external-agents/types.ts'
 import { FederationChannel } from '../federation/channel.ts'
@@ -136,6 +137,14 @@ export class Ms1LiveNode {
         throw error
       }
     })
+    // This connection exists for relay calls, which always carry a transport (the remote session, or the attached server). A call
+    // without one would be answered by this node's own Ollama, which the pairing exists to avoid: a native agent or a chat that
+    // picked the connection by name must be refused, not served silently from the wrong machine.
+    const guarded = this.connection
+    const localChat = connections.localChat.bind(connections)
+    connections.localChat = (accountId, id, request, call) => id === guarded && !call.transport
+      ? Promise.reject(new ConnectionError('policy_denied', 'This connection serves relay calls on the executor only'))
+      : localChat(accountId, id, request, call)
     if (this.hasLead) {
       this.leadConnection = ensure(MS1_LEAD_CONNECTION, 'agent', () =>
         connections.create(owner, { name: MS1_LEAD_CONNECTION, kind: 'agent', provider: 'claude-code' as 'codex', auth: 'cli_login' }))
