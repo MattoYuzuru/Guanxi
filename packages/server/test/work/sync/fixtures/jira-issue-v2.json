@@ -1,0 +1,12 @@
+{
+  "id": "10002",
+  "key": "PROJ-12",
+  "fields": {
+    "summary": "Add tracker sync",
+    "description": "Initial description from Jira Data Center.",
+    "priority": { "name": "High" },
+    "assignee": { "name": "tracker-user" },
+    "labels": ["backend"],
+    "updated": "2026-10-20T12:00:00.000+0000"
+  }
+}

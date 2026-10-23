@@ -1,0 +1,174 @@
+# Agent browser policy core
+
+**Status:** implemented and locally validated by unit tests. This directory is a pure core
+slice: it contains no `playwright-core`, no Chromium, no HTTP route, no socket, no timer and no
+storage outside the site-grant SQLite file. The browser host, lease, streamed pane, Bridge
+extension, encrypted session bundles, route wiring and MCP tool surface are later work
+([ADR-0035](../../../../docs/decisions/0035-agent-browser-and-site-sessions.md)).
+
+`types.ts` holds the shared types. `origin-policy.ts` is pure and deterministic.
+`site-grants.ts` owns `<dataDir>/browser.sqlite` and its append-only `c1_migrations` table.
+
+## Origin policy
+
+`normalizeOrigin(url)` accepts an absolute http(s) URL and returns `scheme://host[:port]`:
+the host is lowercased, IDN labels become punycode through the WHATWG URL parser, every
+trailing dot is removed and default ports (`http:80`, `https:443`) are dropped. Userinfo,
+path, query and fragment are not part of an origin. A relative reference, a non-http(s) scheme
+or an unparseable value throws `TypeError`.
+
+A `RunBrowserPolicy` carries `mode` (`read_only` or `full`) plus canonical `readable` and
+`writable` origins. Policy arrays are a caller precondition; `decide` never normalizes or
+mutates them. `decide(policy, action)` returns `{ allowed, code, addReadable? }` and reads no
+clock, storage, network or environment.
+
+`via` and `fromOrigin` are assertions supplied by the host. This pure layer cannot prove that a
+link was clicked; the route/tool boundary must derive both from its own navigation state and
+never from model or tool JSON. Letting a model choose `via: 'policy'` or `'clean_link'` would
+bypass the model-data rule.
+
+| Action | Rule |
+| --- | --- |
+| `navigate`, origin readable | allowed, except a `via: 'model'` URL carrying data (below). |
+| `navigate`, `via: 'policy'` | allowed only when the target origin is readable; never mutates the policy. |
+| `navigate`, `via: 'clean_link'` | from a readable `fromOrigin` to a new origin: allowed with `addReadable` only when the URL is clean. The added origin is readable, never writable. |
+| `navigate`, `via: 'model'` | non-readable origin → `origin_not_allowed`; readable origin carrying data → `data_url_refused`. |
+| `type`, `submit`, `upload`, `download` in `read_only` | `read_only` on every origin, readable or not. |
+| `click` | readable origin only, in both modes. |
+| `type`, `submit`, `upload`, `download` in `full` | target origin must be writable, else `write_not_allowed`. |
+| `javascript:`, `data:`, `file:`, `blob:` | always `scheme_refused`; malformed references are `invalid_url`. |
+| `navigate` with missing/unknown `via` | `invalid_action`; never falls through to clean-link handling. |
+| unknown action kind (for example `evaluate` or `scroll`) | `invalid_action` before any origin check; only the action kinds in the spec are whitelisted. |
+| unknown runtime `mode` | write actions fail closed as `read_only`. |
+
+### Clean-link heuristic (exact)
+
+A URL is clean only when all of these hold:
+
+- scheme is http or https, and it has no username or password;
+- it has no query string and no fragment, including an empty `?` or `#`;
+- the pathname is percent-decoded first, including its leading `/`, and is at most 200 characters;
+- that decoded pathname is split on `/`, and every segment is at most 32 characters **or** is not
+  composed solely of `[A-Za-z0-9_+=-]`;
+- every lowercased/punycode hostname label is at most 32 characters **or** is not composed solely
+  of that alphabet, so a hostname cannot carry DNS-exfiltration data either.
+
+In other words, a path segment or host label longer than 32 characters drawn only from that
+base64/hex-like alphabet is data-carrying. This is intentionally conservative: a 33-letter
+English word is refused. There is no query allowance at all; `?q=hello` is not a clean link.
+Malformed percent escapes are measured as literal text.
+
+### Model-URL data heuristic (exact)
+
+A `via: 'model'` navigate URL is data-carrying when any of these hold:
+
+- it has a username or password;
+- it has a non-empty fragment;
+- its percent-decoded pathname plus percent-decoded query is longer than 200 characters;
+- it has more than 8 query parameters;
+- any query parameter **name or value** is longer than 64 characters;
+- any query parameter name or value is longer than 32 characters and composed solely of
+  `[A-Za-z0-9_+=-]`;
+- the pathname is percent-decoded first and split on `/`; any resulting segment is longer than
+  64 characters;
+- any resulting segment is longer than 32 characters and composed solely of the same alphabet,
+  or any part of it split on `.`, `-` or `_` is.
+
+The query is split on `&` and the first `=`; `+` stays a literal base64 character rather than
+becoming a space. The decoded path and query share one 200-character budget, and more than eight
+query parameters are refused, so data cannot be spread across many short segments or parameters.
+A non-empty fragment is refused outright. Splitting a path segment on `.`, `-` and `_` keeps a
+separator from hiding one long data run inside an otherwise mixed segment. The query-name checks
+are stricter than the minimum in the decision text, on purpose.
+
+## Site grants
+
+`SiteGrantStore(path, clock)` creates `<dataDir>/browser.sqlite` with directory mode `0700` and
+file mode `0600`, WAL, `foreign_keys=ON` and `busy_timeout=5000`. Migration v1 creates:
+
+- `site_grants(id, account_id, project_id, role, domain, source, sync_mode, scopes, access,
+  expires_at, last_used_at, created_by, created_at, revoked_at)`, with `source` checked against
+  `login`, `bridge_once`, `bridge_run_start`, `bridge_live`, `live_chrome`, `access` checked
+  against `read`/`write`, and scope/project indexes;
+- `site_contexts(context_id, grant_id, opened_at, closed_at)` with a foreign key to the grant.
+
+`scopes` is a JSON array of short scope names such as `cookies` or `storage`; it is metadata,
+not session material. The name pattern limits length and characters, but it cannot prove that a
+short string resembling a name is not a value. The store never has a column, input field or
+return field for cookie values, passwords or tokens. Every input is scanned recursively for field names matching
+`cookie`, `password`/`passwd`, `token` or `secret`, and such a call is refused with
+`secret_material_rejected` before a row is written.
+
+### Methods
+
+- `grant(principal, input, channel)` — account and creator come from an authenticated user
+  principal; forged account/time fields are ignored. The safe default channel is `agent`, so a
+  caller must pass `'ui'` explicitly. `'agent'` is always refused with `agent_cannot_grant`.
+- `revoke(principal, grantId, now)` — only the grant's own account may revoke. Records
+  `revoked_at` (first value wins) and returns exactly the still-open `context_id`s for that
+  grant. The store does not close them; the browser host must remove them within one lease TTL.
+- `grantsFor(accountId, projectId, role, now)` — active grants only: not revoked and
+  `expires_at` null or strictly after `now`. A run context therefore sees only its project and
+  role.
+- `openContext(contextId, grantId, accountId, projectId, role)` — host-authorized and scoped by
+  all of account, project and role. An unknown grant is `grant_not_found`; a grant that exists
+  in another scope is `context_foreign`; revoked and expired grants are refused. A context id
+  bound to another grant and a previously closed context id are refused as well. Reopening the
+  same open context is idempotent.
+- `closeContext(contextId, now?)` — closes an open context; returns false when absent or
+  already closed. It is keyed by context id only and is an internal host operation.
+- `touch(grantId, now, accountId, projectId, role)` — records `last_used_at` for an active grant
+  in the same required scope; an unknown grant is `grant_not_found`, a grant in another scope is
+  `context_foreign`, and revoked or expired grants return false.
+- `contextsToClose(now)` — returns the still-open contexts whose grant is revoked or expired at
+  `now`, in open order. Revocation records only `revoked_at`; the browser host calls this method
+  and closes the returned contexts within one lease TTL.
+
+### Domain normalization
+
+`normalizeSiteDomain` accepts a bare host or an http(s) URL, lowercases it, uses the URL parser
+for punycode, strips trailing dots and returns the exact host the user entered. It rejects
+non-http(s) URLs, bare-host ports/paths/userinfo, IP literals, single-label hosts, wildcards (`*`)
+and a bare known public suffix such as `co.uk`.
+
+There is no registrable-domain broadening. `www.example.com` is stored as `www.example.com`; a
+grant for `example.com` does not cover `www.example.com`, and a grant for `github.com` does not
+cover `gist.github.com`; each host must be granted separately. A context's origin matches a grant
+only by exact host equality. The small public-suffix set is used only to refuse a grant for a
+suffix itself and never to derive a domain. Subdomain grouping, if ever needed, requires the real
+Public Suffix List (residual).
+
+### Error codes
+
+`SiteGrantStoreError.code` is one of `invalid_actor`, `agent_cannot_grant`, `invalid_grant`,
+`invalid_domain`, `wildcard_domain_forbidden`, `secret_material_rejected`, `invalid_expiry`,
+`grant_not_found`, `grant_revoked`, `grant_expired`, `context_foreign`, `context_closed` or
+`write_failed`.
+
+## Checks
+
+```bash
+nice -n 10 node --test packages/server/test/browser/*.test.ts
+nice -n 10 npx tsc --noEmit -p packages/server
+npx markdownlint-cli2 packages/server/src/browser/README.md docs/plans/lanes/C1-a.handoff.md
+```
+
+The two test files cover normalization and each origin rule, clean-link and model heuristics,
+the explicit Read-only form-submission block, full-mode writable checks, refused schemes,
+missing/unknown `via` and `mode`, unknown action kinds and other fail-closed paths, determinism,
+migration reopen and file modes, the agent-channel and wildcard refusals, project/role/account
+scoping, expiry, revocation context lists, `contextsToClose`, context lifecycle including the required
+account/project/role guard, secret-field rejection and `touch`.
+
+## Residuals
+
+- `playwright-core` browser host, per-run contexts, profile encryption and browser leases.
+- Streamed pane, takeover/pop-out UI and Connections → Browser page.
+- Bridge extension, per-site host permissions, live Chrome delegation and bookmark/history
+  import.
+- Cookie scrubber rules, encrypted session bundles in the account vault and the
+  planted-cookie/injection-page validation from ADR-0035.
+- Routes, contract types and the MCP-shaped agent tool surface.
+- `via` and `fromOrigin` remain host assertions; route/tool validation must enforce them.
+- Subdomain grouping for site grants is deliberately absent for now; it would need the real
+  Public Suffix List (later). A grant matches only its exact normalized host.

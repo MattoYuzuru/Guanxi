@@ -1,0 +1,15 @@
+{
+  "id": 1007,
+  "number": 7,
+  "title": "Add tracker sync (remote edit)",
+  "body": "Updated description owned by the tracker.",
+  "state": "open",
+  "labels": [
+    { "id": 11, "name": "bug" },
+    { "id": 13, "name": "priority:urgent" },
+    { "id": 14, "name": "guanxi:in_progress" }
+  ],
+  "assignee": { "login": "remote-editor" },
+  "assignees": [{ "login": "remote-editor" }],
+  "updated_at": "2026-10-20T13:00:00Z"
+}

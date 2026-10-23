@@ -1,0 +1,1695 @@
+/**
+ * T1 plugin manager core (ADR-0022 §7; ROADMAP P1). A local directory is the
+ * only supported source in this slice: inspect validates and hashes it, install
+ * copies it transactionally into `<pluginsDir>/<id>@<version>/`, and the enabled
+ * set plus exact versions and integrity live in two JSON files.
+ *
+ * T0 is core-only and T2 needs the later out-of-process sandbox. Build scripts
+ * are never executed here; an explicit approval is only recorded in the lock.
+ */
+import { randomBytes } from 'node:crypto'
+import {
+  closeSync,
+  constants,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  unlink,
+} from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import {
+  KERNEL_API_VERSION,
+  readPackageManifest,
+  satisfiesEngine,
+  type GuanxiManifest,
+} from '@guanxi/kernel'
+import {
+  computeDirectoryIntegrity,
+  computeDirectoryIntegritySync,
+  SourceIntegrityError,
+} from './integrity.ts'
+
+export { SourceIntegrityError } from './integrity.ts'
+
+export const BUILD_SCRIPT_NAMES = ['preinstall', 'install', 'postinstall', 'prepare'] as const
+
+/** Fault points reachable during a successful install, in call order. */
+export const INSTALL_FAULT_POINTS = [
+  'install:start',
+  'install:inspected',
+  'install:engine',
+  'install:state-read',
+  'install:peer',
+  'install:trust',
+  'install:build-scripts',
+  'install:expected-integrity',
+  'install:staging-created',
+  'install:copied',
+  'install:staged-integrity',
+  'install:metadata-planned',
+  'install:before-plugin-rename',
+  'install:plugin-renamed',
+  'install:manifest-temp',
+  'install:manifest-renamed',
+  'install:lock-temp',
+  'install:lock-renamed',
+  'install:before-previous-remove',
+  'install:committed',
+] as const
+
+export const UNINSTALL_FAULT_POINTS = [
+  'uninstall:start',
+  'uninstall:state-read',
+  'uninstall:before-state-write',
+  'uninstall:manifest-temp',
+  'uninstall:manifest-renamed',
+  'uninstall:lock-temp',
+  'uninstall:lock-renamed',
+  'uninstall:committed',
+] as const
+
+export const SET_ENABLED_FAULT_POINTS = [
+  'set-enabled:start',
+  'set-enabled:state-read',
+  'set-enabled:manifest-temp',
+  'set-enabled:manifest-renamed',
+  'set-enabled:committed',
+] as const
+
+/** The primary enumeration used by install rollback tests. */
+export const FAULT_POINTS = INSTALL_FAULT_POINTS
+
+export type InstallFaultPoint = (typeof INSTALL_FAULT_POINTS)[number]
+export type UninstallFaultPoint = (typeof UNINSTALL_FAULT_POINTS)[number]
+export type SetEnabledFaultPoint = (typeof SET_ENABLED_FAULT_POINTS)[number]
+export type PluginFaultPoint = InstallFaultPoint | UninstallFaultPoint | SetEnabledFaultPoint
+
+export interface PluginManagerHooks {
+  /** Throw or reject to exercise rollback at a named step. */
+  point(name: PluginFaultPoint): void | Promise<void>
+}
+
+export type PluginManagerErrorCode =
+  | 'engine_mismatch'
+  | 'peer_missing'
+  | 'build_scripts_unapproved'
+  | 'trust_tier_unsupported'
+  | 'integrity_mismatch'
+  | 'invalid_package_json'
+  | 'invalid_plugin_version'
+  | 'invalid_state'
+  | 'plugin_not_installed'
+  | 'plugin_directory_exists'
+  | 'version_exists'
+  | 'plugins_busy'
+  | 'dependency_in_use'
+  | 'invalid_arguments'
+
+export interface PluginManagerErrorDetails {
+  readonly pluginId?: string
+  readonly missing?: readonly string[]
+  readonly dependents?: readonly string[]
+  readonly buildScripts?: readonly string[]
+  readonly expected?: string
+  readonly actual?: string
+}
+
+export class PluginManagerError extends Error {
+  readonly code: PluginManagerErrorCode
+  readonly details: PluginManagerErrorDetails
+
+  constructor(code: PluginManagerErrorCode, message: string, details: PluginManagerErrorDetails = {}) {
+    super(message)
+    this.name = 'PluginManagerError'
+    this.code = code
+    this.details = details
+  }
+}
+
+/**
+ * Thrown by a fault-injection hook to model a process kill: the manager
+ * propagates it without running rollback so a test can build a fresh manager
+ * and exercise `recover()`.
+ */
+export class SimulatedCrash extends Error {
+  readonly simulatedCrash = true
+
+  constructor(point: string) {
+    super(`simulated crash at ${point}`)
+    this.name = 'SimulatedCrash'
+  }
+}
+
+export interface BootSkip {
+  readonly id: string
+  readonly directory: string
+  readonly reason: 'missing_directory' | 'integrity_mismatch'
+  readonly expectedIntegrity: string
+  /** Null when the directory is missing. */
+  readonly actualIntegrity: string | null
+}
+
+export interface RecoveryReport {
+  /** Set when another manager holds the exclusive lock; nothing was removed. */
+  readonly skipped?: 'plugins_busy'
+  /** True when a `.staging` directory was removed. */
+  readonly removedStaging: boolean
+  /** Unreferenced `<id>@<version>` directory names, sorted. */
+  readonly removedDirectories: readonly string[]
+  /** Enabled ids dropped because the lock has no entry, sorted. */
+  readonly removedEnabledIds: readonly string[]
+  /** Stale state temporary files removed from `pluginsDir`, sorted. */
+  readonly removedTemporaryFiles: readonly string[]
+}
+
+export interface PluginManagerOptions {
+  /** Directory that holds installed plugin directories and the two state files. */
+  readonly pluginsDir: string
+  /** Version that `engines.guanxi` ranges are checked against. */
+  readonly kernelApiVersion?: string
+  /** Services provided by plugins already loaded outside this manager. */
+  readonly loaded: () => { readonly provides: readonly string[] }
+  /** Injectable time source for the lock's `installedAt`. */
+  readonly clock?: () => Date
+  readonly hooks?: PluginManagerHooks
+}
+
+export interface InspectResult {
+  readonly manifest: GuanxiManifest
+  readonly integrity: string
+  readonly buildScripts: string[]
+  readonly license: string | null
+}
+
+export interface InstalledPlugin {
+  readonly id: string
+  readonly version: string
+  readonly integrity: string
+  readonly enabled: boolean
+  /** Absolute installed directory. */
+  readonly path: string
+  /** Relative directory name inside `pluginsDir`. */
+  readonly directory: string
+  readonly requires: string[]
+  readonly provides: string[]
+  readonly buildScripts: string[]
+  readonly buildScriptsApproved: boolean
+  readonly installedAt: string | null
+}
+
+export interface InstallOptions {
+  readonly approveBuildScripts?: boolean
+  readonly expectedIntegrity?: string
+}
+
+export interface BootSetOptions {
+  readonly safeMode?: boolean
+  /** Reports an enabled entry whose directory is missing or fails its integrity check. */
+  readonly onSkip?: (skip: BootSkip) => void
+}
+
+interface InspectedPlugin extends InspectResult {
+  readonly version: string
+  readonly packageJson: Record<string, unknown>
+}
+
+interface LockedPlugin {
+  readonly id: string
+  readonly version: string
+  readonly integrity: string
+  readonly directory: string
+  readonly requires: readonly string[]
+  readonly provides: readonly string[]
+  readonly buildScripts: readonly string[]
+  readonly buildScriptsApproved: boolean
+  readonly installedAt: string | null
+  /** False for a hand-written or older lock entry whose `provides` is unknown. */
+  readonly providesKnown: boolean
+}
+
+interface StateSnapshot {
+  /** Exact bytes, or null when the file did not exist. */
+  readonly plugins: Buffer | null
+  readonly lock: Buffer | null
+}
+
+interface ManagerState {
+  readonly enabled: Set<string>
+  readonly plugins: Map<string, LockedPlugin>
+  readonly snapshot: StateSnapshot
+}
+
+interface ExclusiveLockInfo {
+  /** Null when the file is not our JSON, for example a hand-written marker. */
+  readonly token: string | null
+  readonly pid: number | null
+  readonly createdAt: string | null
+  readonly mtimeMs: number
+}
+
+interface InstallRollbackContext {
+  readonly snapshot: StateSnapshot | undefined
+  readonly stagingDir: string | null
+  readonly target: string | null
+  readonly targetCreated: boolean
+  readonly pluginsDirCreated: boolean
+  readonly stagingRootCreated: boolean
+}
+
+const PLUGIN_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+const PLUGIN_DIRECTORY_NAME = /^[a-z][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+@[^@/\\]+$/
+const STATE_TEMPORARY_NAME = /^\.plugins(?:\.lock)?\.json\.[0-9a-f]+\.tmp$/
+const LOCK_FILE_NAME = '.lock'
+const LOCK_STALE_MS = 30 * 60 * 1000
+const EMPTY_RECOVERY: RecoveryReport = {
+  removedStaging: false,
+  removedDirectories: [],
+  removedEnabledIds: [],
+  removedTemporaryFiles: [],
+}
+const BUSY_RECOVERY: RecoveryReport = { ...EMPTY_RECOVERY, skipped: 'plugins_busy' }
+
+function lockBody(token: string): string {
+  return `${JSON.stringify({ pid: process.pid, token, createdAt: new Date().toISOString() })}
+`
+}
+
+function processIsAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // ESRCH means no such process; EPERM means it exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+  }
+}
+
+function lockInfoFromBytes(bytes: Buffer, mtimeMs: number): ExclusiveLockInfo {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(bytes.toString('utf8'))
+  } catch {
+    parsed = undefined
+  }
+  const record: Record<string, unknown> = isRecord(parsed) ? parsed : {}
+  const rawCreatedAt = typeof record['createdAt'] === 'string' ? record['createdAt'] : record['startedAt']
+  return {
+    token: typeof record['token'] === 'string' ? record['token'] : null,
+    pid: typeof record['pid'] === 'number' && Number.isInteger(record['pid']) ? record['pid'] : null,
+    // `startedAt` is accepted from locks written before the rename to `createdAt`.
+    createdAt: typeof rawCreatedAt === 'string' ? rawCreatedAt : null,
+    mtimeMs,
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSimulatedCrash(error: unknown): error is SimulatedCrash {
+  return error instanceof SimulatedCrash || (isRecord(error) && error['simulatedCrash'] === true)
+}
+
+function rollbackFailure(step: string, error: unknown): Error {
+  return new Error(`rollback step "${step}" failed: ${error instanceof Error ? error.message : String(error)}`, {
+    cause: error,
+  })
+}
+
+/** Attach rollback failures instead of swallowing them; the original error stays primary. */
+function attachRollbackFailures(error: unknown, failures: readonly unknown[]): unknown {
+  if (failures.length === 0) return error
+  const aggregate = new AggregateError(failures, `plugin rollback failed with ${failures.length} error(s)`)
+  if (error instanceof Error) {
+    try {
+      error.cause = aggregate
+    } catch {
+      // A frozen or otherwise non-extensible error keeps its original shape.
+    }
+  }
+  return error
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function parseJson(text: string, path: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch (error) {
+    throw new PluginManagerError('invalid_state', `${path}: invalid JSON (${String(error)})`)
+  }
+}
+
+function parsePluginsFile(text: string, path: string): Set<string> {
+  const parsed = parseJson(text, path)
+  const enabled = new Set<string>()
+  const add = (value: unknown, fallback: boolean): void => {
+    if (typeof value === 'string') {
+      enabled.add(value)
+      return
+    }
+    if (!isRecord(value)) throw new PluginManagerError('invalid_state', `${path}: invalid plugin entry`)
+    const id = value['id']
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new PluginManagerError('invalid_state', `${path}: a plugin entry has no id`)
+    }
+    if (value['enabled'] !== false && fallback) enabled.add(id)
+  }
+
+  if (Array.isArray(parsed)) {
+    for (const entry of parsed) add(entry, true)
+    return enabled
+  }
+  if (!isRecord(parsed)) throw new PluginManagerError('invalid_state', `${path}: must be a JSON object`)
+  const list = parsed['enabled']
+  if (Array.isArray(list)) {
+    for (const entry of list) add(entry, true)
+    return enabled
+  }
+  if (isRecord(list)) {
+    for (const [id, value] of Object.entries(list)) {
+      if (value !== false) enabled.add(id)
+    }
+    return enabled
+  }
+  const plugins = parsed['plugins']
+  if (Array.isArray(plugins)) {
+    for (const entry of plugins) add(entry, true)
+    return enabled
+  }
+  if (isRecord(plugins)) {
+    for (const [id, value] of Object.entries(plugins)) {
+      if (typeof value === 'boolean') {
+        if (value) enabled.add(id)
+      } else if (isRecord(value)) {
+        if (value['enabled'] !== false) enabled.add(id)
+      } else if (typeof value === 'string') {
+        enabled.add(id)
+      } else {
+        throw new PluginManagerError('invalid_state', `${path}.plugins.${id}: invalid entry`)
+      }
+    }
+    return enabled
+  }
+  // Tolerate an older direct `{ id: true | { enabled } }` map.
+  for (const [id, value] of Object.entries(parsed)) {
+    if (id === 'version' || id === 'schemaVersion') continue
+    if (value === true) enabled.add(id)
+    else if (value === false) continue
+    else if (isRecord(value) && value['enabled'] !== false) enabled.add(id)
+  }
+  return enabled
+}
+
+function lockedPlugin(id: string, value: unknown, path: string): LockedPlugin {
+  if (!isRecord(value)) throw new PluginManagerError('invalid_state', `${path}: invalid lock entry for "${id}"`)
+  const version = value['version']
+  const integrity = value['integrity'] ?? value['checksum']
+  if (typeof version !== 'string' || version.length === 0) {
+    throw new PluginManagerError('invalid_state', `${path}: lock entry "${id}" has no version`)
+  }
+  if (typeof integrity !== 'string' || !integrity.startsWith('sha256-')) {
+    throw new PluginManagerError('invalid_state', `${path}: lock entry "${id}" has no sha256- integrity`)
+  }
+  const expectedDirectory = `${id}@${version}`
+  const directory = value['directory']
+  if (directory !== expectedDirectory) {
+    throw new PluginManagerError(
+      'invalid_state',
+      `${path}: lock entry "${id}" directory must be "${expectedDirectory}"`,
+    )
+  }
+  if (directory.includes('/') || directory.includes('\\')) {
+    throw new PluginManagerError('invalid_state', `${path}: lock entry "${id}" has an unsafe directory`)
+  }
+  const installedAt = typeof value['installedAt'] === 'string' ? value['installedAt'] : null
+  return {
+    id,
+    version,
+    integrity,
+    directory,
+    requires: stringArray(value['requires']),
+    provides: stringArray(value['provides']),
+    buildScripts: stringArray(value['buildScripts']),
+    buildScriptsApproved: value['buildScriptsApproved'] === true,
+    installedAt,
+    providesKnown: Object.prototype.hasOwnProperty.call(value, 'provides'),
+  }
+}
+
+function parseLockFile(text: string, path: string): Map<string, LockedPlugin> {
+  const parsed = parseJson(text, path)
+  if (!isRecord(parsed)) throw new PluginManagerError('invalid_state', `${path}: must be a JSON object`)
+  const source = parsed['plugins'] ?? parsed['packages'] ?? parsed['locked']
+  const plugins = new Map<string, LockedPlugin>()
+  const add = (id: string, value: unknown): void => {
+    if (plugins.has(id)) throw new PluginManagerError('invalid_state', `${path}: duplicate lock entry "${id}"`)
+    plugins.set(id, lockedPlugin(id, value, path))
+  }
+  if (source === undefined) {
+    // Tolerate an older direct `{ id: { version, integrity } }` map.
+    for (const [id, entry] of Object.entries(parsed)) {
+      if (id === 'version' || id === 'schemaVersion') continue
+      if (isRecord(entry) && typeof entry['version'] === 'string') add(id, entry)
+    }
+    return plugins
+  }
+  if (Array.isArray(source)) {
+    for (const entry of source) {
+      if (!isRecord(entry) || typeof entry['id'] !== 'string' || entry['id'].length === 0) {
+        throw new PluginManagerError('invalid_state', `${path}: a lock entry has no id`)
+      }
+      add(entry['id'], entry)
+    }
+  } else if (isRecord(source)) {
+    for (const [id, entry] of Object.entries(source)) add(id, entry)
+  } else {
+    throw new PluginManagerError('invalid_state', `${path}: plugins must be an array or an object`)
+  }
+  return plugins
+}
+
+function licenseOf(packageJson: Record<string, unknown>): string | null {
+  const license = packageJson['license']
+  if (typeof license === 'string') return license
+  if (isRecord(license) && typeof license['type'] === 'string') return license['type']
+  return null
+}
+
+function buildScriptsOf(packageJson: Record<string, unknown>): string[] {
+  const scripts = packageJson['scripts']
+  if (!isRecord(scripts)) return []
+  return BUILD_SCRIPT_NAMES.filter(name => Object.prototype.hasOwnProperty.call(scripts, name))
+}
+
+function parsePackageJson(text: string, path: string): Record<string, unknown> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (error) {
+    throw new PluginManagerError('invalid_package_json', `${path}: invalid JSON (${String(error)})`)
+  }
+  if (!isRecord(parsed)) throw new PluginManagerError('invalid_package_json', `${path}: must be a JSON object`)
+  return parsed
+}
+
+function pluginVersion(packageJson: Record<string, unknown>, path: string): string {
+  const version = packageJson['version']
+  if (typeof version !== 'string' || !PLUGIN_VERSION.test(version)) {
+    throw new PluginManagerError(
+      'invalid_plugin_version',
+      `${path}: package.json version must be a safe release or pre-release version such as "1.2.3"`,
+    )
+  }
+  return version
+}
+
+async function inspectPluginSource(sourceDir: string): Promise<InspectedPlugin> {
+  if (typeof sourceDir !== 'string' || sourceDir.length === 0) {
+    throw new PluginManagerError('invalid_arguments', 'inspect() needs a source directory')
+  }
+  const root = resolve(sourceDir)
+  const integrity = await computeDirectoryIntegrity(root)
+  const packagePath = join(root, 'package.json')
+  let text: string
+  try {
+    text = await readFile(packagePath, 'utf8')
+  } catch (error) {
+    throw new PluginManagerError(
+      'invalid_package_json',
+      `${packagePath}: cannot read package.json (${String(error)})`,
+    )
+  }
+  const packageJson = parsePackageJson(text, packagePath)
+  const manifest = readPackageManifest(packageJson)
+  return {
+    manifest,
+    integrity,
+    buildScripts: buildScriptsOf(packageJson),
+    license: licenseOf(packageJson),
+    version: typeof packageJson['version'] === 'string' ? packageJson['version'] : '',
+    packageJson,
+  }
+}
+
+function compareIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+
+function isInside(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate)
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false
+    throw error
+  }
+}
+
+/** Accept our hex form and the SRI base64 form for the same SHA-256 digest. */
+function sameIntegrity(expected: string, actual: string): boolean {
+  if (expected === actual) return true
+  if (!actual.startsWith('sha256-')) return false
+  const actualHex = actual.slice('sha256-'.length)
+  if (!/^[0-9a-f]{64}$/.test(actualHex)) return false
+  const expectedBody = expected.startsWith('sha256-')
+    ? expected.slice('sha256-'.length)
+    : expected.startsWith('sha256:')
+      ? expected.slice('sha256:'.length)
+      : null
+  if (expectedBody === null) return false
+  if (/^[0-9a-f]{64}$/.test(expectedBody)) return expectedBody === actualHex
+  const decoded = Buffer.from(expectedBody, 'base64')
+  return decoded.length === 32 && decoded.toString('hex') === actualHex
+}
+
+function serializePlugins(enabled: ReadonlySet<string>): string {
+  return `${JSON.stringify({ version: 1, enabled: [...enabled].sort(compareIds) }, null, 2)}\n`
+}
+
+function serializeLock(plugins: ReadonlyMap<string, LockedPlugin>): string {
+  const locked: Record<string, unknown> = Object.create(null) as Record<string, unknown>
+  for (const id of [...plugins.keys()].sort(compareIds)) {
+    const entry = plugins.get(id)!
+    locked[id] = {
+      version: entry.version,
+      integrity: entry.integrity,
+      directory: entry.directory,
+      requires: [...entry.requires],
+      provides: [...entry.provides],
+      buildScripts: [...entry.buildScripts],
+      buildScriptsApproved: entry.buildScriptsApproved,
+      installedAt: entry.installedAt,
+    }
+  }
+  return `${JSON.stringify({ version: 1, plugins: locked }, null, 2)}\n`
+}
+
+async function writeAll(handle: Awaited<ReturnType<typeof open>>, data: Buffer): Promise<void> {
+  let offset = 0
+  while (offset < data.byteLength) {
+    const { bytesWritten } = await handle.write(data, offset, data.byteLength - offset, null)
+    if (bytesWritten <= 0) throw new Error('short write while copying a plugin file')
+    offset += bytesWritten
+  }
+}
+
+async function copyRegularFile(source: string, destination: string, mode: number): Promise<void> {
+  let from: Awaited<ReturnType<typeof open>> | undefined
+  let to: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    try {
+      from = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
+        throw new SourceIntegrityError('source_symlink', source, 'symbolic links are not allowed in a plugin source')
+      }
+      throw new SourceIntegrityError('source_unreadable', source, `cannot read the plugin source file (${String(error)})`)
+    }
+    const stat = await from.stat()
+    if (!stat.isFile()) {
+      throw new SourceIntegrityError('source_not_regular', source, 'only regular files can be installed')
+    }
+    to = await open(
+      destination,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      mode & 0o777,
+    )
+    const buffer = Buffer.allocUnsafe(64 * 1024)
+    for (;;) {
+      const { bytesRead } = await from.read(buffer, 0, buffer.byteLength, null)
+      if (bytesRead === 0) break
+      await writeAll(to, buffer.subarray(0, bytesRead))
+    }
+    await to.sync()
+  } finally {
+    await to?.close().catch(() => undefined)
+    await from?.close().catch(() => undefined)
+  }
+}
+
+async function copyPluginEntries(source: string, destination: string, root: string): Promise<void> {
+  const names = (await readdir(source)).sort()
+  for (const name of names) {
+    const from = join(source, name)
+    const to = join(destination, name)
+    const stat = await lstat(from)
+    if (stat.isSymbolicLink()) {
+      throw new SourceIntegrityError('source_symlink', from, 'symbolic links are not allowed in a plugin source')
+    }
+    let real: string
+    try {
+      real = await realpath(from)
+    } catch (error) {
+      throw new SourceIntegrityError('source_unreadable', from, `cannot resolve the plugin source entry (${String(error)})`)
+    }
+    if (!isInside(root, real)) {
+      throw new SourceIntegrityError('source_outside_root', from, 'the plugin source entry resolves outside the source directory')
+    }
+    if (stat.isDirectory()) {
+      await mkdir(to, { mode: stat.mode & 0o777 })
+      await copyPluginEntries(from, to, root)
+    } else {
+      // The opened handle decides: O_NONBLOCK avoids hanging on a FIFO and
+      // fstat refuses anything that is not a regular file.
+      await copyRegularFile(from, to, stat.mode)
+    }
+  }
+}
+
+async function copyPluginTree(sourceDir: string, destination: string): Promise<void> {
+  const stat = await lstat(sourceDir)
+  if (stat.isSymbolicLink()) {
+    throw new SourceIntegrityError('source_symlink', sourceDir, 'the plugin source itself must not be a symbolic link')
+  }
+  if (!stat.isDirectory()) {
+    throw new SourceIntegrityError('source_not_directory', sourceDir, 'the plugin source must be a directory')
+  }
+  const root = await realpath(sourceDir)
+  await copyPluginEntries(sourceDir, destination, root)
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(directory, constants.O_RDONLY)
+    await handle.sync()
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'EINVAL' && code !== 'ENOTSUP' && code !== 'EISDIR' && code !== 'EBADF' && code !== 'EPERM') {
+      throw error
+    }
+  } finally {
+    await handle?.close().catch(() => undefined)
+  }
+}
+
+function syncDirectorySync(directory: string): void {
+  let handle: number | undefined
+  try {
+    handle = openSync(directory, constants.O_RDONLY)
+    fsyncSync(handle)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'EINVAL' && code !== 'ENOTSUP' && code !== 'EISDIR' && code !== 'EBADF' && code !== 'EPERM') {
+      throw error
+    }
+  } finally {
+    if (handle !== undefined) closeSync(handle)
+  }
+}
+
+/** Synchronous temp + fsync + rename used by recovery, which holds the lock. */
+function writeAtomicSync(path: string, data: string | Buffer): void {
+  const directory = dirname(path)
+  const temporary = join(directory, `.${basename(path)}.${randomBytes(8).toString('hex')}.tmp`)
+  try {
+    const handle = openSync(
+      temporary,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    )
+    try {
+      writeFileSync(handle, data)
+      fsyncSync(handle)
+    } finally {
+      closeSync(handle)
+    }
+    renameSync(temporary, path)
+    syncDirectorySync(directory)
+  } catch (error) {
+    try {
+      unlinkSync(temporary)
+    } catch {
+      // The temporary file may never have been created.
+    }
+    throw error
+  }
+}
+
+/**
+ * Minimal `engines.guanxi` range check. Supported forms: `x.y.z`, `^x.y.z`,
+ * `~x.y.z`, and whitespace-separated conjunctions of `>=x.y.z` and `<x.y.z`.
+ * Pre-release tags, wildcards, `||`, `>`, `<=` and hyphen ranges are rejected
+ * by the kernel validator rather than half-supported.
+ */
+export function satisfiesGuanxiRange(range: string, version: string): boolean {
+  return satisfiesEngine(range, version)
+}
+
+export class PluginManager {
+  readonly pluginsDir: string
+  readonly kernelApiVersion: string
+  private readonly loaded: () => { readonly provides: readonly string[] }
+  private readonly clock: () => Date
+  private readonly hooks: PluginManagerHooks
+  private readonly pluginsPath: string
+  private readonly lockPath: string
+  private readonly exclusiveLockPath: string
+  private tail: Promise<unknown> = Promise.resolve()
+  private recovered = false
+  private holdsExclusiveLock = false
+
+  constructor(options: PluginManagerOptions) {
+    if (!options || typeof options !== 'object') throw new TypeError('PluginManager needs options')
+    if (typeof options.pluginsDir !== 'string' || options.pluginsDir.length === 0) {
+      throw new TypeError('PluginManager options.pluginsDir must be a non-empty string')
+    }
+    if (typeof options.loaded !== 'function') throw new TypeError('PluginManager options.loaded must be a function')
+    this.pluginsDir = resolve(options.pluginsDir)
+    this.kernelApiVersion = options.kernelApiVersion ?? KERNEL_API_VERSION
+    this.loaded = options.loaded
+    this.clock = options.clock ?? (() => new Date())
+    this.hooks = options.hooks ?? { point: () => undefined }
+    this.pluginsPath = join(this.pluginsDir, 'plugins.json')
+    this.lockPath = join(this.pluginsDir, 'plugins.lock.json')
+    this.exclusiveLockPath = join(this.pluginsDir, LOCK_FILE_NAME)
+  }
+
+  /** Read-only source inspection. It never creates the plugins directory. */
+  async inspect(sourceDir: string): Promise<InspectResult> {
+    const inspected = await inspectPluginSource(sourceDir)
+    return {
+      manifest: inspected.manifest,
+      integrity: inspected.integrity,
+      buildScripts: [...inspected.buildScripts],
+      license: inspected.license,
+    }
+  }
+
+  /** Install or upgrade a local T1 plugin. Enabled state is preserved on upgrade. */
+  install(sourceDir: string, options: InstallOptions = {}): Promise<InstalledPlugin> {
+    return this.enqueue(() => this.withExclusiveLock(() => this.installLocked(sourceDir, options)))
+  }
+
+  /** Remove an installed plugin and its lock entry. */
+  uninstall(id: string): Promise<void> {
+    return this.enqueue(() => this.withExclusiveLock(() => this.uninstallLocked(id)))
+  }
+
+  /** Change only the enabled set; the lock keeps the exact installed version. */
+  setEnabled(id: string, enabled: boolean): Promise<void> {
+    return this.enqueue(() => this.withExclusiveLock(() => this.setEnabledLocked(id, enabled)))
+  }
+
+  /** Installed plugins sorted by id, oldest lock state included. */
+  list(): InstalledPlugin[] {
+    this.ensureRecovered()
+    const state = this.readStateSync()
+    return [...state.plugins.values()]
+      .sort((left, right) => compareIds(left.id, right.id))
+      .map(entry => this.publicEntry(entry, state.enabled.has(entry.id)))
+  }
+
+  /**
+   * Absolute directories to load; safe mode loads none (ADR-0022 invariant).
+   * An enabled entry whose directory is missing or whose bytes no longer match
+   * the locked integrity is skipped and reported through `onSkip`.
+   */
+  bootSet(options: BootSetOptions = {}): string[] {
+    if (options.safeMode === true) return []
+    this.ensureRecovered()
+    const state = this.readStateSync()
+    const paths: string[] = []
+    for (const entry of [...state.plugins.values()]
+      .filter(candidate => state.enabled.has(candidate.id))
+      .sort((left, right) => compareIds(left.id, right.id))) {
+      const path = join(this.pluginsDir, entry.directory)
+      let stat: ReturnType<typeof lstatSync> | undefined
+      try {
+        stat = lstatSync(path)
+      } catch {
+        stat = undefined
+      }
+      if (stat === undefined || !stat.isDirectory()) {
+        options.onSkip?.({
+          id: entry.id,
+          directory: entry.directory,
+          reason: 'missing_directory',
+          expectedIntegrity: entry.integrity,
+          actualIntegrity: null,
+        })
+        continue
+      }
+      let actual: string | null = null
+      try {
+        actual = computeDirectoryIntegritySync(path)
+      } catch {
+        actual = null
+      }
+      if (actual === null || !sameIntegrity(entry.integrity, actual)) {
+        options.onSkip?.({
+          id: entry.id,
+          directory: entry.directory,
+          reason: 'integrity_mismatch',
+          expectedIntegrity: entry.integrity,
+          actualIntegrity: actual,
+        })
+        continue
+      }
+      paths.push(path)
+    }
+    return paths
+  }
+
+  private publicEntry(entry: LockedPlugin, enabled: boolean): InstalledPlugin {
+    return {
+      id: entry.id,
+      version: entry.version,
+      integrity: entry.integrity,
+      enabled,
+      path: join(this.pluginsDir, entry.directory),
+      directory: entry.directory,
+      requires: [...entry.requires],
+      provides: [...entry.provides],
+      buildScripts: [...entry.buildScripts],
+      buildScriptsApproved: entry.buildScriptsApproved,
+      installedAt: entry.installedAt,
+    }
+  }
+
+  /** True when the locked directory exists and its bytes still match the lock. */
+  private installedDirectoryMatches(entry: LockedPlugin): boolean {
+    try {
+      const path = join(this.pluginsDir, entry.directory)
+      if (!lstatSync(path).isDirectory()) return false
+      return sameIntegrity(entry.integrity, computeDirectoryIntegritySync(path))
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Remove leftovers of an interrupted install: `.staging`, our own stale state
+   * temporary files, enabled ids without a lock entry, and every
+   * `<id>@<version>` directory that the lock does not reference. Returns what
+   * was removed. No-op when `pluginsDir` is absent; skipped while another
+   * manager holds the exclusive lock so an in-flight install is never swept.
+   */
+  recover(): RecoveryReport {
+    const report = this.recoverSync()
+    if (report.skipped === undefined) this.recovered = true
+    return report
+  }
+
+  private ensureRecovered(): void {
+    if (this.recovered) return
+    if (this.holdsExclusiveLock) {
+      // We already own the lock: sweep before this mutation touches anything.
+      this.sweepLocked()
+      this.recovered = true
+      return
+    }
+    this.recover()
+  }
+
+  /**
+   * Hold `<pluginsDir>/.lock` for one mutation. O_EXCL is the mutex; the JSON
+   * body carries a random token so a manager never removes another process's
+   * lock. A lock whose pid is dead or that is older than 30 minutes is treated
+   * as stale, removed once and retried; otherwise a concurrent mutation fails
+   * with `plugins_busy`.
+   */
+  private async withExclusiveLock<T>(operation: () => Promise<T>): Promise<T> {
+    const createdPluginsDir = !(await pathExists(this.pluginsDir))
+    if (createdPluginsDir) await mkdir(this.pluginsDir, { recursive: true })
+    const token = randomBytes(16).toString('hex')
+    let acquired = false
+    try {
+      await this.acquireExclusiveLock(token)
+      acquired = true
+      this.holdsExclusiveLock = true
+      this.ensureRecovered()
+      return await operation()
+    } finally {
+      if (acquired) {
+        this.holdsExclusiveLock = false
+        await this.releaseExclusiveLock(token)
+      }
+      if (createdPluginsDir) await this.removeEmptyDirectory(this.pluginsDir)
+    }
+  }
+
+  private async acquireExclusiveLock(token: string): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const handle = await open(
+          this.exclusiveLockPath,
+          constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+          0o600,
+        )
+        try {
+          await handle.writeFile(lockBody(token))
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
+        return
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw new PluginManagerError(
+            'invalid_state',
+            `${this.exclusiveLockPath}: cannot create the plugin lock (${String(error)})`,
+          )
+        }
+        if (attempt === 0) {
+          const observed = await this.readExclusiveLockInfo()
+          if (observed !== null && this.lockInfoIsStale(observed) && (await this.removeStaleExclusiveLock(observed))) {
+            continue
+          }
+        }
+        throw new PluginManagerError(
+          'plugins_busy',
+          `${this.pluginsDir} is locked by another plugin manager; remove ${this.exclusiveLockPath} if it is stale`,
+        )
+      }
+    }
+  }
+
+  /** Synchronous form used by recovery, which must not yield while sweeping. */
+  private acquireExclusiveLockSync(token: string): boolean {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let handle: number | undefined
+      try {
+        handle = openSync(
+          this.exclusiveLockPath,
+          constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+          0o600,
+        )
+        writeFileSync(handle, lockBody(token))
+        fsyncSync(handle)
+        closeSync(handle)
+        handle = undefined
+        return true
+      } catch (error) {
+        if (handle !== undefined) closeSync(handle)
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          throw new PluginManagerError(
+            'invalid_state',
+            `${this.exclusiveLockPath}: cannot create the plugin lock (${String(error)})`,
+          )
+        }
+        const observed = this.readExclusiveLockInfoSync()
+        if (attempt === 0 && observed !== null && this.lockInfoIsStale(observed) && this.removeStaleExclusiveLockSync(observed)) {
+          continue
+        }
+        return false
+      }
+    }
+    return false
+  }
+
+  private lockInfoIsStale(info: ExclusiveLockInfo): boolean {
+    if (info.pid !== null && !processIsAlive(info.pid)) return true
+    const createdAt = info.createdAt === null ? Number.NaN : Date.parse(info.createdAt)
+    const startedAt = Number.isNaN(createdAt) ? info.mtimeMs : createdAt
+    return Date.now() - startedAt > LOCK_STALE_MS
+  }
+
+  private readExclusiveLockInfoSync(): ExclusiveLockInfo | null {
+    try {
+      const stat = lstatSync(this.exclusiveLockPath)
+      return lockInfoFromBytes(readFileSync(this.exclusiveLockPath), stat.mtimeMs)
+    } catch {
+      return null
+    }
+  }
+
+  private async readExclusiveLockInfo(): Promise<ExclusiveLockInfo | null> {
+    try {
+      const stat = await lstat(this.exclusiveLockPath)
+      return lockInfoFromBytes(await readFile(this.exclusiveLockPath), stat.mtimeMs)
+    } catch {
+      return null
+    }
+  }
+
+  /** Re-read and confirm the same token before removing a lock we judged stale. */
+  private async removeStaleExclusiveLock(observed: ExclusiveLockInfo): Promise<boolean> {
+    const current = await this.readExclusiveLockInfo()
+    if (current === null) return true
+    if (current.token !== observed.token || !this.lockInfoIsStale(current)) return false
+    await unlink(this.exclusiveLockPath).catch(() => undefined)
+    return true
+  }
+
+  private removeStaleExclusiveLockSync(observed: ExclusiveLockInfo): boolean {
+    const current = this.readExclusiveLockInfoSync()
+    if (current === null) return true
+    if (current.token !== observed.token || !this.lockInfoIsStale(current)) return false
+    try {
+      unlinkSync(this.exclusiveLockPath)
+    } catch {
+      // Best-effort: another contender may have removed it already.
+    }
+    return true
+  }
+
+  private async releaseExclusiveLock(token: string): Promise<void> {
+    try {
+      const info = await this.readExclusiveLockInfo()
+      if (info?.token === token) await unlink(this.exclusiveLockPath)
+    } catch {
+      // A stale lock may already be gone; release stays best-effort.
+    }
+  }
+
+  private releaseExclusiveLockSync(token: string): void {
+    try {
+      const info = this.readExclusiveLockInfoSync()
+      if (info?.token === token) unlinkSync(this.exclusiveLockPath)
+    } catch {
+      // A stale lock may already be gone; release stays best-effort.
+    }
+  }
+
+  private recoverSync(): RecoveryReport {
+    if (this.holdsExclusiveLock) return BUSY_RECOVERY
+    if (!this.directoryExistsSync(this.pluginsDir)) return EMPTY_RECOVERY
+    const token = randomBytes(16).toString('hex')
+    if (!this.acquireExclusiveLockSync(token)) return BUSY_RECOVERY
+    try {
+      return this.sweepLocked()
+    } finally {
+      this.releaseExclusiveLockSync(token)
+    }
+  }
+
+  private directoryExistsSync(path: string): boolean {
+    try {
+      return lstatSync(path).isDirectory()
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false
+      throw new PluginManagerError('invalid_state', `${path}: cannot read the plugins directory (${String(error)})`)
+    }
+  }
+
+  private sweepLocked(): RecoveryReport {
+    let names: string[]
+    try {
+      names = readdirSync(this.pluginsDir)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return EMPTY_RECOVERY
+      throw new PluginManagerError('invalid_state', `${this.pluginsDir}: cannot scan for recovery (${String(error)})`)
+    }
+    const lock = this.readOptionalSync(this.lockPath)
+    const locked = lock === null ? new Map<string, LockedPlugin>() : parseLockFile(lock.toString('utf8'), this.lockPath)
+    const referenced = new Set([...locked.values()].map(entry => entry.directory))
+
+    // An enabled id without a lock entry is a half-written fresh install, not
+    // an installed plugin; drop it so the two state files agree.
+    const pluginsBytes = this.readOptionalSync(this.pluginsPath)
+    const removedEnabledIds: string[] = []
+    if (pluginsBytes !== null) {
+      const enabled = parsePluginsFile(pluginsBytes.toString('utf8'), this.pluginsPath)
+      for (const id of enabled) if (!locked.has(id)) removedEnabledIds.push(id)
+      if (removedEnabledIds.length > 0) {
+        removedEnabledIds.sort(compareIds)
+        const kept = new Set([...enabled].filter(id => locked.has(id)))
+        writeAtomicSync(this.pluginsPath, serializePlugins(kept))
+      }
+    }
+
+    const removedDirectories: string[] = []
+    const removedTemporaryFiles: string[] = []
+    let removedStaging = false
+
+    for (const name of names.sort(compareIds)) {
+      const path = join(this.pluginsDir, name)
+      if (name === '.staging') {
+        rmSync(path, { recursive: true, force: true })
+        removedStaging = true
+        continue
+      }
+      let stat: ReturnType<typeof lstatSync>
+      try {
+        stat = lstatSync(path)
+      } catch {
+        continue
+      }
+      if (stat.isFile() && STATE_TEMPORARY_NAME.test(name)) {
+        rmSync(path, { force: true })
+        removedTemporaryFiles.push(name)
+      } else if (stat.isDirectory() && PLUGIN_DIRECTORY_NAME.test(name) && !referenced.has(name)) {
+        rmSync(path, { recursive: true, force: true })
+        removedDirectories.push(name)
+      }
+    }
+    return { removedStaging, removedDirectories, removedEnabledIds, removedTemporaryFiles }
+  }
+
+  private readOptionalSync(path: string): Buffer | null {
+    try {
+      return readFileSync(path)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null
+      throw new PluginManagerError('invalid_state', `${path}: cannot read state (${String(error)})`)
+    }
+  }
+
+  private readStateSync(): ManagerState {
+    const plugins = this.readOptionalSync(this.pluginsPath)
+    const lock = this.readOptionalSync(this.lockPath)
+    return {
+      enabled: plugins === null ? new Set() : parsePluginsFile(plugins.toString('utf8'), this.pluginsPath),
+      plugins: lock === null ? new Map() : parseLockFile(lock.toString('utf8'), this.lockPath),
+      snapshot: { plugins, lock },
+    }
+  }
+
+  private async fault(name: PluginFaultPoint): Promise<void> {
+    await this.hooks.point?.(name)
+  }
+
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.tail.then(operation, operation)
+    this.tail = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  private async installLocked(sourceDir: string, options: InstallOptions): Promise<InstalledPlugin> {
+    this.ensureRecovered()
+    let snapshot: StateSnapshot | undefined
+    let stagingDir: string | null = null
+    let target: string | null = null
+    let targetCreated = false
+    let pluginsDirCreated = false
+    let stagingRootCreated = false
+    const stagingRoot = join(this.pluginsDir, '.staging')
+    try {
+      await this.fault('install:start')
+      if (typeof sourceDir !== 'string' || sourceDir.length === 0) {
+        throw new PluginManagerError('invalid_arguments', 'install() needs a source directory')
+      }
+      if (options === null || typeof options !== 'object') {
+        throw new PluginManagerError('invalid_arguments', 'install() options must be an object')
+      }
+      const root = resolve(sourceDir)
+      const inspected = await inspectPluginSource(root)
+      await this.fault('install:inspected')
+      const manifest = inspected.manifest
+
+      if (!satisfiesGuanxiRange(manifest.engines.guanxi, this.kernelApiVersion)) {
+        throw new PluginManagerError(
+          'engine_mismatch',
+          `plugin "${manifest.id}" needs engines.guanxi "${manifest.engines.guanxi}", not kernel ${this.kernelApiVersion}`,
+          { pluginId: manifest.id, expected: manifest.engines.guanxi, actual: this.kernelApiVersion },
+        )
+      }
+      await this.fault('install:engine')
+
+      const state = await this.readState()
+      snapshot = state.snapshot
+      await this.fault('install:state-read')
+
+      const provided = await this.installedProvides(state, manifest.id)
+      for (const name of this.loadedProvides()) provided.add(name)
+      const missing = manifest.requires.filter(name => !provided.has(name))
+      if (missing.length > 0) {
+        throw new PluginManagerError(
+          'peer_missing',
+          `plugin "${manifest.id}" requires ${missing.map(name => `"${name}"`).join(', ')}, which no enabled plugin or loaded kernel provides`,
+          { pluginId: manifest.id, missing },
+        )
+      }
+      await this.fault('install:peer')
+
+      if (manifest.trust !== 'T1') {
+        throw new PluginManagerError(
+          'trust_tier_unsupported',
+          `plugin "${manifest.id}" has trust ${manifest.trust}; only T1 installs are supported in this slice`,
+          { pluginId: manifest.id },
+        )
+      }
+      await this.fault('install:trust')
+
+      if (inspected.buildScripts.length > 0 && options.approveBuildScripts !== true) {
+        throw new PluginManagerError(
+          'build_scripts_unapproved',
+          `plugin "${manifest.id}" declares build scripts (${inspected.buildScripts.join(', ')}); approve them explicitly`,
+          { pluginId: manifest.id, buildScripts: inspected.buildScripts },
+        )
+      }
+      await this.fault('install:build-scripts')
+
+      if (options.expectedIntegrity !== undefined && !sameIntegrity(options.expectedIntegrity, inspected.integrity)) {
+        throw new PluginManagerError(
+          'integrity_mismatch',
+          `plugin "${manifest.id}" integrity ${inspected.integrity} does not match the expected ${options.expectedIntegrity}`,
+          { pluginId: manifest.id, expected: options.expectedIntegrity, actual: inspected.integrity },
+        )
+      }
+      await this.fault('install:expected-integrity')
+
+      const version = pluginVersion(inspected.packageJson, join(root, 'package.json'))
+      const directory = `${manifest.id}@${version}`
+      const targetPath = join(this.pluginsDir, directory)
+      target = targetPath
+      const previous = state.plugins.get(manifest.id)
+
+      if (previous && previous.version === version) {
+        if (!sameIntegrity(previous.integrity, inspected.integrity)) {
+          throw new PluginManagerError(
+            'version_exists',
+            `plugin "${manifest.id}@${version}" is already installed with different content; install a new version to upgrade`,
+            { pluginId: manifest.id, expected: previous.integrity, actual: inspected.integrity },
+          )
+        }
+        // A no-op only when the locked directory still exists and matches; a
+        // missing directory falls through to a normal reinstall that repairs it.
+        if (this.installedDirectoryMatches(previous)) {
+          return this.publicEntry(previous, state.enabled.has(manifest.id))
+        }
+      }
+
+      if (previous) {
+        const previousProvides = await this.providesOf(previous)
+        const dropped = previousProvides.filter(name => !manifest.provides.includes(name))
+        this.assertDependencyInUse(state, manifest.id, dropped, `upgrade from ${previous.version}`)
+      }
+
+      if (await pathExists(targetPath)) {
+        throw new PluginManagerError(
+          'plugin_directory_exists',
+          `plugin directory already exists for "${manifest.id}@${version}" but is not the locked version`,
+          { pluginId: manifest.id },
+        )
+      }
+
+      const enabled = new Set(state.enabled)
+      if (!previous) enabled.add(manifest.id)
+      const nextPlugins = new Map(state.plugins)
+      const nextEntry: LockedPlugin = {
+        id: manifest.id,
+        version,
+        integrity: inspected.integrity,
+        directory,
+        requires: [...manifest.requires],
+        provides: [...manifest.provides],
+        buildScripts: [...inspected.buildScripts],
+        buildScriptsApproved: inspected.buildScripts.length > 0 && options.approveBuildScripts === true,
+        installedAt: this.nowIso(),
+        providesKnown: true,
+      }
+      nextPlugins.set(manifest.id, nextEntry)
+
+      if (!(await pathExists(this.pluginsDir))) {
+        await mkdir(this.pluginsDir, { recursive: true })
+        pluginsDirCreated = true
+      }
+      if (!(await pathExists(stagingRoot))) {
+        await mkdir(stagingRoot, { recursive: true })
+        stagingRootCreated = true
+      }
+      stagingDir = await mkdtemp(join(stagingRoot, 'stage-'))
+      await this.fault('install:staging-created')
+
+      await copyPluginTree(root, stagingDir)
+      await this.fault('install:copied')
+
+      const stagedIntegrity = await computeDirectoryIntegrity(stagingDir)
+      if (stagedIntegrity !== inspected.integrity) {
+        throw new PluginManagerError(
+          'integrity_mismatch',
+          `plugin "${manifest.id}" changed while it was staged (expected ${inspected.integrity}, got ${stagedIntegrity})`,
+          { pluginId: manifest.id, expected: inspected.integrity, actual: stagedIntegrity },
+        )
+      }
+      if (options.expectedIntegrity !== undefined && !sameIntegrity(options.expectedIntegrity, stagedIntegrity)) {
+        throw new PluginManagerError(
+          'integrity_mismatch',
+          `staged plugin "${manifest.id}" integrity ${stagedIntegrity} does not match the expected ${options.expectedIntegrity}`,
+          { pluginId: manifest.id, expected: options.expectedIntegrity, actual: stagedIntegrity },
+        )
+      }
+      await this.fault('install:staged-integrity')
+      await this.fault('install:metadata-planned')
+
+      // Commit the directory first: a crash before the state write leaves only
+      // an unreferenced directory, never a lock entry with no directory.
+      await this.fault('install:before-plugin-rename')
+      const staging = stagingDir
+      if (staging === null) throw new Error('plugin staging directory disappeared')
+      await rename(staging, targetPath)
+      stagingDir = null
+      targetCreated = true
+      await syncDirectory(this.pluginsDir)
+      await this.fault('install:plugin-renamed')
+
+      await this.writeAtomicWithFaults(
+        this.pluginsPath,
+        serializePlugins(enabled),
+        'install:manifest-temp',
+        'install:manifest-renamed',
+      )
+      await this.writeAtomicWithFaults(
+        this.lockPath,
+        serializeLock(nextPlugins),
+        'install:lock-temp',
+        'install:lock-renamed',
+      )
+      await this.fault('install:before-previous-remove')
+      await this.fault('install:committed')
+
+      // The commit is final from here: cleanup failures leave an old or
+      // unreferenced directory behind, and `recover()` sweeps it later.
+      if (previous && previous.version !== version) {
+        await rm(join(this.pluginsDir, previous.directory), { recursive: true, force: true }).catch(() => undefined)
+      }
+      if (stagingRootCreated) await this.removeEmptyDirectory(stagingRoot)
+      return this.publicEntry(nextEntry, enabled.has(manifest.id))
+    } catch (error) {
+      if (isSimulatedCrash(error)) throw error
+      const failures = await this.rollbackInstall({
+        snapshot,
+        stagingDir,
+        target,
+        targetCreated,
+        pluginsDirCreated,
+        stagingRootCreated,
+      })
+      throw attachRollbackFailures(error, failures)
+    }
+  }
+
+  private async uninstallLocked(id: string): Promise<void> {
+    let snapshot: StateSnapshot | undefined
+    let directory: string | null = null
+    try {
+      await this.fault('uninstall:start')
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new PluginManagerError('invalid_arguments', 'uninstall() needs a plugin id')
+      }
+      const state = await this.readState()
+      snapshot = state.snapshot
+      await this.fault('uninstall:state-read')
+      const entry = state.plugins.get(id)
+      if (!entry) {
+        throw new PluginManagerError('plugin_not_installed', `plugin "${id}" is not installed`, { pluginId: id })
+      }
+      this.assertDependencyInUse(state, id, await this.providesOf(entry), 'uninstall')
+      directory = join(this.pluginsDir, entry.directory)
+      const nextPlugins = new Map(state.plugins)
+      nextPlugins.delete(id)
+      const nextEnabled = new Set(state.enabled)
+      nextEnabled.delete(id)
+      await this.fault('uninstall:before-state-write')
+
+      // Commit the state before touching the directory: a crash after this
+      // leaves an unreferenced directory for `recover()`, never a lock entry
+      // whose directory is missing.
+      await this.writeAtomicWithFaults(
+        this.pluginsPath,
+        serializePlugins(nextEnabled),
+        'uninstall:manifest-temp',
+        'uninstall:manifest-renamed',
+      )
+      await this.writeAtomicWithFaults(
+        this.lockPath,
+        serializeLock(nextPlugins),
+        'uninstall:lock-temp',
+        'uninstall:lock-renamed',
+      )
+      await this.fault('uninstall:committed')
+    } catch (error) {
+      if (isSimulatedCrash(error)) throw error
+      const failures: unknown[] = []
+      if (snapshot !== undefined) {
+        const state = snapshot
+        await this.rollbackStep(failures, 'restore state files', () => this.restoreSnapshot(state))
+      }
+      throw attachRollbackFailures(error, failures)
+    }
+
+    // The commit is final: removal is best-effort and an orphan is swept later.
+    if (directory !== null) {
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  private async setEnabledLocked(id: string, enabled: boolean): Promise<void> {
+    let snapshot: StateSnapshot | undefined
+    let wrote = false
+    try {
+      await this.fault('set-enabled:start')
+      if (typeof id !== 'string' || id.length === 0) {
+        throw new PluginManagerError('invalid_arguments', 'setEnabled() needs a plugin id')
+      }
+      if (typeof enabled !== 'boolean') {
+        throw new PluginManagerError('invalid_arguments', 'setEnabled() needs a boolean state')
+      }
+      const state = await this.readState()
+      snapshot = state.snapshot
+      await this.fault('set-enabled:state-read')
+      const entry = state.plugins.get(id)
+      if (!entry) {
+        throw new PluginManagerError('plugin_not_installed', `plugin "${id}" is not installed`, { pluginId: id })
+      }
+      if (!enabled) this.assertDependencyInUse(state, id, await this.providesOf(entry), 'disable')
+      const next = new Set(state.enabled)
+      if (enabled) next.add(id)
+      else next.delete(id)
+      wrote = true
+      await this.writeAtomicWithFaults(
+        this.pluginsPath,
+        serializePlugins(next),
+        'set-enabled:manifest-temp',
+        'set-enabled:manifest-renamed',
+      )
+      await this.fault('set-enabled:committed')
+    } catch (error) {
+      const failures: unknown[] = []
+      if (wrote && snapshot !== undefined) {
+        const state = snapshot
+        await this.rollbackStep(failures, 'restore plugins.json', () => this.restoreFile(this.pluginsPath, state.plugins))
+      }
+      throw attachRollbackFailures(error, failures)
+    }
+  }
+
+  private async rollbackInstall(context: InstallRollbackContext): Promise<unknown[]> {
+    const failures: unknown[] = []
+    if (context.targetCreated && context.target !== null) {
+      await this.rollbackStep(failures, 'remove partial plugin directory', () =>
+        rm(context.target!, { recursive: true, force: true }))
+    }
+    if (context.stagingDir !== null) {
+      await this.rollbackStep(failures, 'remove staging directory', () =>
+        rm(context.stagingDir!, { recursive: true, force: true }))
+    }
+    if (context.snapshot !== undefined) {
+      await this.rollbackStep(failures, 'restore state files', () => this.restoreSnapshot(context.snapshot!))
+    }
+    if (context.stagingRootCreated) {
+      await this.rollbackStep(failures, 'remove staging root', () =>
+        this.removeEmptyDirectory(join(this.pluginsDir, '.staging')))
+    }
+    if (context.pluginsDirCreated) {
+      await this.rollbackStep(failures, 'remove plugins directory', () => this.removeEmptyDirectory(this.pluginsDir))
+    }
+    return failures
+  }
+
+  private async rollbackStep(failures: unknown[], step: string, action: () => Promise<void>): Promise<void> {
+    try {
+      await action()
+    } catch (error) {
+      failures.push(rollbackFailure(step, error))
+    }
+  }
+
+  private async restoreSnapshot(snapshot: StateSnapshot): Promise<void> {
+    const failures: unknown[] = []
+    await this.rollbackStep(failures, 'restore plugins.json', () => this.restoreFile(this.pluginsPath, snapshot.plugins))
+    await this.rollbackStep(failures, 'restore plugins.lock.json', () => this.restoreFile(this.lockPath, snapshot.lock))
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'cannot restore plugin state files')
+  }
+
+  private async restoreFile(path: string, bytes: Buffer | null): Promise<void> {
+    const current = await this.readOptional(path)
+    if (bytes === null) {
+      if (current !== null) await unlink(path)
+      return
+    }
+    if (current !== null && current.equals(bytes)) return
+    await this.writeAtomic(path, bytes)
+  }
+
+  private async writeAtomicWithFaults(
+    path: string,
+    data: string | Buffer,
+    temporaryPoint: PluginFaultPoint,
+    renamedPoint: PluginFaultPoint,
+  ): Promise<void> {
+    await this.writeAtomic(
+      path,
+      data,
+      async () => this.fault(temporaryPoint),
+      async () => this.fault(renamedPoint),
+    )
+  }
+
+  private async writeAtomic(
+    path: string,
+    data: string | Buffer,
+    beforeRename?: () => Promise<void>,
+    afterRename?: () => Promise<void>,
+  ): Promise<void> {
+    const directory = dirname(path)
+    const temporary = join(directory, `.${basename(path)}.${randomBytes(8).toString('hex')}.tmp`)
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    try {
+      handle = await open(
+        temporary,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+        0o600,
+      )
+      await handle.writeFile(data)
+      await handle.sync()
+      await handle.close()
+      handle = undefined
+      await beforeRename?.()
+      await rename(temporary, path)
+      await syncDirectory(directory)
+      await afterRename?.()
+    } catch (error) {
+      await handle?.close().catch(() => undefined)
+      await unlink(temporary).catch(() => undefined)
+      throw error
+    }
+  }
+
+  private async removeEmptyDirectory(path: string): Promise<void> {
+    await rmdir(path).catch(() => undefined)
+  }
+
+  private async readOptional(path: string): Promise<Buffer | null> {
+    try {
+      return await readFile(path)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return null
+      throw new PluginManagerError('invalid_state', `${path}: cannot read state (${String(error)})`)
+    }
+  }
+
+  private async readState(): Promise<ManagerState> {
+    const plugins = await this.readOptional(this.pluginsPath)
+    const lock = await this.readOptional(this.lockPath)
+    return {
+      enabled: plugins === null ? new Set() : parsePluginsFile(plugins.toString('utf8'), this.pluginsPath),
+      plugins: lock === null ? new Map() : parseLockFile(lock.toString('utf8'), this.lockPath),
+      snapshot: { plugins, lock },
+    }
+  }
+
+  /** The services an installed entry provides, reading its manifest for older locks. */
+  private async providesOf(entry: LockedPlugin): Promise<string[]> {
+    if (entry.providesKnown) return [...entry.provides]
+    try {
+      const path = join(this.pluginsDir, entry.directory, 'package.json')
+      const text = await readFile(path, 'utf8')
+      return [...readPackageManifest(parsePackageJson(text, path)).provides]
+    } catch {
+      return []
+    }
+  }
+
+  private assertDependencyInUse(
+    state: ManagerState,
+    providerId: string,
+    dropped: readonly string[],
+    action: string,
+  ): void {
+    if (dropped.length === 0) return
+    const names = new Set(dropped)
+    const dependents = [...state.plugins.entries()]
+      .filter(([id, entry]) => id !== providerId && state.enabled.has(id) && entry.requires.some(name => names.has(name)))
+      .map(([id]) => id)
+      .sort(compareIds)
+    if (dependents.length === 0) return
+    throw new PluginManagerError(
+      'dependency_in_use',
+      `plugin "${providerId}" cannot be changed by ${action}: enabled plugin(s) ${dependents.map(id => `"${id}"`).join(', ')} require ${dropped.map(name => `"${name}"`).join(', ')}`,
+      { pluginId: providerId, missing: dropped, dependents },
+    )
+  }
+
+  private async installedProvides(state: ManagerState, excludeId: string): Promise<Set<string>> {
+    const provided = new Set<string>()
+    for (const [id, entry] of state.plugins) {
+      if (id === excludeId || !state.enabled.has(id)) continue
+      if (entry.providesKnown) {
+        for (const name of entry.provides) provided.add(name)
+        continue
+      }
+      try {
+        const text = await readFile(join(this.pluginsDir, entry.directory, 'package.json'), 'utf8')
+        const manifest = readPackageManifest(
+          parsePackageJson(text, join(this.pluginsDir, entry.directory, 'package.json')),
+        )
+        for (const name of manifest.provides) provided.add(name)
+      } catch {
+        // A disabled or incomplete installed copy provides nothing.
+      }
+    }
+    return provided
+  }
+
+  private loadedProvides(): Set<string> {
+    const loaded = this.loaded()
+    if (!isRecord(loaded) || !Array.isArray(loaded.provides)) {
+      throw new PluginManagerError('invalid_arguments', 'loaded() must return { provides: string[] }')
+    }
+    const provided = new Set<string>()
+    for (const name of loaded.provides) {
+      if (typeof name !== 'string') {
+        throw new PluginManagerError('invalid_arguments', 'loaded().provides must contain only strings')
+      }
+      provided.add(name)
+    }
+    return provided
+  }
+
+  private nowIso(): string {
+    const value = this.clock()
+    const date = value instanceof Date ? value : new Date(value as unknown as string)
+    if (Number.isNaN(date.getTime())) {
+      throw new PluginManagerError('invalid_arguments', 'clock() must return a valid Date')
+    }
+    return date.toISOString()
+  }
+
+}

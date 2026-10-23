@@ -1,0 +1,21 @@
+{
+  "id": "10001",
+  "key": "PROJ-12",
+  "fields": {
+    "summary": "Add tracker sync (remote edit)",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [{ "type": "text", "text": "Updated description owned by Jira Cloud." }]
+        }
+      ]
+    },
+    "priority": { "name": "Highest" },
+    "assignee": { "displayName": "Remote Editor" },
+    "labels": ["backend", "tracker"],
+    "updated": "2026-10-20T13:00:00.000+0000"
+  }
+}

@@ -108,7 +108,7 @@ test('sandbox denies actual ignore-file reads after an ancestor swap; unsandboxe
     }catch(e){process.send({kind:'failure',code:e.code})}finally{process.disconnect()}})`)
   type Result = { kind: string; inside: string; content: string | null; bytes: number; code: string | null }
   const run = async (sandbox: boolean): Promise<Result> => {
-    const child = sandbox ? await indexProcess(entry, root, data) : spawn(process.execPath, [entry], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+    const child = sandbox ? await indexProcess(entry, root, data, 'inherit') : spawn(process.execPath, [entry], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
     try {
       return await new Promise<Result>((resolve, reject) => {
         child.on('message', message => {
