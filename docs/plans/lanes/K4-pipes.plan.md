@@ -2,6 +2,8 @@
 
 **Status:** plan · **Date:** 2026-10-23 · Branch `claude/k4-child-process-pipes`, base main `47e238c7`.
 Security-boundary change: conservative, every claim has an assertion that fails when it is violated.
+**Addendum (2026-10-23, review round 2):** the plan below is the first round. MSG_OOB denial, io_uring
+denial, image identity by guard digest and the tag `k4-v3` were added afterwards; see the hand-off.
 
 ## Observed defect
 
