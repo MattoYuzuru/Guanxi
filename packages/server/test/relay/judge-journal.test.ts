@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { test } from 'node:test'
+import { Hono } from 'hono'
 import { byteHash, canonical, render } from '../../src/relay/handoff.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
 import {
@@ -8,7 +11,8 @@ import {
   journalReplayRun,
   readJournalCorpus,
   readJournalReplay,
-  type JudgeJournalEntry
+  type JudgeJournalEntry,
+  type JudgeJournalRow
 } from '../../src/relay/judge-journal.ts'
 import { RelayJudgeCascade, type RelayCascadeInput } from '../../src/relay/judge-cascade.ts'
 import { evaluateJudgeSignals, type JudgeObservation, type JudgeSignalPolicy } from '../../src/relay/judge-signals.ts'
@@ -18,8 +22,11 @@ import { score } from '../../src/relay/judge-replay.ts'
 import { buildWakePacket } from '../../src/leads/packet.ts'
 import type { ChildReport } from '../../src/leads/types.ts'
 import { signedDispatchGrantSchema } from '@guanxi/contract/federation'
+import { sessionLogRoutes } from '../../src/session-log/routes.ts'
+import { cascadeWithJournal } from '../../src/relay/plugin.ts'
 import { sessionExportSchema } from '@guanxi/contract'
 import { DEFAULT_REASONING_RETENTION_MS } from '../../src/session-log/log.ts'
+import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { fixture, plan, reserves, caps } from './fixture.ts'
 
 const CANARY_PATH = '/r3-journal-canary/private/notes-7f3a.md'
@@ -156,6 +163,31 @@ function journalEntry(
   }
 }
 
+function replayRow(cycle: number, packet: unknown): JudgeJournalRow {
+  const observedAt = 1_000_000 + cycle * 1_000
+  const observation = observationAt(observedAt, { cycle })
+  return {
+    id: cycle,
+    run_id: 'run',
+    session_id: 'session',
+    attempt_id: 'attempt',
+    cycle,
+    phase: 'cycle_start',
+    layer: 'J2',
+    reason: 'scheduled',
+    request_key: `row-${cycle}`,
+    packet: canonical(packet),
+    observation: canonical(observation),
+    policy: canonical(policy),
+    signals: canonical(evaluateJudgeSignals(observation, policy)),
+    state: 'completed',
+    result: '{}',
+    started_at: observedAt,
+    finished_at: observedAt,
+    expires_at: observedAt + 1_000_000
+  }
+}
+
 test('cascade without a journal and journal:null executor leave no journal table', async () => {
   const f = fixture()
   try {
@@ -244,6 +276,9 @@ test('default executor journal writes one completed row per J2 boundary with the
       f.db.prepare('SELECT version FROM relay_journal_migrations').get()!.version,
       42
     )
+    assert.equal(f.db.prepare('PRAGMA user_version').get()!.user_version, 33)
+    assert.equal(f.db.prepare('SELECT version FROM relay_migrations').get()!.version, 35)
+    assert.equal(f.db.prepare('SELECT version FROM relay_judge_migrations').get()!.version, 38)
     assert.throws(
       () => f.db.prepare("UPDATE relay_judge_journal SET state='invalid'").run(),
       /append only/
@@ -305,6 +340,21 @@ test('session, run and expiry purges delete rows; run deletion cascades; duplica
     )
     assert.equal(store.purgeExpired(ttlExpiry - 1), 0)
     assert.equal(store.purgeExpired(ttlExpiry), 1)
+
+    // The configured retention is the parent window, not a coincidental equal constant.
+    const short = new JudgeJournalStore(f.db, {
+      scrubber: f.scrubber,
+      clock: f.relay.clock,
+      retentionMs: 2 * 24 * 60 * 60 * 1_000
+    })
+    const shortRun = f.store.create({ id: 'run-ttl2', sessionId: 'session-ttl' })
+    short.record(journalEntry(shortRun.id, shortRun.session_id, 'request-ttl2', now))
+    const shortExpiry = Date.parse(activity) + 2 * 24 * 60 * 60 * 1_000
+    assert.equal(
+      f.db.prepare("SELECT expires_at FROM relay_judge_journal WHERE request_key='request-ttl2'").get()!.expires_at,
+      shortExpiry
+    )
+    assert.equal(short.purgeExpired(shortExpiry), 1)
 
     const cascaded = f.store.create()
     store.record(journalEntry(cascaded.id, cascaded.session_id, 'request-f', now))
@@ -383,28 +433,18 @@ test('reader round-trips a finished run through the strict R3-b replay scorer', 
   }
 })
 
-test('journal canaries stay local: no wake, handoff, F2, session export or captured log contains them', async () => {
+test('journal canaries stay local: no wake, handoff, F2, session export or captured log contains them', async (t) => {
   const f = fixture()
   const writes: string[] = []
-  const originalStdout = process.stdout.write
-  const originalStderr = process.stderr.write
-  const originalLog = console.log
-  const originalError = console.error
-  const originalWarn = console.warn
   let clock = f.relay.clock()
   try {
     f.scrubber.register('secret://fixture/r3-journal', CANARY_SECRET)
-    process.stdout.write = ((chunk: unknown) => {
-      writes.push(String(chunk))
-      return true
-    }) as typeof process.stdout.write
-    process.stderr.write = ((chunk: unknown) => {
-      writes.push(String(chunk))
-      return true
-    }) as typeof process.stderr.write
-    console.log = (...args: unknown[]) => writes.push(args.map(String).join(' '))
-    console.error = (...args: unknown[]) => writes.push(args.map(String).join(' '))
-    console.warn = (...args: unknown[]) => writes.push(args.map(String).join(' '))
+    const capture = (...args: unknown[]) => {
+      writes.push(args.map(String).join(' '))
+    }
+    for (const method of ['log', 'info', 'debug', 'trace', 'error', 'warn'] as const) {
+      t.mock.method(console, method, capture)
+    }
     const executor = new RelayExecutor(
       f.relay,
       f.model,
@@ -492,28 +532,45 @@ test('journal canaries stay local: no wake, handoff, F2, session export or captu
     assert.doesNotMatch(f2, new RegExp(CANARY_PATH))
     assert.doesNotMatch(f2, new RegExp(CANARY_SECRET))
 
-    const events = f.log.readAll(f.run.session_id, 'person')
-    const exported = sessionExportSchema.parse({
-      exportVersion: 1,
-      sessionId: f.run.session_id,
-      exportedAt: new Date(clock).toISOString(),
-      lastSeq: events.at(-1)?.seq ?? 0,
-      excluded: { reasoning: 0 },
-      events
-    })
-    const exportText = canonical(exported)
+    // Exercise the real export route rather than rebuilding its body by hand.
+    const app = new Hono().route('/api/sessions', sessionLogRoutes(() => f.log))
+    const exported = await app.request(
+      `/api/sessions/${f.run.session_id}/export?exportVersion=3`,
+      {},
+      { incoming: { socket: { remoteAddress: '127.0.0.1' } } } as never
+    )
+    assert.equal(exported.status, 200)
+    const exportText = canonical(sessionExportSchema.parse(await exported.json()))
     assert.doesNotMatch(exportText, new RegExp(CANARY_PATH))
     assert.doesNotMatch(exportText, new RegExp(CANARY_SECRET))
+
+    // Structural guard: none of the real egress producers may start reading the journal.
+    for (const file of [
+      'packages/server/src/leads/packet.ts',
+      'packages/server/src/leads/service.ts',
+      'packages/server/src/relay/handoff.ts',
+      'packages/server/src/remote-attempts/dispatch.ts',
+      'packages/server/src/federation/channel.ts',
+      'packages/server/src/federation/service.ts',
+      'packages/server/src/session-log/routes.ts'
+    ]) {
+      const source = await readFile(join(process.cwd(), file), 'utf8')
+      assert.doesNotMatch(source, /relay_judge_journal|judge-journal|JudgeJournal/, file)
+    }
 
     const captured = writes.join('\n')
     assert.doesNotMatch(captured, new RegExp(CANARY_PATH))
     assert.doesNotMatch(captured, new RegExp(CANARY_SECRET))
+    for (const file of [
+      'packages/server/src/relay/judge-journal.ts',
+      'packages/server/src/relay/judge-cascade.ts',
+      'packages/server/src/relay/executor.ts',
+      'packages/server/src/relay/plugin.ts'
+    ]) {
+      const source = await readFile(join(process.cwd(), file), 'utf8')
+      assert.doesNotMatch(source, /console\.|process\.stdout|process\.stderr/, file)
+    }
   } finally {
-    process.stdout.write = originalStdout
-    process.stderr.write = originalStderr
-    console.log = originalLog
-    console.error = originalError
-    console.warn = originalWarn
     f.close()
   }
 })
@@ -587,6 +644,229 @@ test('checker, J2 and J3 evaluations are journaled once and a duplicate request 
 
     await cascade.sample(f.attempt, 'cycle_start', signal)
     assert.equal(rows().length, 3)
+  } finally {
+    f.close()
+  }
+})
+
+test('expired rows are unreadable, late secrets are re-scrubbed, and an unready source refuses writes', () => {
+  const f = fixture()
+  try {
+    const now = f.relay.clock()
+    const store = new JudgeJournalStore(f.db, {
+      scrubber: f.scrubber,
+      clock: () => now,
+      retentionMs: 1_000
+    })
+    const expired = f.store.create()
+    store.record(journalEntry(expired.id, expired.session_id, 'expired', now))
+    f.db.prepare("UPDATE durable_runs SET state='completed' WHERE id=?").run(expired.id)
+    assert.equal(store.readRun(expired.id, now + 999).length, 1)
+    assert.equal(store.readRun(expired.id, now + 1_000).length, 0)
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM relay_judge_journal WHERE request_key='expired'").get()!.n,
+      1,
+      'the read filters expiry without depending on the purge timer'
+    )
+    assert.equal(store.purgeExpired(now + 1_000), 1)
+
+    const late = 'r3-late-secret-68d2c0f1'
+    const lateRun = f.store.create()
+    const lateEntry = journalEntry(lateRun.id, lateRun.session_id, 'late', now + 2_000)
+    lateEntry.packet = { note: late }
+    lateEntry.observation = observationAt(now + 2_000, { protectedPathEdits: [late] })
+    lateEntry.policy = { ...policy }
+    store.record(lateEntry)
+    f.db.prepare("UPDATE durable_runs SET state='completed' WHERE id=?").run(lateRun.id)
+    f.scrubber.register('secret://fixture/r3-late', late)
+    const reread = canonical(store.readRun(lateRun.id, now + 2_000))
+    assert.doesNotMatch(reread, new RegExp(late))
+    assert.match(reread, /secret:\/\/fixture\/r3-late/)
+
+    const pending = new SecretScrubber({ expectedSources: ['vault'] })
+    try {
+      const pendingStore = new JudgeJournalStore(f.db, {
+        scrubber: pending,
+        clock: () => now
+      })
+      const pendingRun = f.store.create()
+      assert.throws(
+        () => pendingStore.record(journalEntry(pendingRun.id, pendingRun.session_id, 'pending', now)),
+        /egress not ready/
+      )
+      assert.equal(
+        f.db.prepare("SELECT count(*) AS n FROM relay_judge_journal WHERE request_key='pending'").get()!.n,
+        0
+      )
+    } finally {
+      pending.close()
+    }
+  } finally {
+    f.close()
+  }
+})
+
+test('reader derives done claims and current-head acceptance conservatively', () => {
+  const run = journalReplayRun([
+    replayRow(1, {
+      items: { one: 'done' },
+      gates: [{ item: 'one', ok: true, head: 'h' }],
+      head: 'h'
+    }),
+    replayRow(2, {
+      items: { one: 'done' },
+      gates: [{ item: 'one', ok: false, head: 'h' }],
+      head: 'h'
+    }),
+    replayRow(3, { items: { one: 'done' }, gates: [], head: 'h' }),
+    replayRow(4, { items: { one: 'open' }, gates: [], head: 'h' })
+  ])
+  assert.deepEqual(
+    run.steps.map((step) => step.claimsDone),
+    [true, true, true, undefined]
+  )
+  assert.deepEqual(
+    run.steps.map((step) => step.acceptancePassed),
+    [true, false, null, undefined]
+  )
+})
+
+test('plugin injection defaults to the journal, preserves explicit/null and is lazy without a cascade', () => {
+  const injected = { record() {} }
+  assert.equal(
+    cascadeWithJournal(undefined, () => {
+      throw new Error('must not construct a journal without a cascade')
+    }),
+    undefined
+  )
+  assert.equal(cascadeWithJournal(cascadeInput(), () => injected)!.journal, injected)
+  assert.equal(
+    cascadeWithJournal({ ...cascadeInput(), journal: null }, () => {
+      throw new Error('must not replace an explicit null')
+    })!.journal,
+    null
+  )
+  assert.equal(
+    cascadeWithJournal({ ...cascadeInput(), journal: injected }, () => {
+      throw new Error('must not replace an explicit journal')
+    })!.journal,
+    injected
+  )
+})
+
+test('unavailable, invalid and abandoned evaluations are journaled with fixed result codes', async () => {
+  const row = (f: ReturnType<typeof fixture>) =>
+    f.db
+      .prepare("SELECT state,result FROM relay_judge_journal WHERE layer='J2'")
+      .get()! as { state: string; result: string }
+
+  const unavailable = fixture()
+  try {
+    const store = new JudgeJournalStore(unavailable.db, {
+      scrubber: unavailable.scrubber,
+      clock: unavailable.relay.clock
+    })
+    const cascade = new RelayJudgeCascade(
+      unavailable.relay,
+      cascadeInput({
+        journal: store,
+        model: { admit: async () => false, sample: async () => validResult() }
+      })
+    )
+    unavailable.relay.begin(unavailable.attempt)
+    cascade.bind(unavailable.attempt)
+    await cascade.sample(unavailable.attempt, 'cycle_start', new AbortController().signal)
+    assert.equal(row(unavailable).state, 'unavailable')
+    assert.match(row(unavailable).result, /judge_model_unavailable/)
+  } finally {
+    unavailable.close()
+  }
+
+  const invalid = fixture()
+  try {
+    const store = new JudgeJournalStore(invalid.db, {
+      scrubber: invalid.scrubber,
+      clock: invalid.relay.clock
+    })
+    const cascade = new RelayJudgeCascade(
+      invalid.relay,
+      cascadeInput({
+        journal: store,
+        model: { admit: async () => true, sample: async () => '{}' }
+      })
+    )
+    invalid.relay.begin(invalid.attempt)
+    cascade.bind(invalid.attempt)
+    await cascade.sample(invalid.attempt, 'cycle_start', new AbortController().signal)
+    assert.equal(row(invalid).state, 'invalid')
+    assert.match(row(invalid).result, /judge_invalid_output/)
+  } finally {
+    invalid.close()
+  }
+
+  const abandoned = fixture()
+  try {
+    const store = new JudgeJournalStore(abandoned.db, {
+      scrubber: abandoned.scrubber,
+      clock: abandoned.relay.clock
+    })
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const abort = new AbortController()
+    const cascade = new RelayJudgeCascade(
+      abandoned.relay,
+      cascadeInput({
+        journal: store,
+        model: {
+          admit: async () => true,
+          sample: async () => {
+            entered()
+            await blocked
+            return validResult()
+          }
+        }
+      })
+    )
+    abandoned.relay.begin(abandoned.attempt)
+    cascade.bind(abandoned.attempt)
+    const pending = cascade.sample(abandoned.attempt, 'cycle_start', abort.signal)
+    await started
+    abort.abort()
+    release()
+    await assert.rejects(pending)
+    assert.equal(row(abandoned).state, 'abandoned')
+    assert.match(row(abandoned).result, /canceled/)
+  } finally {
+    abandoned.close()
+  }
+})
+
+test('an asynchronous journal rejection is contained like a synchronous failure', async () => {
+  const f = fixture()
+  try {
+    const cascade = new RelayJudgeCascade(
+      f.relay,
+      cascadeInput({
+        journal: {
+          record: async () => {
+            throw new Error('local journal unavailable')
+          }
+        }
+      })
+    )
+    cascade.bind(f.attempt)
+    await cascade.sample(f.attempt, 'cycle_start', new AbortController().signal)
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(
+      f.db.prepare("SELECT state FROM relay_judge_requests WHERE layer='J2'").get()!.state,
+      'completed'
+    )
   } finally {
     f.close()
   }

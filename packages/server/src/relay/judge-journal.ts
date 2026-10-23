@@ -70,7 +70,7 @@ export interface JudgeJournalContext {
 
 /** Small boundary owned by the cascade. No SQLite type crosses into the cascade. */
 export interface JudgeJournal {
-  record(entry: JudgeJournalEntry): void
+  record(entry: JudgeJournalEntry): void | Promise<void>
 }
 
 export interface JudgeJournalEntry {
@@ -308,7 +308,8 @@ export class JudgeJournalStore implements JudgeJournal {
   }
 
   /** Insert exactly once. A duplicate request key keeps the existing row: the stored result is
-   * authoritative and a retry must not rewrite history. */
+   * authoritative and a retry must not rewrite history. The scrubber must be ready: persisting
+   * before every secret source is known would make a later registration unredactable. */
   record(entry: JudgeJournalEntry): void {
     if (!entry.runId || !entry.sessionId || !entry.attemptId || !entry.requestKey) {
       invalid('missing run/session/attempt/request identity')
@@ -317,6 +318,18 @@ export class JudgeJournalStore implements JudgeJournal {
     if (!integer(entry.startedAt, 0) || !integer(entry.finishedAt, 0)) invalid('invalid timestamps')
     if (!['completed', 'unavailable', 'invalid', 'abandoned'].includes(entry.state)) {
       invalid('invalid state')
+    }
+    if (!this.scrubber.isReady()) invalid('egress not ready')
+    for (const value of [
+      entry.runId,
+      entry.sessionId,
+      entry.attemptId,
+      entry.phase,
+      entry.layer,
+      entry.reason,
+      entry.requestKey
+    ]) {
+      if (this.scrubber.scrub(value) !== value) invalid('identity contains a registered secret')
     }
     const packet = canonical(this.scrubber.scrub(entry.packet))
     const observation = entry.observation === null
@@ -362,9 +375,17 @@ export class JudgeJournalStore implements JudgeJournal {
       )
   }
 
-  /** Finished-run rows in stable order. A live run is refused: a partial corpus is not a
-   * recorded one, and a caller must not mistake it for gate evidence. */
-  readRun(runId: string): JudgeJournalRow[] {
+  private scrubJson(value: string): string {
+    return canonical(this.scrubber.scrub(JSON.parse(value)))
+  }
+
+  /** Finished-run, unexpired rows in stable order. Expiry is enforced on read as it is for
+   * reasoning (D-113), not only by the periodic purge. A live run is refused: a partial corpus
+   * is not a recorded one, and a caller must not mistake it for gate evidence. Values are
+   * scrubbed again on read so a secret registered after the write is still redacted. */
+  readRun(runId: string, now = this.clock()): JudgeJournalRow[] {
+    if (!integer(now, 0)) invalid('invalid read time')
+    if (!this.scrubber.isReady()) invalid('egress not ready')
     const run = this.db.prepare('SELECT state FROM durable_runs WHERE id=?').get(runId) as
       | { state: string }
       | undefined
@@ -373,9 +394,21 @@ export class JudgeJournalStore implements JudgeJournal {
     if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_judge_journal'").get()) {
       return []
     }
-    return this.db
-      .prepare('SELECT * FROM relay_judge_journal WHERE run_id=? ORDER BY cycle, started_at, id')
-      .all(runId) as unknown as JudgeJournalRow[]
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM relay_judge_journal
+         WHERE run_id=? AND expires_at > ?
+         ORDER BY cycle, started_at, id`
+      )
+      .all(runId, now) as unknown as JudgeJournalRow[]
+    return rows.map((row) => ({
+      ...row,
+      packet: this.scrubJson(row.packet),
+      observation: row.observation === null ? null : this.scrubJson(row.observation),
+      policy: row.policy === null ? null : this.scrubJson(row.policy),
+      signals: this.scrubJson(row.signals),
+      result: this.scrubJson(row.result)
+    }))
   }
 
   purgeExpired(now = this.clock()): number {

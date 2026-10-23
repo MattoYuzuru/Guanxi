@@ -16,10 +16,23 @@ import { RelayStarts, type RelayStartHost } from './start.ts'
 import type { EtaInput } from './eta.ts'
 import type { RelayJudgeInput } from './judge-host.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
-import { JudgeJournalStore } from './judge-journal.ts'
+import { JudgeJournalStore, type JudgeJournal } from './judge-journal.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
 const JOURNAL_PURGE_INTERVAL_MS = 10 * 60 * 1_000
+
+/** Default-on injection for one execution. The journal store is created lazily so a node with
+ * no cascaded judge run creates no journal table. An explicit `journal: null` stays off. */
+export function cascadeWithJournal(
+  cascade: RelayCascadeInput | undefined,
+  journal: () => JudgeJournal
+): RelayCascadeInput | undefined {
+  if (!cascade) return undefined
+  return {
+    ...cascade,
+    journal: cascade.journal === undefined ? journal() : cascade.journal
+  }
+}
 export interface RelayConfig { db: Db; limits?: Partial<RelayLimits>; startHost?: RelayStartHost }
 export interface RelayInput {
   connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves; limits?: Partial<RelayLimits>
@@ -38,11 +51,14 @@ export const relayPlugin = definePlugin<RelayConfig>({
     const scrubber = ctx.service<EgressScrubber>('egress.scrubber')
     const store = new RelayStore(config.db, runs.store, scrubber)
     // D-199 journal is owned by this node and bounded by the reasoning retention. It is
-    // constructed even before a judge runs so a periodic purge can empty an old node.
-    const journal = new JudgeJournalStore(config.db, { scrubber })
+    // created on the first cascaded execution, so a node without a judge creates no table; the
+    // periodic purge then removes expired rows.
+    let journal: JudgeJournalStore | null = null
+    const journalStore = (): JudgeJournalStore =>
+      (journal ??= new JudgeJournalStore(config.db, { scrubber }))
     const purgeJournal = () => {
       try {
-        journal.purgeExpired()
+        journal?.purgeExpired()
       } catch {
         // The next tick retries; a local sidecar purge never stops the relay.
       }
@@ -61,12 +77,7 @@ export const relayPlugin = definePlugin<RelayConfig>({
         invariant(!closed && !active.has(a.run_id), 'relay_busy')
         invariant(!input.eta || input.eta.scope.model === input.model, 'eta_model')
         const limits = { ...DEFAULT_RELAY_LIMITS, ...config.limits, ...input.limits }
-        const cascade = input.cascade
-          ? {
-              ...input.cascade,
-              journal: input.cascade.journal === undefined ? journal : input.cascade.journal
-            }
-          : undefined
+        const cascade = cascadeWithJournal(input.cascade, journalStore)
         const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits, input.eta, input.judgeSignals, cascade)
         const promise = executor.run(a)
         active.set(a.run_id, { executor, promise })

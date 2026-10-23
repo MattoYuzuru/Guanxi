@@ -215,7 +215,8 @@ export class RelayJudgeCascade {
     a: Attempt,
     id: JudgeIdentity,
     signal: AbortSignal,
-    body: (r: JudgeRequest, packet: { text: string; refs: string[] }) => Promise<unknown>
+    body: (r: JudgeRequest, packet: { text: string; refs: string[] }) => Promise<unknown>,
+    observed: JudgeJournalContext | undefined
   ): Promise<JudgeRequest> {
     this.check(a, id.cycle, signal)
     const packet = this.packet(a, id, structuredClone(this.relay.read(a.run_id)))
@@ -238,7 +239,7 @@ export class RelayJudgeCascade {
           } catch {
             /* a revoked fence cannot append */
           }
-          if (abandoned) this.journal(a, id, r.key, packet, abandoned, startedAt)
+          if (abandoned) this.journal(a, id, r.key, packet, abandoned, startedAt, observed)
           throw error
         }
         // Resourceful body has already settled before reaching here. Cancellation/fence
@@ -255,7 +256,7 @@ export class RelayJudgeCascade {
           { code }
         )
       }
-      this.journal(a, id, r.key, packet, finished, startedAt)
+      this.journal(a, id, r.key, packet, finished, startedAt, observed)
       return finished
     })()
     this.pending.set(r.key, promise)
@@ -273,7 +274,8 @@ export class RelayJudgeCascade {
     key: string,
     packet: { text: string; refs: string[] },
     request: JudgeRequest,
-    startedAt: number
+    startedAt: number,
+    observed: JudgeJournalContext | undefined
   ): void {
     const journal = this.input.journal
     if (!journal) return
@@ -287,22 +289,30 @@ export class RelayJudgeCascade {
         layer: id.layer as JudgeJournalLayer,
         reason: id.reason,
         requestKey: key,
-        packet: JSON.parse(packet.text) as unknown,
-        observation: this.observed?.observation ?? null,
-        policy: this.observed?.policy ?? null,
-        signals: this.observed?.signals ?? [],
+        packet: structuredClone(JSON.parse(packet.text)) as unknown,
+        observation: observed === undefined ? null : structuredClone(observed.observation),
+        policy: observed === undefined ? null : structuredClone(observed.policy),
+        signals: observed === undefined ? [] : structuredClone([...observed.signals]),
         state: request.state as JudgeJournalState,
-        result: request.payload,
+        result: structuredClone(request.payload),
         startedAt,
         finishedAt: this.relay.clock()
       }
-      journal.record(entry)
+      const pending = journal.record(entry)
+      if (pending && typeof pending.then === 'function') {
+        void pending.catch(() => undefined)
+      }
     } catch {
       /* The judge outcome is already fenced and persisted. The local journal is best-effort
        * for execution and is never allowed to turn a valid verdict into an unavailable one. */
     }
   }
-  private async model(a: Attempt, id: JudgeIdentity, signal: AbortSignal): Promise<JudgeRequest> {
+  private async model(
+    a: Attempt,
+    id: JudgeIdentity,
+    signal: AbortSignal,
+    observed: JudgeJournalContext | undefined
+  ): Promise<JudgeRequest> {
     return this.request(a, id, signal, async (r, packet) => {
       const role = id.layer === 'J3' ? this.brief!.roles.j3 : this.brief!.roles.j2
       invariant(role, 'judge_model_unavailable')
@@ -342,9 +352,14 @@ export class RelayJudgeCascade {
           .evidence.filter((e) => !e.ok)
           .map((e) => e.id)
       }
-    })
+    }, observed)
   }
-  private async checker(a: Attempt, phase: string, signal: AbortSignal): Promise<void> {
+  private async checker(
+    a: Attempt,
+    phase: string,
+    signal: AbortSignal,
+    observed: JudgeJournalContext | undefined
+  ): Promise<void> {
     const spec = this.brief!.judges.checker
     if (!spec) return
     const cycle = this.relay.read(a.run_id).cycle
@@ -380,7 +395,8 @@ export class RelayJudgeCascade {
         } finally {
           clearTimeout(timer)
         }
-      }
+      },
+      observed
     )
   }
   async sample(
@@ -419,8 +435,9 @@ export class RelayJudgeCascade {
       invariant(!previous || canonical(previous) === canonical(detached), 'judge_summary_conflict')
       this.summaries.set(phase, detached)
     }
-    await this.checker(a, phase, signal)
-    const j2 = await this.model(a, { cycle, phase, layer: 'J2', reason: 'scheduled' }, signal)
+    const context = this.observed
+    await this.checker(a, phase, signal, context)
+    const j2 = await this.model(a, { cycle, phase, layer: 'J2', reason: 'scheduled' }, signal, context)
     this.store.availability(a, cycle, j2.state === 'completed')
     if (phase === 'pre_seal') {
       const l = this.relay.read(a.run_id)
@@ -444,7 +461,8 @@ export class RelayJudgeCascade {
     return this.model(
       a,
       { cycle: this.relay.read(a.run_id).cycle, phase: 'review', layer: 'J3', reason },
-      signal
+      signal,
+      this.observed
     )
   }
 }
