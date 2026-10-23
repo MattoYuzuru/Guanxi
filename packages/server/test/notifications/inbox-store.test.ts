@@ -92,7 +92,7 @@ test('migration v1 is idempotent when the sidecar database is reopened', async (
 
   assert.deepEqual(
     reopened.db.prepare('SELECT version FROM nc1_migrations ORDER BY version').all().map(row => Number(row.version)),
-    [1],
+    [1, 2],
   )
   assert.equal(String(reopened.db.prepare('PRAGMA journal_mode').get()?.journal_mode).toLowerCase(), 'wal')
   assert.equal(Number(reopened.db.prepare('PRAGMA foreign_keys').get()?.foreign_keys), 1)
