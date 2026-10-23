@@ -1249,13 +1249,14 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 11,
+        "count": 12,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/agent/WorkspacePicker.tsx",
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
+          "packages/web/src/features/models/CatalogVariantInstall.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",

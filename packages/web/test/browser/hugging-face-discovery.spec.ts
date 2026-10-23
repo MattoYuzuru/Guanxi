@@ -913,7 +913,9 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(installed).toHaveCount(1)
   await expect(section.getByText(/новом локальном sample \/api\/tags/u)).toHaveCount(1)
   await expect(section.getByText(/completion probe получил свежий/u)).toHaveCount(1)
-  await expect(section.getByText(/owner\/model:latest, manifest-digest/u)).toHaveCount(1)
+  // Reference and digest are separate facts now (D-202): each appears exactly once.
+  await expect(section.locator('dl.model-facts .model-fact').filter({ hasText: 'owner/model:latest' })).toHaveCount(1)
+  await expect(section.locator('dl.model-facts dd', { hasText: /^manifest-digest$/u })).toHaveCount(1)
   await expect.poll(modelCalls)
     .toBe(modelsBeforeImport + 1)
   const installedRegion = page.getByRole('heading', { name: 'Установленные' })

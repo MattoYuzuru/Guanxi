@@ -6,6 +6,7 @@ import {
   HuggingFaceDiscovery,
   RepositoryCard,
 } from '../../src/features/models/HuggingFaceDiscovery.tsx'
+import { factPairs } from '../helpers/facts.ts'
 
 const originalFetch = globalThis.fetch
 const OBSERVED_AT = '2026-08-07T12:00:00.000Z'
@@ -913,7 +914,7 @@ describe('P2-K exact GGUF file/revision selection', () => {
         },
       },
     })))
-    await waitFor(() => expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy())
+    await waitFor(() => expect(factPairs()).toContainEqual(['Окно контекста', '32k']))
   })
 
   it('supersedes the initial pending selection when the context changes', async () => {
@@ -962,12 +963,12 @@ describe('P2-K exact GGUF file/revision selection', () => {
         },
       },
     })))
-    await waitFor(() => expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy())
-    expect(screen.queryByText(/выбранный контекст 8k/u)).toBeNull()
+    await waitFor(() => expect(factPairs()).toContainEqual(['Окно контекста', '32k']))
+    expect(factPairs()).not.toContainEqual(['Окно контекста', '8k'])
 
     pending[0]?.resolve(json(confirmedSelectionResult()))
     await Promise.resolve()
-    expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy()
+    expect(factPairs()).toContainEqual(['Окно контекста', '32k'])
   })
 
   it('shows a typed refusal and selects again from its own button when a fresh re-check no longer confirms the target', async () => {

@@ -8,6 +8,7 @@ import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { LocaleProvider } from '../../src/lib/locale-context.tsx'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
+import { factPairs } from '../helpers/facts.ts'
 
 const CUSTOM_CONTEXT = 1_048_577
 const OBSERVED_AT = '2026-08-03T00:00:00.000Z'
@@ -136,7 +137,7 @@ describe('no-artificial-context-cap UI', () => {
     fireEvent.change(input, { target: { value: String(CUSTOM_CONTEXT) } })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(getModel).toHaveBeenLastCalledWith('fixture:latest', CUSTOM_CONTEXT, expect.any(AbortSignal)))
-    expect(view.container.textContent).toContain('Объявленный provider максимум: 1.9M')
-    expect(screen.getAllByText(/окно 1M/).length).toBeGreaterThan(0)
+    expect(factPairs(view.container)).toContainEqual(['Объявленный provider максимум', '1.9M'])
+    expect(factPairs(view.container)).toContainEqual(['Окно контекста', '1M'])
   })
 })

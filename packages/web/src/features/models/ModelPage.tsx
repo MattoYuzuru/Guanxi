@@ -28,6 +28,7 @@ import {
   formatRelativeTime,
 } from '../../lib/format.ts'
 import { FitIndicator } from './FitIndicator.tsx'
+import { FactList } from './Facts.tsx'
 import { exceedsDeclaredContextLimit, parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { translate } from '../../lib/locale.ts'
 import { InstalledEvidenceDetails } from './InstalledEvidence.tsx'
@@ -168,21 +169,27 @@ function ModelProfile({
       <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="font-mono text-lg font-semibold tracking-tight">{model.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary">
-            <span>{model.family}</span>
-            <span>{model.parameterSize}</span>
-            <span>{model.quantization}</span>
-            <span title={formatDateTime(model.modifiedAt)}>
-              {translate('model.modified', { time: formatRelativeTime(model.modifiedAt) })}
-            </span>
-          </div>
+          <FactList
+            className="mt-2"
+            label={translate('models.facts.label')}
+            facts={[
+              { label: translate('models.facts.family'), value: model.family },
+              { label: translate('models.facts.parameters'), value: model.parameterSize },
+              { label: translate('models.facts.quantization'), value: model.quantization },
+              model.isCloud && { label: translate('models.facts.runs'), value: translate('models.facts.cloud') },
+              {
+                label: translate('models.facts.observed'),
+                value: translate('model.modified', { time: formatRelativeTime(model.modifiedAt) }),
+                title: formatDateTime(model.modifiedAt),
+              },
+            ]}
+          />
           <div className="mt-2 flex flex-wrap gap-1">
             {(model.descriptor.capabilities.state === 'declared' ? model.capabilities : []).map((capability) => (
               <Badge key={capability} tone="accent">
                 {capability}
               </Badge>
             ))}
-            {model.isCloud && <Badge tone="accent">{translate('model.cloud')}</Badge>}
           </div>
         </div>
 
@@ -310,30 +317,37 @@ function ModelProfile({
               ) : null}
             </div>
 
-            <p className="mt-2 text-2xs text-muted">
-              {model.contextLimit.state === 'declared' ? (
-                <>
-                  {translate('context.limit.declared')}: {formatContextLength(model.contextLimit.value)},{' '}
-                  {model.contextLimit.source === 'ollama_api_tags'
-                    ? translate('context.limit.source.tags')
-                    : translate('context.limit.source.show')}
-                 , {translate('context.limit.confidence.declared')},{' '}
-                  {formatDateTime(model.contextLimit.observedAt)}
-                </>
-              ) : model.contextLimit.source === 'conflicting_provider_declarations' ? (
-                <>
-                  {translate('context.limit.conflicting')},{' '}
-                  {translate('context.limit.confidence.unknown')},{' '}
-                  {formatDateTime(model.contextLimit.observedAt)}
-                </>
-              ) : (
-                <>
-                  {translate('context.limit.unknown')},{' '}
-                  {translate('context.limit.confidence.unknown')},{' '}
-                  {formatDateTime(model.contextLimit.observedAt)}
-                </>
-              )}
-            </p>
+            {model.contextLimit.state === 'declared' ? (
+              <FactList
+                className="mt-2"
+                facts={[
+                  { label: translate('context.limit.declared'), value: formatContextLength(model.contextLimit.value) },
+                  {
+                    label: translate('models.facts.source'),
+                    value: model.contextLimit.source === 'ollama_api_tags'
+                      ? translate('context.limit.source.tags')
+                      : translate('context.limit.source.show'),
+                    mono: true,
+                  },
+                  { label: translate('models.facts.confidence'), value: translate('models.facts.confidence.declared') },
+                  { label: translate('models.facts.observed'), value: formatDateTime(model.contextLimit.observedAt) },
+                ]}
+              />
+            ) : (
+              <div className="mt-2">
+                <p className="text-2xs text-muted">
+                  {model.contextLimit.source === 'conflicting_provider_declarations'
+                    ? translate('context.limit.conflicting')
+                    : translate('context.limit.unknown')}
+                </p>
+                <FactList
+                  facts={[
+                    { label: translate('models.facts.confidence'), value: translate('models.facts.confidence.unknown'), tone: 'warning' },
+                    { label: translate('models.facts.observed'), value: formatDateTime(model.contextLimit.observedAt) },
+                  ]}
+                />
+              </div>
+            )}
 
             <FitIndicator
               fit={shownFit}

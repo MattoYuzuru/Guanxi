@@ -30,6 +30,7 @@ import { ApiRequestError, api, streamHuggingFaceDownload } from '../../lib/api.t
 import { formatBytes, formatContextLength, formatDateTime, formatUtilization } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { HuggingFaceImportControl } from './HuggingFaceImportControl.tsx'
+import { FactList } from './Facts.tsx'
 
 type Page = Extract<HuggingFaceSearchResult, { state: 'listed' | 'empty' }>
 
@@ -684,9 +685,12 @@ function HuggingFaceDownloadControl({
         {state.phase === 'downloading' ? (
           <div className="mt-2">
             {ratio === null ? (
-              <p className="text-2xs text-secondary">
-                {formatBytes(state.completedBytes)}, {translate('hf.download.totalUnknown')}
-              </p>
+              <FactList
+                facts={[
+                  { label: translate('models.facts.downloaded'), value: formatBytes(state.completedBytes) },
+                  { label: translate('models.facts.size'), value: translate('hf.download.totalUnknown'), tone: 'muted' },
+                ]}
+              />
             ) : (
               <>
                 <Meter value={ratio} label={translate('hf.download.progress')} height={4} />
@@ -727,26 +731,26 @@ function HuggingFaceDownloadControl({
       <p className="text-2xs font-semibold">{title}</p>
       {state.kind === 'completed' ? (
         <div className="mt-1 min-w-0 text-2xs text-secondary">
-          <p>
-            {formatBytes(state.provenance.observedSizeBytes)}, {translate('hf.download.format')}{' '}
-            v{state.provenance.format.version}
-          </p>
-          <p className="mt-1 min-w-0 break-all font-mono">
-            {translate('hf.download.checksum')}: {state.provenance.checksum.observedDigest}
-          </p>
+          <FactList
+            facts={[
+              { label: translate('models.facts.size'), value: formatBytes(state.provenance.observedSizeBytes) },
+              { label: translate('hf.download.format'), value: `v${state.provenance.format.version}`, mono: true },
+              { label: translate('hf.download.checksum'), value: state.provenance.checksum.observedDigest, mono: true },
+            ]}
+          />
           <p className="mt-0.5">
             {state.provenance.checksum.relation === 'matched_provider_claim'
               ? translate('hf.download.checksum.matched')
               : translate('hf.download.checksum.observedOnly')}
           </p>
-          <p className="mt-1">
-            {translate('hf.repository.license')}: {licenseStateLabel(state.provenance.license)}
-            {', '}
-            {translate('hf.repository.gated')}: {gatedStateLabel(state.provenance.gated)}
-          </p>
-          <p className="mt-1 min-w-0 break-all font-mono">
-            {translate('hf.download.artifact')}: {state.provenance.artifact.id}
-          </p>
+          <FactList
+            className="mt-1"
+            facts={[
+              { label: translate('hf.repository.license'), value: licenseStateLabel(state.provenance.license) },
+              { label: translate('hf.repository.gated'), value: gatedStateLabel(state.provenance.gated) },
+              { label: translate('hf.download.artifact'), value: state.provenance.artifact.id, mono: true },
+            ]}
+          />
           <HuggingFaceImportControl
             artifact={state.provenance}
             contextLength={result.fit.contextLength}
@@ -959,11 +963,13 @@ export function RepositoryCard({
           <p className="min-w-0 break-all font-mono text-sm">
             {repository.identity.repositoryId}
           </p>
-          <p className="mt-0.5 text-2xs text-secondary">
-            {translate('hf.repository.source')}: {translate('hf.repository.source.value')}
-            {', '}
-            {translate('hf.repository.observed')}: {formatDateTime(repository.observedAt)}
-          </p>
+          <FactList
+            className="mt-0.5"
+            facts={[
+              { label: translate('hf.repository.source'), value: translate('hf.repository.source.value') },
+              { label: translate('hf.repository.observed'), value: formatDateTime(repository.observedAt) },
+            ]}
+          />
         </div>
         <Badge tone={badge.tone}>{badge.label}</Badge>
       </div>
@@ -1081,42 +1087,40 @@ export function RepositoryCard({
               <p className="mt-1 min-w-0 break-all font-mono text-2xs">
                 {state.result.selection.filePath}
               </p>
-              <p className="mt-1 text-2xs text-secondary">
-                {translate('hf.select.size')}:{' '}
-                {state.result.selection.sizeBytes === null
-                  ? translate('hf.repository.files.size.unknown')
-                  : `${formatBytes(state.result.selection.sizeBytes)}, ${translate('hf.select.size.source')}`}
-              </p>
+              <FactList
+                className="mt-1"
+                facts={[
+                  {
+                    label: translate('hf.select.size'),
+                    value: state.result.selection.sizeBytes === null
+                      ? translate('hf.repository.files.size.unknown')
+                      : formatBytes(state.result.selection.sizeBytes),
+                  },
+                  state.result.selection.sizeBytes !== null && { label: translate('models.facts.source'), value: translate('hf.select.size.source'), tone: 'muted' },
+                ]}
+              />
               <div className="mt-2">
                 {state.result.fit.state === 'calculated' ? (
                   <div className="text-2xs">
-                    <p className="font-medium">
-                      {translate(SELECTION_FIT_LEVEL_KEYS[state.result.fit.verdict.level])}
-                      {', '}
-                      {formatUtilization(state.result.fit.verdict.utilization)}
-                    </p>
-                    <p className="mt-0.5 text-secondary">
-                      {formatBytes(state.result.fit.verdict.requiredBytes)} /{' '}
-                      {formatBytes(state.result.fit.verdict.usableBytes)}
-                      {', '}
-                      {translate('hf.select.fit.context')}{' '}
-                      {formatContextLength(state.result.fit.contextLength)}
-                    </p>
+                    <FactList
+                      facts={[
+                        { label: translate('models.facts.fit'), value: translate(SELECTION_FIT_LEVEL_KEYS[state.result.fit.verdict.level]) },
+                        { label: translate('models.facts.memory'), value: `${formatBytes(state.result.fit.verdict.requiredBytes)} / ${formatBytes(state.result.fit.verdict.usableBytes)} (${formatUtilization(state.result.fit.verdict.utilization)})` },
+                        { label: translate('models.facts.context'), value: formatContextLength(state.result.fit.contextLength) },
+                      ]}
+                    />
                     <p className="mt-1 text-warning">
                       {translate('hf.select.fit.reportedSizeOnly')}
                     </p>
-                    <p className="mt-1 text-secondary">
-                      {translate('hf.select.fit.hardware')}:{' '}
-                      {translate('hf.select.fit.hardware.source')}
-                      {', '}
-                      {translate('hf.repository.observed')}:{' '}
-                      {formatDateTime(state.result.fit.hardware.observedAt)}
-                      {', '}
-                      {translate('hf.select.fit.hardware.confidence')}
-                      {', '}
-                      {translate('hf.select.fit.calculated')}:{' '}
-                      {formatDateTime(state.result.fit.calculatedAt)}
-                    </p>
+                    <FactList
+                      className="mt-1"
+                      facts={[
+                        { label: translate('hf.select.fit.hardware'), value: translate('hf.select.fit.hardware.source') },
+                        { label: translate('hf.repository.observed'), value: formatDateTime(state.result.fit.hardware.observedAt) },
+                        { label: translate('models.facts.confidence'), value: translate('hf.select.fit.hardware.confidence') },
+                        { label: translate('hf.select.fit.calculated'), value: formatDateTime(state.result.fit.calculatedAt) },
+                      ]}
+                    />
                   </div>
                 ) : (
                   <p className="text-2xs text-warning">
@@ -1126,11 +1130,13 @@ export function RepositoryCard({
                   </p>
                 )}
               </div>
-              <p className="mt-2 text-2xs text-secondary">
-                {translate('hf.repository.gated')}: {gatedLabel(state.result.repository)}
-                {', '}
-                {translate('hf.repository.license')}: {licenseLabel(state.result.repository)}
-              </p>
+              <FactList
+                className="mt-2"
+                facts={[
+                  { label: translate('hf.repository.gated'), value: gatedLabel(state.result.repository) },
+                  { label: translate('hf.repository.license'), value: licenseLabel(state.result.repository) },
+                ]}
+              />
               {state.result.repository.license.state === 'declared' ? (
                 <p className="mt-1 text-2xs text-secondary">
                   {translate('hf.repository.license.note')}

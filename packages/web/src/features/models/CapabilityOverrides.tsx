@@ -23,6 +23,7 @@ import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
+import { FactList } from './Facts.tsx'
 
 const CAPABILITIES = modelCapabilitySchema.options
 
@@ -312,14 +313,16 @@ export function CapabilityOverrides({
                   {translate('models.override.remove')}
                 </Button>
               </div>
-              <p className="mt-1 min-w-0 break-all text-secondary">
-                {translate('models.override.created')} {formatDateTime(override.createdAt)},{' '}
-                {translate('models.override.updated')} {formatDateTime(override.updatedAt)}
-              </p>
-              <p className="mt-1 min-w-0 break-all font-mono text-secondary">
-                {override.normalizedModelReference}, {override.artifactDigest}, Ollama{' '}
-                {override.runtimeVersion}
-              </p>
+              <FactList
+                className="mt-1"
+                facts={[
+                  { label: translate('models.override.created'), value: formatDateTime(override.createdAt) },
+                  { label: translate('models.override.updated'), value: formatDateTime(override.updatedAt) },
+                  { label: translate('models.facts.reference'), value: override.normalizedModelReference, mono: true },
+                  { label: translate('models.facts.digest'), value: override.artifactDigest, mono: true },
+                  { label: translate('models.facts.runtime'), value: `Ollama ${override.runtimeVersion}` },
+                ]}
+              />
             </li>
           ))}
         </ul>

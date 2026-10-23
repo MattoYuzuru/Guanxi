@@ -3,6 +3,7 @@ import type { CatalogModel, CatalogVariant } from '@guanxi/contract'
 import { Button, Modal } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
+import { FactList, type Fact } from './Facts.tsx'
 
 export interface CatalogComparisonRow {
   model: CatalogModel
@@ -120,17 +121,21 @@ function CompareColumn({
   return (
     <section className="min-w-0 rounded-lg border border-divider bg-inset p-3" aria-label={variant.normalizedName}>
       <h3 className="break-all font-mono text-xs font-semibold">{variant.normalizedName}</h3>
-      <p className="mt-1 text-2xs text-secondary">
-        {translate('catalog.compare.tag')}: <span className="font-mono">{variant.tag}</span>
-      </p>
-      <Fact label={translate('catalog.compare.claimedSize')} value={variant.sizeBytes === null ? unknown() : formatBytes(variant.sizeBytes)} />
-      <Fact label={translate('catalog.compare.parameters')} value={variant.parameterSize ?? unknown()} />
-      <Fact label={translate('catalog.compare.claimedContext')} value={variant.contextLength === null ? unknown() : formatContextLength(variant.contextLength)} />
-      <Fact label={translate('catalog.compare.fit')} value={fitText(variant)} />
-      <Fact label={translate('catalog.compare.source')} value={`${sourceText(variant)}, ${freshnessText(variant)}`} />
-      <Fact label={translate('catalog.compare.observed')} value={variant.sourceObservedAt ? formatDateTime(variant.sourceObservedAt) : unknown()} />
-      <Fact label={translate('catalog.compare.fetched')} value={variant.sourceFetchedAt ? formatDateTime(variant.sourceFetchedAt) : unknown()} />
-      <Fact label={translate('catalog.compare.installation')} value={installationText(variant)} />
+      <FactList
+        className="mt-2"
+        facts={[
+          { label: translate('catalog.compare.tag'), value: variant.tag, mono: true },
+          { label: translate('catalog.compare.claimedSize'), value: variant.sizeBytes === null ? unknown() : formatBytes(variant.sizeBytes) },
+          { label: translate('catalog.compare.parameters'), value: variant.parameterSize ?? unknown() },
+          { label: translate('catalog.compare.claimedContext'), value: variant.contextLength === null ? unknown() : formatContextLength(variant.contextLength) },
+          ...fitFacts(variant),
+          { label: translate('catalog.compare.source'), value: sourceText(variant) },
+          { label: translate('models.facts.freshness'), value: freshnessText(variant) },
+          { label: translate('catalog.compare.observed'), value: variant.sourceObservedAt ? formatDateTime(variant.sourceObservedAt) : unknown() },
+          { label: translate('catalog.compare.fetched'), value: variant.sourceFetchedAt ? formatDateTime(variant.sourceFetchedAt) : unknown() },
+          ...installationFacts(variant),
+        ]}
+      />
       <Button
         variant="ghost"
         size="sm"
@@ -144,28 +149,34 @@ function CompareColumn({
   )
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <p className="mt-2 min-w-0 text-2xs">
-      <span className="block font-medium text-secondary">{label}</span>
-      <span className="block break-words text-foreground">{value}</span>
-    </p>
-  )
+function fitFacts(variant: CatalogVariant): Fact[] {
+  const label = translate('catalog.compare.fit')
+  if (variant.fit.state === 'unknown') {
+    return [{ label, value: unknown(), tone: 'warning' }, { label: translate('models.facts.reason'), value: variant.fit.reason, mono: true }]
+  }
+  return [
+    { label, value: translate(`catalog.filters.value.${variant.fit.verdict.level}` as LocaleKey) },
+    { label: translate('models.facts.basis'), value: translate('catalog.compare.claimedFitBasis'), tone: 'muted' },
+    { label: translate('models.facts.context'), value: formatContextLength(variant.fit.contextLength) },
+  ]
 }
 
-function fitText(variant: CatalogVariant): string {
-  if (variant.fit.state === 'unknown') return `${unknown()}, ${variant.fit.reason}`
-  return `${translate(`catalog.filters.value.${variant.fit.verdict.level}` as LocaleKey)}, ${translate('catalog.compare.claimedFitBasis')}, ${formatContextLength(variant.fit.contextLength)}`
-}
-
-function installationText(variant: CatalogVariant): string {
+function installationFacts(variant: CatalogVariant): Fact[] {
+  const label = translate('catalog.compare.installation')
   if (variant.installation.state === 'installed') {
-    return `${translate('catalog.filters.value.installed')}, ${variant.installation.digest}, ${formatDateTime(variant.installation.observedAt)}`
+    return [
+      { label, value: translate('catalog.filters.value.installed') },
+      { label: translate('models.facts.digest'), value: variant.installation.digest, mono: true },
+      { label: translate('models.facts.observed'), value: formatDateTime(variant.installation.observedAt) },
+    ]
   }
   if (variant.installation.state === 'not_installed') {
-    return `${translate('catalog.filters.value.not_installed')}, ${formatDateTime(variant.installation.observedAt)}`
+    return [
+      { label, value: translate('catalog.filters.value.not_installed') },
+      { label: translate('models.facts.observed'), value: formatDateTime(variant.installation.observedAt) },
+    ]
   }
-  return `${unknown()}, ${variant.installation.reason}`
+  return [{ label, value: unknown(), tone: 'warning' }, { label: translate('models.facts.reason'), value: variant.installation.reason, mono: true }]
 }
 
 function sourceText(variant: CatalogVariant): string {

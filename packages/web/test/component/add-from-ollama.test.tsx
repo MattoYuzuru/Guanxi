@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AddFromOllama } from '../../src/features/models/AddFromOllama.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { factPairs } from '../helpers/facts.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -172,7 +173,8 @@ describe('Add from Ollama Marketplace flow', () => {
     ))
     expect(await screen.findByText('Ollama скачивает данные модели.')).toBeTruthy()
     expect(screen.getByLabelText('Прогресс Ollama pull')).toBeTruthy()
-    expect(screen.getByText('25%, 25 Б')).toBeTruthy()
+    expect(factPairs()).toContainEqual(['Прогресс', '25%'])
+    expect(factPairs().find(([label]) => label === 'Скачано')?.[1]).toMatch(/^25\s?Б$/u)
     streamController.enqueue(encoder.encode(
       `id: 1\nevent: guanxi\ndata: ${JSON.stringify({
         type: 'done', seq: 1, data: { name: 'qwen3:8b' },
