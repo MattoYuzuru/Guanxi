@@ -174,6 +174,63 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.equal((await Promise.race([home.exited, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the home did not shut down')), 30_000).unref())])).code, 0)
 })
 
+// ---- Time and the owner end a delegation ---------------------------------------------------------------------------------
+
+test('the lead\'s deadline passes in simulated hours while the relay works: it is stopped, nothing keeps running, and the lead is woken once with "deadline"', async t => {
+  let lead = ''
+  const w = await createWorld(t, { items: 6, gapMs: 75 * MINUTE, leadDeadlineMs: 3 * HOUR })
+  const home = await w.boot()
+  const started = await w.startLead(home); lead = started.runId
+  await started.first
+  await until(() => w.state(lead) === 'completed', 'the woken lead to finish', 120_000)
+  const promise = w.one('SELECT * FROM promises WHERE parent_id=?', lead)!
+  assert.equal(promise['outcome'], 'deadline', 'resolved by the 3 h deadline, which the injected clock passed between two cycles')
+  assert.deepEqual(w.wakes(lead).map(wake => [wake.kind, wake.acknowledged_at !== null]), [['resolution', true]])
+  assert.equal(w.wakePrompts().length, 1)
+  const [relay] = w.relayStarts()
+  assert.equal(w.state(relay!.run_id), 'canceled', 'the relay run was told to stop (cancel after wrap-up)')
+  const ledger = w.ledger(relay!.run_id)
+  assert.ok(Object.values(ledger.items).some(status => status === 'done') && Object.values(ledger.items).some(status => status === 'open'), 'it stopped part-way')
+  const packet = JSON.parse(w.one('SELECT packet FROM lead_wakes WHERE run_id=?', lead)!['packet'] as string)
+  assert.equal(packet.outcome, 'deadline')
+  assert.deepEqual(packet.items.map((item: { id: string; status: string }) => [item.id, item.status]), Object.entries(ledger.items).sort(), 'every item once, as the ledger says')
+  assert.ok(w.gaps.length >= 3 && w.gaps.length < 5, `the clock stopped moving when the relay did (${w.gaps.length} gaps)`)
+  const calls = await w.fake.count('/completion')
+  await new Promise(resolve => setTimeout(resolve, 800))
+  assert.equal(await w.fake.count('/completion'), calls, 'no model call after the stop')
+  assert.deepEqual(w.target.db.prepare('SELECT id FROM federation_streams').all(), [], 'the executor holds no pin for the stopped run')
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM run_attempts WHERE state IN ('delivered','started')"), 0)
+  assert.deepEqual(readdirSync(w.checkouts), [], 'the owned checkout is gone')
+  assert.deepEqual(await w.agentProcesses(), [])
+  w.db(legalState); w.db(integrity)
+})
+
+test('the owner cancels the lead between two relay cycles: the relay run and its pin are gone, nobody is woken, nothing keeps running', async t => {
+  let lead = '', home!: Awaited<ReturnType<World['boot']>>
+  const w = await createWorld(t, { items: 6, gapMs: 75 * MINUTE, onGap: gap => { if (gap.cycle === 2) home.send({ cmd: 'cancel', runId: lead }) } })
+  home = await w.boot()
+  const started = await w.startLead(home); lead = started.runId
+  await started.first
+  await home.wait('the cancel to be answered', () => home.find('canceled'), 120_000)
+  await until(() => w.relayStarts()[0]?.status !== 'running', 'the relay start to settle', 60_000)
+  const mirror = w.rows<{ child_id: string }>('SELECT child_id FROM promises WHERE parent_id=?', lead)[0]!.child_id
+  for (const id of [lead, mirror, w.relayStarts()[0]!.run_id]) assert.equal(w.state(id), 'canceled', id)
+  assert.equal(w.relayStarts()[0]!.status, 'canceled')
+  assert.equal(w.wakes(lead).length, 0, 'a canceled lead is not woken')
+  assert.equal(w.wakePrompts().length, 0)
+  assert.deepEqual(home.all('notice'), [])
+  assert.equal(w.gaps.length, 2, 'no cycle began after the cancel')
+  const calls = await w.fake.count('/completion')
+  await new Promise(resolve => setTimeout(resolve, 800))
+  assert.equal(await w.fake.count('/completion'), calls, 'no model call after the cancel')
+  assert.deepEqual(w.target.db.prepare('SELECT id FROM federation_streams').all(), [], 'the executor holds no pin')
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM run_attempts WHERE state IN ('delivered','started')"), 0)
+  assert.deepEqual(readdirSync(w.checkouts), [])
+  assert.deepEqual(await w.agentProcesses(), [])
+  assert.equal(w.costs(lead).length, 1, 'the lead was billed only for the turn that delegated')
+  w.db(legalState); w.db(integrity)
+})
+
 // ---- The owner's limits bind the lead inside the composition ------------------------------------------------------------
 
 test('the owner\'s limits and executor allow-list bind the lead in the composed node: a refused brief hibernates nothing and starts no relay', async t => {

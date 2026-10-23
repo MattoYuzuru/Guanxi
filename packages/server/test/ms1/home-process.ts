@@ -208,6 +208,8 @@ async function main() {
       const { runId, first } = lead.startLead({ ownerAccountId: cfg.owner, actorAccountId: cfg.owner, projectId: 'p', prompt: String(message['prompt']) })
       send({ event: 'lead-started', runId })
       first.then(result => send({ event: 'lead-first', result }), error => send({ event: 'lead-first', error: String(error?.code ?? error) }))
+    } else if (message.cmd === 'cancel') {
+      send({ event: 'canceled', result: await lead.cancel(String(message['runId'])) })
     } else if (message.cmd === 'resume') {
       const result = await lead.resume(String(message['runId']), String(message['prompt']))
       send({ event: 'resumed', result })
