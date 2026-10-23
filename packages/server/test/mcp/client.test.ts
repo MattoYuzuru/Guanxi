@@ -441,3 +441,25 @@ it('close kills the child and waits for its exited promise', async (t) => {
   await harness.manager.close()
   assert.equal(harness.calls.length, 1)
 })
+
+it('close kills a grandchild that inherits stdio', { skip: process.platform === 'win32' }, async (t) => {
+  const harness = await createHarness(t, { mode: 'grandchild' })
+  await harness.manager.listTools('fake')
+  const log = await waitForMessages(
+    harness.log,
+    list => list.some(message => typeof message.grandchildPid === 'number'),
+  )
+  const pid = log.find(message => typeof message.grandchildPid === 'number')?.grandchildPid
+  assert.equal(typeof pid, 'number')
+
+  await withTimeout(harness.manager.close(), 2_000, 'close with a grandchild holding stdout')
+  await waitFor(() => {
+    try {
+      process.kill(pid as number, 0)
+      return false
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === 'ESRCH'
+    }
+  }, 2_000)
+  assert.throws(() => process.kill(pid as number, 0), { code: 'ESRCH' })
+})

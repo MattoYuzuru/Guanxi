@@ -84,6 +84,8 @@ export function spawnMcpProcess(spec: McpTransportSpec): McpTransport {
       env: { ...spec.env },
       shell: false,
       stdio: ['pipe', 'pipe', 'ignore'],
+      // A POSIX process group lets close() reap helpers that inherit stdio.
+      detached: process.platform !== 'win32',
       windowsHide: true,
     })
   } catch {
@@ -93,6 +95,8 @@ export function spawnMcpProcess(spec: McpTransportSpec): McpTransport {
     child.kill('SIGKILL')
     throw new McpError('mcp_config', 'MCP transport did not expose stdin and stdout')
   }
+  const stdin = child.stdin
+  const stdout = child.stdout
 
   const exited = new Promise<McpProcessExit>((resolve) => {
     let settled = false
@@ -101,20 +105,39 @@ export function spawnMcpProcess(spec: McpTransportSpec): McpTransport {
       settled = true
       resolve({ code, signal })
     }
-    child.once('close', settle)
-    // A spawn error may not be followed by `close` on every platform.
+    // `exit` settles even when a grandchild keeps the stdio pipes open.
+    child.once('exit', settle)
+    // A spawn error may not be followed by `exit` on every platform.
     child.once('error', () => settle(null, null))
   })
 
+  const pid = child.pid
   return {
-    stdin: child.stdin,
-    stdout: child.stdout,
+    stdin,
+    stdout,
     kill(signal: NodeJS.Signals = 'SIGKILL') {
-      try {
-        child.kill(signal)
-      } catch {
-        // Already exited or reaped elsewhere.
+      if (process.platform !== 'win32' && pid !== undefined) {
+        try {
+          process.kill(-pid, signal)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+            try {
+              child.kill(signal)
+            } catch {
+              // Already exited or reaped elsewhere.
+            }
+          }
+        }
+      } else {
+        try {
+          child.kill(signal)
+        } catch {
+          // Already exited or reaped elsewhere.
+        }
       }
+      // A helper may still hold the pipes; do not wait on its descriptors.
+      stdin.destroy()
+      stdout.destroy()
     },
     exited,
   }

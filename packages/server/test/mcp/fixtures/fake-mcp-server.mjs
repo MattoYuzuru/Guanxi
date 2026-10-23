@@ -8,6 +8,7 @@
  * The planted stderr string is a sentinel, not a credential. It exists to
  * prove that the client never copies stderr into a result or an error.
  */
+import { spawn } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
 
 const PLANTED_STDERR_SENTINEL = 'fixture-stderr-sentinel-not-a-real-credential-9c41'
@@ -37,6 +38,12 @@ function write(message) {
   } catch {
     // The client may have killed the process after an oversize frame.
   }
+}
+
+if (mode === 'grandchild' && process.platform !== 'win32') {
+  // Inherits this process's stdout, so `close` waits for the grandchild too.
+  const grandchild = spawn('/bin/sleep', ['30'], { stdio: 'inherit' })
+  log({ grandchildPid: grandchild.pid ?? null })
 }
 
 function result(id, value) {
