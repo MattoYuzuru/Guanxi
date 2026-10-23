@@ -49,12 +49,13 @@ evaluating another count gives no verdict; stop during a judge call waits for th
 `dispatched`, never a verdict; a failing collector keeps its fixed fail-closed rule; the default collector's facts.
 `judge-start-local.test.ts` (4, stock Ollama): the relay's own requests are byte for byte those of a relay without a
 judge, judge requests carry no transport-only field, R1 rows are unchanged, `ledger.tokens` grew by exactly the
-reserves, K3 recorded the judge's usage; signals alone; prose verdict; refusal. `judge-model.test.ts` (+9): binding
+reserves, K3 recorded the judge's usage; signals alone; prose verdict; refusal. `judge-model.test.ts` (+13): binding
 rules for transport, stock and inconsistent meters; role refusal before attestation; on real K3, the judge goes
 through the meter's transport (local and remote shape) with count, authorization, dispatch in that order and never
 Ollama; other evaluated tokens give no result; an over-ceiling count dispatches nothing; a scrubber that rewrites the
-request is stopped by the pin. `test/ms1/rehearsal.test.ts` (23, +3): see above, including that a judged crash never
-replays a call and invents no verdict.
+request is stopped by the pin. `test/ms1/rehearsal.test.ts` (25, +5): see above, including that a judged crash never
+replays a call and invents no verdict, that the F2-c books are consistent after recovery (also for a kill inside the transaction),
+and the judge-off baseline.
 
 ## Mutation checks (applied, named test run, source restored)
 
@@ -64,7 +65,9 @@ pre-count (3); `countAsync` without transport allowed (1); no `think:false` (3);
 `onPrepared` pin removed (1); `judge_config_invalid` not a public code (every refusal row); plugin default dropped (1);
 unobserved facts not published (1); start-time role check removed (2); thenable source allowed (1); collector
 deadline wrong (1); in the rehearsal, the judge not wired into the home, and signals without the cascade (the happy
-path fails both).
+path fails both); sample limit disabled (the public-start test). The second-round fixes were checked the other way: the test
+was run with the production change reverted and failed (child process exits 1; stock judge `usage_invalid`; stale admission at the
+second slow sample; store clock). The new judged kill assertions were observed passing on the final states, not mutated.
 
 ## Independent verification
 
@@ -111,7 +114,7 @@ that failed before it (the rest of this file describes the final state):
 
 ## Gates (Mac, Node 26.9.0, shared lock resource `heavy`)
 
-Clean tree at `9fb99f05` (the only later change is this gate table).
+Clean tree at `5edf0932` (the only later change is this section).
 
 | Gate | Result |
 | --- | --- |
@@ -119,18 +122,18 @@ Clean tree at `9fb99f05` (the only later change is this gate table).
 | ESLint on every changed `.ts` | pass, no output |
 | `npm run lint:md` | pass, 276 files, 746 links |
 | `npm run check:licenses` | pass, 675 packages, 0 not allowed |
-| `agent-dev … npm run test`, receipt `check-f4787n_g` | exit 0: core 2740 tests, 2738 pass, 0 fail, 2 skipped (the two pre-existing Linux-only opt-ins); kernel, web, ui, ui-gates, bench and codemod suites 0 fail; `source_changed` false |
-| `agent-dev … npm run build`, receipt `check-1tmxdfn_` | exit 0 |
-| `node --test test/ms1/rehearsal.test.ts`, before the review fixes and again with the relay suites after them | 23/23 (about 3.6 minutes); relay directory plus rehearsal 312 tests, 311 pass (the one failure is `sealing.test.ts` run from `packages/server`, see residual 7; it passes from the repository root) |
+| `agent-dev … npm run test`, receipt `check-m8g_0bf6` | exit 0: core 2749 tests, 2747 pass, 0 fail, 2 skipped (the two pre-existing Linux-only opt-ins); kernel, web, ui, ui-gates, bench and codemod suites 0 fail; `source_changed` false |
+| `agent-dev … npm run build`, receipt `check-ehr0b5_p` | exit 0 |
+| direct: the whole relay test directory plus `test/ms1/rehearsal.test.ts`, run from the repository root | 321 tests, 321 pass (the rehearsal is 25 of them, about 4 minutes) |
 
-An earlier full run (receipt `check-charojky`, head `fb971c57`) failed once: `trusted-start.test.ts` "public start runs the
-real K3 plus K4 tool/clean-gate path", the 5 s `until` in its container-gate wait, while two other lanes held the machine (7.5 s
-for a test that takes 1.7 to 4.5 s in other full runs). It passed alone (three reruns) and the wait was made a 30 s ceiling in
-`554b71f2`; the green run above is after that fix.
+Earlier full runs on this branch: `check-f4787n_g` (head `9fb99f05`, green, before the second review round) and `check-charojky`
+(head `fb971c57`), which failed once on the 5 s `until` of the container-gate wait in `trusted-start.test.ts` while two other lanes
+held the machine (7.5 s for a test that takes 1.7 to 4.5 s in other full runs; it passed alone three times and the wait became a
+30 s ceiling in `554b71f2`).
 
-**New: 42** = `judge-start.test.ts` 26, `judge-start-local.test.ts` 4, `judge-model.test.ts` 9 (5 to 14), `rehearsal.test.ts` 3
-judged kill points (the judge-blocker test was replaced one for one, so the file is 20 to 23). **Regression envelope:** the other
-2698 core cases and the non-core suites; the whole relay test directory and the rehearsal were also run directly.
+**New: 51** = `judge-start.test.ts` 29, `judge-start-local.test.ts` 4, `judge-model.test.ts` 13 (5 to 18), `rehearsal.test.ts` 5 (the file goes
+from 20 to 25: four judged kill points and the judge-off baseline; the judge-blocker test was replaced one for one).
+**Regression envelope:** the other 2698 core cases and the non-core suites.
 
 ## Residual risk (named, not closed)
 
@@ -148,8 +151,10 @@ judged kill points (the judge-blocker test was replaced one for one, so the file
    streaks, dead ends and path edits need a host collector; a collector that fails keeps the existing fail-closed rule
    (`input_required`), not a degrade.
 6. **Not exercised:** J3 and J1.5 on a remote relay (same `model()` path, J3 disabled in the fixtures), the 15 original
-   kill points with the judge on (their arithmetic is call-by-call), a real llama-server judge, real latencies,
-   `maxAgeMs` against a slow sample, `temperature` (not sent to llama-server, so "agreement" is server sampling).
+   kill points with the judge on (their arithmetic is call-by-call), a real llama-server judge, real latencies (the slow-runtime
+   and sample-limit tests use fakes), `temperature` (not sent to llama-server, so "agreement" is server sampling). Each admission
+   refresh is one more signed observation on a remote runtime; the default sample limit (5 minutes) is a guess for a few tokens per
+   second and must be set per role from a measurement.
 7. **Pre-existing, observed:** `sealing.test.ts` resolves its child script from the repository root and fails when run
    from `packages/server`; the full run passes it. The first full run failed once on a 5 s wait in
    `trusted-start.test.ts` (container gate, machine shared with other lanes); the wait is now a 30 s ceiling.
