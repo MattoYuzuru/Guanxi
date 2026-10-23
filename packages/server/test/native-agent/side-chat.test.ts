@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readdir, stat } from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
 import { join, relative } from 'node:path'
 import {
-  parseSideChatSavedNote, promptTextOf, sideChatRespondResponseSchema, sideChatSaveResponseSchema, sideChatSendResponseSchema,
+  INPUT_EXCERPT_BYTES, SIDE_CHAT_SAVE_MAX_BYTES, encodeSideChatSavedNote, parseSideChatSavedNote, promptTextOf, sideChatRespondResponseSchema, sideChatSaveResponseSchema, sideChatSendResponseSchema,
 } from '@guanxi/contract'
 import { fixture } from './fixture.ts'
 import { nativeAgentRoutes } from '../../src/native-agent/routes.ts'
-import { MESSAGE_FRAMING_BYTES, SideChatError, renderSessionContext, runSideChat, sideChatMessageId } from '../../src/native-agent/side-chat.ts'
+import { MESSAGE_FRAMING_BYTES, SIDE_CHAT_CONCURRENCY_ENV, SideChatError, assertWithinBudget, renderSessionContext, runSideChat, sideChatConcurrencyFromEnv, sideChatMessageId } from '../../src/native-agent/side-chat.ts'
 
 type Fixture = Awaited<ReturnType<typeof fixture>>
 const peer = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
@@ -19,18 +20,46 @@ const post = (f: Fixture, id: string, kind: 'respond' | 'save' | 'send', body: u
 const respond = (f: Fixture, id: string, messages: { role: 'user' | 'assistant'; text: string }[], context: unknown = { include: 'session' }, init: RequestInit = {}) =>
   post(f, id, 'respond', { requestId: uuid(), messages, context }, init)
 
-/** Every row of every node-database table, so "nothing was written" is one exact comparison. */
-function tableCounts(f: Fixture): Record<string, number> {
-  const tables = f.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%_fts%' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]
-  return Object.fromEntries(tables.map(({ name }) => [name, Number((f.db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n)]))
+/** The costs table of the connection store is the one intended exception: K3 records a usage receipt. */
+const RECEIPTS = 'connections.sqlite:costs'
+async function sqliteFiles(f: Fixture): Promise<string[]> {
+  const out: string[] = []
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) await walk(path)
+      else if (/\.sqlite$/u.test(entry.name)) out.push(path)
+    }
+  }
+  await walk(f.data)
+  return out.sort()
 }
+/**
+ * Every row of every table of every `*.sqlite` file under the data directory (the node database, the connection
+ * store, the native project roots and any sidecar that appears), keyed `file:table`, each opened read-only.
+ * "Nothing was written" is then one exact comparison; only the K3 receipt table is excepted and checked separately.
+ */
+async function tableCounts(f: Fixture): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {}
+  for (const path of await sqliteFiles(f)) {
+    const db = new DatabaseSync(path, { readOnly: true })
+    try {
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%_fts%' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]
+      for (const { name } of tables) counts[`${relative(f.data, path)}:${name}`] = Number((db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n)
+    } finally { db.close() }
+  }
+  return counts
+}
+const withoutReceipts = (counts: Record<string, number>) => Object.fromEntries(Object.entries(counts).filter(([key]) => key !== RECEIPTS))
+/** File names (sqlite files by name only, since they change in place) and sizes of everything else. */
 async function files(f: Fixture): Promise<string[]> {
   const out: string[] = []
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) await walk(path)
-      else if (!/\.sqlite(-wal|-shm)?$/u.test(entry.name)) out.push(`${relative(f.data, path)}:${(await stat(path)).size}`)
+      else if (/\.sqlite$/u.test(entry.name)) out.push(relative(f.data, path))
+      else if (!/\.sqlite-(wal|shm)$/u.test(entry.name)) out.push(`${relative(f.data, path)}:${(await stat(path)).size}`)
     }
   }
   await walk(f.data)
@@ -51,7 +80,7 @@ test('an unsaved side chat writes nothing: completed, failed and canceled conver
   })
   const { sessionId } = await f.agents().create({ ...f.input, prompt: `inspect ${f.secret}` })
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
-  const before = { rows: tableCounts(f), files: await files(f), head: f.log.session(sessionId)!.lastSeq, requests: f.requests.length, costs: f.connections.store.costs('local').length }
+  const before = { rows: await tableCounts(f), files: await files(f), head: f.log.session(sessionId)!.lastSeq, requests: f.requests.length, costs: f.connections.store.costs('local').length }
 
   const done = await respond(f, sessionId, [{ role: 'user', text: `what did it say? ${f.secret}` }])
   assert.equal(done.status, 200)
@@ -77,9 +106,19 @@ test('an unsaved side chat writes nothing: completed, failed and canceled conver
   await new Promise(resolve => setTimeout(resolve, 50))
 
   assert.ok(['aborted', 499].includes(await outcome as never), 'the canceled request ends as a client abort')
-  assert.equal(f.connections.store.costs('local').length, before.costs + 1, 'only the completed request left its K3 usage receipt; failed and canceled ones left none')
-  assert.equal(JSON.stringify(f.connections.store.costs('local')).includes('side answer BETA'), false, 'receipts hold metadata, never content')
-  assert.deepEqual(tableCounts(f), before.rows, 'no node database table gained a row (events, runs, attempts, jobs, threads)')
+  // K3 records one usage receipt per request the provider completed. In this fixture the failed and the
+  // canceled request never completed, so they left none. That is not a property: a request canceled AFTER the
+  // provider billed it would also leave none (K3 under-accounting on cancel, a recorded residual, not changed here).
+  const receipts = f.connections.store.costs('local')
+  assert.equal(receipts.length, before.costs + 1, 'exactly the one completed request left a K3 usage receipt')
+  assert.match(receipts.at(-1)!.runId, new RegExp(`^side-chat:${sessionId}:[0-9a-f-]{36}$`), 'the receipt is attributable to its session')
+  assert.equal(JSON.stringify(receipts).includes('side answer BETA'), false, 'receipts hold metadata, never content')
+  const after = await tableCounts(f)
+  assert.ok(Object.keys(after).some(key => key.startsWith('connections.sqlite:') && key !== RECEIPTS), 'the connection store is part of the comparison')
+  assert.ok(Object.keys(after).some(key => key.startsWith('native-projects.sqlite:')), 'the native project roots store is part of the comparison')
+  assert.ok(Object.keys(after).some(key => key.startsWith('test.sqlite:session_events')), 'the node database is part of the comparison')
+  assert.equal(after[RECEIPTS], before.rows[RECEIPTS]! + 1, 'the receipts table gained exactly that one row')
+  assert.deepEqual(withoutReceipts(after), withoutReceipts(before.rows), 'no table of any sqlite file under the data directory gained a row, apart from the K3 receipt')
   assert.deepEqual(await files(f), before.files, 'no file was created or resized')
   assert.equal(f.log.session(sessionId)!.lastSeq, before.head)
   assert.equal(events(f, sessionId).length, before.head)
@@ -93,7 +132,7 @@ test('context selection is explicit: none, the whole session or the last turns; 
   await f.agents().wait(sessionId)
   await f.agents().prompt(sessionId, 'second turn')
   await f.agents().wait(sessionId)
-  const before = tableCounts(f)
+  const before = withoutReceipts(await tableCounts(f))
 
   const refused = await respond(f, sessionId, [{ role: 'user', text: 'q' }])
   assert.equal(refused.status, 413)
@@ -111,7 +150,7 @@ test('context selection is explicit: none, the whole session or the last turns; 
   assert.equal(f.requests.at(-1)!.includes('HUGE'), false)
   assert.match(f.requests.at(-1)!, /second answer/)
   assert.equal(f.requests.length, providerCalls + 2, 'a refused context never reaches the provider')
-  assert.deepEqual(tableCounts(f), before)
+  assert.deepEqual(withoutReceipts(await tableCounts(f)), before)
 })
 
 test('rendering reads only prompts and assistant messages and counts bounded excerpts', () => {
@@ -268,7 +307,7 @@ test('refusals are explicit: validation, unknown or unavailable session, unready
   const f = await fixture(t)
   const { sessionId } = await f.agents().create({ ...f.input, retention: 'session' })
   await f.agents().wait(sessionId)
-  const before = tableCounts(f)
+  const before = await tableCounts(f)
   const code = async (response: Response) => ({ status: response.status, code: (await response.json() as { code: string }).code })
   assert.deepEqual(await code(await post(f, sessionId, 'respond', '{broken')), { status: 400, code: 'validation_failed' })
   assert.deepEqual(await code(await post(f, sessionId, 'respond', { requestId: uuid(), messages: [{ role: 'assistant', text: 'x' }], context: { include: 'none' } })), { status: 400, code: 'validation_failed' })
@@ -289,7 +328,7 @@ test('refusals are explicit: validation, unknown or unavailable session, unready
   assert.deepEqual(await code(await respond(f, sessionId, [{ role: 'user', text: 'x' }])), { status: 409, code: 'session_unavailable' })
   assert.deepEqual(await code(await post(f, sessionId, 'send', { operationId: uuid(), text: 'x' })), { status: 409, code: 'session_unavailable' })
   assert.equal(f.requests.length, providerCalls, 'no refusal reached the provider')
-  assert.equal(tableCounts(f).session_events, before.session_events, 'no refusal wrote an event')
+  assert.equal((await tableCounts(f))['test.sqlite:session_events'], before['test.sqlite:session_events'], 'no refusal wrote an event')
 })
 
 test('the fit proof counts the whole request: an oversize draft or conversation is refused and never reaches the provider', { timeout: 60000 }, async t => {
@@ -306,10 +345,10 @@ test('the fit proof counts the whole request: an oversize draft or conversation 
   assert.equal(f.requests.length, before, 'refused before dispatch')
 })
 
-function fakeConnections(kind: 'model_api' | 'local_runtime', reply: { text: string; stop: 'stop' | 'length' }, seen: { request?: unknown; signal?: AbortSignal; meter?: string[] } = {}) {
+function fakeConnections(kind: 'model_api' | 'local_runtime', reply: { text: string; stop: 'stop' | 'length' }, seen: { request?: unknown; signal?: AbortSignal; meter?: string[]; costs?: unknown[] } = {}) {
   const connection = { id: 'c', accountId: 'local', name: 'c', kind, provider: kind === 'model_api' ? 'deepseek' : 'ollama', auth: 'none', unattended: false, secretRef: null, facts: {}, balance: null, createdAt: '2026-10-23T00:00:00.000Z' }
   return {
-    snapshot: () => ({ connections: [connection] }),
+    snapshot: () => ({ connections: [connection], costs: seen.costs ?? [] }),
     async complete(_account: string, _id: string, context: unknown, call: { requestId: string; runId: string; signal?: AbortSignal }) {
       seen.request = context; seen.signal = call.signal; seen.meter = [call.requestId, call.runId]
       return { role: 'assistant', content: [{ type: 'text', text: reply.text }], stopReason: reply.stop, usage: {}, api: 'x', provider: 'x', model: 'x', timestamp: 0 }
@@ -322,6 +361,7 @@ function fakeConnections(kind: 'model_api' | 'local_runtime', reply: { text: str
 }
 const model = (contextWindow: number, maxTokens: number) => ({ id: 'm', name: 'm', api: 'openai-completions', provider: 'deepseek', contextWindow, maxTokens, input: ['text'], reasoning: false, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }) as never
 const run = (connections: unknown, bound: { window: number; output: number }, text: string, signal?: AbortSignal) => runSideChat({
+  sessionId: 's',
   connections: connections as never, scrubber: { scrub: <T>(value: T) => value } as never, model: model(bound.window, bound.output),
   input: { projectId: 'p', connectionId: 'c', model: 'm', mode: 'read-only', prompt: 'x', domains: [], protectedPaths: [], attachmentIds: [], retention: 'ttl', contextTokens: bound.window },
   events: [], request: { requestId: crypto.randomUUID(), messages: [{ role: 'user', text }], context: { include: 'none' } }, signal })
@@ -353,7 +393,7 @@ test('the fit bound is exact for hosted and local runtimes, a length stop is rep
   const first: { meter?: string[] } = {}, second: { meter?: string[] } = {}
   const requestId = crypto.randomUUID()
   for (const seenIn of [first, second]) {
-    await runSideChat({ connections: fakeConnections('model_api', { text: 'x', stop: 'stop' }, seenIn), scrubber: { scrub: <T>(value: T) => value } as never, model: model(100_000, 0),
+    await runSideChat({ sessionId: 's', connections: fakeConnections('model_api', { text: 'x', stop: 'stop' }, seenIn), scrubber: { scrub: <T>(value: T) => value } as never, model: model(100_000, 0),
       input: { projectId: 'p', connectionId: 'c', model: 'm', mode: 'read-only', prompt: 'x', domains: [], protectedPaths: [], attachmentIds: [], retention: 'ttl' },
       events: [], request: { requestId, messages: [{ role: 'user', text: 'a' }], context: { include: 'none' } } })
   }
@@ -422,11 +462,175 @@ test('prompts that were read as excerpts are announced to the model', async () =
   const seen: { request?: { systemPrompt?: string } } = {}
   const event = (seq: number, version: number) => ({ seq, type: 'prompt', version, class: 'standard', createdAt: '2026-10-23T00:00:00.000Z',
     data: version === 1 ? { origin: 'typed', messageId: `m${seq}`, text: 'short', attachmentCount: 0 } : { origin: 'typed', messageId: `m${seq}`, attachmentCount: 0, artifact: { excerpt: 'long (excerpt)' } } }) as never
-  const base = { connections: fakeConnections('model_api', { text: 'ok', stop: 'stop' }, seen), scrubber: { scrub: <T>(value: T) => value } as never, model: model(100_000, 0),
+  const base = { sessionId: 's', connections: fakeConnections('model_api', { text: 'ok', stop: 'stop' }, seen), scrubber: { scrub: <T>(value: T) => value } as never, model: model(100_000, 0),
     input: { projectId: 'p', connectionId: 'c', model: 'm', mode: 'read-only', prompt: 'x', domains: [], protectedPaths: [], attachmentIds: [], retention: 'ttl' } as never,
     request: { requestId: crypto.randomUUID(), messages: [{ role: 'user' as const, text: 'q' }], context: { include: 'session' as const } } }
   await runSideChat({ ...base, events: [event(1, 1)] })
   assert.doesNotMatch(seen.request!.systemPrompt!, /bounded excerpts/)
   await runSideChat({ ...base, events: [event(1, 1), event(2, 2)] })
   assert.match(seen.request!.systemPrompt!, /bounded excerpts/)
+})
+
+const receipt = (runId: string, tokens: number, usd: number | null) => ({ runId, inputTokens: tokens, outputTokens: 0, costUsd: usd })
+const SID = 'native-1'
+const meterId = () => crypto.randomUUID()
+
+test('budget: a session\'s side-chat spend is attributed to it and refused before dispatch once a limit is reached', () => {
+  const mine = (n: number, tokens = 10, usd: number | null = 0.001) => Array.from({ length: n }, () => receipt(`side-chat:${SID}:${meterId()}`, tokens, usd))
+  const refused = (budget: Parameters<typeof assertWithinBudget>[0], costs: ReturnType<typeof mine>) =>
+    assert.throws(() => assertWithinBudget(budget, costs, SID), (error: unknown) => error instanceof SideChatError && error.code === 'budget_exhausted')
+  // No budget, or no limit set: nothing to enforce.
+  assertWithinBudget(undefined, mine(50), SID)
+  assertWithinBudget({ reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(50), SID)
+  // Each limit is exact: below passes, at the limit refuses.
+  assertWithinBudget({ maxModelCalls: 3, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(2), SID)
+  refused({ maxModelCalls: 3, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(3))
+  assertWithinBudget({ maxTokens: 100, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(9), SID)
+  refused({ maxTokens: 100, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(10))
+  assertWithinBudget({ maxCostMicrounits: 3000, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(2, 1, 0.0014), SID)
+  refused({ maxCostMicrounits: 3000, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(3, 1, 0.001))
+  // An unknown cost cannot be proven to stay inside a money limit.
+  refused({ maxCostMicrounits: 3000, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(1, 1, null))
+  assertWithinBudget({ maxTokens: 100, reportMaxCalls: 1, reportMaxDurationMs: 1 }, mine(1, 1, null), SID)
+  // Only this session's side-chat receipts count: other sessions, ordinary runs and look-alike prefixes do not.
+  const others = [...mine(9).map(cost => ({ ...cost, runId: `side-chat:other:${meterId()}` })), receipt(`run-${meterId()}`, 999, 9), receipt(`side-chat:${SID}x:${meterId()}`, 999, 9), receipt(`side-chat:${SID}:not-a-uuid`, 999, 9)]
+  assertWithinBudget({ maxModelCalls: 1, maxTokens: 1, maxCostMicrounits: 1, reportMaxCalls: 1, reportMaxDurationMs: 1 }, others, SID)
+})
+
+test('budget: the node refuses with budget_exhausted before the provider is called, counting prior side-chat spend', { timeout: 30000 }, async t => {
+  const usage = { input: 60, output: 40, cacheRead: 0, cacheWrite: 0, totalTokens: 100, cost: { input: 0.001, output: 0.001, cacheRead: 0, cacheWrite: 0, total: 0.002 } }
+  for (const budget of [{ maxModelCalls: 2 }, { maxTokens: 150 }, { maxCostMicrounits: 3000 }]) {
+    const f = await fixture(t, undefined, undefined, undefined, undefined, { usage })
+    const { sessionId } = await f.agents().create({ ...f.input, budget })
+    assert.equal((await f.agents().wait(sessionId)).status, 'completed', JSON.stringify(budget))
+    const before = f.requests.length
+    assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'one' }])).status, 200, `${JSON.stringify(budget)} first`)
+    assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'two' }])).status, 200, `${JSON.stringify(budget)} second`)
+    const refused = await respond(f, sessionId, [{ role: 'user', text: 'three' }])
+    assert.equal(refused.status, 429, JSON.stringify(budget))
+    assert.deepEqual(await refused.json(), { code: 'budget_exhausted' }, 'a content-free typed refusal')
+    assert.equal(f.requests.length, before + 2, 'the refused request never reached the provider')
+    // Another session of the same node keeps its own allowance.
+    const other = await f.agents().create({ ...f.input, budget })
+    await f.agents().wait(other.sessionId)
+    assert.equal((await respond(f, other.sessionId, [{ role: 'user', text: 'fresh' }])).status, 200)
+    const keys = f.connections.store.costs('local').map(cost => cost.runId)
+    assert.equal(keys.filter(key => key.startsWith(`side-chat:${sessionId}:`)).length, 2)
+    assert.equal(keys.filter(key => key.startsWith(`side-chat:${other.sessionId}:`)).length, 1)
+  }
+})
+
+test('concurrency: one respond per session at a time by default, a slot is released on completion, failure and abort, and the limit is a named setting', { timeout: 30000 }, async t => {
+  let gate = held()
+  let fail = false
+  const f = await fixture(t, async (call, _context, signal) => {
+    if (call === 1) return [{ type: 'text', text: 'main' }]
+    if (fail) throw new Error('provider down')
+    const current = gate.promise
+    await Promise.race([current, new Promise<never>((_resolve, reject) => signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))])
+    return [{ type: 'text', text: 'side' }]
+  })
+  t.after(() => gate.release())
+  const { sessionId } = await f.agents().create(f.input)
+  await f.agents().wait(sessionId)
+  assert.equal(f.agents().sideChatConcurrency, 1, 'documented default')
+  const started = (count: number) => (async () => { while (f.requests.length < count) await new Promise(resolve => setTimeout(resolve, 5)) })()
+
+  const first = respond(f, sessionId, [{ role: 'user', text: 'a' }])
+  await started(2)
+  const second = await respond(f, sessionId, [{ role: 'user', text: 'b' }])
+  assert.equal(second.status, 429)
+  assert.deepEqual(await second.json(), { code: 'too_many_requests' })
+  assert.equal(f.requests.length, 2, 'the refused request never reached the provider')
+  gate.release()
+  assert.equal((await first).status, 200)
+  assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'c' }])).status, 200, 'released on completion')
+
+  fail = true
+  assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'd' }])).status, 502)
+  fail = false
+  gate = held()
+  const controller = new AbortController()
+  const aborted = respond(f, sessionId, [{ role: 'user', text: 'e' }], { include: 'session' }, { signal: controller.signal })
+  await started(5)
+  assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'blocked while e runs' }])).status, 429)
+  controller.abort()
+  await Promise.resolve(aborted).catch(() => undefined)
+  await new Promise(resolve => setTimeout(resolve, 30))
+  gate.release()
+  assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'f' }])).status, 200, 'released after failure and after abort')
+
+  // A named, documented setting: a higher limit admits parallel requests for the same session only up to it.
+  f.agents().sideChatConcurrency = 2
+  gate = held()
+  const base = f.requests.length
+  const a = respond(f, sessionId, [{ role: 'user', text: 'g' }]), b = respond(f, sessionId, [{ role: 'user', text: 'h' }])
+  await started(base + 2)
+  assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'i' }])).status, 429)
+  gate.release()
+  assert.deepEqual((await Promise.all([a, b])).map(response => response.status), [200, 200])
+})
+
+test('the concurrency setting is read strictly from its named environment variable', () => {
+  assert.equal(sideChatConcurrencyFromEnv({}), 1)
+  assert.equal(sideChatConcurrencyFromEnv({ [SIDE_CHAT_CONCURRENCY_ENV]: '' }), 1)
+  assert.equal(sideChatConcurrencyFromEnv({ [SIDE_CHAT_CONCURRENCY_ENV]: '4' }), 4)
+  for (const bad of ['0', '-1', '1.5', 'two', '1000', ' 2']) {
+    assert.throws(() => sideChatConcurrencyFromEnv({ [SIDE_CHAT_CONCURRENCY_ENV]: bad }), new RegExp(SIDE_CHAT_CONCURRENCY_ENV), bad)
+  }
+})
+
+test('Save is bounded explicitly: the largest transcript fits, one byte more is refused as too_large and nothing is truncated or appended', { timeout: 30000 }, async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input)
+  await f.agents().wait(sessionId)
+  const operationId = uuid()
+  const overhead = Buffer.byteLength(encodeSideChatSavedNote(operationId, [{ role: 'user', text: 'x' }]), 'utf8') - 1
+  const exact = 'x'.repeat(SIDE_CHAT_SAVE_MAX_BYTES - overhead)
+  assert.equal(Buffer.byteLength(encodeSideChatSavedNote(operationId, [{ role: 'user', text: exact }]), 'utf8'), SIDE_CHAT_SAVE_MAX_BYTES)
+  const head = f.log.session(sessionId)!.lastSeq
+  const refused = await post(f, sessionId, 'save', { operationId: uuid(), messages: [{ role: 'user', text: `${exact}x` }] })
+  assert.equal(refused.status, 413)
+  assert.deepEqual(await refused.json(), { code: 'too_large', details: { bytes: SIDE_CHAT_SAVE_MAX_BYTES + 1, boundBytes: SIDE_CHAT_SAVE_MAX_BYTES } })
+  assert.equal(notes(f, sessionId).length, 0, 'a refused save appended nothing')
+  assert.equal(f.log.session(sessionId)!.lastSeq, head)
+  const ok = await post(f, sessionId, 'save', { operationId, messages: [{ role: 'user', text: exact }] })
+  assert.equal(ok.status, 200)
+  const stored = notes(f, sessionId)[0]
+  assert.equal(stored?.type === 'agent.note' && parseSideChatSavedNote(stored.data.text)?.messages[0]?.text, exact, 'stored whole, never truncated')
+})
+
+test('Send idempotency for a long text compares the stored checksum: same excerpt but a different tail conflicts', { timeout: 30000 }, async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input)
+  await f.agents().wait(sessionId)
+  const head = 'a'.repeat(INPUT_EXCERPT_BYTES + 100)
+  const text = `${head}${'b'.repeat(20_000)}`
+  const operationId = uuid()
+  assert.equal((await post(f, sessionId, 'send', { operationId, text })).status, 202)
+  await f.agents().wait(sessionId)
+  const prompt = events(f, sessionId).find(e => e.type === 'prompt' && e.data.messageId === sideChatMessageId(operationId))
+  assert.equal(prompt?.version, 2, 'the long prompt is stored as an artifact with a bounded excerpt')
+  const retry = sideChatSendResponseSchema.parse(await (await post(f, sessionId, 'send', { operationId, text })).json())
+  assert.deepEqual({ delivery: retry.delivery, duplicate: retry.duplicate }, { delivery: 'already_sent', duplicate: true })
+  const sameExcerptDifferentTail = await post(f, sessionId, 'send', { operationId, text: `${head}${'c'.repeat(20_000)}` })
+  assert.equal(sameExcerptDifferentTail.status, 409)
+  assert.equal((await sameExcerptDifferentTail.json() as { code: string }).code, 'operation_conflict')
+  assert.equal(events(f, sessionId).filter(e => e.type === 'prompt' && e.data.messageId === sideChatMessageId(operationId)).length, 1)
+})
+
+test('Send reports what the node actually did even when a turn became active since its checks', { timeout: 30000 }, async t => {
+  const f = await fixture(t)
+  const { sessionId } = await f.agents().create(f.input)
+  await f.agents().wait(sessionId)
+  const agents = f.agents() as unknown as { prompt: (...args: unknown[]) => Promise<string> }
+  const original = agents.prompt.bind(agents)
+  const answer = async (outcome: 'queued' | 'duplicate', delivery: string, duplicate: boolean) => {
+    agents.prompt = async () => outcome
+    const body = sideChatSendResponseSchema.parse(await (await post(f, sessionId, 'send', { operationId: uuid(), text: 'hello' })).json())
+    assert.deepEqual({ delivery: body.delivery, duplicate: body.duplicate }, { delivery, duplicate }, outcome)
+  }
+  await answer('queued', 'queued', false)
+  await answer('duplicate', 'queued', true)
+  agents.prompt = original
 })

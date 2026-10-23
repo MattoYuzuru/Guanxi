@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  encodeSideChatSavedNote, parseSideChatSavedNote, sideChatErrorSchema, sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema,
+  SIDE_CHAT_SAVE_MAX_BYTES, encodeSideChatSavedNote, parseSideChatSavedNote, sideChatErrorSchema, sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema,
 } from '@guanxi/contract'
 
 const id = '11111111-1111-4111-8111-111111111111'
@@ -29,4 +29,8 @@ test('a saved side chat round-trips and no other agent note is mistaken for one'
   }
   assert.equal(sideChatErrorSchema.safeParse({ code: 'context_too_large', details: { bytes: 2, boundBytes: 1, windowTokens: 1, outputTokens: 0, source: 's' } }).success, true)
   assert.equal(sideChatErrorSchema.safeParse({ code: 'unknown' }).success, false)
+  for (const code of ['budget_exhausted', 'too_many_requests']) assert.equal(sideChatErrorSchema.safeParse({ code }).success, true, code)
+  assert.equal(sideChatErrorSchema.safeParse({ code: 'too_large', details: { bytes: 2, boundBytes: 1 } }).success, true)
+  assert.equal(sideChatErrorSchema.safeParse({ code: 'too_large', details: { bytes: 2 } }).success, false)
+  assert.equal(SIDE_CHAT_SAVE_MAX_BYTES, 256 * 1024)
 })
