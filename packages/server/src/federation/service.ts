@@ -41,6 +41,8 @@ export interface FederationOptions {
 export interface RelayPinReconciliation { released: number; kept: number; failed: number }
 const PIN_TTL_DEFAULT_MS = 10 * 60_000
 const UNPIN_TIMEOUT_MS = 5000
+/** Node clamps a longer timer delay to 1 ms, which would turn a period into a tight loop. */
+export const MAX_TIMER_MS = 2 ** 31 - 1
 export interface PeerContext { identity: NodeIdentity; readOnly: boolean; version: { major: number; minor: number } }
 export class Federation {
   readonly configOpsPerRequest: number
@@ -413,12 +415,15 @@ export class Federation {
       if (this.closed) break
       if (this.livePins.has(runId)) { result.kept++; continue }
       if (down.has(executor)) { result.failed++; continue }
-      let timer: ReturnType<typeof setTimeout> | undefined
+      let timer: ReturnType<typeof setTimeout> | undefined, stop: (() => void) | undefined
       try {
         const unpin = this.relayChannel(executor).relayPin({ action: 'unpin', homeNodeId: this.identity.id, executorNodeId: executor, model: String(row.model),
           runId, sessionId: String(row.session_id), epoch: Number(row.epoch), challenge: randomUUID() })
         unpin.catch(() => undefined)
-        await Promise.race([unpin, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new FederationError('relay_unpin_timeout', 504)), UNPIN_TIMEOUT_MS) })])
+        await Promise.race([unpin, new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new FederationError('relay_unpin_timeout', 504)), UNPIN_TIMEOUT_MS); timer.unref()
+          stop = () => reject(new FederationError('closed', 503)); this.lifetime.signal.addEventListener('abort', stop, { once: true })   // close() ends the wait
+        })])
         // A pin that became live in the meantime (it cannot: run ids are fresh) would be left alone by the settle below.
         if (!this.livePins.has(runId)) this.settleRelayPin(runId)
         result.released++
@@ -428,12 +433,12 @@ export class Federation {
         const refused = error instanceof FederationError && error.status < 500 && error.code !== 'relay_unpin_timeout'
         if (!refused) down.add(executor)
         result.failed++
-      } finally { clearTimeout(timer) }
+      } finally { clearTimeout(timer); if (stop) this.lifetime.signal.removeEventListener('abort', stop) }
     }
     return result
   }
   private startPinMaintenance(periodMs: number): void {
-    if (!Number.isSafeInteger(periodMs) || periodMs < 0) throw new FederationError('invalid_relay_limits')
+    if (!Number.isSafeInteger(periodMs) || periodMs < 0 || periodMs > MAX_TIMER_MS) throw new FederationError('invalid_relay_limits')
     if (periodMs === 0) return
     const tick = async () => {
       if (this.closed) return

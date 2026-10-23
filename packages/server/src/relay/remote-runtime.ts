@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ZodError } from 'zod'
 import { RELAY_RUNTIME_PROBE, type CountedRequest, type LocalInferenceJob, type RelayRuntimeBinding } from '@guanxi/contract/federation'
-import type { Federation } from '../federation/service.ts'
+import { MAX_TIMER_MS, type Federation } from '../federation/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import { FederationError, canonical } from '../federation/crypto.ts'
 import type { LocalChatTransport } from '../connections/service.ts'
@@ -62,7 +62,7 @@ export class RemoteRelayRuntime implements RelayRuntimeObserver {
     for (const ms of [cancelWaitMs, options.callDeadlineMs ?? 1, options.reservationMs ?? 1, options.pollMs ?? 1, options.cacheEntries ?? 1, options.pinRenewMs ?? 1]) {
       invariant(Number.isSafeInteger(ms) && ms > 0, 'relay_policy_invalid')
     }
-    invariant(cancelWaitMs >= holderTtl, 'relay_policy_invalid')
+    invariant(cancelWaitMs >= holderTtl && (options.pinRenewMs ?? 1) <= MAX_TIMER_MS, 'relay_policy_invalid')
     this.options = Object.freeze({ ...options, cancelWaitMs }); this.model = model
     this.remote = Object.freeze({ nodeId: options.executorNodeId })
     this.host = `federation://${encodeURIComponent(options.executorNodeId)}`
@@ -140,9 +140,9 @@ class RemoteRelaySession implements RelayRuntimeSession {
     this.pending = { ...run }
     // F2-reap: the home's own durable record comes first. A crash from here on, even after the executor acknowledged the pin
     // and before any run row exists, leaves a journal row that the next boot reconciles with a signed, fenced unpin.
-    this.options.federation.journalRelayPin(this.options.executorNodeId, { ...run, model: this.model })
-    this.pinSent = true
     try {
+      this.options.federation.journalRelayPin(this.options.executorNodeId, { ...run, model: this.model })
+      this.pinSent = true
       await abortableRead(this.channel.relayPin(this.pinRequest('pin')), active)
     } catch (error) {
       await this.unpin()

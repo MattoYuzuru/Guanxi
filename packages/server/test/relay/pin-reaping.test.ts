@@ -13,6 +13,7 @@ import { normalizeOllamaModelReference } from '../../src/runtime/observation-key
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 import { openDb } from '../../src/store/db.ts'
 import { SimNode } from '../federation/harness.ts'
+import { RemoteRelayRuntime } from '../../src/relay/remote-runtime.ts'
 import { keys, remoteFixture, until } from './remote-fixture.ts'
 
 const MODEL = 'fixture'
@@ -23,9 +24,9 @@ const stubRuntime = (now: () => number): ExecutorRelayRuntime => ({ model: REF,
 const ask = (runId: string, over: Record<string, unknown> = {}) => ({ action: 'pin' as const, homeNodeId: 'home', executorNodeId: 'target', model: MODEL,
   runId, sessionId: `s-${runId}`, epoch: 1, challenge: `c-${runId}-${Math.random()}`, ...over })
 
-interface Pair { lease: { now: number }; restartTarget(): SimNode; homeCtx: { identity: ReturnType<typeof keys>['identity']; readOnly: boolean; version: { major: number; minor: number } }; target: SimNode; home: () => SimNode; crash(maintenanceMs?: number): SimNode; streams(): string[]; down: { value: boolean }; sent: string[]; attempts: { value: number }; dir: string }
+interface Pair { lease: { now: number }; restartTarget(): SimNode; homeCtx: { identity: ReturnType<typeof keys>['identity']; readOnly: boolean; version: { major: number; minor: number } }; target: SimNode; home: () => SimNode; crash(maintenanceMs?: number): SimNode; streams(): string[]; down: { value: boolean; hang?: boolean }; sent: string[]; attempts: { value: number }; dir: string }
 function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinTtlMs?: number; maintenanceMs?: number; persistentTarget?: boolean } = {}): Pair {
-  const dir = mkdtempSync(join(tmpdir(), 'guanxi-reap-')), path = join(dir, 'home.sqlite'), down = { value: false }, sent: string[] = [], attempts = { value: 0 }
+  const dir = mkdtempSync(join(tmpdir(), 'guanxi-reap-')), path = join(dir, 'home.sqlite'), down = { value: false } as { value: boolean; hang?: boolean }, sent: string[] = [], attempts = { value: 0 }
   const homeKeys = keys('home'), targetKeys = keys('target'), homeCtx = { identity: homeKeys.identity, readOnly: false, version: { major: 1, minor: 4 } }
   let home!: SimNode, target!: SimNode
   const lease = { now: 1_000_000 }, mono = () => lease.now, targetPath = o.persistentTarget ? join(dir, 'target.sqlite') : ':memory:'
@@ -34,6 +35,7 @@ function pair(t: { after(fn: () => unknown): void }, o: { maxPins?: number; pinT
       const route = new URL(request.url).pathname.replace('/api/federation', '')
       if (route === '/attempts/runtime/pin') sent.push((await request.clone().json() as { action: string }).action)
       attempts.value++
+      if (down.hang) return new Promise<Response>(() => undefined)
       if (down.value) throw new Error('executor unreachable')
       return to().app.request(request)
     } })
@@ -307,4 +309,36 @@ test('a released relay run is tombstoned on the executor for one TTL, and the to
   p.lease.now += 1001
   p.target.federation.sweepRelayPins()
   assert.equal(p.target.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_tombstones').get()!.n, 0, 'tombstones lapse with the TTL')
+})
+
+test('closing the federation ends a reconciliation that waits on a hung executor at once', async t => {
+  const p = pair(t)
+  await pinFromHome(p, 'run')
+  const home = p.crash()
+  p.down.hang = true
+  const pass = home.federation.reconcileRelayPins()
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const started = Date.now()
+  home.federation.close()
+  await pass
+  assert.ok(Date.now() - started < 1000, `the pass ended ${Date.now() - started} ms after close, not after the 5 s unpin bound`)
+})
+
+test('the maintenance and heartbeat periods are capped at the largest timer Node honours', async t => {
+  const p = pair(t), tooLong = 2 ** 31
+  assert.throws(() => new SimNode(keys('x'), ':memory:', { attempts: { governor: new ResourceGovernor(), maxReservationMs: 5000, leaseClock: () => 1 },
+    dispatch: { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: () => 1, channel: () => { throw new Error('unused') }, relayPinMaintenanceMs: tooLong } }), /invalid_relay_limits/)
+  const f = await remoteFixture(t)
+  assert.throws(() => new RemoteRelayRuntime({ federation: f.home.federation, runs: f.home.runs, executorNodeId: 'target', model: 'fixture', pinRenewMs: tooLong }), /relay_policy_invalid/)
+  new RemoteRelayRuntime({ federation: f.home.federation, runs: f.home.runs, executorNodeId: 'target', model: 'fixture', pinRenewMs: 2 ** 31 - 1 })
+  assert.ok(p)
+})
+
+test('a federation closed under a starting relay refuses the start cleanly and leaves the session reusable-or-refusing, never half bound', async t => {
+  const f = await remoteFixture(t), controller = new AbortController()
+  const prepared = await f.source.prepare(f.homeConnection.id, 'fixture', 1000, controller.signal)
+  f.home.federation.close()
+  const bind = () => prepared.prepareBind!({ runId: 'closed-run', sessionId: 'closed-session', epoch: 1 }, controller.signal).then(() => 'bound', (error: { code?: string }) => error.code)
+  assert.equal(await bind(), 'runtime_meter_unavailable', 'a typed relay refusal, not the raw federation error')
+  assert.equal(await bind(), 'runtime_meter_unavailable', 'and no stale pending state turns the next attempt into relay_policy_invalid')
 })
