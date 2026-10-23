@@ -190,9 +190,11 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
 `runDeadlineMs` (above the longest turn), `domains`, and `limits.maxCaps` (all four caps) with `maxDeadlineMs`.
 
 - **Model and effort (D-210: Sonnet 5.5, medium).** `home.lead.model` must be `default` or one of the values of the bridge's *model*
-  config option (`session/new` reports them; K5 refuses anything else with `model_unavailable`). K5 refuses `params.reasoning` for
-  Claude Code (`unsupported_parameter`), so **the role binding cannot carry the effort**: medium effort has to come from the CLI's
-  own settings in the private config directory below, or from an owner-approved K5 change. Neither is decided or tested here.
+  config option (`session/new` reports them; K5 refuses anything else with `model_unavailable` before any prompt, so a wrong value
+  costs nothing). `home.lead.effort` (`low` to `max`) sets the bridge's *effort* config option after the model is chosen; K5 refuses
+  `effort_unavailable` when the model offers no such level, and `params.reasoning` stays refused for Claude Code. Without `effort`
+  the vendor's own default applies (a `settings.json` `effortLevel` in the private config directory is the vendor's mechanism and
+  keeps working in subscription mode; Guanxi never writes it).
 
 - **Bridge.** K5 does not run `claude`; it runs the ACP bridge, `https://github.com/agentclientprotocol/claude-agent-acp`
   (npm package `@agentclientprotocol/claude-agent-acp`), with no arguments, and gives it `CLAUDE_CODE_EXECUTABLE` pointing at your
@@ -209,10 +211,35 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   `bridgeVersion` must equal that `agentInfo.version` (an absent `agentInfo` records the version as unknown, not as a mismatch).
 - **CLI.** `~/.local/bin/claude` resolves to `~/.local/share/claude/versions/2.1.287` at the time of writing; K5 resolves the real
   path at each launch.
-- **Sign-in.** K5 launches the bridge with a private `HOME`/`CLAUDE_CONFIG_DIR` under `<data dir>/external-agent-config/`, so your
+- **Sign-in (subscription mode).** K5 launches the bridge with a private `HOME`/`CLAUDE_CONFIG_DIR` under `<data dir>/external-agent-config/`, so your
   everyday login is not used. `start` prints the exact sign-in command (event `lead-login`: executable, `auth login`, and the
   environment *paths*); run it once in a terminal. A run refuses with `claude_login_required` until it has been done, and
   `bare_subscription_unavailable` if `claudeBare` is set. On macOS the login keychain may not be separable by these variables.
+- **On an Anthropic API key instead of the subscription (D-211).** Set `home.lead.auth` to `"api_key"` and nothing needs signing in to:
+
+  ```json
+  "lead": { "auth": "api_key", "providerKeysFile": "/Users/<you>/…/your-dotenv-file", "effort": "medium", "model": "<bridge model value>",
+            "bridge": "…", "bridgeVersion": "…", "claudeExecutable": "…", "billingAccount": "…", "limits": { … } }
+  ```
+
+  At boot the home imports `ANTHROPIC_API_KEY` from that dotenv file into its own K3 vault (the same import as D-208; the variable
+  `GUANXI_PROVIDER_KEYS_FILE` names the file instead, when set), resolves the one `anthropic` API-key connection that holds a key
+  (`home.lead.connection` names it by name or id when there are several) and binds K5's `claude-code` installation to it. At each
+  launch the key is injected into the bridge's environment as `ANTHROPIC_API_KEY` and nowhere else: not an argument, not a file, not
+  an event or log, and not the private config directory (which only keeps the saved ACP sessions a resumed lead needs). `claude auth
+  status` must report `authMethod: "api_key"` (CLI 2.1.287 does with only that variable set) or the run refuses
+  `claude_api_key_not_in_effect`. Usage is billed by Anthropic as API usage: the lead's per-turn tokens and cost are recorded on the
+  lead run like any lead turn, and the connection's `billing` fact reads `api_usage`. `start` prints `lead-auth` instead of
+  `lead-login`. An OAuth or subscription token (`sk-ant-oat…`) is refused as an API key by K3.
+
+  `doctor` reads only the file you named and prints no value: `lead_key` is `ok`, or `lead_key_invalid` (wrong token family),
+  `lead_key_missing` (no `ANTHROPIC_API_KEY`), `lead_key_import_failed` (another line in the file fails to import, and an API-key lead
+  does not start on a half-imported vault), `lead_key_file_invalid`, `lead_key_file_unreadable`, plus a `lead_key_mode` warning when
+  others can read the file. `start` refuses with `lead_key_missing`, `lead_key_import_failed`, `lead_connection_not_found`,
+  `lead_connection_ambiguous`, `lead_connection_invalid` or `lead_vault_locked`, each with its field and a one-line summary.
+  Not verified: a real turn on the API key (everything above runs against the fixture agent and the real CLI's `auth status` with a
+  fake key); the API key is the owner's money, so keep `limits.maxCaps.moneyMicros` and `runDeadlineMs` honest.
+
 - **Start the lead** (the project from section 5 must exist): `$G start --config … --lead-prompt-file prompt.txt --project $P`.
   It binds the lead role, starts one lead and prints `lead-started` and `lead-first`; a node that already has a lead does not start
   another. The lead's turns are billed to your Claude account under the vendor's own policy (unknown to K5).

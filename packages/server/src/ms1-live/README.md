@@ -14,7 +14,7 @@ An opt-in way for the production `start()` to be one half of a two-node MS1 run:
 | `config.ts` | the strict JSON configuration, loopback-only URLs, error codes that name a field and never a value |
 | `identity.ts` | Ed25519 identity, `init`, the public peer offer, key-file checks (mode 0600, belongs to the identity), pairing checks |
 | `transport.ts` | the `FederationChannel` transport: one configured loopback origin, federation paths only, no redirect, a deadline |
-| `boot.ts` | `Ms1LiveNode`: federation host options, connections ensured by name, home relay wiring (`RemoteRelayRuntime` into the existing `RelayRuntimeSource`), executor attestation, the optional K5/LW lead wiring |
+| `boot.ts` | `Ms1LiveNode`: federation host options, connections ensured by name, home relay wiring (`RemoteRelayRuntime` into the existing `RelayRuntimeSource`), executor attestation, the optional K5/LW lead wiring, subscription or (D-211) an Anthropic API key resolved from the K3 vault |
 | `checks.ts`, `preflight.ts`, `doctor.ts` | the explained diagnostics; stable codes, no key material |
 | `cli.ts` | `init`, `doctor`, `preflight`, `start`; exit 0 ok, 1 failed, 2 usage or configuration |
 
@@ -31,5 +31,8 @@ Boundaries worth knowing:
 - The executor serves under the federation identity's account; the home looks its connection up under the local owner.
 - Scopes are exactly `attempts` plus `replicas` (the executor's relay-run pin is a replica-stream binding), trust `owner_device`, no
   admin right, on both identities: a peer file with more is refused.
+- `home.lead.auth: "api_key"` pays the lead from the K3 vault: `providerKeysFile` is imported at boot (after the `providerKeysFile` option and
+  `GUANXI_PROVIDER_KEYS_FILE`), the one `anthropic` API-key connection is resolved (or named by `connection`), and any failure is an
+  `Ms1LiveError` before the lead exists. See the [runbook](../../../../docs/operations/ms1-live-run.md) section 7.
 - `connectionsPolicy` defaults to `{ ownerDevice: true, nodeKeyOptIn: true }` under this option (the relay's connection must be
   unattended); that is node-wide, each connection still needs its own consent.
