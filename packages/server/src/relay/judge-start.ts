@@ -51,6 +51,9 @@ export function prepareStartJudge(source: RelayStartJudgeSource | undefined, con
   let judge: unknown
   try { judge = source(context) } catch { return refused() }
   if (judge === undefined || judge === null) return undefined
+  // A refused promise is still a promise: its rejection must be consumed here, or the host process would exit on it
+  // (and its text would reach stderr).
+  if (typeof (judge as { then?: unknown }).then === 'function') Promise.resolve(judge).then(undefined, () => undefined)
   // A promise is not a judge: an asynchronous source would otherwise look like an empty one and silently opt the start out.
   if (!isRecord(judge) || typeof (judge as { then?: unknown }).then === 'function' || Object.keys(judge).some(key => key !== 'signals' && key !== 'cascade')) return refused()
   const { signals, cascade } = judge as { signals?: RelayJudgeInput; cascade?: RelayCascadeInput }

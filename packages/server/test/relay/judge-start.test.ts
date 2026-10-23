@@ -283,3 +283,9 @@ test('the default collector reports what the ledger holds, leaves the rest unkno
     ledger: { cycle: 1, noProgress: 0, startedAt: 1_000, caps: { wallMs: null } } as never, signal: new AbortController().signal })
   assert.equal(open.deadlineAt, null); assert.deepEqual(evaluateJudgeSignals(open, signalPolicy), [])
 })
+
+test('an asynchronous judge source that rejects is refused and its rejection is handled: the host process stays alive and prints nothing', async () => {
+  const child = await exec(process.execPath, [new URL('./judge-start-reject-child.ts', import.meta.url).pathname])
+  assert.equal(child.stdout, 'refused: judge_config_invalid\nalive\n')
+  assert.equal(child.stderr, '', 'no unhandled-rejection report, and none of the source\'s own text')
+})
