@@ -16,7 +16,7 @@ export interface RelayStartsChildOptions {
   /** Owner choices a lead can never make for itself: Full-access consent and allowed domains. */
   consent: 'full-access'
   domains?: readonly string[]
-  runs: Pick<RunStore, 'complete' | 'renew' | 'modelStarted' | 'get'>
+  runs: Pick<RunStore, 'complete' | 'renew' | 'get'>
   /** Status poll interval; the mirror's lease is renewed on the same interval. Default 5 s, at most 30 s. */
   pollMs?: number
   /** Consecutive unreadable statuses tolerated before the mirror fails. Default 5. */
@@ -31,15 +31,15 @@ export interface RelayStartsChildOptions {
  * in step with the relay run:
  * - the mirror's lease is renewed on an interval for the whole life of the start, including the (unbounded)
  *   preparation, so a healthy relay run is never orphaned by lease expiry;
- * - once the relay run left preparation the mirror records that work began, so a restart never replays it;
+ * - the mirror NEVER records a model start: the relay run owns the work, and re-attaching to it by key is idempotent, so
+ *   the lead service may re-attach a lost mirror (bounded by its `childStartLimit`) without ever replaying work;
  * - the mirror completes with the relay run's outcome. A run that settles without finishing its plan
  *   (`wrapping_up` or `input_required` after a cap, a wall limit or no progress) and an `interrupted` one end the
  *   mirror as `failed`: the ledger is final and the lead hears about it once, with the relay status in the packet;
  * - when R1's deadline puts the mirror into `wrapping_up` the relay run is stopped (the default "cancel after
  *   wrap-up"), and canceling the lead stops it once through the lead service.
- * The start key is the child id, so a re-attach before work began reaches the same relay run. After a restart a
- * mirror that already recorded work stays `interrupted` (see the lead README): the lead hears of it by notice and
- * by its deadline. */
+ * The start key is the child id, so a re-attach reaches the same relay run. After a node restart the relay reports its
+ * run `interrupted` (it never resumes inference), which ends the re-attached mirror as `failed` at once. */
 export function relayStartsChildStarter(starts: Pick<RelayStarts, 'start' | 'status' | 'stop'>, options: RelayStartsChildOptions): RelayStartsChildStarter {
   const sleep = options.sleep ?? (ms => new Promise<void>(resolve => { setTimeout(resolve, ms).unref() }))
   const pollMs = options.pollMs ?? 5_000
@@ -65,27 +65,37 @@ export function relayStartsChildStarter(starts: Pick<RelayStarts, 'start' | 'sta
               plan: launch.brief.plan, caps: launch.brief.caps })
           } catch (error) {
             // The lead was canceled while the relay prepared: the stop is the expected end, not a failure.
-            if (codeOf(error) === 'relay_stopped' && (lost || TERMINAL_RUN_STATES.has(options.runs.get(launch.childRunId).state))) return
+            if (codeOf(error) === 'relay_stopped') {
+              if (lost || TERMINAL_RUN_STATES.has(options.runs.get(launch.childRunId).state)) return
+              // The node is shutting down: restart reconciliation owns the mirror, it did not fail.
+              try { starts.status(key) } catch (probe) { if (codeOf(probe) === 'relay_closed') return }
+            }
             throw error
           }
-          let started = false
           let stopRequested = false
           let errors = 0
           for (;;) {
             if (lost) return
-            if (status.status !== 'preparing' && !started) { started = true; options.runs.modelStarted(launch.attempt) }
             if (SETTLED.has(status.status)) {
               options.runs.complete(launch.attempt, status.status === 'completed' ? 'completed' : status.status === 'canceled' ? 'canceled' : 'failed')
               return
             }
-            if (!stopRequested && options.runs.get(launch.childRunId).state === 'wrapping_up') { stopRequested = true; await stopQuietly(key) }
+            if (!stopRequested && options.runs.get(launch.childRunId).state === 'wrapping_up') {
+              // Only a stop that went through counts; a refused one is retried on the next poll, bounded like status errors.
+              try { await stopQuietly(key); stopRequested = true } catch (error) { if (++errors > maxErrors) throw error }
+            }
             await sleep(pollMs)
             try { status = starts.status(key); errors = 0 } catch (error) {
               const why = codeOf(error)
               // The node is going down: restart reconciliation owns the mirror. A start that never existed, or
               // a status that stays unreadable, fails it.
               if (why === 'relay_closed') return
-              if (why === 'relay_not_found' || ++errors > maxErrors) throw error
+              if (why === 'relay_not_found') throw error
+              if (++errors > maxErrors) {
+                // Nobody can watch it any more: do not leave a Full-access run unobserved and unstopped.
+                await stopQuietly(key).catch(() => undefined)
+                throw error
+              }
             }
           }
         } catch (error) {

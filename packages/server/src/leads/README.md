@@ -79,15 +79,18 @@ stays the lead's promise as a **mirror** kept in step with the relay run:
 
 - The mirror's lease is renewed on an interval for the whole life of the start, including the unbounded
   preparation (checkout, runtime meter), so a healthy relay run is never orphaned by lease expiry.
-- Once the relay run left preparation the mirror records that work began, so a restart never replays it.
+- The mirror never records a model start: the relay run owns the work, and re-attaching to it by key is idempotent.
 - It completes with the relay run's outcome. A run that settles without finishing its plan (`wrapping_up` or
   `input_required` after a cap, a wall limit or no progress: the executor has returned and the ledger is final) and
   an `interrupted` one end the mirror as `failed`; the lead is woken once, with the relay status in the packet.
 - When R1's deadline puts the mirror into `wrapping_up`, the relay run is stopped (the default "cancel after
   wrap-up"); canceling the lead stops it once through the lead service. A detached child keeps running.
-- The start key is the child id, so a re-attach before work began reaches the same relay run. After a restart a
-  mirror that already recorded work stays `interrupted`: the lead hears of it by a `child_interrupted` notice and by
-  its deadline; the relay itself never resumes inference.
+- The start key is the child id, so a lost mirror (an expired lease, a node restart) is re-attached by the lead
+  service, at most `childStartLimit` times, to the same relay run. After a restart the relay reports its run
+  `interrupted` (it never resumes inference) and the re-attached mirror ends `failed` at once; the lead is woken.
+- A refused deadline stop is retried on the next poll; an unreadable status stops the relay run before the mirror
+  fails; a node shutdown during preparation is not a failure. `pollMs` (default 5 s, at most 30 s) must stay well
+  below the R1 attempt lease (default 60 s).
 - A start refused for lack of a runtime meter or workspace (`runtime_meter_unavailable`,
   `relay_workspace_unavailable`) fails the child and wakes the lead with `failed`.
 
@@ -120,7 +123,7 @@ reports, including a turn the node itself lost to a crash, are unobserved.
 | before the intent commits | lead `interrupted`, no intent | none automatic; `resume` retries the first turn |
 | intent committed, delegate not | intent row, lead `interrupted` | `runs.start`, the same keyed `delegate`; the lead is not re-prompted |
 | delegate committed | promise exists, intent not marked | marked delegated, child started |
-| child attempt exists | child `working`/`interrupted` | restarted only if no attempt reached a model call (with the relay adapter: before the relay run left preparation); else notice and the deadline wakes the lead |
+| child attempt exists | child `working`/`interrupted` | restarted only if no attempt reached a model call (the relay adapter never records one, so a lost mirror is re-attached); else notice and the deadline wakes the lead |
 | resolution, wake delivered | R1 outbox | R1 redelivers; the stored packet is reused |
 | after the acknowledgement | lead `interrupted` | never replayed; `resume` is explicit |
 

@@ -161,7 +161,7 @@ export interface StartOptions {
     { child: ChildStarter; relay?: undefined } |
     /** Delegated plans run through this node's public relay start; consent and domains are owner choices
      * the lead can never make for itself. */
-    { child?: undefined; relay: { consent: 'full-access'; domains?: readonly string[]; pollMs?: number } })
+    { child?: undefined; relay: { consent: 'full-access'; domains?: readonly string[]; pollMs?: number }; validateExecutor: NonNullable<LeadPluginConfig['validateExecutor']> })
   /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
    * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
   operationalRelay?: OperationalRelayOptions
