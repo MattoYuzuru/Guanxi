@@ -10,7 +10,8 @@
  * - `GET /health` answers `{"status":"ok"}`, or HTTP 503 while the model loads;
  * - `POST /inference` takes multipart `file`, `response_format=verbose_json`, `language` and an
  *   optional `prompt`;
- * - `verbose_json` has `text`, `language` (a full name such as `russian`), `duration` and
+ * - `verbose_json` has `text`, `language` (a full name such as `russian`; the adapter maps a
+ *   small fixed vocabulary to an ISO code and returns null for an unknown name), `duration` and
  *   `segments[]` with `start`/`end` in audio seconds, `text`, `avg_logprob` and
  *   `no_speech_prob` when the server reports them;
  * - the server exposes no model id and no streaming endpoint, so the caller supplies the model
@@ -71,6 +72,63 @@ export const WHISPER_SERVER_REQUEST_TIMEOUT_MS = 15_000
 export const WHISPER_SERVER_TRANSCRIBE_TIMEOUT_MS = 10 * 60_000
 /** Node's timers accept at most a signed 32-bit millisecond delay. */
 export const WHISPER_SERVER_MAX_TIMEOUT_MS = 2_147_483_647
+
+/** Short BCP-47/ISO 639-1 shape accepted for a requested language. */
+const LANGUAGE_PATTERN = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/
+
+/**
+ * whisper.cpp reports a full language name in `verbose_json`. This fixed vocabulary is the
+ * adapter's whole mapping; an unknown name returns null rather than a guessed code.
+ */
+const LANGUAGE_CODES: Readonly<Record<string, string>> = Object.freeze({
+  arabic: 'ar',
+  armenian: 'hy',
+  azerbaijani: 'az',
+  belarusian: 'be',
+  czech: 'cs',
+  danish: 'da',
+  dutch: 'nl',
+  english: 'en',
+  finnish: 'fi',
+  french: 'fr',
+  georgian: 'ka',
+  german: 'de',
+  greek: 'el',
+  hebrew: 'he',
+  hindi: 'hi',
+  hungarian: 'hu',
+  indonesian: 'id',
+  italian: 'it',
+  japanese: 'ja',
+  kazakh: 'kk',
+  korean: 'ko',
+  malay: 'ms',
+  norwegian: 'no',
+  persian: 'fa',
+  polish: 'pl',
+  portuguese: 'pt',
+  romanian: 'ro',
+  russian: 'ru',
+  spanish: 'es',
+  swedish: 'sv',
+  thai: 'th',
+  turkish: 'tr',
+  ukrainian: 'uk',
+  uzbek: 'uz',
+  vietnamese: 'vi',
+  chinese: 'zh',
+})
+
+function normalizeLanguage(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (normalized.length === 0) return null
+  const mapped = LANGUAGE_CODES[normalized]
+  if (mapped !== undefined) return mapped
+  // The documented output is a full name, but keep an already-short server code instead of
+  // discarding a fact the server actually reported. Anything longer and unknown is null.
+  return /^[a-z]{2,3}$/.test(normalized) ? normalized : null
+}
 
 /** The one place that names the whisper.cpp server wire fields this adapter sends or reads. */
 export const WHISPER_SERVER_API = Object.freeze({
@@ -405,6 +463,7 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
 
     const parsed = verboseJsonSchema.safeParse(body)
     if (!parsed.success) throw new SttError('stt_protocol')
+    const language = normalizeLanguage(parsed.data.language)
     const segments: SttSegment[] = parsed.data.segments.map((segment) => ({
       start: segment.start,
       end: segment.end,
@@ -434,7 +493,7 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
         origin: 'voice',
         backend: WHISPER_SERVER_BACKEND,
         model: this.model,
-        language: parsed.data.language ?? null,
+        language,
         confidenceSpans,
         replacements,
         glossaryRevision,
@@ -445,7 +504,7 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
 
     return {
       text: replaced.text,
-      language: parsed.data.language ?? null,
+      language,
       segments,
       durationSec: parsed.data.duration ?? null,
       source: WHISPER_SERVER_RESULT_SOURCE,
@@ -465,7 +524,7 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
       throw new SttError('stt_audio_invalid')
     }
     if (req.language !== undefined
-      && (typeof req.language !== 'string' || req.language.trim().length === 0)) {
+      && (typeof req.language !== 'string' || !LANGUAGE_PATTERN.test(req.language))) {
       throw new SttError('stt_protocol')
     }
     if (req.glossary !== undefined && !Array.isArray(req.glossary)) {

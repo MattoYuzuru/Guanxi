@@ -259,7 +259,7 @@ describe('transcribe happy path', () => {
     assert.deepEqual(call.files[0]!.bytes, AUDIO)
 
     assert.equal(result.text, DEFAULT_VERBOSE_JSON.text)
-    assert.equal(result.language, 'english')
+    assert.equal(result.language, 'en')
     assert.equal(result.durationSec, 1)
     assert.equal(result.source, WHISPER_SERVER_RESULT_SOURCE)
     assert.equal(result.biasing, 'initial_prompt')
@@ -273,7 +273,7 @@ describe('transcribe happy path', () => {
       origin: 'voice',
       backend: 'whisper.cpp',
       model: 'large-v3',
-      language: 'english',
+      language: 'en',
       confidenceSpans: [{ start: 0, end: 6, confidence: Math.exp(-0.1) * 0.99 }],
       replacements: [],
       glossaryRevision: glossaryFingerprint([HONO, PR]),
@@ -622,6 +622,42 @@ describe('request and transport failures', () => {
       })
     }
     assert.equal(fake.requests.length, 0)
+  })
+
+  it('accepts short BCP-47 language codes and rejects full names or loose shapes', async (t) => {
+    const fake = await startFakeWhisperServer()
+    t.after(() => fake.close())
+    const client = adapter(fake)
+    for (const language of ['ru', 'en-US', 'zh-Hant-TW', 'und']) {
+      await client.transcribe(request({ language }))
+      assert.equal(inference(fake).fields.language, language)
+    }
+    const sent = fake.requests.length
+    for (const language of ['EN', 'e', 'english', 'en_US', 'en--US', 'ru ', 'ru\n', '']) {
+      await assert.rejects(client.transcribe(request({ language })), failure('stt_protocol'))
+    }
+    assert.equal(fake.requests.length, sent, 'an invalid language sends no audio')
+  })
+
+  it('normalizes whisper full language names to codes and never invents an unknown one', async (t) => {
+    const fake = await startFakeWhisperServer()
+    t.after(() => fake.close())
+    for (const [reported, expected] of [
+      ['russian', 'ru'],
+      ['english', 'en'],
+      ['ukrainian', 'uk'],
+      ['de', 'de'],
+      ['klingon', null],
+    ] as const) {
+      fake.setInference({ body: { ...DEFAULT_VERBOSE_JSON, language: reported } })
+      const result = await adapter(fake).transcribe(request())
+      assert.equal(result.language, expected, reported)
+      assert.equal(result.origin.language, expected, reported)
+    }
+    fake.setInference({ body: { text: 'hello', segments: [] } })
+    const missing = await adapter(fake).transcribe(request())
+    assert.equal(missing.language, null)
+    assert.equal(missing.origin.language, null)
   })
 
   it('maps malformed inference answers to protocol without echoing the body', async (t) => {
