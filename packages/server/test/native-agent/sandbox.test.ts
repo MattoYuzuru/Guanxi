@@ -220,7 +220,8 @@ test('arbitrary execution can spawn children with piped stdio, including node --
 import { appendFileSync } from 'node:fs'
 test('${name}', () => appendFileSync('pids', [process.pid, process.ppid].join(' ') + String.fromCharCode(10)))
 `
-  const command = `node -e ${quote(spawnProbe)} && mkdir fixture && cd fixture && printf %s ${quote(suite('first'))} > first.test.mjs && printf %s ${quote(suite('second'))} > second.test.mjs && node --test --test-reporter=tap > ../tap.txt; echo "node-test-exit=$?"; cat ../tap.txt; cat pids`
+  const directory = join(policy.scratch, 'fixture'), report = join(policy.scratch, 'tap.txt')
+  const command = `node -e ${quote(spawnProbe)} && mkdir ${quote(directory)} && cd ${quote(directory)} && printf %s ${quote(suite('first'))} > first.test.mjs && printf %s ${quote(suite('second'))} > second.test.mjs && node --test --test-reporter=tap > ${quote(report)}; echo "node-test-exit=$?"; cat ${quote(report)}; cat pids`
   const result = await sandboxCommand(policy, command)
   assert.equal(result.code, 0, result.stdout + result.stderr)
   assert.match(result.stdout, /^piped both-ways$/m)

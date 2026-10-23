@@ -81,13 +81,15 @@ Level 3; NIST RBAC/ABAC; Zanzibar (USENIX ATC '19).
 
 ## Appendix A: workload syscall filter and child-process pipes (K4-pipes, 2026-10-23)
 
-**Status:** implemented · locally validated on Linux arm64 (kernel 6.8, Colima); x64 shares the
-generator and is validated at instruction level only.
+**Status:** implemented · locally validated on Linux arm64 (kernel 6.8, Colima). On x64 the generated
+program is validated at instruction level and its numbers were read from amd64 kernel headers;
+`guard.c` was compiled for amd64 with `-Werror` but not run there.
 
 *Problem.* The workload seccomp filter denied `socketpair` outright, so every Node child with
 piped stdio failed with `EPERM` (libuv builds those pipes from `socketpair(AF_UNIX, SOCK_STREAM)`),
-including the per-file subprocesses of `node --test`. In the first two-host MS1 run each acceptance
-gate failed this way and only `--test-isolation=none` passed. No earlier document gives a reason for
+including the per-file subprocesses of `node --test`. The first real two-host MS1 run (2026-10-23, as
+reported by the owner; see the hand-off) failed every acceptance gate this way, and only
+`--test-isolation=none` passed. No earlier document gives a reason for
 the denial beyond "no arbitrary Unix sockets"; the Linux filter was only made to match the
 container guard.
 
@@ -121,10 +123,18 @@ syscall numbers are denied (the guard gained this x32 check). The execution imag
    removed what that layer allowed.
    Docker's default profile allows `socketpair` for ordinary containers and denies `io_uring_setup`
    (observed `EPERM`); the guard relies on that default for io_uring, as before.
-5. Residual risk: the kernel's AF_UNIX stream implementation (including `SCM_RIGHTS` garbage
-   collection and out-of-band data) is now reachable from the workload. That surface is exposed to
-   any default container and was already reachable through the runner's pipes; it is accepted and
-   named, not eliminated. Kernel hardening stays with the host.
+5. Residual risks, named and not eliminated:
+   - `connect` on a stream-pair end looks up the target before it reports `EISCONN`, so the
+     workload can tell whether a pathname or abstract name exists (`ENOENT`, `EACCES`,
+     `ECONNREFUSED`, `EPROTOTYPE`). That discloses names only and opens no data channel; abstract
+     names belong to the empty network namespace.
+   - The container path relies on the runtime's default seccomp profile to deny `io_uring_setup`
+     (`IORING_OP_SOCKET` could otherwise create an `AF_UNIX` socket, as it could before this change).
+     A kernel test asserts this precondition; a runtime without it fails that test.
+   - The kernel's AF_UNIX stream implementation (including `SCM_RIGHTS` garbage collection and
+     out-of-band data) is now reachable from the workload. That surface is exposed to any default
+     container and was already reachable through the runner's pipes; it is accepted and named, not
+     eliminated. Kernel hardening stays with the host.
 
 *Evidence.* [K4-pipes hand-off](../plans/lanes/K4-pipes.handoff.md); real-kernel tests in
 `packages/server/test/native-agent/seccomp-kernel.test.ts`, instruction-level tests in

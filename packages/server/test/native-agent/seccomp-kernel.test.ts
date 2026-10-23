@@ -34,7 +34,11 @@ async function discover(): Promise<Discovery> {
 const found = await discover()
 const skip = found.skip !== undefined ? `${found.skip} (provision ${CONTAINER_IMAGE} with packages/server/scripts/prepare-native-execution.sh)` : false
 const arch: 'arm64' | 'x64' = found.arch ?? 'arm64'
-const numbers = { arm64: { socket: 198, socketpair: 199, prctl: 167 }, x64: { socket: 41, socketpair: 53, prctl: 157 } }[arch]
+// Read from the kernel headers of each architecture by compiling a probe (see the hand-off), as in seccomp.test.ts.
+const numbers = {
+  arm64: { socket: 198, socketpair: 199, prctl: 167, bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40 },
+  x64: { socket: 41, socketpair: 53, prctl: 157, bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165 },
+}[arch]
 
 // serve: stand-ins for host services the workload must not reach (pathname and abstract names,
 // stream and datagram), started unfiltered and counting every connection or datagram they receive.
@@ -53,8 +57,10 @@ if ($mode eq 'serve') {
   }
   open(my $ready, '>', '/tmp/ready') or die; close $ready;
   my $deadline = time + 40;
-  while (!-e '/tmp/stop' && time < $deadline) {
-    for my $s ($select->can_read(0.1)) {
+  while (time < $deadline) {
+    my @readable = $select->can_read(0.1);
+    last if !@readable && -e '/tmp/stop';  # stop only once every queued connection or datagram is counted
+    for my $s (@readable) {
       my ($name) = grep { $sock{$_} == $s } keys %sock;
       if ($name =~ /stream/) { if (accept(my $c, $s)) { close $c } } else { recv($s, my $buffer, 64, 0) }
       $count{$name}++;
@@ -71,6 +77,22 @@ sub install {
 }
 install() if $ENV{BPF} && $mode ne 'serve';
 exec(@rest) or die "exec: $!" if $mode eq 'exec';
+if ($mode eq 'iouring') {
+  my $params = "\0" x 120; $! = 0; my $r = syscall(425, 4, $params);  # io_uring_setup, the same number on x64 and arm64
+  print "raw.io_uring_setup=", ($r == -1 ? $!+0 : 0), "\n";
+  exit 0;
+}
+if ($mode eq 'raw') {
+  # Each call is chosen so that, without a filter, the kernel fails it with something other than EPERM
+  # (EBADF, ENOTSOCK, ESRCH, EFAULT, ENOSYS) or succeeds. Prints the errno (0 = success).
+  my $unused = "\0" x 64;
+  sub raw { my ($name, @args) = @_; $! = 0; my $r = syscall($args[0], @args[1 .. $#args]); print "raw.$name=", ($r == -1 ? $!+0 : 0), "\n" }
+  raw(bind => ${numbers.bind}, 0, $unused, 16); raw(listen => ${numbers.listen}, 0, 1);
+  raw(ptrace => ${numbers.ptrace}, 16, 999999, 0, 0); raw(process_vm_writev => ${numbers.process_vm_writev}, 999999, 0, 0, 0, 0, 0);
+  raw(unshare => ${numbers.unshare}, 0); raw(setns => ${numbers.setns}, -1, 0); raw(mount => ${numbers.mount}, 0, 0, 0, 0, 0);
+  raw(x32_or_unknown_abi => 0x40000000); raw(x32_socketpair => 0x40000000 + ${numbers.socketpair}, 1, 1, 0, $unused);
+  exit 0;
+}
 sub result { my $ok = shift; return $ok ? 'ok' : $!{EPERM} ? 'EPERM' : 'err:' . ($!+0) }
 sub pair { my ($family, $type) = @_; my $fds = "\0" x 8; return result(syscall(${numbers.socketpair}, $family, $type, 0, $fds) == 0) }
 sub sock { my ($family, $type) = @_; my $fd = syscall(${numbers.socket}, $family, $type, 0); return result($fd >= 0) }
@@ -95,21 +117,26 @@ for my $kind ([stream => SOCK_STREAM], [dgram => SOCK_DGRAM], [seqpacket => SOCK
   $out{"reach.$label.pair"} = 'ok';
   syswrite($left, 'ping'); sysread($right, my $echo, 4); $out{"reach.$label.io"} = ($echo // '') eq 'ping' ? 'ok' : 'broken';
   for my $name (sort keys %names) {
-    $out{"reach.$label.connect.$name"} = connect($left, sockaddr_un($names{$name})) ? 'CONNECTED' : 'refused';
-    $out{"reach.$label.sendto.$name"} = send($left, 'x', 0, sockaddr_un($names{$name})) ? 'SENT' : 'refused';
+    $out{"reach.$label.connect.$name"} = connect($left, sockaddr_un($names{$name})) ? 'CONNECTED' : 'refused:' . ($!+0);
+    $out{"reach.$label.sendto.$name"} = send($left, 'x', 0, sockaddr_un($names{$name})) ? 'SENT' : 'refused:' . ($!+0);
   }
+}
+# What a plain stream socket could do if the policy allowed it: proves the stream listeners are reachable at all.
+for my $name (grep { /stream/ } sort keys %names) {
+  my $plain;
+  $out{"socket.connect.$name"} = socket($plain, AF_UNIX, SOCK_STREAM, 0) ? (connect($plain, sockaddr_un($names{$name})) ? 'CONNECTED' : 'refused:' . ($!+0)) : 'no-socket';
 }
 print "$_=$out{$_}\n" for sort keys %out;
 `
 
-async function inContainer(command: string, env: Record<string, string> = {}) {
+async function inContainer(command: string, env: Record<string, string> = {}, dockerOptions: string[] = []) {
   const shell = `cat > /tmp/probe.pl
 perl /tmp/probe.pl serve > /tmp/served.txt 2>&1 &
 i=0; while [ ! -e /tmp/ready ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
 ${command}
 touch /tmp/stop; wait; cat /tmp/served.txt`
   const result = await docker(['run', '--rm', '-i', '--network', 'none', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-    '--user', '1000:1000', '--read-only', '--tmpfs', '/tmp:exec,mode=1777', ...Object.entries(env).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
+    '--user', '1000:1000', '--read-only', '--tmpfs', '/tmp:exec,mode=1777', ...dockerOptions, ...Object.entries(env).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
     '--entrypoint', '/bin/sh', CONTAINER_IMAGE, '-c', shell], probe)
   const values = new Map<string, string>()
   for (const line of result.stdout.split('\n')) {
@@ -144,11 +171,17 @@ for (const implementation of implementations) {
   })
   test(`${implementation.name}: a stream pair cannot reach any pathname or abstract listener, and no listener saw traffic`, { skip, timeout: 120_000 }, async () => {
     const { values, stderr } = await inContainer(implementation.command, implementation.env)
+    const EISCONN = 106
     for (const name of reachNames) {
-      assert.equal(values.get(`reach.stream.connect.${name}`), 'refused', `connect ${name} ${stderr}`)
-      assert.equal(values.get(`reach.stream.sendto.${name}`), 'refused', `sendto ${name} ${stderr}`)
+      for (const call of ['connect', 'sendto']) {
+        const outcome = values.get(`reach.stream.${call}.${name}`)
+        assert.match(outcome ?? '', /^refused:\d+$/, `${call} ${name} ${stderr}`)
+        // A stream listener is refused because the pair is already connected, not for some other reason.
+        if (name.endsWith('_stream')) assert.equal(outcome, `refused:${EISCONN}`, `${call} ${name}`)
+      }
       assert.equal(values.get(`served.${name}`), '0', `listener ${name} was reached`)
     }
+    for (const name of ['fs_stream', 'abs_stream']) assert.equal(values.get(`socket.connect.${name}`), 'no-socket', 'no plain Unix socket can be created to try')
   })
 }
 
@@ -160,8 +193,32 @@ test('control: without the filter a datagram pair does reach a pathname and an a
     assert.equal(values.get(`reach.dgram.sendto.${name}`), 'SENT', stderr)
     assert.ok(Number(values.get(`served.${name}`)) >= 1, `listener ${name} saw ${values.get(`served.${name}`)}`)
   }
+  for (const name of ['fs_stream', 'abs_stream']) {
+    assert.equal(values.get(`socket.connect.${name}`), 'CONNECTED', `control must reach the stream listener ${name} with a plain socket`)
+    assert.ok(Number(values.get(`served.${name}`)) >= 1, `stream listener ${name} counted no connection`)
+  }
   assert.equal(values.get('socket.unix.stream'), 'ok', 'control must be able to create the sockets the policy denies')
   assert.equal(values.get('tcp.bind'), 'ok')
+})
+
+// The remaining denied syscalls, one by one. Docker's default profile would mask several of them with the same EPERM,
+// so these run unconfined: the BPF filter alone must produce EPERM, and the unfiltered control must not.
+const EPERM = 1
+const rawNames = ['bind', 'listen', 'ptrace', 'process_vm_writev', 'unshare', 'setns', 'mount', 'x32_or_unknown_abi', 'x32_socketpair']
+const unconfined = ['--security-opt', 'seccomp=unconfined']
+for (const implementation of implementations) {
+  test(`${implementation.name}: every other denied syscall and the x32/unknown ABI numbers fail with EPERM`, { skip, timeout: 120_000 }, async () => {
+    const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
+    for (const name of rawNames) assert.equal(values.get(`raw.${name}`), String(EPERM), `${name} ${stderr}`)
+  })
+}
+test('control: without the filter none of those syscalls fails with EPERM', { skip, timeout: 120_000 }, async () => {
+  const { values, stderr } = await inContainer('perl /tmp/probe.pl raw', {}, unconfined)
+  for (const name of rawNames) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
+})
+test('precondition: the container runtime default profile denies io_uring (it can otherwise create AF_UNIX sockets)', { skip, timeout: 120_000 }, async () => {
+  const { values, stderr } = await inContainer('perl /tmp/probe.pl iouring')
+  assert.equal(values.get('raw.io_uring_setup'), String(EPERM), stderr)
 })
 
 // Each file records its own pid and parent pid, so per-file subprocess isolation is observable.
