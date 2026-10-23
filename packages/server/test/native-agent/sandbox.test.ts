@@ -10,7 +10,7 @@ import { networkInterfaces } from 'node:os'
 import { nativeAgentInputSchema } from '@guanxi/contract'
 import { sandboxCommand as rawSandboxCommand, quote, type SandboxPolicy } from '../../src/native-agent/sandbox.ts'
 import { orientation } from '../../src/native-agent/orientation.ts'
-import { CONTAINER_IMAGE } from '../../src/native-agent/execution-owner.ts'
+import { CONTAINER_IMAGE, GUARD_DIGEST } from '../../src/native-agent/execution-owner.ts'
 
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 const fixtureScrubber = new SecretScrubber()
@@ -497,7 +497,7 @@ if [ "$1" = context ]; then if [ "$2" = show ]; then printf fixture; else printf
 case "$3" in
   context) printf 'unix:///fixture';;
   info) printf linux;;
-  image) printf 'sha256:${'a'.repeat(64)}';;
+  image) printf 'sha256:${'a'.repeat(64)} ${GUARD_DIGEST}';;
   create) exit 0;;
   start) touch ${quote(marker)}; exec sleep 30;;
   *) exec sleep 30;;
@@ -564,7 +564,7 @@ test('interrupted container create retains quarantine even if the daemon current
 if [ "$1" = context ]; then if [ "$2" = show ]; then printf fixture; else printf unix:///fixture; fi; exit 0; fi
 case "$3" in
   info) printf linux;;
-  image) printf 'sha256:${'a'.repeat(64)}';;
+  image) printf 'sha256:${'a'.repeat(64)} ${GUARD_DIGEST}';;
   create) touch ${quote(marker)}; exec sleep 30;;
   rm|ps) exit 0;;
   *) exit 1;;

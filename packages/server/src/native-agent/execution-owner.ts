@@ -11,6 +11,14 @@ import { TOOL_OUTPUT_BYTES, commandOutput, type SandboxPolicy, type CommandResul
 
 const exec = promisify(execFile)
 export const CONTAINER_IMAGE = 'guanxi-native-execution:k4-v3'
+/**
+ * Image identity: sha256 of `container/guard.c` followed by `container/Dockerfile` (the base image is pinned
+ * by digest inside the Dockerfile). The provisioning script labels the image with it and `execute()` refuses an
+ * image whose label differs, so a tag that still points at an older guard fails closed. Edit either file and the
+ * identity test fails until this value and the image are updated together.
+ */
+export const GUARD_LABEL = 'org.guanxi.execution-guard-sha256'
+export const GUARD_DIGEST = '4d949325e9c3965c826e7d6daa83ad42a16462c17f482c7b59feca6776c85a8e'
 
 /** Settlement includes confirmed namespace teardown; callers retain writer ownership until then. */
 export interface ExecutionOwner {
@@ -87,10 +95,11 @@ export class ContainerExecutionOwner implements ExecutionOwner {
   }
   async execute(command: string): Promise<CommandResult> {
     const { policy } = this
-    let image: string
-    try { image = (await this.docker(['image', 'inspect', '--format', '{{.Id}}', CONTAINER_IMAGE])).stdout.trim() }
+    let image: string | undefined, guard: string | undefined
+    try { [image, guard] = (await this.docker(['image', 'inspect', '--format', `{{.Id}} {{index .Config.Labels "${GUARD_LABEL}"}}`, CONTAINER_IMAGE])).stdout.trim().split(/\s+/) }
     catch { throw new Error('container_runtime_unavailable') }
-    if (!/^sha256:[a-f0-9]{64}$/.test(image)) throw new Error('container_runtime_unavailable')
+    // An image from an older build (no label, or another guard) must never run: it would enforce another policy.
+    if (!image || !/^sha256:[a-f0-9]{64}$/.test(image) || guard !== GUARD_DIGEST) throw new Error('container_runtime_unavailable')
     const runner = join(this.directory, 'container.cjs')
     await writeFile(runner, containerRunner, { mode: 0o444, flag: 'wx' })
     const ca = join(this.directory, 'egress-ca.pem')

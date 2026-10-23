@@ -18,7 +18,7 @@ test('the guard digest the node trusts is the hash of guard.c followed by the Do
 
 test('the provisioning script labels the image with the same digest it computes from the files', async () => {
   const script = await readFile(new URL('../../scripts/prepare-native-execution.sh', import.meta.url), 'utf8')
-  assert.match(script, new RegExp(`--label ${GUARD_LABEL.replaceAll('.', '\\.')}=`))
+  assert.match(script, new RegExp(`--label "?${GUARD_LABEL.replaceAll('.', '\\.')}=`))
   assert.match(script, /guard\.c/); assert.match(script, /Dockerfile/); assert.ok(script.includes(CONTAINER_IMAGE), 'script builds the tag the node runs')
 })
 
