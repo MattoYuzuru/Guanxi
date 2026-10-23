@@ -36,8 +36,10 @@ const skip = found.skip !== undefined ? `${found.skip} (provision ${CONTAINER_IM
 const arch: 'arm64' | 'x64' = found.arch ?? 'arm64'
 // Read from the kernel headers of each architecture by compiling a probe (see the hand-off), as in seccomp.test.ts.
 const numbers = {
-  arm64: { socket: 198, socketpair: 199, prctl: 167, bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40 },
-  x64: { socket: 41, socketpair: 53, prctl: 157, bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165 },
+  arm64: { socket: 198, socketpair: 199, prctl: 167, bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40,
+    sendto: 206, recvfrom: 207, sendmmsg: 269, recvmmsg: 243, sendmsg: 211, recvmsg: 212 },
+  x64: { socket: 41, socketpair: 53, prctl: 157, bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165,
+    sendto: 44, recvfrom: 45, sendmmsg: 307, recvmmsg: 299, sendmsg: 46, recvmsg: 47 },
 }[arch]
 
 // serve: stand-ins for host services the workload must not reach (pathname and abstract names,
@@ -90,6 +92,13 @@ if ($mode eq 'raw') {
   raw(bind => ${numbers.bind}, 0, $unused, 16); raw(listen => ${numbers.listen}, 0, 1);
   raw(ptrace => ${numbers.ptrace}, 16, 999999, 0, 0); raw(process_vm_writev => ${numbers.process_vm_writev}, 999999, 0, 0, 0, 0, 0);
   raw(unshare => ${numbers.unshare}, 0); raw(setns => ${numbers.setns}, -1, 0); raw(mount => ${numbers.mount}, 0, 0, 0, 0, 0);
+  # MSG_OOB (1) in the flags slot of each send and receive call; the plain_ twins pass flags 0 and a length of 1.
+  for my $flags ([oob => 1], [plain => 0]) {
+    my ($kind, $value) = @$flags;
+    raw($kind . '_sendto', ${numbers.sendto}, 0, $unused, 1, $value, 0, 0); raw($kind . '_recvfrom', ${numbers.recvfrom}, 0, $unused, 1, $value, 0, 0);
+    raw($kind . '_sendmmsg', ${numbers.sendmmsg}, 0, $unused, 1, $value); raw($kind . '_recvmmsg', ${numbers.recvmmsg}, 0, $unused, 1, $value, 0);
+    raw($kind . '_sendmsg', ${numbers.sendmsg}, 0, $unused, $value); raw($kind . '_recvmsg', ${numbers.recvmsg}, 0, $unused, $value);
+  }
   raw(x32_or_unknown_abi => 0x40000000); raw(x32_socketpair => 0x40000000 + ${numbers.socketpair}, 1, 1, 0, $unused);
   exit 0;
 }
@@ -116,6 +125,13 @@ for my $kind ([stream => SOCK_STREAM], [dgram => SOCK_DGRAM], [seqpacket => SOCK
   if (!socketpair($left, $right, AF_UNIX, $type, 0)) { $out{"reach.$label.pair"} = result(0); next }
   $out{"reach.$label.pair"} = 'ok';
   syswrite($left, 'ping'); sysread($right, my $echo, 4); $out{"reach.$label.io"} = ($echo // '') eq 'ping' ? 'ok' : 'broken';
+  if ($label eq 'stream') {
+    # Ordinary send/recv keeps working; out-of-band data is what the filter refuses.
+    my ($normal, $urgent) = ('', '');
+    $out{'reach.stream.sendrecv'} = (send($left, 'pong', 0) && defined(recv($right, $normal, 4, 0)) && $normal eq 'pong') ? 'ok' : 'broken';
+    $out{'reach.stream.oob_send'} = result(defined send($left, '!', MSG_OOB));
+    $out{'reach.stream.oob_recv'} = result(defined recv($right, $urgent, 1, MSG_OOB));
+  }
   for my $name (sort keys %names) {
     $out{"reach.$label.connect.$name"} = connect($left, sockaddr_un($names{$name})) ? 'CONNECTED' : 'refused:' . ($!+0);
     $out{"reach.$label.sendto.$name"} = send($left, 'x', 0, sockaddr_un($names{$name})) ? 'SENT' : 'refused:' . ($!+0);
@@ -160,7 +176,8 @@ const expectedPolicy: Record<string, string> = {
   'socket.unix.stream': 'EPERM', 'socket.unix.dgram': 'EPERM', 'socket.unix.seqpacket': 'EPERM',
   'socket.inet.stream': 'ok', 'socket.inet6.stream': 'ok', 'socket.netlink.raw': 'EPERM', 'socket.packet.raw': 'EPERM',
   'tcp.bind': 'EPERM', 'tcp.listen': 'EPERM',
-  'reach.stream.pair': 'ok', 'reach.stream.io': 'ok',
+  'reach.stream.pair': 'ok', 'reach.stream.io': 'ok', 'reach.stream.sendrecv': 'ok',
+  'reach.stream.oob_send': 'EPERM', 'reach.stream.oob_recv': 'EPERM',
   'reach.dgram.pair': 'EPERM', 'reach.seqpacket.pair': 'EPERM',
 }
 
@@ -204,6 +221,7 @@ test('control: without the filter a datagram pair does reach a pathname and an a
 // The remaining denied syscalls, one by one. Docker's default profile would mask several of them with the same EPERM,
 // so these run unconfined: the BPF filter alone must produce EPERM, and the unfiltered control must not.
 const EPERM = 1
+const oobCalls = ['sendto', 'recvfrom', 'sendmmsg', 'recvmmsg', 'sendmsg', 'recvmsg']
 const rawNames = ['bind', 'listen', 'ptrace', 'process_vm_writev', 'unshare', 'setns', 'mount', 'x32_or_unknown_abi', 'x32_socketpair']
 const unconfined = ['--security-opt', 'seccomp=unconfined']
 for (const implementation of implementations) {
@@ -211,10 +229,20 @@ for (const implementation of implementations) {
     const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
     for (const name of rawNames) assert.equal(values.get(`raw.${name}`), String(EPERM), `${name} ${stderr}`)
   })
+  test(`${implementation.name}: MSG_OOB is refused on all six send/receive calls and other flags are not`, { skip, timeout: 120_000 }, async () => {
+    const { values, stderr } = await inContainer(implementation.command.replace(/probe$/, 'raw'), implementation.env, unconfined)
+    const control = await controlRaw()
+    for (const call of oobCalls) {
+      assert.equal(values.get(`raw.oob_${call}`), String(EPERM), `oob_${call} ${stderr}`)
+      assert.equal(values.get(`raw.plain_${call}`), control.get(`raw.plain_${call}`), `plain_${call} behaves as without a filter`)
+      assert.notEqual(values.get(`raw.plain_${call}`), String(EPERM), `plain_${call}`)
+    }
+  })
 }
+const controlRaw = (() => { let cached: Promise<Map<string, string>> | undefined; return () => cached ??= inContainer('perl /tmp/probe.pl raw', {}, unconfined).then(result => result.values) })()
 test('control: without the filter none of those syscalls fails with EPERM', { skip, timeout: 120_000 }, async () => {
   const { values, stderr } = await inContainer('perl /tmp/probe.pl raw', {}, unconfined)
-  for (const name of rawNames) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
+  for (const name of [...rawNames, ...oobCalls.map(call => `oob_${call}`)]) assert.ok(values.has(`raw.${name}`) && values.get(`raw.${name}`) !== String(EPERM), `${name} ${stderr}`)
 })
 test('precondition: the container runtime default profile denies io_uring (it can otherwise create AF_UNIX sockets)', { skip, timeout: 120_000 }, async () => {
   const { values, stderr } = await inContainer('perl /tmp/probe.pl iouring')

@@ -6,12 +6,15 @@ const DENY = 0x00050001, ALLOW = 0x7fff0000, KILL = 0x80000000
 const AF_UNIX = 1, AF_INET = 2, AF_INET6 = 10, AF_NETLINK = 16, AF_PACKET = 17
 const SOCK_STREAM = 1, SOCK_DGRAM = 2, SOCK_RAW = 3, SOCK_SEQPACKET = 5, SOCK_CLOEXEC = 0x80000, SOCK_NONBLOCK = 0x800
 
+const low32 = (value: number) => Number(BigInt(value) & 0xffffffffn)
+
 // Evaluate the generated classic BPF program against synthetic seccomp_data. Reading any
 // seccomp_data field the tests do not model fails the test rather than reading zero.
 interface Call { nr: number; arch: number; args?: number[] }
 function verdict(filter: Buffer, call: Call) {
   const args = call.args ?? []
-  const data = new Map<number, number>([[0, call.nr], [4, call.arch], [16, args[0] ?? 0], [24, args[1] ?? 0]])
+  // seccomp_data.args[n] sits at 16 + 8n; classic BPF loads the low 32 bits (little-endian).
+  const data = new Map<number, number>([[0, call.nr], [4, call.arch], ...[0, 1, 2, 3].map(index => [16 + 8 * index, low32(args[index] ?? 0)] as const)])
   let accumulator = 0
   for (let pc = 0; pc < filter.length / 8; pc++) {
     const code = filter.readUInt16LE(pc * 8), yes = filter[pc * 8 + 2]!, no = filter[pc * 8 + 3]!, value = filter.readUInt32LE(pc * 8 + 4)
@@ -19,6 +22,7 @@ function verdict(filter: Buffer, call: Call) {
     else if (code === 0x54) accumulator = (accumulator & value) >>> 0
     else if (code === 0x15) pc += accumulator === value ? yes : no
     else if (code === 0x35) pc += accumulator >= value ? yes : no
+    else if (code === 0x45) pc += (accumulator & value) !== 0 ? yes : no
     else if (code === 0x06) return value
     else assert.fail(`unknown BPF instruction ${code.toString(16)}`)
   }
@@ -28,8 +32,10 @@ function verdict(filter: Buffer, call: Call) {
 // Numbers and audit constants were read from the kernel headers of Debian bookworm (linux-libc-dev)
 // by compiling a probe for each architecture, not copied from memory.
 const abis = {
-  x64: { audit: 0xc000003e, socket: 41, socketpair: 53, denied: { bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165 }, connect: 42 },
-  arm64: { audit: 0xc00000b7, socket: 198, socketpair: 199, denied: { bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40 }, connect: 203 },
+  x64: { audit: 0xc000003e, socket: 41, socketpair: 53, denied: { bind: 49, listen: 50, ptrace: 101, process_vm_writev: 311, unshare: 272, setns: 308, mount: 165 }, connect: 42,
+    flagsAt3: { sendto: 44, recvfrom: 45, sendmmsg: 307, recvmmsg: 299 }, flagsAt2: { sendmsg: 46, recvmsg: 47 } },
+  arm64: { audit: 0xc00000b7, socket: 198, socketpair: 199, denied: { bind: 200, listen: 201, ptrace: 117, process_vm_writev: 271, unshare: 97, setns: 268, mount: 40 }, connect: 203,
+    flagsAt3: { sendto: 206, recvfrom: 207, sendmmsg: 269, recvmmsg: 243 }, flagsAt2: { sendmsg: 211, recvmsg: 212 } },
 } as const
 
 for (const [arch, abi] of Object.entries(abis) as [keyof typeof abis, typeof abis[keyof typeof abis]][]) {
@@ -72,6 +78,36 @@ for (const [arch, abi] of Object.entries(abis) as [keyof typeof abis, typeof abi
     for (const family of [AF_INET, AF_INET6, AF_NETLINK, AF_PACKET, 0, 0x80000001]) assert.equal(pair(family, SOCK_STREAM), DENY, `family ${family}`)
   })
 
+  test(`MSG_OOB is denied on every send and receive path, and only there, on ${arch}`, () => {
+    // Unix-domain out-of-band data is the reachable kernel surface a socketpair would otherwise add.
+    const MSG_OOB = 1, MSG_PEEK = 2, MSG_DONTWAIT = 0x40
+    const flagged = (nr: number, position: 2 | 3, flags: number) => run(nr, 8, 8, ...(position === 2 ? [flags, 8] : [8, flags]))
+    const wide = [[abi.flagsAt3, 3], [abi.flagsAt2, 2]] as const
+    for (const [calls, position] of wide) for (const [name, nr] of Object.entries(calls)) {
+      assert.equal(flagged(nr, position, MSG_OOB), DENY, `${name} MSG_OOB`)
+      assert.equal(flagged(nr, position, MSG_OOB | MSG_PEEK | MSG_DONTWAIT), DENY, `${name} MSG_OOB among other flags`)
+      assert.equal(flagged(nr, position, 0x100000001), DENY, `${name} high bits do not hide the low-word bit`)
+      assert.equal(flagged(nr, position, 0), ALLOW, `${name} plain`)
+      assert.equal(flagged(nr, position, MSG_PEEK | MSG_DONTWAIT), ALLOW, `${name} other flags`)
+      assert.equal(flagged(nr, position, 0x100000000), ALLOW, `${name} only a bit above the low word`)
+      // The other argument slot is not the flags word: sendto's length or a buffer address may be odd.
+      assert.equal(flagged(nr, position === 3 ? 2 : 3, MSG_OOB), ALLOW, `${name} flags are read from slot ${position} only`)
+    }
+  })
+
+  test(`MSG_OOB rule agrees with its reference model over every syscall and flag value on ${arch}`, () => {
+    const flagsAt3 = new Set<number>(Object.values(abi.flagsAt3)), flagsAt2 = new Set<number>(Object.values(abi.flagsAt2))
+    const special = new Set<number>([...Object.values(abi.denied), abi.socket, abi.socketpair])
+    const values = [0, 1, 2, 3, 0x40, 0x41, 0x100, 0x80000000, 0x80000001, 0x100000000, 0x100000001, 0x1fffffffe]
+    for (let nr = 0; nr < 450; nr++) {
+      if (special.has(nr)) continue
+      for (const at2 of values) for (const at3 of values) {
+        const expected = (flagsAt3.has(nr) && (low32(at3) & 1)) || (flagsAt2.has(nr) && (low32(at2) & 1)) ? DENY : ALLOW
+        assert.equal(run(nr, 0, 0, at2, at3), expected, `nr=${nr} args[2]=${at2} args[3]=${at3}`)
+      }
+    }
+  })
+
   test(`filter agrees with its reference model over a syscall, family and type grid on ${arch}`, () => {
     const denied = new Set<number>(Object.values(abi.denied))
     const model = (nr: number, family: number, type: number) => {
@@ -100,3 +136,4 @@ for (const [arch, abi] of Object.entries(abis) as [keyof typeof abis, typeof abi
 test('filter generation refuses an unknown architecture', () => {
   assert.throws(() => linuxBindingFilter('ia32'), /supervision_unavailable/)
 })
+
