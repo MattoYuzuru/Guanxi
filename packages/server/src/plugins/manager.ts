@@ -258,6 +258,8 @@ interface ManagerState {
 interface ExclusiveLockInfo {
   /** Null when the file is not our JSON, for example a hand-written marker. */
   readonly token: string | null
+  readonly pid: number | null
+  readonly createdAt: string | null
   readonly mtimeMs: number
 }
 
@@ -283,8 +285,19 @@ const EMPTY_RECOVERY: RecoveryReport = {
 const BUSY_RECOVERY: RecoveryReport = { ...EMPTY_RECOVERY, skipped: 'plugins_busy' }
 
 function lockBody(token: string): string {
-  return `${JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() })}
+  return `${JSON.stringify({ pid: process.pid, token, createdAt: new Date().toISOString() })}
 `
+}
+
+function processIsAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    // ESRCH means no such process; EPERM means it exists but belongs to someone else.
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+  }
 }
 
 function lockInfoFromBytes(bytes: Buffer, mtimeMs: number): ExclusiveLockInfo {
@@ -295,8 +308,12 @@ function lockInfoFromBytes(bytes: Buffer, mtimeMs: number): ExclusiveLockInfo {
     parsed = undefined
   }
   const record: Record<string, unknown> = isRecord(parsed) ? parsed : {}
+  const rawCreatedAt = typeof record['createdAt'] === 'string' ? record['createdAt'] : record['startedAt']
   return {
     token: typeof record['token'] === 'string' ? record['token'] : null,
+    pid: typeof record['pid'] === 'number' && Number.isInteger(record['pid']) ? record['pid'] : null,
+    // `startedAt` is accepted from locks written before the rename to `createdAt`.
+    createdAt: typeof rawCreatedAt === 'string' ? rawCreatedAt : null,
     mtimeMs,
   }
 }
@@ -919,8 +936,7 @@ export class PluginManager {
         }
         if (attempt === 0) {
           const observed = await this.readExclusiveLockInfo()
-          if (observed !== null && this.lockInfoIsStale(observed)) {
-            await this.removeStaleExclusiveLock()
+          if (observed !== null && this.lockInfoIsStale(observed) && (await this.removeStaleExclusiveLock(observed))) {
             continue
           }
         }
@@ -956,8 +972,7 @@ export class PluginManager {
           )
         }
         const observed = this.readExclusiveLockInfoSync()
-        if (attempt === 0 && observed !== null && this.lockInfoIsStale(observed)) {
-          this.removeStaleExclusiveLockSync()
+        if (attempt === 0 && observed !== null && this.lockInfoIsStale(observed) && this.removeStaleExclusiveLockSync(observed)) {
           continue
         }
         return false
@@ -967,7 +982,10 @@ export class PluginManager {
   }
 
   private lockInfoIsStale(info: ExclusiveLockInfo): boolean {
-    return Date.now() - info.mtimeMs > LOCK_STALE_MS
+    if (info.pid !== null && !processIsAlive(info.pid)) return true
+    const createdAt = info.createdAt === null ? Number.NaN : Date.parse(info.createdAt)
+    const startedAt = Number.isNaN(createdAt) ? info.mtimeMs : createdAt
+    return Date.now() - startedAt > LOCK_STALE_MS
   }
 
   private readExclusiveLockInfoSync(): ExclusiveLockInfo | null {
@@ -988,16 +1006,25 @@ export class PluginManager {
     }
   }
 
-  private async removeStaleExclusiveLock(): Promise<void> {
+  /** Re-read and confirm the same token before removing a lock we judged stale. */
+  private async removeStaleExclusiveLock(observed: ExclusiveLockInfo): Promise<boolean> {
+    const current = await this.readExclusiveLockInfo()
+    if (current === null) return true
+    if (current.token !== observed.token || !this.lockInfoIsStale(current)) return false
     await unlink(this.exclusiveLockPath).catch(() => undefined)
+    return true
   }
 
-  private removeStaleExclusiveLockSync(): void {
+  private removeStaleExclusiveLockSync(observed: ExclusiveLockInfo): boolean {
+    const current = this.readExclusiveLockInfoSync()
+    if (current === null) return true
+    if (current.token !== observed.token || !this.lockInfoIsStale(current)) return false
     try {
       unlinkSync(this.exclusiveLockPath)
     } catch {
       // Best-effort: another contender may have removed it already.
     }
+    return true
   }
 
   private async releaseExclusiveLock(token: string): Promise<void> {

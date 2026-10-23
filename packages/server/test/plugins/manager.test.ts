@@ -5,7 +5,7 @@
  * Every test uses a fresh temporary directory. No build script is ever run.
  */
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import {
   link,
   lstat,
@@ -170,6 +170,18 @@ async function rejectsWithCode(run: Promise<unknown>, code: string): Promise<Plu
   assert.ok(caught instanceof PluginManagerError, `expected PluginManagerError, got ${String(caught)}`)
   assert.equal(caught.code, code)
   return caught
+}
+
+/** A pid that is guaranteed to have exited before it is returned. */
+async function exitedChildPid(): Promise<number> {
+  const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' })
+  const pid = child.pid
+  assert.ok(pid !== undefined, 'the short-lived child has a pid')
+  await new Promise<void>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', () => resolve())
+  })
+  return pid
 }
 
 test('inspect validates the manifest, hashes files, and reports build scripts and license', async t => {
@@ -1007,12 +1019,63 @@ test('a second manager cannot install while the first holds the exclusive lock',
   })
   const installing = holder.install(second)
   await atCommit
+  const held = JSON.parse(await readFile(join(pluginsDir, '.lock'), 'utf8')) as Record<string, unknown>
+  assert.equal(held['pid'], process.pid)
+  assert.equal(typeof held['token'], 'string')
+  assert.equal(typeof held['createdAt'], 'string')
+  assert.equal('startedAt' in held, false, 'the lock body uses createdAt')
   await rejectsWithCode(manager(pluginsDir).install(second), 'plugins_busy')
   release()
   const installed = await installing
   assert.equal(installed.version, '2.0.0')
   assert.equal(await exists(join(pluginsDir, '.lock')), false)
   assert.deepEqual(manager(pluginsDir).bootSet(), [installed.path])
+})
+
+test('a dead pid or an aged lock is stale, a fresh live pid is not', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const lockPath = join(pluginsDir, '.lock')
+  const v1 = await writePlugin(join(base, 'v1'), { version: '1.0.0' })
+  const v2 = await writePlugin(join(base, 'v2'), { version: '2.0.0' })
+  const v3 = await writePlugin(join(base, 'v3'), { version: '3.0.0' })
+  const v4 = await writePlugin(join(base, 'v4'), { version: '4.0.0' })
+  await manager(pluginsDir).install(v1)
+
+  const deadPid = await exitedChildPid()
+  assert.throws(
+    () => process.kill(deadPid, 0),
+    (error: unknown) => (error as NodeJS.ErrnoException).code === 'ESRCH',
+    'the spawned child has exited',
+  )
+  await writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: deadPid, token: 'dead-owner', createdAt: new Date().toISOString() })}\n`,
+  )
+  const upgraded = await manager(pluginsDir).install(v2)
+  assert.equal(upgraded.version, '2.0.0', 'a dead owner is stale even with a fresh timestamp')
+  assert.equal(await exists(lockPath), false)
+
+  await writeFile(
+    lockPath,
+    `${JSON.stringify({ pid: process.pid, token: 'live-owner', createdAt: new Date().toISOString() })}\n`,
+  )
+  await rejectsWithCode(manager(pluginsDir).install(v3), 'plugins_busy')
+  const stillLive = JSON.parse(await readFile(lockPath, 'utf8')) as { pid: number; token: string }
+  assert.equal(stillLive.pid, process.pid, 'a foreign live lock is not removed')
+  assert.equal(stillLive.token, 'live-owner')
+
+  await writeFile(
+    lockPath,
+    `${JSON.stringify({
+      pid: process.pid,
+      token: 'aged-owner',
+      createdAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
+    })}\n`,
+  )
+  const last = await manager(pluginsDir).install(v4)
+  assert.equal(last.version, '4.0.0', 'a live but aged lock is stale')
+  assert.equal(await exists(lockPath), false)
 })
 
 test('refuses to remove or replace a service an enabled plugin requires', async t => {
