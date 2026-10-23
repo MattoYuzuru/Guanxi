@@ -310,7 +310,7 @@ export function Select({
 }: {
   value: string
   onChange: (next: string) => void
-  options: Array<{ value: string; label: string; disabled?: boolean; group?: string }>
+  options: Array<{ value: string; label: string; disabled?: boolean; group?: string; groupId?: string }>
   className?: string
   disabled?: boolean
   ariaLabel?: string
@@ -335,9 +335,9 @@ export function Select({
         backgroundSize: '12px',
       }}
     >
-      {[...new Set(options.map(option => option.group))].map(group => group ? (
-        <optgroup key={group} label={group}>
-          {options.filter(option => option.group === group).map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
+      {[...new Set(options.map(option => option.groupId ?? option.group))].map(groupId => options.find(option => (option.groupId ?? option.group) === groupId)?.group ? (
+        <optgroup key={groupId} label={options.find(option => (option.groupId ?? option.group) === groupId)!.group!}>
+          {options.filter(option => (option.groupId ?? option.group) === groupId).map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
         </optgroup>
       ) : options.filter(option => !option.group).map(option => (
         <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>

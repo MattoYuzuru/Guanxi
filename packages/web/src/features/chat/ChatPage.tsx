@@ -304,10 +304,10 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
                 options={availableModels.map((item) => ({
                   value: item.name,
                   label: item.name,
-                  group: translate('chat.models.local'),
+                  group: translate('chat.models.local'), groupId: 'ollama',
                   disabled: item.capabilities.includes('embedding'),
                 })).concat(providerGroups.flatMap(group => group.models.map(item => ({
-                  value: item.selection, label: item.modelId, group: group.label, disabled: false,
+                  value: item.selection, label: item.modelId, group: group.label, groupId: group.id, disabled: false,
                 }))))}
               />
             )}

@@ -71,3 +71,16 @@ it('reselects a visible local model when quiet refresh removes a locked provider
   await waitFor(() => expect(screen.queryByRole('option', { name: 'owner-model' })).toBeNull())
   await waitFor(() => expect(select.value).toBe('local-model'))
 })
+
+
+it('keeps equally named connections in separate groups by connection identity', async () => {
+  const first = vi.mocked(api.chatModels).getMockImplementation()!
+  const snapshot = await first()
+  vi.mocked(api.chatModels).mockResolvedValue({ groups: [snapshot.groups[0]!, {
+    ...snapshot.groups[0]!, id: 'second-connection', models: [{ ...snapshot.groups[0]!.models[0]!, selection: 'second-selection', modelId: 'second-model' }],
+  }] })
+  render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
+  await screen.findByRole('option', { name: 'second-model' })
+  expect(screen.getAllByRole('group', { name: 'Owner API' })).toHaveLength(2)
+  expect(screen.getByRole('option', { name: 'owner-model' }).closest('optgroup')).not.toBe(screen.getByRole('option', { name: 'second-model' }).closest('optgroup'))
+})
