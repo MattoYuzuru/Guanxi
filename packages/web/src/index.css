@@ -103,6 +103,16 @@
     border-radius: var(--border-radius-inline);
   }
 
+  /* Script-moved focus on a non-control (an announcement region) shows no ring unless the browser
+     judges it keyboard-visible; a heading focused after navigation is a target, never a control. */
+  [tabindex='-1']:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  :is(h1, h2, h3, h4, h5, h6)[tabindex='-1']:focus {
+    outline: none;
+  }
+
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;

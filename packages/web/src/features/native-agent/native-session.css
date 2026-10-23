@@ -84,11 +84,6 @@
   white-space: nowrap;
 }
 
-/* Focus lands on the heading programmatically after navigation; it is not a control, so no ring. */
-.native-session-title:focus {
-  outline: none;
-}
-
 .native-session-connection {
   display: flex;
   flex: 0 1 auto;
