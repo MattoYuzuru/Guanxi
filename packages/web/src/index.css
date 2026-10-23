@@ -642,6 +642,19 @@
   }
 }
 
+/* The legacy choice field is the design-system Select trigger. Its default full width sits in the
+   components layer so a feature's width utilities still win; the trigger's own minimum width is
+   unlayered, so it is reset here with higher specificity. */
+@layer components {
+  .legacy-select {
+    box-sizing: border-box;
+    @apply w-full max-w-full;
+  }
+}
+.gx-select-trigger.legacy-select {
+  min-width: 0;
+}
+
 @layer components {
   .legacy-button {
     display: inline-flex;

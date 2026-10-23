@@ -21,7 +21,10 @@
  *
  * То есть вердикт сам себя уточняет по мере использования.
  */
-import type { FitLevel, FitVerdict, HardwareInfo } from '@guanxi/contract'
+import type { FitLevel, FitReason, FitVerdict, HardwareInfo } from '@guanxi/contract'
+
+/** What this node sends: the reason code is always present (the schema keeps it optional for old nodes). */
+export type NodeFitVerdict = FitVerdict & { reason: FitReason }
 
 /**
  * Байт на элемент KV-кэша.
@@ -147,6 +150,12 @@ function levelFor(utilization: number): FitLevel {
   return 'red'
 }
 
+function reasonFor(level: FitLevel): FitReason {
+  if (level === 'green') return 'headroom'
+  if (level === 'yellow') return 'tight'
+  return 'spills_to_cpu'
+}
+
 function summarize(level: FitLevel, requiredBytes: number, usableBytes: number): string {
   if (level === 'green') return `${formatGb(requiredBytes)} из ${formatGb(usableBytes)} — запас есть`
   if (level === 'yellow')
@@ -171,7 +180,7 @@ export interface ComputeFitInput {
   loaded?: { sizeBytes: number; sizeVramBytes: number } | null
 }
 
-export function computeFit(input: ComputeFitInput): FitVerdict {
+export function computeFit(input: ComputeFitInput): NodeFitVerdict {
   const { contextLength, hardware, modelBytes, isCloud } = input
   const usableBytes = hardware.usableMemoryBytes
 
@@ -179,6 +188,7 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
     return {
       level: 'green',
       summary: 'Считается в облаке Ollama — локальная память не расходуется',
+      reason: 'cloud',
       contextLength,
       modelBytes: 0,
       kvCacheBytes: 0,
@@ -202,20 +212,25 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
 
     let level: FitLevel
     let summary: string
+    let reason: FitReason
     if (!fullyOnGpu) {
       level = 'red'
+      reason = 'loaded_partial_gpu'
       summary = `Только ${gpuPercent}% на ускорителе, остальное считает CPU — будет медленно`
     } else if (utilization < GREEN_UTILIZATION) {
       level = 'green'
+      reason = 'loaded_on_accelerator'
       summary = `Загружена целиком на ускоритель, занимает ${formatGb(sizeBytes)}`
     } else {
       level = 'yellow'
+      reason = 'loaded_tight'
       summary = `Влезла на ускоритель, но занимает ${formatGb(sizeBytes)} из ${formatGb(usableBytes)} — запаса почти нет`
     }
 
     return {
       level,
       summary,
+      reason,
       contextLength,
       modelBytes,
       kvCacheBytes: Math.max(0, sizeBytes - modelBytes),
@@ -243,6 +258,7 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
     return {
       level,
       summary: summarize(level, requiredBytes, usableBytes),
+      reason: reasonFor(level),
       contextLength,
       modelBytes,
       kvCacheBytes: Math.max(0, requiredBytes - modelBytes),
@@ -264,6 +280,7 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
     return {
       level,
       summary: summarize(level, requiredBytes, usableBytes),
+      reason: reasonFor(level),
       contextLength,
       modelBytes,
       kvCacheBytes,
@@ -282,6 +299,7 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
 
     return {
       level,
+      reason: level === 'red' ? 'vendor_exceeds' : 'vendor_requires',
       summary:
         level === 'red'
           ? `По данным вендора нужно ${formatGb(requiredBytes)} видеопамяти — больше доступных ${formatGb(usableBytes)}`
@@ -300,6 +318,7 @@ export function computeFit(input: ComputeFitInput): FitVerdict {
   return {
     level: 'unknown',
     summary: 'Недостаточно данных о модели, чтобы оценить требования к памяти',
+    reason: 'insufficient_data',
     contextLength,
     modelBytes,
     kvCacheBytes: 0,

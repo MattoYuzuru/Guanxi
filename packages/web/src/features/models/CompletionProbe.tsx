@@ -5,6 +5,7 @@ import { api, errorMessage } from '../../lib/api.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { useOptionalRuntimeProjection } from '../health/RuntimeContext.tsx'
+import { FactList } from './Facts.tsx'
 
 type LocalState =
   | { state: 'idle' }
@@ -218,15 +219,27 @@ function ProbeResult({ evidence }: { evidence: CompletionProbeEvidence }) {
     <>
       <ProbeState label={label} tone={tone} />
       <p className="mt-1">{probeReason(evidence)}</p>
-      <p className="mt-1 min-w-0 break-all font-mono text-muted">
-        {evidence.basis.state === 'exact'
-          ? `${translate('models.probe.identity.reference')}: ${evidence.basis.normalizedModelReference}, ${translate('models.probe.identity.digest')}: ${evidence.basis.artifactDigest}, ${translate('models.probe.identity.runtime')}: Ollama ${evidence.basis.runtimeVersion}, ${translate('models.probe.identity.context')}: ${formatContextLength(evidence.basis.contextLength)}, ${translate('models.probe.identity.definition')}: v${evidence.basis.probeDefinitionVersion}`
-          : translate('models.probe.identity.unknown')}
-      </p>
-      <p className="mt-1 text-muted">
-        {translate('models.probe.observed')} {formatDateTime(evidence.observedAt)},{' '}
-        {translate('models.probe.confidence')} {probeConfidence(evidence.confidence)}
-      </p>
+      {evidence.basis.state === 'exact' ? (
+        <FactList
+          className="mt-1"
+          facts={[
+            { label: translate('models.probe.identity.reference'), value: evidence.basis.normalizedModelReference, mono: true },
+            { label: translate('models.probe.identity.digest'), value: evidence.basis.artifactDigest, mono: true },
+            { label: translate('models.probe.identity.runtime'), value: `Ollama ${evidence.basis.runtimeVersion}` },
+            { label: translate('models.probe.identity.context'), value: formatContextLength(evidence.basis.contextLength) },
+            { label: translate('models.probe.identity.definition'), value: `v${evidence.basis.probeDefinitionVersion}`, mono: true },
+          ]}
+        />
+      ) : (
+        <p className="mt-1 min-w-0 break-all font-mono text-muted">{translate('models.probe.identity.unknown')}</p>
+      )}
+      <FactList
+        className="mt-1"
+        facts={[
+          { label: translate('models.probe.observed'), value: formatDateTime(evidence.observedAt) },
+          { label: translate('models.probe.confidence'), value: probeConfidence(evidence.confidence) },
+        ]}
+      />
     </>
   )
 }

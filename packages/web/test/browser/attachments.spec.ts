@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { installFrameOrderSwitch, setFramesBeforePendingCommits } from './fixtures/frame-order.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { pickValue } from './fixtures/select.ts'
 
 test('attachment recovery/reload stays exact, scoped, accessible and download-once', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -172,7 +173,7 @@ test('attachment recovery/reload stays exact, scoped, accessible and download-on
   await expect(page.getByText(/Стандартная storage policy сервера/u)).toHaveCount(1)
   await expect(page.getByText(/не capability модели/u)).toHaveCount(1)
 
-  await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
+  await pickValue(page, page.getByRole('combobox', { name: 'Область' }), project.id)
   await expect(page.getByRole('heading', { name: project.name })).toHaveCount(1)
   const input = page.getByLabel('Выберите или перетащите один локальный файл')
   await input.setInputFiles({
@@ -203,7 +204,7 @@ test('attachment recovery/reload stays exact, scoped, accessible and download-on
   await setFramesBeforePendingCommits(page, false)
 
   await page.reload()
-  await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
+  await pickValue(page, page.getByRole('combobox', { name: 'Область' }), project.id)
   await expect(page.getByRole('list', { name: 'Вложения в выбранной области' }).getByText(item.displayName)).toHaveCount(1)
   await expect(page.getByText(id)).toHaveCount(1)
   const [download] = await Promise.all([

@@ -10,6 +10,8 @@ import {
 } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
+import { FactList } from './Facts.tsx'
+import { Icon } from '@guanxi/ui'
 
 type Progress = Extract<PullStreamEvent, { type: 'progress' }>['data']
 
@@ -238,7 +240,7 @@ export function CatalogVariantInstall({
                     onClick={() => onToggleCompare(variant)}
                     className="min-h-11 shrink-0 rounded border border-divider px-2 text-2xs hover:border-control disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-8"
                   >
-                    {compared ? '−' : '+'}
+                    <Icon name={compared ? 'check' : 'plus'} size={14} aria-hidden="true" />
                   </button>
                 ) : null}
               </div>
@@ -260,15 +262,12 @@ export function CatalogVariantInstall({
           <div className="space-y-1.5">
             <p className="break-all text-2xs text-[var(--color-fit-green)]" role="status">
               {translate('models.catalogVariant.installed')}{' '}
-              <span className="font-mono">{selected.installation.digest}</span>
-            </p>
-            <div className="flex gap-1.5">
-              <Link
-                to={paths.model(selected.normalizedName)}
-                className="flex h-8 flex-1 items-center justify-center rounded-md border border-control bg-surface px-3 text-xs font-medium"
-              >
-                {translate('models.catalogVariant.profile')}
+              <Link to={paths.model(selected.normalizedName)} className="font-mono underline" aria-label={`${translate('models.catalogVariant.profile')} ${selected.normalizedName}`}>
+                {selected.installation.digest}
               </Link>
+            </p>
+            {/* One primary action; the installed variant's profile is linked from its digest line. */}
+            <div className="flex gap-1.5">
               <Link
                 to={`${paths.chat()}?model=${encodeURIComponent(selected.normalizedName)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
                 className="flex h-8 flex-1 items-center justify-center rounded-md bg-accent px-3 text-xs font-medium text-accent-foreground"
@@ -410,34 +409,22 @@ function VariantFacts({
   variant: SelectedVariant
   detailed?: boolean
 }) {
+  const unknown = translate('models.catalogVariant.unknown')
   return (
     <div className="mb-2 space-y-1.5 rounded-md border border-divider bg-inset p-2">
       <p className="break-all font-mono text-xs font-medium">{variant.normalizedName}</p>
-      <p className="text-2xs text-secondary">
-        {translate('models.catalogVariant.claimedSize')}: {' '}
-        {variant.sizeBytes === null ? translate('models.catalogVariant.unknown') : formatBytes(variant.sizeBytes)}
-        {', '}{translate('models.catalogVariant.parameters')}: {' '}
-        {variant.parameterSize ?? translate('models.catalogVariant.unknown')}
-      </p>
-      {variant.contextLength !== null ? (
-        <p className="text-2xs text-secondary">
-          {translate('models.catalogVariant.claimedContext')}: {formatContextLength(variant.contextLength)}
-        </p>
-      ) : null}
+      <FactList
+        facts={[
+          { label: translate('models.catalogVariant.claimedSize'), value: variant.sizeBytes === null ? unknown : formatBytes(variant.sizeBytes) },
+          { label: translate('models.catalogVariant.parameters'), value: variant.parameterSize ?? unknown },
+          variant.contextLength !== null && { label: translate('models.catalogVariant.claimedContext'), value: formatContextLength(variant.contextLength) },
+          { label: translate('models.facts.source'), value: sourceLabel(variant) },
+          { label: translate('models.facts.freshness'), value: freshnessLabel(variant), tone: variant.freshness === 'fresh' ? undefined : 'warning' },
+          { label: translate('models.catalogVariant.source.observed'), value: variant.sourceObservedAt ? formatDateTime(variant.sourceObservedAt) : unknown },
+          { label: translate('models.catalogVariant.source.fetched'), value: variant.sourceFetchedAt ? formatDateTime(variant.sourceFetchedAt) : unknown },
+        ]}
+      />
       <VariantFit variant={variant} />
-      <p className="text-2xs text-secondary">
-        {sourceLabel(variant)}, {freshnessLabel(variant)}
-      </p>
-      <p className="text-2xs text-secondary">
-        {translate('models.catalogVariant.source.observed')}: {' '}
-        {variant.sourceObservedAt
-          ? formatDateTime(variant.sourceObservedAt)
-          : translate('models.catalogVariant.unknown')}
-        {', '}{translate('models.catalogVariant.source.fetched')}: {' '}
-        {variant.sourceFetchedAt
-          ? formatDateTime(variant.sourceFetchedAt)
-          : translate('models.catalogVariant.unknown')}
-      </p>
       <VariantInstallation variant={variant} />
       {detailed ? (
         <p className="text-2xs text-secondary">
@@ -484,11 +471,19 @@ function VariantFit({ variant }: { variant: CatalogVariant }) {
   }
   const verdict = variant.fit.verdict
   return (
-    <p className="text-2xs text-secondary">
-      {translate(`models.catalogVariant.fit.${verdict.level}`)},{' '}
-      {formatBytes(verdict.requiredBytes)} / {formatBytes(verdict.usableBytes)},{' '}
-      {formatContextLength(verdict.contextLength)}, {translate('models.catalogVariant.fit.claimed')}
-    </p>
+    <FactList
+      facts={[
+        {
+          label: translate('models.facts.fit'),
+          value: translate(`models.catalogVariant.fit.${verdict.level}`),
+          title: translate('models.catalogVariant.fit.claimed'),
+          tone: verdict.level === 'green' ? undefined : 'warning',
+        },
+        { label: translate('models.facts.memory'), value: `${formatBytes(verdict.requiredBytes)} / ${formatBytes(verdict.usableBytes)}` },
+        { label: translate('models.facts.context'), value: formatContextLength(verdict.contextLength) },
+        { label: translate('models.facts.basis'), value: translate('models.catalogVariant.fit.claimed'), tone: 'muted' },
+      ]}
+    />
   )
 }
 
@@ -507,14 +502,12 @@ function PullProgress({ variant, progress }: { variant: SelectedVariant; progres
       ) : (
         <Meter value={percent / 100} label={translate('models.catalogVariant.progress')} />
       )}
-      <p className="font-mono text-2xs text-muted">
-        {percent === null
-          ? translate('models.catalogVariant.progress.unknown')
-          : formatPercent(percent, 1)}
-        {progress?.completedBytes !== null && progress?.completedBytes !== undefined
-          ? `, ${formatBytes(progress.completedBytes)}`
-          : ''}
-      </p>
+      <FactList
+        facts={[
+          { label: translate('models.facts.progress'), value: percent === null ? translate('models.catalogVariant.progress.unknown') : formatPercent(percent, 1) },
+          progress?.completedBytes !== null && progress?.completedBytes !== undefined && { label: translate('models.facts.downloaded'), value: formatBytes(progress.completedBytes) },
+        ]}
+      />
     </div>
   )
 }

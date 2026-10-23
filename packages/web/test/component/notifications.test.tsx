@@ -9,6 +9,7 @@ import {
   CONNECTION_ID, FakeNode, OTHER_CONNECTION_ID, T0, allWireAvailable, notification, notificationId,
 } from '../fixtures/notifications-server.ts'
 import { counterKeys, installNodeFetch } from '../helpers/notifications-fetch.ts'
+import { chooseValue, optionLabels } from '../helpers/select.ts'
 
 const NOW = T0 + 3_600_000
 
@@ -618,11 +619,11 @@ describe('actions follow what the node reports', () => {
     fireEvent.click(button(rowOf(1), 'Switch connection…'))
     const form = await within(rowOf(1)).findByTestId('switch-form')
     const select = await within(form).findByRole('combobox', { name: 'Fallback connection' })
-    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['Choose a connection', 'DeepSeek'])
+    expect(await optionLabels(select)).toEqual(['Choose a connection', 'DeepSeek'])
     fireEvent.click(within(form).getByRole('button', { name: 'Switch' }))
     expect(within(form).getByText('Choose a connection first.')).toBeTruthy()
     expect(node.count(/^POST /u)).toBe(0)
-    fireEvent.change(select, { target: { value: OTHER_CONNECTION_ID } })
+    await chooseValue(select, OTHER_CONNECTION_ID)
     fireEvent.click(within(form).getByRole('button', { name: 'Switch' }))
     await waitFor(() => expect(node.effects['switch_connection']).toBe(1))
     const post = node.requests.find((record) => record.method === 'POST')!

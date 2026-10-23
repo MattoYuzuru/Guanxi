@@ -11,6 +11,7 @@ import {
 } from '../../lib/api.ts'
 import { formatBytes, formatPercent } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { FactList } from './Facts.tsx'
 
 type Progress = Extract<PullStreamEvent, { type: 'progress' }>['data']
 
@@ -326,12 +327,12 @@ function PullProgress({ progress, target }: { progress: Progress | null; target:
       ) : (
         <Meter value={percent / 100} label={translate('models.addOllama.progress')} />
       )}
-      <p className="font-mono text-2xs text-muted">
-        {percent === null ? translate('models.addOllama.progress.unknown') : formatPercent(percent, percent < 10 ? 1 : 0)}
-        {progress?.completedBytes !== null && progress?.completedBytes !== undefined
-          ? `, ${formatBytes(progress.completedBytes)}`
-          : ''}
-      </p>
+      <FactList
+        facts={[
+          { label: translate('models.facts.progress'), value: percent === null ? translate('models.addOllama.progress.unknown') : formatPercent(percent, percent < 10 ? 1 : 0) },
+          progress?.completedBytes !== null && progress?.completedBytes !== undefined && { label: translate('models.facts.downloaded'), value: formatBytes(progress.completedBytes) },
+        ]}
+      />
     </div>
   )
 }

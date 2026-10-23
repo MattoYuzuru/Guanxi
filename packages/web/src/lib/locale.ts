@@ -7,8 +7,10 @@ import { newSessionEnglish, newSessionRussian } from '../features/new-session/me
 import { sideChatEnglish, sideChatRussian } from '../features/side-chat/messages.ts'
 import { voiceGlossaryEnglish, voiceGlossaryRussian } from '../features/voice/messages.ts'
 import { notificationsEnglish, notificationsRussian } from '../features/notifications/messages.ts'
+import { modelsEnglish, modelsRussian } from '../features/models/messages.ts'
 
 const english = {
+  ...modelsEnglish,
   ...workspaceEnglish,
   ...shellEnglish,
   ...nativeEnglish,
@@ -985,7 +987,6 @@ const english = {
   'model.capability.thinkingHint': 'Returns a separate reasoning block before the answer',
   'model.capability.embedding': 'embed',
   'model.capability.embeddingHint': 'Embeddings only; not suitable for Chat',
-  'model.profile': 'Profile',
   'model.startChat': 'Start Chat',
   'model.install': 'Install',
   'model.count.one': '{count} model',
@@ -1021,7 +1022,6 @@ const english = {
   'fit.basis.vendorHint': 'Taken from catalog guidance and not verified on this hardware.',
   'fit.memoryUsage': 'Memory usage with a {context} window',
   'fit.aria': 'Fit: {summary}',
-  'fit.summary': '{required} of {available}, {context} window',
   'fit.breakdown': 'Calculation details',
   'fit.cacheHint': 'For a {context}-token window. Grows linearly with window size.',
   'fit.deficit': '{bytes} short. Some layers will move to CPU and generation will be several times slower.',
@@ -1064,6 +1064,7 @@ const english = {
   'model.carousel.item': 'Model {index} of {count}',
   'launcher.context.aria': 'Context window used for fit calculation',
   'launcher.context.short': 'context',
+  'launcher.context.suggestions': 'Suggested context sizes',
   'launcher.context.hint':
     'Preset values are suggestions. You can enter any positive whole-token count.',
   'hardware.acceleratorProfile': 'Accelerator profile',
@@ -1846,6 +1847,7 @@ export type LocaleKey = keyof typeof english
 type Messages = Record<LocaleKey, string>
 
 const russian: Messages = {
+  ...modelsRussian,
   ...connectionRussian,
   ...nativeRussian,
   ...newSessionRussian,
@@ -2822,7 +2824,6 @@ const russian: Messages = {
   'model.capability.thinkingHint': 'Отдельный блок рассуждений перед ответом',
   'model.capability.embedding': 'embed',
   'model.capability.embeddingHint': 'Только эмбеддинги, для Чата не подходит',
-  'model.profile': 'Профиль',
   'model.startChat': 'Начать Чат',
   'model.install': 'Установить',
   'model.count.one': '{count} модель',
@@ -2858,7 +2859,6 @@ const russian: Messages = {
   'fit.basis.vendorHint': 'Взято из подсказки каталога, на этом железе не проверялось.',
   'fit.memoryUsage': 'Заполнение памяти при окне {context}',
   'fit.aria': 'Влезаемость: {summary}',
-  'fit.summary': '{required} из {available}, окно {context}',
   'fit.breakdown': 'Разбор расчёта',
   'fit.cacheHint': 'Под окно {context} токенов. Растёт линейно с размером окна.',
   'fit.deficit': 'Не хватает {bytes}. Часть слоёв уйдёт на CPU — генерация замедлится в несколько раз.',
@@ -2901,6 +2901,7 @@ const russian: Messages = {
   'model.carousel.item': 'Модель {index} из {count}',
   'launcher.context.aria': 'Размер окна контекста для расчёта влезаемости',
   'launcher.context.short': 'окно',
+  'launcher.context.suggestions': 'Предлагаемые размеры окна',
   'launcher.context.hint':
     'Preset-значения — только подсказки. Можно ввести любое положительное целое число токенов.',
   'hardware.acceleratorProfile': 'Профиль ускорителя',

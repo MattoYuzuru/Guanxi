@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HuggingFaceDownloadProvenance } from '@guanxi/contract'
 import { HuggingFaceImportControl } from '../../src/features/models/HuggingFaceImportControl.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { factPairs } from '../helpers/facts.ts'
 
 const originalFetch = globalThis.fetch
 const ARTIFACT_ID = '11111111-1111-4111-8111-111111111111'
@@ -158,7 +159,8 @@ describe('explicit Hugging Face staged import control', () => {
     expect(await screen.findByText('Установлено и проверено runtime')).toBeTruthy()
     expect(screen.getAllByText(/Установка наблюдалась в новом локальном sample/u)).toHaveLength(1)
     expect(screen.getAllByText(/Фиксированный completion probe получил/u)).toHaveLength(1)
-    expect(screen.getAllByText(/owner\/model:latest, manifest-digest/u)).toHaveLength(1)
+    expect(factPairs().filter(([label, value]) => label === 'Ссылка' && value === 'owner/model:latest')).toHaveLength(1)
+    expect(factPairs().filter(([label, value]) => label === 'Digest' && value === 'manifest-digest')).toHaveLength(1)
     expect(onInstalled).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: 'Проверить локальный импорт' })).toBeNull()
     expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)

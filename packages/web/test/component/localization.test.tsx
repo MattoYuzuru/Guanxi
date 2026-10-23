@@ -30,6 +30,7 @@ import {
 } from '../../src/lib/format.ts'
 import { sseStream } from '../../src/lib/sse.ts'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
+import { chooseValue } from '../helpers/select.ts'
 
 const SETTINGS: Settings = {
   ollamaHost: 'http://127.0.0.1:11434',
@@ -353,7 +354,7 @@ describe('Settings language and glossary', () => {
     })
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
     language.focus()
-    fireEvent.change(language, { target: { value: 'en' } })
+    await chooseValue(language, 'en')
     expect(document.activeElement).toBe(language)
     expect(document.documentElement.lang).toBe('en')
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy()
@@ -385,7 +386,7 @@ describe('Settings language and glossary', () => {
       </LocaleProvider>,
     )
     const language = await screen.findByLabelText('Язык')
-    fireEvent.change(language, { target: { value: 'en' } })
+    await chooseValue(language, 'en')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(language.matches(':disabled')).toBe(true)
     resolveUpdate({ ...SETTINGS, locale: 'en' })
@@ -410,10 +411,10 @@ describe('Settings language and glossary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Could not connect to the Guanxi server')).toBeTruthy()
     expect(screen.queryByText('Settings saved')).toBeNull()
-    fireEvent.change(language, { target: { value: 'ru' } })
+    await chooseValue(language, 'ru')
     expect(await screen.findByText('Не удалось соединиться с сервером Guanxi')).toBeTruthy()
     expect(screen.queryByText('Could not connect to the Guanxi server')).toBeNull()
-    fireEvent.change(language, { target: { value: 'en' } })
+    await chooseValue(language, 'en')
     expect(await screen.findByText('Could not connect to the Guanxi server')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Settings saved')).toBeTruthy()

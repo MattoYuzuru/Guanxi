@@ -13,6 +13,7 @@ import { voiceGlossaryEnglish, voiceGlossaryRussian } from '../../src/features/v
 import { paths, parseRoute } from '../../src/lib/router.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import { createGlossaryNode, glossaryFetch, type GlossaryNode } from '../fixtures/glossary-node.ts'
+import { chooseValue, isSelectTrigger, selectedValue } from '../helpers/select.ts'
 
 const PROJECTS = [
   { id: 'p1', name: 'Alpha project', createdAt: '2026-10-21T00:00:00.000Z', updatedAt: '2026-10-21T00:00:00.000Z', filesystemBindings: [] },
@@ -45,7 +46,7 @@ const seedBasic = (target: GlossaryNode) => {
 const card = (name: string) => screen.getByRole('heading', { level: 4, name }).closest('article') as HTMLElement
 const button = (name: string | RegExp, scope: HTMLElement | Document = document) => within(scope as HTMLElement).getByRole('button', { name }) as HTMLButtonElement
 const field = (name: string) => {
-  const controls = screen.getAllByLabelText(name).filter((element) => ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
+  const controls = screen.getAllByLabelText(name).filter((element) => ['INPUT', 'TEXTAREA'].includes(element.tagName) || isSelectTrigger(element))
   if (controls.length !== 1) throw new Error(`expected one control labelled "${name}", found ${controls.length}`)
   return controls[0] as HTMLInputElement
 }
@@ -202,9 +203,9 @@ describe('states', () => {
     expect(screen.getAllByText(/The project list could not be loaded/u)).toHaveLength(1)
     expect(screen.getByRole('heading', { level: 3, name: 'Project p1' })).toBeTruthy()
     fireEvent.click(button('New entry'))
-    type(field('Applies to'), 'project')
+    await chooseValue(field('Applies to'), 'project')
     expect(screen.getByText('The project list is unavailable, so a project entry cannot be created now.')).toBeTruthy()
-    expect((field('Project') as unknown as HTMLSelectElement).disabled).toBe(true)
+    expect((field('Project') as unknown as HTMLButtonElement).disabled).toBe(true)
   })
 })
 
@@ -232,7 +233,7 @@ describe('list', () => {
   it('asks the node for exactly what the view needs: all, then a project, and with or without inactive', async () => {
     await open()
     expect(node.requests.filter((request) => request.path === '/').map((request) => request.query)).toEqual([{ includeInactive: 'true' }])
-    type(field('Show entries for'), 'p1')
+    await chooseValue(field('Show entries for'), 'p1')
     await waitFor(() => expect(node.count('GET', '/')).toBe(2))
     expect(node.requests.filter((request) => request.path === '/')[1]?.query).toEqual({ projectId: 'p1', includeInactive: 'true' })
     expect(screen.getByRole('button', { name: 'Show inactive entries' }).getAttribute('aria-pressed')).toBe('true')
@@ -246,7 +247,7 @@ describe('list', () => {
     await open()
     let release: () => void = () => {}
     node.holdList = new Promise<void>((resolve) => { release = resolve })
-    type(field('Show entries for'), 'p1')
+    await chooseValue(field('Show entries for'), 'p1')
     await waitFor(() => expect(screen.queryAllByTestId('glossary-skeleton')).toHaveLength(1))
     expect(screen.queryAllByRole('article')).toHaveLength(0)
     await act(async () => { release() })
@@ -261,7 +262,7 @@ describe('list', () => {
     render(<GlossaryPage />)
     await ready()
     expect(screen.queryAllByText('Overridden in this project')).toHaveLength(0)
-    type(field('Show entries for'), 'p1')
+    await chooseValue(field('Show entries for'), 'p1')
     await waitFor(() => expect(screen.queryAllByText('Overridden in this project')).toHaveLength(1))
     expect(within(screen.getAllByRole('heading', { level: 4, name: 'Hono' })[0]?.closest('article') as HTMLElement).getAllByText('Overridden in this project')).toHaveLength(1)
     expect(screen.getAllByRole('article').filter((element) => element.textContent?.includes('Overridden in this project'))).toHaveLength(1)
@@ -306,8 +307,8 @@ describe('create', () => {
   it('creates a project entry with its project id and the right group', async () => {
     await open()
     fireEvent.click(button('New entry'))
-    type(field('Applies to'), 'project')
-    type(field('Project'), 'p2')
+    await chooseValue(field('Applies to'), 'project')
+    await chooseValue(field('Project'), 'p2')
     type(field('Canonical term'), 'Zod')
     submitForm()
     await waitFor(() => expect(screen.queryAllByRole('form')).toHaveLength(0))
@@ -320,12 +321,12 @@ describe('create', () => {
     await open()
     fireEvent.click(button('New entry'))
     type(field('Canonical term'), 'Корень')
-    type(field('Language of the term'), 'ru')
+    await chooseValue(field('Language of the term'), 'ru')
     const endings = screen.getByRole('button', { name: 'Add Russian endings after a hyphen (PR-а)' })
     expect((endings as HTMLButtonElement).disabled).toBe(true)
     expect(endings.getAttribute('aria-pressed')).toBe('false')
     expect(describedBy(endings)).toBe('Available for English terms only.')
-    type(field('Language of the term'), 'en')
+    await chooseValue(field('Language of the term'), 'en')
     const caseToggle = screen.getByRole('button', { name: 'Match letter case exactly' })
     expect(caseToggle.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(caseToggle)
@@ -362,14 +363,14 @@ describe('create', () => {
     await open()
     fireEvent.click(button('New entry'))
     type(field('Canonical term'), 'x'.repeat(201))
-    type(field('Applies to'), 'project')
+    await chooseValue(field('Applies to'), 'project')
     submitForm()
     expect(mutationCount()).toBe(0)
     expect(describedBy(field('Canonical term'))).toContain('longer than 200 characters')
     expect(describedBy(field('Project'))).toContain('Choose a project for a project entry.')
     expect(document.activeElement).toBe(field('Project'))
     type(field('Canonical term'), 'x'.repeat(200))
-    type(field('Project'), 'p1')
+    await chooseValue(field('Project'), 'p1')
     submitForm()
     await waitFor(() => expect(mutationCount()).toBe(1))
   })
@@ -433,16 +434,16 @@ describe('create', () => {
 
   it('shows a created entry that the current view would hide by resetting the view, and says so', async () => {
     await open()
-    type(field('Show entries for'), 'p2')
+    await chooseValue(field('Show entries for'), 'p2')
     await waitFor(() => expect(node.count('GET', '/')).toBe(2))
     await waitFor(() => expect(screen.queryAllByTestId('glossary-skeleton')).toHaveLength(0))
     fireEvent.click(button('New entry'))
-    type(field('Applies to'), 'project')
-    type(field('Project'), 'p1')
+    await chooseValue(field('Applies to'), 'project')
+    await chooseValue(field('Project'), 'p1')
     type(field('Canonical term'), 'Elsewhere')
     submitForm()
     await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4, name: 'Elsewhere' })).toHaveLength(1))
-    expect((field('Show entries for') as unknown as HTMLSelectElement).value).toBe('')
+    expect(selectedValue(field('Show entries for'))).toBe('')
     expect(announcement()).toBe('Created “Elsewhere”, revision 1. The view was reset to show it.')
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 4, name: 'Elsewhere' }))
   })
@@ -626,7 +627,7 @@ describe('consistency', () => {
 
   it('locks the view controls while a form is open or a change is in flight, and says why', async () => {
     await open()
-    const filter = field('Show entries for') as unknown as HTMLSelectElement
+    const filter = field('Show entries for') as unknown as HTMLButtonElement
     const inactive = screen.getByRole('button', { name: 'Show inactive entries' })
     expect(filter.disabled).toBe(false)
     fireEvent.click(button('New entry'))
@@ -730,12 +731,12 @@ describe('consistency', () => {
 
   it('does not move focus later when the read it waited for failed', async () => {
     await open()
-    type(field('Show entries for'), 'p1')
+    await chooseValue(field('Show entries for'), 'p1')
     await waitFor(() => expect(node.count('GET', '/')).toBe(2))
     await waitFor(() => expect(screen.queryAllByTestId('glossary-skeleton')).toHaveLength(0))
     fireEvent.click(button('New entry'))
-    type(field('Applies to'), 'project')
-    type(field('Project'), 'p2')
+    await chooseValue(field('Applies to'), 'project')
+    await chooseValue(field('Project'), 'p2')
     type(field('Canonical term'), 'Elsewhere')
     node.fail.set('GET /', { status: 503, code: 'glossary_unavailable' })
     submitForm()
@@ -875,13 +876,13 @@ describe('preview', () => {
 
   it('previews a project glossary when a project is chosen, and follows the list view', async () => {
     await open()
-    type(field('Show entries for'), 'p1')
-    await waitFor(() => expect((within(preview()).getByLabelText('Glossary used') as unknown as HTMLSelectElement).value).toBe('p1'))
+    await chooseValue(field('Show entries for'), 'p1')
+    await waitFor(() => expect(selectedValue(within(preview()).getByLabelText('Glossary used'))).toBe('p1'))
     type(within(preview()).getByLabelText('Dictated text'), 'вайт и пиар')
     await waitFor(() => expect(screen.queryAllByTestId('glossary-preview-output')).toHaveLength(1))
     expect(previewRequests()[0]?.body).toEqual({ text: 'вайт и пиар', projectId: 'p1' })
     expect(Array.from(screen.getByTestId('glossary-preview-output').querySelectorAll('mark')).map((mark) => mark.textContent)).toEqual(['Vite', 'PR'])
-    type(within(preview()).getByLabelText('Glossary used'), '')
+    await chooseValue(within(preview()).getByLabelText('Glossary used'), '')
     await waitFor(() => expect(previewRequests()).toHaveLength(2))
     expect(previewRequests()[1]?.body).toEqual({ text: 'вайт и пиар', projectId: null })
     await waitFor(() => expect(Array.from(screen.getByTestId('glossary-preview-output').querySelectorAll('mark')).map((mark) => mark.textContent)).toEqual(['PR']))
@@ -895,7 +896,7 @@ describe('preview', () => {
     expect(screen.queryAllByTestId('glossary-preview-stale')).toHaveLength(0)
     let release: () => void = () => {}
     node.holdPreview = new Promise<void>((resolve) => { release = resolve })
-    type(within(preview()).getByLabelText('Glossary used'), 'p1')
+    await chooseValue(within(preview()).getByLabelText('Glossary used'), 'p1')
     await waitFor(() => expect(previewRequests()).toHaveLength(2))
     expect(screen.getAllByTestId('glossary-preview-stale')).toHaveLength(1)
     expect(screen.getByTestId('glossary-preview-count').textContent).toBe('')

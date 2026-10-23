@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { pickValue } from './fixtures/select.ts'
 
 test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layout safe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -301,7 +302,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await expect(conflict).toContainText('Guanxi загрузил текущую ревизию')
   await expect(page.getByText('Ревизия 1')).toHaveCount(0)
 
-  await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
+  await pickValue(page, page.getByRole('combobox', { name: 'Область' }), project.id)
   await expect(page.getByText(ownedId)).toHaveCount(1)
   await expect(page.getByText(id)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: project.name })).toHaveCount(1)

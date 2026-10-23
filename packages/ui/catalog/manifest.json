@@ -142,7 +142,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4bd49fa194c54011d6cacd143f46399ca52ed05215b8e59dfb00413b516f1c23",
+      "sourceHash": "sha256:7f5304d2999262574a259672de11accd432a969932ad4dca9df52c29dd69620d",
       "snapshotHashes": {
         "default-dark": "sha256:d8cb99f4a94a3e153145d578218821a6bb3f24a95a6fae3465e4760b3ea249f9",
         "default-light": "sha256:be9060a69277f0ab395f857a7195d8bf0b4226ee1e62861f63b03094631209d7",
@@ -244,7 +244,7 @@
         "--spacing-4",
         "--spacing-6"
       ],
-      "sourceHash": "sha256:1f6f5e860c107717085cdc2f76373533f4306ea328c65d7f788a38efd3e1dfa2",
+      "sourceHash": "sha256:7c8ae55246a0d9a755e13ad958537d9beaf7a6e880441b3dec0616700322dc9b",
       "snapshotHashes": {
         "accent-dark-hc": "sha256:06b21938fe3b509e1cf57074339d6fec986fd8aedd91689eacc481da33f13de3",
         "accent-dark": "sha256:2afff742b120f3bd070d58c489a32862b9b3f4a94467a425f8ed0f7c85ebfaa0",
@@ -392,7 +392,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4eca08320b8a79da7ccec6e1f9b67f92c37074d33e57008bdcffbd99ec5012d9",
+      "sourceHash": "sha256:a81cf04051ec1cbd90b8ec36fd968b824078a6fc537eca23b880acbe8770b406",
       "snapshotHashes": {
         "active-dark-hc": "sha256:8c26f012e02fe542d5f4d747290ec978d1e0f43d0c8e6ea237ac63e484a33a79",
         "active-dark": "sha256:0f3dd60a945e30481c00a897839c391a2d86287224cdae8a08cdd6f3737d33f0",
@@ -526,7 +526,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:b127a640277a1f024d03fae637d1d57844ecbcf29f577bd5c2988126e6f1937e",
+      "sourceHash": "sha256:1e20ba7ab1c77d774c0e3745520b426348f260c3a59a489858e5721e51f35435",
       "snapshotHashes": {
         "checked-dark-hc": "sha256:756fe85212052f633ec46408eb948adca60ff3c4b69b85342ca91324e38d7781",
         "checked-dark": "sha256:16922df76222e0a8a782e2d7a418cc928f6ec605de6c8760805f4746d648de8a",
@@ -769,7 +769,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:dffaa1e3c7f6679ee38b1be398f7520fe4aaff8b6629a9ad2ecd5db6c6b295ce",
+      "sourceHash": "sha256:659999e05f1b596505712a60db92e90ea83db17a6e99830355471beaa23256ce",
       "snapshotHashes": {
         "disabled-dark": "sha256:cb6dd16311a3ed0064be82e697488ac86902c3e44835b3e4b8027cb29c5827a8",
         "disabled-light": "sha256:759b02da3b97895de2dfb9dcdc508049281e42099b130f5e7a604b99ce1b12fe",
@@ -935,7 +935,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4a23a436c3ed1a1b183641e5221607c1f7264fd7bd98c9f7ffae146c20d2d933",
+      "sourceHash": "sha256:c3b0359ab8cb458000d9e2e6b0c0ad687bf474f8b1bba2da85c5002b377f5ec1",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:3ecb8e80a92be44bb3cbb67a36e22f413b277f269c7e467d7e3922b9de64afe7",
         "closed-dark": "sha256:0747e3370006d2aa0f7d67bb0f7a974b1405d98c92596294b32eb577f4966a69",
@@ -1020,7 +1020,7 @@
         "--spacing-24",
         "--spacing-40"
       ],
-      "sourceHash": "sha256:e45a80b30c9045f97ab4b2c5a12a73116ce14e30464c28ee138748a0d8ac8907",
+      "sourceHash": "sha256:7bfdcd7b84771fac202a8bec1098906dfb7c3882958c83ae19a6b5597352de09",
       "snapshotHashes": {
         "default-dark": "sha256:500ec48114671f2d2f8dab582449d7a313ae1c47cb2d9332800ac0b5a10c238b",
         "default-light": "sha256:4c278d25ee1c849c944abb714d6c429ac50c8e526bc5550dfbf3d509cc9fd5cf"
@@ -1137,7 +1137,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:ba4184a49195a792e91dfb82a3ca90813f3095a9d112a4a37f0831d6f41e1838",
+      "sourceHash": "sha256:5f16def0c650952cf8b99b6252ed283339f8b53a6a907f6d39a862551831f312",
       "snapshotHashes": {
         "acting-dark": "sha256:61f6605aa54801fafab40be17990985e0049b3f9bacd07296cfad20d4a56b89a",
         "acting-light": "sha256:2a5ec87fe1f8b2138220fab37d256f610b32771941949c4aee1efc1607e10a3a",
@@ -1231,7 +1231,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:89b1fcee85bd250e7c03df77fb5d4a4eff64581a382504a603b9647b590f7b02",
+      "sourceHash": "sha256:e730a3fa4945249dfebc1eae464eb3a5220543a008e7b8c94582dfab8af211d0",
       "snapshotHashes": {
         "domain-dark-hc": "sha256:74c80f285b9405f3a56a3130705d77ae1d39b89e289140a0d5ef47bf489dbc39",
         "domain-dark": "sha256:74c80f285b9405f3a56a3130705d77ae1d39b89e289140a0d5ef47bf489dbc39",
@@ -1250,12 +1250,14 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 12,
+        "count": 14,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/agent/WorkspacePicker.tsx",
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/launcher/LauncherPage.tsx",
+          "packages/web/src/features/models/CatalogVariantInstall.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
@@ -1404,7 +1406,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:d54b2763c1c029330322ff17306ba9c3d71b30856516678bdd3f2fba45536dc8",
+      "sourceHash": "sha256:84c112243ee85f77baaf5fbc59717271c5ddcd2cad2c15887c75c0e6532060fb",
       "snapshotHashes": {
         "default-dark-hc": "sha256:48fa4ad02735ff587c4bace74020f4709fe26cda5d144ed794ec442066e7e8bb",
         "default-dark": "sha256:48fa4ad02735ff587c4bace74020f4709fe26cda5d144ed794ec442066e7e8bb",
@@ -1439,10 +1441,11 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 9,
+        "count": 10,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
@@ -1525,7 +1528,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:10c90036eae0a7f15656b74161a78fa13875fb7dad0cd9f8010940397721daba",
+      "sourceHash": "sha256:bf851ed271c2cd3f324fc6ed2c18232fd9a4f9bae38a11312f49b03090ac0c12",
       "snapshotHashes": {
         "default-dark-hc": "sha256:ee7a3bd8080c1030ababc0ceb657b5bc9af1b93740145158dc5ed6da1020635c",
         "default-dark": "sha256:22bb423c6786e7d2e33dfe86e7c064fee2a18597847f1216ea8b4e03fc888685",
@@ -1620,7 +1623,7 @@
         "--spacing-20",
         "--spacing-4"
       ],
-      "sourceHash": "sha256:9a09f29b58aee11d7a3207234525f6a057f9d4aabdb1ec29e1acf15cfe7ff3c7",
+      "sourceHash": "sha256:e68675d89c9b097261db2d6fb1a9156715b0d25f27911ae1667fe795e734ec2f",
       "snapshotHashes": {
         "combo-dark-hc": "sha256:1ebe8ff407565e50238ecfdcdd9660076a54e2187533a72aa9ea931447bf45d3",
         "combo-dark": "sha256:dfb17827c35e0cec2206cbc5b12c631f40430fa20a07c214472faa12feb3a87e",
@@ -1764,7 +1767,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:d3d5c326ff3aa385bf8df9b11a812301920768b885f160eb71928635fc7227dc",
+      "sourceHash": "sha256:51953596a28bb54ba19820456701a6ced21a3233061524b775b58f6102ba2bff",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:1b1499492a0432b5e6538d0231614478c415caeec324100f60eeba094062c045",
         "closed-dark": "sha256:a49b163a4a8ec74c89a95a1e960196eb87a470831752e6387081f6643d7987cd",
@@ -1779,8 +1782,9 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 1,
+        "count": 2,
         "files": [
+          "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx"
         ]
       },
@@ -1851,7 +1855,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:d735e7f131a0c90e381d8b6cedf12030993f978fd1d86cfd4bf251f61b2bc3cf",
+      "sourceHash": "sha256:003eaed5ad677b00cad384533a130bb8525202c98162b24ccc21d215d9255a26",
       "snapshotHashes": {
         "linen-azure-dark": "sha256:ab4ed8a5683674e7ad03e9efbcf8d06f11dd2ec2dca0d4f247cbff43811723d5",
         "linen-azure-light": "sha256:e546d8648e3e6c907d3b13461995326b262d52f67a72d0c307a4ac5cd43e94bc",
@@ -1956,9 +1960,12 @@
         "--border-radius-glass",
         "--border-width-regular",
         "--color-border-secondary",
+        "--color-ring-primary",
         "--color-text-primary",
         "--color-text-secondary",
         "--color-text-tertiary",
+        "--focus-ring-offset",
+        "--focus-ring-width",
         "--font-heading-5-line-height",
         "--font-line-height-ui",
         "--font-size-12",
@@ -1972,7 +1979,7 @@
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:aa365d8149ba2694bc39febad3ae86a4a376736942d9d40984c97b19d1933012",
+      "sourceHash": "sha256:601cd08cc8b48c9096aec4a54c8ff17e640a2c052bffd0576cf879af3255e069",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:79454c0e3f4896c644f2083080421e64aa1d42eada91526ea9f4de2e325dacdd",
         "closed-dark": "sha256:1f17147eb4461f5549f300784e07b157f270b531d521bbae5dfb5f70a604fe93",
@@ -2067,7 +2074,7 @@
             "name": "staleAfterSeconds",
             "type": "number | undefined",
             "required": false,
-            "description": "After this many seconds the label switches to \"as of HH:MM, N min ago\"."
+            "description": "After this many seconds the label switches to the aged \"as of HH:MM\" warning."
           }
         ]
       },
@@ -2080,7 +2087,7 @@
         "--font-size-12",
         "--spacing-4"
       ],
-      "sourceHash": "sha256:d37c538d48b24106561f3007cd38909ef91777a017b8f57b5e0d1a7505018a34",
+      "sourceHash": "sha256:2ca89967a9a7dfd290d5e38b1a6c0641e22487b6e8f050c36e8f1c8a46d96d51",
       "snapshotHashes": {
         "aged-dark": "sha256:d8a878a166220d97341e61107776dc29f3ad8c7696afbc11c966727ef52c21ff",
         "aged-light": "sha256:02f8a94defa6a17ac1ec7d8c5724652d5a012f5c3db49901e13681e0baffd2be",
@@ -2192,7 +2199,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:362116ae7f0355d9b60de1e1c868545d7390fc20a1514fe4a210c463b1bb2823",
+      "sourceHash": "sha256:db89f25014cb2da172e318b6ee4fd1c1231685491f2c5b7a339191c4d3db0c3f",
       "snapshotHashes": {
         "default-dark-hc": "sha256:117099e5e353794399ea98ad4896f9bd693de491ab7d7ec25bc9bdda3b533512",
         "default-dark": "sha256:d6b1a278b79882b3c6967d94b26949d23a16551bc6d2d19232b5e9f49e927ca4",
@@ -2357,7 +2364,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:9f1d6ffe311f025e25374bd88190360a07fcc9c342d5cb22bb60d4d0500afa99",
+      "sourceHash": "sha256:ba6cf1bb0792e39648e550b6eda668e5b1a80795c6368fe2617e7d6589f0e9ee",
       "snapshotHashes": {
         "disabled-dark-hc": "sha256:805b4b994b2b35180704085dacd716c21978d52a95650b6c824fc1798242adeb",
         "disabled-dark": "sha256:892d5cd3ecf247258751aafbe839f20e9823bb8feb829c430ae03b56289a9fc5",
@@ -2380,12 +2387,14 @@
         "selected-light-hc": "sha256:470e02269fefe51c723731105d3a059efdcec87202f421e4bb047de942c58366",
         "selected-light": "sha256:8e297f5018c0746baa7de13966c9da858107d90227a55cbf8f55e63235c8ffb5"
       },
-      "storedStatus": "draft",
+      "storedStatus": "review",
       "signature": "absent",
-      "status": "draft",
+      "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/components/ui.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -2554,6 +2563,7 @@
         "--layout-container-2xs",
         "--layout-container-lg",
         "--layout-container-sm",
+        "--layout-status-value",
         "--motion-duration-fast",
         "--motion-easing-standard",
         "--spacing-12",
@@ -2562,7 +2572,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:6687f22d204adb2a2d6a183c3713a2d06a7fd691f68bde704287c4f8640b9f75",
+      "sourceHash": "sha256:a56b3780f9b2629dfa7d70b2aa99ca88b125463701dac859d1c714fce0080ebd",
       "snapshotHashes": {
         "badge-dark": "sha256:e95fea265ee1b76f963eb09d94f21f50b321572e4189ac8ada73f1479c62691a",
         "badge-light": "sha256:b933cd44835755a71947f8e8da57116400bf6bbf700c91223eb88a6f8f9acedc",
@@ -2656,7 +2666,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:97e15bfe3a4b428107a91c6c2ef60acbf2ae3013a34e327bf3238805a39b3f38",
+      "sourceHash": "sha256:445058a3e62d995a557ec963c4ef18815001ba941d72bdf33b5861d5af07f3b2",
       "snapshotHashes": {
         "error-dark": "sha256:e400619c97e21875cb0a7fe51d3ffbf6be79d765e1f2af6fecaac4322fd1b7fd",
         "error-light": "sha256:87009d980b92d57e8b5a5efe28654b92232dcda7e51bc165901967d1454f83c2",
@@ -2750,7 +2760,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:da5cc3bd87a9f92a27d82393ae0649b334d71c7b3bde004cd7269509f511124d",
+      "sourceHash": "sha256:15c8d49cb6cbdd660ad7b1e4408e54a85d7a0f366ab53462ac2030fe774530fb",
       "snapshotHashes": {
         "disabled-dark-hc": "sha256:961e2b4bf1b07729278bea857d47896f6e19fe9432548fc488d2dc8e15048c20",
         "disabled-dark": "sha256:e3cd4989000fafbbb8eef9084aab7821ff145f61d9fae3b6c898aea0a0c8a5c9",
@@ -2870,7 +2880,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:6f5ae8cdb8972b49c94fedcf6123277bb7442c3e2bd57513cd6714a0e649a8ac",
+      "sourceHash": "sha256:f664b6ac0fc347402c09a495f58b5a8d57478875bbe674f5142924c428be6a0c",
       "snapshotHashes": {
         "default-dark-hc": "sha256:fbf0267c2696b31df05fee25d2bdf11e54163d7d666f598b583fe4d323c310a3",
         "default-dark": "sha256:9afdde5e6f918d2d00690fcf424eaf9ef1e063f8e56578e08dd68282858b603e",
@@ -2965,7 +2975,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:faa6e21251bdbd0277b615c7b11368b431056ba97b713ad0f43e548ca7c1cf93",
+      "sourceHash": "sha256:4a94dd42f87fa9881d239dfe93396c5e46f3f98dac56ec7a64914d473e5aa3ae",
       "snapshotHashes": {
         "default-dark-hc": "sha256:f89773f429de1a531f41f12409c80b0c6ee3891fe050bb8095a29c111c182581",
         "default-dark": "sha256:882504874c07cc6d2989ed07a602a3f47df0cdb5249639726366d031e8656685",
@@ -3113,7 +3123,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:f88f76078a1e5ff6415f2b48add6975b842356f82b60e24fd9a0e62516c2614d",
+      "sourceHash": "sha256:5f8dfb0cb418d0fa3abdeb654d92e80a7988fe1aafdd4e28f645bff3a32a0ffd",
       "snapshotHashes": {
         "error-dark-hc": "sha256:bd47ba2b6b91ce8a51870a3e35c8650fb2c6849ea7851f9ef06524fa406df5b4",
         "error-dark": "sha256:39abdf4abd89366a30166ee6455c2932f8a26102a2e02cc2dfb6725de491e7d2",
@@ -3220,7 +3230,7 @@
         "--spacing-2",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:eb781a0ca4d3f0ac2ee8cfb68b412abb5ddb5a842fc524ba817efaf23333bece",
+      "sourceHash": "sha256:10920b5812debb3f96b94cf987059f65c0a4526759b64b9165c96db669419f2b",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:21d4c4caa3e28cd6e1532fd96101c46b7181ccf5dc6dc05827745ce1b33e028d",
         "closed-dark": "sha256:a7c2e84dd574e76e0fd72fdb8f371d485bbb6355d9936c10d261ee1257d250ae",
@@ -3312,7 +3322,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:96bac948c57ff6930d9ce313ffe356b2f4e184f9c25d6603eafd5881b0a45511",
+      "sourceHash": "sha256:7dfbdfd3d16e55171fc18da0790a3da8ab3d91646a33c3b14a5d87f57144f893",
       "snapshotHashes": {
         "default-dark": "sha256:45f730b8a2c91349e4eb3b032a40279036228b389a620dfdf4b85b6831fb5b6d",
         "default-light": "sha256:d071cc5cda394099a646cbf8af5460c1abf2026efe7ac0492752087ccf7793d8",

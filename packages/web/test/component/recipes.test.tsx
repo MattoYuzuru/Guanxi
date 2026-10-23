@@ -9,6 +9,7 @@ import type {
 import { RecipesPage } from '../../src/features/recipes/RecipesPage.tsx'
 import { ApiRequestError, api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { chooseValue } from '../helpers/select.ts'
 
 const AT = '2026-08-13T12:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -146,7 +147,7 @@ describe('RecipesPage', () => {
     render(<RecipesPage />)
     expect(await screen.findByRole('heading', { name: 'Recipes' })).toBeTruthy()
     expect(screen.getByText('Queued snapshot foundation; execution is not connected')).toBeTruthy()
-    fireEvent.change(screen.getByRole('combobox', { name: 'Scope' }), { target: { value: PROJECT.id } })
+    await chooseValue(screen.getByRole('combobox', { name: 'Scope' }), PROJECT.id)
     await screen.findByRole('heading', { name: 'Exact Project' })
     fireEvent.change(screen.getByRole('textbox', { name: 'Recipe name' }), { target: { value: 'Project Recipe' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'Instructions' }), { target: { value: 'Exact instructions' } })

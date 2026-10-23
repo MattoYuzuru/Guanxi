@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CapabilityOverrides } from '../../src/features/models/CapabilityOverrides.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { optionLabels } from '../helpers/select.ts'
 
 const AT = '2026-08-07T00:00:00.000Z'
 const DIGEST = 'sha256:fixture'
@@ -605,15 +606,14 @@ describe('installed capability overrides', () => {
     expect((label as HTMLLabelElement).control).toBe(select)
   })
 
-  it('offers only capabilities that are not asserted yet', () => {
+  it('offers only capabilities that are not asserted yet', async () => {
     renderOverrides({
       overrides: (
         ['completion', 'tools', 'vision', 'insert', 'thinking'] as const
       ).map((capability) => override({ capability })),
     })
     const select = screen.getByRole('combobox', { name: 'Какую capability утвердить' })
-    expect([...select.querySelectorAll('option')].map((option) => option.textContent))
-      .toEqual(['embedding'])
+    expect(await optionLabels(select)).toEqual(['embedding'])
     expect(screen.queryAllByText('Переопределено')).toHaveLength(5)
   })
 })

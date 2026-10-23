@@ -4,6 +4,7 @@ import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CatalogVariantInstall } from '../../src/features/models/CatalogVariantInstall.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { factPairs } from '../helpers/facts.ts'
 
 const originalFetch = globalThis.fetch
 const AT = '2026-08-04T00:00:00.000Z'
@@ -173,7 +174,7 @@ describe('variant-first Marketplace install', () => {
     expect(view.queryByText('fixture:a')).toBeNull()
     expect(view.getByText('fixture:b')).toBeTruthy()
     expect(view.getByText(/Не влезает по текущей оценке/u)).toBeTruthy()
-    expect(view.getByText(/Локальный cache рекомендаций, устаревший sample/u)).toBeTruthy()
+    expect(factPairs(view.container)).toEqual(expect.arrayContaining([['Источник', 'Локальный cache рекомендаций'], ['Свежесть', 'устаревший sample']]))
 
     fireEvent.click(view.getByRole('button', { name: 'Проверить точную установку' }))
     expect(view.getAllByText('fixture:b')).toHaveLength(2)

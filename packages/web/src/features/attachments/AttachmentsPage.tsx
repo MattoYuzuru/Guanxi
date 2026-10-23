@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -13,7 +14,7 @@ import {
   type Attachment,
   type Project,
 } from '@guanxi/contract'
-import { Badge, Button, Callout, EmptyState, Skeleton, cx } from '../../components/ui.tsx'
+import { Badge, Button, Callout, EmptyState, Select, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'
 import { useAutoRecover } from '../../lib/recover.ts'
@@ -43,6 +44,7 @@ export function AttachmentsPage() {
   const projects = useAsync((signal) => api.listProjects(signal), [])
   const policy = useAsync((signal) => api.artifactTransferPolicy(signal), [])
   const [scope, setScope] = useState<ArtifactScope>({ scope: 'projectless' })
+  const scopeId = useId()
   const selectedScope = scope.scope === 'project' ? scope.projectId : 'projectless'
 
   return (
@@ -62,24 +64,21 @@ export function AttachmentsPage() {
 
       <PolicyProjection policy={policy.data ?? null} loading={policy.loading} error={policy.error} />
 
-      <label className="mt-5 block max-w-md text-xs font-medium">
-        {translate('attachments.scope.label')}
-        <select
+      <div className="mt-5 max-w-md text-xs font-medium">
+        <label htmlFor={scopeId} className="block">{translate('attachments.scope.label')}</label>
+        <Select
+          id={scopeId}
           value={selectedScope}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-          onChange={(event) => {
-            const value = event.target.value
-            setScope(value === 'projectless'
-              ? { scope: 'projectless' }
-              : { scope: 'project', projectId: value })
-          }}
-        >
-          <option value="projectless">{translate('attachments.scope.projectless')}</option>
-          {projects.data?.projects.map((project) => (
-            <option key={project.id} value={project.id}>{project.name}</option>
-          ))}
-        </select>
-      </label>
+          className="mt-1"
+          onChange={(value) => setScope(value === 'projectless'
+            ? { scope: 'projectless' }
+            : { scope: 'project', projectId: value })}
+          options={[
+            { value: 'projectless', label: translate('attachments.scope.projectless') },
+            ...(projects.data?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
+          ]}
+        />
+      </div>
       {projects.loading ? (
         <p role="status" className="mt-1 text-2xs text-muted">
           {translate('attachments.projects.loading')}

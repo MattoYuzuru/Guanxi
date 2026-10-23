@@ -87,7 +87,7 @@ describe('ephemeral labelling and storage', () => {
     await ask('q2')
     expect(screen.getAllByText('The answer stopped at the model\'s output limit and may be cut short.')).toHaveLength(1)
   })
-  it('refuses an invalid number of turns before any request', () => {
+  it('refuses an invalid number of turns before any request', async () => {
     render(<SideChatPanel sessionId="s1" />)
     fireEvent.click(screen.getByRole('radio', { name: 'Last turns' }))
     fireEvent.change(screen.getByLabelText('Number of last turns'), { target: { value: '0' } })

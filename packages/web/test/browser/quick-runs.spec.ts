@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { installFrameOrderSwitch, setFramesBeforePendingCommits } from './fixtures/frame-order.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { pickValueByKeyboard } from './fixtures/select.ts'
 
 test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-layout safe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -219,7 +220,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await expect(page.getByRole('button', { name: 'Сессия' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByText('Не реализовано', { exact: true })).toHaveCount(3)
 
-  await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
+  await pickValueByKeyboard(page, page.getByRole('combobox', { name: 'Область' }), project.id)
   await expect(page.getByText('Quick Run: 1')).toHaveCount(1)
   await expect(page.getByText(ownedId)).toHaveCount(1)
   await expect(page.getByText(projectlessId)).toHaveCount(0)

@@ -2,14 +2,39 @@
  * Индикатор влезаемости — главная фича карточки модели.
  *
  * Показываем три вещи, и все три важны:
- *  1. цвет + `summary` (готовый русский текст из контракта, его не переписываем);
+ *  1. цвет + причина: код `reason` из контракта, текст локализуем здесь (русский `summary`
+ *     узла в интерфейсе не показываем);
  *  2. степень доверия к числам — `basis`: прогноз, факт или подсказка вендора;
  *  3. по раскрытию — разбор: из чего сложился requiredBytes и сколько есть.
  */
 import type { FitVerdict } from '@guanxi/contract'
-import { Badge, Disclosure, FIT_COLOR_VAR, Meter, Stat, cx, fitLabel } from '../../components/ui.tsx'
+import { Disclosure, FIT_COLOR_VAR, Meter, Stat, cx, fitLabel } from '../../components/ui.tsx'
 import { formatBytes, formatContextLength, formatUtilization } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
+import { FactList } from './Facts.tsx'
+
+/**
+ * The localised reason for a verdict's level. Older nodes send no `reason`; then the localised
+ * level is the honest fallback (the node's Russian `summary` is never shown).
+ */
+export function fitReasonText(fit: FitVerdict, usableBytes: number = fit.usableBytes): string {
+  if (!fit.reason) return fitLabel(fit.level)
+  const required = formatBytes(fit.requiredBytes)
+  const available = formatBytes(usableBytes)
+  const size = formatBytes(fit.measured?.sizeBytes ?? fit.requiredBytes)
+  switch (fit.reason) {
+    case 'cloud': return translate('fit.reason.cloud')
+    case 'insufficient_data': return translate('fit.reason.insufficient_data')
+    case 'loaded_partial_gpu': return translate('fit.reason.loaded_partial_gpu', { gpuPercent: String(fit.measured?.gpuPercent ?? 0) })
+    case 'loaded_on_accelerator': return translate('fit.reason.loaded_on_accelerator', { size })
+    case 'loaded_tight': return translate('fit.reason.loaded_tight', { size, available })
+    case 'vendor_requires': return translate('fit.reason.vendor_requires', { required })
+    case 'headroom': return translate('fit.reason.headroom', { required, available })
+    case 'tight': return translate('fit.reason.tight', { required, available })
+    case 'spills_to_cpu': return translate('fit.reason.spills_to_cpu', { required, available })
+    case 'vendor_exceeds': return translate('fit.reason.vendor_exceeds', { required, available })
+  }
+}
 
 /** Степени доверия. Различие принципиальное: прогноз может ошибаться, факт — нет. */
 const BASIS_META: Record<
@@ -48,7 +73,7 @@ export function FitBadge({ fit }: { fit: FitVerdict }) {
     >
       <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {fitLabel(fit.level)}
-      <span className="opacity-70">({translate(basis.label)})</span>
+      <span className="opacity-70">{translate(basis.label)}</span>
     </span>
   )
 }
@@ -76,6 +101,7 @@ export function FitIndicator({
   const scale = Math.max(1, fit.utilization)
   const marker = scale > 1 ? 1 / scale : undefined
   const deficit = fit.requiredBytes - usable
+  const reason = fitReasonText(fit, usable)
 
   return (
     <div>
@@ -84,7 +110,7 @@ export function FitIndicator({
           className={cx('min-w-0 font-medium', compact ? 'text-2xs' : 'text-xs')}
           style={{ color }}
         >
-          {fit.summary}
+          {reason}
         </p>
         <span
           className="shrink-0 font-mono text-2xs tabular-nums"
@@ -101,20 +127,17 @@ export function FitIndicator({
         marker={marker}
         height={compact ? 4 : 5}
         className="mt-1.5"
-        label={translate('fit.aria', { summary: fit.summary })}
+        label={translate('fit.aria', { summary: reason })}
       />
 
       <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-muted">
-        <span className="truncate">
-          {translate('fit.summary', {
-            required: formatBytes(fit.requiredBytes),
-            available: formatBytes(usable),
-            context: formatContextLength(fit.contextLength),
-          })}
-        </span>
-        <Badge tone={basis.tone} title={translate(basis.hint)} className="shrink-0">
-          {translate(basis.label)}
-        </Badge>
+        <FactList
+          facts={[
+            { label: translate('models.facts.memory'), value: `${formatBytes(fit.requiredBytes)} / ${formatBytes(usable)}` },
+            { label: translate('models.facts.context'), value: formatContextLength(fit.contextLength) },
+            { label: translate('models.facts.basis'), value: translate(basis.label), title: translate(basis.hint) },
+          ]}
+        />
       </div>
 
       <Disclosure
