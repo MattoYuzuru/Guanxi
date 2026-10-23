@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { plainSchema, strictParameters, toJsonSchema, type JsonSchema } from './json-schema.ts'
-import { RelayError } from './types.ts'
+import { RelayError, type Ledger } from './types.ts'
 
 /** One tool the relay model may call: its name and its parameters as a JSON Schema object. */
 export interface RelayToolSpec { name: string; parameters: JsonSchema }
@@ -17,9 +17,14 @@ export const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tool'), name: z.string(), args: z.record(z.unknown()) }).strict(),
   ...otherActions,
 ])
+/** The statuses of an item that is not done: exactly the ledger's own status type minus `done`. The two assertions below fail to compile if the
+ * ledger gains or loses a status, so the probe can never become unanswerable (or answerable by a status that does not exist) unnoticed. */
+const OPEN_STATUSES = ['open', 'verification_requested'] as const satisfies ReadonlyArray<Exclude<Ledger['items'][string], 'done'>>
+const _every: [Exclude<Exclude<Ledger['items'][string], 'done'>, typeof OPEN_STATUSES[number]>] extends [never] ? true : never = true
+void _every
 /** The answer to the five critical ledger probes. `nextStatus` can only be a status of an item that is not done. */
 export const probeAnswerSchema = z.object({
-  ledgerHash: z.string(), head: z.string(), revision: z.string(), nextItem: z.string().nullable(), nextStatus: z.enum(['open', 'verification_requested']).nullable(),
+  ledgerHash: z.string(), head: z.string(), revision: z.string(), nextItem: z.string().nullable(), nextStatus: z.enum(OPEN_STATUSES).nullable(),
 }).strict()
 
 /** Tools the executor itself answers from its own ledger and notes (see `RelayExecutor.tool`). */

@@ -76,20 +76,39 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     return JSON.stringify(clean)
   }
   /** One page of a text file starting at byte `offset`. The result is the command result with the cursor fields in front; `stdout`
-   * stays last, so a reader that cuts the tail of the text still has `more` and `nextOffset`. */
+   * stays last, so a reader that cuts the tail of the text still has `more` and `nextOffset`.
+   *
+   * `nextOffset` is a position in the FILE, so it is only issued when the text below is exactly the bytes it came from. A page that
+   * needs a cursor (`more`) is refused (`page_cursor_unavailable`) when redaction changed it (a registered secret is replaced by a marker of
+   * another length) or when it holds a replacement character (an invalid byte decodes to three bytes of text); the whole remainder of
+   * a file is always returned, redacted or not. */
   const fileRead = async (requested: string, rawOffset: unknown, signal?: AbortSignal) => {
     // Decimal digits only, as a string or a number: no sign, fraction, exponent, hex or padding.
     if (rawOffset !== undefined && rawOffset !== '' && !/^\d{1,15}$/.test(String(rawOffset))) throw new Error('invalid_offset')
     const offset = rawOffset === undefined || rawOffset === '' ? 0 : Number(rawOffset)
-    const target = quote(path(requested))
-    const result = scrubber.scrub(await (ctx.executeCommand ?? sandboxCommand)(policy, offset === 0 ? `/bin/cat -- ${target}` : `/usr/bin/tail -c +${offset + 1} -- ${target}`, signal, 120_000, true, scrubber))
+    const target = quote(path(requested)), execute = ctx.executeCommand ?? sandboxCommand
+    const raw = await execute(policy, offset === 0 ? `/bin/cat -- ${target}` : `/usr/bin/tail -c +${offset + 1} -- ${target}`, signal, 120_000, true, scrubber)
+    const result = scrubber.scrub(raw)
     if (result.code !== 0) throw new Error('tool_failed')
-    // A start inside a multi-byte character decodes to a replacement character; a cursor this tool returned never does.
-    if (offset > 0 && result.stdout.startsWith('\uFFFD')) throw new Error('invalid_offset')
+    if (offset > 0 && result.stdout.startsWith('\uFFFD')) {
+      // Either the offset is inside a multi-byte character (every continuation byte decodes to a replacement character) or the file really
+      // has U+FFFD (EF BF BD) here, which a cursor this tool returned can point at. The bytes at the offset tell them apart.
+      const bytes = scrubber.scrub(await execute(policy, `/usr/bin/od -An -tx1 -j ${offset} -N 3 -- ${target}`, signal, 120_000, true, scrubber))
+      // `od` pads its columns differently on macOS and Linux.
+      if (bytes.code !== 0 || bytes.stdout.trim().split(/\s+/).join(' ') !== 'ef bf bd') throw new Error('invalid_offset')
+    }
     const data = Buffer.from(result.stdout), limit = ctx.pageBytes
     for (let page = data.length; ;) {
-      const text = new StringDecoder('utf8').write(data.subarray(0, page)), used = Buffer.byteLength(text)
+      let text = new StringDecoder('utf8').write(data.subarray(0, page))
+      let used = Buffer.byteLength(text)
+      if (used === 0 && data.length > 0) throw new Error('page_too_small')
       const more = used < data.length || result.truncated
+      if (more && result.stdout !== raw.stdout) throw new Error('page_cursor_unavailable')
+      if (more && text.includes('\uFFFD')) {
+        // The page ends in front of the first replacement character, so everything before it is exact; there is no honest cursor across it.
+        text = text.slice(0, text.indexOf('\uFFFD')); used = Buffer.byteLength(text)
+        if (used === 0) throw new Error('page_cursor_unavailable')
+      }
       // `truncated` keeps its old meaning for a reader that has only seen it: the text below is not the whole of what follows the offset.
       const body = JSON.stringify({ more, nextOffset: offset + used, offset, code: result.code, stderr: result.stderr, truncated: more, stdout: text })
       if (limit === undefined || Buffer.byteLength(body) <= limit) return body
@@ -109,7 +128,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
         ctx.guard?.()
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['invalid_offset', 'page_too_small', 'cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
+        const safeCodes = ['invalid_offset', 'page_too_small', 'page_cursor_unavailable', 'cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
         const code = error instanceof Error && (safeCodes.includes(error.message) || /^index_[a-z_]+$/.test(error.message)) ? error.message : 'tool_denied_or_failed'
         if (code === 'input_artifact_storage_failed' || code === 'tool_call_trace_missing') {
           ctx.abortTurn?.()

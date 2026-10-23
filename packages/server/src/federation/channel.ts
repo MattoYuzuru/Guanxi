@@ -36,7 +36,9 @@ export class FederationChannel {
     beforeSend?.()
     const response = await options.transport(new Request(`https://federation.invalid${route}`, {
       method, headers: { 'X-Guanxi-Node': canonical(auth), 'Content-Type': 'application/json' },
-      ...(method === 'GET' ? {} : { body: canonical(body) }), redirect: 'error',
+      // The proof signs `hash(body)` (the sorted form), so the order of the wire text carries no authority; it is kept as the sender built it
+      // because a response schema's property order is the order a grammar writes a reply in.
+      ...(method === 'GET' ? {} : { body: JSON.stringify(body) }), redirect: 'error',
     }))
     if (!response.ok) {
       const error = await response.json().catch(() => null) as {code?: unknown} | null

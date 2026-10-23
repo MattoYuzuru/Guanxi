@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ZodError } from 'zod'
-import { RELAY_RUNTIME_PROBE, type CountedRequest, type LocalInferenceJob, type RelayRuntimeBinding } from '@guanxi/contract/federation'
+import { RELAY_RESPONSE_SCHEMA_BYTES, RELAY_RUNTIME_PROBE, type CountedRequest, type LocalInferenceJob, type RelayRuntimeBinding } from '@guanxi/contract/federation'
 import { MAX_TIMER_MS, type Federation } from '../federation/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import { FederationError, canonical } from '../federation/crypto.ts'
@@ -18,8 +18,9 @@ import { abortableRead } from './runtime.ts'
 export const REMOTE_RELAY_COUNTER_SOURCE = 'federation:llama-server:/apply-template+/tokenize'
 export const REMOTE_RELAY_PROPS_SOURCE = 'federation:llama_server_props'
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
-/** A signed F2 message is one HTTP body. Leave room for the binding, grant and job fields around the message. */
-const CONTENT_BUDGET_BYTES = FEDERATION_BODY_BYTES - 32 * 1024
+/** A signed F2 message is one HTTP body. Leave room for the binding, grant and job fields around the message, and for the largest response
+ * schema a counted job may carry. */
+const CONTENT_BUDGET_BYTES = FEDERATION_BODY_BYTES - 32 * 1024 - RELAY_RESPONSE_SCHEMA_BYTES
 
 export interface RemoteRelayRuntimeOptions {
   /** The home node's federation service: its signed channel, its R1 store and its dispatch ledger. */

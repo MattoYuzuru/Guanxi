@@ -116,7 +116,9 @@ export class AttemptDispatch {
         expiresAt: Math.min(job.deadline, this.clock() + reservationMs, Number(lease.expires_at)),
         resource: { kind: 'local_inference', model: job.model, requestedContext: job.context }, ...(parent ? { parent } : {}) }
       db.prepare('INSERT INTO remote_home_offers VALUES (?,?)').run(offer.id, canonical(offer))
-      db.prepare('INSERT INTO remote_dispatch_home VALUES (?,?,?,?,NULL)').run(offer.id, canonical(offer), canonical(job), canonical(a))
+      // The job text keeps the order of its keys (a response schema's property order is the order a grammar writes a reply in); the signed hash is
+      // computed over the sorted form, so the order carries no authority and loses no integrity.
+      db.prepare('INSERT INTO remote_dispatch_home VALUES (?,?,?,?,NULL)').run(offer.id, canonical(offer), JSON.stringify(job), canonical(a))
       return offer
     })
   }

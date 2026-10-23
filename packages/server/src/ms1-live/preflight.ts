@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_RESERVATIONS_CAPABILITY, RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_PROBE } from '@guanxi/contract/federation'
+import { ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_RESERVATIONS_CAPABILITY, RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_PROBE, RELAY_STRUCTURED_MINOR } from '@guanxi/contract/federation'
 import { FederationChannel } from '../federation/channel.ts'
 import { thresholds } from '../relay/budget.ts'
 import { REMOTE_RELAY_COUNTER_SOURCE, REMOTE_RELAY_PROPS_SOURCE } from '../relay/remote-runtime.ts'
@@ -69,6 +69,10 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
       const missing = [ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_DISPATCH_CAPABILITY, RELAY_RUNTIME_CAPABILITY].filter(name => !(shake.capabilities ?? []).includes(name))
       if (missing.length) return fail('handshake', 'peer_lacks_capability', `The executor does not offer: ${missing.join(', ')}.`,
         'Start the executor in role "executor" (it advertises the relay runtime only with an attached llama-server) on the same Guanxi version.')
+      // Federation 1.6 carries a response schema in a counted job; an older executor would refuse every probe and work call (426).
+      if (settings.home!.structuredOutput && shake.version.minor < RELAY_STRUCTURED_MINOR) return fail('handshake', 'peer_protocol_old',
+        `The executor speaks federation ${shake.version.major}.${shake.version.minor}; decoding under a JSON Schema needs 1.${RELAY_STRUCTURED_MINOR}.`,
+        'Run the same Guanxi commit on both nodes, or set home.structuredOutput to false to run without the grammar.')
       return ok('handshake', 'The executor accepts this node\'s signature and offers the relay runtime.', { protocol: `${shake.negotiated.major}.${shake.negotiated.minor}`, capabilities: shake.capabilities })
     }))
     if (handshake.status !== 'ok') return finish(settings, [...checks, skip('observe', 'Skipped: the handshake failed.')], observed, clock)

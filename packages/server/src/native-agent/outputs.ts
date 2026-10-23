@@ -37,6 +37,8 @@ export class NativeOutputs {
       if (data.length && (data[0]! & 0xc0) === 0x80) throw new Error('path_denied')
       const text = new StringDecoder('utf8').write(data)
       const nextOffset = offset + Buffer.byteLength(text)
+      // A budget smaller than one character returns nothing and would make the caller ask again at the same offset for ever.
+      if (nextOffset === offset && data.length > 0) throw new Error('page_too_small')
       const body = JSON.stringify({ artifact: id, offset, nextOffset, bytes, truncated: nextOffset < bytes, text: this.scrubber.scrub(text) })
       if (limit === undefined || Buffer.byteLength(body) <= limit) return body
       if (page === 0) throw new Error('page_too_small')
