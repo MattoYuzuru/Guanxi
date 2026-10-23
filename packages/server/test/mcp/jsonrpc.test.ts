@@ -12,6 +12,22 @@ function sink(): Writable {
   })
 }
 
+function capture(): Writable & { chunks: string[] } {
+  const chunks: string[] = []
+  const stream = new Writable({
+    decodeStrings: false,
+    write(chunk: string, _encoding, callback) {
+      chunks.push(chunk)
+      callback()
+    },
+  })
+  return Object.assign(stream, { chunks })
+}
+
+async function tick(): Promise<void> {
+  await new Promise<void>(resolve => setImmediate(resolve))
+}
+
 async function expectCode(promise: Promise<unknown>, code: McpErrorCode): Promise<McpError> {
   try {
     await promise
@@ -68,6 +84,55 @@ it('truncates an untrusted server error message and drops its data', async () =>
   assert.equal(serverPart.includes('SERVER-SECRET-TAIL'), false)
   assert.equal((error as { data?: unknown }).data, undefined)
   assert.equal(error.message.includes(secret), false)
+
+  rpc.close()
+  stdin.destroy()
+  stdout.destroy()
+})
+
+it('echoes a 128-character server request id and refuses a longer one', async () => {
+  const stdin = capture()
+  const stdout = new PassThrough()
+  const rpc = new JsonRpcConnection({ stdin, stdout, requestTimeoutMs: 1_000 })
+  const pending = rpc.request('initialize')
+
+  const allowed = 'a'.repeat(128)
+  stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: allowed, method: 'sampling/createMessage' })}\n`)
+  await tick()
+  assert.equal(rpc.isClosed, false)
+  assert.ok(stdin.chunks.some(chunk => chunk.includes(allowed)))
+  assert.ok(stdin.chunks.some(chunk => chunk.includes('-32601')))
+
+  const refused = 'b'.repeat(129)
+  stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: refused, method: 'sampling/createMessage' })}\n`)
+  const error = await expectCode(pending, 'mcp_protocol')
+  assert.match(error.message, /128/)
+  assert.equal(stdin.chunks.some(chunk => chunk.includes(refused)), false)
+
+  rpc.close()
+  stdin.destroy()
+  stdout.destroy()
+})
+
+it('does not reply to server requests while stdin needs drain', async () => {
+  const stdin = new Writable({
+    highWaterMark: 1,
+    write(_chunk, _encoding, _callback) {
+      // Simulates a server that stopped reading its stdin.
+    },
+  })
+  const stdout = new PassThrough()
+  const rpc = new JsonRpcConnection({ stdin, stdout, requestTimeoutMs: 1_000 })
+
+  stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'first', method: 'sampling/createMessage' })}\n`)
+  await tick()
+  assert.equal(stdin.writableNeedDrain, true)
+  const buffered = stdin.writableLength
+  assert.ok(buffered > 0)
+
+  stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: 'second', method: 'sampling/createMessage' })}\n`)
+  await tick()
+  assert.equal(stdin.writableLength, buffered, 'a backpressured reply must be dropped')
 
   rpc.close()
   stdin.destroy()

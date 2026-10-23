@@ -52,6 +52,7 @@ function positiveTimeout(value: number, name: string): number {
 }
 
 const MAX_SERVER_ERROR_MESSAGE_CHARS = 200
+const MAX_ECHOED_SERVER_REQUEST_ID_CHARS = 128
 
 /** Keeps a hostile server message bounded without splitting a code point. */
 function truncateServerMessage(message: string): string {
@@ -271,6 +272,14 @@ export class JsonRpcConnection {
           this.fail(new McpError('mcp_protocol', 'MCP server sent an invalid request id'), true)
           return
         }
+        if (typeof message.id === 'string' && message.id.length > MAX_ECHOED_SERVER_REQUEST_ID_CHARS) {
+          this.fail(new McpError(
+            'mcp_protocol',
+            `MCP server request id exceeded ${MAX_ECHOED_SERVER_REQUEST_ID_CHARS} characters`,
+          ), true)
+          return
+        }
+        if (this.stdin.writableNeedDrain) return
         try {
           this.write({
             jsonrpc: '2.0',
