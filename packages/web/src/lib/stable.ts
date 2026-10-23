@@ -6,9 +6,14 @@
 export function replaceEqualDeep<T>(previous: T, next: T): T {
   if (Object.is(previous, next)) return previous
   if (Array.isArray(previous) && Array.isArray(next)) {
+    // Rows with an id are matched by it, so an insert or a reorder keeps every unchanged row (P3).
+    const key = rowKey(previous) ?? undefined
+    const byKey = key && rowKey(next) === key
+      ? new Map(previous.map(item => [(item as Record<string, unknown>)[key], item])) : null
     let equal = previous.length === next.length
     const merged = next.map((item, index) => {
-      const value = index < previous.length ? replaceEqualDeep(previous[index], item) : item
+      const match = byKey ? byKey.get((item as Record<string, unknown>)[key!]) : previous[index]
+      const value = match !== undefined && (byKey || index < previous.length) ? replaceEqualDeep(match, item) : item
       if (value !== previous[index]) equal = false
       return value
     })
@@ -26,6 +31,18 @@ export function replaceEqualDeep<T>(previous: T, next: T): T {
     return (equal ? previous : merged) as T
   }
   return next
+}
+
+const ROW_KEYS = ['id', 'sessionId', 'chatId', 'threadId', 'jobId'] as const
+
+/** The id field every row carries with a unique string or number value, if there is one. */
+function rowKey(rows: readonly unknown[]): string | null {
+  if (rows.length === 0 || !rows.every(isPlainObject)) return null
+  for (const key of ROW_KEYS) {
+    const values = rows.map(row => (row as Record<string, unknown>)[key])
+    if (values.every(value => typeof value === 'string' || typeof value === 'number') && new Set(values).size === values.length) return key
+  }
+  return null
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

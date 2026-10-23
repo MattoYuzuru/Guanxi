@@ -30,6 +30,26 @@ describe('replaceEqualDeep', () => {
   })
 })
 
+describe('replaceEqualDeep keyed rows (P3)', () => {
+  it('matches rows by their id, so an insert or a reorder keeps every unchanged row', () => {
+    const previous = { rows: [{ id: 'a', n: 1 }, { id: 'b', n: 2 }] }
+    const inserted = replaceEqualDeep(previous, { rows: [{ id: 'z', n: 0 }, { id: 'a', n: 1 }, { id: 'b', n: 2 }] })
+    expect(inserted.rows[1]).toBe(previous.rows[0])
+    expect(inserted.rows[2]).toBe(previous.rows[1])
+    const reordered = replaceEqualDeep(previous, { rows: [{ id: 'b', n: 2 }, { id: 'a', n: 1 }] })
+    expect(reordered).not.toBe(previous)
+    expect(reordered.rows[0]).toBe(previous.rows[1])
+    expect(reordered.rows[1]).toBe(previous.rows[0])
+    const sessions = [{ sessionId: 's1', title: 'x' }, { sessionId: 's2', title: 'y' }]
+    expect(replaceEqualDeep(sessions, [{ sessionId: 's0', title: 'w' }, ...structuredClone(sessions)])[1]).toBe(sessions[0])
+    // Rows without ids, or with duplicate ids, keep index matching.
+    const plain = [{ n: 1 }, { n: 2 }]
+    expect(replaceEqualDeep(plain, [{ n: 0 }, { n: 1 }, { n: 2 }])[1]).not.toBe(plain[0])
+    const duplicate = [{ id: 'a', n: 1 }, { id: 'a', n: 2 }]
+    expect(replaceEqualDeep(duplicate, structuredClone(duplicate))).toBe(duplicate)
+  })
+})
+
 describe('retryDelay', () => {
   it('doubles from the base and stops at the cap', () => {
     expect([1, 2, 3, 4, 10].map(failures => retryDelay(failures, DEFAULT_ASYNC_RETRY))).toEqual([2_000, 4_000, 8_000, 16_000, 60_000])
