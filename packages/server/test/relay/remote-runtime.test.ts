@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createHash } from 'node:crypto'
-import { RELAY_RUNTIME_PROBE, type SignedDispatchGrant, type SignedDispatchEvent } from '@guanxi/contract/federation'
+import { RELAY_RUNTIME_PROBE, type LocalInferenceJob, type RemoteAttemptOffer, type SignedDispatchGrant, type SignedDispatchEvent } from '@guanxi/contract/federation'
 import { canonical, hash, signValue } from '../../src/federation/crypto.ts'
 import { ConnectionJudgeModel } from '../../src/relay/judge-model.ts'
 import { fakeRender, fakeTokens } from '../fixtures/fake-llama-server.ts'
+import { RemoteRelayRuntime } from '../../src/relay/remote-runtime.ts'
+import { requestAsync } from '../../src/relay/budget.ts'
 import { remoteFixture, until, type Sent } from './remote-fixture.ts'
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -46,6 +48,10 @@ test('a relay model call executes on the executor, is counted by its llama-serve
   assert.equal(rows.length, 1); assert.equal(rows[0]!.entry_key, `remote-dispatch:${grant!.offer.id}`)
   assert.equal(rows[0]!.input_tokens, exact(prompt)); assert.equal(rows[0]!.output_tokens, fakeTokens('{"action":"handoff"}', false))
   assert.equal(f.costs('relay').length, 0); assert.equal(f.home.runs.get('relay').state, 'working')
+  // The relay run's trace links the call to its child, written under the relay's own fence.
+  const notes = f.home.log.readAll('relay-session', 'person').filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+  assert.ok(notes.some(text => text.includes('remote_call') && text.includes(child) && text.includes(grant!.offer.id)), JSON.stringify(notes))
+  assert.equal((Reflect.get(f.home.federation.attemptDispatch!, 'waiters') as Map<string, unknown>).size, 0, 'no waiter outlives its call')
   // Only the relay run was ever pinned; the child's pin is derived from it, never separately.
   assert.equal(f.pins.length, 1); assert.equal(f.pins[0]!.runId, 'relay')
   assert.throws(() => f.target.federation.replicas.binding(child), /unknown_stream/)
@@ -94,7 +100,7 @@ test('tampered counted evidence is refused by the executor before the model sees
     const childId = `tamper-${sha(canonical(counted)).slice(0, 8)}`
     f.home.runs.create({ id: childId, sessionId: 'relay-session' })
     const offer = f.home.federation.prepareDispatch(childId, 'target', { kind: 'local_inference', model: 'fixture', context: 16000, outputTokens: 1000,
-      deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }, 4000, 'relay')
+      deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }, 4000, { runId: 'relay', epoch: 1 })
     const channel = f.channel('home'), receipt = await channel.offer(offer)
     await channel.dispatch(f.home.federation.grantDispatch(offer.id, receipt))
     const terminal = await f.home.federation.attemptDispatch!.awaitTerminal(offer.id, AbortSignal.timeout(5000), () => undefined, 5)
@@ -283,7 +289,7 @@ test('the final fence check, the request shape check and the signed dispatch req
 })
 
 test('an executor that disappears leaves the child interrupted and the call failed, never completed', async t => {
-  const f = await remoteFixture(t, { fake: { completionDelayMs: 600 }, cancelWaitMs: 150 }), r = await f.relay()
+  const f = await remoteFixture(t, { fake: { completionDelayMs: 600 }, ttlMs: 300, safetyMs: 50 }), r = await f.relay()
   let down = false
   f.rules.push(() => { if (down) throw new Error('fixture partition') })
   const call = r.call('The executor vanishes.').catch((error: unknown) => error)
@@ -299,18 +305,47 @@ test('an executor that disappears leaves the child interrupted and the call fail
   assert.ok(f.seen.slice(partitioned).filter(p => p === '/handshake').length >= 2, 'the cancel was attempted and retried; it only reaches the executor after negotiation')
 })
 
-test('cancel without an ACK is retried until the holder window ends, and only then does the call settle', async t => {
-  const f = await remoteFixture(t, { fake: { completionDelayMs: 3000 }, cancelWaitMs: 300 }), r = await f.relay()
+test('cancel without an ACK is retried until the holder window ends, and by then the executor holder has fenced itself', async t => {
+  const f = await remoteFixture(t, { fake: { completionDelayMs: 3000 }, ttlMs: 400, safetyMs: 50 }), r = await f.relay()
   f.rules.push(path => { if (path === '/attempts/dispatch-cancel') throw new Error('fixture partition') })
   const abort = new AbortController(), call = r.call('Cancel into a partition.', { signal: abort.signal }).catch((error: unknown) => error)
   await until(async () => (await f.fake.count('/completion')) === 1)
+  const [grant] = grants(f.sent), started = Date.now()
+  abort.abort()
+  setTimeout(() => { f.clock.mono += 10_000 }, 80)    // the wait stands for real elapsed time: the holder's TTL passes on its own clock
+  assert.ok((await call) instanceof Error)
+  assert.ok(Date.now() - started >= 380, `settled after ${Date.now() - started} ms, before the holder window`)
+  assert.ok(f.seen.filter(p => p === '/attempts/dispatch-cancel').length >= 2, 'the cancel was retried')
+  assert.notEqual(f.target.federation.attemptDispatch!.state(grant!.id).status, 'running', 'the holder is no longer running when the call settles')
+  assert.equal(f.home.runs.get(grant!.offer.runId).state, 'canceled')
+  await f.target.federation.attemptDispatch!.settled(grant!.id)
+  assert.equal(f.tg.snapshot().activeLease, null)
+})
+
+test('a cancel window shorter than the holder TTL cannot be configured, and a hanging cancel is bounded by the window', async t => {
+  const f = await remoteFixture(t)
+  assert.throws(() => new RemoteRelayRuntime({ federation: f.home.federation, runs: f.home.runs, executorNodeId: 'target', model: 'fixture', cancelWaitMs: 100 }), /relay_policy_invalid/,
+    'the guarantee needs the window to cover the holder TTL')
+  const slow = await remoteFixture(t, { fake: { completionDelayMs: 3000 }, ttlMs: 300, safetyMs: 50 }), r = await slow.relay()
+  slow.rules.push(async path => { if (path === '/attempts/dispatch-cancel') await new Promise(resolve => setTimeout(resolve, 60_000).unref()) })
+  const abort = new AbortController(), call = r.call('Hanging cancel.', { signal: abort.signal }).catch((error: unknown) => error)
+  await until(async () => (await slow.fake.count('/completion')) === 1)
   const started = Date.now()
   abort.abort()
   assert.ok((await call) instanceof Error)
-  assert.ok(Date.now() - started >= 280, `settled after ${Date.now() - started} ms, before the cancel window`)
-  assert.ok(f.seen.filter(p => p === '/attempts/dispatch-cancel').length >= 2, 'the cancel was retried')
-  const [grant] = grants(f.sent)
-  assert.equal(f.home.runs.get(grant!.offer.runId).state, 'canceled')
+  assert.ok(Date.now() - started < 5000, 'a request that never answers cannot hold the relay past the window')
+})
+
+test('the executor never blocks its event loop on the synchronous bridge while serving a remote call', async t => {
+  const f = await remoteFixture(t), original = Atomics.wait
+  let waits = 0
+  Atomics.wait = ((...args: Parameters<typeof Atomics.wait>) => { waits++; return original(...args) }) as typeof Atomics.wait
+  try {
+    const r = await f.relay()
+    await r.call('No blocking wait on either node.')
+    assert.equal(waits, 0)
+    assert.equal(f.target.federation.attemptDispatch!.state(grants(f.sent)[0]!.id).status, 'completed')
+  } finally { Atomics.wait = original }
 })
 
 test('no request exceeds the hard ceiling: H tokens dispatch, H plus one is refused before anything is offered', async t => {
@@ -339,11 +374,23 @@ test('the executor enforces the loaded window itself, whatever the home asked fo
   const counted = { contentSha256: sha(content), renderedSha256: sha(rendered(content)), tokens: exact(content), digest: seen.digest, contextTokens: 16000 }
   f.home.runs.create({ id: 'greedy', sessionId: 'relay-session' })
   const offer = f.home.federation.prepareDispatch('greedy', 'target', { kind: 'local_inference', model: 'fixture', context: 16000, outputTokens: 16000,
-    deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }, 4000, 'relay')
+    deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }, 4000, { runId: 'relay', epoch: 1 })
   const channel = f.channel('home'), receipt = await channel.offer(offer)
   await channel.dispatch(f.home.federation.grantDispatch(offer.id, receipt))
   const terminal = await f.home.federation.attemptDispatch!.awaitTerminal(offer.id, AbortSignal.timeout(5000), () => undefined, 5)
   assert.equal(terminal.outcome, 'failed'); assert.equal(terminal.reason, 'context_ceiling'); assert.equal((await f.completions()).length, 0)
+  // A claimed window larger (or smaller) than the loaded one is refused too, even with every count and hash true.
+  for (const claimed of [1_000_000, 8000]) {
+    const id = `window-${claimed}`
+    f.home.runs.create({ id, sessionId: 'relay-session' })
+    const bigger = f.home.federation.prepareDispatch(id, 'target', { kind: 'local_inference', model: 'fixture', context: claimed, outputTokens: 500, deadline: f.home.time + 30_000,
+      messages: [{ role: 'user', content }], counted }, 4000, { runId: 'relay', epoch: 1 })
+    const receipt2 = await channel.offer(bigger)
+    await channel.dispatch(f.home.federation.grantDispatch(bigger.id, receipt2))
+    const refused = await f.home.federation.attemptDispatch!.awaitTerminal(bigger.id, AbortSignal.timeout(5000), () => undefined, 5)
+    assert.equal(refused.outcome, 'failed', String(claimed)); assert.equal(refused.reason, 'context_ceiling', String(claimed))
+  }
+  assert.equal((await f.completions()).length, 0, 'the executor posted nothing for a window it does not have')
 })
 
 test('the host sees one session per start: an unbound use of the factory refuses and closing a session stops its calls', async t => {
@@ -447,4 +494,140 @@ test('a count made by a server that is no longer the observed one is refused, no
   await f.fake.configure({ buildInfo: 'b0-fixture' })
   assert.throws(() => r.model.count('counted by someone else'), /runtime_count_invalid/)
   assert.equal(await r.model.countAsync!('counted by someone else'), exact('counted by someone else'))
+})
+
+test('a fence lost inside the fenced start observation, a request that changes at the last check or an abort after negotiation sends no dispatch', async t => {
+  const f = await remoteFixture(t), r = await f.relay()
+  const mk = (content: string) => ({ model: 'fixture', stream: false, think: false as const, messages: [{ role: 'user' as const, content }], options: { num_ctx: 16000, num_predict: 1000 } })
+  const transport = r.prepared.meter.transport!
+  for (const text of ['request A', 'request B']) await r.model.countAsync!(text)
+  // 1. The R1-fenced start observation fails: its error is the call's, and the request is never signed.
+  assert.equal(await code(r.call('request A', { prime: false, onStarted: () => { throw new Error('fence lost') } })), 'provider_failed')
+  assert.equal(f.seen.includes('/attempts/dispatch'), false)
+  // 2. Both requests were counted, but the one that is about to be sent is not the one that was admitted.
+  let n = 0
+  await assert.rejects(transport.chat(mk('request A'), r.controller.signal, () => undefined, { authorizeDispatch: async () => undefined, prepare: () => mk(n++ === 0 ? 'request A' : 'request B') }), /runtime_request_changed/)
+  assert.equal(f.seen.includes('/attempts/dispatch'), false)
+  // 3. The call is aborted while the dispatch is still negotiating: the negotiated request must not follow it.
+  const abort = new AbortController()
+  let armed = false
+  f.afters.push(path => { if (path === '/attempts/offers') armed = true })
+  f.rules.push(async path => { if (armed && path === '/handshake') { armed = false; abort.abort(); await new Promise(resolve => setTimeout(resolve, 60)) } })
+  await assert.rejects(transport.chat(mk('request A'), abort.signal, () => undefined, { authorizeDispatch: async () => undefined, prepare: () => mk('request A') }))
+  await new Promise(resolve => setTimeout(resolve, 150))
+  assert.equal(f.seen.includes('/attempts/dispatch'), false, 'nothing was sent after the abort')
+  assert.equal((await f.completions()).length, 0)
+  // Every abandoned reservation was cancelled and the executor is free.
+  assert.equal(f.tg.snapshot().activeLease, null)
+})
+
+test('evidence that arrives after the relay fence was lost is neither used nor remembered', async t => {
+  const f = await remoteFixture(t), r = await f.relay()
+  let armed = true
+  f.afters.push(path => { if (armed && path === '/attempts/runtime/count') { armed = false; f.home.runs.cancel('relay') } })
+  assert.equal(await code(r.model.countAsync!('counted under a lost fence')), 'stale_lease')
+  assert.throws(() => r.model.count('counted under a lost fence'), /runtime_count_invalid/)
+  const g = await remoteFixture(t), s = await g.relay()
+  let observe = true
+  g.afters.push(path => { if (observe && path === '/attempts/runtime/observe') { observe = false; g.home.runs.cancel('relay') } })
+  assert.equal(await code(s.model.observe()), 'stale_lease')
+})
+
+test('an offer still in flight when the call is aborted is cancelled after it lands, so no reservation outlives the call', async t => {
+  const f = await remoteFixture(t), r = await f.relay(), abort = new AbortController()
+  await r.model.countAsync!('abort during the offer')
+  f.rules.push(async path => { if (path === '/attempts/offers') { setTimeout(() => abort.abort(), 20); await new Promise(resolve => setTimeout(resolve, 100)) } })
+  assert.ok((await r.call('abort during the offer', { prime: false, signal: abort.signal }).catch((error: unknown) => error)) instanceof Error)
+  const offerId = (f.sent.find(s => s.path === '/attempts/offers')!.body as { id: string }).id
+  assert.equal(f.target.federation.attemptOffers!.read('home', offerId).status, 'canceled')
+  assert.equal(f.tg.snapshot().activeLease, null); assert.ok(f.seen.includes('/attempts/cancel')); assert.equal(f.seen.includes('/attempts/dispatch'), false)
+})
+
+test('the child pin derives only from a pinned parent at its epoch, and a counted grant must be consistent end to end', async t => {
+  const f = await remoteFixture(t), r = await f.relay(), content = 'Pin derivation fixture.'
+  await r.model.countAsync!(content)
+  const seen = await f.llama.observe(f.llama.model, new AbortController().signal)
+  const counted = { contentSha256: sha(content), renderedSha256: sha(rendered(content)), tokens: exact(content), digest: seen.digest, contextTokens: 16000 }
+  const job: LocalInferenceJob = { kind: 'local_inference', model: 'fixture', context: 16000, outputTokens: 500, deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }
+  const channel = f.channel('home')
+  let serial = 0
+  const make = async () => {
+    const id = `kid-${++serial}`
+    f.home.runs.create({ id, sessionId: 'relay-session' })
+    const offer = f.home.federation.prepareDispatch(id, 'target', job, 4000, { runId: 'relay', epoch: 1 })
+    return { offer, id }
+  }
+  // Offers: wrong parent epoch, the parent as its own child, and a child that is pinned in its own right.
+  const { offer } = await make()
+  f.target.federation.replicas.bind({ streamId: 'other-pinned', kind: 'run', sessionId: 'relay-session', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
+  for (const [name, edited] of [['wrong parent epoch', { ...offer, parent: { runId: 'relay', epoch: 2 } }], ['parent as child', { ...offer, runId: 'relay' }],
+    ['pinned run as child', { ...offer, runId: 'other-pinned' }], ['unknown parent', { ...offer, parent: { runId: 'nobody', epoch: 1 } }]] as const) {
+    await assert.rejects(f.target.federation.receiveAttemptOffer(f.homeCtx, edited), /not_home|unknown_stream/, name)
+  }
+  assert.equal((await channel.offer(offer)).status, 'reserved', 'the unedited offer is valid')
+  await channel.cancelOffer({ offerId: offer.id, homeNodeId: 'home', executorNodeId: 'target' })
+  // The home itself refuses a parent without a counted job, a counted job without a parent and a self-parent.
+  f.home.runs.create({ id: 'plain', sessionId: 'relay-session' })
+  const plain = { ...job }; delete (plain as { counted?: unknown }).counted
+  assert.throws(() => f.home.federation.prepareDispatch('plain', 'target', plain, 4000, { runId: 'relay', epoch: 1 }), /dispatch_binding/)
+  assert.throws(() => f.home.federation.prepareDispatch('plain', 'target', job, 4000), /dispatch_binding/)
+  // Grants: the executor re-checks the same shape on its own.
+  const forge = async (editJob: LocalInferenceJob, editOffer: (offer: RemoteAttemptOffer) => RemoteAttemptOffer, pinned = false) => {
+    const { offer: fresh } = await make(), receipt = await channel.offer(fresh)
+    // Without a parent the child would need a pin of its own; give it one so only the grant's own shape check is left.
+    if (pinned) f.target.federation.replicas.bind({ streamId: fresh.runId, kind: 'run', sessionId: 'relay-session', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
+    const granted = f.home.federation.grantDispatch(fresh.id, receipt)
+    const edited = { ...granted.grant, job: editJob, jobHash: hash(editJob), offer: editOffer(granted.grant.offer) }
+    try { return await f.target.federation.receiveDispatch(f.homeCtx, { grant: edited, signature: signValue(f.home.keys.privateKey, edited) }) }
+    finally { await channel.cancelOffer({ offerId: fresh.id, homeNodeId: 'home', executorNodeId: 'target' }) }   // the single executor permit
+  }
+  const withModel = (model: string): LocalInferenceJob => ({ ...job, model })
+  await assert.rejects(forge(plain, o => o), /dispatch_binding/, 'a parent without a counted job')
+  await assert.rejects(forge(job, o => { const { parent, ...rest } = o; void parent; return rest }, true), /dispatch_binding/, 'a counted job without a parent')
+  await assert.rejects(forge(withModel('another-model'), o => ({ ...o, resource: { ...o.resource, model: 'another-model' } })), /dispatch_binding/, 'a model this executor does not serve')
+  await assert.rejects(forge({ ...job, messages: [{ role: 'user', content: 'a different message' }] }, o => o), /dispatch_binding/, 'a message other than the counted one')
+  await assert.rejects(forge({ ...job, messages: [{ role: 'system', content }] }, o => o), /dispatch_binding/, 'a counted message that is not a user message')
+  assert.equal((await f.completions()).length, 0)
+})
+
+test('a string larger than one signed message is reported above every ceiling, never counted, and the packer shrinks it', async t => {
+  const f = await remoteFixture(t), r = await f.relay(), huge = 'w '.repeat(600_000)
+  const counts = () => f.sent.filter(s => s.path === '/attempts/runtime/count').length
+  const before = counts()
+  assert.equal(await r.model.countAsync!(huge), Number.MAX_SAFE_INTEGER)
+  assert.equal(counts(), before, 'it was never sent')
+  assert.throws(() => r.model.count(huge), /runtime_count_invalid/, 'and never remembered')
+  const measure = Object.assign((value: string) => r.model.countAsync!(value), { exact: true, async: true as const })
+  for (const turns of [[huge, 'older turn', 'newest turn'], ['older turn', huge]]) {
+    const out = await requestAsync('head', { turns }, measure, 4000)
+    assert.ok(exact(out.text) <= 4000, 'the packed request fits'); assert.ok(out.dropped + out.cut > 0)
+  }
+})
+
+test('the cancel path sends the cancel for the right resource and a home call deadline abandons a silent executor', async t => {
+  const f = await remoteFixture(t, { fake: { completionDelayMs: 3000 }, callDeadlineMs: 150, ttlMs: 400, safetyMs: 50 }), r = await f.relay()
+  const call = r.call('Deadline fixture.').catch((error: unknown) => error)
+  await until(async () => (await f.fake.count('/completion')) === 1)
+  f.home.time += 300                       // the call's wall deadline passes on the home's clock
+  assert.ok((await call) instanceof Error)
+  const [grant] = grants(f.sent)
+  assert.equal(f.home.runs.get(grant!.offer.runId).state, 'canceled'); assert.equal((await f.completions()).length, 1)
+  assert.deepEqual(f.sent.filter(s => s.path === '/attempts/dispatch-cancel').map(s => (s.body as { id: string }).id).filter((id, i, all) => all.indexOf(id) === i), [grant!.id])
+})
+
+test('the home accepts only an owner-device executor with the attempts scope, and a failed admission closes its session', async t => {
+  const f = await remoteFixture(t), { identity: makeIdentity } = await import('../federation/harness.ts')
+  assert.throws(() => f.home.federation.relayChannel('nobody'), /unauthenticated/)
+  for (const [name, overrides] of [['shared device', { trust: 'shared_device', admin: false, scopes: ['attempts'] }], ['no attempts scope', { scopes: ['config'] }]] as Array<[string, Parameters<typeof makeIdentity>[1]]>) {
+    const peer = makeIdentity('exec-' + name.replace(/ /g, '-'), overrides)
+    f.home.federation.trust(peer.identity)
+    assert.throws(() => f.home.federation.relayChannel(peer.identity.id), /owner_mismatch/, name)
+  }
+  const sessions: Array<{ observe(reference: string, signal: AbortSignal): Promise<unknown> }> = []
+  const open = f.remote.open.bind(f.remote)
+  f.remote.open = () => { const session = open(); sessions.push(session); return session }
+  f.rules.push(path => { if (path.startsWith('/attempts/runtime')) throw new Error('fixture partition') })
+  assert.equal(await code(f.relay()), 'runtime_meter_unavailable')
+  assert.equal(sessions.length, 1)
+  assert.equal(await code(sessions[0]!.observe(f.remote.model, new AbortController().signal)), 'relay_stopped', 'the failed preparation released its session')
 })

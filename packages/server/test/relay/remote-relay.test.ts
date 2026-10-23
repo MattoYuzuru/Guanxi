@@ -18,7 +18,7 @@ import { relayScript, remoteFixture, until, type RemoteOptions } from './remote-
 const exec = promisify(execFile), sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /** The R2-op end-to-end shape, with the relay on the home node and every model call on the executor node. */
-async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState> } = {}) {
+async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState>; projectFails?: boolean } = {}) {
   // Match the K4 fixtures: Colima shares the checkout, not macOS tmpdir().
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const parent = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'remote-relay-')))
@@ -32,7 +32,7 @@ async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOpt
   let allocations = 0
   const allocator = new OwnedCheckoutAllocator({ root: checkouts })
   const host = { runtime: f.source, reserves, clock: () => f.home.time, nodePorts: () => [4417, 5217],
-    project: async (id: string) => ({ projectId: id, roots: [source], source: 'fixture project/workspace store', observedAt: f.home.time }),
+    project: async (id: string) => options.projectFails ? Promise.reject(new Error('project unavailable')) : ({ projectId: id, roots: [source], source: 'fixture project/workspace store', observedAt: f.home.time }),
     allocate: (async (policy, signal) => { allocations++; return allocator.allocate(policy, signal) }) as NonNullable<ConstructorParameters<typeof RelayStarts>[6]['allocate']> }
   const starts = new RelayStarts(f.home.db, f.home.runs, f.home.log, f.h.connections, f.home.scrubber, relayStore, host)
   const input: RelayStartInput = { key: 'remote-key', projectId: 'project', connectionId: f.homeConnection.id, model: 'fixture', consent: 'full-access', domains: [],
@@ -126,7 +126,7 @@ test('an executor that evaluates another token count fails the whole run closed 
 })
 
 test('an executor that stops answering leaves the relay interrupted for the owner, never completed', async t => {
-  const f = await fixture(t, { fake: { completionDelayMs: 400 }, cancelWaitMs: 100 }), receipt = await f.starts.start(f.input)
+  const f = await fixture(t, { fake: { completionDelayMs: 400 }, ttlMs: 300, safetyMs: 50 }), receipt = await f.starts.start(f.input)
   await until(async () => (await f.fake.count('/completion')) === 1)
   f.rules.push(() => { throw new Error('fixture partition') })
   f.home.time += 5_000                       // the child's holder lease lapses; the relay's own lease is still valid
@@ -154,4 +154,20 @@ test('a relay run the executor has not pinned gets no evidence: it stops before 
   assert.deepEqual(f.errors(receipt.sessionId!), ['runtime_identity_unknown'])
   assert.equal(f.seen.includes('/attempts/offers'), false); assert.equal((await f.completions()).length, 0)
   assert.equal(f.home.db.prepare("SELECT COUNT(*) n FROM durable_runs WHERE id LIKE 'rc-%'").get()!.n, 0, 'no child run was created')
+})
+
+test('a refused run pin rolls the whole start back, and a start that fails after admission releases its remote session', async t => {
+  const refused = await fixture(t)
+  refused.refusePin()
+  await assert.rejects(refused.starts.start(refused.input))
+  for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(refused.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
+  assert.equal(refused.seen.includes('/attempts/offers'), false); assert.equal((await refused.completions()).length, 0)
+  await until(async () => (await refused.holdings()).length === 0)
+  const sessions: Array<{ observe(reference: string, signal: AbortSignal): Promise<unknown> }> = []
+  const failing = await fixture(t, { projectFails: true }), open = failing.remote.open.bind(failing.remote)
+  failing.remote.open = () => { const session = open(); sessions.push(session); return session }
+  await assert.rejects(failing.starts.start(failing.input))
+  assert.equal(sessions.length, 1)
+  await assert.rejects(sessions[0]!.observe(failing.remote.model, new AbortController().signal), /relay_stopped/)
+  for (const table of ['durable_runs', 'sessions']) assert.equal(failing.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
 })

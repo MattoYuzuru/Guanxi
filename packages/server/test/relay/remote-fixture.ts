@@ -35,7 +35,7 @@ export const relayScript = reply(prompt => {
 })
 export interface RemoteOptions {
   fake?: Partial<FakeLlamaState>
-  ttlMs?: number; safetyMs?: number; cancelWaitMs?: number; maximumAgeMs?: number
+  ttlMs?: number; safetyMs?: number; cancelWaitMs?: number; maximumAgeMs?: number; callDeadlineMs?: number
   /** The executor serves no relay runtime (an older or differently configured node). */
   noRelayRuntime?: boolean
   dir?: string
@@ -88,10 +88,11 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
   tp.localModel = model => ({ connectionId: targetConnection.id, model, placement: 'installed_local', source: 'fixture installed inventory', observedAt: target.time })
   if (!o.noRelayRuntime) tp.relayRuntime = llama
   const pins: NonNullable<RelayRuntimeBinding['run']>[] = []
-  let pinning = true, pinEpoch: number | undefined
+  let pinning = true, pinEpoch: number | undefined, refusing = false
   const remote = new RemoteRelayRuntime({ federation: home.federation, runs: home.runs, executorNodeId: 'target', model: 'fixture', clock: () => home.time,
-    cancelWaitMs: o.cancelWaitMs ?? 300, pollMs: 10,
+    ...(o.cancelWaitMs ? { cancelWaitMs: o.cancelWaitMs } : {}), pollMs: 10, ...(o.callDeadlineMs ? { callDeadlineMs: o.callDeadlineMs } : {}),
     onBind: run => {
+      if (refusing) throw new Error('fixture refuses the pin')
       pins.push(run)
       // The explicit F1 pin the executor needs for the relay run. Tests can withhold it.
       if (pinning) target.federation.replicas.bind({ streamId: run.runId, kind: 'run', sessionId: run.sessionId, ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: pinEpoch ?? run.fence.epoch })
@@ -126,5 +127,5 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
   const costs = (runId: string) => home.db.prepare('SELECT * FROM run_costs WHERE run_id=?').all(runId) as Array<{ run_id: string; entry_key: string; input_tokens: number; output_tokens: number }>
   return { home, target, hg, tg, clock, fake, llama, remote, source, h, tc, homeConnection, targetConnection, pins, relay, completions, costs, homeCtx,
     seen, sent, rules, probes, overrides, afters, channel: (from: 'home' | 'target') => from === 'home' ? channel(home, target) : channel(target, home), dir, modelPath,
-    withholdPin() { pinning = false }, pinWithEpoch(epoch: number) { pinEpoch = epoch } }
+    withholdPin() { pinning = false }, refusePin() { refusing = true }, pinWithEpoch(epoch: number) { pinEpoch = epoch } }
 }
