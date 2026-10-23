@@ -280,6 +280,27 @@ test('the owner cancels the lead between two relay cycles: the relay run and its
   w.db(legalState); w.db(integrity)
 })
 
+// ---- The judge-off baseline ---------------------------------------------------------------------------------------------------
+
+test('with the judge off, the relay run\'s own accounting equals the executor\'s reports call for call, and nothing of the judge exists', async t => {
+  const w = await createWorld(t, { items: 2, gapMs: 75 * MINUTE, judge: false })
+  const home = await w.boot()
+  const started = await w.startLead(home); await started.first
+  await until(() => w.state(started.runId) === 'completed', 'the lead to finish', 240_000)
+  const relay = w.relayStarts()[0]!.run_id
+  const posts = await w.fake.requests('/completion')
+  const children = w.rows<{ id: string }>("SELECT id FROM durable_runs WHERE id LIKE 'rc-%'")
+  const childRows = children.flatMap(child => w.costs(child.id)) as Array<{ input_tokens: number }>
+  const relayRows = w.costs(relay) as Array<{ input_tokens: number }>
+  assert.equal(children.length, posts.length); assert.equal(childRows.length, children.length)
+  assert.equal(relayRows.length, posts.length, 'one relay row per call')
+  assert.equal(sum(relayRows), sum(childRows), 'the two views agree on the tokens that were evaluated (and are never summed together)')
+  assert.deepEqual(relayRows.map(row => row.input_tokens).sort(num), posts.map(post => fakeTokens(post.body.prompt, true)).sort(num))
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'relay_judge%'"), 0, 'no judge ledger')
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE payload LIKE '%judge%'"), 0, 'no judge event anywhere')
+  w.db(legalState); w.db(integrity)
+})
+
 // ---- The owner's limits bind the lead inside the composition ------------------------------------------------------------
 
 test('the owner\'s limits and executor allow-list bind the lead in the composed node: a refused brief hibernates nothing and starts no relay', async t => {
@@ -344,6 +365,9 @@ interface Crash {
   stalePin?: boolean
   /** The judge is on for this case. The 15 original cases run without it so that their call-by-call arithmetic stays as it was. */
   judge?: boolean
+  /** The final F2-c outcome of the first remote call (the judge's) after recovery: `billed` is completed with its one row, `unbilled`
+   * is not completed with none. Never a row without the completion, never two rows. */
+  judgeChild?: 'billed' | 'unbilled'
   /** What the disk says at the instant of the kill: proof that the process died on the boundary the name claims. */
   atKill(w: World, lead: string): void | Promise<void>
 }
@@ -411,7 +435,7 @@ const crashes: Crash[] = [
     } },
   // The same kill points with the R3 judge on. The first remote call of a judged relay is the J2 sample at the first cycle_start, so
   // nth 1 is a judge call. A killed judge call is never replayed: recovery loses the relay run (R2) and dispatches nothing.
-  { name: 'judge sample, terminal ingest before it commits', label: 'net:terminal:before_ingest', nth: 1, judge: true, recovery: 'fails', done: [], stalePin: true,
+  { name: 'judge sample, terminal ingest before it commits', label: 'net:terminal:before_ingest', nth: 1, judge: true, judgeChild: 'unbilled', recovery: 'fails', done: [], stalePin: true,
     atKill(w) {
       const [child, ...others] = remoteChildren(w)
       assert.ok(child && others.length === 0 && child.state !== 'completed', 'one remote call, the judge\'s, not completed')
@@ -419,12 +443,21 @@ const crashes: Crash[] = [
       assert.deepEqual(w.rows('SELECT layer,state FROM relay_judge_requests'), [{ layer: 'J2', state: 'dispatched' }], 'the request was dispatched and has no outcome')
       assert.equal(w.costs(relayOf(w)!.run_id).length, 0)
     } },
-  { name: 'judge sample, terminal ingest committed but unanswered', label: 'net:terminal:after_ingest', nth: 1, judge: true, recovery: 'fails', done: [], stalePin: true,
+  { name: 'judge sample, terminal ingest committed but unanswered', label: 'net:terminal:after_ingest', nth: 1, judge: true, judgeChild: 'billed', recovery: 'fails', done: [], stalePin: true,
     atKill(w) {
       const [child, ...others] = remoteChildren(w)
       assert.ok(child && others.length === 0 && child.state === 'completed')
       assert.equal(w.costs(child!.id).length, 1, 'the judge call is billed to its child')
       assert.equal(w.costs(relayOf(w)!.run_id).length, 0, 'and not to the relay run')
+      assert.deepEqual(w.rows('SELECT layer,state FROM relay_judge_requests'), [{ layer: 'J2', state: 'dispatched' }])
+    } },
+  // Inside the one transaction that records the receipt, the usage and the completion of a remote call (F2-c); the first R1 `complete`
+  // of a judged relay is the judge call's, as it is the first remote call.
+  { name: 'judge sample, terminal ingest inside the transaction', label: 'complete:before_commit', nth: 1, judge: true, judgeChild: 'unbilled', recovery: 'fails', done: [], stalePin: true,
+    atKill(w) {
+      const [child, ...others] = remoteChildren(w)
+      assert.ok(child && others.length === 0 && child.state !== 'completed', 'the completion rolled back')
+      assert.equal(w.costs(child!.id).length, 0, 'and took the judge call\'s usage row with it')
       assert.deepEqual(w.rows('SELECT layer,state FROM relay_judge_requests'), [{ layer: 'J2', state: 'dispatched' }])
     } },
   { name: 'between relay cycles, judged', label: 'gap:2', nth: 1, judge: true, recovery: 'fails', done: ['i1', 'i2'], stalePin: true,
@@ -532,6 +565,20 @@ for (const crash of crashes) {
     if (crash.judge) {
       assert.equal(await w.fake.count('/completion'), evaluated, 'recovery dispatched no model call, judge or relay')
       assert.equal(w.count("SELECT COUNT(*) AS n FROM relay_judge_requests WHERE state='completed'"), crash.label === 'gap:2' ? 4 : 0, 'no verdict was invented for a call that was lost')
+      // After recovery, the F2-c books of the judge's calls are what they were at the kill, or complete: one row at most per child,
+      // a row only with its completion, and none of it on the relay run.
+      const children = remoteChildren(w)
+      for (const child of children) {
+        const rows = w.costs(child.id).length
+        assert.ok(rows <= 1, `${child.id} has at most one cost row`)
+        assert.equal(rows === 1, child.state === 'completed', `${child.id}: a row exists exactly when the call completed (${child.state})`)
+      }
+      assert.ok(w.costs(relay!.run_id).every(row => !String(row['entry_key']).startsWith('remote-dispatch:')), 'no executor report on the relay run')
+      if (crash.judgeChild) {
+        const first = children[0]!
+        assert.equal(first.state === 'completed', crash.judgeChild === 'billed', `the judge call's final state is ${first.state}`)
+        assert.equal(w.costs(first.id).length, crash.judgeChild === 'billed' ? 1 : 0)
+      }
     }
     assert.deepEqual(await w.agentProcesses(), [], 'no agent process survives recovery')
     w.db(legalState); w.db(integrity)
