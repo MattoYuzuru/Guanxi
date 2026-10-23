@@ -631,3 +631,23 @@ test('the home accepts only an owner-device executor with the attempts scope, an
   assert.equal(sessions.length, 1)
   assert.equal(await code(sessions[0]!.observe(f.remote.model, new AbortController().signal)), 'relay_stopped', 'the failed preparation released its session')
 })
+
+test('the session guards its own fence: a caller whose start observation is a no-op still cannot dispatch or keep a call under a lost fence', async t => {
+  const f = await remoteFixture(t, { fake: { completionDelayMs: 3000 } }), r = await f.relay()
+  const mk = (content: string) => ({ model: 'fixture', stream: false, think: false as const, messages: [{ role: 'user' as const, content }], options: { num_ctx: 16000, num_predict: 1000 } })
+  const transport = r.prepared.meter.transport!, handle = { authorizeDispatch: async () => undefined, prepare: () => mk('guarded') }
+  await r.model.countAsync!('guarded')
+  // Lost before the send: the fence is checked in the same stretch even though the caller's hook checks nothing.
+  let armed = true
+  f.afters.push(path => { if (armed && path === '/attempts/offers') { armed = false; f.home.runs.cancel('relay') } })
+  await assert.rejects(transport.chat(mk('guarded'), r.controller.signal, () => undefined, handle), /stale_lease/)
+  assert.equal(f.seen.includes('/attempts/dispatch'), false)
+  // Lost while pending: the heartbeat does not depend on the caller either.
+  const g = await remoteFixture(t, { fake: { completionDelayMs: 3000 } }), s = await g.relay()
+  await s.model.countAsync!('guarded')
+  const call = s.prepared.meter.transport!.chat(mk('guarded'), s.controller.signal, () => undefined, handle).catch((error: unknown) => error)
+  await until(async () => (await g.fake.count('/completion')) === 1)
+  g.home.runs.cancel('relay')
+  assert.match(String(await call), /stale_lease/)
+  assert.equal(g.target.federation.attemptDispatch!.state(grants(g.sent)[0]!.id).status, 'canceled')
+})
