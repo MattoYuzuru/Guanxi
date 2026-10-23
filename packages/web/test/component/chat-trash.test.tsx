@@ -159,7 +159,7 @@ describe('Chat Trash list', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Корзина' })).toBe(document.activeElement))
   })
 
-  it('focuses a safe Restore error and retries the same mutation without an extra list read', async () => {
+  it('focuses a safe Restore error and repeats the same mutation from Restore without an extra list read', async () => {
     vi.spyOn(api, 'listChatTrash').mockResolvedValue({
       lifecycleVersion: 1, scope: 'projectless', projectId: null,
       ...EMPTY_DELETIONS,
@@ -173,13 +173,14 @@ describe('Chat Trash list', () => {
     const error = await screen.findByText('safe restore failure')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
     expect(api.listChatTrash).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить восстановление' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Восстановить чат' }))
     await waitFor(() => expect(api.restoreChat).toHaveBeenCalledTimes(2))
     expect(api.restoreChat).toHaveBeenNthCalledWith(1, 'trash-chat', { lifecycleVersion: 1 })
     expect(api.restoreChat).toHaveBeenNthCalledWith(2, 'trash-chat', { lifecycleVersion: 1 })
   })
 
-  it('removes a restored stale item, focuses failed refresh, and converges through explicit list retry', async () => {
+  it('removes a restored stale item, focuses failed refresh, and converges by itself', async () => {
     vi.spyOn(api, 'listChatTrash')
       .mockResolvedValueOnce({
         lifecycleVersion: 1, ...EMPTY_DELETIONS, scope: 'project', projectId: 'project-a', chats: [ITEM], hasMore: false,
@@ -197,13 +198,14 @@ describe('Chat Trash list', () => {
     expect(screen.queryByText(ITEM.title)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Восстановить чат' })).toBeNull()
     expect(onRestored).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку Корзины' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     await screen.findByText('В этой области Корзина пуста.')
     expect(api.listChatTrash).toHaveBeenCalledTimes(3)
     expect(api.restoreChat).toHaveBeenCalledTimes(1)
   })
 
-  it('focuses an initial list error and recovers only after explicit retry', async () => {
+  it('focuses an initial list error and recovers by itself', async () => {
     vi.spyOn(api, 'listChatTrash')
       .mockRejectedValueOnce(new Error('initial Trash failure'))
       .mockResolvedValueOnce({
@@ -212,7 +214,8 @@ describe('Chat Trash list', () => {
     render(<ChatTrashList projectId={null} />)
     const error = await screen.findByText(/initial Trash failure/u)
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку Корзины' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     await screen.findByText('В этой области Корзина пуста.')
     expect(api.listChatTrash).toHaveBeenCalledTimes(2)
   })
@@ -284,12 +287,13 @@ describe('Chat Trash list', () => {
     expect(await screen.findAllByText(pending.title)).toHaveLength(1)
     expect(screen.getAllByText(/metadata deletion is pending server maintenance/u)).toHaveLength(1)
     expect(screen.getAllByText(/generic blob cleanup is not applicable/u)).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh deletion status' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     const failure = await screen.findByText(/safe English deletion failure/u)
     await waitFor(() => expect(failure.closest('[tabindex="-1"]')).toBe(document.activeElement))
     expect(screen.getAllByText(pending.title)).toHaveLength(1)
     expect(screen.queryAllByText(/Session Chat metadata deleted by server maintenance/u)).toHaveLength(0)
-    fireEvent.click(screen.getByRole('button', { name: 'Retry Trash' }))
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findAllByText(/Session Chat metadata deleted by server maintenance/u)).toHaveLength(1)
     expect(screen.queryAllByText(pending.title)).toHaveLength(0)
     expect(screen.getAllByText(/generic blob cleanup is not applicable/u)).toHaveLength(1)
@@ -340,13 +344,15 @@ describe('Chat Trash list', () => {
     expect(await screen.findAllByText(pending.title)).toHaveLength(1)
     expect(screen.queryAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить статус удаления' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     const failure = await screen.findByText(/safe deletion refresh failure/u)
     await waitFor(() => expect(failure.closest('[tabindex="-1"]')).toBe(document.activeElement))
     expect(screen.getAllByText(pending.title)).toHaveLength(1)
     expect(screen.queryAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(0)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку Корзины' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить|Retry|Refresh)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findAllByText(/Server maintenance удалил metadata чат-сессии/u)).toHaveLength(1)
     expect(screen.queryAllByText(pending.title)).toHaveLength(0)
     expect(screen.getAllByText(/generic blob cleanup неприменим/u)).toHaveLength(1)

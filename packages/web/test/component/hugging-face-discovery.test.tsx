@@ -302,7 +302,7 @@ describe('Marketplace Hugging Face discovery section', () => {
     expect(screen.getByText(/Содержит файлы GGUF/u)).toBeTruthy()
   })
 
-  it('renders each transport failure distinguishably with a retry', async () => {
+  it('renders each transport failure distinguishably and keeps Search as the next step', async () => {
     const reasons: Array<[string, RegExp]> = [
       ['rate_limited', /ограничивает частоту запросов/u],
       ['provider_unavailable', /Провайдер недоступен/u],
@@ -319,12 +319,13 @@ describe('Marketplace Hugging Face discovery section', () => {
       submitSearch()
       const alert = await screen.findByRole('alert')
       expect(alert.textContent).toMatch(message)
-      expect(screen.getByRole('button', { name: /Повторить/u })).toBeTruthy()
+      expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+      expect((screen.getByRole('button', { name: /Выполнить поиск/u }) as HTMLButtonElement).disabled).toBe(false)
       view.unmount()
     }
   })
 
-  it('retries through the same explicit intent after a failure', async () => {
+  it('repeats a failed search from Search with the same explicit intent', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(json(failed('rate_limited')))
       .mockResolvedValueOnce(json(listed()))
@@ -333,7 +334,8 @@ describe('Marketplace Hugging Face discovery section', () => {
     submitSearch()
     await screen.findByRole('alert')
 
-    fireEvent.click(screen.getByRole('button', { name: /Повторить/u }))
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    submitSearch()
     expect(await screen.findByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).page).toBe(1)
@@ -531,8 +533,9 @@ describe('Marketplace Hugging Face discovery section', () => {
     expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
     expect(screen.queryByText(/Подходящих репозиториев нет/u)).toBeNull()
 
-    // Retry repeats the failed page and cursor, not a fresh page-1 search.
-    fireEvent.click(screen.getByRole('button', { name: /Повторить/u }))
+    // Load the next page repeats the failed page and cursor, not a fresh page-1 search.
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить следующую страницу/u }))
     expect(await screen.findByText('Second/Repo-GGUF')).toBeTruthy()
     expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({
       query: 'llama gguf', page: 2, pageSize: 10, cursor: 'CURSOR-2',
@@ -613,10 +616,11 @@ describe('Marketplace Hugging Face discovery section', () => {
     render(<HuggingFaceDiscovery contextLength={8_192} />)
     submitSearch()
     const alert = await screen.findByRole('alert')
-    // The alert carries the framing and the retry, not just a bare sentence.
+    // The alert carries the framing and the reason, not just a bare sentence; the next step is
+    // the Search button itself (D-203: no Retry inside the alert).
     expect(alert.textContent).toMatch(/Не удалось прочитать Hugging Face/u)
     expect(alert.textContent).toMatch(/ограничивает частоту запросов/u)
-    expect(alert.querySelector('button')).toBeTruthy()
+    expect(alert.querySelector('button')).toBeNull()
   })
 
   it('distinguishes unreadable metadata from an absent declaration', async () => {
@@ -966,7 +970,7 @@ describe('P2-K exact GGUF file/revision selection', () => {
     expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy()
   })
 
-  it('shows a typed refusal with retry when a fresh re-check no longer confirms the target', async () => {
+  it('shows a typed refusal and selects again from its own button when a fresh re-check no longer confirms the target', async () => {
     let attempts = 0
     vi.stubGlobal('fetch', routedFetch({
       selection: () => {
@@ -985,9 +989,8 @@ describe('P2-K exact GGUF file/revision selection', () => {
     const article = screen.getByText('TheBloke/Llama-2-7B-GGUF').closest('article')!
     expect(article.querySelector('[role="status"]')?.textContent)
       .toContain('Повторная проверка больше не находит этот файл в перечне.')
-    const retry = screen.getByRole('button', { name: 'Повторить' })
-    expect(retry).toBeTruthy()
-    fireEvent.click(retry)
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: /Выбрать этот файл/u }))
     await screen.findByText('Выбранная цель')
     expect(article.querySelector('[role="status"]')?.textContent)
       .toContain('Выбранная цель: llama-2-7b.Q4_K_M.gguf')
@@ -1299,7 +1302,7 @@ describe('P2-L exact GGUF download projection', () => {
     const cancelled = await screen.findByText('Скачивание отменено')
     expect(cancelled).toBeTruthy()
     expect(signal?.aborted).toBe(true)
-    expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Скачать точный GGUF' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.textContent).toContain('Скачивание отменено'))
   })
 
@@ -1342,7 +1345,7 @@ describe('P2-L exact GGUF download projection', () => {
     expect(await screen.findByText(/Общий размер остаётся неизвестным/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
     expect(await screen.findByText('Скачивание отменено')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить скачивание' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать точный GGUF' }))
     expect(await screen.findByText('Staging artifact скачан и проверен')).toBeTruthy()
     expect(calls).toBe(2)
     expect(oldSignal?.aborted).toBe(true)
@@ -1419,7 +1422,7 @@ describe('P2-L exact GGUF download projection', () => {
       fireEvent.click(await confirmTarget())
       expect(await screen.findByText(message)).toBeTruthy()
       expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
-      expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Скачать точный GGUF' })).toBeTruthy()
       await waitFor(() => expect(document.activeElement?.textContent).toMatch(message))
       view.unmount()
     }

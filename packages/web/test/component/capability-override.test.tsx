@@ -228,7 +228,7 @@ describe('installed capability overrides', () => {
     expect(screen.queryAllByText('Переопределено')).toHaveLength(0)
   })
 
-  it('shows every conflict truthfully and offers reload only for identity drift', async () => {
+  it('shows every conflict truthfully and reloads the model by itself only for identity drift', async () => {
     const { onRefresh } = renderOverrides()
     const conflicts = [
       ['model_not_installed', 'Этой модели больше нет в текущей выборке установленных.', false],
@@ -255,9 +255,9 @@ describe('installed capability overrides', () => {
           ? screen.getByText(copy)
           : screen.getByText(copy),
       ).toBeTruthy()
-      const reload = screen.queryByRole('button', { name: 'Перечитать модель' })
-      expect(reload === null).toBe(!offersReload)
-      if (reload) fireEvent.click(reload)
+      // D-203: no Reload button; identity drift re-reads the model at once and says so.
+      expect(screen.queryAllByRole('button', { name: /Перечитать|Обновить|Повторить/u })).toHaveLength(0)
+      expect(screen.queryByText(/Guanxi перечитал эту модель/u) !== null).toBe(offersReload)
       // A conflict never records an assertion.
       expect(screen.queryAllByText('Переопределено')).toHaveLength(0)
     }
@@ -495,7 +495,8 @@ describe('installed capability overrides', () => {
     // A conflict changed nothing, so the row must still be shown exactly once and
     // must not be silently emptied as if the removal had succeeded.
     expect(screen.queryAllByText('Переопределено')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Перечитать модель' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Перечитать модель' })).toBeNull()
+    expect(screen.getByText(/Guanxi перечитал эту модель/u)).toBeTruthy()
   })
 
   it.each([

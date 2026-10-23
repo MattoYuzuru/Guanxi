@@ -12,7 +12,7 @@ const mutate = vi.fn(async (action: () => Promise<unknown>) => { await action() 
 
 it.each([undefined, null])('a balance without observedAt=%s renders Unknown and never its numeric amount', observedAt => {
   setActiveLocale('en')
-  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, balance: { amount: 123.45, currency: 'USD', source: 'fixture', observedAt, confidence: 'high' } }] }} retry={() => {}} mutate={mutate} />)
+  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, balance: { amount: 123.45, currency: 'USD', source: 'fixture', observedAt, confidence: 'high' } }] }} mutate={mutate} />)
   expect(screen.getByTestId('connection-balance').textContent).toBe('Unknown')
   expect(screen.queryByText(/123.45/)).toBeNull()
   expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
@@ -21,34 +21,34 @@ it.each([undefined, null])('a balance without observedAt=%s renders Unknown and 
 })
 it('renders observed balances with source, observation time and confidence, including a real zero', () => {
   setActiveLocale('en')
-  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, balance: { amount: 0, currency: 'USD', source: 'fixture-api', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'high' } }] }} retry={() => {}} mutate={mutate} />)
+  render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, balance: { amount: 0, currency: 'USD', source: 'fixture-api', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'high' } }] }} mutate={mutate} />)
   expect(screen.getByTestId('connection-balance').textContent).toBe('0 USD')
   expect(screen.getByText(/fixture-api · observed/).textContent).toContain('high confidence')
 })
 it.each(['en', 'ru'] as const)('names controls and shows empty state in %s', locale => {
   setActiveLocale(locale)
-  render(<ConnectionsView snapshot={{ ...snapshot, connections: [] }} retry={() => {}} mutate={mutate} />)
+  render(<ConnectionsView snapshot={{ ...snapshot, connections: [] }} mutate={mutate} />)
   expect(screen.getAllByRole('textbox')).toHaveLength(1)
   expect(screen.getAllByRole('combobox')).toHaveLength(2)
   expect(screen.getByLabelText(locale === 'en' ? 'Connection name' : 'Название подключения')).toBeTruthy()
   expect(screen.getByText(locale === 'en' ? 'No connections yet.' : 'Подключений пока нет.')).toBeTruthy()
 })
-it('loading, offline and retry states have announced names', () => {
+it('loading, offline and recovering states have announced names and no Retry button', () => {
   setActiveLocale('en')
-  const retry = vi.fn()
-  render(<ConnectionsView snapshot={null} loading error offline retry={retry} mutate={mutate} />)
+  render(<ConnectionsView snapshot={null} loading error offline recovering mutate={mutate} />)
   expect(screen.getByText('Loading connections').getAttribute('role')).toBe('status')
   expect(screen.getByRole('alert').textContent).toContain('offline')
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(retry).toHaveBeenCalledOnce()
+  expect(screen.getByRole('alert').textContent).toContain('Guanxi tries again by itself.')
+  expect(screen.queryAllByRole('button', { name: /retry|refresh/iu })).toHaveLength(0)
 })
-it('failed request retries and stale fetch cannot replace the next result after unmount', async () => {
+it('a failed request recovers by itself and stale fetch cannot replace the next result after unmount', async () => {
   setActiveLocale('en')
   const fetchMock = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(Response.json(snapshot))
   vi.stubGlobal('fetch', fetchMock)
   render(<ConnectionsPage />)
   await screen.findByRole('alert')
-  fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+  expect(screen.queryAllByRole('button', { name: /retry|refresh/iu })).toHaveLength(0)
+  await act(async () => { window.dispatchEvent(new Event('online')) })
   await screen.findByText('Fixture model')
   expect(fetchMock).toHaveBeenCalledTimes(2)
   expect(screen.queryByRole('alert')).toBeNull()
@@ -58,7 +58,7 @@ it('create sends no unattended opt-in; saving a key clears the password input', 
   const bodies: unknown[] = []
   vi.stubGlobal('fetch', vi.fn(async (_path, init) => { bodies.push(JSON.parse(init.body)); return Response.json({ ok: true }) }))
   const run = async (action: () => Promise<unknown>) => { await action() }
-  render(<ConnectionsView snapshot={{ ...snapshot, vault: { unlocked: true, unattendedAvailable: true } }} retry={() => {}} mutate={run} />)
+  render(<ConnectionsView snapshot={{ ...snapshot, vault: { unlocked: true, unattendedAvailable: true } }} mutate={run} />)
   fireEvent.change(screen.getByLabelText('Connection name'), { target: { value: 'New' } })
   fireEvent.click(screen.getByRole('button', { name: 'Add connection' }))
   await waitFor(() => expect(bodies).toHaveLength(1))
@@ -78,7 +78,7 @@ it('formats observation numbers and dates in the chosen locale and visibly label
   const observedAt = '2026-10-20T00:00:00.000Z'
   render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, unattended: true,
     balance: { amount: 1234.5, currency: 'USD', source: 'locale-fixture', observedAt, confidence: 'high' },
-  }] }} retry={() => {}} mutate={mutate} />)
+  }] }} mutate={mutate} />)
   expect(screen.getByTestId('connection-balance').textContent).toBe(`${(1234.5).toLocaleString('ru')} USD`)
   expect(screen.getByText(/locale-fixture/).textContent).toContain(new Date(observedAt).toLocaleString('ru'))
   expect(screen.getByRole('switch').textContent).toBe('Фоновое использование: вкл.')
@@ -95,7 +95,7 @@ it.each(['en', 'ru'] as const)('facts and metered costs render value, source, ti
   } }], costs: [{ id: 'cost-fixture', accountId: connection.accountId, connectionId: connection.id,
     runId: 'run-fixture', requestId: 'request-fixture', inputTokens: 10, outputTokens: 2, costUsd: 0.125,
     source: 'usage-fixture', observedAt, confidence: 'medium' }],
-  }} retry={() => {}} mutate={mutate} />)
+  }} mutate={mutate} />)
   const fact = screen.getByText('pi-ai.context: 8192').parentElement!
   expect(fact.textContent).toContain('catalog-fixture')
   expect(fact.textContent).toContain(time)
@@ -113,9 +113,10 @@ it.each([
   ['internal_error', 'could not process'], ['validation_failed', 'details are invalid'], ['provider_failed', 'provider request failed'],
 ] as const)('shows an actionable message for %s', (code, message) => {
   setActiveLocale('en')
-  render(<ConnectionsView snapshot={null} error errorCode={code} retry={() => {}} mutate={mutate} />)
+  render(<ConnectionsView snapshot={null} error errorCode={code} mutate={mutate} />)
   expect(screen.getByRole('alert').textContent).toContain(message)
-  expect(screen.getByRole('button', { name: code === 'vault_locked' ? 'Unlock vault' : 'Retry' })).toBeTruthy()
+  if (code === 'vault_locked') expect(screen.getByRole('button', { name: 'Unlock vault' })).toBeTruthy()
+  expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
 })
 
 it('preserves the server recovery code and unlocks from a failed initial load', async () => {
@@ -146,7 +147,7 @@ it.each([
   }], costs: [{ id: 'currency-cost', accountId: connection.accountId, connectionId: connection.id,
     runId: 'run', requestId: 'request', inputTokens: 1, outputTokens: 1, costUsd: 0.125,
     source: 'currency-cost-fixture', observedAt, confidence: 'medium' }],
-  }} retry={() => {}} mutate={mutate} />)
+  }} mutate={mutate} />)
   expect(screen.getByTestId('connection-balance').textContent).toBe(balance)
   expect(screen.getByText(/currency-cost-fixture/).textContent).toContain(`${cost} ·`)
 })

@@ -76,7 +76,7 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   const ownedId = '22222222-2222-4222-8222-222222222222'
   let projectless: ReturnType<typeof run>[] = []
   const owned = [run(ownedId, project.id, 'ocr')]
-  // Every projectless list request fails until the test presses Retry.
+  // Every projectless list request fails until the test lets the automatic recovery succeed.
   let failProjectlessList = true
   let createCalls = 0
   const createBodies: unknown[] = []
@@ -156,10 +156,12 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   const projectlessQueries = () => listQueries.filter(({ scope }) => scope === 'projectless')
   const initialProjectlessQueries = projectlessQueries().length
   expect([1, 2]).toContain(initialProjectlessQueries)
+  // D-203: no Retry button. Count the reads so far and allow the next read to succeed in the
+  // same synchronous step; regaining focus recovers at once (a backoff timer would, later).
+  await expect(page.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  const beforeRecovery = projectlessQueries().length
   failProjectlessList = false
-  const retry = page.getByRole('button', { name: 'Повторить', exact: true })
-  await retry.focus()
-  await retry.press('Enter')
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.getByText('В этой области нет Quick Run')).toHaveCount(1)
   await expect(page.getByText('Quick Run: 0')).toHaveCount(1)
   await expect(page.getByText('Метаданные готовы, выполнение — нет')).toHaveCount(1)
@@ -195,7 +197,9 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   const retentionError = page.getByText('Не удалось сохранить запрос в локальное хранилище.').locator('..')
   await expect(retentionError).toBeFocused()
   await setFramesBeforePendingCommits(page, false)
-  await page.getByRole('button', { name: 'Повторить изменение retention' }).press('Enter')
+  // The failed change keeps its own mode button; pressing it again repeats the same policy.
+  await expect(page.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  await session.press('Enter')
   await expect.poll(() => patchCalls).toBe(2)
   expect(patchBodies).toEqual([
     {
@@ -220,9 +224,9 @@ test('Quick Run metadata stays scoped, truthful, keyboard-safe and constrained-l
   await expect(page.getByText(ownedId)).toHaveCount(1)
   await expect(page.getByText(projectlessId)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: project.name })).toHaveCount(1)
-  // Retry issued exactly one projectless request, and nothing after it re-read that scope.
+  // Recovery issued exactly one successful projectless request, and nothing after it re-read that scope.
   expect(projectlessQueries()).toEqual(Array.from(
-    { length: initialProjectlessQueries + 1 },
+    { length: beforeRecovery + 1 },
     () => ({ quickRunVersion: '1', scope: 'projectless' }),
   ))
   const projectQueries = listQueries.filter(({ scope }) => scope === 'project')

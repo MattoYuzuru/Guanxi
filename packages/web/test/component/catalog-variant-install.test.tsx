@@ -323,7 +323,8 @@ describe('variant-first Marketplace install', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Проверить точную установку' }))
     fireEvent.click(screen.getByRole('button', { name: /Подтвердить точную цель/u }))
     expect(await screen.findByText('Pull варианта завершился ошибкой')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить точный pull' }))
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать точный tag' }))
     expect(await screen.findByText(/Installation остаётся неподтверждённой/u)).toBeTruthy()
     first.unmount()
 

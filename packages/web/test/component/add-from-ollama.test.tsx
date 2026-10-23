@@ -182,7 +182,7 @@ describe('Add from Ollama Marketplace flow', () => {
     expect(await screen.findByText('Ollama сообщила о завершении pull')).toBeTruthy()
   })
 
-  it('keeps refresh failure truthful and supports explicit retry after provider error', async () => {
+  it('keeps refresh failure truthful and pulls again from its own Pull button after a provider error', async () => {
     let pullAttempt = 0
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
       const url = String(input)
@@ -209,13 +209,14 @@ describe('Add from Ollama Marketplace flow', () => {
     fireEvent.submit(input.closest('form')!)
     fireEvent.click(await screen.findByRole('button', { name: /Подтвердить нормализованную цель/u }))
     expect(await screen.findByText('Pull завершился ошибкой')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить pull' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать' }))
     expect(await screen.findByText(/Обновить Installed не удалось/u)).toBeTruthy()
     expect(screen.queryByText(/sha256/u)).toBeNull()
     expect(pullAttempt).toBe(2)
   })
 
-  it('cancels only the active request, shows cancelled and allows one explicit retry', async () => {
+  it('cancels only the active request, shows cancelled and allows one explicit pull again', async () => {
     let aborted = false
     let pullAttempt = 0
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, init) => {
@@ -247,7 +248,8 @@ describe('Add from Ollama Marketplace flow', () => {
     fireEvent.click(cancel)
     expect(await screen.findByText('Pull отменён')).toBeTruthy()
     expect(aborted).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить pull' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать' }))
     expect(await screen.findByText('Pull завершился ошибкой')).toBeTruthy()
     expect(pullAttempt).toBe(2)
   })

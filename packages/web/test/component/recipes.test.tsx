@@ -109,7 +109,7 @@ afterEach(() => {
 })
 
 describe('RecipesPage', () => {
-  it('distinguishes loading, focused error/retry and exact empty scope', async () => {
+  it('distinguishes loading, a focused error that recovers by itself and exact empty scope', async () => {
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     const retry = deferred<{ recipeVersion: 1; scope: 'projectless'; projectId: null; recipes: Recipe[] }>()
     vi.spyOn(api, 'listRecipes')
@@ -120,7 +120,8 @@ describe('RecipesPage', () => {
     expect(screen.getByRole('status', { name: 'Загружаем сценарии' })).toBeTruthy()
     const heading = await screen.findByRole('heading', { name: 'Не удалось загрузить сценарии' })
     await waitFor(() => expect(heading).toBe(document.activeElement))
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить', exact: true }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Загрузить текущую)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     await act(async () => retry.resolve({ recipeVersion: 1, scope: 'projectless', projectId: null, recipes: [] }))
     expect(await screen.findByText('В этой области нет сценариев')).toBeTruthy()
     expect(api.listRecipes).toHaveBeenCalledTimes(2)
@@ -206,7 +207,7 @@ describe('RecipesPage', () => {
     expect(await screen.findByText('Ревизия 2')).toBeTruthy()
   })
 
-  it('focuses a stale revision conflict and reloads instead of claiming a partial revision', async () => {
+  it('focuses a stale revision conflict and reloads the current revision by itself instead of claiming a partial revision', async () => {
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1 })
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     vi.spyOn(api, 'listRecipes')
@@ -223,12 +224,13 @@ describe('RecipesPage', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('Частичная ревизия не сохранена')
     await waitFor(() => expect(alert).toBe(document.activeElement))
-    fireEvent.click(screen.getByRole('button', { name: 'Загрузить текущую ревизию' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Загрузить текущую)/u })).toHaveLength(0)
     expect(await screen.findByText('Ревизия 2')).toBeTruthy()
+    expect(screen.getByText(/Guanxi загрузил текущую ревизию/u)).toBeTruthy()
     expect(api.listRecipes).toHaveBeenCalledTimes(2)
   })
 
-  it('confirms one exact queued snapshot, retries the same key and focuses sourced result', async () => {
+  it('confirms one exact queued snapshot, repeats the same key from Confirm and focuses sourced result', async () => {
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { callback(0); return 1 })
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(IDEMPOTENCY_KEY)
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
@@ -259,7 +261,8 @@ describe('RecipesPage', () => {
       scope: 'projectless',
       idempotencyKey: IDEMPOTENCY_KEY,
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить тот же запрос Job' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Загрузить текущую)/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Создать снимок Job в очереди' }))
     await act(async () => retry.resolve(snapshotProjection()))
     const result = await screen.findByRole('heading', { name: 'Снимок Job сохранён в очереди' })
     await waitFor(() => expect(result).toBe(document.activeElement))
@@ -286,7 +289,8 @@ describe('RecipesPage', () => {
     render(<RecipesPage />)
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('snapshot read failed')
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить поиск снимка' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Загрузить текущую)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     expect(await screen.findByText(JOB_ID)).toBeTruthy()
     expect(api.getRecipeJobSnapshot).toHaveBeenCalledWith(
       ID,

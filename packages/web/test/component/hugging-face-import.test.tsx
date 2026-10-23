@@ -160,7 +160,8 @@ describe('explicit Hugging Face staged import control', () => {
     expect(screen.getAllByText(/Фиксированный completion probe получил/u)).toHaveLength(1)
     expect(screen.getAllByText(/owner\/model:latest · manifest-digest/u)).toHaveLength(1)
     expect(onInstalled).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('button', { name: 'Повторить импорт' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Проверить локальный импорт' })).toBeNull()
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
   })
 
   it('shows typed no-overwrite conflict without Installed/runtime claims or refresh', async () => {
@@ -211,7 +212,8 @@ describe('explicit Hugging Face staged import control', () => {
     expect(await screen.findByText(/Укажите корректную локальную ссылку/u)).toBeTruthy()
     expect(screen.queryByText(/Ollama был недоступен/u)).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить импорт' }))
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить локальный импорт' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', {
       name: 'Локальная ссылка модели Ollama',
     })))
@@ -258,7 +260,8 @@ describe('explicit Hugging Face staged import control', () => {
     expect(await screen.findByText('Результат импорта требует внимания')).toBeTruthy()
     expect(screen.getByText(/Create мог начаться/u)).toBeTruthy()
     await waitFor(() => expect(document.activeElement).not.toBe(document.body))
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить импорт' }))
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Проверить локальный импорт' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', {
       name: 'Локальная ссылка модели Ollama',
     })))
