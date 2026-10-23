@@ -46,7 +46,6 @@ review fixes `dda21413` (production) with tests `6fe46d78`, `1613b896`, `4da1d65
 llama-server cases, 242 federation, F2-a/b/c, K3 connections and R1 cases re-run directly (466/466, zero skips, before the merge of main).
 Two earlier selected runs: 405/405 after the feature commit. The `Atomics.wait` probe and the mutation runs above are in the new files.
 
-
 ## Properties and their failing-when-violated probes
 
 Each mutation was applied, the named file run, and the source restored. Caught unless noted.
