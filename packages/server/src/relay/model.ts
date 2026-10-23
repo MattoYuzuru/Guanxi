@@ -40,14 +40,14 @@ export class ConnectionRelayModel implements RelayModel {
     const connection = this.connections.snapshot('local').connections.find(c => c.id === this.connectionId)
     invariant(connection, 'connection_not_found')
     invariant(!this.meter.localOnly || connection.kind === 'local_runtime', 'relay_local_connection_required')
-    let dispatchedPrompt = prompt
+    let dispatchedTokens = -1
     const call = { runId: o.runId, requestId: o.requestId, signal: o.signal, background: this.background, onStarted: o.onStarted,
       ...(this.meter.authorizeDispatch ? { authorizeDispatch: () => this.meter.authorizeDispatch!(o.signal) } : {}),
       onPrepared: (request: import('@earendil-works/pi-ai').Context | import('../ollama/types.ts').OllamaChatRequest) => {
         invariant(request.messages.length === 1 && request.messages[0]!.role === 'user' && typeof request.messages[0]!.content === 'string', 'request_shape')
-        dispatchedPrompt = request.messages[0]!.content as string
-        const tokens = this.count(dispatchedPrompt)
+        const tokens = this.count(request.messages[0]!.content as string)
         invariant(Number.isSafeInteger(tokens) && tokens >= 0 && tokens <= o.maxInput, 'context_ceiling')
+        dispatchedTokens = tokens
         this.meter.validatePrepared?.(request as import('../ollama/types.ts').OllamaChatRequest)
       } }
     if (connection.kind === 'local_runtime') {
@@ -57,7 +57,9 @@ export class ConnectionRelayModel implements RelayModel {
       invariant(Number.isSafeInteger(r.prompt_eval_count) && Number.isSafeInteger(r.eval_count), 'usage_unknown')
       const inputTokens = r.prompt_eval_count!
       return { text: r.message?.content ?? '', inputTokens, outputTokens: r.eval_count!, moneyMicros: this.model.endsWith(':cloud') ? null : 0,
-        inputTruncated: inputTokens !== this.count(dispatchedPrompt), outputLimited: r.done_reason === 'length' }
+        // Compared with the count taken when the request was prepared: counting again here would demand a fresh runtime
+        // observation after the call, and a real call may outlast the observation age (minutes on a slow executor).
+        inputTruncated: dispatchedTokens < 0 || inputTokens !== dispatchedTokens, outputLimited: r.done_reason === 'length' }
     }
     invariant(connection.kind === 'model_api', 'connection_not_supported')
     const r = await this.connections.complete('local', this.connectionId, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] },

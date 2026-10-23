@@ -188,8 +188,11 @@ export class RelayExecutor {
     this.store.emit(a, { type: 'assistant.started', data: { messageId: id, model: 'relay:' + purpose, step: l.cycle } })
     let reply: Reply
     try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, maxInput: t.H, window: w, signal, onStarted: () => this.store.runs.modelStarted(a) })) }
-    catch {
+    catch (error) {
+      // Only a fixed code is recorded: a message may carry provider text or paths.
+      const reason = error instanceof RelayError ? error.code : typeof (error as { code?: unknown })?.code === 'string' && /^[a-z0-9_]{1,64}$/.test((error as { code: string }).code) ? (error as { code: string }).code : 'unknown'
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
+      this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', purpose, reason }) } })
       throw new RelayError('model_failed')
     }
     invariant([reply.inputTokens, reply.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) &&
