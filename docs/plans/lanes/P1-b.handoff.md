@@ -8,7 +8,7 @@ slice implemented; **P1 remains in progress**.
 - `packages/server/src/plugins/integrity.ts` — canonical SHA-256 identity over sorted relative paths and file hashes; symlinks, non-regular entries and paths outside the source are refused.
 - `packages/server/src/plugins/manager.ts` — `PluginManager` with read-only `inspect`, transactional `install`/upgrade, `uninstall`, `setEnabled`, `list`, `bootSet`, engine/peer checks and exported fault points.
 - `packages/server/src/plugins/README.md` — API, state schemas, integrity format, supported ranges, transaction order and residual risks.
-- `packages/server/test/plugins/manager.test.ts` — 29 tests, including install rollback at every exported fault point, fresh/same-version loops, crash recovery, lock and dependency checks.
+- `packages/server/test/plugins/manager.test.ts` — 34 tests, including install and uninstall crash loops, lock-staleness and recovery-under-lock checks, missing-directory repair and byte-for-byte rollback at every exported fault point.
 
 Commits: `c6aecf04` feat(plugins): add T1 plugin inspection and integrity; `0989672c` feat(plugins): add transactional install with rollback and safe-mode boot set; `5e088cad` test(plugins): cover install rollback at every fault point; docs commit: this hand-off plus the plugin README.
 
@@ -82,3 +82,28 @@ Final checks after the fixes: `tests 29`, `pass 29`, `fail 0`, `skipped 0`; `tsc
 no output; markdownlint `0 error(s)` for the plugin README and this hand-off. macOS `fsync` is
 documented as not being `F_FULLFSYNC` in the README residual risk; Node exposes no portable
 `F_FULLFSYNC` in this slice.
+
+## Independent re-check fixes
+
+A second independent re-check confirmed install crash safety and found the problems below.
+Each was fixed in its own commit with a failing-first test:
+
+- `468e687f` — uninstall writes `plugins.json` and then `plugins.lock.json` before removing the
+  directory, and the uninstall catch passes `SimulatedCrash` through. An uninstall crash loop
+  asserts after every point plus a fresh `recover()` that no lock entry names a missing
+  directory.
+- `6404776c` — `recoverSync` takes `<pluginsDir>/.lock` with `O_CREAT | O_EXCL` for the whole
+  sweep and returns `{ skipped: 'plugins_busy' }` while it is held; public `recover()` and the
+  implicit recovery in `list()`/`bootSet()` share that path. A held lock now protects an
+  in-flight, renamed-but-unreferenced directory.
+- `1e40faa2` — the same-version no-op requires the installed directory to exist and match the
+  lock; a missing directory falls through to a normal reinstall and is repaired.
+- `ef6bcfcd` — the lock body is `{ pid, token, createdAt }`; staleness comes from a dead pid
+  (`process.kill(pid, 0)` throws `ESRCH`) or a 30-minute-old `createdAt`, with mtime as the
+  fallback for a non-JSON lock. A stale lock is re-read and its token confirmed before
+  unlinking. Tests cover a reaped child pid, a live pid and an aged live lock.
+- `6430f453` — recovery drops enabled ids that have no lock entry and reports them as
+  `removedEnabledIds`.
+
+Final checks after the re-check fixes: `tests 34`, `pass 34`, `fail 0`, `skipped 0`; `tsc`
+exit 0 with no output; markdownlint `0 error(s)` for the plugin README and this hand-off.

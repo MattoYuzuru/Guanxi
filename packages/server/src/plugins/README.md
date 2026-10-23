@@ -41,8 +41,10 @@ the source integrity, and reports the build-script names among `preinstall`, `in
 
 `install` upgrades an existing id in place, keeps its enabled/disabled state, and removes the
 previous version directory only after the commit. A fresh install is enabled. Installing the
-same version again is a no-op when the source integrity equals the locked integrity and fails
-with `version_exists` when it differs; an upgrade must use a new version. `list()` and
+same version again is a no-op only when the source integrity equals the locked integrity and
+the installed directory still exists with matching bytes; a missing directory is reinstalled
+and repaired, and different source content fails with `version_exists`; an upgrade must use a
+new version. `list()` and
 `bootSet()` are synchronous and sorted by id. `bootSet({ safeMode: true })` returns `[]`
 without reading state (ADR-0022 invariant: safe mode disables all T1 and T2 plugins).
 `bootSet()` returns the absolute directories of enabled plugins whose directory exists and
@@ -119,22 +121,30 @@ rename and a `syncDirectory(pluginsDir)` does it write `plugins.json` and
 `plugins.lock.json`. A crash before the state write leaves an unreferenced plugin directory,
 never a lock entry whose directory is missing.
 
+`uninstall` commits `plugins.json` and then `plugins.lock.json` before removing the directory.
+A crash before the lock write leaves the plugin installed (possibly disabled); a crash after
+it leaves only an unreferenced directory that `recover()` sweeps, never a lock entry whose
+directory is missing.
+
 A thrown failure at any step before commit restores `plugins.json` and `plugins.lock.json`
 from their exact previous bytes (or removes them when they did not exist), removes the
 staging or partial directory, and removes a plugins directory that the attempt created.
-Rollback steps are attempted independently; if one fails, the original error carries all
-rollback failures as an `AggregateError` in `error.cause` instead of swallowing them. Commit
-is final after the state writes: cleanup of the old version is best-effort and cannot turn a
-successful install into a failure. There is no `previous-*` same-version backup path anymore.
+Uninstall has no directory backup: it restores the two state files and removes the directory
+only after a successful commit. Rollback steps are attempted independently; if one fails, the
+original error carries all rollback failures as an `AggregateError` in `error.cause` instead
+of swallowing them. Commit is final after the state writes: cleanup of the old version is
+best-effort and cannot turn a successful install or uninstall into a failure. There is no
+`previous-*` same-version backup path anymore.
 
-`recover()` removes `.staging`, the manager's own stale state temporary files, and every
+`recover()` removes `.staging`, the manager's own stale state temporary files, enabled ids in
+`plugins.json` that have no lock entry (reported as `removedEnabledIds`), and every
 `<id>@<version>` directory that the lock does not reference. It runs once per manager instance
 on the first `install`, `list` or `bootSet` (and on the first `uninstall`/`setEnabled`), and
-can be called explicitly. Recovery only deletes unreferenced directories, so it never removes a
-directory the lock references; an entry whose directory was already missing is reported by
-`bootSet()` through `onSkip`. Automatic
-recovery is skipped while another manager holds the exclusive lock, so call the explicit
-method only when no manager is active.
+can be called explicitly. The whole sweep holds `<pluginsDir>/.lock`; when another manager
+holds it, `recover()` removes nothing and returns `{ skipped: 'plugins_busy' }` with empty
+removal arrays. A manager that already holds the lock sweeps under it. Recovery only deletes
+unreferenced directories, so it never removes a directory the lock references; an entry whose
+directory was already missing is reported by `bootSet()` through `onSkip`.
 
 `uninstall`, `setEnabled(false)` and an upgrade that drops a `provides` entry fail with
 `dependency_in_use` while an enabled installed plugin `requires` a service that would
@@ -143,13 +153,16 @@ disappear. Disabled consumers do not block the change.
 ## Concurrency
 
 Mutations take `<pluginsDir>/.lock` with `O_CREAT | O_EXCL` and write
-`{ pid, token, startedAt }`. A second manager attempting `install`, `uninstall` or
+`{ pid, token, createdAt }`. A second manager attempting `install`, `uninstall` or
 `setEnabled` while the lock is held fails with `plugins_busy`; the in-process queue serialises
 one instance, the file lock serialises processes. The token prevents one manager from removing
-another manager's lock. A lock older than **30 minutes** is treated as stale: it is removed
-once and acquisition is retried. If a live process legitimately holds a mutation for longer
-than 30 minutes, a second manager can take over; that remains a documented residual risk.
-`list()` and `bootSet()` are read-only and do not take the lock.
+another manager's lock. A lock is stale when its `pid` is not alive (`process.kill(pid, 0)`
+throws `ESRCH`) or when `createdAt` is older than **30 minutes**; the file mtime is the
+fallback for a lock that is not our JSON. Before unlinking a stale lock the manager re-reads it
+and confirms the same token, so a fresh lock taken by another contender is not removed. A
+stale lock is removed once and acquisition is retried. `list()` and `bootSet()` are read-only
+apart from implicit recovery: they take the lock for that sweep and skip it while another
+manager is active.
 
 ## Fault injection and checks
 
@@ -159,14 +172,18 @@ and `FAULT_POINTS` aliases the install list. A happy install records the points 
 the test deep-equals them with `INSTALL_FAULT_POINTS`, so the list cannot silently drift.
 Tests throw at each point for upgrade, fresh and same-version installs and assert
 byte-identical state and listings. `SimulatedCrash` thrown from a hook bypasses rollback so a
-fresh manager can exercise `recover()` after every crash point.
+fresh manager can exercise `recover()` after every install and uninstall crash point; the
+uninstall loop asserts that no lock entry survives without its directory.
 
 ## Residual risk
 
 - Node's `fsync` is not macOS `F_FULLFSYNC`: the state files and parent directory are synced
   with `fsync`, but a power loss can still lose a rename on macOS. `F_FULLFSYNC` is not
   exposed by Node's `fs` API in this slice.
-- The 30-minute stale-lock threshold is a heuristic; there is no lease heartbeat.
+- The 30-minute stale-lock threshold is still a heuristic: a live mutation can be taken over
+  after it, and a reused pid is treated as alive until then.
+- Recovery writes `plugins.json` to drop ids without a lock entry; a hand-edited enabled id
+  that the operator intended to keep is therefore not preserved across recovery.
 - Hand-edited state is trusted local data, not signed.
 
 ## Checks
