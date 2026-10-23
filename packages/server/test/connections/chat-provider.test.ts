@@ -140,7 +140,7 @@ test('custom connection discovers models with explicit credentials, refuses redi
   assert.equal(f.service.snapshot('local').connections[0]!.baseUrl, 'https://api.example.invalid/v1')
 })
 
-test('discovery failure falls back to catalog and locked/service/keyless connections are absent from picker', async t => {
+test('custom discovery failure is explicitly unknown and locked/service/keyless connections are absent from picker', async t => {
   let requests = 0
   const { service } = await setup(t, undefined, async () => { requests++; throw new Error('offline') })
   const id = await imported(service, canary(), 'https://api.example.invalid/v1')
@@ -150,8 +150,8 @@ test('discovery failure falls back to catalog and locked/service/keyless connect
   assert.equal(groups.length, 1)
   await service.chatModels('local', id)
   assert.equal(requests, 1)
-  assert.equal(groups[0]!.models[0]!.source, '@earendil-works/pi-ai@1.3.0')
-  assert.ok(groups[0]!.models.some(model => model.selection === chatModelSelection(id, piModels('openai')[0]!.id)))
+  assert.deepEqual(groups[0]!.models, [])
+  assert.equal((await service.chatModels('local', id)).state, 'unknown')
   assert.ok(chatModelsResponse.safeParse({ groups }).success)
   service.lockVault('local')
   assert.deepEqual(await providerChatGroups(service), [])
@@ -258,7 +258,7 @@ test('custom transport refuses request escape before forwarding a credential', a
   } }, async () => { calls++; return Response.json({ data: [{ id: 'owner-model' }] }) })
   const id = await imported(f.service, canary(), 'https://api.example.invalid/v1')
   await assert.rejects(f.service.complete('local', id, { messages: [] }, { model: 'owner-model', runId: 'escape', requestId: 'escape' }))
-  assert.equal(calls, 1) // Discovery only.
+  assert.equal(calls, 0) // Completion does not rediscover; escape is rejected before transport.
 })
 
 test('plain Chat orientation is bounded English with brand and no execution access', () => {
@@ -422,4 +422,36 @@ test('local sends reach Ollama with an unregistered vault row or missing K3 serv
     await response.text()
   }
   assert.equal(calls, 2)
+})
+
+
+test('failed refresh keeps the last successful custom discovery stale and low confidence', async t => {
+  let failing = false
+  const f = await setup(t, undefined, async () => {
+    if (failing) throw new Error('offline')
+    return Response.json({ data: [{ id: 'owner-model' }] })
+  })
+  const id = await imported(f.service, canary(), 'https://api.example.invalid/v1')
+  const first = await f.service.chatModels('local', id)
+  failing = true
+  const now = Date.now()
+  t.mock.method(Date, 'now', () => now + 61_000)
+  const stale = await f.service.chatModels('local', id)
+  assert.deepEqual(stale.models, ['owner-model'])
+  assert.equal(stale.observedAt, first.observedAt)
+  assert.equal(stale.confidence, 'low'); assert.equal(stale.state, 'stale')
+})
+
+test('admitted custom completion needs no rediscovery and uses neutral compat for a gpt catalog ID', async t => {
+  let discovery = 0
+  const f = await setup(t, { complete: async (model, context, options) => {
+    assert.equal(model.api, 'openai-completions')
+    assert.equal(model.reasoning, false)
+    assert.equal((model.compat as { supportsDeveloperRole?: boolean }).supportsDeveloperRole, false)
+    assert.equal(model.contextWindow, 0); assert.equal(model.maxTokens, 0)
+    return reply(model, context, options)
+  } }, async () => { discovery++; throw new Error('offline') })
+  const id = await imported(f.service, canary(), 'https://api.example.invalid/v1')
+  await f.service.complete('local', id, { messages: [] }, { model: 'gpt-5', runId: 'admitted', requestId: 'admitted' })
+  assert.equal(discovery, 0)
 })

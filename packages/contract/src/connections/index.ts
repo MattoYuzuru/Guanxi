@@ -97,6 +97,7 @@ export function parseChatModelSelection(value: string): { connectionId: string; 
 }
 export const chatModelsResponse = z.object({ groups: z.array(z.object({
   id: z.string(), label: z.string(), kind: z.enum(['local', 'provider']),
+  discovery: z.object({ state: z.enum(['current', 'stale', 'unknown']), source: z.string(), observedAt: z.string().datetime().nullable(), confidence: z.enum(['medium', 'low', 'unknown']) }).strict().optional(),
   models: z.array(z.object({ selection: z.string(), modelId: z.string(),
     source: z.string(), observedAt: z.string().datetime(), confidence: z.enum(['medium', 'low']),
   }).strict()),

@@ -58,7 +58,7 @@ export interface LocalChatTransport {
 export class Connections {
   private imports: Promise<unknown> = Promise.resolve()
   private closed = false
-  private readonly discovered = new Map<string, { at: string; models: string[]; source: string }>()
+  private readonly discovered = new Map<string, { checked: number; observedAt: string | null; models: string[]; source: string; state: 'current' | 'stale' | 'unknown'; confidence: 'medium' | 'low' | 'unknown' }>()
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
   #vault: Vault
@@ -153,12 +153,10 @@ export class Connections {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
     const fallback = () => ({ models: piModels(connection.provider).map(model => model.id),
-      source: '@earendil-works/pi-ai@1.3.0', observedAt: new Date().toISOString(), confidence: 'medium' as const })
+      source: '@earendil-works/pi-ai@1.3.0', observedAt: new Date().toISOString(), confidence: 'medium' as const, state: 'current' as const })
     if (!connection.baseUrl) return fallback()
     const cached = this.discovered.get(id)
-    if (cached && Date.now() - Date.parse(cached.at) < 60_000) return {
-      models: cached.models, source: cached.source, observedAt: cached.at, confidence: 'medium' as const,
-    }
+    if (cached && Date.now() - cached.checked < 60_000) return cached
     try {
       const result = await this.#vault.inject(accountId, id, false, async key => {
         this.#vault.assertScrubbingReady(accountId)
@@ -173,15 +171,20 @@ export class Connections {
       })
       const at = new Date().toISOString()
       const models = this.scrubber.scrub(result)
-      this.discovered.set(id, { at, models, source: `${connection.baseUrl.replace(/\/+$/, '')}/models` })
-      return { models, source: `${connection.baseUrl.replace(/\/+$/, '')}/models`, observedAt: at, confidence: 'medium' as const }
+      const catalog = { checked: Date.now(), models, source: `${connection.baseUrl.replace(/\/+$/, '')}/models`, observedAt: at, confidence: 'medium' as const, state: 'current' as const }
+      this.discovered.set(id, catalog)
+      return catalog
     } catch {
-      // Cache fallback too: quiet background polling must not hammer a failing endpoint.
-      const catalog = fallback()
-      this.discovered.set(id, { at: catalog.observedAt, models: catalog.models, source: catalog.source })
+      signal?.throwIfAborted()
+      // Retain only observations from this endpoint, never an unrelated public catalog.
+      const catalog = { checked: Date.now(), models: cached?.models ?? [], source: cached?.source ?? new URL(connection.baseUrl).host,
+        observedAt: cached?.observedAt ?? null, confidence: cached?.observedAt ? 'low' as const : 'unknown' as const,
+        state: cached?.observedAt ? 'stale' as const : 'unknown' as const }
+      this.discovered.set(id, catalog)
       return catalog
     }
   }
+
   /** Chat commands cross this boundary before durable input or title persistence. */
   scrubChat<T>(value: T, requireReady = true): T {
     this.assertOpen()
@@ -243,10 +246,15 @@ export class Connections {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const catalogModel = piModels(connection.provider).find(item => item.id === call.model)
-      if (connection.baseUrl) await this.assertChatModel(accountId, id, call.model)
-      const template = catalogModel ?? piModels('openai')[0]
-      const model: Model<Api> | undefined = connection.baseUrl && template
-        ? { ...template, id: call.model, provider: 'openai', api: 'openai-completions', baseUrl: connection.baseUrl,
+      // Admission validates picker membership. An admitted thread can continue during
+      // discovery outages; authorization and vault readiness are still checked below.
+      const model: Model<Api> | undefined = connection.baseUrl
+        ? { id: call.model, name: call.model, provider: 'openai', api: 'openai-completions', baseUrl: connection.baseUrl,
+          reasoning: false, input: ['text'], contextWindow: 0, maxTokens: 0,
+          compat: { supportsDeveloperRole: false, supportsStore: false, supportsReasoningEffort: false,
+            supportsStrictMode: false, supportsLongCacheRetention: false, maxTokensField: 'max_tokens',
+            requiresReasoningContentOnAssistantMessages: false, thinkingFormat: 'openai',
+            sendSessionAffinityHeaders: false, supportsOpenAIGrammarTools: false },
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
         : catalogModel
       if (!model) throw new ConnectionError('connection_not_found', 'Model not found in the provider catalog')

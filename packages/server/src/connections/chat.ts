@@ -18,9 +18,9 @@ export async function providerChatGroups(connections: Connections, signal?: Abor
   if (!snapshot.vault.unlocked) return []
   return Promise.all(snapshot.connections.filter(row => row.kind === 'model_api' && row.secretRef).map(async row => {
     const catalog = await connections.chatModels('local', row.id, signal)
-    return { id: row.id, label: row.name, kind: 'provider' as const, models: catalog.models.map(modelId => ({
+    return { id: row.id, label: row.name, kind: 'provider' as const, discovery: { state: catalog.state, source: catalog.source, observedAt: catalog.observedAt, confidence: catalog.confidence }, models: catalog.models.map(modelId => ({
       selection: chatModelSelection(row.id, modelId), modelId, source: catalog.source,
-      observedAt: catalog.observedAt, confidence: catalog.confidence,
+      observedAt: catalog.observedAt!, confidence: catalog.confidence === 'unknown' ? 'low' as const : catalog.confidence,
     })) }
   }))
 }
