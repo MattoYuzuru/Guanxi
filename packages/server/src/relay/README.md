@@ -384,7 +384,10 @@ executor leases each pin (`relayLimits.pinTtlMs`, 10 minutes by default), renewe
 session's heartbeat (`pinRenewMs`, 60 s, the same idempotent signed pin). A lapsed or lease-less relay pin is deleted on the
 executor's own transaction, lazily before every relay request and by its maintenance timer. A lapsed pin only removes a
 permission, so a home that is alive but partitioned for longer than the TTL simply re-pins with its next heartbeat, if the
-cap allows. Tests: `test/relay/pin-reaping.test.ts` and the pin lines of `test/ms1/rehearsal.test.ts`.
+cap allows. The home cannot see the executor's TTL: keep `pinRenewMs` well under `pinTtlMs`, and note that an executor clock jump
+or suspend longer than the TTL lapses a live run's pin (the run's next call is `runtime_identity_unknown`, the next heartbeat
+re-pins). A journal row for an executor that refuses permanently (another model, no relay runtime, no longer trusted) is retried
+every pass and never given up; the executor's lease still frees its pin. Tests: `test/relay/pin-reaping.test.ts` and the pin lines of `test/ms1/rehearsal.test.ts`.
 
 **Asynchronous exact count.** The R2-op `Atomics.wait` bridge is not used over F2: the signing key
 and transport live on the main thread, and blocking the home event loop for a network round trip

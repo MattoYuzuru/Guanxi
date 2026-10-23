@@ -347,10 +347,12 @@ export class Federation {
    * lease predates the lease and can only be a leaked one: a relay run does not survive its node. */
   sweepRelayPins(): number {
     const db = this.#options.db, now = this.now()
-    return this.transaction(() => {
-      const removed = Number(db.prepare(`DELETE FROM federation_streams WHERE id LIKE 'relay:%'
+    const lapsed = `FROM federation_streams WHERE id LIKE 'relay:%'
         AND NOT EXISTS (SELECT 1 FROM federation_replicas r WHERE r.stream_id=federation_streams.id)
-        AND NOT EXISTS (SELECT 1 FROM federation_relay_pin_leases l WHERE l.stream_id=federation_streams.id AND l.expires_at>?)`).run(now).changes)
+        AND NOT EXISTS (SELECT 1 FROM federation_relay_pin_leases l WHERE l.stream_id=federation_streams.id AND l.expires_at>?)`
+    if (!db.prepare(`SELECT 1 ${lapsed} LIMIT 1`).get(now)) return 0     // the common case takes no write lock
+    return this.transaction(() => {
+      const removed = Number(db.prepare(`DELETE ${lapsed}`).run(now).changes)
       if (removed) db.exec('DELETE FROM federation_relay_pin_leases WHERE stream_id NOT IN (SELECT id FROM federation_streams)')
       return removed
     })

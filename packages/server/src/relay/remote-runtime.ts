@@ -94,6 +94,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
   private pending: { runId: string; sessionId: string; epoch: number } | undefined
   private pinSent = false
   private renewal: ReturnType<typeof setInterval> | undefined
+  private renewing: Promise<void> | undefined
   private closed = false
   private identity = ''
   private proven = ''
@@ -159,8 +160,11 @@ class RemoteRelaySession implements RelayRuntimeSession {
   /** Heartbeat: asking again renews the executor's lease on the pin (or restores a lapsed one while the cap allows). A missed
    * beat is retried at the next one; the executor's lease is sized for several. */
   private async renew(): Promise<void> {
-    if (this.closed || !this.pinSent || !this.pending) return
-    try { await abortableRead(this.channel.relayPin(this.pinRequest('pin')), AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)])) } catch { /* see above */ }
+    if (this.closed || !this.pinSent || !this.pending || this.renewing) return
+    const beat = abortableRead(this.channel.relayPin(this.pinRequest('pin')), AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)]))
+      .then(() => undefined, () => undefined /* see above */)
+    this.renewing = beat
+    try { await beat } finally { this.renewing = undefined }
   }
   /** Best effort and bounded. An unreachable executor keeps the pin, but the home's journal row stays too: it is released by the
    * home's reconciliation when the executor is back, or by the executor's own lease. */
@@ -169,6 +173,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
     this.pinSent = false
     clearInterval(this.renewal); this.renewal = undefined
     const { runId } = this.pending
+    // A heartbeat already on the wire must land before the unpin, or it could re-create the pin after its release.
+    await this.renewing
     try {
       await abortableRead(this.channel.relayPin(this.pinRequest('unpin')), AbortSignal.timeout(5000))
       this.options.federation.settleRelayPin(runId)
