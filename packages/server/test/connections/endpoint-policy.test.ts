@@ -52,3 +52,15 @@ test('trusted dotenv records owner opt-in; HTTP cannot set it', async () => {
   assert.equal(parseProviderKeys(text)[0]!.allowPrivate, false)
   assert.equal(parseProviderKeys(text + '\nGUANXI_PROVIDER_ALLOW_PRIVATE=1')[0]!.allowPrivate, true)
 })
+
+test('LAN HTTP needs owner consent and a mixed public/private DNS set is refused', async () => {
+  const lan = async () => [{ address: '192.168.1.2', family: 4 }]
+  let calls = 0
+  const transport: typeof fetch = async () => { calls++; return Response.json({}) }
+  await assert.rejects(endpointFetch('http://provider.invalid/v1/models', {}, false, transport, lan))
+  await endpointFetch('http://provider.invalid/v1/models', {}, true, transport, lan)
+  assert.equal(calls, 1)
+  await assert.rejects(endpointFetch('https://provider.invalid/v1/models', {}, false, transport,
+    async () => [{ address: '8.8.8.8', family: 4 }, { address: '10.0.0.1', family: 4 }]))
+  assert.equal(calls, 1)
+})
