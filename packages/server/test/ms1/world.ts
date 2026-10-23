@@ -166,7 +166,9 @@ export class World {
           ...(request.method === 'GET' ? {} : { body: await request.text() }), redirect: 'error' })
       } })
     // As in the F2-d fixture, the policy is completed once the node exists: its connections need the node's scrubber.
-    const policy: DispatchPolicy = { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => toHome }
+    // F2-reap: the simulated clock jumps 75 minutes per gap, which no real-time heartbeat can follow, so the executor's pin lease is
+    // long here; the lease itself is proven in test/relay/pin-reaping.test.ts. What the rehearsal proves is the home's reconciliation.
+    const policy: DispatchPolicy = { ttlMs: 3000, safetyMs: 100, maxModelAgeMs: 5000, leaseClock: clock, channel: () => toHome, relayLimits: { pinTtlMs: 7 * 24 * HOUR } }
     target = this.target = new SimNode(this.targetKeys, ':memory:', { attempts: { governor, maxReservationMs: 5000, leaseClock: clock }, dispatch: policy })
     target.time = START
     target.federation.trust(this.homeKeys.identity)
