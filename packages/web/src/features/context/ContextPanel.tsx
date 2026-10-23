@@ -52,7 +52,7 @@ export function ContextPanel({
   }
 
   if (context.providerContext) return (
-    <div className="p-3 text-xs text-secondary">
+    <div className="p-3 text-12 text-secondary">
       <p>{context.allocatedTokens === null ? translate('context.provider.unknown') : translate('context.provider.limit', { tokens: formatTokens(context.allocatedTokens ?? 0) })}</p>
       <p>{translate('context.provider.source', { source: context.providerContext.source, time: context.providerContext.observedAt ?? translate('inspector.unknown'), confidence: translate(`connections.confidence.${context.providerContext.confidence}`) })}</p>
       <p>{translate('context.provider.compaction')}</p>
