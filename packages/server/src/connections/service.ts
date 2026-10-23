@@ -4,7 +4,7 @@ import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { AssistantMessage, Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
-import type { Connection, ConnectionSnapshot, CreateConnection } from '@guanxi/contract'
+import { MAX_DISCOVERED_MODELS, providerModelIdSchema, type Connection, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
 import type { OllamaAdapter } from '../ollama/plugin.ts'
 import type { OllamaChatRequest, OllamaChatChunk } from '../ollama/types.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
@@ -15,6 +15,7 @@ import { assertApiKey, piModels, piTransport, type PiTransport } from './pi.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { modelsDevFacts } from './metadata.ts'
 import type { ImportedProvider } from './dotenv.ts'
+import { readDiscovery } from './discovery.ts'
 import { SafeTextStream } from './safe-stream.ts'
 import type { Api, Model } from '@earendil-works/pi-ai'
 
@@ -169,8 +170,8 @@ export class Connections {
           signal: AbortSignal.any([this.lifetime, AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
         }, connection.allowPrivate ?? false, this.transport, this.resolveEndpoint)
         if (!response.ok) throw new Error('Model discovery failed')
-        const body = await response.json() as { data?: { id?: unknown }[] }
-        if (!Array.isArray(body.data) || !body.data.length || body.data.some(model => typeof model.id !== 'string' || !model.id.length)) throw new Error('Invalid model list')
+        const body = await readDiscovery(response) as { data?: { id?: unknown }[] }
+        if (!Array.isArray(body.data) || !body.data.length || body.data.length > MAX_DISCOVERED_MODELS || body.data.some(model => !providerModelIdSchema.safeParse(model.id).success)) throw new Error('Invalid model list')
         return [...new Set(body.data.map(model => model.id as string))]
       })
       const at = new Date().toISOString()

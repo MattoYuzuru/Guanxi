@@ -542,3 +542,20 @@ test('provider context uses catalog evidence or unknown, never local numCtx, and
     }
   }
 })
+
+test('discovery refuses oversized bodies, lists and IDs and contract rejects oversized picker payloads', async t => {
+  const bodies = [
+    ' '.repeat(1_048_577) + JSON.stringify({ data: [{ id: 'fixture' }] }),
+    JSON.stringify({ data: Array.from({ length: 1025 }, (_, i) => ({ id: `model-${i}` })) }),
+    JSON.stringify({ data: [{ id: 'x'.repeat(257) }] }),
+  ]
+  for (const body of bodies) {
+    const f = await setup(t, undefined, async () => new Response(body))
+    const id = await imported(f.service, canary(), 'https://api.example.invalid/v1')
+    const catalog = await f.service.chatModels('local', id)
+    assert.deepEqual(catalog.models, []); assert.equal(catalog.state, 'unknown')
+  }
+  const model = { selection: 'fixture', modelId: 'x'.repeat(257), source: 'fixture', observedAt: new Date().toISOString(), confidence: 'medium' }
+  assert.equal(chatModelsResponse.safeParse({ groups: [{ id: 'fixture', label: 'fixture', kind: 'provider', models: [model] }] }).success, false)
+  assert.equal(chatModelsResponse.safeParse({ groups: [{ id: 'fixture', label: 'fixture', kind: 'provider', models: Array(1025).fill({ ...model, modelId: 'fixture' }) }] }).success, false)
+})
