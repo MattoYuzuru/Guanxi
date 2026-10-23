@@ -41,18 +41,19 @@ each turns a named test red.
 
 New / envelope: 11 new unit tests + 1 flipped rehearsal assertion block / `npm run test` full server+cli+web suite.
 
-## Gates (head `a231b36c`, clean tree)
+## Gates (final head, clean tree; round 2 included)
 
 | Gate | Result | Receipt |
 | --- | --- | --- |
-| `npm run typecheck` | pass | direct run (not locked) |
-| `npm run lint:md`, `npm run check:licenses` | pass (0 problems; 675 packages) | direct run |
-| `npm run test` (heavy lock) | pass, 0 fail, 0 skipped | `check-bdg7t57t` |
-| `npm run build` (heavy lock) | pass | `check-oj_x_20q` |
-| rehearsal alone (20 tests, Colima present) | pass | `check-c19qzatu` (earlier head, dirty tree) |
+| `npm run typecheck`, `lint:md`, `check:licenses` | pass (direct runs) | none |
+| pin-reaping (21 tests) + rehearsal (19 tests), heavy lock | 40/40 pass | `check-ylwdk7sm` |
+| `npm run test`, heavy lock | pass, 0 fail | `check-5o7a9lda` |
+| `npm run build`, heavy lock | pass | `check-xeov88d4` |
 
-An earlier full run (`check-ax2w20iy`) failed one test, `remote-dispatch.test.ts` "fresh remote binding": it JSON-stringifies the Federation
-object and my timer handles were an enumerable field; fixed by a `#private` field, then the full run above is green.
+One earlier full run (`check-ozcb3fx4`) failed `operational-relay.test.ts` "stop during checkout allocation" (`relay_stopped` instead of
+`cleanup_unconfirmed`); it passed 3/3 alone and in the later full run, and touches no pin code (load-sensitive timing, not investigated).
+A first round-2 attempt failed the rehearsal at world setup because the boot grace read the lease clock inside the Federation
+constructor (the harness's clock does not exist yet); the grace now runs lazily on the first relay request or tick.
 
 ## Review round 2 (Opus), all fixed in separate commits with a test that failed before
 
