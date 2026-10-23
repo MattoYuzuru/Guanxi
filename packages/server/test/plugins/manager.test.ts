@@ -619,6 +619,27 @@ test('recover removes staging, stale temporary state, and unreferenced plugin di
   assert.deepEqual(fresh.list().map(entry => entry.version), ['1.0.0'])
 })
 
+test('recover drops enabled ids that have no lock entry', async t => {
+  const base = await tempBase(t)
+  const pluginsDir = join(base, 'plugins')
+  const source = await writePlugin(join(base, 'source'))
+  await manager(pluginsDir).install(source)
+  const pluginsPath = join(pluginsDir, 'plugins.json')
+  const state = JSON.parse(await readFile(pluginsPath, 'utf8')) as { version: number; enabled: string[] }
+  await writeFile(
+    pluginsPath,
+    `${JSON.stringify({ ...state, enabled: [...state.enabled, 'guanxi.ghost'] }, null, 2)}\n`,
+  )
+
+  const report = manager(pluginsDir).recover()
+  assert.deepEqual(report.removedEnabledIds, ['guanxi.ghost'])
+  assert.deepEqual(JSON.parse(await readFile(pluginsPath, 'utf8')), {
+    version: 1,
+    enabled: [DEFAULT_ID],
+  })
+  assert.deepEqual(manager(pluginsDir).list().map(entry => entry.id), [DEFAULT_ID])
+})
+
 test('recovery skips while the exclusive lock is held and keeps the in-flight directory', async t => {
   const base = await tempBase(t)
   const pluginsDir = join(base, 'plugins')

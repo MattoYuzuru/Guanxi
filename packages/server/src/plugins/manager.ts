@@ -174,6 +174,8 @@ export interface RecoveryReport {
   readonly removedStaging: boolean
   /** Unreferenced `<id>@<version>` directory names, sorted. */
   readonly removedDirectories: readonly string[]
+  /** Enabled ids dropped because the lock has no entry, sorted. */
+  readonly removedEnabledIds: readonly string[]
   /** Stale state temporary files removed from `pluginsDir`, sorted. */
   readonly removedTemporaryFiles: readonly string[]
 }
@@ -280,6 +282,7 @@ const LOCK_STALE_MS = 30 * 60 * 1000
 const EMPTY_RECOVERY: RecoveryReport = {
   removedStaging: false,
   removedDirectories: [],
+  removedEnabledIds: [],
   removedTemporaryFiles: [],
 }
 const BUSY_RECOVERY: RecoveryReport = { ...EMPTY_RECOVERY, skipped: 'plugins_busy' }
@@ -709,6 +712,49 @@ async function syncDirectory(directory: string): Promise<void> {
   }
 }
 
+function syncDirectorySync(directory: string): void {
+  let handle: number | undefined
+  try {
+    handle = openSync(directory, constants.O_RDONLY)
+    fsyncSync(handle)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code !== 'EINVAL' && code !== 'ENOTSUP' && code !== 'EISDIR' && code !== 'EBADF' && code !== 'EPERM') {
+      throw error
+    }
+  } finally {
+    if (handle !== undefined) closeSync(handle)
+  }
+}
+
+/** Synchronous temp + fsync + rename used by recovery, which holds the lock. */
+function writeAtomicSync(path: string, data: string | Buffer): void {
+  const directory = dirname(path)
+  const temporary = join(directory, `.${basename(path)}.${randomBytes(8).toString('hex')}.tmp`)
+  try {
+    const handle = openSync(
+      temporary,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+      0o600,
+    )
+    try {
+      writeFileSync(handle, data)
+      fsyncSync(handle)
+    } finally {
+      closeSync(handle)
+    }
+    renameSync(temporary, path)
+    syncDirectorySync(directory)
+  } catch (error) {
+    try {
+      unlinkSync(temporary)
+    } catch {
+      // The temporary file may never have been created.
+    }
+    throw error
+  }
+}
+
 /**
  * Minimal `engines.guanxi` range check. Supported forms: `x.y.z`, `^x.y.z`,
  * `~x.y.z`, and whitespace-separated conjunctions of `>=x.y.z` and `<x.y.z`.
@@ -1079,6 +1125,21 @@ export class PluginManager {
     const lock = this.readOptionalSync(this.lockPath)
     const locked = lock === null ? new Map<string, LockedPlugin>() : parseLockFile(lock.toString('utf8'), this.lockPath)
     const referenced = new Set([...locked.values()].map(entry => entry.directory))
+
+    // An enabled id without a lock entry is a half-written fresh install, not
+    // an installed plugin; drop it so the two state files agree.
+    const pluginsBytes = this.readOptionalSync(this.pluginsPath)
+    const removedEnabledIds: string[] = []
+    if (pluginsBytes !== null) {
+      const enabled = parsePluginsFile(pluginsBytes.toString('utf8'), this.pluginsPath)
+      for (const id of enabled) if (!locked.has(id)) removedEnabledIds.push(id)
+      if (removedEnabledIds.length > 0) {
+        removedEnabledIds.sort(compareIds)
+        const kept = new Set([...enabled].filter(id => locked.has(id)))
+        writeAtomicSync(this.pluginsPath, serializePlugins(kept))
+      }
+    }
+
     const removedDirectories: string[] = []
     const removedTemporaryFiles: string[] = []
     let removedStaging = false
@@ -1104,7 +1165,7 @@ export class PluginManager {
         removedDirectories.push(name)
       }
     }
-    return { removedStaging, removedDirectories, removedTemporaryFiles }
+    return { removedStaging, removedDirectories, removedEnabledIds, removedTemporaryFiles }
   }
 
   private readOptionalSync(path: string): Buffer | null {
