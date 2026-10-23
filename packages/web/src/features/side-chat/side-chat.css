@@ -1,0 +1,217 @@
+/* W4 side chat (D-135): a panel with a one-line description, flat turns and the ask box pinned
+   at the bottom. Tokens only. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.side-chat {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  @apply h-full;
+  background-color: var(--color-background-secondary);
+}
+
+.side-chat-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-width: 0;
+  padding: var(--spacing-8) var(--spacing-8) var(--spacing-8) var(--spacing-16);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.side-chat-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-heading);
+  white-space: nowrap;
+}
+
+.side-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
+.side-chat-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.side-chat-about p {
+  margin: 0;
+}
+
+.side-chat-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  min-height: 0;
+  padding: var(--spacing-12) var(--spacing-16);
+  overflow-y: auto;
+}
+
+.side-chat-description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.side-chat-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+.side-chat-turns-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
+.side-chat-field-label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.side-chat-turns-input {
+  width: var(--spacing-64);
+}
+
+.side-chat-error-text {
+  margin: 0;
+  color: var(--color-text-danger);
+  font-size: var(--font-size-12);
+}
+
+.side-chat-log {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.side-chat-empty {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-13);
+}
+
+.side-chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+  padding-block: var(--spacing-12);
+}
+
+.side-chat-turn + .side-chat-turn {
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.side-chat-turn:first-child {
+  padding-top: 0;
+}
+
+.side-chat-role {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.side-chat-text {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-14);
+  overflow-wrap: anywhere;
+}
+
+.side-chat-prompt {
+  white-space: pre-wrap;
+}
+
+.side-chat-facts {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+}
+
+.side-chat-turn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+
+.side-chat-sent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  color: var(--color-text-success);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.side-chat-status {
+  min-height: var(--spacing-20);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+}
+
+.side-chat-status:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.side-chat-ask {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  padding: var(--spacing-12) var(--spacing-16) var(--spacing-16);
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.side-chat-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+}
+
+.side-chat-unsaved {
+  margin: 0 auto 0 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+}
+
+.side-chat-footer {
+  justify-content: flex-start;
+}
+
+.side-chat-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  padding: var(--spacing-8) var(--spacing-12);
+  border-left: var(--spacing-2) solid var(--color-border-danger);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-danger-subtle);
+  font-size: var(--font-size-13);
+}
+
+.side-chat-confirm p {
+  margin: 0;
+}
