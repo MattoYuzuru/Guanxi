@@ -241,9 +241,10 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
     `auth status` must report `authMethod: "api_key"` with `apiKeySource: "ANTHROPIC_API_KEY"` or the run refuses
     `claude_api_key_not_in_effect`. A subscription token is refused as an API key. The `billing` fact reads `api_usage`.
   - **Both modes.** The credential is in the CLI's environment only: not an argument, a file, an event or a log. K5 sets
-    `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`: with the real CLI 2.1.287, offline, an MCP stdio server it starts no longer sees the credential
-    (nor `CLAUDE_CONFIG_DIR`), and the bridge 0.94.0 still initialises and opens a session. **Open risk:** the same variable is meant to
-    cover the CLI's Bash tool and hooks, but only the MCP case was observed, and no real turn was run; K5 also denies every permission
+    `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`: with the real CLI 2.1.287, offline, an MCP stdio server it starts no longer sees
+    `ANTHROPIC_API_KEY` (nor `CLAUDE_CONFIG_DIR`), and the bridge 0.94.0 still initialises and opens a session. For
+    `CLAUDE_CODE_OAUTH_TOKEN` the same check showed the token is not passed to an MCP stdio server with the variable or without it. **Open
+    risk:** the CLI's Bash tool and hooks were not exercised in either mode (the variable is meant to cover them), and no real turn was run; K5 also denies every permission
     request. The CLI's own config directory is Guanxi's and persistent (a resumed lead needs its saved sessions); a settings file in it or
     in `work/.claude` (user, project or local scope) refuses the launch (`claude_settings_present`, existence checked only), and the
     endpoint and permission mode are pinned in the bridge's programmatic settings tier (`ANTHROPIC_BASE_URL`, `defaultMode: default`).

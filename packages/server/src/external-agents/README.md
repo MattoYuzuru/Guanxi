@@ -176,8 +176,9 @@ without a secret is the subscription *login* path above. Two vault modes need no
   `token_login`, `billing = subscription`.
 
 In both: the environment is built from nothing, so no ambient key or token passes; the credential is in no argument, file, event or log;
-`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` keeps it out of the CLI's MCP stdio subprocesses (observed offline with CLI 2.1.287; Bash tool and
-hooks not observed, so this is an open risk); a vendor settings file in the config directory or in `work/.claude` refuses the launch
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` keeps `ANTHROPIC_API_KEY` out of the CLI's MCP stdio subprocesses (observed offline with CLI 2.1.287). For
+`CLAUDE_CODE_OAUTH_TOKEN` the same observation showed the CLI does not pass it to an MCP stdio server with or without the variable. Bash tool
+and hooks were not observed in either mode, so that is an open risk; a vendor settings file in the config directory or in `work/.claude` refuses the launch
 (`claude_settings_present`, existence only) and the endpoint and permission mode are pinned in the bridge's programmatic settings tier.
 The persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); Guanxi never writes the
 credential there, and switching mode switches directory. Another author is refused (`host_tools_owner_only` for the API key, K3's `cannot

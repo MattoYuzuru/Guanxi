@@ -32,7 +32,8 @@ Plan: [K5-apikey.plan](K5-apikey.plan.md) · Decisions: D-211 and D-212 in the
 - `claude -p` run offline with a fake key and with a fake token: the credential's last 20 characters appear in no file of the
   config/home directory (no `customApiKeyResponses` entry). No turn completed offline, so a full stream-json turn is unobserved.
 - `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`: an MCP stdio server started by `claude mcp list` no longer sees `ANTHROPIC_API_KEY` or
-  `CLAUDE_CONFIG_DIR` (without it, it sees both). The bridge still initialises and opens a session offline with it. Bash tool and hooks
+  `CLAUDE_CONFIG_DIR` (without it, it sees both). With a fake `CLAUDE_CODE_OAUTH_TOKEN` the server did not see the token either way
+  (the CLI does not pass it to MCP servers by default). The bridge still initialises and opens a session offline with it. Bash tool and hooks
   were not exercised.
 - The bridge offers `effort` (`select`) and applies programmatic `_meta.claudeCode.options.settings` as its highest settings tier.
 
