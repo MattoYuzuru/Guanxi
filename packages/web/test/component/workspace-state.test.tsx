@@ -65,7 +65,7 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     expect(screen.getByTestId('adapter-boundary').getAttribute('data-account')).toBe('second')
   })
 
-  it('retains one busy Retry during a pending load and replaces its observed record only on a new failure', async () => {
+  it('recovers a failed load by itself with no Retry, keeps one alert and replaces its observed record only on a new failure', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-22T12:00:00.000Z'))
     let rejectRetry!: (error: Error) => void
@@ -74,17 +74,18 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     render(<Workspace><p>Chat content</p></Workspace>)
     const error = await screen.findByRole('alert')
     const first = error.querySelector('time')!.getAttribute('datetime')
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    const busy = await screen.findByRole('button', { name: 'Retrying…' })
-    expect(busy.getAttribute('aria-busy')).toBe('true')
-    fireEvent.click(busy)
-    expect(api.layoutContext).toHaveBeenCalledTimes(2)
+    // D-203: no Retry button; regaining focus (or the backoff timer) reads again.
+    expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(api.layoutContext).toHaveBeenCalledTimes(2))
+    // The pending read keeps the first record and shows no second alert.
     expect(error.querySelector('time')!.getAttribute('datetime')).toBe(first)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     vi.setSystemTime(new Date('2026-10-22T13:00:00.000Z'))
     await act(async () => { rejectRetry(new Error('private-second-sentinel')); await Promise.resolve() })
-    await screen.findByRole('button', { name: 'Retry' })
+    await waitFor(() => expect(screen.getByRole('alert').querySelector('time')!.getAttribute('datetime')).toBe('2026-10-22T13:00:00.000Z'))
     expect(screen.getAllByRole('alert')).toHaveLength(1)
-    expect(error.querySelector('time')!.getAttribute('datetime')).toBe('2026-10-22T13:00:00.000Z')
-    expect(error.textContent).not.toContain('private-')
+    expect(screen.getByRole('alert').textContent).not.toContain('private-')
+    expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
   })
 })

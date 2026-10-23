@@ -132,8 +132,6 @@
         "--font-text-size",
         "--layer-sticky",
         "--layout-container-2xs",
-        "--material-backdrop",
-        "--material-background",
         "--motion-duration-fast",
         "--motion-easing-standard",
         "--spacing-2",
@@ -144,7 +142,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:440f0de391c37bee2d1bf1e29f732cdfac80d1f399b8517dba258287c8d01c49",
+      "sourceHash": "sha256:39400043da564aa53f77f548921d07611e385374cd704f8e733764702681378e",
       "snapshotHashes": {
         "default-dark": "sha256:ec62c0cf85a5ec5f0cba22074b014ca9318dc6c8e1fa60b3c18e818ea98a9303",
         "default-light": "sha256:7f09f180a4b7b5159b9db12b97a1b570834699c96128cd2fd354184154197515",

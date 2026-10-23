@@ -98,7 +98,7 @@ test('Russian phone search exposes failure/retry and cancellation without claimi
   await expect(page.getByRole('button', { name: 'Open commands' })).toBeFocused()
 })
 
-test('retry after a failed first-page refresh replaces stale rows before scanning only the new tail', async ({ page }) => {
+test('a failed first-page re-read (here after a navigation) is recovered by Search all, which replaces stale rows before scanning only the new tail', async ({ page }) => {
   const cursors: (string | null)[] = []
   let firstPages = 0
   const item = (id: number, title: string) => ({ ...session(id), title })
@@ -117,9 +117,14 @@ test('retry after a failed first-page refresh replaces stale rows before scannin
   await trigger.click()
   const input = page.getByRole('combobox', { name: 'Search commands' })
   await expect(page.getByRole('option', { name: 'Session: Old head', exact: true })).toHaveCount(1)
-  await input.fill('Refresh sessions')
-  await page.keyboard.press('Enter')
+  // D-203: there is no Refresh command; a navigation re-reads the first page (and here it fails).
+  await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.evaluate(() => {
+    history.pushState(null, '', `${location.pathname}${location.search}&moved=1`)
+    dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await expect.poll(() => firstPages).toBe(2)
   await trigger.click()
   await expect(page.getByText('Could not refresh sessions. Searching 1 previously loaded sessions; the list recovers by itself.')).toBeVisible()
   await expect(page.getByText(/Searching all \d+ sessions available/)).toHaveCount(0)

@@ -1,6 +1,6 @@
 # Design principles
 
-**Status:** accepted · **Updated:** 2026-10-20
+**Status:** accepted · **Updated:** 2026-10-23 (principle 9 follows D-204; 17 added for D-203)
 
 Every screen, component and review is checked against these. Each principle names how a
 reviewer can tell it is broken. Evidence: [01 harness UI patterns](../research/2026-10-20-design/01-harness-ui-patterns.md) §6 and the owner decisions.
@@ -32,9 +32,10 @@ reviewer can tell it is broken. Evidence: [01 harness UI patterns](../research/2
    out; plugins add blocks but never rearrange; the core navigation always exists (D-131).
    *Broken when* a plugin moves another block or the user cannot reach New, Projects, Models or
    Settings.
-9. **Two modes, one product.** Developer mode shows the machinery; Visual mode shows results.
-   Switching never loses work or the other mode's layout (D-132).
-   *Broken when* a Visual-mode screen shows raw code by default.
+9. **One interface, visual from the start** (D-204 supersedes D-132's two modes). Density, sidebar
+   placement, motion and the graphics tier are presentation preferences in the chrome's
+   customisation popover; nothing in the product depends on a mode.
+   *Broken when* a screen asks the user to pick a mode, or hides a capability behind one.
 10. **Queue and steer are distinct.** Enter queues; "send now" steers at the next tool boundary;
     the queue is visible and editable.
 11. **Review is a conversation.** Line comments on a diff are batched and sent back as one
@@ -54,3 +55,9 @@ reviewer can tell it is broken. Evidence: [01 harness UI patterns](../research/2
     keyboard paths including moving blocks without dragging, visible focus, names on every
     control, live regions for streaming and status, 24 px minimum targets, Reduce Motion,
     Reduce Transparency, Increase Contrast and forced colours honoured.
+17. **Always current, never flickering** (D-203). Views update by push or quiet background refresh;
+    there are no Retry or Refresh buttons and no "updated N s ago" captions for normal data. A
+    failed read keeps the last data, says what happened and recovers by itself; a failed user
+    action keeps the user's own action, named by its verb.
+    *Broken when* a view flashes a loading state during a refresh, a number re-renders without a
+    change, or a Retry button appears.

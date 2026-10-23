@@ -8,9 +8,11 @@ import { DEFAULT_ASYNC_RETRY, retryDelay } from './useAsync.ts'
  * at once when the window regains focus or the browser comes back online. Callers keep their
  * error text; there is no Retry button.
  */
-export function useAutoRecover(failure: unknown, retry: () => void): void {
+export function useAutoRecover(failure: unknown, retry: () => void, policy: { baseMs: number; maxMs: number } = DEFAULT_ASYNC_RETRY): void {
   const retryRef = useRef(retry)
   retryRef.current = retry
+  const policyRef = useRef(policy)
+  policyRef.current = policy
   const failures = useRef(0)
   const failed = Boolean(failure)
   useEffect(() => {
@@ -20,7 +22,7 @@ export function useAutoRecover(failure: unknown, retry: () => void): void {
       clearTimeout(timer)
       if (document.visibilityState === 'hidden') return
       failures.current += 1
-      timer = setTimeout(run, retryDelay(failures.current, DEFAULT_ASYNC_RETRY))
+      timer = setTimeout(run, retryDelay(failures.current, policyRef.current))
     }
     const run = () => { clearTimeout(timer); retryRef.current(); schedule() }
     const visible = () => { if (document.visibilityState === 'hidden') clearTimeout(timer); else run() }

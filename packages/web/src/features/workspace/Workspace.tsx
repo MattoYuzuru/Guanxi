@@ -11,6 +11,7 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { builtInLayout } from './defaults.ts'
 import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND } from './commands.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { clearWorkspaceShellState, publishWorkspaceShellState } from './shell-state.ts'
 import { layoutSaveScope, layoutSaveScopes, layoutScopeForSave, type LayoutSaveScope } from './scopes.ts'
 import { paneRegistry } from './renderers.ts'
@@ -18,6 +19,8 @@ import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
 import { workspaceFailure, workspaceStep, type WorkspaceFailure } from './failure.ts'
 import './workspace.css'
+
+const WORKSPACE_RECOVERY = { baseMs: 10_000, maxMs: 60_000 } as const
 
 type SaveAttempt = { document: LayoutDocument; geometry: LayoutGeometry; basedOn?: LayoutClock; result?: Awaited<ReturnType<typeof api.saveLayout>>; applied?: boolean }
 type ActivationAttempt = { remembered?: boolean; response?: Awaited<ReturnType<typeof api.saveLayout>>; next?: LayoutDocument; applied?: boolean }
@@ -136,9 +139,12 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setLoading(false)
     }).catch(error => { if (!controller.signal.aborted) { setLoadError(workspaceFailure(error, 'load-workspace')); setLoading(false) } })
     return () => loadController.current?.abort()
-    // Initial hydration and explicit retry only; mode changes use the loaded documents.
+    // Initial hydration and automatic recovery only (D-203).
   }, [account, project, device, deviceClass])
   useEffect(load, [load])
+  // Layout reads fail mostly while the node restarts: the first automatic re-read waits 10 s so a
+  // failure is readable (and copyable) before it is replaced; focus or reconnect re-reads at once.
+  useAutoRecover(loadError, () => { load() }, WORKSPACE_RECOVERY)
 
   function snapshot(): LayoutDocument {
     const current = latestDocument.current!
@@ -386,9 +392,13 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       : failure.operation === 'snapshot-layout' || failure.operation === 'resolve-layout' || failure.operation === 'prepare-layout-save' ? 'workspaceLayout.localError'
         : failure.operation === 'kernel-ready' ? 'workspaceLayout.kernelError'
           : failure.operation === 'save-layout' || failure.operation === 'activate-layout' || failure.operation === 'save-workspace' ? 'workspaceLayout.saveError' : 'workspaceLayout.error')
-  const errorState = (failure: WorkspaceFailure, retry: () => void, busy = false) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure}
-    action={{ label: translate('workspaceLayout.retry'), onClick: retry, busy, loadingLabel: translate('workspaceLayout.retrying') }} />
-  if (!doc) return <UiLocaleProvider locale={locale}>{loadError ? errorState(loadError, load, loading)
+  // D-203: a failed read recovers by itself (useAutoRecover above) and shows no button; a failed
+  // save or switch keeps the user's own action, named by its verb, never "Retry".
+  const loadErrorState = (failure: WorkspaceFailure) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure} />
+  const actionErrorState = (failure: WorkspaceFailure, repeat: () => void, busy = false) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure}
+    action={{ label: translate(failure.operation === 'activate-layout' || failure.operation === 'activate-layout-geometry' ? 'workspaceLayout.switchAgain' : 'workspaceLayout.save'),
+      onClick: repeat, busy, loadingLabel: translate('workspaceLayout.saving') }} />
+  if (!doc) return <UiLocaleProvider locale={locale}>{loadError ? loadErrorState(loadError)
     : <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} loading />}</UiLocaleProvider>
   for (const id of Object.keys(doc.blocks)) if (!paneHosts.current.has(id)) { const host = document.createElement('div'); host.className = 'workspace-retained-pane'; paneHosts.current.set(id, host) }
   for (const host of paneHosts.current.values()) { host.dataset.theme = theme; host.dataset.density = doc.density; host.lang = locale }
@@ -427,8 +437,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       { label: translate('workspaceLayout.move'), onClick: () => openMove(), disabled: phone },
       { label: translate('workspaceLayout.reset'), onClick: reset },
     ]} />
-    {loadError && errorState(loadError, load, loading)}
-    {saveError && errorState(saveError, () => retryOperation.current(), saving || switching)}
+    {loadError && loadErrorState(loadError)}
+    {saveError && actionErrorState(saveError, () => retryOperation.current(), saving || switching)}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
     {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspaceLayout.popoutRestore')}</p>}
     <div className="workspace-content" inert={loading || saving || switching || undefined}>

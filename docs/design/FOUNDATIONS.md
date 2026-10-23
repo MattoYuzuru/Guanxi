@@ -181,9 +181,10 @@ data-only plugin).
 | Ink seam | 1 px bottom rule, ink at 10% | black at 32% |
 | Grain | static 128 px fractal-noise tile, 5% opacity, soft-light blend (tunable 4–6%) | 6% (tunable 5–7%) |
 
-- **Where:** sidebar, title strip, dock lanes above the composer, composer, command palette,
-  menus, popovers, toasts. Never on reading surfaces. At most three glass surfaces visible; no
-  glass on glass.
+- **Where:** command palette, menus, popovers, tooltips' neighbours, toasts and dialogs (D-200).
+  The sidebar and the status strip sit directly on the chrome tone; panes and the composer are
+  opaque (they hold reading text). In Max graphics the chrome shows the shader instead
+  (§8). Never on reading surfaces. At most three glass surfaces visible; no glass on glass.
 - **Levels** in Settings → Appearance: **Glass** (default), **Tinted**, **Solid**. Values per
   level (the Tinted values are the ones in the owner-reviewed preview):
 

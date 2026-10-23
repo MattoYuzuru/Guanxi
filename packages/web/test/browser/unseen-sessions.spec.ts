@@ -30,7 +30,7 @@ test('marks exactly the finished sessions not yet opened, clears one on open, an
   const fixture = createSessionFeaturesFixture(world())
   await open(page, fixture)
   await expect(marked(page)).toHaveCount(2)
-  await expect(page.getByTestId('shell-unseen-count')).toHaveText('Finished, not yet opened: 2')
+  await expect(page.getByTestId('shell-unseen-count').locator('.sr-only')).toHaveText('Finished, not yet opened: 2')
   for (const id of ['s1', 's2']) await expect(rowMarks(page, id)).toHaveCount(1)
   await expect(rowMarks(page, 's3')).toHaveCount(0)
 
@@ -38,7 +38,7 @@ test('marks exactly the finished sessions not yet opened, clears one on open, an
   await expect(page).toHaveURL(/\/agent\/s1$/u)
   await expect(page.getByText('Fixture response', { exact: true })).toHaveCount(1)
   await expect(marked(page)).toHaveCount(1)
-  await expect(page.getByTestId('shell-unseen-count')).toHaveText('Finished, not yet opened: 1')
+  await expect(page.getByTestId('shell-unseen-count').locator('.sr-only')).toHaveText('Finished, not yet opened: 1')
   await expect(rowMarks(page, 's2')).toHaveCount(1)
 
   await page.reload()
@@ -66,9 +66,11 @@ test('a session that finishes while elsewhere is flagged by the next read; one w
   await expect(marked(page)).toHaveCount(1)
   // s1 finishes again later: its head moved beyond what the user last saw, so it is flagged again.
   fixture.sessions = [nativeSession('s1', 'Title s1', 'completed', 11, AFTER_BASELINE), ...fixture.sessions.slice(1)]
-  await page.getByRole('button', { name: 'Refresh sessions' }).click()
+  // D-203: no Refresh button; the list re-reads by itself (here: the window regains focus).
+  await expect(page.getByRole('button', { name: 'Refresh sessions' })).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(marked(page)).toHaveCount(2)
-  await expect(page.getByTestId('shell-unseen-count')).toHaveText('Finished, not yet opened: 2')
+  await expect(page.getByTestId('shell-unseen-count').locator('.sr-only')).toHaveText('Finished, not yet opened: 2')
   await expect(rowMarks(page, 's1')).toHaveCount(1)
   await expect(rowMarks(page, 's2')).toHaveCount(1)
 })
@@ -106,7 +108,7 @@ test('the count stays reachable in the rail and the indicator has no critical ax
 test('Russian copy and no marks when the node reports no finished session', async ({ page }) => {
   const fixture = createSessionFeaturesFixture({ ...world(), locale: 'ru' })
   await open(page, fixture)
-  await expect(page.getByTestId('shell-unseen-count')).toHaveText('Завершено, ещё не открыто: 2')
+  await expect(page.getByTestId('shell-unseen-count').locator('.sr-only')).toHaveText('Завершено, ещё не открыто: 2')
   await expect(page.locator('[data-unseen="true"]', { hasText: 'Завершена, ещё не открыта' })).toHaveCount(2)
   await page.unrouteAll({ behavior: 'ignoreErrors' })
   await installSessionFeaturesApi(page, createSessionFeaturesFixture({ locale: 'ru', sessions: [nativeSession('s3', 'Title s3', 'working', 3, AFTER_BASELINE)] }))
