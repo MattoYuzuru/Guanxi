@@ -59,9 +59,9 @@ export class ConnectionStore {
     if (!row) throw new ConnectionError('connection_not_found', 'Connection not found')
     return connectionSchema.parse(JSON.parse(String(row.data)))
   }
-  create(accountId: string, input: CreateConnection): Connection {
+  create(accountId: string, input: CreateConnection, endpoint?: { baseUrl: string; allowPrivate?: boolean }): Connection {
     const data = createConnectionSchema.parse(input)
-    const row = connectionSchema.parse({ ...data, id: randomUUID(), accountId,
+    const row = connectionSchema.parse({ ...data, ...endpoint, id: randomUUID(), accountId,
       secretRef: null, facts: {
         health: { value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' },
         billing: { value: null, source: 'not_observed', observedAt: null, confidence: 'unknown' },

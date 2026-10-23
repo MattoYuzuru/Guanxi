@@ -48,7 +48,7 @@ async function setup(t: { after(fn: () => unknown): void }, pi: PiTransport = { 
   const governor = new ResourceGovernor()
   const lifetime = new AbortController()
   const service = new Connections(store, vault, {} as never, scrubber, lifetime.signal, {} as OllamaAdapter, governor,
-    () => 'http://127.0.0.1:11434', pi, transport)
+    () => 'http://127.0.0.1:11434', pi, transport, async () => [{ address: '8.8.8.8', family: 4 }])
   await vault.registerForScrubbing()
   t.after(async () => { lifetime.abort(); await service.close(); vault.close(); store.close(); wrapping.fill(0); await governor.close(); await rm(dir, { recursive: true, force: true }) })
   return { dir, service, scrubber, store, vault, governor }
@@ -72,7 +72,7 @@ test('dotenv treats quotes, comments, export, variables and shell substitution a
 })
 
 test('base URL rejects insecure, credential-bearing, query and non-OpenAI roots', () => {
-  for (const value of ['http://example.invalid/v1', 'https://user:pass@example.invalid', 'https://example.invalid/?key=x', 'https://example.invalid/#key', 'file:///tmp/api']) assert.equal(connectionBaseUrlSchema.safeParse(value).success, false)
+  for (const value of ['https://user:pass@example.invalid', 'https://example.invalid/?key=x', 'https://example.invalid/#key', 'file:///tmp/api']) assert.equal(connectionBaseUrlSchema.safeParse(value).success, false)
   for (const value of ['https://api.example.invalid/v1', 'http://127.0.0.1:1234/v1', 'http://[::1]:1234/v1', 'http://localhost/v1']) assert.equal(connectionBaseUrlSchema.safeParse(value).success, true)
   assert.equal(createConnectionSchema.safeParse({ name: 'x', kind: 'model_api', provider: 'deepseek', auth: 'api_key', baseUrl: 'https://example.invalid' }).success, false)
 })

@@ -26,16 +26,15 @@ export const connectionBaseUrlSchema = z.string().url().max(2048).refine(value =
   try {
     const url = new URL(value)
     return !url.username && !url.password && !url.search && !url.hash &&
-      (url.protocol === 'https:' || url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+      (url.protocol === 'https:' || url.protocol === 'http:')
   } catch { return false }
-}, 'API root requires HTTPS (or loopback HTTP) without credentials, query or fragment')
+}, 'API root requires HTTP(S) without credentials, query or fragment; dispatch enforces network policy')
 export const createConnectionSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: connectionKindSchema,
   provider: connectionProviderSchema,
   auth: z.enum(['api_key', 'cli_login', 'none']),
   unattended: z.boolean().default(false),
-  baseUrl: connectionBaseUrlSchema.optional(),
 }).strict().superRefine((value, ctx) => {
   const agents = ['claude-code', 'codex', 'copilot']
   const models = ['anthropic', 'openai', 'google', 'openrouter', 'deepseek']
@@ -46,7 +45,6 @@ export const createConnectionSchema = z.object({
       : value.kind === 'local_runtime'
         ? value.provider === 'ollama' && value.auth === 'none'
         : ['brave', 'tavily', 'openai-stt'].includes(value.provider) && value.auth === 'api_key'
-  if (value.baseUrl && (value.provider !== 'openai' || value.kind !== 'model_api')) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Custom API roots require an OpenAI-compatible model connection' })
   if (!valid) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Unsupported connection route' })
 })
 export const connectionSchema = z.object({
@@ -54,6 +52,7 @@ export const connectionSchema = z.object({
   kind: connectionKindSchema, provider: connectionProviderSchema,
   auth: z.enum(['api_key', 'cli_login', 'none']), unattended: z.boolean(),
   baseUrl: connectionBaseUrlSchema.optional(),
+  allowPrivate: z.boolean().optional(),
   secretRef: secretReferenceSchema.nullable(),
   facts: z.record(connectionFactSchema), balance: connectionBalanceSchema.nullable(),
   createdAt: z.string().datetime(),

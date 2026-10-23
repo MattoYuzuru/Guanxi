@@ -40,7 +40,7 @@ Search and STT are service connection roles.
   injects the vault key at dispatch, scrubs the full response and records usage. It exposes
   no login API, arbitrary headers, per-request base URL override or environment credential fallback.
   D-208 explicitly relaxes the original prohibition on base URL overrides: an OpenAI model
-  connection may have an immutable `baseUrl`. HTTPS is required except literal loopback HTTP;
+  connection may have an immutable `baseUrl`. API roots are import-only, never accepted by HTTP connection creation. Dispatch resolves DNS once and pins the validated address while preserving Host/TLS identity. Link-local IPv4/IPv6 is always refused, including mapped IPv4. Private/loopback addresses require `GUANXI_PROVIDER_ALLOW_PRIVATE=1` in the imported file; this owner choice is persisted on the connection. HTTP is limited to loopback or an opted-in private LAN; public endpoints require HTTPS;
   credentials, query strings and fragments are refused. Only that root's `/models` and
   `/chat/completions` paths receive its key; redirects are refused. Changing an imported root
   creates a separate connection, preserving the endpoint of existing Chats.

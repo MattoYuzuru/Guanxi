@@ -7,7 +7,7 @@ import type { Connections } from './service.ts'
 
 const keys = { OPENAI_API_KEY: 'openai', DEEPSEEK_API_KEY: 'deepseek', ANTHROPIC_API_KEY: 'anthropic',
   OPENROUTER_API_KEY: 'openrouter', GOOGLE_API_KEY: 'google' } as const
-export interface ImportedProvider { provider: Connection['provider']; value: string; baseUrl?: string }
+export interface ImportedProvider { provider: Connection['provider']; value: string; baseUrl?: string; allowPrivate?: boolean }
 /** Node's dotenv parser treats shell substitutions and ${variables} as literal data. */
 export function parseProviderKeys(text: string): ImportedProvider[] {
   try {
@@ -19,7 +19,7 @@ export function parseProviderKeys(text: string): ImportedProvider[] {
       assertApiKey(provider, value)
       const baseUrl = provider === 'openai' && data.OPENAI_API_URL
         ? connectionBaseUrlSchema.parse(data.OPENAI_API_URL).replace(/\/+$/, '') : undefined
-      entries.push({ provider, value, ...(baseUrl ? { baseUrl } : {}) })
+      entries.push({ provider, value, ...(baseUrl ? { baseUrl, allowPrivate: data.GUANXI_PROVIDER_ALLOW_PRIVATE === '1' } : {}) })
     }
     return entries
   } catch { throw new ConnectionError('validation_failed', 'Provider key file is invalid') }

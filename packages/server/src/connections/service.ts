@@ -1,3 +1,4 @@
+import { endpointFetch, type EndpointResolver } from './endpoint.ts'
 import { normalizeHost } from '../ollama/normalize-host.ts'
 import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
@@ -68,12 +69,14 @@ export class Connections {
   private readonly governor: ResourceGovernor
   private readonly localHost: () => string
   private readonly pi: PiTransport
+  private readonly resolveEndpoint?: EndpointResolver
   private readonly transport: typeof fetch
   constructor(store: ConnectionStore, vault: Vault, probes: BalanceProbes,
     scrubber: EgressScrubber, lifetime: AbortSignal,
     ollama: OllamaAdapter, governor: ResourceGovernor,
     localHost: () => string, pi: PiTransport = piTransport,
-    transport: typeof fetch = globalThis.fetch) {
+    transport: typeof fetch = globalThis.fetch,
+    resolveEndpoint?: EndpointResolver) {
     this.store = store
     this.#vault = vault
     this.probes = probes
@@ -84,6 +87,7 @@ export class Connections {
     this.localHost = localHost
     this.pi = pi
     this.transport = transport
+    this.resolveEndpoint = resolveEndpoint
   }
   private assertOpen() { if (this.closed) throw new Error('Connections plugin unloaded'); this.lifetime.throwIfAborted() }
   private track<T>(task: () => Promise<T>): Promise<T> {
@@ -128,8 +132,8 @@ export class Connections {
         if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
           throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
         for (const [index, { entry, row, same }] of prepared.entries()) {
-          const connection = row ?? this.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
-            provider: entry.provider, auth: 'api_key', ...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}) })
+          const connection = row ?? this.store.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
+            provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
           if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
           if (!row) this.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)')
             .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)
@@ -158,10 +162,10 @@ export class Connections {
     try {
       const result = await this.#vault.inject(accountId, id, false, async key => {
         this.#vault.assertScrubbingReady(accountId)
-        const response = await this.transport(`${connection.baseUrl!.replace(/\/+$/, '')}/models`, {
+        const response = await endpointFetch(`${connection.baseUrl!.replace(/\/+$/, '')}/models`, {
           headers: { Authorization: `Bearer ${key}` }, redirect: 'error',
           signal: AbortSignal.any([this.lifetime, AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
-        })
+        }, connection.allowPrivate ?? false, this.transport, this.resolveEndpoint)
         if (!response.ok) throw new Error('Model discovery failed')
         const body = await response.json() as { data?: { id?: unknown }[] }
         if (!Array.isArray(body.data) || !body.data.length || body.data.some(model => typeof model.id !== 'string' || !model.id.length)) throw new Error('Invalid model list')
@@ -285,7 +289,9 @@ export class Connections {
                   if (target.origin !== root.origin || target.pathname !== `${root.pathname.replace(/\/+$/, '')}/chat/completions` || target.search || target.hash || target.username || target.password)
                     throw new ConnectionError('policy_denied', 'Request escaped the connection API root')
                 }
-                const response = await this.transport(url, { ...init, redirect: 'error', signal })
+                const response = connection.baseUrl
+                  ? await endpointFetch(String(url), { ...init, redirect: 'error', signal }, connection.allowPrivate ?? false, this.transport, this.resolveEndpoint)
+                  : await this.transport(url, { ...init, redirect: 'error', signal })
                 quota ||= response.status === 429
                 return response
               },
