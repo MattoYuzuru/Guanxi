@@ -7,6 +7,7 @@ import type { LeadSessionInfo, LeadUsage } from '../external-agents/types.ts'
 import { adapterIdSchema, bindingSchema, type Roles, type RoleBinding } from '../external-agents/types.ts'
 import type { RunStore } from '../runs/store.ts'
 import { TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Wake } from '../runs/types.ts'
+import { typedWakeFailure } from './failure.ts'
 import { buildWakePacket, DEFAULT_PACKET_TOKENS, renderWakePacket } from './packet.ts'
 import { LeadStore, type LeadDelegation, type LeadSession } from './store.ts'
 import { LeadToolServer, type ToolResult } from './tool-server.ts'
@@ -35,6 +36,8 @@ export interface LeadServiceOptions {
   retryMs?: (failures: number) => number
   /** Attempts a child may take before its first model call; real work is never replayed regardless. */
   childStartLimit?: number
+  /** Consecutive undeliverable wakes before a person is asked (typed `admission_stuck`, `quota_exhausted` or `agent_unavailable`). Default 5. */
+  wakeFailureLimit?: number
   cancelGraceMs?: number
   /** Every durable boundary of the lead flow; crash tests kill the process at each. */
   fault?: (point: string) => void
@@ -515,6 +518,17 @@ export class LeadService {
   private deferWake(attempt: Attempt, failureCode: string): LeadTurnResult {
     const runId = attempt.run_id
     const failures = this.store.session(runId)!.failures + 1
+    if (failures >= (this.o.wakeFailureLimit ?? 5)) {
+      // Retrying forever hides a blocked account: keep the wake and packet, record the real code, and ask a person.
+      const reason = typedWakeFailure(failureCode)
+      this.runs.mutate(attempt, (db, emit) => {
+        this.store.setRetry(db, runId, failures, 0)
+        this.note(emit, { action: 'wake_undeliverable', reason, code: failureCode, failures })
+      })
+      this.runs.inputRequired(attempt)
+      this.notice({ kind: 'lead_failed', runId, wakeSeq: attempt.wake_seq, code: reason })
+      return { runId, wakeSeq: attempt.wake_seq, outcome: 'input_required', code: reason }
+    }
     const retryAt = this.now() + (this.o.retryMs ?? defaultRetry)(failures)
     this.runs.hibernate(attempt)
     this.runs.homeFence().transaction('lead.retry', db => this.store.setRetry(db, runId, failures, retryAt))

@@ -143,8 +143,12 @@ its executor, with at most `childStartLimit` attempts before a first model call,
 executor of this process; an executor handle that never settles keeps its child from being restarted, and the
 deadline still wakes the lead).
 
-A killed node can leave K5's admission holder for that account occupied (K5 keeps it until an audited break
-exists) and an orphaned detached agent group; neither is hidden by this service. Child executor stop is
+A killed node leaves K5's admission holder and possibly a detached agent group still running a billable turn until
+the next start: K5's boot reconciliation then releases the holder once its owner and group are proven gone (see the K5
+README) and the wake is delivered. A holder that cannot be proven stays occupied; after `wakeFailureLimit` (default 5)
+consecutive undeliverable wakes the lead moves to `input_required` with a typed code (`admission_stuck`,
+`quota_exhausted` or `agent_unavailable`; the real code is in the run's notes), keeping the wake and packet, and
+`resume` continues it. Neither is hidden by this service. Child executor stop is
 at-least-once and idempotent; R1's chain cancel is exactly once.
 
 ## Storage
