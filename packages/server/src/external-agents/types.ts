@@ -45,6 +45,9 @@ export interface AgentInstallation {
   /** Required for Claude's separately installed ACP bridge. */
   claudeExecutable?: string
   claudeBare?: boolean
+  /** Claude Code only: the bridge's `effort` config option applied to every session (operator policy, not a vendor limit).
+   * It is a launch-time choice made through the ACP client; the vendor's settings files are never edited. */
+  claudeEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   /** Explicit operator policy, not a vendor limit. Default 1 (conservative serialization). */
   concurrency?: number
 }

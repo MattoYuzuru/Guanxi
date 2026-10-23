@@ -170,6 +170,11 @@ and fixed codes, never values. A bad URL/key does not prevent other valid provid
 CLI JSON includes `imported` and optional `errors`, and partial failure exits nonzero.
 No dotenv values enter `process.env` or act as ambient credential fallbacks.
 
+**D-212 token mode.** Asked for by the MS1 lead (`home.lead.auth: "oauth_token"`), the import also reads `CLAUDE_CODE_OAUTH_TOKEN`, or an
+`sk-ant-oat` value under `ANTHROPIC_API_KEY` when the first name is absent, and stores it on a `claude-code` *agent* connection
+(`claude-code (dotenv)`). `dispatchAgent` hands it to K5 for the official CLI's environment and to nothing else; `complete()`, chat and
+`saveSecret` refuse it, and `assertApiKey` still refuses the `sk-ant-oat` family as an API key. Without that option the token names are ignored.
+
 Import unlocks this process's interactive vault. Standalone CLI disposal locks it again;
 successful boot import leaves it unlocked for Chat. Boot import failure (including partial
 failure) logs only `provider_key_import_failed`, locks provider access and continues booting;

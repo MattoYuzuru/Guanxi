@@ -115,9 +115,14 @@ export async function killOrphanGroup(pgid: number): Promise<boolean> {
   return false
 }
 
-export async function isolatedEnvironment(root: string, install: AgentInstallation) {
+/** The private directory (HOME, config, work) of one installation; a path only, nothing is created or opened. */
+export function configDirectoryFor(root: string, install: Pick<AgentInstallation, 'nodeId' | 'ownerAccountId' | 'connectionId'>) {
   const key = createHash('sha256').update(JSON.stringify([install.nodeId, install.ownerAccountId, install.connectionId])).digest('hex')
-  const base = join(root, 'external-agent-config', key)
+  return join(root, 'external-agent-config', key)
+}
+
+export async function isolatedEnvironment(root: string, install: AgentInstallation) {
+  const base = configDirectoryFor(root, install)
   const dirs = [join(root, 'external-agent-config'), base, join(base, 'home'), join(base, 'config'), join(base, 'data'), join(base, 'cache'), join(base, 'tmp'), join(base, 'work')]
   for (const path of dirs) {
     await mkdir(path, { recursive: true, mode: 0o700 })
@@ -269,7 +274,7 @@ export class AgentProcess {
   }
 }
 
-export interface ClaudeAuthStatus { loggedIn: boolean; authMethod: string | null }
+export interface ClaudeAuthStatus { loggedIn: boolean; authMethod: string | null; /** Which variable or helper the CLI says supplied the key; unknown values read as `other`. */ apiKeySource: string | null }
 export type ClaudeAuthStatusResult =
   | { ok: true; status: ClaudeAuthStatus }
   | { ok: false; error: 'auth_status_unavailable' | 'cancelled' }
@@ -327,7 +332,8 @@ export function startClaudeAuthStatus(executable: string, env: NodeJS.ProcessEnv
       const status = JSON.parse(data.toString('utf8'))
       // Drop emails, organization names and all unexpected fields immediately.
       settle({ ok: true, status: { loggedIn: status.loggedIn === true,
-        authMethod: ['none', 'claude.ai', 'oauth_token', 'api_key', 'api_key_helper', 'third_party'].includes(status.authMethod) ? status.authMethod : null } })
+        authMethod: ['none', 'claude.ai', 'oauth_token', 'api_key', 'api_key_helper', 'third_party'].includes(status.authMethod) ? status.authMethod : null,
+        apiKeySource: typeof status.apiKeySource !== 'string' ? null : ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'apiKeyHelper'].includes(status.apiKeySource) ? status.apiKeySource : 'other' } })
     } catch {
       settle({ ok: false, error: signal.aborted ? 'cancelled' : 'auth_status_unavailable' })
     }

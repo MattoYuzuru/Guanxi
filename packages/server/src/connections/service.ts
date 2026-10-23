@@ -12,7 +12,7 @@ import type { ResourceGovernor } from '../runtime/resource-governor.ts'
 import type { Vault } from '../vault/vault.ts'
 import type { BalanceProbes } from '../probes/balances.ts'
 import { ConnectionStore } from './store.ts'
-import { assertApiKey, piModels, piTransport, type PiTransport } from './pi.ts'
+import { assertApiKey, assertOAuthToken, piModels, piTransport, type PiTransport } from './pi.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { modelsDevFacts } from './metadata.ts'
 import type { ImportedProvider } from './dotenv.ts'
@@ -139,8 +139,10 @@ export class Connections {
         if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
           throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
         for (const [index, { entry, row, same }] of prepared.entries()) {
-          const connection = row ?? this.store.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
-            provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
+          // A Claude Code subscription token belongs to an `agent` connection: only K5 can receive it, for the official CLI's environment.
+          const connection = row ?? this.store.create(accountId, entry.provider === 'claude-code'
+            ? { name: 'claude-code (dotenv)', kind: 'agent', provider: 'claude-code', auth: 'cli_login' }
+            : { name: `${entry.provider} (dotenv)`, kind: 'model_api', provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
           if (row?.baseUrl && row.allowPrivate !== (entry.allowPrivate ?? false))
             this.store.setImportedNetworkPolicy(accountId, row.id, entry.allowPrivate ?? false)
           if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
@@ -445,6 +447,10 @@ export class Connections {
       if (connection.kind === 'service') throw new ConnectionError('policy_denied', 'Not an agent payment connection')
       if (connection.auth === 'api_key') return this.#vault.inject(ownerAccountId, id, call.background ?? false,
         key => { assertApiKey(connection.provider, key); return launch(connection, key, signal) })
+      // D-212: a Claude Code connection that holds the owner's subscription token passes it to K5 and to nothing else.
+      if (connection.kind === 'agent' && connection.provider === 'claude-code' && connection.auth === 'cli_login' && connection.secretRef) {
+        return this.#vault.inject(ownerAccountId, id, call.background ?? false, key => { assertOAuthToken(key); return launch(connection, key, signal) })
+      }
       return launch(connection, undefined, signal)
     })
   }
