@@ -38,7 +38,9 @@ export interface RemoteOptions {
   ttlMs?: number; safetyMs?: number; cancelWaitMs?: number; maximumAgeMs?: number; callDeadlineMs?: number
   /** The executor serves no relay runtime (an older or differently configured node). */
   noRelayRuntime?: boolean
-  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number }
+  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number; pinTtlMs?: number }
+  /** F2-reap: the home session's pin heartbeat, and the nodes' maintenance timers (off by default so tests drive reconciliation themselves). */
+  pinRenewMs?: number; maintenanceMs?: number
   /** The executor's own holder TTL, when it differs from the home's. */
   targetTtlMs?: number
   dir?: string
@@ -69,7 +71,7 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
       for (const after of afters) after(path, response)
       return response
     } })
-  const hp: DispatchPolicy = { ttlMs: o.ttlMs ?? 3000, safetyMs: o.safetyMs ?? 100, maxModelAgeMs: 5000, leaseClock: () => clock.mono, channel: () => channel(home, target) }
+  const hp: DispatchPolicy = { ttlMs: o.ttlMs ?? 3000, safetyMs: o.safetyMs ?? 100, maxModelAgeMs: 5000, leaseClock: () => clock.mono, channel: () => channel(home, target), relayPinMaintenanceMs: o.maintenanceMs ?? 0 }
   const tp: DispatchPolicy = { ...hp, ...(o.targetTtlMs ? { ttlMs: o.targetTtlMs } : {}), ...(o.relayLimits ? { relayLimits: o.relayLimits } : {}), channel: () => channel(target, home) }
   home = new SimNode(keys('home'), ':memory:', { attempts: { governor: hg, maxReservationMs: 5000, leaseClock: () => clock.mono }, dispatch: hp })
   target = new SimNode(keys('target'), ':memory:', { attempts: { governor: tg, maxReservationMs: 5000, leaseClock: () => clock.mono }, dispatch: tp })
@@ -92,7 +94,7 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
   if (!o.noRelayRuntime) tp.relayRuntime = llama
   // Nothing here writes a pin on the executor: the relay's own pin arrives only through the signed pin message.
   const remote = new RemoteRelayRuntime({ federation: home.federation, runs: home.runs, executorNodeId: 'target', model: 'fixture', clock: () => home.time,
-    ...(o.cancelWaitMs ? { cancelWaitMs: o.cancelWaitMs } : {}), pollMs: 10, ...(o.callDeadlineMs ? { callDeadlineMs: o.callDeadlineMs } : {}) })
+    ...(o.cancelWaitMs ? { cancelWaitMs: o.cancelWaitMs } : {}), pollMs: 10, ...(o.callDeadlineMs ? { callDeadlineMs: o.callDeadlineMs } : {}), ...(o.pinRenewMs ? { pinRenewMs: o.pinRenewMs } : {}) })
   const source = new RelayRuntimeSource(h.connections, () => { throw new Error('Ollama models must not be consulted') },
     { maximumAgeMs: o.maximumAgeMs ?? 10_000, observer: remote }, () => home.time)
   const homeCtx = { identity: home.keys.identity, readOnly: false, version: { major: 1, minor: 4 } }
