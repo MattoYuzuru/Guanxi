@@ -223,6 +223,8 @@ function journalEntry(
     observation: null,
     policy: null,
     signals: [],
+    unknownFacts: [],
+    unobserved: [],
     state: 'completed',
     result: { samples: [] },
     startedAt: finishedAt - 1,
@@ -247,6 +249,8 @@ function replayRow(cycle: number, packet: unknown): JudgeJournalRow {
     observation: canonical(observation),
     policy: canonical(policy),
     signals: canonical(evaluateJudgeSignals(observation, policy)),
+    unknown_facts: '[]',
+    unobserved: '[]',
     state: 'completed',
     result: '{}',
     started_at: observedAt,
@@ -883,6 +887,24 @@ test('a real RelayStore verification_requested claim replays as premature_done',
   }
 })
 
+test('journal replay accepts equal observedAt values from a same-millisecond collector', () => {
+  const first = replayRow(1, { items: { one: 'open' }, gates: [], head: 'h' })
+  const second = replayRow(2, { items: { one: 'open' }, gates: [], head: 'h' })
+  const same = {
+    ...second,
+    observation: first.observation,
+    signals: first.signals,
+    started_at: first.started_at,
+    finished_at: first.finished_at
+  }
+  const run = journalReplayRun([first, same])
+  assert.equal(run.steps.length, 2)
+  assert.deepEqual(
+    run.steps.map((step) => step.observation.observedAt),
+    [1_001_000, 1_001_000]
+  )
+})
+
 test('a recovery attempt keeps its own replay steps and is not stitched into attempt 1', () => {
   const row = (
     id: number,
@@ -967,6 +989,30 @@ test('readRun orders journal rows by attempt ordinal before cycle and phase', ()
   }
 })
 
+test('the plugin executor default journals a public-start execution', async () => {
+  const f = fixture()
+  try {
+    await executeThroughPlugin(f)
+    assert.equal(
+      f.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_judge_journal'").get() !==
+        undefined,
+      true
+    )
+    const rows = f.db
+      .prepare('SELECT state, phase FROM relay_judge_journal WHERE run_id=? ORDER BY id')
+      .all(f.run.id) as { state: string; phase: string }[]
+    assert.equal(rows.length >= 2, true, 'the executor default created a journal without injection')
+    assert.equal(rows.every((row) => row.state === 'completed'), true)
+    assert.deepEqual(new Set(rows.map((row) => row.phase)), new Set(['cycle_start', 'pre_seal']))
+    assert.equal(
+      f.db.prepare("SELECT state FROM durable_runs WHERE id=?").get(f.run.id)!.state,
+      'completed'
+    )
+  } finally {
+    f.close()
+  }
+})
+
 test('a foreign journal migration value disables the sidecar without failing the judged relay', async () => {
   const f = fixture()
   try {
@@ -994,6 +1040,54 @@ test('a foreign journal migration value disables the sidecar without failing the
       99,
       'the foreign ledger is left untouched'
     )
+  } finally {
+    f.close()
+  }
+})
+
+test('unobserved judge facts are stored in the row and carried as unknown replay evidence', async () => {
+  const f = fixture()
+  let clock = f.relay.clock()
+  try {
+    const executor = new RelayExecutor(
+      f.relay,
+      f.model,
+      f.workspace,
+      reserves,
+      f.scrubber,
+      DEFAULT_RELAY_LIMITS,
+      undefined,
+      {
+        policy,
+        unobserved: ['failureStreak'],
+        collect: async () => {
+          const observation = observationAt(clock)
+          clock += 1_000
+          return observation
+        }
+      },
+      cascadeInput()
+    )
+    await executor.run(f.attempt)
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: () => clock })
+    const rows = store.readRun(f.run.id)
+    assert.equal(rows.length, 2)
+    assert.deepEqual(rows.map((row) => JSON.parse(row.unknown_facts)), [
+      ['failureStreak'],
+      ['failureStreak']
+    ])
+    assert.deepEqual(rows.map((row) => JSON.parse(row.unobserved)), [
+      ['failureStreak'],
+      ['failureStreak']
+    ])
+    const replay = readJournalReplay(store, f.run.id)
+    assert.equal(
+      replay.steps.every((step) => step.unknownFacts?.includes('failureStreak') === true),
+      true,
+      'the reader carries the marker instead of replaying the zero streak as healthy'
+    )
+    const scored = score({ version: 1, runs: [replay] })
+    assert.equal(scored.classes.loop.unknown >= 1, true)
   } finally {
     f.close()
   }

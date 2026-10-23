@@ -2,6 +2,7 @@
  * clock, filesystem, model or relay state. Synthetic corpora are explicitly not gate evidence;
  * only a fully recorded corpus with labelled R3 fault classes may evaluate the gate. */
 import { evaluateJudgeSignals, type JudgeObservation, type JudgeSignalPolicy } from './judge-signals.ts'
+import { JUDGE_UNKNOWN_FACTS, type JudgeUnknownFact } from './judge-host.ts'
 
 export type FaultClass = 'loop' | 'protected_path_edit' | 'premature_done' | 'out_of_scope_edit' | 'stall'
 export type ReplayOrigin = 'synthetic' | 'recorded'
@@ -20,13 +21,16 @@ export interface ReplayStep {
   claimsDone?: boolean
   /** true/false is an explicit acceptance result; null means unknown. */
   acceptancePassed?: boolean | null
+  /** Facts the collector declared unobserved. Their zero/empty observation fields are not
+   * health evidence: a detector whose signal depends on one reports an unknown step. */
+  unknownFacts?: readonly JudgeUnknownFact[]
 }
 
 export interface ReplayRun {
   id: string
   origin: ReplayOrigin
   policy: JudgeSignalPolicy
-  /** Ordered by observation.observedAt, strictly increasing. */
+  /** Ordered by observation.observedAt, non-decreasing; equal host-clock milliseconds are valid. */
   steps: ReplayStep[]
   /** Ground truth: the fault exists from firstStep onward. */
   labels: { fault: FaultClass; firstStep: number }[]
@@ -224,7 +228,7 @@ function parseObservation(value: unknown, path: string): JudgeObservation {
 }
 
 function parseStep(value: unknown, path: string): ReplayStep {
-  const record = exactObject(value, path, STEP_REQUIRED_KEYS, ['claimsDone', 'acceptancePassed'])
+  const record = exactObject(value, path, STEP_REQUIRED_KEYS, ['claimsDone', 'acceptancePassed', 'unknownFacts'])
   parseObservation(record.observation, `${path}.observation`)
   if (Object.hasOwn(record, 'claimsDone') && typeof record.claimsDone !== 'boolean') {
     fail(`${path}.claimsDone`, 'expected boolean')
@@ -233,6 +237,19 @@ function parseStep(value: unknown, path: string): ReplayStep {
     && record.acceptancePassed !== null
     && typeof record.acceptancePassed !== 'boolean') {
     fail(`${path}.acceptancePassed`, 'expected null or boolean')
+  }
+  if (Object.hasOwn(record, 'unknownFacts')) {
+    const facts = record.unknownFacts
+    if (!Array.isArray(facts)) fail(`${path}.unknownFacts`, 'expected array')
+    const seen = new Set<string>()
+    for (let index = 0; index < facts.length; index++) {
+      const fact = facts[index]
+      if (typeof fact !== 'string' || !(JUDGE_UNKNOWN_FACTS as readonly string[]).includes(fact)) {
+        fail(`${path}.unknownFacts[${index}]`, 'expected a known unknown fact')
+      }
+      if (seen.has(fact)) fail(`${path}.unknownFacts[${index}]`, 'duplicate unknown fact')
+      seen.add(fact)
+    }
   }
   return record as unknown as ReplayStep
 }
@@ -266,8 +283,10 @@ function parseRun(value: unknown, path: string): ReplayRun {
     const stepPath = `${path}.steps[${index}]`
     const step = parseStep(record.steps[index], stepPath)
     const observedAt = step.observation.observedAt
-    if (previousObservedAt !== null && observedAt <= previousObservedAt) {
-      fail(`${stepPath}.observation.observedAt`, 'expected strictly increasing time')
+    // A host clock can return the same millisecond at two boundaries. Equal times are valid;
+    // order is carried by the corpus order, never invented by the parser.
+    if (previousObservedAt !== null && observedAt < previousObservedAt) {
+      fail(`${stepPath}.observation.observedAt`, 'expected non-decreasing time')
     }
     previousObservedAt = observedAt
     steps.push(step)
@@ -295,14 +314,37 @@ export function parseReplayCorpus(value: unknown): ReplayCorpus {
   return { version: 1, runs }
 }
 
+/** A signal whose observation source is declared unobserved is not a healthy zero when it does
+ * not fire. The step stays out of firedSteps and is reported as unknown instead. */
+const SIGNAL_UNKNOWN_FACTS: Readonly<Record<string, readonly JudgeUnknownFact[]>> = {
+  heartbeat_stall: ['heartbeat'],
+  lease_lost: ['lease'],
+  deadline: ['deadline'],
+  disk: ['disk'],
+  crash: ['crash'],
+  repeated_failure: ['failureStreak'],
+  edit_revert: ['editRevert'],
+  repeated_dead_end: ['deadEnds'],
+  protected_path_edit: ['pathEdits'],
+  out_of_scope_edit: ['pathEdits'],
+  token_blowup: ['tokenBudget', 'itemTokens'],
+}
+
 function signalDetector(matches: (code: string) => boolean): Detector {
   return run => {
     const firedSteps: number[] = []
+    const unknown = new Set<number>()
     for (let index = 0; index < run.steps.length; index++) {
-      const signals = evaluateJudgeSignals(run.steps[index]!.observation, run.policy)
-      if (signals.some(signal => matches(signal.code))) firedSteps.push(index)
+      const step = run.steps[index]!
+      const signals = evaluateJudgeSignals(step.observation, run.policy)
+      let fired = false
+      for (const signal of signals) if (matches(signal.code)) fired = true
+      if (fired) { firedSteps.push(index); continue }
+      const facts = step.unknownFacts ?? []
+      if (facts.some(fact => Object.entries(SIGNAL_UNKNOWN_FACTS)
+        .some(([code, needed]) => matches(code) && needed.includes(fact)))) unknown.add(index)
     }
-    return { firedSteps }
+    return { firedSteps, unknownSteps: [...unknown].sort((left, right) => left - right) }
   }
 }
 

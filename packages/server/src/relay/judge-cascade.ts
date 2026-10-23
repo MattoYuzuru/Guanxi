@@ -293,6 +293,8 @@ export class RelayJudgeCascade {
         observation: observed === undefined ? null : structuredClone(observed.observation),
         policy: observed === undefined ? null : structuredClone(observed.policy),
         signals: observed === undefined ? [] : structuredClone([...observed.signals]),
+        unknownFacts: observed === undefined ? [] : structuredClone([...(observed.unknownFacts ?? [])]),
+        unobserved: observed === undefined ? [] : structuredClone([...(observed.unobserved ?? [])]),
         state: request.state as JudgeJournalState,
         result: structuredClone(request.payload),
         startedAt,
@@ -407,11 +409,17 @@ export class RelayJudgeCascade {
     observed?: JudgeJournalContext
   ): Promise<void> {
     invariant(this.brief, 'brief_missing')
-    this.observed =
-      observed ??
+    const observedContext = observed ??
       (summary
         ? { observation: null, policy: null, signals: summary.signals }
         : undefined)
+    this.observed = observedContext === undefined
+      ? undefined
+      : {
+          ...observedContext,
+          unknownFacts: observedContext.unknownFacts ?? summary?.unknownFacts ?? [],
+          unobserved: observedContext.unobserved ?? []
+        }
     const cycle = this.relay.read(a.run_id).cycle
     this.check(a, cycle, signal)
     if (this.summaryCycle !== cycle) {

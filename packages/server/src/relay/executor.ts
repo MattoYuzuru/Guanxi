@@ -12,7 +12,7 @@ import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff 
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation, type JudgeSignalPolicy } from './judge-signals.ts'
 import { JudgeJournalStore, lazyJournal } from './judge-journal.ts'
-import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput, type RelayJudgeSummary } from './judge-host.ts'
+import { judgeUnknownFacts, prepareJudgeSignals, type JudgePhase, type JudgeUnknownFact, type PreparedRelayJudge, type RelayJudgeCollectInput, type RelayJudgeInput, type RelayJudgeSummary } from './judge-host.ts'
 
 const actionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tool'), name: z.string(), args: z.record(z.unknown()) }).strict(),
@@ -119,6 +119,7 @@ export class RelayExecutor {
         summary: RelayJudgeSummary
         observation: JudgeObservation
         policy: Readonly<JudgeSignalPolicy>
+        unobserved: readonly JudgeUnknownFact[]
       }
     | undefined
   > {
@@ -155,7 +156,8 @@ export class RelayExecutor {
     return {
       summary: structuredClone(summary),
       observation: structuredClone(observation),
-      policy: judge.policy
+      policy: judge.policy,
+      unobserved: [...judge.unobserved]
     }
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal): Promise<Reply> {
@@ -271,7 +273,9 @@ export class RelayExecutor {
       judged && {
         observation: judged.observation,
         policy: judged.policy,
-        signals: judged.summary.signals
+        signals: judged.summary.signals,
+        unknownFacts: judged.summary.unknownFacts,
+        unobserved: judged.unobserved
       }
     )
     let narrative = '', degraded = false
@@ -349,7 +353,9 @@ export class RelayExecutor {
           judged && {
             observation: judged.observation,
             policy: judged.policy,
-            signals: judged.summary.signals
+            signals: judged.summary.signals,
+            unknownFacts: judged.summary.unknownFacts,
+            unobserved: judged.unobserved
           }
         )
         const narrative = await this.orient(a, w, t, signal, measure)

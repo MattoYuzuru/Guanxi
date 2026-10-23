@@ -12,6 +12,7 @@
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { DEFAULT_REASONING_RETENTION_MS } from '../session-log/log.ts'
+import { JUDGE_UNKNOWN_FACTS, type JudgeUnknownFact } from './judge-host.ts'
 import { canonical } from './handoff.ts'
 import {
   parseReplayCorpus,
@@ -44,6 +45,8 @@ CREATE TABLE relay_judge_journal(
   observation TEXT CHECK(observation IS NULL OR json_valid(observation)),
   policy TEXT CHECK(policy IS NULL OR json_valid(policy)),
   signals TEXT NOT NULL CHECK(json_valid(signals)),
+  unknown_facts TEXT NOT NULL CHECK(json_valid(unknown_facts)),
+  unobserved TEXT NOT NULL CHECK(json_valid(unobserved)),
   state TEXT NOT NULL CHECK(state IN ('completed','unavailable','invalid','abandoned')),
   result TEXT NOT NULL CHECK(json_valid(result)),
   started_at INTEGER NOT NULL,
@@ -66,6 +69,10 @@ export interface JudgeJournalContext {
   observation: JudgeObservation | null
   policy: JudgeSignalPolicy | null
   signals: readonly JudgeSignal[]
+  /** `judgeUnknownFacts` for this sample, including the collector's declared unobserved facts. */
+  unknownFacts?: readonly JudgeUnknownFact[]
+  /** The collector's declared unobserved facts, unchanged. */
+  unobserved?: readonly JudgeUnknownFact[]
 }
 
 /** Small boundary owned by the cascade. No SQLite type crosses into the cascade. */
@@ -118,6 +125,8 @@ export interface JudgeJournalEntry {
   observation: JudgeObservation | null
   policy: JudgeSignalPolicy | null
   signals: readonly JudgeSignal[]
+  unknownFacts: readonly JudgeUnknownFact[]
+  unobserved: readonly JudgeUnknownFact[]
   state: JudgeJournalState
   /** Sample verdicts, checker result or a fixed unavailable/invalid/canceled code. */
   result: unknown
@@ -141,6 +150,8 @@ export interface JudgeJournalRow {
   observation: string | null
   policy: string | null
   signals: string
+  unknown_facts: string
+  unobserved: string
   state: string
   result: string
   started_at: number
@@ -175,6 +186,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function integer(value: unknown, minimum: number): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
+}
+
+function unknownFacts(value: unknown, field: string): asserts value is readonly JudgeUnknownFact[] {
+  if (!Array.isArray(value) || value.some((fact) => !JUDGE_UNKNOWN_FACTS.includes(fact)) ||
+    new Set(value).size !== value.length) {
+    invalid(`invalid ${field}`)
+  }
 }
 
 /** One retention implementation shared with reasoning: the session/run owns the row and a
@@ -276,7 +294,6 @@ export function journalReplayRun(
       left.cycle - right.cycle ||
       PHASE_ORDER.indexOf(left.phase as (typeof PHASE_ORDER)[number]) -
         PHASE_ORDER.indexOf(right.phase as (typeof PHASE_ORDER)[number]) ||
-      left.started_at - right.started_at ||
       left.id - right.id
   )
   if (stepsInOrder.length === 0) invalid('run has no replayable judge observations')
@@ -290,8 +307,10 @@ export function journalReplayRun(
       invalid('observations were recorded under different signal policies')
     }
     const observation = JSON.parse(row.observation!) as JudgeObservation
-    if (previous !== null && observation.observedAt <= previous) {
-      invalid('journal observations are not strictly increasing in time')
+    // Equal host-clock milliseconds are valid; the rows were ordered by attempt, cycle and
+    // phase before this check, so the parser never sorts by an invented timestamp.
+    if (previous !== null && observation.observedAt < previous) {
+      invalid('journal observations are not non-decreasing in time')
     }
     previous = observation.observedAt
     if (canonical(evaluateJudgeSignals(observation, rowPolicy)) !== canonical(JSON.parse(row.signals))) {
@@ -299,6 +318,8 @@ export function journalReplayRun(
     }
     const claims = claimsAndAcceptance(JSON.parse(row.packet))
     const step: ReplayStep = { observation }
+    const unknownFacts = JSON.parse(row.unknown_facts) as JudgeUnknownFact[]
+    if (unknownFacts.length > 0) step.unknownFacts = unknownFacts
     if (claims.claimsDone) {
       step.claimsDone = true
       step.acceptancePassed = claims.acceptancePassed
@@ -363,6 +384,8 @@ export class JudgeJournalStore implements JudgeJournal {
     if (!['completed', 'unavailable', 'invalid', 'abandoned'].includes(entry.state)) {
       invalid('invalid state')
     }
+    unknownFacts(entry.unknownFacts, 'unknown facts')
+    unknownFacts(entry.unobserved, 'unobserved facts')
     if (!this.scrubber.isReady()) invalid('egress not ready')
     for (const value of [
       entry.runId,
@@ -381,6 +404,8 @@ export class JudgeJournalStore implements JudgeJournal {
       : canonical(this.scrubber.scrub(entry.observation))
     const policy = entry.policy === null ? null : canonical(this.scrubber.scrub(entry.policy))
     const signals = canonical(this.scrubber.scrub([...entry.signals]))
+    const unknown = canonical(this.scrubber.scrub([...entry.unknownFacts]))
+    const unobserved = canonical(this.scrubber.scrub([...entry.unobserved]))
     const result = canonical(this.scrubber.scrub(entry.result))
     if (packet === undefined || result === undefined) invalid('unserializable payload')
     const expiresAt = journalExpiry(
@@ -393,9 +418,9 @@ export class JudgeJournalStore implements JudgeJournal {
       .prepare(
         `INSERT INTO relay_judge_journal(
            run_id, session_id, attempt_id, cycle, phase, layer, reason, request_key,
-           packet, observation, policy, signals, state, result,
+           packet, observation, policy, signals, unknown_facts, unobserved, state, result,
            started_at, finished_at, expires_at
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(request_key) DO NOTHING`
       )
       .run(
@@ -411,6 +436,8 @@ export class JudgeJournalStore implements JudgeJournal {
         observation,
         policy,
         signals,
+        unknown,
+        unobserved,
         entry.state,
         result,
         entry.startedAt,
@@ -446,7 +473,7 @@ export class JudgeJournalStore implements JudgeJournal {
          WHERE j.run_id=? AND j.expires_at > ?
          ORDER BY a.ordinal, j.cycle,
            CASE j.phase WHEN 'cycle_start' THEN 0 WHEN 'pre_seal' THEN 1 ELSE 2 END,
-           j.started_at, j.id`
+           j.id`
       )
       .all(runId, now) as unknown as JudgeJournalRow[]
     for (const row of rows) {
