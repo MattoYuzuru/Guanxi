@@ -122,3 +122,11 @@ limit agents, not the user's own actions.
   (`features/side-chat`), ephemeral by construction, with Save to session log and Send to main. See the
   [native-agent README](../../packages/server/src/native-agent/README.md#ephemeral-side-chat-u1) for the node
   seam. The floating placement and legacy Chat threads are not built.
+- **Voice glossary editor** (T1 "Voice and glossary") is implemented at `/settings/voice/glossary`
+  (`packages/web/src/features/voice`), linked from Settings and the command palette: account-wide and
+  per-project entries, create and edit (canonical term, spoken forms, language, case and ending flags),
+  deactivate, reactivate, one-click revert, a newest-first revision history and a live preview built on
+  `apply-preview` that highlights replacements and shows the glossary revision hash. It has the loading,
+  empty, error, `node_unreachable` and degraded (project list unavailable) states. Not built: search or
+  paging of entries (the node has neither), import and export, learned-candidate review (V2), and a
+  project-page entry point.

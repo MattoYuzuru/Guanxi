@@ -42,7 +42,7 @@ const seedBasic = (target: GlossaryNode) => {
   target.seed({ canonical: 'Vite', variants: ['вайт'] }, { id: 'gl_vite', scope: 'project', projectId: 'p1' })
 }
 
-const card = (name: string) => screen.getByRole('heading', { level: 3, name }).closest('article') as HTMLElement
+const card = (name: string) => screen.getByRole('heading', { level: 4, name }).closest('article') as HTMLElement
 const button = (name: string | RegExp, scope: HTMLElement | Document = document) => within(scope as HTMLElement).getByRole('button', { name }) as HTMLButtonElement
 const field = (name: string) => {
   const controls = screen.getAllByLabelText(name).filter((element) => ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName))
@@ -141,13 +141,38 @@ describe('states', () => {
     expect(mutating).toHaveLength(9)
     for (const element of mutating) expect(element.hasAttribute('disabled'), element.getAttribute('aria-label') ?? '').toBe(true)
     const editHono = screen.getByRole('button', { name: 'Edit Hono' })
-    expect(describedBy(editHono)).toContain('Creating, editing, deactivating and reverting are disabled')
+    expect(describedBy(editHono)).toContain('Creating, editing, deactivating, reactivating and reverting are disabled')
     expect(screen.getByRole('button', { name: 'New entry' }).hasAttribute('disabled')).toBe(true)
     expect(mutationCount()).toBe(0)
     node.down = false
     fireEvent.click(button('Retry'))
     await waitFor(() => expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(0))
     expect(screen.getByRole('button', { name: 'Edit Hono' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('treats a body-less 502 (a proxy with no node behind it) as node_unreachable, not as a version mismatch', async () => {
+    install(seedBasic)
+    node.fail.set('GET /', { status: 502 })
+    render(<GlossaryPage />)
+    await waitFor(() => expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(1))
+    expect(alerts()).toHaveLength(1)
+    expect(document.body.textContent).not.toContain('different versions')
+    expect(screen.getByText('Nothing can be read or changed until the connection returns.')).toBeTruthy()
+  })
+
+  it('says a project is missing from the list only when the list is known, and shows the plain id otherwise', async () => {
+    install((target) => { target.seed({ canonical: 'Ghost' }, { id: 'gl_ghost', scope: 'project', projectId: 'gone' }) })
+    render(<GlossaryPage />)
+    await ready()
+    expect(screen.getByRole('heading', { level: 3, name: 'Project gone, missing from the project list' })).toBeTruthy()
+    cleanup()
+    install((target) => { target.seed({ canonical: 'Ghost' }, { id: 'gl_ghost', scope: 'project', projectId: 'gone' }) })
+    projectsDown = true
+    render(<GlossaryPage />)
+    await ready()
+    await screen.findByText(/The project list could not be loaded/u)
+    expect(screen.getByRole('heading', { level: 3, name: 'Project gone' })).toBeTruthy()
+    expect(screen.queryAllByText(/missing from the project list/u)).toHaveLength(0)
   })
 
   it('degrades to project ids when the project list is unavailable and says so once', async () => {
@@ -157,7 +182,7 @@ describe('states', () => {
     await ready()
     await screen.findByText(/The project list could not be loaded/u)
     expect(screen.getAllByText(/The project list could not be loaded/u)).toHaveLength(1)
-    expect(screen.getByRole('heading', { level: 3, name: 'Project p1, missing from the project list' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 3, name: 'Project p1' })).toBeTruthy()
     fireEvent.click(button('New entry'))
     type(field('Applies to'), 'project')
     expect(screen.getByText('The project list is unavailable, so a project entry cannot be created now.')).toBeTruthy()
@@ -175,9 +200,8 @@ describe('list', () => {
     await ready()
     const groups = Array.from(document.querySelectorAll('[data-group]')).map((element) => element.getAttribute('data-group'))
     expect(groups).toEqual(['account', 'project:p1'])
-    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual([
-      'Account-wide', 'Hono', 'Old', 'PR', 'Project: Alpha project', 'Vite',
-    ])
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Account-wide', 'Project: Alpha project'])
+    expect(screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent)).toEqual(['Hono', 'Old', 'PR', 'Vite'])
     expect(screen.getAllByRole('article')).toHaveLength(4)
     expect(screen.getByTestId('glossary-count').textContent).toBe('Entries: 4, active: 3')
     expect(within(card('Hono')).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['хоно', 'хона'])
@@ -193,7 +217,9 @@ describe('list', () => {
     type(field('Show entries for'), 'p1')
     await waitFor(() => expect(node.count('GET', '/')).toBe(2))
     expect(node.requests.filter((request) => request.path === '/')[1]?.query).toEqual({ projectId: 'p1', includeInactive: 'true' })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show inactive entries' }))
+    expect(screen.getByRole('button', { name: 'Show inactive entries' }).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Show inactive entries' }))
+    expect(screen.getByRole('button', { name: 'Show inactive entries' }).getAttribute('aria-pressed')).toBe('false')
     await waitFor(() => expect(node.count('GET', '/')).toBe(3))
     expect(node.requests.filter((request) => request.path === '/')[2]?.query).toEqual({ projectId: 'p1', includeInactive: 'false' })
   })
@@ -219,7 +245,7 @@ describe('list', () => {
     expect(screen.queryAllByText('Overridden in this project')).toHaveLength(0)
     type(field('Show entries for'), 'p1')
     await waitFor(() => expect(screen.queryAllByText('Overridden in this project')).toHaveLength(1))
-    expect(within(screen.getAllByRole('heading', { level: 3, name: 'Hono' })[0]?.closest('article') as HTMLElement).getAllByText('Overridden in this project')).toHaveLength(1)
+    expect(within(screen.getAllByRole('heading', { level: 4, name: 'Hono' })[0]?.closest('article') as HTMLElement).getAllByText('Overridden in this project')).toHaveLength(1)
     expect(screen.getAllByRole('article').filter((element) => element.textContent?.includes('Overridden in this project'))).toHaveLength(1)
   })
 
@@ -255,7 +281,7 @@ describe('create', () => {
     expect(screen.getAllByRole('article')).toHaveLength(4)
     expect(within(card('Guanxi')).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['гуанси', 'гуаньси'])
     expect(announcement()).toBe('Created “Guanxi”, revision 1.')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'Guanxi' }))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 4, name: 'Guanxi' }))
     expect(node.count('GET', '/')).toBe(1)
   })
 
@@ -277,12 +303,16 @@ describe('create', () => {
     fireEvent.click(button('New entry'))
     type(field('Canonical term'), 'Корень')
     type(field('Language of the term'), 'ru')
-    const endings = screen.getByRole('checkbox', { name: 'Add Russian endings after a hyphen (PR-а)' })
-    expect(endings.hasAttribute('disabled') || endings.getAttribute('aria-disabled') === 'true').toBe(true)
+    const endings = screen.getByRole('button', { name: 'Add Russian endings after a hyphen (PR-а)' })
+    expect((endings as HTMLButtonElement).disabled).toBe(true)
+    expect(endings.getAttribute('aria-pressed')).toBe('false')
     expect(describedBy(endings)).toBe('Available for English terms only.')
     type(field('Language of the term'), 'en')
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Match letter case exactly' }))
-    expect(describedBy(screen.getByRole('checkbox', { name: 'Add Russian endings after a hyphen (PR-а)' })))
+    const caseToggle = screen.getByRole('button', { name: 'Match letter case exactly' })
+    expect(caseToggle.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(caseToggle)
+    expect(caseToggle.getAttribute('aria-pressed')).toBe('true')
+    expect(describedBy(screen.getByRole('button', { name: 'Add Russian endings after a hyphen (PR-а)' })))
       .toBe('Off while letter case must match.')
     submitForm()
     await waitFor(() => expect(screen.queryAllByRole('form')).toHaveLength(0))
@@ -372,8 +402,12 @@ describe('create', () => {
     type(field('Canonical term'), 'Lost')
     node.down = true
     submitForm()
-    await waitFor(() => expect(alerts()).toHaveLength(1))
-    expect(alerts()[0]?.textContent).toContain('it is unknown whether the change was applied')
+    // The unanswered write also makes the page re-read, which names the offline state: two alerts, each once.
+    await waitFor(() => expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(1))
+    expect(alerts()).toHaveLength(2)
+    const formAlert = within(screen.getByRole('form')).getAllByRole('alert')
+    expect(formAlert).toHaveLength(1)
+    expect(formAlert[0]?.textContent).toContain('it is unknown whether the change was applied')
     expect(screen.getAllByRole('form')).toHaveLength(1)
     expect(field('Canonical term').value).toBe('Lost')
     expect(screen.queryAllByRole('article')).toHaveLength(3)
@@ -389,10 +423,10 @@ describe('create', () => {
     type(field('Project'), 'p1')
     type(field('Canonical term'), 'Elsewhere')
     submitForm()
-    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 3, name: 'Elsewhere' })).toHaveLength(1))
+    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4, name: 'Elsewhere' })).toHaveLength(1))
     expect((field('Show entries for') as unknown as HTMLSelectElement).value).toBe('')
     expect(announcement()).toBe('Created “Elsewhere”, revision 1. The view was reset to show it.')
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'Elsewhere' }))
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 4, name: 'Elsewhere' }))
   })
 })
 
@@ -414,7 +448,7 @@ describe('edit', () => {
       { method: 'PUT', path: '/gl_hono', query: {}, body: { entry: { canonical: 'Hono.js', variants: ['хоно'], language: 'en' } } },
     ])
     expect(mutationCount()).toBe(1)
-    expect(screen.queryAllByRole('heading', { level: 3, name: 'Hono' })).toHaveLength(0)
+    expect(screen.queryAllByRole('heading', { level: 4, name: 'Hono' })).toHaveLength(0)
     expect(within(card('Hono.js')).getByText(/Revision 2/u)).toBeTruthy()
     expect(announcement()).toBe('Saved “Hono.js”, revision 2.')
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit Hono.js' }))
@@ -429,7 +463,7 @@ describe('edit', () => {
     expect(screen.queryAllByRole('form')).toHaveLength(0)
     expect(mutationCount()).toBe(0)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Edit PR' }))
-    expect(screen.getByRole('heading', { level: 3, name: 'PR' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 4, name: 'PR' })).toBeTruthy()
   })
 
   it('shows glossary_invalid on edit without echoing terms and leaves the entry untouched', async () => {
@@ -457,7 +491,7 @@ describe('edit', () => {
     fireEvent.click(button('Edit PR'))
     expect(screen.getAllByRole('form')).toHaveLength(1)
     node.entries.delete('gl_pr')
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show inactive entries' }))
+    act(() => { window.dispatchEvent(new Event('online')) }) // the view controls are locked while a form is open; a regained network re-reads
     await waitFor(() => expect(screen.queryAllByRole('form')).toHaveLength(0))
   })
 })
@@ -497,11 +531,11 @@ describe('deactivate, reactivate and revert', () => {
 
   it('removes a deactivated card when inactive entries are hidden and moves focus to the list heading', async () => {
     await open()
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Show inactive entries' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show inactive entries' }))
     await waitFor(() => expect(node.count('GET', '/')).toBe(2))
     await waitFor(() => expect(screen.queryAllByRole('article')).toHaveLength(3))
     fireEvent.click(button('Deactivate Hono'))
-    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 3, name: 'Hono' })).toHaveLength(0))
+    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4, name: 'Hono' })).toHaveLength(0))
     expect(screen.queryAllByRole('article')).toHaveLength(2)
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Entries' }))
   })
@@ -513,13 +547,13 @@ describe('deactivate, reactivate and revert', () => {
     submitForm()
     await waitFor(() => expect(screen.queryAllByRole('form')).toHaveLength(0))
     fireEvent.click(button('Revert Hono 2'))
-    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 3, name: 'Hono' })).toHaveLength(1))
+    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4, name: 'Hono' })).toHaveLength(1))
     expect(node.requests.filter((request) => request.path === '/gl_hono/revert')).toHaveLength(1)
     expect(mutationCount()).toBe(2)
     expect(within(card('Hono')).getByText(/Revision 3/u)).toBeTruthy()
     expect(announcement()).toBe('Reverted “Hono”, now revision 3.')
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Revert Hono' }))
-    expect(screen.queryAllByRole('heading', { level: 3, name: 'Hono 2' })).toHaveLength(0)
+    expect(screen.queryAllByRole('heading', { level: 4, name: 'Hono 2' })).toHaveLength(0)
   })
 
   it('reverting a first revision deactivates the entry, and the control says so beforehand', async () => {
@@ -546,7 +580,7 @@ describe('deactivate, reactivate and revert', () => {
     expect(screen.getByRole('button', { name: 'Revert Hono' }).hasAttribute('disabled')).toBe(false)
   })
 
-  it('ignores a second click while a change to that entry is in flight', async () => {
+  it('sends one request for a double click and keeps every other entry untouched while a change is in flight', async () => {
     await open()
     let release: () => void = () => {}
     const gate = new Promise<void>((resolve) => { release = resolve })
@@ -561,6 +595,140 @@ describe('deactivate, reactivate and revert', () => {
     await waitFor(() => expect(card('Hono').getAttribute('data-active')).toBe('false'))
     expect(node.requests.filter((request) => request.path.endsWith('/deactivate'))).toHaveLength(1)
     expect(card('PR').getAttribute('data-active')).toBe('true')
+  })
+})
+
+
+describe('consistency', () => {
+  const hold = () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    return { gate, release }
+  }
+
+  it('locks the view controls while a form is open or a change is in flight, and says why', async () => {
+    await open()
+    const filter = field('Show entries for') as unknown as HTMLSelectElement
+    const inactive = screen.getByRole('button', { name: 'Show inactive entries' })
+    expect(filter.disabled).toBe(false)
+    fireEvent.click(button('New entry'))
+    expect(filter.disabled).toBe(true)
+    expect((inactive as HTMLButtonElement).disabled).toBe(true)
+    expect(describedBy(filter)).toContain('Finish or cancel the open form')
+    fireEvent.click(button('Cancel'))
+    expect(filter.disabled).toBe(false)
+    const { gate, release } = hold()
+    const original = node.handle.bind(node)
+    node.handle = async (method, path, body) => { if (path.endsWith('/deactivate')) await gate; return original(method, path, body) }
+    fireEvent.click(button('Deactivate PR'))
+    expect(filter.disabled).toBe(true)
+    await act(async () => { release() })
+    await waitFor(() => expect(card('PR').getAttribute('data-active')).toBe('false'))
+    expect(filter.disabled).toBe(false)
+  })
+
+  it('discards a read that started before a change and reads again, so an old snapshot never wins', async () => {
+    await open()
+    const { gate, release } = hold()
+    node.holdList = gate
+    act(() => { window.dispatchEvent(new Event('online')) }) // a read starts and takes its snapshot: Hono is active
+    await waitFor(() => expect(node.count('GET', '/')).toBe(2))
+    fireEvent.click(button('Deactivate Hono')) // the change completes while that read is still in flight
+    await waitFor(() => expect(card('Hono').getAttribute('data-active')).toBe('false'))
+    await act(async () => { release() })
+    await waitFor(() => expect(node.count('GET', '/')).toBe(3))
+    await waitFor(() => expect(screen.queryByTestId('glossary-skeleton')).toBeNull())
+    expect(card('Hono').getAttribute('data-active')).toBe('false')
+    expect(screen.getAllByRole('article')).toHaveLength(3)
+    expect(screen.getByTestId('glossary-count').textContent).toBe('Entries: 3, active: 2')
+  })
+
+  it('blocks Save while another change is in flight instead of ignoring the click', async () => {
+    await open()
+    fireEvent.click(button('Edit Hono'))
+    type(field('Canonical term'), 'Hono 2')
+    const { gate, release } = hold()
+    const original = node.handle.bind(node)
+    node.handle = async (method, path, body) => { if (path.endsWith('/gl_pr/deactivate')) await gate; return original(method, path, body) }
+    fireEvent.click(button('Deactivate PR'))
+    expect(button('Save entry').disabled).toBe(true)
+    submitForm()
+    expect(node.requests.filter((request) => request.method === 'PUT')).toHaveLength(0)
+    await act(async () => { release() })
+    await waitFor(() => expect(button('Save entry').disabled).toBe(false))
+    submitForm()
+    await waitFor(() => expect(screen.queryAllByRole('form')).toHaveLength(0))
+    expect(node.requests.filter((request) => request.method === 'PUT')).toHaveLength(1)
+  })
+
+  it('shows glossary_invalid once for a reactivation that collides, and leaves the entry inactive', async () => {
+    await open()
+    fireEvent.click(button('Deactivate PR'))
+    await waitFor(() => expect(card('PR').getAttribute('data-active')).toBe('false'))
+    node.seed({ canonical: 'Pee', variants: ['пиар'] }, { id: 'gl_pee' })
+    fireEvent.click(button('Reactivate PR'))
+    await waitFor(() => expect(alerts()).toHaveLength(1))
+    expect(alerts()[0]?.textContent).toContain('The change was not applied')
+    expect(alerts()[0]?.textContent).toContain('does not accept this change')
+    expect(alerts()[0]?.textContent).toContain('POST /api/voice/glossary/:id/reactivate')
+    expect(alerts()[0]?.textContent).not.toContain('пиар')
+    expect(card('PR').getAttribute('data-active')).toBe('false')
+    expect(node.entries.get('gl_pr')?.revision).toBe(2)
+  })
+
+  it('shows glossary_invalid once for a revert that would collide, and keeps the current revision', async () => {
+    await open()
+    fireEvent.click(button('Edit PR'))
+    type(field('Spoken forms'), 'пиар2')
+    submitForm()
+    await waitFor(() => expect(screen.queryAllByRole('form')).toHaveLength(0))
+    node.seed({ canonical: 'Pee', variants: ['пиар'] }, { id: 'gl_pee' })
+    fireEvent.click(button('Revert PR'))
+    await waitFor(() => expect(alerts()).toHaveLength(1))
+    expect(alerts()[0]?.textContent).toContain('glossary_invalid')
+    expect(node.entries.get('gl_pr')?.revision).toBe(2)
+    expect(within(card('PR')).getByText(/Revision 2/u)).toBeTruthy()
+  })
+
+  it('turns a write that got no answer into the named offline state, with the unknown outcome stated', async () => {
+    await open()
+    node.down = true
+    fireEvent.click(button('Deactivate Hono'))
+    await waitFor(() => expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(1))
+    const text = alerts().map((alert) => alert.textContent ?? '').join(' | ')
+    expect(text).toContain('it is unknown whether the change was applied')
+    expect(alerts()).toHaveLength(2)
+    expect(screen.getAllByRole('article')).toHaveLength(3)
+    expect(card('Hono').getAttribute('data-active')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Deactivate Hono' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('explains a disabled Edit on an inactive entry through the control\'s own description', async () => {
+    install((target) => { target.seed({ canonical: 'Old' }, { id: 'gl_old', active: false }) })
+    render(<GlossaryPage />)
+    await ready()
+    expect(describedBy(screen.getByRole('button', { name: 'Edit Old' }))).toContain('Reactivate this entry before editing it.')
+  })
+
+  it('does not move focus later when the read it waited for failed', async () => {
+    await open()
+    type(field('Show entries for'), 'p1')
+    await waitFor(() => expect(node.count('GET', '/')).toBe(2))
+    await waitFor(() => expect(screen.queryAllByTestId('glossary-skeleton')).toHaveLength(0))
+    fireEvent.click(button('New entry'))
+    type(field('Applies to'), 'project')
+    type(field('Project'), 'p2')
+    type(field('Canonical term'), 'Elsewhere')
+    node.fail.set('GET /', { status: 503, code: 'glossary_unavailable' })
+    submitForm()
+    await waitFor(() => expect(alerts()).toHaveLength(1)) // the view reset asked again and the read failed
+    const focusedBefore = document.activeElement
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    node.fail.delete('GET /')
+    fireEvent.click(button('Retry'))
+    await waitFor(() => expect(screen.queryAllByRole('heading', { level: 4, name: 'Elsewhere' })).toHaveLength(1))
+    expect(document.activeElement).not.toBe(screen.getByRole('heading', { level: 4, name: 'Elsewhere' }))
+    expect(focusedBefore).not.toBeNull()
   })
 })
 
@@ -697,6 +865,54 @@ describe('preview', () => {
     await waitFor(() => expect(previewRequests()).toHaveLength(2))
     expect(previewRequests()[1]?.body).toEqual({ text: 'вайт и пиар', projectId: null })
     await waitFor(() => expect(Array.from(screen.getByTestId('glossary-preview-output').querySelectorAll('mark')).map((mark) => mark.textContent)).toEqual(['PR']))
+  })
+
+  it('marks the result stale, and announces no count for it, while a changed scope is being answered', async () => {
+    await open()
+    type(within(preview()).getByLabelText('Dictated text'), 'вайт и пиар')
+    await waitFor(() => expect(screen.getByTestId('glossary-preview-count').textContent).toBe('Replacements: 1'))
+    const accountHash = screen.getByTestId('glossary-revision').textContent
+    expect(screen.queryAllByTestId('glossary-preview-stale')).toHaveLength(0)
+    let release: () => void = () => {}
+    node.holdPreview = new Promise<void>((resolve) => { release = resolve })
+    type(within(preview()).getByLabelText('Glossary used'), 'p1')
+    await waitFor(() => expect(previewRequests()).toHaveLength(2))
+    expect(screen.getAllByTestId('glossary-preview-stale')).toHaveLength(1)
+    expect(screen.getByTestId('glossary-preview-count').textContent).toBe('')
+    expect(screen.getByTestId('glossary-revision').textContent).toBe(accountHash) // the old result is still what is on screen
+    await act(async () => { release() })
+    await waitFor(() => expect(screen.queryAllByTestId('glossary-preview-stale')).toHaveLength(0))
+    expect(screen.getByTestId('glossary-preview-count').textContent).toBe('Replacements: 2')
+    expect(screen.getByTestId('glossary-revision').textContent).not.toBe(accountHash)
+  })
+
+  it('marks the result stale while the answer to an edit is pending, then replaces it', async () => {
+    await open()
+    type(within(preview()).getByLabelText('Dictated text'), 'пиар')
+    await waitFor(() => expect(screen.getByTestId('glossary-preview-count').textContent).toBe('Replacements: 1'))
+    let release: () => void = () => {}
+    node.holdPreview = new Promise<void>((resolve) => { release = resolve })
+    fireEvent.click(button('Deactivate PR'))
+    await waitFor(() => expect(previewRequests()).toHaveLength(2))
+    expect(screen.getAllByTestId('glossary-preview-stale')).toHaveLength(1)
+    expect(screen.getByTestId('glossary-preview-count').textContent).toBe('')
+    await act(async () => { release() })
+    await waitFor(() => expect(screen.getByTestId('glossary-preview-count').textContent).toBe('No replacement applies to this text.'))
+    expect(screen.queryAllByTestId('glossary-preview-stale')).toHaveLength(0)
+  })
+
+  it('keeps one persistent status node for the page outcome and one for the preview count', async () => {
+    await open()
+    const statuses = screen.getAllByRole('status')
+    expect(statuses.map((node) => node.getAttribute('data-testid'))).toEqual(['glossary-announcement', 'glossary-preview-count'])
+    const [outcome, count] = statuses as [HTMLElement, HTMLElement]
+    expect(count.textContent).toBe('')
+    type(within(preview()).getByLabelText('Dictated text'), 'хоно')
+    await waitFor(() => expect(count.textContent).toBe('Replacements: 1'))
+    fireEvent.click(button('Deactivate Hono'))
+    await waitFor(() => expect(outcome.textContent).toBe('Deactivated “Hono”, revision 2.'))
+    expect(screen.getAllByRole('status')).toEqual([outcome, count]) // the same nodes: their text changes, they are never re-created
+    await waitFor(() => expect(count.textContent).toBe('No replacement applies to this text.'))
   })
 
   it('fails visibly, once, and recovers with Retry', async () => {

@@ -22,7 +22,8 @@ type Op = 'create' | 'update' | 'deactivate' | 'reactivate' | 'revert'
 interface Revision { entryId: string; revision: number; op: Op; entry: GlossaryEntryWire | null; source: 'user' | 'import' | 'candidate'; createdAt: number }
 export interface NodeRequest { method: string; path: string; query: Record<string, string>; body: unknown }
 export interface NodeAnswer { status: number; body: unknown }
-export type FailureRule = { status: number; code: string; once?: boolean } | 'abort'
+/** Without a `code` the answer has no body, like a proxy or gateway that cannot reach the node. */
+export type FailureRule = { status: number; code?: string; once?: boolean } | 'abort'
 
 const ENDINGS = 'аеиоуыэюяй'
 const key = (value: string) => value.toLowerCase()
@@ -33,8 +34,10 @@ export interface GlossaryNode {
   requests: NodeRequest[]
   /** Next answer for `METHOD /path-template` (e.g. `POST /revert`), consumed when `once` is set. */
   fail: Map<string, FailureRule>
-  /** While set, `GET /` waits for this promise. */
+  /** While set, `GET /` answers with the snapshot it took, but only once this promise settles. */
   holdList: Promise<void> | null
+  /** While set, `POST /apply-preview` waits for this promise before answering. */
+  holdPreview: Promise<void> | null
   /** `handle` returns `'abort'` for every request while down. */
   down: boolean
   seed(entry: Partial<GlossaryEntryWire> & { canonical: string }, options?: { id?: string; scope?: 'account' | 'project'; projectId?: string | null; active?: boolean }): StoredGlossaryEntryWire
@@ -49,11 +52,10 @@ export function createGlossaryNode(): GlossaryNode {
   const entries = new Map<string, StoredGlossaryEntryWire>()
   const revisions = new Map<string, Revision[]>()
   const node: GlossaryNode = {
-    entries, revisions, requests: [], fail: new Map(), holdList: null, down: false,
+    entries, revisions, requests: [], fail: new Map(), holdList: null, holdPreview: null, down: false,
     seed(entry, options = {}) {
       const id = options.id ?? `gl_seed_${++counter}`
-      const body: GlossaryEntryWire = { id, canonical: entry.canonical, variants: entry.variants ?? [], language: entry.language ?? 'en',
-        ...(entry.caseSensitive === undefined ? {} : { caseSensitive: entry.caseSensitive }), ...(entry.inflect === undefined ? {} : { inflect: entry.inflect }) }
+      const body = normalize({ id, canonical: entry.canonical, variants: entry.variants ?? [], language: entry.language ?? 'en', caseSensitive: entry.caseSensitive, inflect: entry.inflect })
       const now = tick()
       const scope = options.scope ?? 'account'
       const stored: StoredGlossaryEntryWire = { id, scope, projectId: scope === 'project' ? options.projectId ?? null : null, entry: body, active: true, revision: 1, createdAt: now, updatedAt: now }
@@ -74,13 +76,13 @@ export function createGlossaryNode(): GlossaryNode {
       if (rule === 'abort') return 'abort'
       if (rule) {
         if (rule.once) node.fail.delete(`${method} ${template}`)
-        return { status: rule.status, body: { code: rule.code } }
+        return { status: rule.status, body: rule.code === undefined ? null : { code: rule.code } }
       }
       if (method === 'GET' && path === '/') {
-        if (node.holdList) await node.holdList
         const includeInactive = query.includeInactive === 'true'
-        const list = [...entries.values()].filter((stored) => (includeInactive || stored.active)
-          && (query.projectId === undefined || stored.scope === 'account' || stored.projectId === query.projectId))
+        const list = structuredClone([...entries.values()].filter((stored) => (includeInactive || stored.active)
+          && (query.projectId === undefined || stored.scope === 'account' || stored.projectId === query.projectId)))
+        if (node.holdList) await node.holdList // the snapshot above is what a slow read answers with
         return { status: 200, body: { entries: list } }
       }
       if (method === 'POST' && path === '/') {
@@ -89,7 +91,7 @@ export function createGlossaryNode(): GlossaryNode {
         const body = parsed.data
         const id = body.id ?? `gl_new_${++counter}`
         if (entries.has(id)) return { status: 409, body: { code: 'entry_exists' } }
-        const entry: GlossaryEntryWire = { ...body.entry, id }
+        const entry = normalize({ ...body.entry, id })
         const scope = body.scope
         const projectId = scope === 'project' ? body.projectId ?? null : null
         if (!compatible(entry, scope, projectId, id)) return { status: 422, body: { code: 'glossary_invalid' } }
@@ -102,6 +104,7 @@ export function createGlossaryNode(): GlossaryNode {
       if (method === 'POST' && path === '/apply-preview') {
         const parsed = glossaryPreviewBodySchema.safeParse(rawBody)
         if (!parsed.success) return { status: 400, body: { code: 'validation_failed' } }
+        if (node.holdPreview) await node.holdPreview
         return { status: 200, body: preview(parsed.data.text, parsed.data.projectId ?? null) }
       }
       const match = /^\/([^/]+)(?:\/(deactivate|reactivate|revert|history))?$/u.exec(path)
@@ -115,13 +118,22 @@ export function createGlossaryNode(): GlossaryNode {
         const parsed = updateGlossaryEntryBodySchema.safeParse(rawBody)
         if (!parsed.success) return { status: 400, body: { code: 'validation_failed' } }
         if (!stored.active) return { status: 409, body: { code: 'entry_inactive' } }
-        const entry: GlossaryEntryWire = { ...parsed.data.entry, id }
+        const entry = normalize({ ...parsed.data.entry, id })
         if (!compatible(entry, stored.scope, stored.projectId, id)) return { status: 422, body: { code: 'glossary_invalid' } }
         return { status: 200, body: mutate(id, 'update', entry) }
       }
       if (method === 'POST' && action === 'deactivate') return stored.active ? { status: 200, body: mutate(id, 'deactivate') } : { status: 409, body: { code: 'already_inactive' } }
-      if (method === 'POST' && action === 'reactivate') return stored.active ? { status: 409, body: { code: 'already_active' } } : { status: 200, body: mutate(id, 'reactivate') }
-      if (method === 'POST' && action === 'revert') return { status: 200, body: mutate(id, 'revert') }
+      if (method === 'POST' && action === 'reactivate') {
+        if (stored.active) return { status: 409, body: { code: 'already_active' } }
+        // The store validates the effective sets a mutation could change, reactivation included.
+        if (!compatible(stored.entry, stored.scope, stored.projectId, id)) return { status: 422, body: { code: 'glossary_invalid' } }
+        return { status: 200, body: mutate(id, 'reactivate') }
+      }
+      if (method === 'POST' && action === 'revert') {
+        const target = revertTarget(id)
+        if (target.active && !compatible(target.entry, stored.scope, stored.projectId, id)) return { status: 422, body: { code: 'glossary_invalid' } }
+        return { status: 200, body: mutate(id, 'revert') }
+      }
       return { status: 404, body: { code: 'entry_not_found' } }
     },
   }
@@ -158,6 +170,19 @@ export function createGlossaryNode(): GlossaryNode {
     return activeBy.get(target) ?? false
   }
 
+  /** The store always writes explicit flags (`compileGlossary` defaults them), so the wire carries them. */
+  function normalize(entry: Omit<GlossaryEntryWire, 'caseSensitive' | 'inflect'> & { caseSensitive?: boolean | undefined; inflect?: boolean | undefined }): GlossaryEntryWire {
+    return { id: entry.id, canonical: entry.canonical, variants: [...entry.variants], language: entry.language, caseSensitive: entry.caseSensitive ?? false, inflect: entry.inflect ?? true }
+  }
+
+  function revertTarget(id: string): { entry: GlossaryEntryWire; active: boolean } {
+    const current = entries.get(id) as StoredGlossaryEntryWire
+    const previous = (revisions.get(id) as Revision[]).filter((row) => row.revision < current.revision)
+    let target: Revision | null = null
+    for (const row of previous) if (row.entry !== null) target = row
+    return { entry: target?.entry ?? current.entry, active: target === null ? false : replayActive(previous, target.revision) }
+  }
+
   function mutate(id: string, op: Exclude<Op, 'create'>, next?: GlossaryEntryWire): StoredGlossaryEntryWire {
     const current = entries.get(id) as StoredGlossaryEntryWire
     const history = revisions.get(id) as Revision[]
@@ -168,13 +193,7 @@ export function createGlossaryNode(): GlossaryNode {
     if (op === 'update') entry = next as GlossaryEntryWire
     else if (op === 'deactivate') active = false
     else if (op === 'reactivate') active = true
-    else {
-      const previous = history.filter((row) => row.revision < current.revision)
-      let target: Revision | null = null
-      for (const row of previous) if (row.entry !== null) target = row
-      entry = target?.entry ?? current.entry
-      active = target === null ? false : replayActive(previous, target.revision)
-    }
+    else ({ entry, active } = revertTarget(id))
     const stored: StoredGlossaryEntryWire = { ...current, entry, active, revision, updatedAt: now }
     entries.set(id, stored)
     history.push({ entryId: id, revision, op, entry, source: 'user', createdAt: now })
@@ -229,6 +248,6 @@ export function glossaryFetch(node: GlossaryNode, other: (path: string, init?: R
     const answer = await node.handle(init?.method ?? 'GET', path, body)
     if (answer === 'abort') throw new TypeError('Failed to fetch')
     if (init?.signal?.aborted) throw new DOMException('aborted', 'AbortError')
-    return Response.json(answer.body, { status: answer.status })
+    return answer.body === null ? new Response(null, { status: answer.status }) : Response.json(answer.body, { status: answer.status })
   }
 }

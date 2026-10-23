@@ -6,6 +6,7 @@ import {
   overriddenAccountEntryIds, previewSegments, previewTooLong, splitVariants, validateDraft, type FailureCode,
 } from '../../src/features/voice/model.ts'
 import { LocalApiError, LocalApiShapeError } from '../../src/lib/local-api.ts'
+import { localeCatalogs } from '../../src/lib/locale.ts'
 
 const stored = (id: string, canonical: string, extra: Partial<StoredGlossaryEntryWire> & { variants?: string[] } = {}): StoredGlossaryEntryWire => ({
   id, scope: extra.scope ?? 'account', projectId: extra.projectId ?? null, active: extra.active ?? true, revision: extra.revision ?? 1, createdAt: 1, updatedAt: 1,
@@ -142,7 +143,10 @@ describe('failures', () => {
   const codes: FailureCode[] = [...GLOSSARY_ERROR_CODES, 'unexpected_response', 'shape', 'unreachable']
   it('classifies transport, shape and contract errors', () => {
     expect(classify(new LocalApiError(422, 'glossary_invalid'))).toBe('glossary_invalid')
-    expect(classify(new LocalApiError(500, 'unexpected_response'))).toBe('unexpected_response')
+    expect(classify(new LocalApiError(500, 'unexpected_response'))).toBe('unreachable') // a body-less 5xx is a proxy or gateway, not the node
+    expect(classify(new LocalApiError(502, 'unexpected_response'))).toBe('unreachable')
+    expect(classify(new LocalApiError(200, 'unexpected_response'))).toBe('unexpected_response')
+    expect(classify(new LocalApiError(500, 'internal_error'))).toBe('internal_error') // the node's own 5xx keeps its code
     expect(classify(new LocalApiShapeError('/x', []))).toBe('shape')
     expect(classify(new TypeError('Failed to fetch'))).toBe('unreachable')
   })
@@ -151,19 +155,19 @@ describe('failures', () => {
     for (const code of codes) {
       for (const intent of ['read', 'write'] as const) {
         const key = failureMessage(code, intent)
-        expect(voiceGlossaryEnglish[key], `${code}/${intent}`).toMatch(/\S/u)
-        expect(voiceGlossaryRussian[key], `${code}/${intent} ru`).toMatch(/\S/u)
+        expect(localeCatalogs.en[key], `${code}/${intent}`).toMatch(/\S/u)
+        expect(localeCatalogs.ru[key], `${code}/${intent} ru`).toMatch(/\S/u)
       }
     }
   })
 
   it('never makes an error message mention the user\'s terms: no message carries a placeholder', () => {
-    for (const code of codes) for (const intent of ['read', 'write'] as const) expect(voiceGlossaryEnglish[failureMessage(code, intent)]).not.toMatch(/\{/u)
+    for (const code of codes) for (const intent of ['read', 'write'] as const) expect(localeCatalogs.en[failureMessage(code, intent)]).not.toMatch(/\{/u)
   })
 
   it('tells an unknown write outcome apart from a read failure', () => {
     expect(failureMessage('unreachable', 'write')).not.toBe(failureMessage('unreachable', 'read'))
-    expect(voiceGlossaryEnglish[failureMessage('unreachable', 'write')]).toMatch(/unknown whether/u)
+    expect(localeCatalogs.en[failureMessage('unreachable', 'write')]).toMatch(/unknown whether/u)
   })
 })
 

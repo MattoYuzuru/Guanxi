@@ -1,10 +1,11 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { GlossaryPreviewResponse } from '@guanxi/contract'
-import { Button, ErrorState, ProvenanceLabel, Textarea } from '@guanxi/ui'
+import { Button, ErrorState, Textarea } from '@guanxi/ui'
 import { Select } from '../../components/ui.tsx'
 import { translate as t } from '../../lib/locale.ts'
 import { useDebounced } from '../../lib/useAsync.ts'
 import { glossaryApi } from './api.ts'
+import { Provenance } from './Provenance.tsx'
 import { classify, failureMessage, previewSegments, previewTooLong, PREVIEW_LIMIT, type Failure } from './model.ts'
 import type { ProjectChoices } from './useGlossary.ts'
 
@@ -30,7 +31,8 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
   const [text, setText] = useState('')
   const delayed = useDebounced(text, PREVIEW_DELAY_MS)
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
-  const [computedFor, setComputedFor] = useState<string | null>(null)
+  // What the shown result was computed for. It is only current while all three still match.
+  const [computedFor, setComputedFor] = useState<{ text: string; scope: string; version: number } | null>(null)
   const [pending, setPending] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const id = useId()
@@ -45,7 +47,7 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
       (result) => {
         if (abort.signal.aborted) return
         setPhase({ kind: 'ready', result, observedAt: new Date().toISOString() })
-        setComputedFor(delayed)
+        setComputedFor({ text: delayed, scope: scopeProjectId, version })
         setPending(false)
       },
       (error: unknown) => {
@@ -59,7 +61,8 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
   }, [delayed, scopeProjectId, version, attempt, blank, tooLong])
 
   const typing = text !== delayed
-  const stale = phase.kind === 'ready' && (typing || computedFor !== delayed)
+  const current = computedFor !== null && computedFor.text === delayed && computedFor.scope === scopeProjectId && computedFor.version === version
+  const stale = phase.kind === 'ready' && (typing || !current)
   const shown = phase.kind === 'ready' ? phase.result : null
   const view = useMemo(() => shown ? previewSegments(shown) : null, [shown])
   const scopeOptions = [{ value: '', label: t('voiceGlossary.preview.scope.account') },
@@ -68,7 +71,7 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
   if (scopeProjectId !== '' && !projects.names.has(scopeProjectId)) scopeOptions.push({ value: scopeProjectId, label: t('voiceGlossary.preview.scope.project', { name: scopeProjectId }) })
 
   return <section aria-labelledby={`${id}-title`} className="flex min-w-0 flex-col gap-3 rounded-panel border border-divider bg-surface p-3" data-testid="glossary-preview">
-    <h2 id={`${id}-title`} className="text-16 font-heading">{t('voiceGlossary.preview.title')}</h2>
+    <h2 id={`${id}-title`} className="text-18 font-heading">{t('voiceGlossary.preview.title')}</h2>
     <p className="text-12 text-secondary">{t('voiceGlossary.preview.description')}</p>
     <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={`${id}-text`} className="text-14 font-heading">{t('voiceGlossary.preview.text')}</label>
@@ -81,22 +84,26 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
       <Select id={`${id}-scope`} value={scopeProjectId} onChange={onScopeChange} options={scopeOptions} />
     </div>
 
-    <div aria-busy={pending || typing} className="flex min-w-0 flex-col gap-2" data-testid="glossary-preview-result">
-      {phase.kind === 'idle' && !tooLong && <p role="status" className="text-12 text-secondary">{blank ? t('voiceGlossary.preview.idle') : t('voiceGlossary.preview.loading')}</p>}
+    {/* One persistent live region for the outcome. It stays empty while the result is stale, so a
+        count is only ever announced for the text, scope and glossary that produced it. */}
+    <p role="status" className="min-h-4 text-13" data-testid="glossary-preview-count">
+      {shown && !stale ? (shown.replacements.length === 0 ? t('voiceGlossary.preview.none') : t('voiceGlossary.preview.count', { count: shown.replacements.length })) : ''}
+    </p>
+    <div className="flex min-w-0 flex-col gap-2" data-testid="glossary-preview-result" data-stale={stale || undefined}>
+      {phase.kind === 'idle' && !tooLong && <p className="text-12 text-secondary">{blank ? t('voiceGlossary.preview.idle') : t('voiceGlossary.preview.loading')}</p>}
       {phase.kind === 'failed' && <>
         <ErrorState title={`${t('voiceGlossary.preview.error')}. ${t(failureMessage(phase.failure.code, 'read'))}`} source={t('voiceGlossary.source.preview')}
           occurredAt={phase.failure.at} timeMeaning="observed" details={phase.failure.code}
           action={<Button size="sm" onClick={() => setAttempt((value) => value + 1)} loading={pending}>{t('voiceGlossary.retry')}</Button>} />
       </>}
       {shown && view && <>
-        {stale && <p role="status" className="text-12 text-secondary">{t('voiceGlossary.preview.stale')}</p>}
+        {stale && <p className="text-12 text-secondary" data-testid="glossary-preview-stale">{t('voiceGlossary.preview.stale')}</p>}
         <h3 className="text-14 font-heading">{t('voiceGlossary.preview.result')}</h3>
         <p className="min-w-0 whitespace-pre-wrap break-words rounded-control border border-divider bg-inset p-2 text-14" data-testid="glossary-preview-output">
           {view.segments.map((segment, index) => segment.replaced
             ? <mark key={index} data-replaced="" className="rounded-control bg-accent px-1 text-accent-foreground underline decoration-2 underline-offset-2">{segment.text}</mark>
             : <span key={index}>{segment.text}</span>)}
         </p>
-        <p className="text-12" data-testid="glossary-preview-count">{shown.replacements.length === 0 ? t('voiceGlossary.preview.none') : t('voiceGlossary.preview.count', { count: shown.replacements.length })}</p>
         {shown.replacements.length > 0 && <>
           <h3 className="text-14 font-heading">{t('voiceGlossary.preview.replacements')}</h3>
           <ul className="flex min-w-0 flex-col gap-1">
@@ -108,7 +115,7 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
         <div className="flex min-w-0 flex-col gap-1 text-12 text-secondary">
           <p>{t('voiceGlossary.preview.entryCount', { count: shown.entryCount })}</p>
           <p className="min-w-0"><span>{t('voiceGlossary.preview.revision')}</span> <code className="break-all font-mono" data-testid="glossary-revision">{shown.glossaryRevision}</code></p>
-          <ProvenanceLabel source={t('voiceGlossary.source.preview')} observedAt={phase.kind === 'ready' ? phase.observedAt : null} />
+          {phase.kind === 'ready' && <Provenance source={t('voiceGlossary.source.preview')} observedAt={phase.observedAt} />}
         </div>
       </>}
     </div>

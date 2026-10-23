@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { StoredGlossaryEntryWire } from '@guanxi/contract'
-import { Button, Checkbox, EmptyState, ErrorState, ProvenanceLabel } from '@guanxi/ui'
+import { Button, EmptyState, ErrorState } from '@guanxi/ui'
 import { Select } from '../../components/ui.tsx'
 import { formatRelativeTime, formatTime } from '../../lib/format.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
@@ -10,6 +10,8 @@ import { glossaryApi } from './api.ts'
 import { GlossaryEntryCard } from './GlossaryEntryCard.tsx'
 import { GlossaryEntryForm } from './GlossaryEntryForm.tsx'
 import { GlossaryPreview } from './GlossaryPreview.tsx'
+import { Provenance } from './Provenance.tsx'
+import { ToggleButton } from './ToggleButton.tsx'
 import {
   bodyFromDraft, classify, draftFromEntry, emptyDraft, failureMessage, groupEntries, inView, overriddenAccountEntryIds,
   type EntryDraft, type Failure,
@@ -52,6 +54,9 @@ export function GlossaryPage() {
   const [focusRequest, setFocusRequest] = useState<{ key: string; token: number } | null>(null)
   const busy = useRef(false)
   const mounted = useRef(true)
+  // The view as it is now: an answer that arrives later must be judged against this, not against the click.
+  const view = useRef({ projectId, showInactive })
+  view.current = { projectId, showInactive }
   const actionFailureRef = useRef<HTMLDivElement>(null)
   const entriesHeadingRef = useRef<HTMLHeadingElement>(null)
   const offlineId = useId()
@@ -74,10 +79,12 @@ export function GlossaryPage() {
   // Move focus on deliberately once the control it names exists; fall back to the list heading.
   useEffect(() => {
     if (!focusRequest) return
+    // A failed read ends the request: focus must not jump later, when some other read succeeds.
+    if (list.failure) { setFocusRequest(null); return }
     const target = focusTarget(focusRequest.key)
-    if (target) { target.focus(); setFocusRequest(null) }
+    if (target && !(target as HTMLButtonElement).disabled) { target.focus(); setFocusRequest(null) }
     else if (list.status === 'ready' && !list.refreshing) { entriesHeadingRef.current?.focus(); setFocusRequest(null) }
-  }, [focusRequest, list.entries, list.status, list.refreshing])
+  }, [focusRequest, list.entries, list.status, list.refreshing, list.failure])
 
   const unreachable = list.failure?.code === 'unreachable'
   const entries = list.entries
@@ -104,6 +111,8 @@ export function GlossaryPage() {
       setAnnouncement('')
       if (action === 'create' || action === 'update') setFormFailure(failure)
       else setActionFailure({ ...failure, action })
+      // No answer at all: ask the read path, so a node that is really gone becomes the named offline state.
+      if (failure.code === 'unreachable') list.reload()
     } finally { busy.current = false; if (mounted.current) setPending(null) }
   }
   const done = (action: Action, stored: StoredGlossaryEntryWire, key: LocaleKey = DONE_KEYS[action]) =>
@@ -114,16 +123,16 @@ export function GlossaryPage() {
     if (editor?.mode === 'edit') {
       const id = editor.id
       void run('update', id, () => glossaryApi.update(id, { entry: body }), (stored) => {
-        list.upsert(stored); setEditor(null); done('update', stored); requestFocus(`edit:${id}`)
+        list.patch(stored, inView(stored, view.current.projectId, view.current.showInactive)); setEditor(null); done('update', stored); requestFocus(`edit:${id}`)
       })
       return
     }
     void run('create', null, () => glossaryApi.create({ scope: draft.scope, ...(draft.scope === 'project' ? { projectId: draft.projectId } : {}), entry: body }), (stored) => {
       setEditor(null)
-      const visible = inView(stored, projectId, showInactive)
+      const visible = inView(stored, view.current.projectId, view.current.showInactive)
       // The new entry may belong to a view that the current filter hides; the full view always shows it.
-      if (visible) list.upsert(stored)
-      else setProjectId('')
+      list.patch(stored, visible)
+      if (!visible) setProjectId('')
       done('create', stored, visible ? 'voiceGlossary.done.created' : 'voiceGlossary.done.created.elsewhere')
       requestFocus(`card:${stored.id}`)
     })
@@ -131,8 +140,7 @@ export function GlossaryPage() {
   const mutate = (action: 'deactivate' | 'reactivate' | 'revert', stored: StoredGlossaryEntryWire) => {
     const key = action === 'revert' ? `revert:${stored.id}` : `toggle:${stored.id}`
     void run(action, stored.id, () => glossaryApi[action](stored.id), (next) => {
-      if (!showInactive && !next.active) list.dropInactive(next.id)
-      else list.upsert(next)
+      list.patch(next, inView(next, view.current.projectId, view.current.showInactive))
       done(action, next); requestFocus(key)
     })
   }
@@ -147,6 +155,7 @@ export function GlossaryPage() {
     setEditor(null); setFormFailure(null); requestFocus(key)
   }
 
+  const viewLocked = pending !== null || editor !== null
   const age = list.observedAt ? t('voiceGlossary.asOf', { time: formatTime(list.observedAt), age: formatRelativeTime(list.observedAt) }) : null
   const emptyKey: LocaleKey = !showInactive ? 'voiceGlossary.empty.activeOnly' : projectId !== '' ? 'voiceGlossary.empty.view' : 'voiceGlossary.empty'
   const emptyView = list.status === 'ready' && entries !== null && entries.length === 0
@@ -157,7 +166,8 @@ export function GlossaryPage() {
   if (projectId !== '' && !names.has(projectId)) filterOptions.push({ value: projectId, label: t('voiceGlossary.filter.project', { name: projectId }) })
   const formInitial = useMemo(() => editing ? draftFromEntry(editing) : emptyDraft(projectId), [editing, projectId])
 
-  return <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4 p-4 text-foreground">
+  // `wrap-anywhere` is inherited: machine names inside shared patterns (sources, details, hashes) may break instead of widening the page.
+  return <div data-testid="glossary-page" className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-4 p-4 text-foreground wrap-anywhere">
     <header className="flex min-w-0 flex-col gap-1">
       <Link to={paths.settings()} className="inline-flex min-h-6 w-fit items-center text-13 text-secondary underline underline-offset-2 focus-visible:outline-focus">{t('voiceGlossary.backToSettings')}</Link>
       <h1 className="text-22 font-heading">{t('voiceGlossary.title')}</h1>
@@ -169,7 +179,7 @@ export function GlossaryPage() {
 
     {unreachable && <div role="alert" className="flex flex-col gap-2 rounded-panel border border-danger bg-surface p-3" data-state="node_unreachable">
       <p className="font-heading">{t('voiceGlossary.offline.title')} · <span className="font-mono">{t('voiceGlossary.offline.state')}</span></p>
-      <p id={offlineId}>{t('voiceGlossary.offline.body')}</p>
+      <p id={offlineId}>{t(entries === null ? 'voiceGlossary.offline.bodyNone' : 'voiceGlossary.offline.body')}</p>
       <p className="text-12 text-secondary">{age ?? t('voiceGlossary.offline.never')}</p>
       <div><Button onClick={list.reload} loading={list.status === 'loading' || list.refreshing}>{t('voiceGlossary.retry')}</Button></div>
     </div>}
@@ -187,24 +197,25 @@ export function GlossaryPage() {
     <div role="group" aria-label={t('voiceGlossary.toolbar')} className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-1">
         <label htmlFor="glossary-filter" className="text-14 font-heading">{t('voiceGlossary.filter.label')}</label>
-        <Select id="glossary-filter" value={projectId} onChange={setProjectId} options={filterOptions} describedBy={projects.status === 'unavailable' ? 'glossary-filter-hint' : undefined} />
+        <Select id="glossary-filter" value={projectId} onChange={setProjectId} options={filterOptions} disabled={viewLocked}
+          describedBy={[projects.status === 'unavailable' ? 'glossary-filter-hint' : '', editor !== null ? 'glossary-view-locked' : ''].filter(Boolean).join(' ') || undefined} />
         {projects.status === 'unavailable' && <p id="glossary-filter-hint" className="text-12 text-secondary">{t('voiceGlossary.filter.projectsUnavailable')}</p>}
       </div>
-      <Checkbox label={t('voiceGlossary.showInactive')} checked={showInactive} onCheckedChange={setShowInactive} />
+      <ToggleButton pressed={showInactive} onPressedChange={setShowInactive} disabled={viewLocked} describedBy={editor !== null ? 'glossary-view-locked' : undefined}>{t('voiceGlossary.showInactive')}</ToggleButton>
+      {editor !== null && <p id="glossary-view-locked" className="text-12 text-secondary">{t('voiceGlossary.view.locked')}</p>}
       <div className="flex flex-wrap items-center gap-3">
         {!emptyView && newButton}
         {entries !== null && <p className="text-12 text-secondary" data-testid="glossary-count">{t('voiceGlossary.count', { count: entries.length, active: activeCount })}</p>}
-        {list.observedAt && <ProvenanceLabel source={t('voiceGlossary.source.list')} observedAt={list.observedAt} />}
+        {list.observedAt && <Provenance source={t('voiceGlossary.source.list')} observedAt={list.observedAt} />}
       </div>
     </div>
 
     {editor && (editor.mode === 'create' || editing) && <GlossaryEntryForm key={editor.mode === 'edit' ? editor.id : 'create'}
       editing={editing ? { name: editing.entry.canonical, scopeLabel: scopeLabel(editing) } : null} initial={formInitial} projects={projects}
-      offline={unreachable} saving={pending?.action === 'create' || pending?.action === 'update'} failure={formFailure}
+      offline={unreachable} saving={pending?.action === 'create' || pending?.action === 'update'} blocked={pending !== null && pending.action !== 'create' && pending.action !== 'update'} failure={formFailure}
       failureSource={t(editor.mode === 'edit' ? 'voiceGlossary.source.update' : 'voiceGlossary.source.create')} onSubmit={submitForm} onCancel={closeEditor} />}
 
-    <section aria-labelledby="glossary-entries" className="flex min-w-0 flex-col gap-3" aria-busy={list.status === 'loading' || list.refreshing}>
-      <h2 id="glossary-entries" ref={entriesHeadingRef} tabIndex={-1} className="text-16 font-heading focus-visible:outline-focus">{t('voiceGlossary.entries')}</h2>
+    <section aria-labelledby="glossary-entries" className="flex min-w-0 flex-col gap-3" ><h2 id="glossary-entries" ref={entriesHeadingRef} tabIndex={-1} className="text-18 font-heading focus-visible:outline-focus">{t('voiceGlossary.entries')}</h2>
       {list.status === 'loading' && <>
         <p role="status">{t('voiceGlossary.loading')}</p>
         <div aria-hidden="true" className="flex flex-col gap-3" data-testid="glossary-skeleton">
@@ -218,7 +229,8 @@ export function GlossaryPage() {
           <h3 id={headingId} className="break-words text-14 font-heading text-secondary">
             {group.scope === 'account' ? t('voiceGlossary.section.account')
               : names.has(group.projectId ?? '') ? t('voiceGlossary.section.project', { name: projectName(group.projectId) })
-                : t('voiceGlossary.section.projectUnknown', { id: group.projectId ?? '' })}
+                // "Missing from the list" is a claim: make it only once the list is known.
+                : t(projects.status === 'ready' ? 'voiceGlossary.section.projectUnknown' : 'voiceGlossary.section.projectId', { id: group.projectId ?? '' })}
           </h3>
           <ul className="flex min-w-0 flex-col gap-2">
             {group.entries.map((stored) => <li key={stored.id} className="min-w-0">

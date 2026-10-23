@@ -112,7 +112,7 @@ and is not stored on the origin, so a spread or `structuredClone` of the origin 
 block. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is independent of
 input order.
 
-Limits: this slice does not add a web glossary editor, an STT adapter, backend biasing mapping,
+Limits: this slice does not add a web glossary editor (it landed later, see MS2 below), an STT adapter, backend biasing mapping,
 the `voice.flag_term` tool or V2 candidate learning. (The plugin, REST routes and contract type
 landed in MS2, below.) The V1 exit gate still needs the owner's evaluation recordings and is not
 measurable here.
@@ -154,8 +154,9 @@ Rules pinned by tests:
 Evidence: `ms2-glossary-routes.test.ts` (14 tests), the voice parts of `ms2-plugins.test.ts` and
 `ms2-contract.test.ts`.
 
-Still later: the glossary editor UI, STT adapters and backend biasing, `voice.flag_term` and V2
-candidate learning.
+The glossary editor UI is built in `packages/web/src/features/voice` (route `/settings/voice/glossary`,
+V1 UI lane; see [LAYOUT_AND_SCREENS](../../../../docs/design/LAYOUT_AND_SCREENS.md) §7). Still later: STT
+adapters and backend biasing, `voice.flag_term` and V2 candidate learning.
 
 ## Evaluation metrics and gates (V1-c)
 

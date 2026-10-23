@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { GlossaryHistoryResponse, StoredGlossaryEntryWire } from '@guanxi/contract'
-import { Badge, Button, ErrorState } from '@guanxi/ui'
+import { Button, ErrorState } from '@guanxi/ui'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import { glossaryApi } from './api.ts'
+import { Tag } from './Tag.tsx'
 import { changedFields, classify, failureMessage, type ChangedField, type Failure } from './model.ts'
 
 type Revision = GlossaryHistoryResponse['revisions'][number]
@@ -40,7 +41,7 @@ export function GlossaryHistory({ entry, panelId }: { entry: StoredGlossaryEntry
   const { revisions, failure, loading } = state
   const ordered = revisions === null ? null : [...revisions].sort((a, b) => b.revision - a.revision)
   return <section id={panelId} aria-labelledby={`${panelId}-title`} aria-busy={loading} className="flex min-w-0 flex-col gap-2 rounded-control border border-divider bg-inset p-3" data-testid="glossary-history">
-    <h4 id={`${panelId}-title`} className="min-w-0 break-words text-14 font-heading">{t('voiceGlossary.history.title', { name: entry.entry.canonical })}</h4>
+    <h5 id={`${panelId}-title`} className="min-w-0 break-words text-14 font-heading">{t('voiceGlossary.history.title', { name: entry.entry.canonical })}</h5>
     {ordered === null && loading && <p role="status" className="text-12 text-secondary">{t('voiceGlossary.history.loading')}</p>}
     {failure && <ErrorState title={t('voiceGlossary.history.error')} source={t('voiceGlossary.source.history')} occurredAt={failure.at} timeMeaning="observed"
       details={failure.code} action={<Button size="sm" onClick={() => setAttempt((value) => value + 1)} loading={loading}>{t('voiceGlossary.retry')}</Button>} />}
@@ -53,7 +54,7 @@ export function GlossaryHistory({ entry, panelId }: { entry: StoredGlossaryEntry
           <p className="flex flex-wrap items-center gap-2 text-13">
             <span className="font-heading">{t('voiceGlossary.history.revision', { revision: revision.revision })}</span>
             <span>{t(OP_KEYS[revision.op])} {t(SOURCE_KEYS[revision.source])}</span>
-            {revision.revision === entry.revision && <Badge tone="accent">{t('voiceGlossary.history.current')}</Badge>}
+            {revision.revision === entry.revision && <Tag tone="info">{t('voiceGlossary.history.current')}</Tag>}
             <time className="text-12 text-secondary" dateTime={new Date(revision.createdAt).toISOString()}>{formatDateTime(new Date(revision.createdAt).toISOString())}</time>
           </p>
           {revision.entry && <p className="break-words text-12 text-secondary">{t('voiceGlossary.history.snapshot', {

@@ -200,7 +200,9 @@ const CODE = { shape: 'shape', invalid: 'validation_failed', unreachable: 'unrea
 
 /** `unreachable`: no HTTP answer at all. Everything else is the node (or a bad body) speaking. */
 export function classify(error: unknown): FailureCode {
-  if (error instanceof LocalApiError) return error.code
+  // The node always answers with a `{ code }` body. A bare 5xx comes from something in between
+  // (the dev proxy or a gateway answering for a node that is not there), which is no answer from the node.
+  if (error instanceof LocalApiError) return error.code === 'unexpected_response' && error.status >= 500 ? CODE.unreachable : error.code
   if (error instanceof LocalApiShapeError) return CODE.shape
   if (error instanceof ZodError) return CODE.invalid
   return CODE.unreachable

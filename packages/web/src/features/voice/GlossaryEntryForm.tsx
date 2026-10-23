@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Button, Checkbox, ErrorState, Input, Textarea } from '@guanxi/ui'
+import { Button, ErrorState, Input, Textarea } from '@guanxi/ui'
 import { Select } from '../../components/ui.tsx'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import {
   draftsEqual, failureMessage, hasErrors, validateDraft,
   type EntryDraft, type FieldErrors, type Failure, type GlossaryLanguage, type Message,
 } from './model.ts'
+import { ToggleButton } from './ToggleButton.tsx'
 import type { ProjectChoices } from './useGlossary.ts'
 
 const LANGUAGE_KEYS = { en: 'voiceGlossary.language.en', ru: 'voiceGlossary.language.ru', any: 'voiceGlossary.language.any' } as const satisfies Record<GlossaryLanguage, LocaleKey>
@@ -33,13 +34,15 @@ export interface GlossaryEntryFormProps {
   projects: ProjectChoices
   offline: boolean
   saving: boolean
+  /** Another change is in flight; saving waits for it instead of silently doing nothing. */
+  blocked: boolean
   failure: Failure | null
   failureSource: string
   onSubmit: (draft: EntryDraft) => void
   onCancel: () => void
 }
 
-export function GlossaryEntryForm({ editing, initial, projects, offline, saving, failure, failureSource, onSubmit, onCancel }: GlossaryEntryFormProps) {
+export function GlossaryEntryForm({ editing, initial, projects, offline, saving, blocked, failure, failureSource, onSubmit, onCancel }: GlossaryEntryFormProps) {
   const [draft, setDraft] = useState(initial)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [showSummary, setShowSummary] = useState(false)
@@ -56,7 +59,7 @@ export function GlossaryEntryForm({ editing, initial, projects, offline, saving,
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (saving || offline) return
+    if (saving || offline || blocked) return
     const found = validateDraft(draft, projectRequired)
     setErrors(found)
     setShowSummary(hasErrors(found))
@@ -73,7 +76,7 @@ export function GlossaryEntryForm({ editing, initial, projects, offline, saving,
   const projectUnavailable = projects.status === 'unavailable'
 
   return <section aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3 rounded-panel border border-control bg-surface p-3" data-testid="glossary-form">
-    <h2 id={titleId} className="text-16 font-heading">{editing ? t('voiceGlossary.form.edit', { name: editing.name }) : t('voiceGlossary.form.create')}</h2>
+    <h2 id={titleId} className="text-18 font-heading">{editing ? t('voiceGlossary.form.edit', { name: editing.name }) : t('voiceGlossary.form.create')}</h2>
     <form aria-labelledby={titleId} onSubmit={submit} noValidate className="flex min-w-0 flex-col gap-4">
       {editing === null
         ? <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
@@ -104,12 +107,11 @@ export function GlossaryEntryForm({ editing, initial, projects, offline, saving,
           onChange={(value) => set('language', value === 'ru' ? 'ru' : value === 'any' ? 'any' : 'en')} />}
       </FormField>
       <div className="flex min-w-0 flex-col gap-2">
-        <Checkbox label={t('voiceGlossary.field.caseSensitive')} checked={draft.caseSensitive} aria-describedby={`${titleId}-case`}
-          onCheckedChange={(checked) => set('caseSensitive', checked)} />
-        <p id={`${titleId}-case`} className="pl-6 text-12 text-secondary">{t('voiceGlossary.field.caseSensitive.hint')}</p>
-        <Checkbox label={t('voiceGlossary.field.inflect')} checked={draft.inflect && inflectAvailable} disabled={!inflectAvailable} aria-describedby={inflectNote ? `${titleId}-inflect` : undefined}
-          onCheckedChange={(checked) => set('inflect', checked)} />
-        {inflectNote && <p id={`${titleId}-inflect`} className="pl-6 text-12 text-secondary">{t(inflectNote)}</p>}
+        <ToggleButton pressed={draft.caseSensitive} describedBy={`${titleId}-case`} onPressedChange={(next) => set('caseSensitive', next)}>{t('voiceGlossary.field.caseSensitive')}</ToggleButton>
+        <p id={`${titleId}-case`} className="text-12 text-secondary">{t('voiceGlossary.field.caseSensitive.hint')}</p>
+        <ToggleButton pressed={draft.inflect && inflectAvailable} disabled={!inflectAvailable} describedBy={inflectNote ? `${titleId}-inflect` : undefined}
+          onPressedChange={(next) => set('inflect', next)}>{t('voiceGlossary.field.inflect')}</ToggleButton>
+        {inflectNote && <p id={`${titleId}-inflect`} className="text-12 text-secondary">{t(inflectNote)}</p>}
       </div>
 
       {showSummary && <p role="alert" className="text-12 text-danger">{t('voiceGlossary.form.fix')}</p>}
@@ -118,7 +120,7 @@ export function GlossaryEntryForm({ editing, initial, projects, offline, saving,
       </div>}
       {offline && <p id={offlineId} className="text-12 text-secondary">{t('voiceGlossary.offline.reason')}</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant="primary" loading={saving} loadingLabel={t('voiceGlossary.form.saving')} disabled={offline} aria-describedby={offline ? offlineId : undefined}>
+        <Button type="submit" variant="primary" loading={saving} loadingLabel={t('voiceGlossary.form.saving')} disabled={offline || blocked} aria-describedby={offline ? offlineId : undefined}>
           {editing ? t('voiceGlossary.form.save') : t('voiceGlossary.form.create.submit')}
         </Button>
         <Button onClick={onCancel} disabled={saving} aria-describedby={cancelHintId}>{t('voiceGlossary.form.cancel')}</Button>

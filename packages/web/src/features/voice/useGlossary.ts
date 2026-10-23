@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, StoredGlossaryEntryWire } from '@guanxi/contract'
 import { agentRequest } from '../native-agent/api.ts'
 import { glossaryApi } from './api.ts'
@@ -17,12 +17,17 @@ export function useGlossaryEntries(projectId: string, includeInactive: boolean) 
   const [failureState, setFailure] = useState<(Failure & { key: string }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [revision, setRevision] = useState(0)
+  // Counts the local patches (a mutation's answer). A read that started before a patch may carry
+  // an older picture, so it is discarded and the view is read once more instead of being shown.
+  const patches = useRef(0)
   useEffect(() => {
     const abort = new AbortController()
+    const startedAt = patches.current
     setLoading(true)
     glossaryApi.list({ ...(projectId === '' ? {} : { projectId }), includeInactive }, abort.signal).then(
       (response) => {
         if (abort.signal.aborted) return
+        if (patches.current !== startedAt) { setRevision((value) => value + 1); return }
         setData({ key: viewKey, entries: response.entries, observedAt: new Date().toISOString() })
         setFailure(null)
         setLoading(false)
@@ -40,16 +45,19 @@ export function useGlossaryEntries(projectId: string, includeInactive: boolean) 
   const failure = failureState !== null && failureState.key === viewKey ? failureState : null
   const status: GlossaryStatus = current === null ? (failure !== null && !loading ? 'failed' : 'loading') : 'ready'
   const reload = useCallback(() => setRevision((value) => value + 1), [])
-  /** Replaces or adds one entry from a mutation answer; the node returned the complete stored row. */
-  const upsert = useCallback((stored: StoredGlossaryEntryWire) => {
+  /**
+   * Patches the loaded view with a mutation's answer (the node returned the complete stored row).
+   * An entry already in the view is replaced; a new one is added only when `belongs` says it fits
+   * to the view being shown now, and an entry the view hides (inactive while they are hidden) leaves.
+   */
+  const patch = useCallback((stored: StoredGlossaryEntryWire, belongs: boolean) => {
+    patches.current += 1
     setData((previous) => {
       if (previous === null) return previous
       const exists = previous.entries.some((entry) => entry.id === stored.id)
+      if (!belongs) return exists ? { ...previous, entries: previous.entries.filter((entry) => entry.id !== stored.id) } : previous
       return { ...previous, entries: exists ? previous.entries.map((entry) => (entry.id === stored.id ? stored : entry)) : [...previous.entries, stored] }
     })
-  }, [])
-  const dropInactive = useCallback((id: string) => {
-    setData((previous) => previous === null ? previous : { ...previous, entries: previous.entries.filter((entry) => entry.id !== id) })
   }, [])
   return {
     status,
@@ -58,8 +66,7 @@ export function useGlossaryEntries(projectId: string, includeInactive: boolean) 
     failure,
     refreshing: loading && current !== null,
     reload,
-    upsert,
-    dropInactive,
+    patch,
   }
 }
 

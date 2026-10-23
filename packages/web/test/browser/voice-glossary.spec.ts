@@ -28,9 +28,36 @@ const ready = async (page: Page, locale: 'en' | 'ru' = 'en') => {
   await expect(page.getByRole('heading', { level: 2, name: COPY[locale].entries, exact: true })).toBeVisible()
   await expect(page.getByTestId('glossary-skeleton')).toHaveCount(0)
 }
-const cardOf = (page: Page, name: string) => page.getByRole('article').filter({ has: page.getByRole('heading', { level: 3, name, exact: true }) })
+const cardOf = (page: Page, name: string) => page.getByRole('article').filter({ has: page.getByRole('heading', { level: 4, name, exact: true }) })
 const entryButton = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const mutations = (node: GlossaryNode) => node.requests.filter((request) => request.method !== 'GET' && request.path !== '/apply-preview')
+
+/**
+ * Scales text to `factor`. The type tokens are px values, so a root font-size change alone would
+ * move only rem-based spacing: every `--font-size-*` token and the base size are scaled as well.
+ */
+async function scaleText(page: Page, factor: number) {
+  await page.evaluate((scale) => {
+    document.documentElement.style.fontSize = `${scale * 100}%`
+    const names = new Set<string>()
+    const walk = (rules: CSSRuleList) => {
+      for (const rule of Array.from(rules)) {
+        if (rule instanceof CSSStyleRule) for (const name of Array.from(rule.style)) { if (name.startsWith('--font-size') || name === '--font-text-size') names.add(name) }
+        else if ('cssRules' in rule) walk((rule as CSSGroupingRule).cssRules)
+      }
+    }
+    for (const sheet of Array.from(document.styleSheets)) { try { walk(sheet.cssRules) } catch { /* cross-origin sheets are not ours */ } }
+    const computed = getComputedStyle(document.documentElement)
+    for (const name of names) {
+      const px = /^([\d.]+)px$/u.exec(computed.getPropertyValue(name).trim())
+      if (px) document.documentElement.style.setProperty(name, `${Number(px[1]) * scale}px`)
+    }
+  }, factor)
+}
+const textSizes = (page: Page) => page.evaluate(() => ({
+  heading: parseFloat(getComputedStyle(document.querySelector('h1') as Element).fontSize),
+  hint: parseFloat(getComputedStyle(document.querySelector('article p') as Element).fontSize),
+}))
 
 /** Serious and critical violations only, as `rule: target` lines. */
 async function seriousViolations(page: Page): Promise<string[]> {
@@ -63,7 +90,7 @@ test('the main flow works end to end: reach it from Settings, create, edit, deac
   await expect(page.getByRole('form')).toHaveCount(0)
   await expect(page.getByRole('article')).toHaveCount(4)
   await expect(page.getByTestId('glossary-announcement')).toHaveText('Created “Guanxi”, revision 1.')
-  await expect(page.getByRole('heading', { level: 3, name: 'Guanxi' })).toBeFocused()
+  await expect(page.getByRole('heading', { level: 4, name: 'Guanxi' })).toBeFocused()
   expect(mutations(node)).toHaveLength(1)
   expect(node.requests.filter((request) => request.method === 'POST' && request.path === '/')[0]?.body).toEqual({
     scope: 'account', entry: { canonical: 'Guanxi', variants: ['гуанси', 'гуаньси'], language: 'en' } })
@@ -125,7 +152,7 @@ test('keyboard alone completes create, edit, deactivate and revert, with a visib
     const label = element.getAttribute('aria-label') ?? (labelledBy ? document.getElementById(labelledBy)?.textContent : null) ?? (element as HTMLInputElement).labels?.[0]?.textContent ?? element.textContent
     const style = getComputedStyle(element)
     const ring = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0 || style.boxShadow !== 'none'
-    return { label: (label ?? '').trim().replace(/\s+/gu, ' '), ring }
+    return { label: (label ?? '').replace('✓', '').trim().replace(/\s+/gu, ' '), ring }
   })
 
   // Tab order of the page chrome up to the first control of the list.
@@ -157,7 +184,7 @@ test('keyboard alone completes create, edit, deactivate and revert, with a visib
   await page.keyboard.press('Shift+Tab') // back to the canonical field
   await page.keyboard.press('Enter') // implicit submission from a text field
   await expect(page.getByRole('form')).toHaveCount(0)
-  await expect(page.getByRole('heading', { level: 3, name: 'Keyboard' })).toBeFocused()
+  await expect(page.getByRole('heading', { level: 4, name: 'Keyboard' })).toBeFocused()
   expect(mutations(node)).toHaveLength(1)
 
   // From the new card's heading, Tab reaches its four actions; Space/Enter operate them.
@@ -201,7 +228,10 @@ test('screen-reader structure: one h1, named regions, described controls and one
   await open(page, node)
   await ready(page)
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  await expect(page.getByRole('status').filter({ has: page.locator('[data-testid="glossary-announcement"]') }).or(page.getByTestId('glossary-announcement'))).toHaveCount(1)
+  // Two persistent polite status nodes in the ready state: the outcome announcement and the preview count.
+  await expect(page.locator('main').getByRole('status')).toHaveCount(2)
+  await expect(page.getByTestId('glossary-announcement')).toHaveAttribute('role', 'status')
+  await expect(page.getByTestId('glossary-preview-count')).toHaveAttribute('role', 'status')
   await expect(page.getByRole('region', { name: 'Account-wide' })).toHaveCount(1)
   await expect(page.getByRole('region', { name: 'Project: Alpha' })).toHaveCount(1)
   await expect(page.getByRole('region', { name: 'Try it' })).toHaveCount(1)
@@ -209,7 +239,7 @@ test('screen-reader structure: one h1, named regions, described controls and one
   await expect(page.getByRole('button', { name: 'Revert Hono' })).toHaveAccessibleDescription(/first revision, so reverting deactivates the entry/u)
   await entryButton(page, 'New entry').click()
   await expect(page.getByRole('textbox', { name: 'Spoken forms', exact: true })).toHaveAccessibleDescription(/PR-а/u)
-  const unnamed = await page.locator('main, body').first().locator('input, select, textarea, button, summary, [role="checkbox"]').evaluateAll(
+  const unnamed = await page.locator('main, body').first().locator('input, select, textarea, button, summary').evaluateAll(
     (elements) => elements.filter((element) => {
       const control = element as HTMLInputElement
       if (control.type === 'hidden' || control.getAttribute('aria-hidden') === 'true') return false
@@ -316,7 +346,7 @@ test('a refused save keeps the form and the typed values, names no term and chan
   await expect(page.getByRole('alert')).toHaveCount(1)
   const text = await page.getByRole('alert').innerText()
   expect(text).toContain('The entry was not saved')
-  expect(text).toContain('Nothing was saved')
+  expect(text).toContain('Nothing was changed')
   expect(text).not.toContain('Private-Term')
   expect(text).not.toContain('хоно')
   await expect(page.getByLabel('Canonical term')).toHaveValue('Private-Term')
@@ -334,28 +364,37 @@ test('phone width (320 px) with 200% text keeps everything inside the viewport w
   await ready(page)
   const check = async (label: string) => {
     const overflow = await page.evaluate(() => {
-      const host = document.querySelector('[data-slot="shell-route-host"]')
-      return { document: document.documentElement.scrollWidth - innerWidth, host: host ? host.scrollWidth - host.clientWidth : 0 }
+      const root = document.querySelector('[data-testid="glossary-page"]') as HTMLElement
+      const visible = Array.from(root.querySelectorAll<HTMLElement>('*')).filter((element) => element.getBoundingClientRect().width > 0 && element.closest('[hidden]') === null)
+      return {
+        document: document.documentElement.scrollWidth - innerWidth,
+        page: root.scrollWidth - root.clientWidth,
+        past: visible.filter((element) => element.getBoundingClientRect().right > innerWidth + 1).map((element) => `${element.tagName} ${element.textContent?.trim().slice(0, 24)}`),
+      }
     })
     expect(overflow.document, `${label} document overflow`).toBeLessThanOrEqual(0)
-    expect(overflow.host, `${label} route host overflow`).toBeLessThanOrEqual(1)
-    const small = await page.locator('main').locator('button, select, summary, input:not([type="checkbox"]), textarea, label.gx-choice, a').evaluateAll(
+    expect(overflow.page, `${label} glossary page overflow`).toBeLessThanOrEqual(1)
+    expect(overflow.past, `${label} elements past the right edge`).toEqual([])
+    const small = await page.getByTestId('glossary-page').locator('button, select, summary, input, textarea, a').evaluateAll(
       (elements) => elements.filter((element) => {
         const box = element.getBoundingClientRect()
         return box.width > 0 && (box.height < 24 || box.width < 24)
       }).map((element) => `${element.tagName} ${element.textContent?.trim().slice(0, 20)} ${Math.round(element.getBoundingClientRect().height)}`))
     expect(small, `${label} targets under 24 px`).toEqual([])
-    const outside = await page.locator('main').locator('button, select, textarea, input, summary, [role="checkbox"], h3, li, code').evaluateAll(
-      (elements) => elements.filter((element) => element.getBoundingClientRect().right > innerWidth + 1).length)
-    expect(outside, `${label} elements past the right edge`).toBe(0)
   }
   await entryButton(page, 'New entry').click()
-  await page.getByLabel('Canonical term').fill('x')
+  await page.getByLabel('Canonical term').fill('Bad!') // the node refuses it: an error state with a long machine source must fit too
+  await page.getByRole('button', { name: 'Create entry' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(1)
   await entryButton(page, 'History of ExtraordinarilyLongTermWithoutAnySpacesThatKeepsGoingAndGoing').click()
   await page.getByLabel('Dictated text').fill('хоно и пиара')
   await expect(page.getByTestId('glossary-preview-output').locator('mark')).toHaveCount(2)
   await check('phone 320')
-  await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
+  const before = await textSizes(page)
+  await scaleText(page, 2)
+  const after = await textSizes(page)
+  expect(after.heading / before.heading, 'heading text really doubled').toBeCloseTo(2, 1)
+  expect(after.hint / before.hint, 'body text really doubled').toBeCloseTo(2, 1)
   await check('phone 320 at 200% text')
   expect(await seriousViolations(page), 'phone at 200% text').toEqual([])
 })

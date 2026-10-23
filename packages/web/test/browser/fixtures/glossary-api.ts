@@ -23,7 +23,7 @@ export function glossaryFixture(node: GlossaryNode, overrides: Partial<SessionFe
       const raw = route.request().postData()
       const answer = await node.handle(method, url.pathname + url.search, raw ? JSON.parse(raw) as unknown : undefined)
       if (answer === 'abort') { await route.abort('connectionrefused'); return true }
-      await route.fulfill({ status: answer.status, contentType: 'application/json', body: JSON.stringify(answer.body) })
+      await route.fulfill({ status: answer.status, contentType: 'application/json', body: answer.body === null ? '' : JSON.stringify(answer.body) })
       return true
     },
   })
