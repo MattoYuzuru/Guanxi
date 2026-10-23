@@ -19,7 +19,12 @@ import {
   type ReplayRun,
   type ReplayStep
 } from './judge-replay.ts'
-import type { JudgeObservation, JudgeSignal, JudgeSignalPolicy } from './judge-signals.ts'
+import {
+  evaluateJudgeSignals,
+  type JudgeObservation,
+  type JudgeSignal,
+  type JudgeSignalPolicy
+} from './judge-signals.ts'
 
 /** Independent additive ledger 42; main user_version and ledgers 34-41 stay untouched. */
 export const JUDGE_JOURNAL_MIGRATION_42 = `
@@ -245,6 +250,9 @@ export function journalReplayRun(
       invalid('journal observations are not strictly increasing in time')
     }
     previous = observation.observedAt
+    if (canonical(evaluateJudgeSignals(observation, rowPolicy)) !== canonical(JSON.parse(row.signals))) {
+      invalid('recorded signals disagree with the recorded observation')
+    }
     const claims = claimsAndAcceptance(JSON.parse(row.packet))
     const step: ReplayStep = { observation }
     if (claims.claimsDone) {

@@ -5,6 +5,7 @@ import { RelayExecutor } from '../../src/relay/executor.ts'
 import {
   JUDGE_JOURNAL_MIGRATION_42,
   JudgeJournalStore,
+  journalReplayRun,
   readJournalCorpus,
   readJournalReplay,
   type JudgeJournalEntry
@@ -343,6 +344,11 @@ test('reader round-trips a finished run through the strict R3-b replay scorer', 
     })
     assert.equal(labelled.labels.length, 1)
     assert.equal(score({ version: 1, runs: [labelled] }).classes.protected_path_edit.tp, 1)
+
+    const tampered = store.readRun(f.run.id).map((row, index) =>
+      index === 0 ? { ...row, signals: '[]' } : row
+    )
+    assert.throws(() => journalReplayRun(tampered), /recorded signals disagree/)
 
     const unfinished = f.store.create()
     assert.throws(() => store.readRun(unfinished.id), /not finished/)
