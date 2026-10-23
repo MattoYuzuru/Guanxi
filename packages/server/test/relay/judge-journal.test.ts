@@ -1093,6 +1093,69 @@ test('unobserved judge facts are stored in the row and carried as unknown replay
   }
 })
 
+test('a failed journal write marks the run incomplete and the reader refuses gate evidence', async () => {
+  const f = fixture()
+  try {
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: f.relay.clock })
+    const cascade = new RelayJudgeCascade(f.relay, cascadeInput({ journal: store }))
+    f.relay.begin(f.attempt)
+    cascade.bind(f.attempt)
+    const observation = observationAt(1_000_000)
+    await cascade.sample(f.attempt, 'cycle_start', new AbortController().signal, undefined, {
+      observation,
+      policy,
+      signals: evaluateJudgeSignals(observation, policy),
+      unknownFacts: [],
+      unobserved: []
+    })
+    assert.equal(store.runIncomplete(f.run.id), false)
+
+    f.db.exec(
+      `CREATE TRIGGER fail_journal BEFORE INSERT ON relay_judge_journal
+       WHEN NEW.run_id='${f.run.id}' BEGIN SELECT RAISE(ABORT,'fixture journal write'); END`
+    )
+    await cascade.sample(f.attempt, 'pre_seal', new AbortController().signal, undefined, {
+      observation,
+      policy,
+      signals: evaluateJudgeSignals(observation, policy),
+      unknownFacts: [],
+      unobserved: []
+    })
+
+    const status = f.db
+      .prepare('SELECT write_failures FROM relay_journal_runs WHERE run_id=?')
+      .get(f.run.id) as { write_failures: number }
+    assert.equal(status.write_failures, 1)
+    assert.equal(store.runIncomplete(f.run.id), true)
+    assert.equal(
+      f.db.prepare('SELECT count(*) AS n FROM relay_judge_journal WHERE run_id=?').get(f.run.id)!.n,
+      1,
+      'the failed row is absent; the marker is the only evidence of the short corpus'
+    )
+    assert.equal(
+      f.db.prepare("SELECT state FROM relay_judge_requests WHERE run_id=? AND phase='pre_seal'").get(f.run.id)!
+        .state,
+      'completed',
+      'the fenced verdict is unchanged'
+    )
+
+    f.db.prepare("UPDATE durable_runs SET state='completed' WHERE id=?").run(f.run.id)
+    assert.equal(store.runIncomplete(f.run.id), true)
+    const replay = readJournalReplay(store, f.run.id)
+    assert.equal(replay.incomplete, true)
+    const scored = score({ version: 1, runs: [replay] })
+    assert.equal(scored.gate.evaluated, false)
+    assert.equal(scored.gate.reason, 'incomplete_corpus')
+    assert.equal(store.purgeRun(f.run.id), 1)
+    assert.equal(
+      f.db.prepare('SELECT count(*) AS n FROM relay_journal_runs WHERE run_id=?').get(f.run.id)!.n,
+      0
+    )
+  } finally {
+    f.close()
+  }
+})
+
 test('plugin injection defaults to the journal, preserves explicit/null and is lazy without a cascade', () => {
   const injected = { record() {} }
   assert.equal(

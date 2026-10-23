@@ -302,11 +302,21 @@ export class RelayJudgeCascade {
       }
       const pending = journal.record(entry)
       if (pending && typeof pending.then === 'function') {
-        void pending.catch(() => undefined)
+        void pending.catch(() => this.markIncomplete(a))
       }
     } catch {
       /* The judge outcome is already fenced and persisted. The local journal is best-effort
        * for execution and is never allowed to turn a valid verdict into an unavailable one. */
+      this.markIncomplete(a)
+    }
+  }
+  /** Best-effort per-run marker so a reader can tell a short corpus from a complete one. */
+  private markIncomplete(a: Attempt): void {
+    try {
+      this.input.journal?.incomplete?.(a.run_id)
+    } catch {
+      /* A sidecar that cannot accept the marker also cannot accept rows; the reader still
+       * refuses an empty corpus and names the resulting residual risk. */
     }
   }
   private async model(

@@ -34,6 +34,8 @@ export interface ReplayRun {
   steps: ReplayStep[]
   /** Ground truth: the fault exists from firstStep onward. */
   labels: { fault: FaultClass; firstStep: number }[]
+  /** The recorder counted a failed row write: steps are known to be missing. */
+  incomplete?: true
 }
 
 export interface ReplayCorpus {
@@ -88,7 +90,7 @@ export interface OriginScore {
 export interface GateScore {
   rule: typeof R3_GATE_RULE
   evaluated: boolean
-  reason: 'synthetic_corpus' | 'not_all_runs_recorded' | 'missing_required_classes' | 'empty_corpus' | 'recorded_corpus'
+  reason: 'synthetic_corpus' | 'not_all_runs_recorded' | 'incomplete_corpus' | 'missing_required_classes' | 'empty_corpus' | 'recorded_corpus'
   met?: boolean
 }
 
@@ -270,8 +272,11 @@ function parseLabels(value: unknown, path: string, stepCount: number): { fault: 
 }
 
 function parseRun(value: unknown, path: string): ReplayRun {
-  const record = exactObject(value, path, RUN_KEYS)
+  const record = exactObject(value, path, RUN_KEYS, ['incomplete'])
   if (typeof record.id !== 'string' || record.id.length === 0) fail(`${path}.id`, 'expected non-empty string')
+  if (Object.hasOwn(record, 'incomplete') && record.incomplete !== true) {
+    fail(`${path}.incomplete`, 'expected true when present')
+  }
   if (record.origin !== 'synthetic' && record.origin !== 'recorded') {
     fail(`${path}.origin`, 'expected synthetic or recorded')
   }
@@ -292,7 +297,14 @@ function parseRun(value: unknown, path: string): ReplayRun {
     steps.push(step)
   }
   const labels = parseLabels(record.labels, `${path}.labels`, steps.length)
-  return { id: record.id, origin: record.origin, policy, steps, labels }
+  return {
+    id: record.id,
+    origin: record.origin,
+    policy,
+    steps,
+    labels,
+    ...(record.incomplete === true ? { incomplete: true as const } : {}),
+  }
 }
 
 /** Strict replay parser. Unknown keys, malformed versions and values, non-increasing
@@ -551,6 +563,9 @@ function evaluateGate(runs: readonly ReplayRun[], classes: Record<FaultClass, Cl
   }
   if (!runs.every(run => run.origin === 'recorded')) {
     return { rule: R3_GATE_RULE, evaluated: false, reason: 'not_all_runs_recorded' }
+  }
+  if (runs.some(run => run.incomplete === true)) {
+    return { rule: R3_GATE_RULE, evaluated: false, reason: 'incomplete_corpus' }
   }
   const missing = REQUIRED_GATE_CLASSES.some(fault =>
     !runs.some(run => run.labels.some(label => label.fault === fault)))

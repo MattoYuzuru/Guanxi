@@ -126,6 +126,7 @@ test('replay parser rejects malformed documents with a TypeError naming the path
   invalid.push([emptyId, 'corpus.runs[0].id'])
   const badOrigin = mutateRun(value => { (value as unknown as Record<string, unknown>).origin = 'real' })
   invalid.push([badOrigin, 'corpus.runs[0].origin'])
+  invalid.push([mutateRun(value => { (value as unknown as Record<string, unknown>).incomplete = false }), 'corpus.runs[0].incomplete'])
   const extraPolicyKey = mutateRun(value => { (value.policy as unknown as Record<string, unknown>).extra = true })
   invalid.push([extraPolicyKey, 'corpus.runs[0].policy.extra'])
   invalid.push([mutateRun(value => { value.policy.heartbeatStallMs = 0 }), 'corpus.runs[0].policy.heartbeatStallMs'])
@@ -178,6 +179,16 @@ test('replay parser rejects malformed documents with a TypeError naming the path
     }, true, null),
   ])])
   assert.deepEqual(parseReplayCorpus(nullable), nullable)
+})
+
+test('an incomplete recorded corpus cannot evaluate the gate', () => {
+  const value = validCorpus()
+  value.runs[0]!.incomplete = true
+  const parsed = parseReplayCorpus(value)
+  assert.equal(parsed.runs[0]!.incomplete, true)
+  const scored = score(parsed)
+  assert.equal(scored.gate.evaluated, false)
+  assert.equal(scored.gate.reason, 'incomplete_corpus')
 })
 
 test('equal observedAt values and declared unknown facts are valid replay data', () => {

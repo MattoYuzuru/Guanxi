@@ -56,6 +56,11 @@ CREATE TABLE relay_judge_journal(
 CREATE INDEX relay_judge_journal_run ON relay_judge_journal(run_id, attempt_id, cycle, started_at);
 CREATE INDEX relay_judge_journal_session ON relay_judge_journal(session_id, expires_at);
 CREATE INDEX relay_judge_journal_expiry ON relay_judge_journal(expires_at);
+CREATE TABLE relay_journal_runs(
+  run_id TEXT PRIMARY KEY REFERENCES durable_runs(id) ON DELETE CASCADE,
+  write_failures INTEGER NOT NULL CHECK(write_failures >= 0),
+  last_failure_at INTEGER NOT NULL
+);
 CREATE TRIGGER relay_judge_journal_immutable BEFORE UPDATE ON relay_judge_journal
 BEGIN SELECT RAISE(ABORT,'append only'); END;
 `
@@ -271,7 +276,13 @@ function claimsAndAcceptance(packet: unknown): {
  * step, preferring J2 over the checker/J3 rows recorded at the same boundary. */
 export function journalReplayRun(
   rows: readonly JudgeJournalRow[],
-  options: { labels?: ReplayRun['labels']; id?: string; policy?: JudgeSignalPolicy } = {}
+  options: {
+    labels?: ReplayRun['labels']
+    id?: string
+    policy?: JudgeSignalPolicy
+    /** The store counted a failed row write for this run; the corpus is known to be short. */
+    incomplete?: boolean
+  } = {}
 ): ReplayRun {
   const selected = new Map<string, JudgeJournalRow>()
   for (const row of rows) {
@@ -334,7 +345,8 @@ export function journalReplayRun(
         origin: 'recorded',
         policy,
         steps,
-        labels: options.labels ?? []
+        labels: options.labels ?? [],
+        ...(options.incomplete ? { incomplete: true as const } : {})
       }
     ]
   }).runs[0]!
@@ -501,16 +513,51 @@ export class JudgeJournalStore implements JudgeJournal {
     }))
   }
 
+  /** Record one failed row write for a run. The marker is a local completeness fact, never a
+   * verdict: a short corpus must not be read as a recorded one. */
+  incomplete(runId: string): void {
+    if (typeof runId !== 'string' || runId.length === 0) invalid('invalid run id')
+    const now = this.clock()
+    if (!integer(now, 0)) invalid('invalid failure time')
+    this.db
+      .prepare(
+        `INSERT INTO relay_journal_runs(run_id, write_failures, last_failure_at) VALUES (?,1,?)
+         ON CONFLICT(run_id) DO UPDATE SET
+           write_failures=write_failures+1, last_failure_at=excluded.last_failure_at`
+      )
+      .run(runId, now)
+  }
+
+  runIncomplete(runId: string): boolean {
+    if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_journal_runs'").get()) {
+      return false
+    }
+    const row = this.db
+      .prepare('SELECT write_failures FROM relay_journal_runs WHERE run_id=?')
+      .get(runId) as { write_failures: number } | undefined
+    return row !== undefined && row.write_failures > 0
+  }
+
   purgeExpired(now = this.clock()): number {
     if (!integer(now, 0)) invalid('invalid purge time')
     return Number(this.db.prepare('DELETE FROM relay_judge_journal WHERE expires_at <= ?').run(now).changes)
   }
 
   purgeRun(runId: string): number {
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_journal_runs'").get()) {
+      this.db.prepare('DELETE FROM relay_journal_runs WHERE run_id=?').run(runId)
+    }
     return Number(this.db.prepare('DELETE FROM relay_judge_journal WHERE run_id=?').run(runId).changes)
   }
 
   purgeSession(sessionId: string): number {
+    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_journal_runs'").get()) {
+      this.db
+        .prepare(
+          'DELETE FROM relay_journal_runs WHERE run_id IN (SELECT id FROM durable_runs WHERE session_id=?)'
+        )
+        .run(sessionId)
+    }
     return Number(this.db.prepare('DELETE FROM relay_judge_journal WHERE session_id=?').run(sessionId).changes)
   }
 }
@@ -529,7 +576,7 @@ export function readJournalReplay(
 ): ReplayRun {
   const rows = store.readRun(runId)
   if (rows.length === 0) invalid(`finished run ${runId} has no journal rows`)
-  return journalReplayRun(rows, { ...options, id: runId })
+  return journalReplayRun(rows, { ...options, id: runId, incomplete: store.runIncomplete(runId) })
 }
 
 export function readJournalCorpus(
