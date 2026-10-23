@@ -1,7 +1,7 @@
 /**
- * Тема. Источник истины — настройки на сервере (`settings.theme`), но применять
- * её надо мгновенно и без сети, поэтому дублируем в localStorage: тот же ключ
- * читает инлайн-скрипт в index.html до первой отрисовки.
+ * Theme. The single source of truth is this device store (localStorage `guanxi.theme`, read by the
+ * inline script in index.html before first paint). The chrome toggle and the Settings field both
+ * write it; Settings Save mirrors the value to the node's `settings.theme` and never overwrites it.
  */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Settings } from '@guanxi/contract'

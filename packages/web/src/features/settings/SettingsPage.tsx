@@ -35,7 +35,9 @@ type SaveFailure =
 
 export function SettingsPage() {
   const models = useAsync((signal) => api.listModels(undefined, signal), [])
-  const { setPreference } = useTheme()
+  // One theme source of truth: the device's theme store, applied before first paint. The chrome
+  // toggle and this field both write it; Save mirrors it to the node instead of overwriting it.
+  const { preference: themePreference, setPreference } = useTheme()
   const {
     source: localeSource,
     settings,
@@ -108,7 +110,7 @@ export function SettingsPage() {
         enableBash: draft.enableBash,
         prewarmEnabled: draft.prewarmEnabled,
         locale: draft.locale,
-        theme: draft.theme,
+        theme: themePreference,
         webSearch: {
           provider: draft.webSearch.provider,
           baseUrl: draft.webSearch.baseUrl,
@@ -116,7 +118,6 @@ export function SettingsPage() {
         },
       })
 
-      setPreference(result.theme)
       acceptSettings(result)
       setDraft({
         ...result,
@@ -388,8 +389,8 @@ export function SettingsPage() {
           <Field label={translate('settings.interface.theme')} htmlFor="settings-theme">
             <Select
               id="settings-theme"
-              value={draft.theme}
-              onChange={(value) => update('theme', value as Settings['theme'])}
+              value={themePreference}
+              onChange={(value) => setPreference(value as Settings['theme'])}
               options={[
                 { value: 'system', label: translate('theme.system') },
                 { value: 'light', label: translate('theme.light') },
