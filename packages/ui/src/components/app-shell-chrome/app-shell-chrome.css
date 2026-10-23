@@ -152,14 +152,11 @@
   color: var(--color-text-primary);
 }
 
-/* Max graphics: the chrome shows the shader, so the sidebar gets tinted glass for contrast. */
-:root[data-graphics='max'] .gx-app-shell-frame {
+/* Max graphics (the host sets data-graphics-active only while the shader runs): the chrome shows
+   the shader through the strip and the sidebar. The field is capped so that secondary text keeps
+   4.5:1 over its brightest point (FOUNDATIONS §8); panes stay opaque. */
+:root[data-graphics-active] .gx-app-shell-frame {
   background-color: transparent;
-}
-
-:root[data-graphics='max'] .gx-app-shell-sidebar {
-  background-color: var(--material-background);
-  backdrop-filter: var(--material-backdrop);
 }
 
 @container (max-width: 639px) {

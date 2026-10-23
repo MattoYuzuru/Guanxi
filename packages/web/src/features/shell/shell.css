@@ -218,3 +218,9 @@
   border-radius: var(--border-radius-inline);
   background-color: var(--color-background-hover);
 }
+
+/* Max graphics canvas (D-206): fixed behind the chrome, never interactive, half-resolution. */
+.max-graphics {
+  @apply pointer-events-none fixed inset-0 size-full;
+  z-index: var(--layer-base);
+}

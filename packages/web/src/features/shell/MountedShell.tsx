@@ -7,6 +7,7 @@ import { useRoute, type Route } from '../../lib/router.tsx'
 import { NotificationBell } from '../notifications/NotificationBell.tsx'
 import { NotificationsProvider } from '../notifications/NotificationsProvider.tsx'
 import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
+import { MaxGraphics } from './MaxGraphics.tsx'
 import { ShellCustomise, ShellThemeToggle } from './ShellCustomise.tsx'
 import { ShellPalette } from './ShellPalette.tsx'
 import { ShellSidebar } from './ShellSidebar.tsx'
@@ -55,6 +56,7 @@ function Shell({
   return (
     <NotificationsProvider>
     <div className="h-dvh min-w-0">
+      <MaxGraphics />
       <AppShellChrome
         side={shell.preferences.side}
         visibility={shell.preferences.visibility}
