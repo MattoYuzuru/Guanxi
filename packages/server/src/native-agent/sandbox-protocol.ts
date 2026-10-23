@@ -30,12 +30,17 @@ export function commandOutput(code: number | null, out: Buffer[], err: Buffer[],
   return { code, stdout, stderr, truncated }
 }
 
+/** io_uring_setup, io_uring_enter, io_uring_register: the same numbers on x64 and arm64. */
+const IO_URING = [425, 426, 427]
+
 /**
  * Workload-only seccomp (classic BPF, little-endian `seccomp_data`): trusted proxy bridges
  * initialize before installation. This is the same policy as `container/guard.c`; keep them equal.
  *
  * - foreign audit architecture: kill the process; x32 and unknown ABI numbers (>= 0x40000000): EPERM
  * - bind, listen, ptrace, process_vm_writev, unshare, setns, mount: EPERM
+ * - io_uring_setup, io_uring_enter, io_uring_register: EPERM (IORING_OP_SOCKET would create sockets past the
+ *   socket() rule; production must not depend on the runtime's default seccomp profile for this)
  * - sendto, recvfrom, sendmmsg, recvmmsg (flags = args[3]) and sendmsg, recvmsg (flags = args[2]): EPERM when
  *   the MSG_OOB bit is set in the low 32 bits. Unix-domain out-of-band data is the kernel surface
  *   (use-after-free and garbage-collector bugs) that holding both ends of a socketpair opens.
@@ -48,9 +53,9 @@ export function commandOutput(code: number | null, out: Buffer[], err: Buffer[],
  */
 export function linuxBindingFilter(arch: string): Buffer {
   const abi = arch === 'x64'
-    ? { audit: 0xc000003e, blocked: [49, 50, 101, 311, 272, 308, 165], socket: 41, socketpair: 53,
+    ? { audit: 0xc000003e, blocked: [49, 50, 101, 311, 272, 308, 165, ...IO_URING], socket: 41, socketpair: 53,
       flagsAt3: [44, 45, 307, 299], flagsAt2: [46, 47] }
-    : arch === 'arm64' ? { audit: 0xc00000b7, blocked: [200, 201, 117, 271, 97, 268, 40], socket: 198, socketpair: 199,
+    : arch === 'arm64' ? { audit: 0xc00000b7, blocked: [200, 201, 117, 271, 97, 268, 40, ...IO_URING], socket: 198, socketpair: 199,
       flagsAt3: [206, 207, 269, 243], flagsAt2: [211, 212] } : null
   if (!abi) throw new Error('supervision_unavailable')
   const deny = 0x00050001, allow = 0x7fff0000, kill = 0x80000000
