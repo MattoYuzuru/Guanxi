@@ -11,6 +11,7 @@ import type { DispatchPolicy } from '../../src/remote-attempts/dispatch.ts'
 import type { ExecutorRelayRuntime } from '../../src/remote-attempts/relay-runtime.ts'
 import { normalizeOllamaModelReference } from '../../src/runtime/observation-key.ts'
 import { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
+import { openDb } from '../../src/store/db.ts'
 import { SimNode } from '../federation/harness.ts'
 import { keys, remoteFixture, until } from './remote-fixture.ts'
 
@@ -96,7 +97,7 @@ test('reconciliation never unpins a live run, including one that is still pinnin
   const result = await home.federation.reconcileRelayPins()
   await during
   assert.deepEqual(p.streams(), ['relay:fresh', 'relay:live'], 'only the dead run lost its pin')
-  assert.equal(result.released, 1); assert.ok(result.kept >= 1)
+  assert.deepEqual(result, { released: 1, kept: 2, failed: 0 }, 'the live and the overlapping fresh run are kept, the dead one is released')
   assert.deepEqual(journal(home), ['fresh', 'live'])
   // The live pin still serves its run: the executor answers its observe.
   const live = { homeNodeId: 'home', executorNodeId: 'target', model: MODEL, run: { runId: 'live', sessionId: 's-live', fence: { attemptId: 'a', epoch: 1, token: 1 } } }
@@ -197,4 +198,37 @@ test('a live session renews its lease by heartbeat, so an idle run outlives the 
   await silent.relay('quiet')
   silent.target.time += 1001
   assert.equal(silent.target.federation.sweepRelayPins(), 1, 'the default heartbeat is 60 s of real time, far from this test')
+})
+
+test('migration 42 upgrades a database made before F2-reap, reopening is idempotent and federation_migrations stays [34]', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'guanxi-reap-mig-')), path = join(dir, 'node.sqlite'), k = keys('solo')
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  new SimNode(k, path).close()
+  const old = openDb(path)
+  old.exec('DROP TABLE federation_relay_pin_journal; DROP TABLE federation_relay_pin_leases; DROP TABLE federation_relay_pin_migrations')
+  old.close()
+  for (let reopen = 0; reopen < 2; reopen++) {                         // the second reopening finds the ledger and changes nothing
+    const node = new SimNode(k, path)
+    assert.deepEqual(node.db.prepare('SELECT version FROM federation_relay_pin_migrations').all().map(r => r.version), [42])
+    assert.deepEqual(node.db.prepare('SELECT version FROM federation_migrations').all().map(r => r.version), [34])
+    node.federation.journalRelayPin('elsewhere', { runId: `r${reopen}`, sessionId: 's', epoch: 1, model: MODEL })
+    node.close()
+  }
+  const again = openDb(path)
+  assert.deepEqual(again.prepare('SELECT run_id FROM federation_relay_pin_journal ORDER BY run_id').all().map(r => r.run_id), ['r0', 'r1'], 'rows written after the upgrade survive reopening')
+  again.close()
+})
+
+test('a heartbeat already on the wire when the session is released cannot re-create the pin after its unpin', async t => {
+  const f = await remoteFixture(t, { pinRenewMs: 10 }), r = await f.relay('late-beat')
+  let delayed = 0
+  f.rules.push(async (path, request) => {
+    if (path !== '/attempts/runtime/pin') return
+    if ((await request.clone().json() as { action: string }).action === 'pin') { delayed++; await new Promise(resolve => setTimeout(resolve, 150)) }
+  })
+  await until(() => delayed > 0, 3000)                                   // a renewal is in flight, held up in transit
+  await r.prepared.release!()
+  await new Promise(resolve => setTimeout(resolve, 300))                 // long enough for a misordered renewal to land
+  assert.deepEqual(f.target.db.prepare("SELECT id FROM federation_streams WHERE id LIKE 'relay:%'").all(), [], 'the unpin was the last word')
+  assert.equal(f.home.db.prepare('SELECT COUNT(*) n FROM federation_relay_pin_journal').get()!.n, 0)
 })
