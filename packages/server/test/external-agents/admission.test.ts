@@ -563,7 +563,7 @@ test('v1 sidecar upgrade appends v2 once, preserves every v1 row, user_version a
   const store = new ExternalStore(path, scrubber)
   const version = sqlAt<{ user_version: number }>(path, 'PRAGMA user_version')[0]!.user_version
   assert.equal(version, 7)
-  assert.deepEqual(sqlAt<{ version: number }>(path, 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2])
+  assert.deepEqual(sqlAt<{ version: number }>(path, 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2, 3])
   assert.equal(sqlAt<{ n: number }>(path, 'SELECT COUNT(*) AS n FROM project_roles')[0]!.n, 1)
   assert.equal(sqlAt<{ n: number }>(path, 'SELECT COUNT(*) AS n FROM editor_grants')[0]!.n, 1)
   assert.equal(sqlAt<{ n: number }>(path, 'SELECT COUNT(*) AS n FROM quota_reports')[0]!.n, 1)
@@ -573,7 +573,7 @@ test('v1 sidecar upgrade appends v2 once, preserves every v1 row, user_version a
   for (const file of [path, `${path}-wal`, `${path}-shm`]) assert.equal((await stat(file)).mode & 0o777, 0o600)
   store.close()
   const reopened = new ExternalStore(path, scrubber)
-  assert.deepEqual(sqlAt<{ version: number }>(path, 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2])
+  assert.deepEqual(sqlAt<{ version: number }>(path, 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2, 3])
   reopened.close()
 })
 
@@ -587,7 +587,7 @@ test('a fresh sidecar creates v1 and v2 atomically without consuming the main da
   const sidecar = new ExternalStore(join(dir, 'external-agents.sqlite'), scrubber)
   assert.equal(Number(sqlAt<{ user_version: number }>(mainPath, 'PRAGMA user_version')[0]!.user_version), before)
   assert.equal(MIGRATIONS.length, migrationCount)
-  assert.deepEqual(sqlAt<{ version: number }>(join(dir, 'external-agents.sqlite'), 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2])
+  assert.deepEqual(sqlAt<{ version: number }>(join(dir, 'external-agents.sqlite'), 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2, 3])
   assert.equal(Number(sqlAt<{ user_version: number }>(join(dir, 'external-agents.sqlite'), 'PRAGMA user_version')[0]!.user_version), 0)
   sidecar.close(); main.close()
 })
@@ -621,7 +621,7 @@ test('two workers migrate a v1 sidecar and claim one slot without losing occupan
     winner.send('release')
     await waitMessage(winner, ['released'])
     await Promise.all(workers.map(child => waitExit(child)))
-    assert.deepEqual(sqlAt<{ version: number }>(path, 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2])
+    assert.deepEqual(sqlAt<{ version: number }>(path, 'SELECT version FROM k5_migrations ORDER BY version').map(row => row.version), [1, 2, 3])
     assert.equal(rowsAt(path).length, 0)
   } finally {
     for (const child of workers) { try { child.kill('SIGKILL') } catch { /* already exited */ } }
@@ -671,7 +671,7 @@ test('actual worker processes sharing one sidecar obey ceilings 1, 2 and 3', asy
   }
 })
 
-test('crash-retained holder survives restart and a one-year timestamp, then exact release admits one child', async t => {
+test('a crash-retained holder blocks its own service, and a restart reconciles it only because its owner and group are proven gone', async t => {
   const f = await fixture(t)
   const install = f.installations[0]!
   const binding = f.bindings[0]!
@@ -695,24 +695,24 @@ test('crash-retained holder survives restart and a one-year timestamp, then exac
     assert.equal(rowsAt(path).length, 1)
     assert.equal(rowsAt(path)[0]!.state, 'held')
     execAt(path, "UPDATE k5_admission SET created_at='2025-01-01T00:00:00.000Z'")
+    // The service that was already running never sweeps: there is no TTL and no age predicate.
     const first = await settled(f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'resume?' }))
     assert.equal(first.status, 'error')
     assert.equal(first.status === 'error' ? first.error.code : '', 'account_busy')
-    await f.reload()
-    const second = await settled(f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'resume?' }))
-    assert.equal(second.status, 'error')
-    assert.equal(second.status === 'error' ? second.error.code : '', 'account_busy')
     assert.equal(rowsAt(path)[0]!.created_at, '2025-01-01T00:00:00.000Z')
-    assert.equal(rowsAt(path)[0]!.state, 'held')
-    const row = rowsAt(path)[0]!
-    const direct = new ExternalStore(path, f.kernel.scrubber)
-    assert.equal(direct.release({ holderId: row.holder_id, instanceId: row.instance_id }).released, true)
-    direct.close()
+    // A restarted service finds the owner process dead and the recorded group empty: the holder is released and one child is admitted.
+    await f.reload()
+    const abort = new AbortController()
+    const running = f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'resume?', signal: abort.signal })
+    const second = await settled(running)
+    assert.equal(second.status, 'timeout', 'admitted and running (the fixture hangs), not refused with account_busy')
+    assert.equal(rowsAt(path).length, 1, 'exactly the new holder')
+    abort.abort()
+    assert.equal((await settled(running, 8000)).status, 'error')
     assert.equal(rowsAt(path).length, 0)
     await f.scenario('codex', {})
     const result = await f.service().run({ ownerAccountId: owner, actorAccountId: owner, projectId: 'p', role: 'lead', prompt: 'new work' })
     assert.match(result.text, /fixture completed/)
-    assert.equal((await f.trace('codex')).filter(frame => frame.method === 'turn/start').length, 1)
   } finally {
     try { child.kill('SIGKILL') } catch { /* already exited */ }
     try { await killGroup(Number(await readFile(prepared.adapterPidPath, 'utf8'))) } catch { /* never spawned */ }
@@ -785,5 +785,9 @@ test('registered canary is absent from the schema, all sidecar data, raw WAL, ev
   const storeSource = await readFile(new URL('../../src/external-agents/store.ts', import.meta.url), 'utf8')
   const serviceSource = await readFile(new URL('../../src/external-agents/service.ts', import.meta.url), 'utf8')
   for (const source of [admissionSource, storeSource, serviceSource]) assert.equal(/process\.kill\s*\(/.test(source), false)
-  for (const source of [storeSource, serviceSource]) assert.equal(/expires_at|pid\s+INTEGER|pgid\s+INTEGER/i.test(source), false)
+  // Boot reconciliation facts (v3) live only in their own table; the holder table and the service never carry a PID or an expiry.
+  const withoutBootFacts = storeSource.replace(/const MIGRATION_V3[\s\S]*?VALUES \(3\);`/, '')
+  for (const source of [withoutBootFacts, serviceSource]) assert.equal(/expires_at|pid\s+INTEGER|pgid\s+INTEGER/i.test(source), false)
+  assert.deepEqual(sqlAt<{ name: string }>(path, 'PRAGMA table_info(k5_admission_process)').map(row => row.name),
+    ['holder_id', 'owner_pid', 'boot_ms', 'phase', 'group_id', 'group_started_at'])
 })

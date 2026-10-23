@@ -52,6 +52,42 @@ export async function awaitOwnedGroupEmpty(pgid: number | undefined, closed: Pro
   }
 }
 
+/** Signal 0 only: false means the pid is certainly gone, true means "cannot prove dead" (alive, or not ours to signal). */
+export function processMayBeAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH' }
+}
+/** Identity evidence for a process group nobody in this process owns any more (boot reconciliation only).
+ * `gone`: no process in the group. `ours`: a live process whose pid is the recorded group id AND whose start time is
+ * within a few seconds of the recorded spawn: a reused pid would have a different start time. `unknown`: anything
+ * else, including EPERM and an unreadable start time. Only `ours` may be signalled. */
+export async function probeOrphanGroup(pgid: number, startedAtMs: number): Promise<'gone' | 'ours' | 'unknown'> {
+  if (process.platform === 'win32' || !Number.isSafeInteger(pgid) || pgid <= 1) return 'unknown'
+  try { process.kill(-pgid, 0) } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'gone' : 'unknown'
+  }
+  const started = await new Promise<number | null>(resolve => {
+    let output = ''
+    let settled = false
+    const done = (value: number | null) => { if (!settled) { settled = true; resolve(value) } }
+    const child = spawn('/bin/ps', ['-o', 'lstart=', '-p', String(pgid)], { env: { LC_ALL: 'C', PATH: '/bin:/usr/bin' }, stdio: ['ignore', 'pipe', 'ignore'] })
+    const timer = setTimeout(() => { child.kill('SIGKILL'); done(null) }, 3_000)
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
+    child.on('error', () => { clearTimeout(timer); done(null) })
+    child.on('close', () => { clearTimeout(timer); const parsed = Date.parse(output.trim()); done(Number.isFinite(parsed) ? parsed : null) })
+  })
+  return started !== null && Math.abs(started - startedAtMs) <= 5_000 ? 'ours' : 'unknown'
+}
+/** SIGKILL a group already proven ours, then require ESRCH within the usual acknowledgement bound. */
+export async function killOrphanGroup(pgid: number): Promise<boolean> {
+  try { process.kill(-pgid, 'SIGKILL') } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
+  const deadline = Date.now() + GROUP_ACK_MS
+  while (Date.now() < deadline) {
+    try { process.kill(-pgid, 0) } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' }
+    await new Promise(resolve => setTimeout(resolve, GROUP_PROBE_MS))
+  }
+  return false
+}
+
 export async function isolatedEnvironment(root: string, install: AgentInstallation) {
   const key = createHash('sha256').update(JSON.stringify([install.nodeId, install.ownerAccountId, install.connectionId])).digest('hex')
   const base = join(root, 'external-agent-config', key)

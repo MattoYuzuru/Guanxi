@@ -141,7 +141,17 @@ export interface AdmissionHolder {
   createdAt: string
   state: AdmissionState
 }
+/** Boot reconciliation facts (v3). They never authorize a signal on their own: see `reconcileAdmission`. */
+export interface AdmissionProcess {
+  ownerPid: number
+  bootMs: number
+  phase: 'prepared' | 'spawning' | 'running'
+  groupId: number | null
+  groupStartedAt: number | null
+}
 export interface AdmissionRequest {
+  /** The node process that owns the holder; stored so a later boot can prove it dead. */
+  process?: { pid: number; bootMs: number }
   instanceId: string
   owner: string
   adapter: AdapterId

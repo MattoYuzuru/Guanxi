@@ -23,9 +23,9 @@ export const externalAgentPlugin = definePlugin<{ dataDir: string; policy: Exter
       limits: agents.limits.bind(agents), observeQuota: agents.observeQuota.bind(agents),
       observeClaudeStatusline: agents.observeClaudeStatusline.bind(agents), signInWithChatGPT: agents.signInWithChatGPT.bind(agents),
       observeConcurrency: agents.observeConcurrency.bind(agents),
-      prepareLogin: agents.prepareLogin.bind(agents),
+      prepareLogin: agents.prepareLogin.bind(agents), admissionReady: agents.admissionReady.bind(agents),
     }))
     ctx.effect(() => async () => { await agents.close(); store.close() }, 'external.close')
   },
 })
-export type ExternalAgentService = Pick<ExternalAgents, 'run' | 'resolve' | 'setProjectRoles' | 'setEditorAllowed' | 'capabilities' | 'limits' | 'observeQuota' | 'observeClaudeStatusline' | 'signInWithChatGPT' | 'observeConcurrency' | 'prepareLogin'>
+export type ExternalAgentService = Pick<ExternalAgents, 'run' | 'resolve' | 'setProjectRoles' | 'setEditorAllowed' | 'capabilities' | 'limits' | 'observeQuota' | 'observeClaudeStatusline' | 'signInWithChatGPT' | 'observeConcurrency' | 'prepareLogin' | 'admissionReady'>
