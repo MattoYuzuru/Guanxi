@@ -1,3 +1,4 @@
+import { Agent, fetch as undiciFetch } from 'undici'
 import { z } from 'zod'
 
 /** Loopback-only client for one llama.cpp `llama-server` instance (ADR-0031 Tier 1 runtime).
@@ -55,21 +56,40 @@ export function loopbackOrigin(baseUrl: string): string {
   return url.origin
 }
 
+/** undici timeouts for llama-server requests: never shorter than the client's own deadlines. */
+export function llamaServerDispatcherTimeouts(requestTimeoutMs: number, completionTimeoutMs: number): { headersTimeout: number; bodyTimeout: number } {
+  const longest = Math.max(requestTimeoutMs, completionTimeoutMs) + 5_000
+  return { headersTimeout: longest, bodyTimeout: longest }
+}
+
 export class LlamaServerClient {
   readonly baseUrl: string
   private readonly transport: typeof fetch
   private readonly requestTimeoutMs: number
   private readonly completionTimeoutMs: number
   private readonly cachePrompt: boolean
+  /** The undici timeouts of the default transport (absent when a transport is injected). */
+  readonly dispatcherTimeouts?: { headersTimeout: number; bodyTimeout: number }
   constructor(options: LlamaServerClientOptions) {
     this.baseUrl = loopbackOrigin(options.baseUrl)
-    this.transport = options.fetch ?? globalThis.fetch
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000
     this.completionTimeoutMs = options.completionTimeoutMs ?? 30 * 60_000
-    this.cachePrompt = options.cachePrompt ?? true
     for (const ms of [this.requestTimeoutMs, this.completionTimeoutMs]) {
-      if (!Number.isSafeInteger(ms) || ms <= 0) throw new LlamaServerError('llama_server_refused')
+      // Timer limit: Node clamps longer delays to 1 ms.
+      if (!Number.isSafeInteger(ms) || ms <= 0 || ms > 2_147_483_647) throw new LlamaServerError('llama_server_refused')
     }
+    if (options.fetch) this.transport = options.fetch
+    else {
+      // A non-streamed completion sends its headers only when generation ends. Node's fetch (undici) gives up waiting for
+      // headers after 300 s by default, so every call longer than five minutes failed on a real executor (a 4096-token turn
+      // takes ~13 min at ~5 tokens/s). Our own deadline (completionTimeoutMs) stays the authority.
+      this.dispatcherTimeouts = llamaServerDispatcherTimeouts(this.requestTimeoutMs, this.completionTimeoutMs)
+      const dispatcher = new Agent(this.dispatcherTimeouts)
+      // undici's own fetch with its own Agent: the fetch bundled in Node 22 (undici 6) refuses an Agent from the undici
+      // package (UND_ERR_INVALID_ARG), so the two must come from the same copy.
+      this.transport = ((url: string | URL, init?: RequestInit) => undiciFetch(url, { ...init, dispatcher } as unknown as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch
+    }
+    this.cachePrompt = options.cachePrompt ?? true
   }
   private async json(path: string, init: { method: 'GET' | 'POST'; body?: unknown }, signal: AbortSignal | undefined, timeoutMs: number,
     onDispatched?: () => void): Promise<{ status: number; body: unknown }> {

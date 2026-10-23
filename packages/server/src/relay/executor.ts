@@ -265,21 +265,90 @@ export class RelayExecutor {
     this.store.runs.signal(a, `relay-probes-${this.store.read(a.run_id).cycle}`)
     throw new RelayError('probe_failed_twice')
   }
+  /** Commits uncommitted work through the harness checkpoint (same refusals as the checkpoint action) when the tree is
+   * dirty. Returns whether it did. Any other reason the tree is unverifiable still throws. */
+  private async checkpointIfDirty(a: Attempt, reason: 'verify' | 'handoff', signal: AbortSignal): Promise<boolean> {
+    const l = this.store.read(a.run_id)
+    // Validate against the tree as it is now: a checkpoint the ledger has not observed yet is not a dirty tree.
+    const now = await this.workspace.observe(l.plan.base, l.baseline.head)
+    // Record a head the ledger has not seen (a checkpoint interrupted before its observation) before anything reads statuses.
+    if (now.head !== l.head) this.store.observe(a, now)
+    try { await this.workspace.validate(l.plan, now.head, now.files); return false } catch (error) {
+      if (!(error instanceof RelayError && error.code === 'checkout_dirty')) throw error
+    }
+    this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'auto_checkpoint', reason }) } })
+    await this.workspace.checkpoint(signal)
+    this.store.observe(a, await this.workspace.observe(l.plan.base, l.baseline.head))
+    return true
+  }
+  /** The verify action. Gate evidence is bound to a head, and a new checkpoint reopens every item, so the dependencies an
+   * item needs are re-verified first, in dependency order, at the current head; the first failing gate ends the action.
+   * Requests the model cannot mean (an unknown id, an item already done at this head) are answered, not fatal. */
+  private async verifyAction(a: Attempt, item: string, signal: AbortSignal): Promise<string> {
+    const plan = this.store.read(a.run_id).plan
+    if (!plan.items.some(i => i.id === item)) return canonical({ item, refused: 'unknown_item', items: plan.items.map(i => i.id) })
+    // Dirtiness first: work written after an item passed reopens it once it is checkpointed.
+    const autoCheckpoint = await this.checkpointIfDirty(a, 'verify', signal)
+    if (this.store.read(a.run_id).items[item] === 'done') return canonical({ item, alreadyDone: true, head: this.store.read(a.run_id).head })
+    const order: string[] = []
+    const seen = new Set<string>()
+    const visit = (id: string): void => {
+      if (seen.has(id)) return; seen.add(id)
+      for (const d of plan.items.find(i => i.id === id)!.dependsOn) visit(d)
+      if (id === item || this.store.read(a.run_id).items[id] !== 'done') order.push(id)
+    }
+    visit(item)
+    const gates: unknown[] = []
+    for (const id of order) {
+      this.store.requestVerification(a, id)
+      let e: Awaited<ReturnType<RelayWorkspace['verify']>>
+      try { e = await this.workspace.verify(plan, id, signal, this.limits.gateTimeoutMs) } catch (error) {
+        // Still dirty right after a checkpoint (a background writer, a filter mismatch): say so, do not loop.
+        if (autoCheckpoint && error instanceof RelayError && error.code === 'checkout_dirty') throw new RelayError('checkout_dirty_after_checkpoint')
+        throw error
+      }
+      const l = this.store.read(a.run_id)
+      const after = await this.workspace.observe(l.plan.base, l.baseline.head)
+      invariant(after.head === e.head, 'gate_head_changed')
+      this.store.observe(a, { ...after, evidence: e }); gates.push(e)
+      if (!e.ok) break
+    }
+    const final = gates.at(-1) as { item: string; ok: boolean } | undefined
+    // The verdict comes first: a bounded result may cut the gate outputs, never the answer.
+    return canonical({ item, ok: final?.item === item && final.ok, ...(final && !final.ok ? { failedAt: final.item } : {}),
+      ...(autoCheckpoint ? { autoCheckpoint: true } : {}), gates })
+  }
+  /** Gates of every item in dependency order at the current head; the first failure ends the pass. */
+  private async verifyAll(a: Attempt, signal: AbortSignal): Promise<void> {
+    const l = this.store.read(a.run_id), order: string[] = []
+    const visit = (id: string): void => { if (order.includes(id)) return; for (const d of l.plan.items.find(i => i.id === id)!.dependsOn) visit(d); order.push(id) }
+    for (const item of l.plan.items) visit(item.id)
+    for (const id of order) {
+      const evidence = await this.workspace.verify(l.plan, id, signal, this.limits.gateTimeoutMs)
+      const after = await this.workspace.observe(l.plan.base, l.baseline.head)
+      invariant(after.head === this.store.read(a.run_id).head && evidence.head === after.head, 'gate_head_changed')
+      this.store.observe(a, { ...after, evidence })
+      if (!evidence.ok) break
+    }
+  }
   private async handoff(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure | AsyncMeasure): Promise<void> {
     this.store.transition(a, 'handoff_write')
+    // A seal needs a clean checkpoint; uncommitted work at a boundary is committed, never discarded or left to stop the run.
+    const allDoneBefore = Object.values(this.store.read(a.run_id).items).every(status => status === 'done')
+    const autoCheckpoint = await this.checkpointIfDirty(a, 'handoff', signal)
+    if (autoCheckpoint) {
+      // The next cycle must know this commit was not the model's own choice and may hold half-finished edits.
+      this.store.note(a, 'open_issue', 'The harness checkpointed uncommitted work at the end of the previous cycle; review it before relying on it.', [], null)
+    }
     const observation = await this.workspace.observe(this.store.read(a.run_id).plan.base, this.store.read(a.run_id).baseline.head)
     this.store.observe(a, observation)
     const l = this.store.read(a.run_id)
-    await this.workspace.validate(l.plan, l.head, l.files)
-    if (Object.values(l.items).every(status => status === 'done')) {
-      for (const item of l.plan.items) {
-        const evidence = await this.workspace.verify(l.plan, item.id, signal, this.limits.gateTimeoutMs)
-        const after = await this.workspace.observe(l.plan.base, l.baseline.head)
-        invariant(after.head === l.head && evidence.head === l.head, 'gate_head_changed')
-        this.store.observe(a, { ...after, evidence })
-        if (!evidence.ok) break
-      }
+    try { await this.workspace.validate(l.plan, l.head, l.files) } catch (error) {
+      if (autoCheckpoint && error instanceof RelayError && error.code === 'checkout_dirty') throw new RelayError('checkout_dirty_after_checkpoint')
+      throw error
     }
+    // Every item done, or every item was done before a harness checkpoint reopened them: the final gates run again here.
+    if (Object.values(l.items).every(status => status === 'done') || autoCheckpoint && allDoneBefore) await this.verifyAll(a, signal)
     this.store.countProgress(a, observation.nonemptyCommit)
     if (this.eta) this.store.updateEta(a, this.eta)
     const judged = await this.judgeSample(a, 'pre_seal', signal)
@@ -410,13 +479,7 @@ export class RelayExecutor {
             await this.workspace.checkpoint(signal)
             this.store.observe(a, await this.workspace.observe(l.plan.base, l.baseline.head))
           }
-          if (x.action === 'verify') {
-            this.store.requestVerification(a, x.item)
-            const e = await this.workspace.verify(l.plan, x.item, signal, this.limits.gateTimeoutMs)
-            const after = await this.workspace.observe(l.plan.base, l.baseline.head)
-            invariant(after.head === e.head, 'gate_head_changed')
-            this.store.observe(a, { ...after, evidence: e }); result = canonical(e)
-          }
+          if (x.action === 'verify') result = await this.verifyAction(a, x.item, signal)
           if (x.action === 'tool') {
             const id = randomUUID()
             this.store.emit(a, { type: 'tool.call', data: { toolCallId: id, name: x.name, arguments: x.args, source: 'builtin', parsedFrom: 'content_json', diffPath: null } })

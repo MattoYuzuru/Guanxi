@@ -49,7 +49,8 @@ test('dispatch pins the validated DNS result and preserves Host without a second
   t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()) }))
   const address = server.address() as { port: number }
   let lookups = 0
-  const result = await endpointFetch(`http://provider.invalid:${address.port}/v1/models`, {}, true, globalThis.fetch,
+  // The production pairing: the default transport (undici's own fetch with the pinned undici Agent), on every Node version.
+  const result = await endpointFetch(`http://provider.invalid:${address.port}/v1/models`, {}, true, undefined,
     async () => { lookups++; return [{ address: '127.0.0.1', family: 4 }] })
   assert.equal(await result.text(), 'pinned'); assert.equal(lookups, 1)
 })
