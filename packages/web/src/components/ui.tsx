@@ -35,8 +35,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 /**
- * Legacy entry point kept for existing features; it renders the design-system Button (D-200), so
- * every legacy screen gets the same control without a feature-by-feature rewrite.
+ * Legacy entry point kept for existing features. It draws the design-system button look
+ * (D-200) through `.legacy-button`, which lives in the components layer of index.css, so the
+ * sizing and spacing utilities legacy callers pass (min-h-11 for phone targets, w-full…) still
+ * win, as they did before the redesign.
  */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
@@ -53,10 +55,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   ref,
 ) {
   return (
-    <UiButton ref={ref} type={type} variant={variant} size={size} loading={loading} disabled={disabled} className={className} {...rest}>
-      {loading ? null : icon}
+    <button
+      ref={ref}
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      data-variant={variant}
+      data-size={size}
+      className={cx('legacy-button', className)}
+      {...rest}
+    >
+      {loading ? <Spinner size={size === 'sm' ? 10 : 12} /> : icon}
       {children}
-    </UiButton>
+    </button>
   )
 })
 
@@ -514,8 +525,9 @@ export function Disclosure({
 
   return (
     <div className={className}>
-      <button
-        type="button"
+      <UiButton
+        variant="ghost"
+        size="sm"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         className="flex w-full items-center gap-1.5 text-left text-2xs font-medium text-secondary hover:text-foreground"
@@ -523,7 +535,7 @@ export function Disclosure({
       >
         <Chevron open={open} />
         {summary}
-      </button>
+      </UiButton>
       {open && <div className="mt-1.5">{children}</div>}
     </div>
   )

@@ -632,6 +632,87 @@
   }
 }
 
+@layer components {
+  .legacy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-6);
+    box-sizing: border-box;
+    min-height: var(--control-height);
+    padding-inline: var(--spacing-12);
+    border: var(--border-width-regular) solid var(--color-border-primary);
+    border-radius: var(--border-radius-control);
+    background-color: var(--color-background-secondary);
+    box-shadow: var(--elevation-control-shadow);
+    color: var(--color-text-primary);
+    font-family: inherit;
+    font-size: var(--font-text-size);
+    font-weight: var(--font-weight-label);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    @apply transition-colors;
+    transition-duration: var(--motion-duration-fast);
+    transition-timing-function: var(--motion-easing-standard);
+  }
+  .legacy-button[data-size='sm'] {
+    min-height: var(--target-minimum);
+    padding-inline: var(--spacing-8);
+    border-radius: var(--border-radius-inline);
+    font-size: var(--font-size-12);
+  }
+  .legacy-button:hover:not(:disabled) {
+    border-color: var(--color-border-control);
+    background-color: var(--color-background-tertiary);
+  }
+  .legacy-button:active:not(:disabled) {
+    background-color: var(--color-background-pressed);
+    box-shadow: none;
+  }
+  .legacy-button:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-ring-primary);
+    outline-offset: var(--focus-ring-offset);
+  }
+  .legacy-button[data-variant='primary'] {
+    border-color: var(--color-background-accent);
+    background-color: var(--color-background-accent);
+    box-shadow: var(--elevation-inset-shadow), var(--elevation-control-shadow);
+    color: var(--color-text-on-accent);
+  }
+  .legacy-button[data-variant='primary']:hover:not(:disabled) {
+    border-color: var(--color-background-accent-hover);
+    background-color: var(--color-background-accent-hover);
+  }
+  .legacy-button[data-variant='ghost'] {
+    border-color: transparent;
+    background-color: transparent;
+    box-shadow: none;
+    color: var(--color-text-secondary);
+  }
+  .legacy-button[data-variant='ghost']:hover:not(:disabled) {
+    background-color: var(--color-background-hover);
+    color: var(--color-text-primary);
+  }
+  .legacy-button[data-variant='danger'] {
+    color: var(--color-text-danger);
+  }
+  .legacy-button[data-variant='danger']:hover:not(:disabled) {
+    border-color: var(--color-border-danger);
+    background-color: var(--color-background-secondary);
+  }
+  .legacy-button:disabled {
+    border-color: var(--color-border-secondary);
+    background-color: var(--color-background-disabled);
+    box-shadow: none;
+    color: var(--color-text-disabled);
+    cursor: not-allowed;
+  }
+  .legacy-button[aria-busy='true'] {
+    cursor: progress;
+  }
+}
+
 /* Legacy primitives (components/ui.tsx) drawn with the D-200 tokens until features migrate. */
 .legacy-badge {
   display: inline-flex;

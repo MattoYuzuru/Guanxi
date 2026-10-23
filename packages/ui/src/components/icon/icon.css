@@ -30,7 +30,7 @@
 .gx-icon-cell span {
   @apply max-w-full;
   overflow-wrap: anywhere;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   font-family: var(--font-family-mono);
   font-size: var(--font-size-12);
   text-align: center;

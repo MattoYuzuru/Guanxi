@@ -74,12 +74,13 @@
 
 .gx-status-item-popover {
   width: var(--layout-container-2xs);
-  max-height: min(var(--available-height), var(--layout-container-lg));
-  overflow-y: auto;
 }
 
+/* Detail lists may scroll; the popup is then a focusable scroll region (tabIndex 0). */
 .gx-status-item-popover[data-size='wide'] {
   width: var(--layout-container-sm);
+  max-height: min(var(--available-height), var(--layout-container-lg));
+  overflow-y: auto;
 }
 
 .gx-status-item-empty {

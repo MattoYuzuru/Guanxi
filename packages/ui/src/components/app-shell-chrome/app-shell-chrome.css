@@ -181,10 +181,17 @@
     justify-content: flex-start;
   }
 
+  /* Phone: the sidebar and the pane span the shell edge to edge (the G14 phone geometry). */
   .gx-app-shell-body {
     flex: none;
     flex-direction: column;
-    padding: 0 var(--spacing-4) var(--spacing-4);
+    gap: var(--spacing-8);
+    padding: 0;
+  }
+
+  .gx-app-shell-main {
+    border-inline: 0;
+    border-radius: 0;
   }
 
   .gx-app-shell-sidebar[data-visibility='expanded'],
