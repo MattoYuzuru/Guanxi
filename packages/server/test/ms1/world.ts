@@ -4,6 +4,7 @@
  * Everything is loopback. The two nodes talk the real signed F2 protocol over HTTP; time is injected and moves only
  * when the home reaches the gap between two relay cycles. */
 import { execFile, fork, type ChildProcess } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -87,7 +88,16 @@ export interface WorldOptions {
   onGap?: (gap: Gap, world: World) => void | Promise<void>
 }
 
+let container: Promise<void> | undefined
+/** The acceptance gates run in K4's container sandbox on macOS: say so at once instead of timing out in a relay. */
+function containerRuntime(): Promise<void> {
+  if (process.platform !== 'darwin') return Promise.resolve()
+  return container ??= exec('docker', ['info', '--format', '{{.OSType}}'], { timeout: 15_000, env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env['PATH'] ?? ''}` } })
+    .then(() => undefined, error => { throw new Error(`The MS1 rehearsal needs the local container runtime (Colima) for its acceptance gates: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`) })
+}
+
 export async function createWorld(t: { after(fn: () => unknown): void }, options: WorldOptions) {
+  await containerRuntime()
   // Colima shares the checkout, not macOS tmpdir(): the allocator root must live under the working directory.
   mkdirSync(join(process.cwd(), '.lane-data'), { recursive: true })
   const dir = realpathSync(mkdtempSync(join(process.cwd(), '.lane-data', 'ms1-')))
@@ -110,6 +120,8 @@ export class World {
   base = ''
   homeKeys = identity('ms1-home', { scopes: ['config', 'replicas', 'commands', 'telemetry', 'attempts'] })
   readonly targetKeys = identity('ms1-executor', { scopes: ['config', 'replicas', 'commands', 'telemetry', 'attempts'] })
+  /** Registered with the home's egress scrubber and printed by the first item's gate; see `brief`. */
+  readonly canary = `ms1-canary-${randomBytes(12).toString('hex')}`
   homes: HomeProcess[] = []
   /** Every federation request the executor received, in order (the pin carries its action). */
   readonly requests: string[] = []
@@ -190,7 +202,7 @@ export class World {
       gapMs: opts.gapMs ?? this.options.gapMs ?? 75 * MINUTE, ttlMs: 100 * MINUTE,
       reserves: { turn: 1000, safety: 200, handoff: 1500, tool: 1000, stepMedian: 1000, effective: 14000 },
       limits: { maxCaps: { cycles: 60, tokens: 4_000_000, moneyMicros: 1_000_000, wallMs: 24 * HOUR }, maxDeadlineMs: 72 * HOUR },
-      model: 'fixture', executorName: 'ms1-executor' }
+      model: 'fixture', executorName: 'ms1-executor', canary: this.canary }
     const path = join(this.dir, `home-${this.configIndex++}.json`)
     writeFileSync(path, JSON.stringify(config))
     const child = fork(HOME_SCRIPT, [], { env: { ...process.env, MS1_CONFIG: path }, execArgv: [], stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
@@ -242,7 +254,10 @@ export class World {
     return {
       objective: 'Produce one green artifact per item', definitionOfDone: ['every item gate is green in a clean checkout'],
       plan: { revision: 'r1', base: this.base, goal: 'Write ms1-<item>.txt for each item and prove it.', protectedPaths: [],
-        items: ids.map((id, i) => ({ id, title: `artifact ${id}`, dependsOn: i ? [ids[i - 1]!] : [], acceptance: ['grep', '-q', `ms1-green-${id}`, `ms1-${id}.txt`], protectedPaths: [] })) },
+        items: ids.map((id, i) => ({ id, title: `artifact ${id}`, dependsOn: i ? [ids[i - 1]!] : [],
+          // The first gate also prints the registered canary, assembled at run time so that the plan itself never contains it.
+          acceptance: i ? ['grep', '-q', `ms1-green-${id}`, `ms1-${id}.txt`]
+            : ['sh', '-c', `p=${this.canary.slice(0, 11)}; s=${this.canary.slice(11)}; echo "$p$s"; grep -q ms1-green-${id} ms1-${id}.txt`], protectedPaths: [] })) },
       caps: { cycles: 40, tokens: 2_000_000, moneyMicros: 500_000, wallMs: 12 * HOUR },
       executor: { connectionId: this.executorConnection, model: 'fixture' }, deadlineMs: this.options.leadDeadlineMs ?? 48 * HOUR, onDeadline: 'wrap_up', onCancel: 'cancel',
       ...overrides,
@@ -302,10 +317,24 @@ export class World {
       control: await Promise.all(items.map(async item => ({ item: item.id, code: await run(pristine, item.acceptance) }))) }
   }
 
+  /** Work files in the owned checkout(s): the proof that the model's writes landed there and not in the project. */
+  async ownedFiles(): Promise<string[]> {
+    const { stdout } = await exec('/usr/bin/find', [this.checkouts, '-name', 'ms1-i*.txt', '-not', '-path', '*/.git/*'])
+    return stdout.split('\n').filter(Boolean).map(path => path.slice(path.lastIndexOf('/') + 1)).sort()
+  }
+  /** The project the plan was cut from is only ever read: its working tree and HEAD never move. */
+  async projectUntouched(): Promise<{ status: string; head: string }> {
+    return { status: await this.git(['status', '--porcelain', '--untracked-files=all']), head: await this.git(['rev-parse', 'HEAD']) }
+  }
+  /** Is a process of this world's lead agent alive by pid? */
+  static alive(pid: number): boolean { try { process.kill(pid, 0); return true } catch { return false } }
+
   async close() {
     for (const home of this.homes) { if (home.alive) { home.child.kill('SIGKILL'); await home.exited } }
+    // A killed home can leave its agent behind until the next start; these are this world's own processes, found by its unique path.
+    for (const line of await this.agentProcesses().catch(() => [] as string[])) { try { process.kill(Number(line.trim().split(/\s+/)[0]), 'SIGKILL') } catch { /* gone */ } }
     for (const close of this.closers.reverse()) { try { await Promise.race([close(), new Promise(resolve => setTimeout(resolve, 8000).unref())]) } catch { /* best effort */ } }
     // A quarantined sandbox keeps its directory; the lane's `.lane-data` is ignored by git.
-    rmSync(this.dir, { recursive: true, force: true })
+    try { rmSync(this.dir, { recursive: true, force: true }) } catch { /* leave it for the next cleanup */ }
   }
 }

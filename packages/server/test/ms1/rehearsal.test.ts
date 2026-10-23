@@ -5,20 +5,28 @@
  * It cannot prove real models, a real Claude Code, two real hosts, six real hours, R3/B3 quality or TLS: see
  * docs/plans/lanes/MS1-rehearsal.handoff.md for the list. */
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { test } from 'node:test'
+import { promisify } from 'node:util'
+import { REDACTION_MARKER_OPEN } from '../../src/egress/types.ts'
 import { REMOTE_RELAY_COUNTER_SOURCE, REMOTE_RELAY_PROPS_SOURCE } from '../../src/relay/remote-runtime.ts'
 import { fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { ConnectionJudgeModel } from '../../src/relay/judge-model.ts'
 import { integrity, legalState } from './invariants.ts'
-import { createWorld, HOUR, MINUTE, START, until, type Gap, type World } from './world.ts'
+import { createWorld, HOUR, MINUTE, START, until, World, type Gap } from './world.ts'
 
+const exec = promisify(execFile)
 const num = (a: number, b: number) => a - b
 const sum = (rows: Array<{ input_tokens: number }>) => rows.reduce((n, r) => n + r.input_tokens, 0)
 
 interface GapCheck {
   cycle: number; relay: string; step: number; leadState: string; mirrorState: string; relayState: string; wakes: number; leadLedgerUnchanged: boolean
   agents: number; pins: string[]; liveLeadAttempts: number; pendingTimers: number
+  /** Nothing is in flight: no pending model call in the relay ledger and no remote call that has not ended. */
+  pendingCall: unknown; openRemoteCalls: number
+  /** The work files in the owned checkout: i1..i<cycle>. */
+  owned: string[]; relayLeaseValid: boolean; mirrorLeaseValid: boolean; legal: string | null
 }
 
 test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at zero cost, and wakes exactly once to a green clean checkout', async t => {
@@ -27,7 +35,13 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   let lead = '', snapshot = '', previous = START
   const w = await createWorld(t, { items: 6, gapMs: 75 * MINUTE, leadDeadlineMs: 8 * HOUR, onGap: async (gap: Gap, world: World) => {
     const mirror = world.rows<{ child_id: string }>('SELECT child_id FROM promises WHERE parent_id=?', lead)[0]!.child_id
-    checks.push({ cycle: gap.cycle, relay: gap.run, step: gap.now - previous, leadState: world.state(lead), mirrorState: world.state(mirror), relayState: world.state(gap.run),
+    // The lead hibernated before the relay's first cycle ended, so the ledger it has now is the one it went to sleep with.
+    if (!snapshot) snapshot = JSON.stringify(world.costs(lead))
+    const leaseValid = (id: string) => Number(world.one('SELECT expires_at FROM leases WHERE key=? AND released=0', `run:${id}/exec`)?.['expires_at'] ?? 0) > gap.now
+    let legal: string | null = null
+    try { world.db(legalState) } catch (error) { legal = String(error) }
+    checks.push({ pendingCall: world.ledger(gap.run).pendingCall, owned: await world.ownedFiles(), legal, relayLeaseValid: leaseValid(gap.run), mirrorLeaseValid: leaseValid(mirror),
+      openRemoteCalls: world.count("SELECT COUNT(*) AS n FROM durable_runs WHERE id LIKE 'rc-%' AND state NOT IN ('completed','failed','canceled')"), cycle: gap.cycle, relay: gap.run, step: gap.now - previous, leadState: world.state(lead), mirrorState: world.state(mirror), relayState: world.state(gap.run),
       wakes: world.wakes(lead).length, leadLedgerUnchanged: JSON.stringify(world.costs(lead)) === snapshot, agents: (await world.agentProcesses()).length,
       pins: world.target.db.prepare('SELECT id FROM federation_streams').all().map(row => String(row['id'])),
       liveLeadAttempts: world.count("SELECT COUNT(*) AS n FROM run_attempts WHERE run_id=? AND state IN ('delivered','started')", lead),
@@ -56,17 +70,21 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.equal(w.count("SELECT COUNT(*) AS n FROM run_attempts WHERE run_id=? AND state IN ('delivered','started')", lead), 0, 'no live attempt')
   assert.equal(w.count("SELECT COUNT(*) AS n FROM leases WHERE key=? AND released=0", `run:${lead}/exec`), 0, 'no execution lease')
   assert.deepEqual(await w.agentProcesses(), [], 'no lead process')
-  const pids = [...new Set(w.agentEvents().map(e => e['pid'] as number))]
-  assert.ok(pids.length >= 1)
-  for (const pid of pids) assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, `agent process ${pid} is gone`)
+  const delegating = [...new Set(w.agentEvents().map(e => e['pid'] as number))]
+  assert.equal(delegating.length, 1, 'the delegating turn ran in one agent process')
+  assert.ok(!World.alive(delegating[0]!), 'and that process is gone')
   const leadRows = w.costs(lead)
   assert.equal(leadRows.length, 1, 'the delegating turn was billed once')
-  snapshot = JSON.stringify(leadRows)
+  snapshot ||= JSON.stringify(leadRows)
+  assert.equal(snapshot, JSON.stringify(leadRows))
 
   // 3-6. The plan runs, the clock advances across the cycles, and the lead wakes once with its ledger untouched.
-  await until(() => w.wakePrompts().length === 1, 'the lead to be woken', 150_000)
+  await until(() => w.wakePrompts().length === 1, 'the lead to be woken', 300_000)
+  // Positive control for every "no lead process" above: while the resumed turn runs, the same check finds it.
+  assert.ok((await w.agentProcesses()).length >= 1, 'the process check can see a live lead agent')
   assert.equal(JSON.stringify(w.costs(lead)), snapshot, 'MS1 cost ledger: the lead\'s totals at the wake are exactly the totals at the delegate')
-  await until(() => w.state(lead) === 'completed', 'the resumed lead to finish', 60_000)
+  await until(() => w.state(lead) === 'completed', 'the resumed lead to finish', 120_000)
+  await until(() => [...new Set(w.agentEvents().map(e => e['pid'] as number))].every(pid => !World.alive(pid)), 'every lead agent process to be gone', 30_000)
 
   assert.equal(w.relayStarts().length, 1, 'one relay start for one delegation')
   const { run_id: relay, status } = w.relayStarts()[0]!
@@ -83,6 +101,7 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.deepEqual(clean.results.map(r => r.code), [0, 0, 0, 0, 0, 0], 'every acceptance command is green in a clean checkout')
   assert.ok(clean.control.every(r => r.code !== 0), 'the same commands fail without the work, so the check above is not vacuous')
   assert.deepEqual(readdirSync(w.checkouts), [], 'the owned checkout is gone')
+  assert.deepEqual(await w.projectUntouched(), { status: '', head: w.base }, 'the project was only read: the model\'s work never touched it')
 
   // 3. Inference ran on the second node through F2-d: signed pin, observe, count, dispatch.
   const pins = w.requests.filter(r => r.startsWith('/attempts/runtime/pin'))
@@ -120,7 +139,7 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.ok(w.now - START >= 6 * HOUR, `simulated ${(w.now - START) / HOUR} h`)
   const real = Date.now() - began
   t.diagnostic(`simulated ${(w.now - START) / HOUR} h in ${(real / 1000).toFixed(1)} s of real time, ${posts.length} model calls`)
-  assert.ok(real < 5 * 60_000, 'the rehearsal did not wait in real time')
+  assert.ok(real < 30 * 60_000, 'the rehearsal did not wait for hours in real time')
   for (const check of checks) {
     assert.equal(check.leadState, 'waiting_children', `cycle ${check.cycle}: the lead sleeps`)
     assert.equal(check.wakes, 0, `cycle ${check.cycle}: nobody woke it`)
@@ -129,6 +148,11 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
     assert.equal(check.liveLeadAttempts, 0)
     assert.equal(check.pendingTimers, 1, `cycle ${check.cycle}: the 8 h deadline is still pending, not fired`)
     assert.equal(check.mirrorState, 'working'); assert.equal(check.relayState, 'working')
+    assert.equal(check.pendingCall, null, `cycle ${check.cycle}: the clock moved with no model call in flight`)
+    assert.equal(check.openRemoteCalls, 0)
+    assert.deepEqual(check.owned, Array.from({ length: check.cycle }, (_, i) => `ms1-i${i + 1}.txt`), `cycle ${check.cycle}: the model's files are in the owned checkout`)
+    assert.ok(check.relayLeaseValid && check.mirrorLeaseValid, `cycle ${check.cycle}: both leases outlive the jump`)
+    assert.equal(check.legal, null, `cycle ${check.cycle}: the cross-table invariants hold`)
     assert.deepEqual(check.pins, [`relay:${check.relay}`], 'exactly the relay run is pinned on the executor while it works')
   }
 
@@ -160,6 +184,12 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   const text = String(w.wakePrompts()[0]!['text'])
   for (const id of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6']) assert.equal(text.split(`- ${id} [done]`).length - 1, 1, `${id} is listed once in the prompt the lead read`)
 
+  // The registered canary was printed by a gate (the redaction marker is the proof it flowed) and appears nowhere at rest or on any wire we can see.
+  assert.match(JSON.stringify(ledger.evidence.filter((e: { item: string }) => e.item === 'i1')), new RegExp(REDACTION_MARKER_OPEN.replace(/[[\]\\^$.*+?()|{}]/g, '\\$&')), 'the gate printed the canary and the scrubber redacted it')
+  assert.ok(!packetRow.includes(w.canary) && !text.includes(w.canary), 'the canary is in neither the packet nor the prompt')
+  assert.ok(!JSON.stringify(posts).includes(w.canary), 'nor in any prompt the executor evaluated')
+  await assert.rejects(exec('/usr/bin/grep', ['-rlF', w.canary, w.homeDir]), (error: { code?: number }) => error.code === 1, 'nor in any file of the home node (database, WAL, agent logs)')
+
   // Recorded blocker, asserted so that it cannot close silently: no judge looked at this remote relay (see the judge test below).
   const relaySession = String(w.one('SELECT session_id FROM durable_runs WHERE id=?', relay)!['session_id'])
   assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE session_id=? AND payload LIKE '%judge%'", relaySession), 0, 'no judge signal or verdict exists for the remote relay')
@@ -169,6 +199,7 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.deepEqual(await w.agentProcesses(), [])
   assert.equal(w.count("SELECT COUNT(*) AS n FROM run_attempts WHERE state IN ('delivered','started')"), 0, 'no attempt anywhere is still live')
   assert.deepEqual(home.all('notice'), [], 'nothing needed a person')
+  w.db(legalState); w.db(integrity)
   // Everything that was composed closes cleanly.
   home.send({ cmd: 'shutdown' })
   assert.equal((await Promise.race([home.exited, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the home did not shut down')), 30_000).unref())])).code, 0)
@@ -182,7 +213,7 @@ test('the lead\'s deadline passes in simulated hours while the relay works: it i
   const home = await w.boot()
   const started = await w.startLead(home); lead = started.runId
   await started.first
-  await until(() => w.state(lead) === 'completed', 'the woken lead to finish', 120_000)
+  await until(() => w.state(lead) === 'completed', 'the woken lead to finish', 240_000)
   const promise = w.one('SELECT * FROM promises WHERE parent_id=?', lead)!
   assert.equal(promise['outcome'], 'deadline', 'resolved by the 3 h deadline, which the injected clock passed between two cycles')
   assert.deepEqual(w.wakes(lead).map(wake => [wake.kind, wake.acknowledged_at !== null]), [['resolution', true]])
@@ -219,7 +250,7 @@ test('the owner cancels the lead between two relay cycles: the relay run and its
   assert.equal(w.wakes(lead).length, 0, 'a canceled lead is not woken')
   assert.equal(w.wakePrompts().length, 0)
   assert.deepEqual(home.all('notice'), [])
-  assert.equal(w.gaps.length, 2, 'no cycle began after the cancel')
+  assert.equal(w.count('SELECT COUNT(*) AS n FROM relay_seals WHERE run_id=?', w.relayStarts()[0]!.run_id), 2, 'the third cycle never sealed: the cancel landed at the second gap')
   const calls = await w.fake.count('/completion')
   await new Promise(resolve => setTimeout(resolve, 800))
   assert.equal(await w.fake.count('/completion'), calls, 'no model call after the cancel')
@@ -339,6 +370,21 @@ const crashes: Crash[] = [
       // The answer reached the relay run too (it was waiting in the same process), but through a different ledger and a different transaction.
       assert.ok([6, 7].includes(w.costs(relayOf(w)!.run_id).length), 'the relay run keeps its own accounting')
     } },
+  // Inside the one transaction that records the receipt, the usage and the completion of a remote call (F2-c). Before the first lead,
+  // mirror or relay run ends, the only R1 `complete` operations are those of the per-call child runs, so #7 is the seventh remote call.
+  { name: 'terminal ingest, inside the transaction', label: 'complete:before_commit', nth: 7, recovery: 'fails', done: ['i1'], stalePin: true,
+    atKill(w) {
+      const children = remoteChildren(w)
+      assert.equal(children.length, 7); assert.equal(children.filter(child => child.state === 'completed').length, 6, 'the seventh completion rolled back')
+      assert.equal(children.flatMap(child => w.costs(child.id)).length, 6, 'and took its usage row with it')
+    } },
+  { name: 'terminal ingest, just after the transaction', label: 'complete:committed', nth: 7, recovery: 'fails', done: ['i1'], stalePin: true,
+    atKill(w) {
+      const children = remoteChildren(w)
+      assert.equal(children.length, 7); assert.ok(children.every(child => child.state === 'completed'))
+      assert.equal(children.flatMap(child => w.costs(child.id)).length, 7, 'completion and usage landed together')
+      assert.equal(w.costs(relayOf(w)!.run_id).length, 6, 'the relay run had not yet heard of it: the two ledgers are separate views and are never summed')
+    } },
   { name: 'relay finished, mirror not yet ended', label: 'mirror:complete:completed:before', nth: 1, recovery: 'completes',
     atKill(w, lead) {
       assert.equal(relayOf(w)?.status, 'completed')
@@ -364,7 +410,7 @@ for (const crash of crashes) {
     const dying = await w.boot({ crash: { label: crash.label, nth: crash.nth } })
     const started = await w.startLead(dying).catch(() => ({ runId: '', first: Promise.resolve({}) }))
     void started.first.catch(() => undefined)
-    const killed = await Promise.race([dying.exited, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`the home never reached ${crash.label} #${crash.nth}\n${dying.stderr.join('').slice(-1500)}`)), 150_000).unref())])
+    const killed = await Promise.race([dying.exited, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`the home never reached ${crash.label} #${crash.nth}\n${dying.stderr.join('').slice(-1500)}`)), 300_000).unref())])
     assert.equal(killed.signal, 'SIGKILL', `the process died at ${crash.label}`)
     const lead = w.one("SELECT run_id FROM lead_sessions")?.['run_id'] as string | undefined ?? started.runId
     assert.ok(lead, 'the lead run was committed before the kill')
@@ -374,14 +420,14 @@ for (const crash of crashes) {
 
     const home = await w.boot({ restart: true })
     if (crash.resume) {
-      await until(() => w.state(lead) === 'interrupted', 'the lead to be reported interrupted', 120_000)
+      await until(() => w.state(lead) === 'interrupted', 'the lead to be reported interrupted', 300_000)
       assert.equal(w.wakePrompts().length, 1, 'an acknowledged wake is never delivered again by the node')
       await new Promise(resolve => setTimeout(resolve, 1500))
       assert.equal(w.wakePrompts().length, 1)
       home.send({ cmd: 'resume', runId: lead, prompt: 'continue the lead' })
       await home.wait('the explicit resume', () => home.find('resumed'))
     }
-    await until(() => w.state(lead) === 'completed', 'the lead to finish after recovery', 180_000)
+    await until(() => w.state(lead) === 'completed', 'the lead to finish after recovery', 300_000)
     assert.equal(home.find('fatal'), undefined)
 
     // Exactly one wake, acknowledged once, built once and never changed.

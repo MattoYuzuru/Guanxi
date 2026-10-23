@@ -139,12 +139,14 @@ test('the reporter finds the relay run through the start key, reads only ledger 
   assert.equal(reporter.report('preparing'), null, 'a start without a run has no ledger yet')
 })
 
-test('the report holds one gate result per item for the current head: the relay re-proves done items, the lead hears each once, in plan order', () => {
-  const ledger = { plan: { items: [{ id: 't1', title: 'One' }, { id: 't2', title: 'Two' }] }, items: { t1: 'done', t2: 'done' }, head: 'h2',
-    // The relay verifies t2, then re-verifies every item when the whole plan is done: the ledger is an append-only log of runs.
-    evidence: [{ item: 't1', head: 'h2', ok: true, output: 'first t1' }, { item: 't2', head: 'h2', ok: true, output: 'first t2' },
-      { item: 't2', head: 'h2', ok: false, output: 'flaky t2' }, { item: 't1', head: 'h2', ok: true, output: 'final t1' }, { item: 't2', head: 'h2', ok: true, output: 'final t2' }],
+test('the report holds one gate result per item for the current head: the newest, in plan order, and a failure is not hidden by an older pass', () => {
+  const ledger = { plan: { items: [{ id: 't1', title: 'One' }, { id: 't2', title: 'Two' }, { id: 't3', title: 'Three' }] }, items: { t1: 'done', t2: 'done', t3: 'verification_requested' }, head: 'h2',
+    // The relay verifies, then re-verifies every item when the plan closes: its evidence is an append-only log of gate runs. The first
+    // evidence of t2 precedes the first of t1, so plan order and arrival order differ; t3 passed once and then failed; t1 has a stale head.
+    evidence: [{ item: 't2', head: 'h2', ok: true, output: 'first t2' }, { item: 't1', head: 'h1', ok: true, output: 'old head t1' }, { item: 't1', head: 'h2', ok: true, output: 'first t1' },
+      { item: 't3', head: 'h2', ok: true, output: 'pass t3' }, { item: 't2', head: 'h2', ok: false, output: 'flaky t2' }, { item: 't1', head: 'h2', ok: true, output: 'final t1' },
+      { item: 't2', head: 'h2', ok: true, output: 'final t2' }, { item: 't3', head: 'h2', ok: false, output: 'fail t3' }],
     diffstat: '', proposals: [], cycle: 2, tokens: 1, moneyMicros: 0, unknownCosts: 0 }
   const report = relayStartsChildReporter({ status: () => status('completed') }, { read: () => ledger as never }).report('child-1')!
-  assert.deepEqual(report.gates, [{ item: 't1', ok: true, head: 'h2', output: 'final t1' }, { item: 't2', ok: true, head: 'h2', output: 'final t2' }])
+  assert.deepEqual(report.gates, [{ item: 't1', ok: true, head: 'h2', output: 'final t1' }, { item: 't2', ok: true, head: 'h2', output: 'final t2' }, { item: 't3', ok: false, head: 'h2', output: 'fail t3' }])
 })

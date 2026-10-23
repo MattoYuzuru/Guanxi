@@ -54,6 +54,8 @@ export interface HomeConfig {
   model: string
   /** Allowed executor connection name, resolved to an id at boot. */
   executorName: string
+  /** A value registered with the egress scrubber, which a gate prints: it must never be found at rest or in the packet. */
+  canary: string
 }
 type Parent = { cmd: string; [key: string]: unknown }
 
@@ -106,12 +108,13 @@ async function main() {
   const federation = kernel.federation!
   // A node that follows a killed one cannot own the home lease until the predecessor's has lapsed; the
   // simulated downtime is exactly that lapse. A first boot claims at once.
-  for (let attempt = 0; cfg.restart && attempt < 4; attempt++) {
+  for (let attempt = 0; cfg.restart; attempt++) {
     try { runs.heartbeat(); break } catch (error) {
-      if ((error as { code?: string }).code !== 'writer_busy') throw error
+      if ((error as { code?: string }).code !== 'writer_busy' || attempt >= 4) throw error
       sim.now += cfg.ttlMs + 60_000
     }
   }
+  kernel.scrubber.register('secret://ms1/canary', cfg.canary)
 
   await kernel.node.plugin(connectionsPlugin, { databasePath: join(cfg.dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
     policy: { ownerDevice: true, nodeKeyOptIn: true }, keychain: async () => ({ key: () => Buffer.alloc(32, 7) }),
