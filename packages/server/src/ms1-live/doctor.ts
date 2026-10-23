@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { accessSync, constants, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { apiPortFromEnv, dataDirFromEnv } from '../config/listen-env.ts'
 import { LlamaServerClient } from '../runtime/llama-server/client.ts'
@@ -15,6 +15,8 @@ export interface DoctorReport { ok: boolean; config: string | null; role: string
 export interface DoctorOptions {
   /** Path of the configuration file; falls back to `GUANXI_MS1_LIVE_CONFIG`. */
   configPath?: string
+  /** The data directory `start` will use; default as `start` computes it (GUANXI_DATA_DIR, else beside the configuration). */
+  dataDir?: string
   env?: Readonly<Record<string, string | undefined>>
   platform?: NodeJS.Platform
   transport?: typeof fetch
@@ -37,6 +39,10 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
   checks.push(loaded)
   if (!settings) return { ok: false, config: path, role: null, checks }
   const s = settings
+  const dataDir = options.dataDir ? resolve(options.dataDir) : env['GUANXI_DATA_DIR'] ? dataDirFromEnv(env) : join(dirname(s.file), 'data')
+  const defaultHome = [join(env['HOME'] ?? homedir(), '.guanxi'), join(homedir(), '.guanxi')].includes(dataDir)
+  checks.push(defaultHome ? fail('data_dir', 'data_dir_default', `The data directory would be ${dataDir}, the default of an everyday node.`, 'Live mode refuses it: pass --data-dir to start, or set GUANXI_DATA_DIR, to a directory of its own.')
+    : ok('data_dir', `Data directory: ${dataDir}.`, { dataDir }))
   let identityId = '', accountId = '', peerId = '', peerAccount = ''
   let identityKey = '', peerKey = ''
   let scopes: string[] = [], peerScopes: string[] = [], trust = '', peerTrust = '', admin = false, peerAdmin = false
@@ -117,7 +123,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
   } else {
     const home = s.home!
     checks.push(executable('/usr/bin/git') ? ok('git', '/usr/bin/git is present (owned checkouts use it).') : fail('git', 'git_missing', '/usr/bin/git is missing.', 'Install git; owned checkouts and the target repository clone need it.'))
-    const root = home.checkoutRoot ?? join(dataDirFromEnv(env), 'relay-checkouts')
+    const root = home.checkoutRoot ?? join(dataDir, 'relay-checkouts')
     const parent = (() => { let p = root; while (p !== dirname(p)) { try { if (statSync(p).isDirectory()) return p } catch { /* walk up */ } p = dirname(p) } return p })()
     checks.push(writableDir(parent) ? ok('checkout_root', `Owned checkouts go under ${root}.`) : fail('checkout_root', 'checkout_root_unwritable', `${root} cannot be created.`, 'Set home.checkoutRoot to a writable directory.'))
     if (platform === 'darwin' && !root.startsWith(homedir() + '/')) {

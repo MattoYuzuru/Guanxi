@@ -15,7 +15,7 @@ export const USAGE = `ms1-live: pair a Guanxi home node with an executor node fo
 
   ms1-live init --role home|executor --dir DIR [--account ID] [--id NODE_ID] [--port N] [--federation-port N]
                 [--peer-federation-port N] [--model NAME] [--llama-url URL] [--peer-file FILE] [--json]
-  ms1-live doctor    [--config FILE] [--json]
+  ms1-live doctor    [--config FILE] [--data-dir DIR] [--json]
   ms1-live preflight [--config FILE] [--completion] [--json]
   ms1-live start     [--config FILE] [--port N] [--data-dir DIR] [--lead-prompt-file FILE --project ID] [--json]
 
@@ -118,7 +118,7 @@ export async function main(argv: readonly string[], io: Io = stdio, env: Readonl
         return 0
       }
       case 'doctor': {
-        const result = await doctor({ configPath: configPath(parsed, env), env })
+        const result = await doctor({ configPath: configPath(parsed, env), env, ...(text(parsed, 'data-dir') ? { dataDir: text(parsed, 'data-dir')! } : {}) })
         report(result, [...lines(result.checks), result.ok ? 'doctor: nothing is wrong that this machine can see.' : 'doctor: fix the FAIL lines first.'])
         return result.ok ? 0 : 1
       }

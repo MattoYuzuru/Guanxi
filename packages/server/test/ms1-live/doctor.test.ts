@@ -29,6 +29,13 @@ test('doctor on a fresh pairing reports nothing wrong, calls an absent peer "not
   const { code, report, raw } = await w.doctor('home')
   assert.equal(code, 0, raw); assert.equal(report.ok, true)
   for (const id of ['config', 'identity', 'private_key', 'peer_file', 'pairing', 'listen', 'forward_port', 'own_port', 'git', 'checkout_root']) assert.equal(status(report, id)?.status, 'ok', id)
+  // The data directory is the one `start` would use: beside the configuration, never ~/.guanxi (the HOME of this run is the temp dir).
+  assert.ok(status(report, 'checkout_root')!.summary.includes(join(w.dir, 'home', 'data', 'relay-checkouts')))
+  assert.equal(status(report, 'data_dir')?.status, 'ok')
+  const explicit = await cli(['doctor', '--config', join(w.dir, 'home', 'ms1-live.json'), '--data-dir', join(w.dir, 'elsewhere'), '--json'], { HOME: w.dir })
+  assert.ok((JSON.parse(explicit.out) as Report).checks.find(c => c.id === 'checkout_root')!.summary.includes(join(w.dir, 'elsewhere', 'relay-checkouts')))
+  const refused = await cli(['doctor', '--config', join(w.dir, 'home', 'ms1-live.json'), '--data-dir', join(w.dir, '.guanxi'), '--json'], { HOME: w.dir })
+  assert.equal(refused.code, 1); assert.equal((JSON.parse(refused.out) as Report).checks.find(c => c.id === 'data_dir')?.code, 'data_dir_default')
   assert.match(status(report, 'listen')!.summary, /Owner API on 127\.0\.0\.1:\d+ \(never forwarded\); federation on/)
   assert.equal(status(report, 'peer_reachable')?.status, 'warn'); assert.equal(status(report, 'peer_reachable')?.code, 'peer_unreachable')
   assert.match(status(report, 'peer_reachable')!.fix!, /ssh forward/)
