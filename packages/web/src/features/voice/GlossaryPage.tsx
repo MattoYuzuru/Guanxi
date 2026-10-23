@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { StoredGlossaryEntryWire } from '@guanxi/contract'
 import { Button, EmptyState, ErrorState } from '@guanxi/ui'
 import { Select } from '../../components/ui.tsx'
-import { formatRelativeTime, formatTime } from '../../lib/format.ts'
+import { formatTime } from '../../lib/format.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { Link, paths } from '../../lib/router.tsx'
@@ -157,7 +157,7 @@ export function GlossaryPage() {
   }
 
   const viewLocked = pending !== null || editor !== null
-  const age = list.observedAt ? t('voiceGlossary.asOf', { time: formatTime(list.observedAt), age: formatRelativeTime(list.observedAt) }) : null
+  const age = list.observedAt ? t('voiceGlossary.asOf', { time: formatTime(list.observedAt) }) : null
   const emptyKey: LocaleKey = !showInactive ? 'voiceGlossary.empty.activeOnly' : projectId !== '' ? 'voiceGlossary.empty.view' : 'voiceGlossary.empty'
   const emptyView = list.status === 'ready' && entries !== null && entries.length === 0
   const newButton = <Button variant="primary" data-focus-key="new" disabled={unreachable || pending !== null || editor !== null} aria-describedby={unreachable ? offlineId : undefined}

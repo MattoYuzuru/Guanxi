@@ -9,7 +9,7 @@ import { GLOSSARY_PREVIEW_MAX_CHARS } from '@guanxi/contract'
 import { GlossaryPage } from '../../src/features/voice/GlossaryPage.tsx'
 import { GlossarySettingsLink } from '../../src/features/voice/GlossarySettingsLink.tsx'
 import { PREVIEW_DELAY_MS } from '../../src/features/voice/GlossaryPreview.tsx'
-import { voiceGlossaryEnglish } from '../../src/features/voice/messages.ts'
+import { voiceGlossaryEnglish, voiceGlossaryRussian } from '../../src/features/voice/messages.ts'
 import { paths, parseRoute } from '../../src/lib/router.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import { createGlossaryNode, glossaryFetch, type GlossaryNode } from '../fixtures/glossary-node.ts'
@@ -128,6 +128,21 @@ describe('states', () => {
     act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(screen.queryAllByRole('article')).toHaveLength(3))
     expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(0)
+  })
+
+  it('shows when the list was read as an absolute time only, never a relative age (P2, D-203)', async () => {
+    await open()
+    const read = screen.getAllByText(/^As of /u)
+    expect(read).toHaveLength(1)
+    expect(read[0]!.textContent).toMatch(/^As of \d{1,2}:\d{2}( [AP]M)?$/u)
+    expect(document.body.textContent).not.toMatch(/just now|\bago\b/u)
+  })
+
+  it('names no control the page does not have: the list is read again by itself (P2, D-203)', () => {
+    const stale = [...Object.values(voiceGlossaryEnglish), ...Object.values(voiceGlossaryRussian)]
+      .filter((text) => /\b(Reload|Refresh)\b|Обновите|Перезагрузите/u.test(String(text)))
+    expect(stale).toEqual([])
+    expect(Object.keys(voiceGlossaryRussian)).toEqual(Object.keys(voiceGlossaryEnglish))
   })
 
   it('keeps the last entries with their age when the node drops, and disables every network action with a reason', async () => {
