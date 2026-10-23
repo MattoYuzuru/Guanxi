@@ -98,7 +98,7 @@ export function StatusItem({
           </TooltipTrigger>
           <TooltipContent side={side}>{label}</TooltipContent>
         </Tooltip>
-        <PopoverContent side={side} align={align} className="gx-status-item-popover" data-size={wide ? 'wide' : undefined} tabIndex={wide ? 0 : undefined}>
+        <PopoverContent side={side} align={align} className="gx-status-item-popover" data-size={wide ? 'wide' : undefined} data-scrollable={wide || undefined} tabIndex={wide ? 0 : undefined}>
           <PopoverTitle>{title ?? label}</PopoverTitle>
           {tone === 'unknown' && children === undefined ? (
             <p className="gx-status-item-empty">{t('ui.status.unknownValue')}</p>

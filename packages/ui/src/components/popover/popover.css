@@ -16,8 +16,9 @@
   outline: none;
 }
 
-/* A popover that scrolls is a focusable region (tabIndex 0): keyboard focus on it is visible (P3). */
-.gx-popover[tabindex='0']:focus-visible {
+/* A popover that scrolls is a focusable region (data-scrollable, tabIndex 0): keyboard focus on it
+   is visible (P3). Other popups take focus on open without a ring around the whole surface. */
+.gx-popover[data-scrollable]:focus-visible {
   outline: var(--focus-ring-width) solid var(--color-ring-primary);
   outline-offset: var(--focus-ring-offset);
 }

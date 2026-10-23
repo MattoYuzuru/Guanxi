@@ -83,6 +83,7 @@ test('a scrollable status popover is a keyboard-focusable region with a visible 
   const popup = page.locator('.gx-status-item-popover[data-size="wide"]')
   await expect(popup).toHaveCount(1)
   await expect(popup).toHaveAttribute('tabindex', '0')
+  await expect(popup).toHaveAttribute('data-scrollable', 'true')
   expect(await popup.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true)
   await popup.focus()
   await expect(popup).toBeFocused()
