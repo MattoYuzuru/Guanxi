@@ -135,6 +135,14 @@ Each item is its own commit with a test that fails without it. (The coordinator'
 - **Judge fence handling (P3 4)** now has a test that fails if the cascade goes back to `JSON.parse`. **Prompt example path (P3 5)** is the
   placeholder `PATH`. **Notes (P3 3, 6)** on the order-preserving schema digest and the stock-Ollama judge `format` are in the relay README.
 
+Gates after this round, clean tree at `ab9e329f`: typecheck, ESLint on every changed `.ts`, `lint:md` and `check:licenses` pass; targeted run
+(relay, llama-server, federation, native-agent, ms1, ms1-live, remote, connections) 862 tests, 0 fail after one existing test was rewritten (below);
+`agent-dev … npm run test` receipt `check-t4jswtri` exit 0 (core 2944 tests, 2942 pass, 0 fail, 2 skipped, the same two Linux-only tests);
+`agent-dev … npm run build` receipt `check-bogk1a1a` exit 0. The earlier receipts (`check-y5lb40fl`, `check-isr9tg2h`) are superseded.
+The operational test that expected the run to stop when the clock passed the observation age during a call asserted the very failure the
+smoke hit; it now asserts that a refreshable observation continues (and re-reads `/props`) and an unrefreshable one (the server answers as
+another model) still dispatches nothing more.
+
 Updated mutation list: the above all caught, plus `redaction check whole window`, `no FFFD byte verification`, `FFFD always trusted`,
 `no-budget cursor kept`, and each observation site except the defensive one in `call()`.
 
