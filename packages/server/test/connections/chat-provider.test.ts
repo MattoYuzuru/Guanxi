@@ -27,7 +27,7 @@ import { ApprovalGate } from '../../src/agent/approvals.ts'
 import { PrefillTracker } from '../../src/context/usage.ts'
 import { threadsRoutes } from '../../src/http/threads-routes.ts'
 import { recoverChatJobs } from '../../src/jobs/chat-recovery.ts'
-import type { AppContext } from '../../src/context.ts'
+import { createAppContext, type AppContext } from '../../src/context.ts'
 import type { OllamaAdapter } from '../../src/ollama/plugin.ts'
 import type { OllamaClient } from '../../src/ollama/client.ts'
 import type { ModelService } from '../../src/models/service.ts'
@@ -493,4 +493,26 @@ test('provider turns bypass a held governor permit while local turns queue behin
   } finally { lease.release() }
   await local.text()
   assert.equal(localCalls, 1)
+})
+
+
+test('startup defers queued provider jobs until Connections has loaded', async t => {
+  let calls = 0, ready = false
+  const f = await setup(t, { complete: async (...args) => { calls++; assert.equal(ready, true); return reply(...args) } })
+  const id = await imported(f.service), chat = chatFixture(f, t)
+  const thread = chat.create(chatModelSelection(id, piModels('openai')[0]!.id))
+  const input = { content: 'queued provider', attachments: [], autoApprove: null }
+  const association = chat.context.jobService.createChat({ threadId: thread.id, idempotencyScope: `chat:${thread.id}:send:v1`,
+    idempotencyKey: randomUUID(), requestFingerprint: chatRequestFingerprint(input), input, derivedTitle: 'queued provider' })
+  const context = await createAppContext({ db: chat.context.db, dbPath: join(f.dir, 'state.sqlite'), appVersion: 'test',
+    deferChatRecovery: true, connections: () => { if (!ready) throw new Error('K3 not loaded'); return f.service } })
+  try {
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(context.jobService.get(association.job.id)!.status, 'queued')
+    assert.equal(calls, 0)
+    ready = true
+    await recoverChatJobs(context)
+    await settle(() => context.jobService.get(association.job.id)!.status === 'completed')
+    assert.equal(calls, 1)
+  } finally { await context.maintenance?.close(); await context.chatExecution.shutdown() }
 })

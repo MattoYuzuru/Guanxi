@@ -123,6 +123,8 @@ export interface AppContext {
 }
 
 export interface CreateContextOptions {
+  /** Boot schedules only after K3 activation/import; standalone contexts recover immediately. */
+  deferChatRecovery?: boolean
   connections?: () => Connections
   dbPath: string
   appVersion: string
@@ -276,7 +278,7 @@ export async function createAppContext(options: CreateContextOptions): Promise<A
       }),
       chatExecution: new ChatJobExecutionOwner(base),
     }
-    await recoverChatJobs(context)
+    await recoverChatJobs(context, { scheduleQueued: !options.deferChatRecovery })
     await maintenance.start()
     return context
   } catch (error) {

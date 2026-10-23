@@ -1,3 +1,4 @@
+import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { importProviderKeysFile } from './connections/dotenv.ts'
 export { importLocalProviderKeys } from './connections/import-local.ts'
 import { relayPlugin, RELAY_SERVICE, type RelayService } from './relay/plugin.ts'
@@ -243,6 +244,7 @@ export async function start(options: StartOptions = {}) {
     context = await createAppContext({
       dbPath,
       db,
+      deferChatRecovery: true,
       appVersion: APP_VERSION,
       connections: () => {
         const service = kernel.node.service<Connections>(CONNECTIONS_SERVICE)
@@ -275,6 +277,7 @@ export async function start(options: StartOptions = {}) {
     })
     const providerKeysFile = options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE
     if (providerKeysFile) await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
+    await recoverChatJobs(context)
     await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
     operationalRelay = options.operationalRelay ? createOperationalRelay(options.operationalRelay, dirname(dbPath)) : null
