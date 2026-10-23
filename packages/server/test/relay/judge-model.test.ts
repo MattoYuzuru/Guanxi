@@ -366,8 +366,18 @@ test('a role that is not served by the runtime that counts is refused at admissi
   for (const other of [{ connectionId: 'another-connection' }, { model: 'another-model' }, { model: 'fixture:cloud' }])
     await assert.rejects(model.admit({ accountId: account, role: { ...role, ...other }, signal }), /judge_config_invalid/)
   assert.equal(attested, 0)
-  assert.equal(await model.admit({ accountId: account, role: { ...role, model: ' FIXTURE ' }, signal }), false, 'the same model by another spelling reaches attestation (which declined)')
+  // The string sent to the runtime is the one the relay itself sends: another spelling of the same model is not the binding.
+  for (const spelling of [' FIXTURE ', 'fixture:latest']) await assert.rejects(model.admit({ accountId: account, role: { ...role, model: spelling }, signal }), /judge_config_invalid/)
+  assert.equal(attested, 0)
+  assert.equal(await model.admit({ accountId: account, role, signal }), false, 'the bound role reaches attestation (which declined)')
   assert.equal(attested, 1)
+})
+test('a binding also holds for a stock meter: the role cannot name another connection or model', async () => {
+  const stock = new ConnectionJudgeModel(noConnections, account, { countIsExact: true, observe: transportMeter.observe, count: () => 1 } as never, noScrubber, async () => null, 1000, () => now, binding)
+  const role = { connectionId: 'relay-connection', model: 'fixture', windowTokens: 16000, maxInputTokens: 12000, maxOutputTokens: 1000, temperature: 0, tokenReserve: 13000, moneyReserveMicros: 0 }
+  const signal = new AbortController().signal
+  await assert.rejects(stock.admit({ accountId: account, role: { ...role, model: 'other' }, signal }), /judge_config_invalid/)
+  assert.equal(await stock.admit({ accountId: account, role, signal }), false)
 })
 
 // ---- R3-remote: the judge dispatches through the transport that counts, on real K3 ----------------------------------------
@@ -437,4 +447,16 @@ test('a transport meter cannot reach a role on another connection or model throu
     await assert.rejects(model.sample({ accountId: account, role, signal: new AbortController().signal, runId: 'run', requestId: 's', prompt: 'x', check: () => {} }))
   }
   assert.deepEqual(r.calls, [])
+})
+
+test('the request K3 hands back is pinned: a scrubber that rewrites the model name stops the judge before the runtime is asked anything', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true })
+  // K3 scrubs the final request. A registered value equal to the model name rewrites `model`, and the judge must not dispatch that.
+  f.scrubber.register('secret://model-name', r.role.model)
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  await model.admit(input)
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 's', prompt: 'fixture', check: () => {} }))
+  assert.deepEqual(r.requests, [], 'the runtime was never handed a request')
+  assert.deepEqual(r.calls.filter(call => call === 'count'), [], 'and nothing was counted for dispatch')
 })

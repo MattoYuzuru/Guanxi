@@ -32,7 +32,9 @@ async function fixture(t: { after(fn: () => unknown): void }, options: { judge?:
   const source = join(parent, 'source'), root = join(parent, 'attempt'), runtimeBase = join(parent, 'runtime'), scratch = join(runtimeBase, 'scratch')
   for (const path of [source, root, runtimeBase, scratch]) await mkdir(path)
   await mkdir(join(root, 'src')); await writeFile(join(root, 'src', 'item.txt'), 'synthetic task content')
-  const git = async (args: string[]) => (await exec('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root })).stdout.trim()
+  // The relay prompts embed the commit hash, so two fixtures must make the same commit whatever the second it happens in.
+  const dates = { GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' }
+  const git = async (args: string[]) => (await exec('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', ...args], { cwd: root, env: { ...process.env, ...dates } })).stdout.trim()
   await git(['init']); await git(['add', '.']); await git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'fixture'])
   const f = runFixture(':memory:')
   const relay = new RelayStore(f.db, f.store, f.scrubber, () => RUN_TIME), governor = new ResourceGovernor(), life = new AbortController()
@@ -103,6 +105,8 @@ test('a local relay with the judge on is the same relay plus judge events: its o
   assert.equal(judged.connections.snapshot('local').costs.length, own(judged).length + 4)
   const rowsOf = (f: typeof plain, runId: string) => f.store.costs(runId).map(row => [row.inputTokens, row.outputTokens])
   assert.deepEqual(rowsOf(judged, b.runId!), rowsOf(plain, a.runId!), 'judge calls add no row to the relay run\'s R1 ledger')
+  // The relay caps do see the judge, through the cascade's pre-debit only: one reserve per sample, nothing settled to actuals.
+  assert.equal(judged.relay.read(b.runId!).tokens, plain.relay.read(a.runId!).tokens + 4 * 13000)
   assert.equal(judged.governor.snapshot().activeLease, null)
 })
 

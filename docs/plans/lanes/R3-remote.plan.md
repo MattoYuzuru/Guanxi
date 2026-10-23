@@ -18,19 +18,20 @@ hook (lane `r3-observation-journal`), real calibration, a checker supervisor, B3
    It returns `{ signals?, cascade? }` (the existing `RelayJudgeInput` / `RelayCascadeInput`). The judge brief binds
    the plan and caps, so it is per start; nothing of it can arrive over HTTP. `RelayConfig.judge` is the plugin-level
    default used when the start host has none.
-2. **Fail closed before anything exists.** The factory runs in `prepare()` after `runtime.validate()` and before the
-   signed pin, the checkout-bound run or any remote write. The signals policy, the brief (`copyBrief` against the
-   start's plan, caps hash equal to the start's caps) and the model shape are validated there, and the executor is
-   constructed there too (it opens the additive judge ledger 38). Any failure refuses the start with
-   `judge_config_invalid` (now a public start code): no run, no pin, no checkout. A host that returns nothing opts
-   that start out.
+2. **Fail closed before the pin and the run exist.** The factory runs in `prepare()` after `runtime.validate()` (the
+   checkout is already allocated and is released like any refusal) and before the signed pin, the run or any remote
+   write. The signals policy, the brief (`copyBrief` against the start's plan, caps hash equal to the start's caps), the
+   model shape and, on a transport meter, the brief's judge roles are validated there, and the executor is constructed
+   there too (it opens the additive judge ledger 38). Any failure refuses the start with `judge_config_invalid` (now a
+   public start code): no run, session or pin. A host that returns nothing opts that start out.
 3. **Signals for every relay.** The collector is host supplied (T0). `ledgerJudgeInput(policy, clock)` is a default that
-   reports only what the ledger really holds (cycle, no-progress streak, wall deadline, token budget unknown) and leaves
-   heartbeat, lease, disk unknown; streaks the ledger does not track are zero and documented as such.
+   reports only what the ledger really holds (cycle, no-progress streak, wall deadline) and leaves heartbeat, lease, disk,
+   token budget unknown; the facts the ledger lacks but the observation shape requires are declared `unobserved` and
+   published as unknown (review fix).
 4. **Judge model on a transport meter.** `ConnectionJudgeModel` takes an optional `runtime` binding
    `{ connectionId, model }`. A meter with a `transport` is accepted only with that binding; a meter with `countAsync`
    but no transport (counted by A, dispatched on B), a transport without a binding, an inexact meter, or a role whose
-   connection or normalised model differs from the binding is `judge_config_invalid` (construction or admission).
+   connection or exact model string differs from the binding is `judge_config_invalid` (construction or admission).
    The dispatch goes through `meter.transport` itself and uses the meter's own counter, so count and dispatch cannot
    diverge: the prompt is pre-counted with `countAsync` when present, `onPrepared` re-checks request shape (`think:false`,
    model, exact options) and the lookup count, `meter.authorizeDispatch` re-observes the runtime, and the result must

@@ -97,7 +97,7 @@ a P3 list; all P1/P2 were fixed in `dda21413` with tests in `6fe46d78`, `1613b89
 6. **Ledger shape.** The relay run keeps its own call accounting (cap enforcement) and each child holds the executor's report;
    no view aggregates them and they must never be summed together. Per-call child runs and offer rows grow without pruning.
 7. The synchronous bridge still exists for the local R2-op path. The judge cascade refuses a meter that needs a runtime transport,
-   so a remote relay has no judge model yet. Governor vocabulary is unchanged (Ollama-only; the executor's llama-server takes its
+   so a remote relay has no judge model yet (superseded: [R3-remote](R3-remote.handoff.md) binds the judge to the meter's own transport). Governor vocabulary is unchanged (Ollama-only; the executor's llama-server takes its
    permit under a `llama-server:` model name).
 8. B3 quality, the six-hour envelope and MS1 are not claimed. ADR-0020 stays `proposed`.
 

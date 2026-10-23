@@ -9,13 +9,15 @@ import { promisify } from 'node:util'
 import type { RelayStartInput } from '@guanxi/contract'
 import type { SignedDispatchGrant } from '@guanxi/contract/federation'
 import { OwnedCheckoutAllocator } from '../../src/relay/checkout.ts'
+import { relayPlugin } from '../../src/relay/plugin.ts'
 import { ledgerJudgeInput, relayJudgeModel, startHostWithJudge, type RelayStartJudgeContext, type RelayStartJudgeSource } from '../../src/relay/judge-start.ts'
+import { judgeUnknownFacts } from '../../src/relay/judge-host.ts'
 import { evaluateJudgeSignals } from '../../src/relay/judge-signals.ts'
 import { RelayStarts } from '../../src/relay/start.ts'
 import { RelayStore } from '../../src/relay/store.ts'
 import { fakeTokens, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
 import { caps, reserves } from './fixture.ts'
-import { JUDGE_PROMPT, relayAndGarbledJudgeScript, relayAndJudgeScript, signalPolicy, startBrief } from './judge-fixture.ts'
+import { JUDGE_PROMPT, judgeRole, relayAndGarbledJudgeScript, relayAndJudgeScript, signalPolicy, startBrief } from './judge-fixture.ts'
 import { remoteFixture, until, type RemoteOptions } from './remote-fixture.ts'
 
 const exec = promisify(execFile), sha = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -55,7 +57,7 @@ async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOpt
     .map(row => { try { return JSON.parse((JSON.parse(row.payload) as { text: string }).text) as Record<string, any> } catch { return {} as Record<string, any> } })
     .filter(note => typeof note['relay'] === 'string')
   const finish = async () => { await until(() => !['running', 'preparing'].includes(starts.status(input.key).status)); return starts.status(input.key) }
-  return { ...f, relayStore, starts, input, notes, finish, allocations: () => allocations, holdings: () => readdir(checkouts).catch(() => [] as string[]),
+  return { ...f, host, relayStore, starts, input, notes, finish, allocations: () => allocations, holdings: () => readdir(checkouts).catch(() => [] as string[]),
     errors: (sessionId: string) => f.home.log.readAll(sessionId, 'person').filter(event => event.type === 'error').map(event => (event.data as { code: string }).code),
     grants: () => f.sent.filter(s => s.path === '/attempts/dispatch').map(s => (s.body as SignedDispatchGrant).grant) }
 }
@@ -76,11 +78,18 @@ test('the judge option reaches the executor through the public start: signals on
   const signals = notes.filter(note => note['relay'] === 'judge_signals')
   assert.deepEqual(signals.map(note => [note['cycle'], note['phase']]), Array.from({ length: cycles }, (_, i) => [i + 1, 'cycle_start']).flatMap(([cycle, phase], i) => [[cycle, phase], [i + 1, 'pre_seal']]))
   assert.ok(signals.every(note => note['unknownFacts'].includes('heartbeat') && note['unknownFacts'].includes('lease') && note['unknownFacts'].includes('disk')))
+  assert.ok(signals.every(note => ['failureStreak', 'editRevert', 'deadEnds', 'pathEdits', 'crash', 'itemTokens'].every(name => note['unknownFacts'].includes(name))),
+    'what the ledger has no fact for is published as unknown, not as zero')
   // Verdicts: two samples per phase, each a real call on the executor, each counted by the executor first.
   const posts = await f.completions(), judgePosts = posts.filter(post => judgePrompt(post.body.prompt))
   assert.equal(judgePosts.length, 2 * 2 * cycles, 'two samples at each of the two boundaries of every cycle')
   const grants = f.grants()
   assert.equal(grants.length, posts.length, 'one grant per completion, judge or relay')
+  for (const post of judgePosts) {
+    const text = post.body.prompt as string
+    assert.match(text, /"watchdog":\{"ref":"signals:[0-9a-f]+","state":"observed","summary":/, 'the judge is shown the signals summary')
+    assert.ok(text.includes('"unknownFacts":["heartbeat","lease","disk","tokenBudget","failureStreak","editRevert","deadEnds","pathEdits","crash","itemTokens"]'), 'and told what was not observed')
+  }
   for (const post of judgePosts) {
     const grant = grants.find(g => g.job.counted!.renderedSha256 === sha(post.body.prompt))
     assert.ok(grant, 'the judge prompt that was evaluated is exactly a rendering the executor counted and was granted')
@@ -134,11 +143,31 @@ test('no judge source: a remote relay publishes no judge event and makes no judg
   assert.equal(f.home.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE 'relay_judge%'").get()!.n, 0)
 })
 
-test('a replay of the same start dispatches no second judge call', async t => {
+test('a concurrent and a later replay of the same start dispatch no second judge call', async t => {
   const f = await fixture(t, { judge: () => remoteJudge() })
-  const receipt = await f.starts.start(f.input); assert.equal((await f.finish()).status, 'completed')
+  const [receipt, again] = await Promise.all([f.starts.start(f.input), f.starts.start(f.input)])
+  assert.equal(again.runId, receipt.runId); assert.equal((await f.finish()).status, 'completed')
+  const judged = async () => (await f.completions()).filter(post => judgePrompt(post.body.prompt)).length
+  assert.equal(await judged(), 4, 'two samples at each of the two boundaries of the one cycle, once')
+  assert.equal(f.home.db.prepare('SELECT COUNT(*) n FROM relay_judge_requests').get()!.n, 2)
   const posts = (await f.completions()).length, replay = await f.starts.start(f.input)
   assert.equal(replay.runId, receipt.runId); assert.equal((await f.completions()).length, posts)
+})
+
+test('the plugin-level default reaches the public start, and a start host\'s own source wins over it', async t => {
+  const f = await fixture(t), calls = { own: 0, fallback: 0 }
+  const provided = new Map<string, any>()
+  const services: Record<string, unknown> = { 'runs.durable': { store: f.home.runs }, 'connections.registry': f.h.connections, 'session.log': f.home.log, 'egress.scrubber': f.home.scrubber }
+  const apply = (config: Parameters<typeof relayPlugin.apply>[1]) => {
+    relayPlugin.apply({ service: (name: string) => services[name], provide: (name: string, service: unknown) => { provided.set(name, service) }, effect: () => undefined } as never, config)
+    return provided.get('agent.relay') as { publicStarts: RelayStarts }
+  }
+  const fallback: RelayStartJudgeSource = () => { calls.fallback++; throw new Error('default judge') }
+  const own: RelayStartJudgeSource = () => { calls.own++; throw new Error('own judge') }
+  await assert.rejects(apply({ db: f.home.db, startHost: f.host, judge: fallback }).publicStarts.start(f.input), /judge_config_invalid/)
+  assert.deepEqual(calls, { own: 0, fallback: 1 }, 'the default was consulted')
+  await assert.rejects(apply({ db: f.home.db, startHost: { ...f.host, judge: own }, judge: fallback }).publicStarts.start({ ...f.input, key: 'second' }), /judge_config_invalid/)
+  assert.deepEqual(calls, { own: 1, fallback: 1 }, 'the host\'s own source replaced it')
 })
 
 // ---- fail closed: nothing exists when the judge cannot be admitted ------------------------------------------------------
@@ -152,6 +181,9 @@ const refusals: Array<[string, (context: RelayStartJudgeContext) => ReturnType<R
   ['the signals policy is invalid', () => ({ signals: { policy: { ...signalPolicy, tokenBlowupRatio: 1 }, collect: async () => { throw new Error('unreachable') } } })],
   ['the signals collector is missing', () => ({ signals: { policy: signalPolicy } as never })],
   ['the source returns something that is not a judge', () => 'judge' as never],
+  ['the source is asynchronous (a promise is not a judge)', context => Promise.resolve({ cascade: { brief: startBrief(context.input), model: relayJudgeModel(context, { accountId: 'local', maxAgeMs: 10_000 }) } }) as never],
+  ['the brief names a judge role on another model than the runtime that counts', context => ({ cascade: { brief: startBrief(context.input, { j2: judgeRole(context.input.connectionId, 'another-model') }), model: relayJudgeModel(context, { accountId: 'local', maxAgeMs: 10_000 }) } })],
+  ['the brief names a judge role on another connection than the runtime that counts', context => ({ cascade: { brief: startBrief(context.input, { j2: judgeRole('another-connection', context.input.model) }), model: relayJudgeModel(context, { accountId: 'local', maxAgeMs: 10_000 }) } })],
   ['the meter is counted by one runtime and would be dispatched on another (async counter, no transport)', context => ({ cascade: { brief: startBrief(context.input),
     model: relayJudgeModel({ ...context, meter: { ...context.meter, transport: undefined } }, { accountId: 'local', maxAgeMs: 10_000 }) } })],
   ['the meter is not exact', context => ({ cascade: { brief: startBrief(context.input), model: relayJudgeModel({ ...context, meter: { ...context.meter, countIsExact: false } }, { accountId: 'local', maxAgeMs: 10_000 }) } })],
@@ -162,6 +194,7 @@ for (const [name, source] of refusals) {
     await assert.rejects(f.starts.start(f.input), (error: Error) => error.message === 'judge_config_invalid' && !/Users|exploded/.test(error.message))
     for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(f.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
     assert.equal(f.sent.filter(s => s.path === '/attempts/runtime/pin').length, 0, 'the executor was never asked to pin a run that cannot exist')
+    assert.equal(f.home.db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name LIKE 'relay_judge%'").get()!.n, 0, 'the judge ledger was not even opened')
     assert.deepEqual(f.target.db.prepare('SELECT id FROM federation_streams').all(), [])
     assert.equal((await f.completions()).length, 0)
     await until(async () => (await f.holdings()).length === 0)
@@ -215,7 +248,7 @@ test('stop during a remote judge call waits for the executor to acknowledge the 
   assert.equal(f.home.runs.get(grant!.offer.runId).state, 'canceled'); assert.equal(f.home.runs.get(receipt.runId!).state, 'canceled')
   const rows = f.home.db.prepare('SELECT state FROM relay_judge_requests WHERE run_id=?').all(receipt.runId!) as Array<{ state: string }>
   // The cancel revokes the fence, so the cascade cannot append an outcome: the row stays as dispatched (R3 recovery abandons it later), never a verdict.
-  assert.ok(rows.length === 1 && rows.every(row => row.state === 'dispatched' || row.state === 'abandoned'), JSON.stringify(rows))
+  assert.deepEqual(rows.map(row => row.state), ['dispatched'])
   await until(async () => (await f.holdings()).length === 0)
 })
 
@@ -243,7 +276,9 @@ test('the default collector reports what the ledger holds, leaves the rest unkno
   const observation = await input.collect({ attempt: { id: 'a', runId: 'r', epoch: 1, token: 1 }, ledger, signal: new AbortController().signal })
   assert.deepEqual([observation.cycle, observation.noProgressCycles, observation.deadlineAt, observation.observedAt], [4, 3, 6_000, 6_500])
   assert.deepEqual([observation.heartbeatAt, observation.lease, observation.disk, observation.tokenBudgetForItem], [null, null, null, null], 'unknown, not healthy')
+  assert.deepEqual(input.unobserved, ['failureStreak', 'editRevert', 'deadEnds', 'pathEdits', 'crash', 'itemTokens'], 'the zeros the shape requires are declared unobserved')
   assert.deepEqual(evaluateJudgeSignals(observation, signalPolicy).map(signal => signal.code), ['deadline', 'no_progress'])
+  assert.deepEqual(judgeUnknownFacts(observation, input.unobserved), ['heartbeat', 'lease', 'disk', 'tokenBudget', 'failureStreak', 'editRevert', 'deadEnds', 'pathEdits', 'crash', 'itemTokens'])
   const open = await ledgerJudgeInput(signalPolicy, () => 6_500).collect({ attempt: { id: 'a', runId: 'r', epoch: 1, token: 1 },
     ledger: { cycle: 1, noProgress: 0, startedAt: 1_000, caps: { wallMs: null } } as never, signal: new AbortController().signal })
   assert.equal(open.deadlineAt, null); assert.deepEqual(evaluateJudgeSignals(open, signalPolicy), [])
