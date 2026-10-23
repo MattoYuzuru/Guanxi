@@ -1,6 +1,6 @@
 # Open questions
 
-**Status:** accepted (one K5 default open) · **Updated:** 2026-10-21
+**Status:** accepted (K5 and Chat defaults open) · **Updated:** 2026-10-21
 
 New questions go under **Open** with the stage they block and a recommended default. A stage
 may start with the default when the owner has not answered, and must record that it did.
@@ -9,10 +9,11 @@ Answers move into a new owner decision record. Legacy questions `Q-1`–`Q-37` a
 
 ## Open
 
-The owner answered the earlier questions below on 2026-10-20. One K5 default awaits an answer.
+The owner answered the earlier questions below on 2026-10-20. K5 and Chat prompt defaults await an answer or benchmark evidence.
 
 | ID | Question | Blocked | Answer |
 | --- | --- | --- | --- |
+| Q-K3-chat | Which Chat default should replace the current shared orientation plus fixed English language instruction? | K3-chat, B1 | Use the byte-stable orientation first and "Reply in the language the user writes in." (350 UTF-8-byte total budget). This owner-requested default awaits an ADR-0025/B1 bench result; request tests prove bytes, not quality or non-inferiority. |
 | Q-245 | The editor payment grant is connection-wide and has no expiry (K5 default, 2026-10-21). Should it be scoped per share or project, with an expiry? | K5, U3 | K5 default: connection-wide, no expiry; owner answer pending. |
 
 ## Answered

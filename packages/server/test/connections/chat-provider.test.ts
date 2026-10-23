@@ -263,13 +263,14 @@ test('custom transport refuses request escape before forwarding a credential', a
 
 test('plain Chat orientation is bounded English with brand and no execution access', () => {
   const prompt = harnessSystemPrompt()
-  assert.ok(Buffer.byteLength(prompt, 'utf8') <= 300)
+  assert.ok(Buffer.byteLength(prompt, 'utf8') <= 350)
+  assert.equal(prompt.split('\n').at(-1), 'Reply in the language the user writes in.')
   assert.ok(prompt.includes(PRODUCT_NAME))
   assert.match(prompt, /Node=local; OS=/)
   assert.match(prompt, /cwd=none; roots=0; mode=chat/)
   assert.match(prompt, /Tools=none\. Skills=off/)
   assert.match(prompt, /Paths, budgets, AGENTS.md=unavailable/)
-  assert.doesNotMatch(prompt, /[^\x20-\x7e]/)
+  assert.doesNotMatch(prompt, /[^\x20-\x7e\n]/)
   assert.doesNotMatch(prompt, /[\\/]|\d{4}-\d{2}-\d{2}|quota|remaining|timestamp|Respond|You run/)
 })
 
