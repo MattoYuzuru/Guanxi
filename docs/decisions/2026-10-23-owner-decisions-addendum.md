@@ -1,6 +1,6 @@
 # Owner decisions — 2026-10-23 addendum (UI redesign, models in chat, MS1 lead)
 
-**Status:** accepted · **Date:** 2026-10-23 · **Decisions:** D-200–D-211
+**Status:** accepted · **Date:** 2026-10-23 · **Decisions:** D-200–D-212
 **Extends:** [2026-10-23](2026-10-23-owner-decisions.md); where they differ, this record wins over it and over
 [`docs/design/`](../design/README.md).
 **Source:** the owner's review of the running product (`localhost:5173`) in the Guanxi development chat,
@@ -20,5 +20,6 @@
 | D-209 | Fleet map | Proposed feature, accepted for design: a rendered (bounded, not free-pan) map of devices and sessions — device nodes with type icons (laptop, desktop, server, phone), state colour, the lead/home marked, animated links showing real traffic; clicking a node opens a panel with its sessions (open any session's chat view, including a delegated sub-agent's prompt and thinking under D-113 rules) and its loaded models. Views: one session, one project, all devices. |
 | D-210 | MS1 lead | The MS1 lead is Claude Sonnet 5.5 at medium effort through K5 (Claude Code), replacing the planning-quota note in D-197. The owner approved the DS2 Touch ID signer setup; Guanxi sends the steps. |
 | D-211 | MS1 lead on an API key | The owner's subscription sign-in into K5's private Claude config directory did not take, so the MS1 lead (D-210: Claude Sonnet 5.5, medium effort) may run Claude Code on the owner's Anthropic API key, imported by K3 from the owner's dotenv file into the vault and billed as API usage. Scope: planning and final review only. The subscription path stays the default and unchanged; the key reaches only the agent process environment and never a log, event, argument or configuration file. |
+| D-212 | MS1 lead on the subscription token | The API-key route of D-211 is not available: the key the owner holds is the long-lived subscription token of `claude setup-token` (`sk-ant-oat…`). It may be stored in the K3 vault only as a K5 credential of the official, unmodified Claude Code CLI (a `claude-code` `agent` connection) and is injected into the ACP bridge environment as `CLAUDE_CODE_OAUTH_TOKEN`; usage is billed to the owner's Claude subscription. It is never usable by K3 `complete()` or any direct API call, by chat, or by any other adapter; K3's refusal of `sk-ant-oat` as an API key stays. The dotenv import reads `CLAUDE_CODE_OAUTH_TOKEN`, and, only when the lead is configured `auth: "oauth_token"`, an `sk-ant-oat` value under `ANTHROPIC_API_KEY` (never routed to the Anthropic API connection). D-211's API-key route remains available for a real `sk-ant-api` key. |
 
 The Electron desktop build (U2) remains the path to a macOS DMG; TypeScript stays.

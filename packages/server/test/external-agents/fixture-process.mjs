@@ -33,8 +33,8 @@ if (process.argv.slice(2).join(' ') === 'auth status') {
     await new Promise(() => {})
   }
   // Like the real CLI (2.1.287): an `ANTHROPIC_API_KEY` in the environment is the active credential. Names only, never values.
-  writeFileSync(join(root, 'auth-env.json'), JSON.stringify({ names: Object.keys(process.env), hasKey: !!process.env.ANTHROPIC_API_KEY }))
-  send(config.claudeAuth ?? (process.env.ANTHROPIC_API_KEY ? { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' } : { loggedIn: true, authMethod: 'claude.ai' }))
+  writeFileSync(join(root, 'auth-env.json'), JSON.stringify({ names: Object.keys(process.env), hasKey: !!process.env.ANTHROPIC_API_KEY, hasToken: !!process.env.CLAUDE_CODE_OAUTH_TOKEN }))
+  send(config.claudeAuth ?? (process.env.CLAUDE_CODE_OAUTH_TOKEN && !process.env.ANTHROPIC_API_KEY ? { loggedIn: true, authMethod: 'oauth_token' } : process.env.ANTHROPIC_API_KEY ? { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' } : { loggedIn: true, authMethod: 'claude.ai' }))
   process.exit(0)
 }
 let vendorRead = false
@@ -45,7 +45,8 @@ if (config.readVendor) {
 writeFileSync(join(root, 'environment.json'), JSON.stringify({
   names: Object.keys(process.env), vendorRead, argv: process.argv.slice(2), subprocessScrub: process.env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB ?? null,
   // Whether the key is the one the test stored in the vault; the value itself is never written anywhere.
-  anthropicKeyMatches: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY === config.anthropicKey, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME,
+  anthropicKeyMatches: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY === config.anthropicKey,
+  oauthTokenMatches: !!process.env.CLAUDE_CODE_OAUTH_TOKEN && process.env.CLAUDE_CODE_OAUTH_TOKEN === config.oauthToken, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CLAUDE_CODE_EXECUTABLE: process.env.CLAUDE_CODE_EXECUTABLE,
   hasGeminiKey: !!process.env.GEMINI_API_KEY,
   openCodeConfig: process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : null,

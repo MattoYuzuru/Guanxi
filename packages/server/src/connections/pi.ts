@@ -22,6 +22,13 @@ export function assertApiKey(provider: string, key: string) {
     throw new ConnectionError('validation_failed', 'An API key is required; subscription access uses the official CLI')
   }
 }
+/** D-212: the long-lived subscription token of `claude setup-token` is a credential for the official Claude Code CLI only. It is never a model
+ * API key (`assertApiKey` refuses its family) and K3 never sends it anywhere itself: it is handed to K5 for the CLI's own environment. */
+export function assertOAuthToken(key: string) {
+  if (key.length < MIN_SECRET_LENGTH || !key.startsWith('sk-ant-oat')) {
+    throw new ConnectionError('validation_failed', 'A Claude Code subscription token (sk-ant-oat...) is required')
+  }
+}
 export interface PiTransport {
   complete(model: Model<Api>, context: Context, options: SimpleStreamOptions, onText?: (delta: string) => void): Promise<AssistantMessage>
 }
