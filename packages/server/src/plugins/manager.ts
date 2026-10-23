@@ -66,7 +66,7 @@ export const INSTALL_FAULT_POINTS = [
 export const UNINSTALL_FAULT_POINTS = [
   'uninstall:start',
   'uninstall:state-read',
-  'uninstall:backup',
+  'uninstall:before-state-write',
   'uninstall:manifest-temp',
   'uninstall:manifest-renamed',
   'uninstall:lock-temp',
@@ -1174,11 +1174,7 @@ export class PluginManager {
 
   private async uninstallLocked(id: string): Promise<void> {
     let snapshot: StateSnapshot | undefined
-    let backupDir: string | null = null
-    let backupMoved = false
     let directory: string | null = null
-    let stagingRootCreated = false
-    const stagingRoot = join(this.pluginsDir, '.staging')
     try {
       await this.fault('uninstall:start')
       if (typeof id !== 'string' || id.length === 0) {
@@ -1197,18 +1193,11 @@ export class PluginManager {
       nextPlugins.delete(id)
       const nextEnabled = new Set(state.enabled)
       nextEnabled.delete(id)
+      await this.fault('uninstall:before-state-write')
 
-      if (await pathExists(directory)) {
-        if (!(await pathExists(stagingRoot))) {
-          await mkdir(stagingRoot, { recursive: true })
-          stagingRootCreated = true
-        }
-        backupDir = join(stagingRoot, `removed-${randomBytes(12).toString('hex')}`)
-        await rename(directory, backupDir)
-        backupMoved = true
-      }
-      await this.fault('uninstall:backup')
-
+      // Commit the state before touching the directory: a crash after this
+      // leaves an unreferenced directory for `recover()`, never a lock entry
+      // whose directory is missing.
       await this.writeAtomicWithFaults(
         this.pluginsPath,
         serializePlugins(nextEnabled),
@@ -1222,29 +1211,19 @@ export class PluginManager {
         'uninstall:lock-renamed',
       )
       await this.fault('uninstall:committed')
-
-      if (backupDir !== null) {
-        await rm(backupDir, { recursive: true, force: true }).catch(() => undefined)
-        backupDir = null
-      }
-      if (stagingRootCreated) await this.removeEmptyDirectory(stagingRoot)
     } catch (error) {
+      if (isSimulatedCrash(error)) throw error
       const failures: unknown[] = []
-      if (backupMoved && backupDir !== null && directory !== null) {
-        const backup = backupDir
-        const original = directory
-        await this.rollbackStep(failures, 'remove replaced plugin directory', () =>
-          rm(original, { recursive: true, force: true }))
-        await this.rollbackStep(failures, 'restore removed plugin directory', () => rename(backup, original))
-      }
       if (snapshot !== undefined) {
         const state = snapshot
         await this.rollbackStep(failures, 'restore state files', () => this.restoreSnapshot(state))
       }
-      if (stagingRootCreated) {
-        await this.rollbackStep(failures, 'remove staging root', () => this.removeEmptyDirectory(stagingRoot))
-      }
       throw attachRollbackFailures(error, failures)
+    }
+
+    // The commit is final: removal is best-effort and an orphan is swept later.
+    if (directory !== null) {
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 

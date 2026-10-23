@@ -666,6 +666,48 @@ test('a crash at every install point recovers to a lockfile whose directories ex
   }
 })
 
+test('a crash at every uninstall point recovers to a lockfile whose directories exist', async t => {
+  const base = await tempBase(t)
+  const source = await writePlugin(join(base, 'source'))
+  const manifestRenamed = UNINSTALL_FAULT_POINTS.indexOf('uninstall:manifest-renamed')
+  const lockRenamed = UNINSTALL_FAULT_POINTS.indexOf('uninstall:lock-renamed')
+  assert.ok(manifestRenamed > 0)
+  assert.ok(lockRenamed > manifestRenamed)
+
+  for (const [index, point] of UNINSTALL_FAULT_POINTS.entries()) {
+    const pluginsDir = join(base, `uninstall-crash-${index}`)
+    const installed = await manager(pluginsDir).install(source)
+    const crashing = manager(pluginsDir, {
+      hooks: { point: name => {
+        if (name === point) throw new SimulatedCrash(name)
+      } },
+    })
+    await assert.rejects(crashing.uninstall(DEFAULT_ID), (error: unknown) => {
+      assert.ok(error instanceof SimulatedCrash, `crash at ${point}`)
+      return true
+    })
+
+    const fresh = manager(pluginsDir)
+    await fresh.recover()
+    const locked = await lockEntries(pluginsDir)
+    for (const [id, entry] of Object.entries(locked)) {
+      assert.equal(await exists(join(pluginsDir, entry.directory)), true, `${id} after crash at ${point}`)
+    }
+    const removed = index >= lockRenamed
+    assert.deepEqual(
+      fresh.list().map(entry => entry.version),
+      removed ? [] : ['1.0.0'],
+      `list after crash at ${point}`,
+    )
+    assert.deepEqual(
+      fresh.bootSet(),
+      !removed && index < manifestRenamed ? [installed.path] : [],
+      `boot after crash at ${point}`,
+    )
+    assert.equal(await exists(join(pluginsDir, '.staging')), false, `staging after crash at ${point}`)
+  }
+})
+
 test('bootSet skips and reports missing directories and changed integrity', async t => {
   const base = await tempBase(t)
   const source = await writePlugin(join(base, 'source'))
