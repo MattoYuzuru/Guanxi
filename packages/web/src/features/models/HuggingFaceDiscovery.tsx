@@ -240,19 +240,13 @@ export function HuggingFaceDiscovery({
    * Repeats exactly the request that failed, including its page and cursor, so a
    * transient failure on page N does not silently restart the walk at page 1.
    */
-  const retry = () => {
+  // A failed search is repeated with Search; a failed next page with Load the next page, which
+  // then repeats the failed page and cursor (D-203: no separate Retry button).
+  const loadMore = () => {
     if (state.kind === 'pageFailed') {
       void run(state.intent, state.page)
       return
     }
-    if (state.kind === 'failed') {
-      void run(state.intent, null)
-      return
-    }
-    startSearch()
-  }
-
-  const loadMore = () => {
     if (state.kind !== 'page' || state.page.state !== 'listed') return
     const cursor = state.page.nextCursor
     if (cursor === null) return
@@ -360,8 +354,8 @@ export function HuggingFaceDiscovery({
       </div>
 
       {/*
-        The whole Callout carries `role="alert"`, so the failure title, the reason and
-        the retry action are announced together rather than as a bare sentence.
+        The whole Callout carries `role="alert"`, so the failure title and the reason are
+        announced together rather than as a bare sentence.
       */}
       {state.kind === 'failed' || state.kind === 'pageFailed' ? (
         <div className="mt-3" role="alert">
@@ -370,11 +364,6 @@ export function HuggingFaceDiscovery({
             title={state.kind === 'pageFailed'
               ? translate('hf.more.error.title')
               : translate('hf.error.title')}
-            action={
-              <Button size="sm" onClick={retry} className="min-h-11 sm:min-h-0">
-                {translate('hf.error.retry')}
-              </Button>
-            }
           >
             {state.reason === 'offline'
               ? translate('hf.error.offline')
@@ -783,7 +772,7 @@ function HuggingFaceDownloadControl({
           className="mt-2 min-h-11 sm:min-h-0"
           onClick={() => void start()}
         >
-          {translate('hf.download.retry')}
+          {translate('hf.download.action')}
         </Button>
       ) : null}
     </div>
@@ -1176,15 +1165,6 @@ export function RepositoryCard({
               <Callout
                 tone="danger"
                 title={translate('hf.select.error.title')}
-                action={
-                  <Button
-                    size="sm"
-                    className="min-h-11 sm:min-h-0"
-                    onClick={() => void runSelection(state.filePath)}
-                  >
-                    {translate('hf.error.retry')}
-                  </Button>
-                }
               >
                 {state.kind === 'refused'
                   ? translate(SELECTION_REFUSAL_KEYS[state.reason])

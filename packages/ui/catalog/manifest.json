@@ -438,7 +438,7 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 14,
+        "count": 12,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
@@ -450,9 +450,7 @@
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryCard.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx",
-          "packages/web/src/features/voice/GlossaryHistory.tsx",
           "packages/web/src/features/voice/GlossaryPage.tsx",
-          "packages/web/src/features/voice/GlossaryPreview.tsx",
           "packages/web/src/features/voice/ToggleButton.tsx"
         ]
       },

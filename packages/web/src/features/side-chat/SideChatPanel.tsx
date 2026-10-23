@@ -137,12 +137,9 @@ export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Ca
       failWith('send', error, turn.id)
     }
   }
-  const retry = () => {
-    if (!failure) return
-    if (failure.action === 'respond') void perform(turns)
-    else if (failure.action === 'save') void save()
-    else { const turn = turns.find(item => item.id === failure.turnId); if (turn) void sendToMain(turn) }
-  }
+  // A failed answer can be asked again with the same messages; a failed save or send keeps its
+  // own Save and Send buttons enabled (same operation id), so there is no separate Retry (D-203).
+  const askAgain = () => { if (failure?.action === 'respond') void perform(turns) }
   const discard = () => {
     abort.current?.abort(); abort.current = null
     setTurns([]); setDraft(''); setSaved(null); setSends({}); setFailure(null); setAnnouncement(null); setConfirming(false)
@@ -199,7 +196,7 @@ export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Ca
 
     {failure && <div className="flex min-w-0 flex-col gap-2">
       <ErrorState title={`${t('sideChat.error.title')}. ${failureText(failure)}`} source={t(SOURCE_KEYS[failure.action])} occurredAt={failure.at} timeMeaning="observed" details={failure.code}
-        action={failure.code === 'context_too_large' || failure.code === 'validation_failed' || failure.code === 'too_large' ? undefined : <Button onClick={retry}>{t('sideChat.retry')}</Button>} />
+        action={failure.action !== 'respond' || failure.code === 'context_too_large' || failure.code === 'validation_failed' || failure.code === 'too_large' ? undefined : <Button onClick={askAgain}>{t('sideChat.askAgain')}</Button>} />
     </div>}
     <p ref={statusRef} role="status" tabIndex={-1} data-testid="side-chat-status" className="min-h-6 text-14 focus-visible:outline-focus">{announcement ? t(announcement.key, announcement.values) : ''}</p>
 

@@ -450,6 +450,14 @@ function Feedback({
   feedback: Feedback
   onRefresh: () => void
 }) {
+  // Identity drift means the shown model is stale: re-read it at once instead of asking the user
+  // to press Reload (D-203). Once per conflict outcome.
+  const drifted = feedback.kind === 'outcome' && feedback.outcome.state === 'conflict'
+    && (feedback.outcome.reason === 'digest_expectation_mismatch' || feedback.outcome.reason === 'runtime_expectation_mismatch')
+    ? feedback.outcome : null
+  const refreshRef = useRef(onRefresh)
+  refreshRef.current = onRefresh
+  useEffect(() => { if (drifted) refreshRef.current() }, [drifted])
   if (feedback.kind === 'export') {
     if (feedback.state === 'failed') {
       return (
@@ -484,9 +492,7 @@ function Feedback({
         <p className="mt-1">{conflictReason(outcome.reason)}</p>
         {outcome.reason === 'digest_expectation_mismatch'
           || outcome.reason === 'runtime_expectation_mismatch' ? (
-            <Button variant="ghost" size="sm" className="mt-1" onClick={onRefresh}>
-              {translate('models.override.refresh')}
-            </Button>
+            <p className="mt-1 text-secondary">{translate('models.override.reloaded')}</p>
           ) : null}
       </>
     )

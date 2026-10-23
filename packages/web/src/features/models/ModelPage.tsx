@@ -47,16 +47,9 @@ export function ModelPage({ name, health }: { name: string; health: Health }) {
   if (detail.error || !detail.data) {
     return (
       <div className="mx-auto max-w-3xl px-5 py-6">
-        <Callout
-          tone="danger"
-          title={translate('model.error')}
-          action={
-            <Button size="sm" onClick={detail.reload}>
-              {translate('model.retry')}
-            </Button>
-          }
-        >
+        <Callout tone="danger" title={translate('model.error')}>
           {errorMessage(detail.error)}
+          <span className="mt-1 block">{translate('common.recovering')}</span>
         </Callout>
         <Link
           to={paths.launcher()}

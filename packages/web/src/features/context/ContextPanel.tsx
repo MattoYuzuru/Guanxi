@@ -145,9 +145,7 @@ export function ContextPanel({
                   }
                 }}
               >
-                {compactError
-                  ? translate('chat.checkpoint.retry')
-                  : translate('chat.checkpoint.confirmAction')}
+                {translate('chat.checkpoint.confirmAction')}
               </Button>
               <Button
                 variant="ghost"

@@ -1,9 +1,10 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { GlossaryPreviewResponse } from '@guanxi/contract'
-import { Button, ErrorState, Textarea } from '@guanxi/ui'
+import { ErrorState, Textarea } from '@guanxi/ui'
 import { Select } from '../../components/ui.tsx'
 import { translate as t } from '../../lib/locale.ts'
 import { useDebounced } from '../../lib/useAsync.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { glossaryApi } from './api.ts'
 import { Provenance } from './Provenance.tsx'
 import { classify, failureMessage, previewSegments, previewTooLong, PREVIEW_LIMIT, type Failure } from './model.ts'
@@ -33,32 +34,30 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' })
   // What the shown result was computed for. It is only current while all three still match.
   const [computedFor, setComputedFor] = useState<{ text: string; scope: string; version: number } | null>(null)
-  const [pending, setPending] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const id = useId()
   const tooLong = previewTooLong(delayed)
   const blank = delayed.trim() === ''
 
   useEffect(() => {
-    if (blank || tooLong) { setPhase({ kind: 'idle' }); setComputedFor(null); setPending(false); return }
+    if (blank || tooLong) { setPhase({ kind: 'idle' }); setComputedFor(null); return }
     const abort = new AbortController()
-    setPending(true)
     glossaryApi.preview({ text: delayed, projectId: scopeProjectId === '' ? null : scopeProjectId }, abort.signal).then(
       (result) => {
         if (abort.signal.aborted) return
         setPhase({ kind: 'ready', result, observedAt: new Date().toISOString() })
         setComputedFor({ text: delayed, scope: scopeProjectId, version })
-        setPending(false)
       },
       (error: unknown) => {
         if (abort.signal.aborted) return
         setPhase({ kind: 'failed', failure: { code: classify(error), at: new Date().toISOString() } })
         setComputedFor(null)
-        setPending(false)
       },
     )
     return () => abort.abort()
   }, [delayed, scopeProjectId, version, attempt, blank, tooLong])
+  // A failed preview recovers by itself (D-203); the failure stays shown until a result replaces it.
+  useAutoRecover(phase.kind === 'failed' ? phase.failure : null, () => setAttempt((value) => value + 1))
 
   const typing = text !== delayed
   const current = computedFor !== null && computedFor.text === delayed && computedFor.scope === scopeProjectId && computedFor.version === version
@@ -93,8 +92,8 @@ export function GlossaryPreview({ projects, scopeProjectId, onScopeChange, versi
       {phase.kind === 'idle' && !tooLong && <p className="text-12 text-secondary">{blank ? t('voiceGlossary.preview.idle') : t('voiceGlossary.preview.loading')}</p>}
       {phase.kind === 'failed' && <>
         <ErrorState title={`${t('voiceGlossary.preview.error')}. ${t(failureMessage(phase.failure.code, 'read'))}`} source={t('voiceGlossary.source.preview')}
-          occurredAt={phase.failure.at} timeMeaning="observed" details={phase.failure.code}
-          action={<Button size="sm" onClick={() => setAttempt((value) => value + 1)} loading={pending}>{t('voiceGlossary.retry')}</Button>} />
+          occurredAt={phase.failure.at} timeMeaning="observed" details={phase.failure.code} />
+        <p className="text-12 text-secondary">{t('voiceGlossary.recovering')}</p>
       </>}
       {shown && view && <>
         {stale && <p className="text-12 text-secondary" data-testid="glossary-preview-stale">{t('voiceGlossary.preview.stale')}</p>}

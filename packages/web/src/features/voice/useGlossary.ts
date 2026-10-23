@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Project, StoredGlossaryEntryWire } from '@guanxi/contract'
 import { agentRequest } from '../native-agent/api.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { glossaryApi } from './api.ts'
 import { classify, type Failure } from './model.ts'
 
@@ -10,6 +11,7 @@ export type GlossaryStatus = 'loading' | 'ready' | 'failed'
  * Loads the entries of one view (a project filter plus the inactive switch). Data belongs to
  * the view it was loaded for: switching view shows the skeleton instead of another view's
  * entries, while a failed refresh of the same view keeps the last good entries and their time.
+ * There is no Retry: a failed read recovers by itself.
  */
 export function useGlossaryEntries(projectId: string, includeInactive: boolean) {
   const viewKey = `${projectId}|${includeInactive}`
@@ -20,20 +22,25 @@ export function useGlossaryEntries(projectId: string, includeInactive: boolean) 
   // Counts the local patches (a mutation's answer). A read that started before a patch may carry
   // an older picture, so it is discarded and the view is read once more instead of being shown.
   const patches = useRef(0)
+  // The view whose last read failed: its recovery reads stay quiet (no loading state, the
+  // failure and the last entries stay on screen) until one succeeds (D-203).
+  const failedView = useRef<string | null>(null)
   useEffect(() => {
     const abort = new AbortController()
     const startedAt = patches.current
-    setLoading(true)
+    if (failedView.current !== viewKey) setLoading(true)
     glossaryApi.list({ ...(projectId === '' ? {} : { projectId }), includeInactive }, abort.signal).then(
       (response) => {
         if (abort.signal.aborted) return
         if (patches.current !== startedAt) { setRevision((value) => value + 1); return }
+        failedView.current = null
         setData({ key: viewKey, entries: response.entries, observedAt: new Date().toISOString() })
         setFailure(null)
         setLoading(false)
       },
       (error: unknown) => {
         if (abort.signal.aborted) return
+        failedView.current = viewKey
         setFailure({ code: classify(error), at: new Date().toISOString(), key: viewKey })
         setLoading(false)
       },
@@ -45,6 +52,8 @@ export function useGlossaryEntries(projectId: string, includeInactive: boolean) 
   const failure = failureState !== null && failureState.key === viewKey ? failureState : null
   const status: GlossaryStatus = current === null ? (failure !== null && !loading ? 'failed' : 'loading') : 'ready'
   const reload = useCallback(() => setRevision((value) => value + 1), [])
+  // A failed read recovers by itself with a growing pause, and at once on focus or reconnect.
+  useAutoRecover(failure, reload)
   /**
    * Patches the loaded view with a mutation's answer (the node returned the complete stored row).
    * An entry already in the view is replaced; a new one is added only when `belongs` says it fits

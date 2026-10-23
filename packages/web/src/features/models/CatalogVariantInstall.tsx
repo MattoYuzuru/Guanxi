@@ -331,7 +331,7 @@ export function CatalogVariantInstall({
                 {translate('models.catalogVariant.close.short')}
               </Button>
               <Button variant="primary" onClick={() => void start(state.variant)}>
-                {translate('models.catalogVariant.retry')}
+                {translate('models.catalogVariant.pull')}
               </Button>
             </>
           ) : state.kind === 'success' ? (

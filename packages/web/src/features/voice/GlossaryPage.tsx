@@ -111,8 +111,9 @@ export function GlossaryPage() {
       setAnnouncement('')
       if (action === 'create' || action === 'update') setFormFailure(failure)
       else setActionFailure({ ...failure, action })
-      // No answer at all: ask the read path, so a node that is really gone becomes the named offline state.
-      if (failure.code === 'unreachable') list.reload()
+      // Read the list again after any failed action, so what is shown is current without a
+      // Reload button (D-203); a node that is really gone becomes the named offline state.
+      list.reload()
     } finally { busy.current = false; if (mounted.current) setPending(null) }
   }
   const done = (action: Action, stored: StoredGlossaryEntryWire, key: LocaleKey = DONE_KEYS[action]) =>
@@ -178,20 +179,20 @@ export function GlossaryPage() {
     <p role="status" className="min-h-4 text-13" data-testid="glossary-announcement">{announcement}</p>
 
     {unreachable && <div role="alert" className="flex flex-col gap-2 rounded-panel border border-danger bg-surface p-3" data-state="node_unreachable">
-      <p className="font-heading">{t('voiceGlossary.offline.title')} · <span className="font-mono">{t('voiceGlossary.offline.state')}</span></p>
+      <p className="font-heading">{t('voiceGlossary.offline.title')} <span className="font-mono font-normal text-secondary">({t('voiceGlossary.offline.state')})</span></p>
       <p id={offlineId}>{t(entries === null ? 'voiceGlossary.offline.bodyNone' : 'voiceGlossary.offline.body')}</p>
       <p className="text-12 text-secondary">{age ?? t('voiceGlossary.offline.never')}</p>
-      <div><Button onClick={list.reload} loading={list.status === 'loading' || list.refreshing}>{t('voiceGlossary.retry')}</Button></div>
+      <p className="text-12 text-secondary">{t('voiceGlossary.recovering')}</p>
     </div>}
     {list.failure && !unreachable && <div className="flex min-w-0 flex-col gap-2">
       <ErrorState title={`${t('voiceGlossary.load.error')}. ${t(failureMessage(list.failure.code, 'read'))}`} source={t('voiceGlossary.source.list')} occurredAt={list.failure.at}
-        timeMeaning="observed" details={list.failure.code} action={<Button onClick={list.reload} loading={list.refreshing || list.status === 'loading'}>{t('voiceGlossary.retry')}</Button>} />
+        timeMeaning="observed" details={list.failure.code} />
+      <p className="text-12 text-secondary">{t('voiceGlossary.recovering')}</p>
       {entries !== null && <p className="text-12 text-secondary">{t('voiceGlossary.stale.note')}</p>}
     </div>}
     {actionFailure && <div ref={actionFailureRef} tabIndex={-1} className="focus-visible:outline-focus">
       <ErrorState title={`${t('voiceGlossary.action.failed')}. ${t(failureMessage(actionFailure.code, 'write'))}`} source={t(SOURCE_KEYS[actionFailure.action])}
-        occurredAt={actionFailure.at} timeMeaning="observed" details={actionFailure.code}
-        action={<Button size="sm" onClick={list.reload}>{t('voiceGlossary.reload')}</Button>} />
+        occurredAt={actionFailure.at} timeMeaning="observed" details={actionFailure.code} />
     </div>}
 
     <div role="group" aria-label={t('voiceGlossary.toolbar')} className="flex min-w-0 flex-col gap-3">
