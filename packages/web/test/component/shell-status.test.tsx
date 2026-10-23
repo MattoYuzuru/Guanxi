@@ -42,7 +42,9 @@ describe('shell status items (D-202, D-203, D-204)', () => {
     setActiveLocale('en')
     const { container } = render(<ShellStatusItems runtime={null} stale={false} health={health()} />)
     const names = triggers().map(button => button.getAttribute('aria-label'))
-    expect(names).toEqual(['This device: Unknown', 'Memory: Unknown', 'Runtime: Unknown', 'Quota: Unknown', 'Keep awake: Unknown', 'Power: Unknown'])
+    expect(names).toEqual(['This device: Unknown', 'Memory: Unknown', 'Runtime: Unknown'])
+    // Items with no source on this node are not shown at all (P3): no permanent Unknown icons.
+    expect(screen.queryAllByRole('button', { name: /^(Quota|Keep awake|Power)\b/u })).toHaveLength(0)
     expect(container.textContent).not.toMatch(/\b0\b/u)
     // The Developer/Visual split is gone (D-204) and nothing offers a manual reload (D-203).
     expect(screen.queryAllByRole('button', { name: /^(Developer|Visual)$/u })).toHaveLength(0)
@@ -92,12 +94,14 @@ describe('shell status items (D-202, D-203, D-204)', () => {
     expect(within(popover).queryAllByRole('button', { name: /retry|check again/iu })).toHaveLength(0)
   })
 
-  it('puts the supplied inbox entry after the facts and keeps quota, keep-awake and power unknown', () => {
+  it('puts the supplied inbox entry after the facts and shows no sourceless quota, keep-awake or power item', () => {
     setActiveLocale('en')
     render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health()} inbox={<a href="/notifications">3 unread</a>} />)
     expect(screen.getByRole('button', { name: 'Runtime' }).closest('[data-slot="status-item"]')?.hasAttribute('data-stale')).toBe(false)
     expect(within(screen.getByTestId('shell-status-items')).getByRole('link', { name: '3 unread' })).toBeTruthy()
-    expect(screen.getAllByRole('button', { name: /: Unknown$/u }).map(button => button.getAttribute('aria-label')))
-      .toEqual(['Quota: Unknown', 'Keep awake: Unknown', 'Power: Unknown'])
+    expect(screen.queryAllByRole('button', { name: /: Unknown$/u })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^(Quota|Keep awake|Power)\b/u })).toHaveLength(0)
+    const items = screen.getByTestId('shell-status-items')
+    expect(items.lastElementChild?.textContent).toBe('3 unread')
   })
 })

@@ -66,6 +66,9 @@
 }
 
 .gx-status-item-value {
+  /* A fixed slot: a changing value never moves its neighbours (P3). */
+  min-width: var(--layout-status-value);
+  text-align: start;
   color: var(--color-text-primary);
   font-size: var(--font-size-12);
   font-weight: var(--font-weight-heading);

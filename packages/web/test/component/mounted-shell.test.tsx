@@ -170,8 +170,8 @@ describe('mounted product shell', () => {
     expect(container.querySelectorAll('li[data-plugin-entry]')).toHaveLength(1)
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'This device' })).toBeTruthy())
-    expect(screen.getAllByRole('button', { name: /: Unknown$/u }).map(button => button.getAttribute('aria-label')))
-      .toEqual(['Quota: Unknown', 'Keep awake: Unknown', 'Power: Unknown'])
+    expect(screen.queryAllByRole('button', { name: /: Unknown$/u })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^(Quota|Keep awake|Power)\b/u })).toHaveLength(0)
     await waitFor(() => expect(runtimeCalls(fetchMock)).toHaveLength(1))
 
     // D-205: the toggle swaps light and dark only; the stored default stays "system" until used.

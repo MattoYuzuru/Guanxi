@@ -117,6 +117,9 @@ Never let slots 4 and 6 be the only difference between two series (deuteranopia)
 | Numbers that change | either face | `font-variant-numeric: tabular-nums` |
 
 - Line height 1.5 for UI text, 1.6 for long prose, 1.6–1.7 for code.
+- A value that updates in place sits in a fixed slot: the status strip's values reserve
+  `--layout-status-value` (3.75 rem, eight tabular digits at 12 px; DTCG dimensions are px or rem
+  only), so a changing number never moves its neighbours.
 - Mono is for values a machine produced (paths, hashes, IDs, model names, timings, token counts)
   and code — never for decoration or small labels.
 - Long prose stays under about 72 characters per line.

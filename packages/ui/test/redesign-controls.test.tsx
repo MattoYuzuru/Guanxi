@@ -125,3 +125,15 @@ describe('Composer', () => {
     expect(onStop).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('status strip value slot (P3)', () => {
+  it('reserves a fixed minimum width so a changing value never moves its neighbours', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const css = readFileSync(resolve(process.cwd(), 'src/components/status-item/status-item.css'), 'utf8')
+    const rule = /^\.gx-status-item-value\s*\{([^}]*)\}/mu.exec(css)?.[1] ?? ''
+    expect(rule).toMatch(/min-width:\s*var\(--layout-status-value\)/u)
+    expect(rule).toMatch(/font-variant-numeric:\s*tabular-nums/u)
+    expect(rule).toMatch(/text-align:\s*(start|left)/u)
+  })
+})

@@ -729,6 +729,16 @@
           "unit": "rem"
         }
       }
+    },
+    "status": {
+      "value": {
+        "$type": "dimension",
+        "$value": {
+          "value": 3.75,
+          "unit": "rem"
+        },
+        "$description": "Minimum width of a status-strip value slot: eight tabular digits at the 12 px value size (DTCG dimensions are px or rem only), so a changing value never moves its neighbours (P3)."
+      }
     }
   },
   "focus": {

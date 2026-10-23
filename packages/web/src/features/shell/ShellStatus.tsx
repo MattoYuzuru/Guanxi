@@ -40,8 +40,8 @@ function deviceIcon(platform: string | undefined): IconName {
 }
 
 /**
- * The status strip's icon items (D-202): device, memory, runtime, quota, keep-awake, power and
- * the inbox. Unknown stays unknown, never 0; values carry the weight; provenance is one sentence
+ * The status strip's icon items (D-202): device, memory, runtime and the inbox; quota,
+ * keep-awake and power appear only once they have a source. Unknown stays unknown, never 0; values carry the weight; provenance is one sentence
  * with an absolute time and no "N s ago" counter (D-203). Updates arrive with the shared quiet
  * runtime sample, so nothing here flickers or offers a Retry.
  */
@@ -116,15 +116,8 @@ export function ShellStatusItems({ runtime, stale, health, healthStale = false, 
       </div>
     </StatusItem>
 
-    <StatusItem icon="quota" label={t('shell.quota')} tone="unknown">
-      <p className="m-0 text-12 text-secondary">{t('shell.status.quota.unknown')}</p>
-    </StatusItem>
-    <StatusItem icon="keep-awake" label={t('shell.keepAwake')} tone="unknown">
-      <p className="m-0 text-12 text-secondary">{t('shell.status.keepAwake.unknown')}</p>
-    </StatusItem>
-    <StatusItem icon="power" label={t('shell.power')} tone="unknown" align="end">
-      <p className="m-0 text-12 text-secondary">{t('shell.status.power.unknown')}</p>
-    </StatusItem>
+    {/* Quota, keep-awake and power join the strip when the node reports a source for them (P3);
+        until then they are not shown, rather than as permanent Unknown icons. */}
     {inbox}
   </div>
 }
