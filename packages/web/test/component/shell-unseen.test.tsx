@@ -11,8 +11,8 @@ const session = (sessionId: string, state: 'working' | 'completed' | 'failed', l
   sessionId, kind: 'agent', threadId: null, title: `Title ${sessionId}`, createdAt: '2026-10-23T09:00:00.000Z', lastSeq, lastEventAt: observedAt,
   execution: { state, attemptState: null, source: 'run-home', observedAt, confidence: 'observed' }, navigation: { kind: 'native', sessionId },
 })
-function Probe({ sessions, location, reads }: { sessions: SessionPageItem[]; location: string; reads: number }) {
-  const unseen = useUnseenSessions(sessions, location, reads)
+function Probe({ sessions, location, reads, complete = false }: { sessions: SessionPageItem[]; location: string; reads: number; complete?: boolean }) {
+  const unseen = useUnseenSessions(sessions, location, reads, complete)
   return <output data-testid="unseen">{[...unseen].sort().join(',')}</output>
 }
 const unseen = () => screen.getByTestId('unseen').textContent
@@ -93,6 +93,21 @@ describe('useUnseenSessions', () => {
     writeSeenSessions({ baselineAt: BASELINE, seen: { a: 1 } })
     expect(JSON.parse(window.localStorage.getItem(SEEN_SESSIONS_KEY)!).seen).toEqual({ a: 4 })
     view.unmount()
+  })
+  it('forgets heads of deleted sessions only from a complete list read', () => {
+    const heads = () => JSON.parse(window.localStorage.getItem(SEEN_SESSIONS_KEY)!).seen
+    const both = [session('a', 'completed', 4), session('b', 'completed', 5)]
+    const view = render(<Probe sessions={both} location="/agent/a" reads={1} />)
+    view.rerender(<Probe sessions={both} location="/agent/b" reads={1} />)
+    expect(heads()).toEqual({ a: 4, b: 5 })
+    // A partial list (more pages exist) says nothing about the sessions it does not show.
+    view.rerender(<Probe sessions={[session('a', 'completed', 4)]} location="/agent/a" reads={2} complete={false} />)
+    expect(heads()).toEqual({ a: 4, b: 5 })
+    // Before any read there is nothing to compare against.
+    view.rerender(<Probe sessions={[]} location="/agent/a" reads={0} complete />)
+    expect(heads()).toEqual({ a: 4, b: 5 })
+    view.rerender(<Probe sessions={[session('a', 'completed', 4)]} location="/agent/a" reads={3} complete />)
+    expect(heads()).toEqual({ a: 4 })
   })
   it('persists the shown heads across a remount', () => {
     const list = [session('a', 'completed', 4)]

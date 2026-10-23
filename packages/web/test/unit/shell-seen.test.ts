@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionPageItem } from '@guanxi/contract'
-import { SEEN_SESSIONS_KEY, isFinishedUnseen, markSeen, readSeenSessions, writeSeenSessions } from '../../src/features/shell/seen.ts'
+import { SEEN_SESSIONS_KEY, isFinishedUnseen, markSeen, pruneSeen, readSeenSessions, writeSeenSessions } from '../../src/features/shell/seen.ts'
 
 beforeEach(() => {
   const values = new Map<string, string>()
@@ -17,6 +17,7 @@ const session = (sessionId: string, state: 'working' | 'completed' | 'failed' | 
   execution: state ? { state, attemptState: null, source: 'run-home', observedAt, confidence: 'observed' } : null,
   navigation: { kind: 'native', sessionId },
 })
+const BASE = '2026-10-23T08:00:00.000Z'
 const baseline = { baselineAt: '2026-10-23T08:00:00.000Z', seen: {} }
 
 describe('finished-unseen derivation', () => {
@@ -58,6 +59,20 @@ describe('seen store', () => {
     writeSeenSessions({ baselineAt: '2026-10-23T08:00:00.000Z', seen: { a: 5, b: 2 } })
     writeSeenSessions({ baselineAt: '2026-10-23T08:00:00.000Z', seen: { a: 3, c: 1 } })
     expect(readSeenSessions().seen).toEqual({ a: 5, b: 2, c: 1 })
+  })
+  it('prunes heads of sessions that are absent from a complete list, and keeps every other', () => {
+    const store = { baselineAt: BASE, seen: { a: 1, b: 2, gone: 3 } }
+    const pruned = pruneSeen(store, ['a', 'b', 'new'])
+    expect(pruned.seen).toEqual({ a: 1, b: 2 })
+    expect(pruneSeen(pruned, ['a', 'b'])).toBe(pruned)
+    expect(pruneSeen(store, [])).toEqual({ baselineAt: BASE, seen: {} })
+  })
+  it('a prune is persisted even though writes merge with the stored heads', () => {
+    writeSeenSessions({ baselineAt: BASE, seen: { a: 1, gone: 3 } })
+    writeSeenSessions({ baselineAt: BASE, seen: { a: 1 } }, ['gone'])
+    expect(readSeenSessions().seen).toEqual({ a: 1 })
+    writeSeenSessions({ baselineAt: BASE, seen: { a: 2 } })
+    expect(readSeenSessions().seen).toEqual({ a: 2 })
   })
   it('stays usable when storage is blocked', () => {
     vi.spyOn(window.localStorage, 'getItem').mockImplementation(() => { throw new Error('blocked') })

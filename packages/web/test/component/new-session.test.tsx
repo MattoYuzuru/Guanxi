@@ -364,6 +364,14 @@ describe('recent projects', () => {
     expect(within(group).getByRole('button', { name: 'Alpha' }).getAttribute('aria-pressed')).toBe('true')
     expect(within(group).getAllByRole('button')).toHaveLength(2)
   })
+  it('remembers at most ten projects, newest first, dropping the oldest', () => {
+    for (let index = 0; index < 14; index++) rememberProject(`p${index}`)
+    expect(readRecentProjects()).toEqual(['p13', 'p12', 'p11', 'p10', 'p9', 'p8', 'p7', 'p6', 'p5', 'p4'])
+    window.localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(Array.from({ length: 40 }, (_, index) => `q${index}`)))
+    expect(readRecentProjects()).toHaveLength(10)
+    expect(rememberProject('fresh')).toHaveLength(10)
+    expect(readRecentProjects()[0]).toBe('fresh')
+  })
   it('stores only opaque ids and survives corrupted or blocked storage', () => {
     rememberProject('a'); rememberProject('b'); rememberProject('a')
     expect(readRecentProjects()).toEqual(['a', 'b'])

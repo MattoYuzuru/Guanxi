@@ -123,3 +123,26 @@ it.each(['running', 'quarantine'] as const)('delete is disabled for %s sessions'
   render(<NativeAgentPage sessionId="session" />)
   expect((await screen.findByRole('button', { name: 'Delete session' }) as HTMLButtonElement).disabled).toBe(true)
 })
+
+it('a Send to main refreshes the session status so a stopped session shows its new turn and polling resumes', async () => {
+  setActiveLocale('en')
+  let reads = 0, status: 'completed' | 'running' = 'completed'
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    const path = String(url)
+    if (path === '/api/agent/session') { reads++; return Response.json({ ...progress, status, queue: [] }) }
+    if (path === '/api/agent/session/side-chat/respond') return Response.json({ requestId: crypto.randomUUID(), text: 'Side answer', truncated: false, context: { source: 'session.log', include: 'session', upToSeq: 3, observedAt: '2026-10-23T10:00:00.000Z', turns: 1, excerpted: 0, bytes: 5 } })
+    if (path === '/api/agent/session/side-chat/send') { status = 'running'; return Response.json({ operationId: JSON.parse(String(init?.body)).operationId, messageId: crypto.randomUUID(), delivery: 'started', duplicate: false }, { status: 202 }) }
+    throw new Error(`Unexpected request ${path}`)
+  }))
+  render(<NativeAgentPage sessionId="session" />)
+  await screen.findByRole('region', { name: 'Session progress' })
+  expect(screen.getByText('Completed')).toBeTruthy()
+  const readsBefore = reads
+  fireEvent.change(screen.getByLabelText('Ask about this session'), { target: { value: 'q' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
+  await screen.findByText('Side answer')
+  fireEvent.click(screen.getByRole('button', { name: 'Send to main, message 2' }))
+  await screen.findByText('Running')
+  expect(reads).toBe(readsBefore + 1)
+  expect(screen.getByRole('button', { name: 'Stop session' })).toBeTruthy()
+})

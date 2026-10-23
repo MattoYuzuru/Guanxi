@@ -111,7 +111,7 @@ describe('ephemeral labelling and storage', () => {
 describe('failures and cancellation write nothing and keep the conversation', () => {
   it.each([
     ['egress_unavailable', 'still preparing secret protection'], ['model_failed', 'The model did not answer'], ['quota_exhausted', 'quota is exhausted'],
-    ['session_unavailable', 'Trash or being removed'], ['connection_unavailable', 'model connection is unavailable'], ['something_else', 'could not complete the request'],
+    ['session_unavailable', 'Trash or being removed'], ['budget_exhausted', 'budget for side chats'], ['too_many_requests', 'already answering'], ['connection_unavailable', 'model connection is unavailable'], ['something_else', 'could not complete the request'],
   ])('explains %s once, keeps the question and retries with the same messages', async (code, copy) => {
     let fail = true
     install(call => fail && call.action === 'respond' ? failure(code) : answer('Recovered'))
@@ -141,6 +141,18 @@ describe('failures and cancellation write nothing and keep the conversation', ()
     await ask('q2')
     expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(document.body.textContent).toContain('node_unreachable')
+  })
+  it('explains a refused save as too large with its explicit bound, keeps the chat and offers no blind retry', async () => {
+    install(call => call.action === 'respond' ? answer('a') : failure('too_large', 413, { bytes: 300000, boundBytes: 262144 }))
+    render(<SideChatPanel sessionId="s1" />)
+    await ask('q')
+    fireEvent.click(screen.getByRole('button', { name: 'Save to session log' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('300000 bytes against the limit of 262144 bytes')
+    expect(alert.textContent).toContain('Nothing was saved or truncated')
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(turns()).toHaveLength(2)
+    expect(screen.getByTestId('side-chat-unsaved').textContent).toBe('Unsaved messages: 2')
   })
   it('Cancel aborts the owned request, keeps the question and reports that nothing was written', async () => {
     let seen: AbortSignal | null | undefined
@@ -231,6 +243,20 @@ describe('Send to main', () => {
     expect(new Set(sends.map(call => call.body.operationId)).size).toBe(2)
     expect((screen.getByRole('button', { name: 'Send to main, message 1' }) as HTMLButtonElement).disabled).toBe(true)
     expect(calls.filter(call => call.action === 'save')).toHaveLength(0)
+  })
+  it('tells its host once per successful send, and not for a failed one', async () => {
+    let fail = true
+    install(call => call.action === 'respond' ? answer('a') : fail ? failure('agent_unavailable') : Response.json({ operationId: call.body.operationId, messageId: crypto.randomUUID(), delivery: 'started', duplicate: false }))
+    const onSent = vi.fn()
+    render(<SideChatPanel sessionId="s1" onSent={onSent} />)
+    await ask('q')
+    fireEvent.click(screen.getByRole('button', { name: 'Send to main, message 1' }))
+    await screen.findByRole('alert')
+    expect(onSent).not.toHaveBeenCalled()
+    fail = false
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByText('Sent to main once: started a new turn.')
+    expect(onSent).toHaveBeenCalledTimes(1)
   })
   it('reuses the operation id when a failed send is retried', async () => {
     let fail = true
