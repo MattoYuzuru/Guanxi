@@ -98,3 +98,16 @@ Smoke-6 and smoke-7 had found the two blockers on the way: `verify` without a ch
 and every gate failed with `spawn EPERM` because the K4 workload seccomp filter denies `socketpair`, which libuv uses for child
 stdio pipes; `node --test` runs each test file in a child process. `--test-isolation=none` is a plan-level workaround; lane
 K4-pipes is the fix.
+
+## Five items in one relay run (multi-2)
+
+Plan: ledger-lite I01–I05 (I02 depends on I01), gates `node --test --test-isolation=none test/<item>.test.mjs`, protected
+`test/`, caps 40 cycles / 4 M tokens / 6 h, judge signals on. Code: `main` `47e238c7` plus the real-run fixes later merged as
+`daee6007` (auto checkpoint, long completions, Node 22 fetch pairing; the second review round was not yet deployed).
+
+Result: **all five items `done`**, state `finish`, start `completed`, 4 cycles in 64 minutes, 96 remote model calls on the
+Fedora executor (930 361 evaluated prompt tokens, 9 823 output tokens, one F2-c cost row each), 8 judge-signal notes, no error
+event. The first five-item attempt (multi-1) had stopped at its first call longer than 300 s (`runtime_meter_unavailable`, Node
+fetch's default headers timeout), which `daee6007` fixes. Independently reproduced: a clean clone plus the sealed bundle at head
+`093accc3` changes only the five `src/` modules (237 insertions, 14 deletions) and passes every gate with the default test
+isolation: I01 11/11, I02 9/9, I03 9/9, I04 8/8, I05 11/11.
