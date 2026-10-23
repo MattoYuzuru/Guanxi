@@ -310,7 +310,8 @@ it('each message has a named icon rail: trace link, one details popover and copy
     expect(within(rail).getAllByRole('link').map(link => link.getAttribute('aria-label') ?? link.textContent)).toEqual(['Show in trace'])
     expect(within(rail).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Message details', 'Copy message'])
   }
-  expect(within(rails[1]!).getByRole('link').getAttribute('href')).toBe('/inspector/session')
+  // Each turn's trace link opens the trace at that turn's own event (P3).
+  expect(rails.map(rail => within(rail).getByRole('link').getAttribute('href'))).toEqual(['/inspector/session?event=1', '/inspector/session?event=7'])
   fireEvent.click(within(rails[1]!).getByRole('button', { name: 'Message details' }))
   const dialog = await screen.findByRole('dialog', { name: 'Message details' })
   expect(screen.getAllByRole('dialog')).toHaveLength(1)

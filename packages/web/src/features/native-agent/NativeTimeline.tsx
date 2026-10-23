@@ -107,7 +107,7 @@ function TimelineEntry({ message, sessionId, announce }: { message: TimelineMess
     <p className="native-message-author"><Icon name={message.role === 'user' ? 'user' : 'agent'} size={14} aria-hidden="true" />{author}</p>
     <div className="native-message-body"><Markdown source={message.text} /></div>
     <div className="native-message-rail" role="group" aria-label={t('native.message.actions', { author })}>
-      <IconButton size="sm" label={t('native.message.trace')} icon={<Icon name="trace" />} nativeButton={false} role="link" render={<Link to={paths.inspector(sessionId)} />} />
+      <IconButton size="sm" label={t('native.message.trace')} icon={<Icon name="trace" />} nativeButton={false} role="link" render={<Link to={paths.inspector(sessionId, message.seq)} />} />
       <Popover>
         <PopoverTrigger render={<IconButton size="sm" label={t('native.message.details')} icon={<Icon name="info" />} />} />
         <PopoverContent align="start">
