@@ -1,6 +1,6 @@
 import { lookup } from 'node:dns/promises'
 import { isIP, BlockList } from 'node:net'
-import { Agent } from 'undici'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { ConnectionError } from './errors.ts'
 
 export type EndpointResolver = (hostname: string) => Promise<{ address: string; family: number }[]>
@@ -14,7 +14,8 @@ loopback.addSubnet('127.0.0.0', 8, 'ipv4'); loopback.addAddress('::1', 'ipv6')
 /** Resolve once, validate every answer and bind the actual socket lookup to the selected IP.
  * URL/Host/TLS servername remain the original authority. No redirect or environment proxy. */
 export async function endpointFetch(url: string, init: RequestInit, allowPrivate: boolean,
-  transport: typeof fetch = globalThis.fetch,
+  // undici's own fetch: Node 22's bundled fetch (undici 6) refuses an Agent from the undici package (UND_ERR_INVALID_ARG).
+  transport: typeof fetch = undiciFetch as unknown as typeof fetch,
   resolve: EndpointResolver = hostname => lookup(hostname, { all: true })) {
   const target = new URL(url)
   const host = target.hostname.replace(/^\[|\]$/g, '')

@@ -1,4 +1,4 @@
-import { Agent } from 'undici'
+import { Agent, fetch as undiciFetch } from 'undici'
 import { z } from 'zod'
 
 /** Loopback-only client for one llama.cpp `llama-server` instance (ADR-0031 Tier 1 runtime).
@@ -78,7 +78,9 @@ export class LlamaServerClient {
       // headers after 300 s by default, so every call longer than five minutes failed on a real executor (a 4096-token turn
       // takes ~13 min at ~5 tokens/s). Our own deadline (completionTimeoutMs) stays the authority.
       const dispatcher = new Agent(llamaServerDispatcherTimeouts(this.requestTimeoutMs, this.completionTimeoutMs))
-      this.transport = ((url: string | URL | Request, init?: RequestInit) => globalThis.fetch(url, { ...init, dispatcher } as unknown as RequestInit)) as typeof fetch
+      // undici's own fetch with its own Agent: the fetch bundled in Node 22 (undici 6) refuses an Agent from the undici
+      // package (UND_ERR_INVALID_ARG), so the two must come from the same copy.
+      this.transport = ((url: string | URL, init?: RequestInit) => undiciFetch(url, { ...init, dispatcher } as unknown as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch
     }
     this.cachePrompt = options.cachePrompt ?? true
     for (const ms of [this.requestTimeoutMs, this.completionTimeoutMs]) {
