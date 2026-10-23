@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fixture, owner } from './helpers.ts'
 
@@ -259,4 +259,12 @@ test('API key mode requires the CLI to name the injected variable as the key sou
   const f = await apiFixture(t)
   await f.scenario('claude-code', { claudeAuth: { loggedIn: true, authMethod: 'api_key', apiKeySource: 'ANTHROPIC_API_KEY' } })
   await f.service().run(input)
+})
+
+test('a settings path that is a dangling symlink still refuses the launch (lstat, not stat)', async t => {
+  const f = await apiFixture(t)
+  const base = (await f.config('claude-code')).configDirectory
+  await symlink(join(base, 'does-not-exist.json'), join(base, 'config', 'settings.json'))
+  await assert.rejects(f.service().run(input), /claude_settings_present/)
+  await neverLaunched(f)
 })

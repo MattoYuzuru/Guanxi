@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import type { AdapterId } from '../../src/external-agents/types.ts'
 import { parseProviderKeyFile } from '../../src/connections/dotenv.ts'
 import { fixture, owner } from './helpers.ts'
 
@@ -46,6 +47,7 @@ test('token mode: the token arrives as CLAUDE_CODE_OAUTH_TOKEN in the bridge and
   // The endpoint and the permission mode are pinned for this launch too.
   const created = (await f.trace('claude-code')).find(frame => frame.method === 'session/new')!
   assert.equal(created.params._meta.claudeCode.options.settings.env.ANTHROPIC_BASE_URL, 'https://api.anthropic.com')
+  assert.equal(created.params._meta.claudeCode.options.settings.permissions.defaultMode, 'default')
   // Nowhere else: not the result, the events, the connections, the trace, nor any file (the token, its tail, or its family prefix with the tail).
   const events = f.kernel.sessionLog!.readAll(result.sessionId, 'person')
   const tail = f.oauthToken.slice(-20)
@@ -112,4 +114,17 @@ test('token families are never exchanged: an API key is not a Claude Code token,
   const f = await fixture(t, ['claude-code'], {}, {}, { claudeApi: true })
   const row = f.connections.create(owner, { name: 'a', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   await assert.rejects(async () => f.connections.saveSecret(owner, row.id, token), /An API key is required/)
+})
+
+test('the token connection pays for Claude Code alone: a Codex, OpenCode or Goose installation bound to it is refused before any process starts', async t => {
+  const adapters: AdapterId[] = ['codex', 'opencode', 'goose']
+  const f = await fixture(t, ['claude-code', ...adapters], {}, {}, { claudeToken: true })
+  const tokenId = f.bindings[0]!.connectionId
+  for (const adapter of adapters) {
+    const install = f.installations.find(i => i.adapter === adapter)!
+    await f.reload({ installations: [{ ...install, connectionId: tokenId }] })
+    f.service().setProjectRoles(owner, owner, 'p', { lead: { backend: adapter, connectionId: tokenId, model: adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture', params: {} } })
+    await assert.rejects(f.service().run(input), /subscription_connection_required|external_api_key_required/, adapter)
+    await assert.rejects(readFile(join(f.dir, adapter, 'environment.json')), { code: 'ENOENT' }, `${adapter} was never started`)
+  }
 })
