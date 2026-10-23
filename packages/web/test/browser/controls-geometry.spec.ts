@@ -57,13 +57,13 @@ for (const theme of ['light', 'dark']) for (const density of ['compact', 'comfor
 
 test('segmented control segments share one height and one checked segment', async ({ page }) => {
   await page.goto(fixture)
-  const radios = page.getByRole('radio')
+  const radios = page.getByRole('radiogroup', { name: 'Density' }).getByRole('radio')
   await expect(radios).toHaveCount(2)
   const [first, second] = [await box(radios.nth(0)), await box(radios.nth(1))]
   expect(first.height).toBe(second.height)
   expect(first.y).toBe(second.y)
   await radios.nth(1).click()
-  await expect(page.locator('[role="radio"][aria-checked="true"]')).toHaveCount(1)
+  await expect(page.getByRole('radiogroup', { name: 'Density' }).locator('[role="radio"][aria-checked="true"]')).toHaveCount(1)
 })
 
 test('composer send button sits inside the card at its lower right', async ({ page }) => {
@@ -91,4 +91,30 @@ test('a scrollable status popover is a keyboard-focusable region with a visible 
   const ring = await popup.evaluate(node => { const style = getComputedStyle(node); return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) } })
   expect(ring.style).toBe('solid')
   expect(ring.width).toBeGreaterThanOrEqual(2)
+})
+
+test('segmented segments are equal in width and their labels sit inside padding (visual pass 2)', async ({ page }) => {
+  for (const density of ['compact', 'comfortable'] as const) {
+    await page.goto(`${fixture}?density=${density}`)
+    // The side-chat context control: three labels of different lengths.
+    const group = page.getByRole('radiogroup', { name: 'Context from the session' })
+    const radios = group.getByRole('radio')
+    await expect(radios).toHaveCount(3)
+    const track = await box(group)
+    const segments = [await box(radios.nth(0)), await box(radios.nth(1)), await box(radios.nth(2))]
+    const widths = segments.map(segment => segment.width)
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.5)
+    for (const segment of segments) {
+      expect(segment.x).toBeGreaterThanOrEqual(track.x + 2)
+      expect(segment.x + segment.width).toBeLessThanOrEqual(track.x + track.width - 2)
+      expect(segment.y).toBeGreaterThanOrEqual(track.y + 2)
+      expect(segment.y + segment.height).toBeLessThanOrEqual(track.y + track.height - 2)
+    }
+    // The longest label keeps at least 12 px of padding on each side inside its segment.
+    const inset = await radios.nth(0).evaluate(node => {
+      const label = node.querySelector('span')!.getBoundingClientRect(), outer = node.getBoundingClientRect()
+      return Math.min(label.left - outer.left, outer.right - label.right)
+    })
+    expect(inset).toBeGreaterThanOrEqual(12)
+  }
 })
