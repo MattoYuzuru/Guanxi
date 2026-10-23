@@ -527,10 +527,13 @@ test('evidence that arrives after the relay fence was lost is neither used nor r
   f.afters.push(path => { if (armed && path === '/attempts/runtime/count') { armed = false; f.home.runs.cancel('relay') } })
   assert.equal(await code(r.model.countAsync!('counted under a lost fence')), 'stale_lease')
   assert.throws(() => r.model.count('counted under a lost fence'), /runtime_count_invalid/)
-  const g = await remoteFixture(t), s = await g.relay()
+  // The same for an observation, asked of the session directly so that no later request can mask the missing check.
+  const g = await remoteFixture(t), sessions: Array<{ observe(reference: string, signal: AbortSignal): Promise<unknown> }> = [], open = g.remote.open.bind(g.remote)
+  g.remote.open = () => { const session = open(); sessions.push(session); return session }
+  await g.relay()
   let observe = true
   g.afters.push(path => { if (observe && path === '/attempts/runtime/observe') { observe = false; g.home.runs.cancel('relay') } })
-  assert.equal(await code(s.model.observe()), 'stale_lease')
+  assert.equal(await code(sessions[0]!.observe(g.remote.model, new AbortController().signal)), 'stale_lease')
 })
 
 test('an offer still in flight when the call is aborted is cancelled after it lands, so no reservation outlives the call', async t => {
@@ -571,6 +574,7 @@ test('the child pin derives only from a pinned parent at its epoch, and a counte
   const plain = { ...job }; delete (plain as { counted?: unknown }).counted
   assert.throws(() => f.home.federation.prepareDispatch('plain', 'target', plain, 4000, { runId: 'relay', epoch: 1 }), /dispatch_binding/)
   assert.throws(() => f.home.federation.prepareDispatch('plain', 'target', job, 4000), /dispatch_binding/)
+  assert.throws(() => f.home.federation.prepareDispatch('relay', 'target', job, 4000, { runId: 'relay', epoch: 1 }), /dispatch_binding/, 'a run is not its own parent')
   // Grants: the executor re-checks the same shape on its own.
   const forge = async (editJob: LocalInferenceJob, editOffer: (offer: RemoteAttemptOffer) => RemoteAttemptOffer, pinned = false) => {
     const { offer: fresh } = await make(), receipt = await channel.offer(fresh)

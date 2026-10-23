@@ -219,7 +219,7 @@ export class Federation {
     if (offer.parent) {
       let own = true
       try { this.replicas.binding(offer.runId) } catch { own = false }
-      if (own || offer.runId === offer.parent.runId) throw new FederationError('not_home')
+      if (own) throw new FederationError('not_home')   // covers the parent itself, which is pinned
     }
     const binding = this.replicas.binding(offer.parent?.runId ?? offer.runId)
     if (binding.kind !== 'run' || binding.sessionId !== offer.sessionId || binding.ownerAccountId !== peer.accountId ||
