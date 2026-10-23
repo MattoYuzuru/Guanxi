@@ -1,5 +1,5 @@
 import { Button } from '@guanxi/ui'
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import type { RuntimeSnapshot } from '@guanxi/contract'
 import { PRODUCT_NAME } from '../../lib/brand.ts'
 import { formatDateTime } from '../../lib/format.ts'
@@ -9,11 +9,13 @@ import { requestWorkspaceMode } from '../workspace/commands.ts'
 import type { WorkspaceShellState } from '../workspace/shell-state.ts'
 
 /** Unknown providers stay visible as unknown; sampled host facts retain their source and time. */
-export function ShellStatus({ breadcrumb, workspace, runtime, stale }: {
+export function ShellStatus({ breadcrumb, workspace, runtime, stale, inbox }: {
   breadcrumb: string
   workspace: WorkspaceShellState
   runtime: RuntimeSnapshot | null
   stale: boolean
+  /** The notification entry; without one the inbox is shown as unknown. */
+  inbox?: ReactNode
 }) {
   const modeReason = useId()
   const machine = runtime?.host.profile
@@ -37,7 +39,8 @@ export function ShellStatus({ breadcrumb, workspace, runtime, stale }: {
         </dd>}
       </div>
       {(['quota', 'keepAwake', 'power', 'inbox'] as const).map(item => <div key={item}>
-        <dt className="font-heading">{t(`shell.${item}`)}</dt><dd className="text-secondary">{t('shell.status.unknown')}</dd>
+        <dt className="font-heading">{t(`shell.${item}`)}</dt>
+        <dd className="text-secondary">{item === 'inbox' && inbox !== undefined ? inbox : t('shell.status.unknown')}</dd>
       </div>)}
     </dl>
   </div>

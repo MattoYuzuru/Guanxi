@@ -49,6 +49,7 @@ export function useShellController() {
       { id: 'quick-runs', label: t('quickRuns.navigation'), path: paths.quickRuns() },
       { id: 'recipes', label: t('recipes.navigation'), path: paths.recipes() },
       { id: 'attachments', label: t('attachments.navigation'), path: paths.attachments() },
+      { id: 'notifications', label: t('notifications.command'), path: paths.notifications() },
       { id: 'inspector', label: t('inspector.navigation'), path: paths.inspector() },
       { id: 'components', label: t('shell.catalog'), path: paths.developerComponents() },
     ].map(item => ({ id: item.id, label: item.label, execute: () => navigate(item.path) })),

@@ -105,6 +105,8 @@ for (const deferNetworkStart of [false, true]) {
         }
         return route.fulfill(json(persisted))
       }
+      // The shell's inbox entry reads the notification list; it is the only ambient read allowed here.
+      if (method === 'GET' && url.pathname === '/api/notifications') return route.fulfill(json({ notifications: [], nextCursor: null }))
       forbiddenEffects.push(`${method} ${url.pathname}`)
       return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
     })
@@ -312,6 +314,8 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
         truncated: false,
       }))
     }
+    // The shell's inbox entry reads the notification list; it is the only ambient read allowed here.
+    if (method === 'GET' && url.pathname === '/api/notifications') return route.fulfill(json({ notifications: [], nextCursor: null }))
     forbiddenEffects.push(`${method} ${url.pathname}`)
     return route.fulfill(json({ code: 'internal_error', message: url.pathname, details: null }, 500))
   })
