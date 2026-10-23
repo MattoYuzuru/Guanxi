@@ -93,7 +93,7 @@ test('scoped Trash restores once, repeats from Restore, recovers by itself and s
   })
   let restored = false
   let deletionRefreshArmed = false
-  let deletionRefreshFailed = false
+  let deletionRefreshFailures = 0
   let deletionCommitted = false
   let restoreCalls = 0
   const restoreBodies: unknown[] = []
@@ -124,13 +124,14 @@ test('scoped Trash restores once, repeats from Restore, recovers by itself and s
       expect(url.searchParams.get('lifecycleVersion')).toBe('1')
       expect(url.searchParams.get('deletionVersion')).toBe('1')
       if (scope === 'projectless') {
-        if (deletionRefreshArmed && !deletionRefreshFailed) {
-          deletionRefreshFailed = true
+        // A background failure surfaces after three consecutive quiet reads (P2, useAsync).
+        if (deletionRefreshArmed && deletionRefreshFailures < 3) {
+          deletionRefreshFailures += 1
           return route.fulfill(json({
             code: 'storage_error', message: 'safe deletion refresh failure', details: null,
           }, 500))
         }
-        if (deletionRefreshFailed) deletionCommitted = true
+        if (deletionRefreshFailures >= 3) deletionCommitted = true
         return route.fulfill(json({
           lifecycleVersion: 1, deletionVersion: 1, scope, projectId: null,
           chats: deletionCommitted
@@ -220,8 +221,13 @@ test('scoped Trash restores once, repeats from Restore, recovers by itself and s
   expect(itemStyles.borderWidth).not.toBe('0px')
 
   deletionRefreshArmed = true
-  // Regaining focus re-reads the Trash quietly; this read fails (armed above).
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  // Regaining focus re-reads the Trash quietly; these reads fail (armed above). One failed read
+  // shows nothing; the third consecutive one is announced.
+  for (let read = 1; read <= 3; read++) {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect.poll(() => deletionRefreshFailures).toBe(read)
+    if (read === 1) await expect(projectlessTrash.getByText('Не удалось сохранить запрос в локальное хранилище.')).toHaveCount(0)
+  }
   const deletionFailure = projectlessTrash.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(deletionFailure).toBeVisible()
   await expect(deletionFailure.locator('xpath=ancestor::*[@tabindex="-1"]')).toBeFocused()

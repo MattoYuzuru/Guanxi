@@ -158,8 +158,10 @@ test('mounts one shell and one slot around actual chat, workspace and non-chat r
   expect(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link').evaluateAll(
     links => links.map(link => link.getAttribute('href')),
   )).toEqual(['/agent', '/projects', '/', '/settings'])
-  // D-202/D-204: icon status items, unknown named as Unknown (never 0), no mode chips, no runtime bar.
-  await expect(page.getByRole('button', { name: /: Unknown$/u })).toHaveCount(3)
+  // D-202/D-204: icon status items, no mode chips, no runtime bar. Items with no source on the node
+  // (quota, keep-awake, power) are not shown rather than as permanent Unknown icons (P3).
+  await expect(page.getByRole('button', { name: /: Unknown$/u })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^(Quota|Keep awake|Power)\b/u })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^(Developer|Visual)$/u })).toHaveCount(0)
   await expect(page.getByRole('region', { name: 'Runtime and resources' })).toHaveCount(0)
   await page.getByRole('button', { name: 'This device' }).click()

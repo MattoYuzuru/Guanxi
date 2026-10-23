@@ -269,7 +269,8 @@ test('local runtimes require a context size in the model picker and starting wai
 })
 
 test('a new session opens in the most recent project, which persists per browser and is never duplicated', async ({ page }) => {
-  const fixture = createSessionFeaturesFixture({ progress: { 'session-1': completedProgress('session-1') } })
+  // The started session belongs to Beta, as the node would report; opening it keeps Beta current (P2).
+  const fixture = createSessionFeaturesFixture({ progress: { 'session-1': { ...completedProgress('session-1'), projectId: 'q' } } })
   await open(page, fixture)
   await expect(page.getByRole('button', { name: 'Choose a project' })).toHaveCount(1)
   await chooseProject(page, 'Beta')

@@ -216,7 +216,8 @@ for (const deferNetworkStart of [false, true]) {
     await expect.poll(() => settingsReads).toBe(2)
     expect(settingsWrites).toBe(2)
     await expect(page.getByRole('heading', { name: 'Глоссарий', exact: true })).toHaveCount(1)
-    await expect(page.locator('#settings-glossary-results article')).toHaveCount(29)
+    // 27 entries: D-204 removed the two experience-mode entries (Developer mode, Visual mode).
+    await expect(page.locator('#settings-glossary-results article')).toHaveCount(27)
 
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     const persistedLanguage = page.getByRole('combobox', { name: 'Язык' })

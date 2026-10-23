@@ -429,7 +429,8 @@ test('workspace discovers the node account before resolving and saving a layout'
   layout.name = 'Owner layout'
   await open(page, layout)
   expect((await state(page)).scope.account).toBe('owner')
-  expect(await page.evaluate(() => (window as any).__LAYOUT_READS__.map((row: any) => row.account))).toEqual(['owner', 'owner'])
+  // One interface (D-204): one layout read, for the one pinned mode.
+  expect(await page.evaluate(() => (window as any).__LAYOUT_READS__.map((row: any) => [row.account, row.mode]))).toEqual([['owner', 'developer']])
   await page.getByRole('button', { name: 'Save layout', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(1)
   expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document.scope.account)).toBe('owner')
