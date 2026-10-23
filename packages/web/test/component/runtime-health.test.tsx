@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { CatalogSourceHealth, Health, RuntimeCurrentFitReason } from '@guanxi/contract'
 import { describe, expect, it, vi } from 'vitest'
-import { OllamaHealthNotice } from '../../src/features/health/HealthGate.tsx'
-import { RuntimeStatusView } from '../../src/features/health/RuntimeStatus.tsx'
+import { RuntimeDetails } from '../../src/features/health/RuntimeStatus.tsx'
+import { ShellStatusItems } from '../../src/features/shell/ShellStatus.tsx'
 import { CatalogSourceNotice } from '../../src/features/launcher/LauncherPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import {
@@ -53,18 +53,9 @@ function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
   }
 }
 
+/** The runtime popover body (D-202): the same projections the runtime bar used to disclose. */
 function renderRuntime(data = runtimeSnapshotFixture()) {
-  const view = render(
-    <RuntimeStatusView
-      data={data}
-      error={null}
-      loading={false}
-      refreshing={false}
-      onRetry={() => undefined}
-    />,
-  )
-  fireEvent.click(screen.getByText(/Показать сведения о runtime|Show runtime details/u))
-  return view
+  return render(<RuntimeDetails snapshot={data} stale={false} />)
 }
 
 describe('Runtime Bar projection', () => {
@@ -331,68 +322,43 @@ describe('Runtime Bar projection', () => {
     expect(within(devices).getByRole('list').className).toContain('overflow-y-auto')
   })
 
-  it('keeps the confirmed NVIDIA sample and timestamps during stale retry failure', () => {
-    const retry = vi.fn()
+  it('keeps the confirmed NVIDIA sample unchanged when a later read fails, and leaks no error text', () => {
     const data = linuxNvidiaRuntimeSnapshot()
-    const view = render(
-      <RuntimeStatusView data={data} error={null} loading={false} refreshing onRetry={retry} />,
-    )
-    fireEvent.click(screen.getByText('Показать сведения о runtime'))
+    const view = render(<RuntimeDetails snapshot={data} stale={false} />)
     const before = screen.getByRole('region', { name: 'Устройства NVIDIA' }).textContent
-    view.rerender(
-      <RuntimeStatusView
-        data={data}
-        error={new Error('secret stderr path /Users/private')}
-        loading={false}
-        refreshing={false}
-        onRetry={retry}
-      />,
-    )
+    view.rerender(<RuntimeDetails snapshot={data} stale />)
     expect(screen.getByRole('region', { name: 'Устройства NVIDIA' }).textContent).toBe(before)
-    expect(screen.getByRole('alert').textContent).toContain('sample устарел')
     expect(view.container.textContent).not.toContain('/Users/private')
   })
 
-  it('keeps confirmed content during refresh/failure and exposes only transition alerts', () => {
-    const retry = vi.fn()
+  it('updates in place with no refreshing caption, no transition alert and no Retry (D-203)', () => {
     const data = runtimeSnapshotFixture()
-    const view = render(
-      <RuntimeStatusView data={data} error={null} loading={false} refreshing onRetry={retry} />,
-    )
-    expect(screen.getByRole('status').textContent).toContain('последний подтверждённый sample')
+    const view = render(<RuntimeDetails snapshot={data} stale={false} />)
     expect(view.container.textContent).toContain('fixture:latest')
-    view.rerender(
-      <RuntimeStatusView
-        data={data}
-        error={new Error('secret endpoint /api/runtime?token=private')}
-        loading={false}
-        refreshing={false}
-        onRetry={retry}
-      />,
-    )
-    expect(screen.getByRole('alert').textContent).toContain('sample устарел')
+    view.rerender(<RuntimeDetails snapshot={data} stale />)
     expect(view.container.textContent).toContain('fixture:latest')
-    expect(view.container.textContent).not.toContain('secret endpoint')
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить runtime-проверку' }))
-    expect(retry).toHaveBeenCalledTimes(1)
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /retry|повтор/iu })).toHaveLength(0)
   })
 
-  it('provides keyboard disclosure plus English fallback and curated Russian copy', () => {
+  it('says it is checking before the first sample, and that the node did not answer when none arrived', () => {
     setActiveLocale('en')
-    const english = render(
-      <RuntimeStatusView
-        data={runtimeSnapshotFixture()}
-        error={null}
-        loading={false}
-        refreshing={false}
-        onRetry={() => undefined}
-      />,
-    )
+    const view = render(<RuntimeDetails snapshot={null} stale={false} />)
+    expect(screen.getByRole('status').textContent).toBe('Checking the current runtime sample…')
+    view.rerender(<RuntimeDetails snapshot={null} stale />)
+    expect(screen.getByRole('status').textContent).not.toBe('Checking the current runtime sample…')
+    setActiveLocale('ru')
+  })
+
+  it('opens from the runtime status icon with English fallback and curated Russian copy', () => {
+    setActiveLocale('en')
+    const english = render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('reachable')} />)
+    const trigger = screen.getByRole('button', { name: 'Runtime' })
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+    fireEvent.click(trigger)
     expect(screen.getByRole('region', { name: 'Runtime and resources' })).toBeTruthy()
-    const disclosure = screen.getByText('Show runtime details')
-    disclosure.focus()
-    expect(document.activeElement).toBe(disclosure)
-    fireEvent.click(disclosure)
     expect(screen.getByRole('heading', { name: 'Live admission' })).toBeTruthy()
     english.unmount()
 
@@ -403,17 +369,19 @@ describe('Runtime Bar projection', () => {
 })
 
 describe('shell health projection', () => {
-  it('keeps the shell-oriented Ollama degraded states distinct', () => {
-    const unavailable = render(
-      <OllamaHealthNotice health={health('unavailable')} onRetry={() => undefined} retrying={false} />,
-    )
-    expect(within(unavailable.container).getByText('Ollama недоступна')).toBeTruthy()
+  it('keeps the shell-oriented Ollama degraded states distinct on the runtime icon', () => {
+    const unavailable = render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('unavailable')} />)
+    const warning = screen.getByRole('button', { name: 'Среда выполнения' })
+    expect(warning.closest('[data-slot="status-item"]')?.getAttribute('data-tone')).toBe('warning')
+    fireEvent.click(warning)
+    expect(screen.getByRole('status').textContent).toContain('Ollama недоступна')
     unavailable.unmount()
 
-    render(
-      <OllamaHealthNotice health={health('incompatible')} onRetry={() => undefined} retrying={false} />,
-    )
-    expect(screen.getByRole('alert').textContent).toContain('несовместимый ответ')
+    render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('incompatible')} />)
+    const danger = screen.getByRole('button', { name: 'Среда выполнения' })
+    expect(danger.closest('[data-slot="status-item"]')?.getAttribute('data-tone')).toBe('danger')
+    fireEvent.click(danger)
+    expect(screen.getByRole('alert').textContent).toContain('не поддерживается')
   })
 })
 

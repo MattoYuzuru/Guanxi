@@ -54,6 +54,8 @@ export function IconButton({
             aria-pressed={pressed}
             className={cx('gx-button gx-icon-button gx-focusable', className)}
             {...props}
+            // An icon link (render={<a/>}, nativeButton={false}) keeps the link role; Base UI would say button.
+            role={props.nativeButton === false ? (props.role ?? 'link') : props.role}
           />
         }
       >

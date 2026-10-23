@@ -1,6 +1,7 @@
 import { Button, Icon, IconButton, type IconName } from '@guanxi/ui'
 import type { SessionPageItem } from '@guanxi/contract'
 import { SidebarSlot } from '../../kernel/SidebarSlot.tsx'
+import { formatTime } from '../../lib/format.ts'
 import { translate as t } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
 import { sessionNavigationPath } from './sessionNavigation.ts'
@@ -66,7 +67,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
       <section aria-label={t('shell.sessions')} className="shell-sessions">
         <div className="shell-sessions-head">
           <h2 className="shell-section-label">{t('shell.sessions')}</h2>
-          {props.unseen.size > 0 && <p data-testid="shell-unseen-count" className="shell-unseen-count" title={unseenLabel}>
+          {props.unseen.size > 0 && <p data-testid="shell-unseen-count" className="shell-unseen-count">
             <span aria-hidden="true">{props.unseen.size}</span><span className="sr-only">{unseenLabel}</span></p>}
         </div>
         {firstLoad && <div role="status" aria-label={t('shell.sessions.loading')} className="shell-skeleton">
@@ -85,13 +86,18 @@ export function ShellSidebar(props: ShellSidebarProps) {
               const target = sessionNavigationPath(session.navigation)
               const isPinned = pinned.has(session.sessionId)
               return <li key={session.sessionId} className="shell-session-row" data-pinned={isPinned || undefined}>
-                <Link to={target} aria-current={props.location === target ? 'page' : undefined} className="shell-session-link">
+                <Link to={target} aria-current={props.location === target ? 'page' : undefined} className="shell-session-link"
+                  aria-describedby={`shell-session-${session.sessionId}`}>
                   <span className="shell-status-dot" data-status={status} aria-hidden="true" />
                   <span className="shell-session-title">{title}</span>
-                  <span className="sr-only">{t(`shell.status.${status}`)}</span>
-                  {props.unseen.has(session.sessionId) && <span data-unseen="true" className="shell-unseen-mark">
-                    <span className="sr-only">{t('shell.unseen.row')}</span></span>}
+                  {props.unseen.has(session.sessionId) && <span data-unseen="true" className="shell-unseen-mark" aria-hidden="true" />}
                 </Link>
+                {/* Status, provenance and the unseen mark are the row's description, not its name. */}
+                <span id={`shell-session-${session.sessionId}`} className="sr-only">
+                  <span>{t(`shell.status.${status}`)}</span>
+                  {session.execution && <span>{` ${t('shell.status.source', { time: formatTime(session.execution.observedAt) })}`}</span>}
+                  {props.unseen.has(session.sessionId) && <span>{` ${t('shell.unseen.row')}`}</span>}
+                </span>
                 <IconButton size="sm" className="shell-session-pin" pressed={isPinned} icon={<Icon name={isPinned ? 'unpin' : 'pin'} />}
                   label={t(isPinned ? 'shell.sessions.unpin' : 'shell.sessions.pin', { title })}
                   onClick={() => props.onPin(session.sessionId)} />

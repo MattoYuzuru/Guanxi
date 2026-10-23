@@ -37,13 +37,14 @@ describe('shell host commands', () => {
     fireEvent.keyDown(window, { key: 'K', metaKey: true })
     expect(result.current.paletteOpen).toBe(false)
   })
-  it('exposes block and mode commands through the engine-free presentation state and explains unavailable moves', async () => {
+  it('exposes block commands (and no Developer/Visual mode command) through the engine-free presentation state and explains unavailable moves', async () => {
     const reveal = vi.fn(), move = vi.fn()
     window.addEventListener(REVEAL_BLOCK_COMMAND, reveal)
     window.addEventListener(MOVE_BLOCK_COMMAND, move)
     const { result } = renderHook(useShellController, { wrapper })
     await waitFor(() => expect(result.current.sessions.loading).toBe(false))
-    expect(result.current.commands.find(command => command.id === 'mode:visual')?.disabled).toBe(true)
+    // D-204: one interface; the palette has no experience-mode commands at all.
+    expect(result.current.commands.filter(command => command.id.startsWith('mode:'))).toHaveLength(0)
     act(() => publishWorkspaceShellState(writer, { ready: true, busy: false, phone: false, mode: 'developer',
       blocks: [{ id: 'first', label: 'Context', hidden: false }, { id: 'second', label: 'Plan', hidden: true }] }))
     const hiddenMove = result.current.commands.find(command => command.id === 'move:second')!
@@ -59,14 +60,13 @@ describe('shell host commands', () => {
     window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal)
     window.removeEventListener(MOVE_BLOCK_COMMAND, move)
   })
-  it('shows the failed session read in the palette and makes refresh a recoverable action', async () => {
+  it('recovers a failed session read by itself and offers no refresh command (D-203)', async () => {
     vi.mocked(inspectorApi.page).mockRejectedValueOnce(new Error('offline'))
     const { result } = renderHook(useShellController, { wrapper })
     await waitFor(() => expect(result.current.sessions.error).toBe(true))
-    const refresh = result.current.commands.find(command => command.id === 'session-refresh')!
-    expect(refresh.disabled).toBe(false)
-    expect(refresh.reason).toBe('Sessions could not be refreshed. Try again.')
-    act(() => refresh.execute())
+    expect(result.current.commands.filter(command => /refresh|retry/u.test(command.id))).toHaveLength(0)
+    // A focus event (or the backoff timer) reads again without any user command.
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(result.current.sessions.error).toBe(false))
     await waitFor(() => expect(result.current.sessions.loading).toBe(false))
     expect(result.current.sessions.sessions).toEqual([])

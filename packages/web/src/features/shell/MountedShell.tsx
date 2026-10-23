@@ -1,6 +1,7 @@
 import type { Health } from '@guanxi/contract'
 import { AppShellChrome, type AppShellLabels } from '@guanxi/ui'
 import type { ReactNode } from 'react'
+import { AppearanceProvider, useOptionalAppearance } from '../../lib/appearance.tsx'
 import { translate as t } from '../../lib/locale.ts'
 import { useRoute, type Route } from '../../lib/router.tsx'
 import { NotificationBell } from '../notifications/NotificationBell.tsx'
@@ -25,7 +26,13 @@ function paletteKeys(): string[] {
  * their lazy boundaries stay intact. There is no Retry anywhere in the chrome: health, runtime,
  * sessions and the inbox refresh quietly and recover by themselves (D-203).
  */
-export function MountedShell({
+export function MountedShell(props: { health: Health; children: ReactNode }) {
+  // The appearance store normally comes from main.tsx; hosts that render App alone (tests,
+  // fixtures) still get one, so the customisation popover always has a store.
+  return useOptionalAppearance() ? <Shell {...props} /> : <AppearanceProvider><Shell {...props} /></AppearanceProvider>
+}
+
+function Shell({
   health,
   children,
 }: {

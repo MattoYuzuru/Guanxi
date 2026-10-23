@@ -65,14 +65,16 @@ describe('status-strip bell', () => {
     node.failNext(/^GET \/api\/notifications$/u, { status: 500, body: { code: 'internal_error' } })
     release()
     await waitFor(() => expect(bellCount()).toBe('No current data'))
+    // D-202: the tray icon carries no visible number while the count is unknown; its name says so.
     expect(bell().textContent).not.toMatch(/\b0\b/u)
+    expect(bell().querySelectorAll('.gx-icon-button-badge')).toHaveLength(0)
     expect(bell().getAttribute('data-unread')).toBeNull()
-    expect(bell().textContent).toContain('Notifications')
+    expect(bell().getAttribute('aria-label')).toBe('Notifications: No current data')
   })
 
   it('without a provider the entry says it has no data', () => {
     render(<NotificationBell />)
-    expect(screen.getByText('No current data')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Notifications: No current data' })).toBeTruthy()
   })
 
   it('the unread badge equals the unread rows, before and after marking one read', async () => {
@@ -146,7 +148,10 @@ describe('status-strip bell', () => {
     await waitFor(() => expect(bellCount()).toBe('3 unread'))
     node.unreachable = true
     await act(async () => { window.dispatchEvent(new Event('focus')) })
-    await waitFor(() => expect(bell().textContent).toMatch(/3 unread.*last known/u))
+    await waitFor(() => expect(bellCount()).toMatch(/3 unread.*last known/u))
+    expect(bell().getAttribute('aria-label')).toMatch(/^Notifications: 3 unread.*last known/u)
+    // The badge keeps the last known number instead of dropping to unknown or zero.
+    expect(bell().querySelector('.gx-icon-button-badge')?.textContent).toBe('3')
   })
 
   it('polls on its interval', async () => {

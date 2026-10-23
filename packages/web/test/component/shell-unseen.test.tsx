@@ -121,7 +121,7 @@ describe('useUnseenSessions', () => {
 
 const sidebarProps = (sessions: SessionPageItem[], unseenIds: string[], extra: Partial<ShellSidebarProps> = {}): ShellSidebarProps => ({
   rail: false, location: '/projects', sessions, pinned: [], unseen: new Set(unseenIds), loading: false, loadingMore: false, error: false,
-  omitted: false, observedAt: null, hasMore: false, onLoadMore: vi.fn(), onRefresh: vi.fn(), onPin: vi.fn(), ...extra,
+  omitted: false, hasMore: false, onLoadMore: vi.fn(), onPin: vi.fn(), ...extra,
 })
 describe('sidebar indicator', () => {
   const sessions = [session('a', 'completed', 4), session('b', 'completed', 5), session('c', 'working', 2)]
@@ -129,8 +129,10 @@ describe('sidebar indicator', () => {
     const view = render(<ShellSidebar {...sidebarProps(sessions, ['a', 'b'])} />)
     const region = screen.getByRole('region', { name: 'Sessions' })
     expect(region.querySelectorAll('[data-unseen="true"]')).toHaveLength(2)
-    expect(within(region).getAllByText('Finished, not yet opened')).toHaveLength(2)
-    expect(screen.getByTestId('shell-unseen-count').textContent).toBe('Finished, not yet opened: 2')
+    expect([...region.querySelectorAll('[id^="shell-session-"]')].filter(node => node.textContent?.endsWith(' Finished, not yet opened'))).toHaveLength(2)
+    const count = screen.getByTestId('shell-unseen-count')
+    expect(count.querySelector('[aria-hidden="true"]')?.textContent).toBe('2')
+    expect(count.querySelector('.sr-only')?.textContent).toBe('Finished, not yet opened: 2')
     expect(screen.queryByTestId('shell-unseen-rail')).toBeNull()
     view.rerender(<ShellSidebar {...sidebarProps(sessions, [])} />)
     expect(region.querySelectorAll('[data-unseen="true"]')).toHaveLength(0)
@@ -138,7 +140,7 @@ describe('sidebar indicator', () => {
   })
   it('says "at least" while older pages are not loaded', () => {
     render(<ShellSidebar {...sidebarProps(sessions, ['a'], { hasMore: true })} />)
-    expect(screen.getByTestId('shell-unseen-count').textContent).toBe('Finished, not yet opened: at least 1 (some sessions are not loaded or not available)')
+    expect(screen.getByTestId('shell-unseen-count').querySelector('.sr-only')?.textContent).toBe('Finished, not yet opened: at least 1 (some sessions are not loaded or not available)')
   })
   it('says "at least" while some sessions are withheld or catching up, even with every page loaded', () => {
     render(<ShellSidebar {...sidebarProps(sessions, ['a'], { omitted: true })} />)
@@ -153,7 +155,7 @@ describe('sidebar indicator', () => {
   it('renders in Russian', () => {
     setActiveLocale('ru')
     render(<ShellSidebar {...sidebarProps(sessions, ['a'])} />)
-    expect(screen.getByTestId('shell-unseen-count').textContent).toBe('Завершено, ещё не открыто: 1')
-    expect(screen.getByText('Завершена, ещё не открыта')).toBeTruthy()
+    expect(screen.getByTestId('shell-unseen-count').querySelector('.sr-only')?.textContent).toBe('Завершено, ещё не открыто: 1')
+    expect([...document.querySelectorAll('[id^="shell-session-"]')].filter(node => node.textContent?.endsWith(' Завершена, ещё не открыта'))).toHaveLength(1)
   })
 })

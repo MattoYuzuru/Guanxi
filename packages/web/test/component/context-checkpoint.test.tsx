@@ -163,7 +163,9 @@ describe('visible non-destructive context checkpoint', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('injected checkpoint failure')
     await waitFor(() => expect(alert).toBe(document.activeElement))
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить checkpoint' }))
+    // D-203: no Retry button; the same explicit action stays available with its own verb.
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Создать checkpoint' }))
     await waitFor(() => expect(onCompact).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
