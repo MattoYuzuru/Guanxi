@@ -459,13 +459,11 @@ const english = {
   'health.ollama.incompatible.title': 'Ollama returned an incompatible response',
   'health.ollama.incompatible.summary':
     'The runtime answered, but its version response did not match the supported protocol.',
-  'health.retry': 'Check again',
   'health.observedAt': 'Observed at',
   'health.source': 'Source',
   'runtime.title': 'Loaded models',
   'runtime.bar.title': 'Runtime and resources',
   'runtime.checking': 'Checking the current runtime sample…',
-  'runtime.refreshing': 'Refreshing; the last confirmed sample remains visible.',
   'runtime.error.title': 'Runtime status is unavailable',
   'runtime.error.summary':
     'No runtime or host state is inferred until a validated sample is available.',
@@ -2298,13 +2296,11 @@ const russian: Messages = {
   'health.ollama.incompatible.title': 'Ollama вернула несовместимый ответ',
   'health.ollama.incompatible.summary':
     'Runtime ответил, но version response не соответствует поддерживаемому протоколу.',
-  'health.retry': 'Проверить снова',
   'health.observedAt': 'Время наблюдения',
   'health.source': 'Источник',
   'runtime.title': 'Загруженные модели',
   'runtime.bar.title': 'Runtime и ресурсы',
   'runtime.checking': 'Проверяем текущее состояние runtime…',
-  'runtime.refreshing': 'Обновляем; последний подтверждённый sample остаётся видимым.',
   'runtime.error.title': 'Состояние runtime недоступно',
   'runtime.error.summary':
     'Пока нет проверенного sample, состояние runtime и host не предполагается.',

@@ -74,13 +74,14 @@ describe('patterns', () => {
     expect(container.textContent).not.toMatch(/\b0\b/)
   })
 
-  it('shows source and age, switches to "as of" when old, and marks estimates', () => {
+  it('shows source and the absolute observation time, switches to "as of" when old, and marks estimates (D-203)', () => {
     const now = '2026-10-20T14:08:00.000Z'
     const fresh = render(<ProvenanceLabel source="ollama /api/ps" observedAt="2026-10-20T14:07:48.000Z" now={now} />)
-    expect(fresh.container.textContent).toBe('ollama /api/ps 12 sec. ago')
+    expect(fresh.container.textContent).toMatch(/^ollama \/api\/ps \d{2}:\d{2}( [AP]M)?$/u)
+    expect(fresh.container.textContent).not.toMatch(/ago|sec\./u)
     fresh.unmount()
     const aged = render(<ProvenanceLabel source="node" observedAt="2026-10-20T14:02:00.000Z" now={now} estimated />)
-    expect(aged.container.textContent).toMatch(/^node as of .+, 6 min\. agoestimated$/)
+    expect(aged.container.textContent).toMatch(/^node as of \d{2}:\d{2}( [AP]M)?estimated$/u)
     expect(aged.container.querySelector('[data-state="aged"]')).not.toBeNull()
   })
 })

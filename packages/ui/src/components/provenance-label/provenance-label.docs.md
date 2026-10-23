@@ -10,7 +10,8 @@ since: 0.1.0
 
 ## Purpose
 
-States where a number came from and how old it is: the source in mono, then its age, separated by spacing rather than a glyph (D-202).
+States where a number came from and when it was observed: the source in mono, then the absolute time,
+separated by spacing rather than a glyph (D-202). It never shows a relative age (D-203).
 
 ## When to use
 
@@ -23,13 +24,13 @@ States where a number came from and how old it is: the source in mono, then its 
 
 ## Anatomy and variants
 
-The source in the mono face, a separator and a relative age in a `time` element whose
+The source in the mono face, then the observation time (HH:MM) in a `time` element whose
 `dateTime` and title hold the exact time. Optional "estimated" Badge and a confidence label.
 
 ## States
 
-fresh, aged (older than `staleAfterSeconds`, shown as "as of HH:MM, N min ago"), unknown and
-estimated.
+fresh (HH:MM), aged (older than `staleAfterSeconds`, shown as "as of HH:MM" in the warning tone),
+unknown and estimated.
 
 ## Accessibility
 
