@@ -418,9 +418,11 @@ describe('performance', () => {
     let source = ''
     while (source.length < 50_000) source += unit
 
-    const started = performance.now()
+    // CPU time, not wall clock: the parallel suite and shared runners must not decide this bound.
+    const started = process.cpuUsage()
     const result = applyGlossary(bigGlossary, source)
-    const elapsed = performance.now() - started
+    const used = process.cpuUsage(started)
+    const elapsed = (used.user + used.system) / 1000
 
     assert.ok(result.replacements.length > 0)
     // The contract is <200 ms. Allow 2x for shared/CI machines; local runs are far below.
@@ -440,9 +442,11 @@ describe('performance', () => {
     let source = ''
     while (source.length < 50_000) source += unit
 
-    const started = performance.now()
+    // CPU time, not wall clock: the parallel suite and shared runners must not decide this bound.
+    const started = process.cpuUsage()
     const result = applyGlossary(bigGlossary, source)
-    const elapsed = performance.now() - started
+    const used = process.cpuUsage(started)
+    const elapsed = (used.user + used.system) / 1000
 
     assert.ok(result.replacements.length > 0)
     // The contract is <200 ms. Allow 2x for shared/CI machines; local runs are far below.

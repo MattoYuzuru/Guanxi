@@ -60,7 +60,8 @@ test('allocation is an isolated clone at exactly the plan base: clean, detached,
   assert.equal(await git(checkout, ['status', '--porcelain=v2', '--untracked-files=all']), '', 'clean tree: the source worktree changes are not carried')
   assert.equal(await readFile(join(checkout, 'src', 'main.txt'), 'utf8'), 'base content\n')
   await assert.rejects(stat(join(checkout, 'untracked.txt'))); await assert.rejects(stat(join(checkout, 'src', 'future.txt')))
-  assert.equal((await stat(join(checkout, 'run.sh'))).mode & 0o111, 0o111, 'the executable bit is part of the base tree')
+  // Owner exec only: group/other bits follow the process umask (e.g. 077 on a locked-down runner).
+  assert.equal((await stat(join(checkout, 'run.sh'))).mode & 0o100, 0o100, 'the executable bit is part of the base tree')
   assert.equal(await git(checkout, ['for-each-ref']), '', 'no branch, tag or remote-tracking ref'); assert.equal(await git(checkout, ['remote']), '')
   await assert.rejects(git(checkout, ['cat-file', '-e', f.future]), 'a commit newer than the base does not exist in the object store')
   assert.equal(await git(checkout, ['rev-list', '--count', 'HEAD']), '1')
