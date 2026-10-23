@@ -10,7 +10,8 @@
 
 .gx-icon-grid {
   display: grid;
-  width: var(--layout-container-4xl);
+  /* Fits the 800 px catalog frame: no label falls outside the themed surface (G14). */
+  width: var(--layout-container-3xl);
   @apply max-w-full;
   grid-template-columns: repeat(auto-fill, minmax(var(--spacing-64), 1fr));
   gap: var(--spacing-8);

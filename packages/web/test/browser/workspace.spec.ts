@@ -529,8 +529,12 @@ test('named selections restore scoped float geometry and a future engine falls b
   expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
   // One interface (D-204): the other preset's stored layout is not offered as a named layout.
   await page.getByRole('button', { name: 'Named layout', exact: true }).click()
+  // The menu is open and listing this preset's documents before the absence is checked.
+  await expect(page.getByRole('menuitem', { name: 'Future engine', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Named geometry', exact: true })).toBeVisible()
   await expect(page.getByRole('menuitem', { name: 'Visual geometry', exact: true })).toHaveCount(0)
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
   await pick(page, 'Named layout', 'Future engine')
   await expect(page.locator('.dv-resize-container:visible')).toHaveCount(0)
   expect((await state(page)).engineState.major).toBe(8)

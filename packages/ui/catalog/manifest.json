@@ -142,7 +142,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:8dffb98124e2e26a23983f8d4260fb3c34cdbceaa43e839395d6b1d6437262ca",
+      "sourceHash": "sha256:4bd49fa194c54011d6cacd143f46399ca52ed05215b8e59dfb00413b516f1c23",
       "snapshotHashes": {
         "default-dark": "sha256:d8cb99f4a94a3e153145d578218821a6bb3f24a95a6fae3465e4760b3ea249f9",
         "default-light": "sha256:be9060a69277f0ab395f857a7195d8bf0b4226ee1e62861f63b03094631209d7",
@@ -768,7 +768,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:e11439ce84d8c65074a12c32418d760ad85ffcb78f667a19c6e476982bd0d8d9",
+      "sourceHash": "sha256:dffaa1e3c7f6679ee38b1be398f7520fe4aaff8b6629a9ad2ecd5db6c6b295ce",
       "snapshotHashes": {
         "disabled-dark": "sha256:cb6dd16311a3ed0064be82e697488ac86902c3e44835b3e4b8027cb29c5827a8",
         "disabled-light": "sha256:759b02da3b97895de2dfb9dcdc508049281e42099b130f5e7a604b99ce1b12fe",
@@ -1222,7 +1222,7 @@
         "--color-text-secondary",
         "--font-family-mono",
         "--font-size-12",
-        "--layout-container-4xl",
+        "--layout-container-3xl",
         "--spacing-16",
         "--spacing-2",
         "--spacing-4",
@@ -1230,16 +1230,16 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:38810d757cf15b2a699693642977513c29658d9079fd8722d70f8059542864f1",
+      "sourceHash": "sha256:89b1fcee85bd250e7c03df77fb5d4a4eff64581a382504a603b9647b590f7b02",
       "snapshotHashes": {
-        "domain-dark-hc": "sha256:9ce961d0ad6a335017eb032d7882f3cda69832a276a4f880e5f2852535b10882",
-        "domain-dark": "sha256:9ce961d0ad6a335017eb032d7882f3cda69832a276a4f880e5f2852535b10882",
-        "domain-light-hc": "sha256:abd700666a2dd66b88ec23b9338953b1453afbaadef7420b2c01622f580aa7c4",
-        "domain-light": "sha256:abd700666a2dd66b88ec23b9338953b1453afbaadef7420b2c01622f580aa7c4",
-        "set-dark-hc": "sha256:6c24881465c660b89909f7fd5eebfaf6da458136b9d9d300120532c1ceb7f178",
-        "set-dark": "sha256:6c24881465c660b89909f7fd5eebfaf6da458136b9d9d300120532c1ceb7f178",
-        "set-light-hc": "sha256:59529587f3bc04e3b7ab37133976e19c727504df1283240ac9127a9f8eba410b",
-        "set-light": "sha256:59529587f3bc04e3b7ab37133976e19c727504df1283240ac9127a9f8eba410b",
+        "domain-dark-hc": "sha256:74c80f285b9405f3a56a3130705d77ae1d39b89e289140a0d5ef47bf489dbc39",
+        "domain-dark": "sha256:74c80f285b9405f3a56a3130705d77ae1d39b89e289140a0d5ef47bf489dbc39",
+        "domain-light-hc": "sha256:ba8f09f00b7914446790b868901fbf389c68910cedc1ccff498ba6e347d920d9",
+        "domain-light": "sha256:ba8f09f00b7914446790b868901fbf389c68910cedc1ccff498ba6e347d920d9",
+        "set-dark-hc": "sha256:dcc9b09fdde8e6d46f2b99a5f619c65fc3bc1440f019daf81f519f39fad9b725",
+        "set-dark": "sha256:dcc9b09fdde8e6d46f2b99a5f619c65fc3bc1440f019daf81f519f39fad9b725",
+        "set-light-hc": "sha256:459f924417c02ca947945dbd988de3f68b6243075798483b72f2832c76036e22",
+        "set-light": "sha256:459f924417c02ca947945dbd988de3f68b6243075798483b72f2832c76036e22",
         "sizes-dark-hc": "sha256:21dcff46fc55e657495209adcfc0e9ac989c4ba816216ea5af45901b1e383d47",
         "sizes-dark": "sha256:21dcff46fc55e657495209adcfc0e9ac989c4ba816216ea5af45901b1e383d47",
         "sizes-light-hc": "sha256:e8d69452ecb4236f3b6edd05df1cf29be534e4c784ac97966e23b436a1b875cd",
@@ -2185,7 +2185,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:636da5aad72008336f480b3071b3cd7caf52977f5cb38d4f777cafcd584eac82",
+      "sourceHash": "sha256:362116ae7f0355d9b60de1e1c868545d7390fc20a1514fe4a210c463b1bb2823",
       "snapshotHashes": {
         "default-dark-hc": "sha256:117099e5e353794399ea98ad4896f9bd693de491ab7d7ec25bc9bdda3b533512",
         "default-dark": "sha256:d6b1a278b79882b3c6967d94b26949d23a16551bc6d2d19232b5e9f49e927ca4",
@@ -2554,7 +2554,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:ba3e9c31baad3b6c0e9f4f630933d84e43610ed603f78be427890cd92a6162dd",
+      "sourceHash": "sha256:6687f22d204adb2a2d6a183c3713a2d06a7fd691f68bde704287c4f8640b9f75",
       "snapshotHashes": {
         "badge-dark": "sha256:e95fea265ee1b76f963eb09d94f21f50b321572e4189ac8ada73f1479c62691a",
         "badge-light": "sha256:b933cd44835755a71947f8e8da57116400bf6bbf700c91223eb88a6f8f9acedc",
