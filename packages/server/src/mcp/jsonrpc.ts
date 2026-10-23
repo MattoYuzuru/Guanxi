@@ -73,8 +73,9 @@ export class JsonRpcConnection {
   private nextId = 1
   private chunks: Buffer[] = []
   private bufferedBytes = 0
-  /** Absolute offset into `chunks` that has already been searched for a newline. */
-  private scannedBytes = 0
+  /** First chunk that has not been searched for a newline, and its absolute base. */
+  private scanIndex = 0
+  private scanBase = 0
   private closed = false
 
   constructor(options: JsonRpcConnectionOptions) {
@@ -204,18 +205,15 @@ export class JsonRpcConnection {
     }
   }
 
-  /** Finds a newline without re-concatenating every buffered chunk. */
+  /** Finds a newline without re-concatenating or re-scanning buffered chunks. */
   private findNewline(): number {
-    let base = 0
-    for (const chunk of this.chunks) {
-      const start = Math.max(0, this.scannedBytes - base)
-      if (start < chunk.length) {
-        const index = chunk.indexOf(0x0a, start)
-        if (index !== -1) return base + index
-      }
-      base += chunk.length
+    while (this.scanIndex < this.chunks.length) {
+      const chunk = this.chunks[this.scanIndex]!
+      const index = chunk.indexOf(0x0a)
+      if (index !== -1) return this.scanBase + index
+      this.scanBase += chunk.length
+      this.scanIndex++
     }
-    this.scannedBytes = this.bufferedBytes
     return -1
   }
 
@@ -237,7 +235,9 @@ export class JsonRpcConnection {
     }
     this.chunks.splice(0, wholeChunks)
     this.bufferedBytes -= count
-    this.scannedBytes = 0
+    // The bytes after the frame are unscanned; start over from the new head.
+    this.scanIndex = 0
+    this.scanBase = 0
     if (parts.length === 1) return parts[0]!
     return Buffer.concat(parts, count)
   }
@@ -245,7 +245,8 @@ export class JsonRpcConnection {
   private discardBuffer(): void {
     this.chunks = []
     this.bufferedBytes = 0
-    this.scannedBytes = 0
+    this.scanIndex = 0
+    this.scanBase = 0
   }
 
   private handleLine(line: string): void {
