@@ -280,6 +280,32 @@ test('session, run and expiry purges delete rows; run deletion cascades; duplica
     store.record(journalEntry(run.id, run.session_id, 'request-e', now))
     assert.equal(store.purgeExpired(now + DEFAULT_REASONING_RETENTION_MS - 1), 0)
 
+    // A parent Thread TTL shortens, never extends, the 7-day diagnostic window.
+    const created = new Date(now - 7 * 24 * 60 * 60 * 1_000).toISOString()
+    const activity = new Date(now - 6 * 24 * 60 * 60 * 1_000).toISOString()
+    f.db
+      .prepare(
+        `INSERT INTO threads(
+           id, title, mode, model, num_ctx, temperature, think, created_at, updated_at,
+           retention_policy, retention_policy_source, retention_policy_updated_at,
+           last_user_activity_at, last_user_activity_source
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+      .run('thread-ttl', 'ttl', 'agent', 'fixture', 4096, 0.7, 'auto', created, created,
+        'ttl', 'default', created, activity, 'chat_created')
+    f.db
+      .prepare('INSERT INTO sessions(id,kind,thread_id,created_at,last_seq) VALUES(?,?,?,?,0)')
+      .run('session-ttl', 'agent', 'thread-ttl', created)
+    const ttlRun = f.store.create({ id: 'run-ttl', sessionId: 'session-ttl' })
+    store.record(journalEntry(ttlRun.id, ttlRun.session_id, 'request-ttl', now))
+    const ttlExpiry = Date.parse(activity) + DEFAULT_REASONING_RETENTION_MS
+    assert.equal(
+      f.db.prepare("SELECT expires_at FROM relay_judge_journal WHERE request_key='request-ttl'").get()!.expires_at,
+      ttlExpiry
+    )
+    assert.equal(store.purgeExpired(ttlExpiry - 1), 0)
+    assert.equal(store.purgeExpired(ttlExpiry), 1)
+
     const cascaded = f.store.create()
     store.record(journalEntry(cascaded.id, cascaded.session_id, 'request-f', now))
     f.db.prepare('DELETE FROM durable_runs WHERE id=?').run(cascaded.id)
