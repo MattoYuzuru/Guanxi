@@ -40,7 +40,14 @@ Search and STT are service connection roles.
   injects the vault key at dispatch, scrubs the full response and records usage. It exposes
   no login API, arbitrary headers, per-request base URL override or environment credential fallback.
   D-208 explicitly relaxes the original prohibition on base URL overrides: an OpenAI model
-  connection may have an immutable `baseUrl`. API roots are import-only, never accepted by HTTP connection creation. Dispatch resolves DNS once and pins the validated address while preserving Host/TLS identity. Link-local IPv4/IPv6 is always refused, including mapped IPv4. Private/loopback addresses require `GUANXI_PROVIDER_ALLOW_PRIVATE=1` in the imported file; this owner choice is persisted on the connection. HTTP is limited to loopback or an opted-in private LAN; public endpoints require HTTPS;
+  connection may have an immutable `baseUrl`, supplied only by trusted file/CLI import;
+  HTTP creation rejects endpoint and network-policy fields. Custom dispatch resolves DNS once,
+  validates every answer and pins the socket IP while preserving Host/TLS identity.
+  Link-local IPv4/IPv6 is always refused, including mapped IPv4. Private/loopback addresses
+  require `GUANXI_PROVIDER_ALLOW_PRIVATE=1` in the imported file, recorded on the connection
+  at import. Trusted reimport explicitly updates or revokes this stored policy for an existing
+  endpoint; omitting the opt-in resets it to denied. HTTP cannot grant or revoke that consent.
+  HTTP is limited to loopback or an opted-in private LAN; public endpoints require HTTPS;
   credentials, query strings and fragments are refused. Only that root's `/models` and
   `/chat/completions` paths receive its key; redirects are refused. Changing an imported root
   creates a separate connection, preserving the endpoint of existing Chats.
@@ -152,24 +159,46 @@ file. `guanxi connections import --file PATH [--data-dir PATH] [--json]` imports
 HTTP listener, model request or file-reading HTTP API. The Node dotenv parser treats the file
 as data, including literal variable/shell substitutions. Supported names: `OPENAI_API_KEY`,
 optional `OPENAI_API_URL` (API root including `/v1` when required), `DEEPSEEK_API_KEY`,
-`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`. Unknown and empty keys are ignored.
+`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`. Unknown and empty keys are ignored, but a file without a supported nonempty key fails.
+`OPENAI_COMPAT_API_KEY` plus required `OPENAI_COMPAT_API_URL` imports a second OpenAI-compatible
+connection alongside official OpenAI. Legacy `OPENAI_API_URL` still redirects only the
+`OPENAI_API_KEY` connection. Each root is an API root, including `/v1` where required.
+A leading BOM and CRLF are accepted. A raw line scan refuses duplicate names, unterminated
+single-line quotes and unquoted `#` truncation before parsing; quote values containing `#`.
+Multiline key values are unsupported. Validation failures identify only supported key names
+and fixed codes, never values. A bad URL/key does not prevent other valid providers' import;
+CLI JSON includes `imported` and optional `errors`, and partial failure exits nonzero.
 No dotenv values enter `process.env` or act as ambient credential fallbacks.
 
 Import unlocks this process's interactive vault. Standalone CLI disposal locks it again;
-boot import leaves it unlocked for Chat. No unattended permission is granted. Migration 3 adds
+successful boot import leaves it unlocked for Chat. Boot import failure (including partial
+failure) logs only `provider_key_import_failed`, locks provider access and continues booting;
+valid keys from a partial import remain stored and can be explicitly unlocked later. No unattended permission is granted. Migration 3 adds
 `dotenv_imports`, a dedicated identity per account/provider/root. Repeated identical input
 returns `unchanged`; new values rotate, preserving retired-key scrubbing. Values are registered
 before any imported connection metadata is persisted. CLI results expose connection IDs,
 provider names and created/rotated/unchanged facts only. Import errors use fixed summaries.
 Imports are serialized within one registry; simultaneous standalone processes may require a
 repeat after a SQLite/identity conflict. Restart the running node after a standalone import so
-its long-lived scrubber registers the new and retired keys before dispatch.
+its long-lived scrubber registers the new and retired keys before provider dispatch. Local
+legacy Chat remains available with incomplete vault registration or a missing Connections
+plugin: it scrubs with the currently registered set when possible. Provider sends still
+require complete vault scrubbing readiness. This local availability does not relax K2
+inspector/export readiness or K3's other egress boundaries.
 
 An unlocked, keyed model connection contributes generic groups to `GET /api/threads/models`.
 The web picker combines these with the existing local-model projection. It quietly refreshes
 provider groups every 15 seconds and on focus, retaining the last successful projection.
-Discovery uses the root's `/models` when valid/nonempty, otherwise the pinned pi-ai catalog;
-both outcomes cache for 60 seconds and carry source, observation time and confidence. An API
+Custom discovery uses only that root's `/models`, bounded to 1 MiB, 1,024 entries and
+256 characters per model ID. The contract enforces the list/ID bounds too. Public source
+labels and connection displays expose only the authority, never the API root path.
+Discovery success and failure are cached for 60 seconds. A failed refresh retains the last
+successful list with its original observation time, state `stale` and confidence `low`;
+without a prior success, the list is empty with state/confidence `unknown`. An ordinary
+connection without a custom root uses its pinned pi-ai catalog. Custom endpoints never
+fall back to OpenAI membership or inherit matching `gpt-*` compatibility settings;
+completion uses a neutral chat-completions template and does not repeat discovery admission.
+The HTTP request's abort signal reaches discovery. An API
 root advertises IDs only: unknown limits remain unasserted, the compatible wire uses backend
 defaults, and custom-endpoint monetary cost stays unknown rather than borrowing public prices.
 Normal provider usage receipts carry a pi-ai catalog estimate, source/time and confidence.
@@ -183,18 +212,27 @@ prefixes across chunks; compatibility transports without streaming return one sc
 The existing durable Job/SSE owner retains subscriber-independent execution, locked-vault
 idempotent replay, explicit Stop and interrupted recovery without inference continuation.
 Provider reasoning text is not projected into legacy Chat; provider compaction is explicitly
-refused until a K3-aware compaction implementation exists.
+refused until a K3-aware compaction implementation exists, and its UI action is absent.
+Context projections use catalog window evidence with source/time/confidence for ordinary
+providers, or an explicit unknown window for custom endpoints; local `numCtx` is never the
+provider window. Unknown allocation/percentage are nullable, including in durable events.
+Startup reconciles interrupted jobs early but schedules queued Chat only after Connections
+activation/import; a locked provider job retains the `vault_locked` failure code.
+API errors preserve connection categories (404 missing, 423 locked, 503 scrubbing unavailable)
+and the client renders curated locale messages.
 
 Both local and provider Chat prepend the plain-chat variant of `native-agent/orientation.ts`
-through `agent/harness-prompt.ts`. This is the ADR-0021 §8 light-orientation baseline, with only
-the product name from the brand module added. It states the local node/OS and the absence of
+through `agent/harness-prompt.ts`. This is the ADR-0021 §8 light-orientation baseline, with
+the product name from the brand module and a fixed English language instruction. It states the local node/OS and the absence of
 execution cwd, roots, tools, skills and available path/budget/AGENTS.md details. The English
-model-facing prefix is bounded to 300 UTF-8 bytes and independent of UI locale, project metadata
+orientation itself retains its 300-byte bound; the complete model-facing prefix is bounded to 350 UTF-8 bytes and independent of UI locale, project metadata
 and per-turn state. It stays byte-identical before history on every turn for prefix-cache reuse.
 When switching a locally compacted Chat to a provider, checkpoint summaries stay in user history
 after the orientation; they are never folded into the provider system prompt.
 Any future volatile facts belong at the end of the latest user turn, outside this prefix.
-Any expansion requires an ADR-0025 bench result; request assertions prove dispatch, not model
+The orientation is first, followed by the fixed line "Reply in the language the user writes in."
+This owner-requested Chat default awaits an ADR-0025/B1 bench result (Q-K3-chat in
+[open questions](../../../../docs/plans/OPEN_QUESTIONS.md)). Any further expansion requires that result; request assertions prove dispatch, not model
 quality, cache hits or benchmark non-inferiority. Per-project prompt editing remains future work.
 
 Rollback preserves migration 3, the sidecar and OS wrapping keys. Older binaries cannot consume

@@ -5,7 +5,7 @@ Status: autonomous under D-208 and the lane owner's instructions. Base: `631cd5c
 ## Outcome and scope
 
 - Import owner-designated dotenv data through boot and a local CLI into the K3 vault.
-- Persist an immutable OpenAI-compatible endpoint per connection; validate HTTPS or loopback,
+- Persist an immutable OpenAI-compatible endpoint per connection; validate DNS/IP policy with stored owner private-network opt-in,
   reject credentials/query/fragment and redirects. No request-level endpoint or environment keys.
 - Expose generic chat model groups combining Ollama and usable K3 connections, including
   model-list provenance; retain the existing picker styling.
@@ -22,11 +22,11 @@ Status: autonomous under D-208 and the lane owner's instructions. Base: `631cd5c
 - OPENAI_API_URL is fixed on an imported connection. Endpoint changes create a new identity;
   they never redirect an existing conversation's key silently.
 - Custom OpenAI endpoints use the chat-completions protocol. Discover `/models` with an explicit
-  vault key and bounded timeout; fall back to the pi-ai catalog with explicit provenance.
+  vault key and bounded timeout/body/list; retain stale endpoint evidence or explicit unknown.
 - Provider streaming may buffer text at the K3 scrubber boundary to avoid partial-secret leaks.
   Durable execution remains independent from subscribers; restart interrupts rather than retries.
 - Plain Chat uses the shared orientation source with truthful no-tools/no-execution facts.
-  Its English prefix is bounded to 300 UTF-8 bytes, first before history, and byte-stable across
+  Its orientation plus fixed English language line is bounded to 350 UTF-8 bytes, first before history, and byte-stable across
   turns and locale changes. No paths, secrets, project metadata or volatile values enter it.
 - Per-project prompt editing is deferred. This reuses the ADR-0021 baseline, not a new prompt;
   any expansion needs an ADR-0025 bench result. Fake-transport assertions establish dispatch,
@@ -46,7 +46,7 @@ No third-party code is copied; reuse pinned pi-ai and existing UI components.
 ## Verification
 
 New tests: data-only dotenv parsing; idempotence/rotation; canary scans of outputs/errors/storage;
-endpoint validation and pinned transport; discovered/fallback catalog provenance; grouped picker;
+endpoint validation and pinned transport; current/stale/unknown endpoint provenance; grouped picker;
 fake pi-ai durable chat including cancellation/replay, scrubbed request/result, harness prompt;
 local prompt and contract/route compatibility.
 
@@ -57,3 +57,19 @@ Gates: Node 26 and lane ports/data, `npm ci`, workspace resolution, `typecheck`,
 Separate read-only reviewer after implementation; findings fixed in separate commits.
 Separate plan, implementation, tests and docs commits. Handoff records new/envelope evidence,
 receipts, review, limitations and the exact operator-only live smoke command.
+
+## Independent Opus review fixes — 2026-10-23
+
+Work is authorized by the owner's itemized review. Each finding is fixed in a separate
+conventional commit with a regression, followed by a read-only reviewer action. No database
+migration is required: network consent is an optional connection JSON field; existing records
+remain denied for private endpoints. HTTP no longer accepts custom roots. Unknown provider
+context makes allocation/percentage nullable; server, contract, clients and durable events
+change together. Existing local context numbers remain unchanged. Rollback retains the vault
+and endpoint metadata; old consumers cannot claim support for the new nullable projections.
+No real credentials, dotenv or provider/model calls are part of validation.
+
+Checks run on Node 26, ports 5236/4436 and isolated lane data. Required order: typecheck,
+Markdown/links, licenses, JavaScript lint, affected server/CLI/web tests, then the locked
+full `test` and mocked Chromium `test:web:browser`. Hand-off records actual failures,
+new versus regression scope, reviewer findings and receipts; no whole-stage exit is inferred.
