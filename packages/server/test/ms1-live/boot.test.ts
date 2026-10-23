@@ -230,3 +230,14 @@ test('start through the command with a lead that cannot be set up returns 1 and 
   await assert.rejects(fetch(`http://127.0.0.1:${api}/api/health`), 'the owner API listener is closed')
   await assert.rejects(fetch(`http://127.0.0.1:${settings.listen.federationPort}/api/federation/handshake`), 'and so is the federation listener')
 })
+
+test('the relay host and plugin accept extra trusted fields (the seam for a judge source) without letting them replace the derived ones', async t => {
+  const { root, settings } = await pairing(t)
+  const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: settings,
+    relayHost: { limits: { gateTimeoutMs: 1234 } } })
+  t.after(() => server.close())
+  const { RELAY_SERVICE } = await import('../../src/relay/plugin.ts')
+  const host = (server.kernel.node.service<{ publicStarts: object }>(RELAY_SERVICE)!.publicStarts as unknown as { host: { limits: { gateTimeoutMs: number }; runtime?: unknown; allocate?: unknown; reserves?: unknown } }).host
+  assert.equal(host.limits.gateTimeoutMs, 1234, 'a field passed through relayHost reaches the relay start host')
+  assert.ok(host.runtime && host.allocate && host.reserves, 'the pairing\'s runtime, allocator and reserves are still the home\'s own')
+})

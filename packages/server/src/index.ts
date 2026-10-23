@@ -1,7 +1,7 @@
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { importProviderKeysFile } from './connections/dotenv.ts'
 export { importLocalProviderKeys } from './connections/import-local.ts'
-import { relayPlugin, RELAY_SERVICE, type RelayService } from './relay/plugin.ts'
+import { relayPlugin, RELAY_SERVICE, type RelayConfig, type RelayService } from './relay/plugin.ts'
 import { relayStartRoutes } from './relay/routes.ts'
 import { RelayRuntimeSource, type RelayRuntimePolicy } from './relay/runtime.ts'
 import { createOperationalRelay, type OperationalRelay, type OperationalRelayOptions } from './relay/operational.ts'
@@ -176,6 +176,12 @@ export interface StartOptions {
   /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
    * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
   operationalRelay?: OperationalRelayOptions
+  /** Extra relay start-host fields for the trusted host, merged after the ones this function derives (runtime, allocator, reserves,
+   * project resolution and node ports stay owned here). It is the seam for what a relay start gains later, such as a judge source
+   * (`startHost.judge`): that lane adds the field to `RelayStartHost` and every boot, including `ms1Live`, passes it through. */
+  relayHost?: Partial<Omit<RelayStartHost, 'runtime' | 'allocate' | 'reserves' | 'project' | 'nodePorts'>>
+  /** Extra relay plugin configuration (for example `RelayConfig.judge`), merged after `db` and `startHost`. */
+  relayConfig?: Partial<Omit<RelayConfig, 'db' | 'startHost'>>
   /** Explicit opt-in to one half of the MS1 live pairing (`docs/operations/ms1-live-run.md`): a `home` node whose relay
    * inference runs on an `executor` node through F2-d, or that `executor`. Loaded and validated from the operator's
    * configuration (`loadMs1LiveConfig`); it names files and loopback URLs, never a secret value. It builds the federation
@@ -326,7 +332,8 @@ export async function start(options: StartOptions = {}) {
       if (wiring) { externalAgents = wiring.externalAgents; leads = wiring.leads }
     }
     const relayOptions = options.relay ?? operationalRelay?.relay ?? liveRelay ?? undefined
-    await kernel.node.plugin(relayPlugin, { db, startHost: {
+    await kernel.node.plugin(relayPlugin, { ...options.relayConfig, db, startHost: {
+      ...options.relayHost,
       ...(relayOptions ? { reserves: relayOptions.reserves, allocate: relayOptions.allocate,
         // A runtime that binds per start (F2-d) has an observer with `open` instead of a counter. In live mode there is no
         // local fallback at all: the model inventory callback refuses, so a stale remote can never become an Ollama call.
