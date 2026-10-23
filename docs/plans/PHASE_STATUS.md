@@ -12,12 +12,14 @@ evidence validator; R3-b judge replay scorer and R3-c ETA calibration scorer; ba
 NC1 (rules, inbox, delivery, producers, OS adapters, delivery wiring), V1 (glossary matcher, store,
 eval metrics, STT adapter), WG1/WG2 (work ledger, tracker sync), U3 (authorization core), P1
 (skills/AGENTS.md, plugin manager, MCP client) and C1 (browser origin policy, site grants); and
-the MS2 wiring (plugins, REST, contract, web client for notifications, voice and work). The full
-gate sequence passed at `712b464d` after the X1 indexing timeout was root-caused (macOS
-background QoS starving the worker under the parallel suite). See the
+the MS2 wiring (plugins, REST, contract, web client for notifications, voice and work); F2-d
+(relay inference on another node over signed F2 messages); LW (external lead delegate,
+zero-token hibernation, exactly-once wake, K5 boot reconciliation); and the U1 session features.
+The full gate sequence passed at `5570b9e5` after the X1 indexing timeout was root-caused (macOS
+background QoS starving the worker under the parallel suite) and two test races were fixed. See the
 [2026-10-23 record](evidence/coordination-2026-10-23.md). No stage exit or milestone is
-claimed: MS1 still needs lead hibernation/wake, remote relay inference, a ≥ 6-hour 30B run on
-the Fedora node and recorded R3/B3 evidence; MS2 needs UI for the new backends, real action
+claimed: MS1 still needs a local composition rehearsal, a judge for a remote relay, a ≥ 6-hour
+30B run on the Fedora node and recorded R3/B3 evidence; MS2 needs UI for the new backends, real action
 ports, U2, C1 host, C4, U3 authentication, DS2 owner signing and two weeks of daily use.
 The [2026-10-22 record](evidence/coordination-2026-10-22.md) keeps the earlier Fedora evidence.
 
@@ -249,15 +251,15 @@ decision was made.
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
 | K4 Native agent | partial; queue-v3 Q0 integrated and independently accepted (2026-10-23) | [Q0 hand-off](lanes/K4-queue-v3.handoff.md); Q1 restricted reader, Q2 producer, whole-buffer paths and wider UI/platform exits remain. Earlier privacy/encoding/Linux-proxy evidence: [input](evidence/K4-input-artifacts.md), [Linux repair](lanes/K4-linux-proxy-path.handoff.md). |
-| R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
-| K5 External agents | partial; reviewed durable same-node admission and atomic learning integrated locally (`1b6f495`) | [K5 evidence](evidence/K5.md), [admission handoff](lanes/K5-durable-admission.handoff.md). Repository 37 new / 66 inherited; independent 105 includes two outside checks. Cleanup uncertainty retains occupancy. Real vendor captures, effective implicit bare, Claude quota producer and distributed admission remain. |
+| R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged; external lead hibernation/wake (LW) and atomic `complete(…, cost)` integrated 2026-10-23 | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
+| K5 External agents | partial; boot reconciliation of stale admission holders by proof (LW, 2026-10-23); reviewed durable same-node admission and atomic learning integrated locally (`1b6f495`) | [K5 evidence](evidence/K5.md), [admission handoff](lanes/K5-durable-admission.handoff.md). Repository 37 new / 66 inherited; independent 105 includes two outside checks. Cleanup uncertainty retains occupancy. Real vendor captures, effective implicit bare, Claude quota producer and distributed admission remain. |
 | B1 Bench base | bounded foundation, process/K2 retention and separate fixture repairs integrated locally (`1b6f495`) | [B1 evidence](evidence/B1.md), [process handoff](lanes/B1-trial-binding.handoff.md), [integration handoff](lanes/F2-integration.handoff.md). Independent OS/retention repairs closed; bench 137 passes in the candidate. Two newly added cleanup/finalization regressions have separate red/fix/review evidence. Stock paid execution, real corpus/images, billing and five seeds remain open. |
 | X1 Repo map and FTS | independently reviewed and integrated locally (`1b6f495`); actual Fedora62/62 passes | [X1 handoff](lanes/X1.handoff.md). Exact c777 source passes62 local Colima Linux cases, zero skips, with documented nested-bwrap permission limits. Candidate d861 passes all eight commands. [Current Fedora](evidence/Fedora-2026-10-22.md) main3e4840bb five-file X1/kernel envelope passes62/62, zero skips, as dedicateduid1001. The separate native/core startup failure is repaired in45491863; actual214 has208 pass/6 Darwin-only skips. Production/rootless untrusted execution and wider platform/runtime proof remain unearned. |
 | R2 Relay executor | operational local runtime integrated (R2-op, 2026-10-23): opt-in llama-server with exact `/apply-template`+`/tokenize` counter, loaded-window observation and owned checkouts | [R2-op hand-off](lanes/R2-op.handoff.md); not yet exercised against a real llama-server; resident model memory is invisible to the governor (residual); quality/long-run gates remain. Earlier: [R2 evidence](evidence/R2.md). |
-| U1 Shell, layout, modes | integrated (2026-10-23): workspace states, mounted shell, status closure, primitive readiness, glossary; six components unsigned `review` | [U1 integration hand-off](lanes/U1-integration.handoff.md); new-session, finished-unseen, ephemeral side chat (lane in progress), CSS suppressions and owner signatures remain |
+| U1 Shell, layout, modes | integrated 2026-10-23: workspace states, mounted shell, status closure, primitive readiness, glossary, new-session screen, finished-unseen, ephemeral side chat | [integration](lanes/U1-integration.handoff.md), [session features](lanes/U1-session-features.handoff.md); 112 CSS suppressions and owner signatures for six `review` components remain |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
 | R3 Judge + ETA | ETA/signals and opt-in cascade integrated; replay (R3-b) and ETA calibration (R3-c) scorers integrated 2026-10-23 | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md); gates evaluate only on recorded corpora; a privacy-reviewed observation journal is needed to record real runs; night J3 wake rate remains |
-| F2 Remote attempts | offers, renewable dispatch and remote cost ledger (F2-c, 2026-10-23) integrated | [F2-c](lanes/F2-c.handoff.md); relay inference on another node (F2-d) in progress; physical two-host evidence remains |
+| F2 Remote attempts | offers, renewable dispatch, remote cost ledger (F2-c) and relay inference on another node (F2-d) integrated 2026-10-23 | [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md); fixture-validated only; real two-host run, TLS between hosts, residency lease, toolful remote steps and a remote-relay judge remain |
 | B3 Relay benchmark | offline evidence validator integrated (B3-a); no measurement | [B3-a hand-off](lanes/B3-a.handoff.md); every gate stays `unevaluated` until a real cohort runs on a non-Mac node (D-194) |
 | V1 Dictation | backend core integrated (V1-a matcher, V1-b store, V1-c eval metrics, V1-d whisper.cpp adapter with D-157 consent); REST via MS2 | owner eval recordings, more STT adapters, `voice.flag_term`, UI remain; exit gate needs owner recordings |
 | WG1 Work ledger | core integrated (evidence-derived status, strip, query, export); REST via MS2 | `project` mode stays off until the WL A/B; board UI, `work.query` agent tool remain |

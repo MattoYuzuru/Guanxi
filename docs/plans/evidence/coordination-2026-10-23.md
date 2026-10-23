@@ -39,6 +39,10 @@ targeted suites at merge.
 | R2-op operational llama-server relay runtime and owned checkouts | Sonnet | P1 unported spawn never wired the relay; unfinished stop types | relay 224 |
 | C1-a browser origin policy and site grants | DeepSeek | data-carrying model URLs, context scope, suffix-wide grants | 39 |
 | MS2 wiring: notifications, voice, work plugins + REST + contract + web client | Sonnet | damaged sidecar failing the whole boot; account-scoped de-dup | 149, browser 173 |
+| NC1-f opt-in OS delivery wiring; P1-c MCP client; V1-d whisper.cpp STT adapter | DeepSeek | inactive notifications re-announced; MCP grandchild hang and schema budget bypass; hidden 300 s STT cap | 187 + 28 + 71 |
+| F2-d relay inference on another node (signed observe/count/pin, executor-side exact counter) | Sonnet | in-lane P1 loaded window not enforced; cross-check P2 pin made inside the home transaction (unusable on a real executor) | 58 new, full npm |
+| LW external lead delegate, zero-token hibernation, exactly-once wake | Sonnet | crash blocking the wake forever (K5 boot reconciliation by proof), lead-set relay caps (owner ceilings), clock-jump false reboot (kernel boot id) | 99 + K5 211 |
+| U1 session features: new session, finished-unseen, ephemeral side chat | Sonnet | incomplete zero-write proof, side-chat spend outside session budgets, long-send idempotency | web 475, browser 194 |
 
 ## Root-caused gate failure
 
@@ -50,10 +54,17 @@ worker at inherited priority (`workerPriority: 'inherit'`, test-only); the produ
 background and the wrapper keeps its own tests. The next full sequence at `712b464d` passed all
 four heavy gates (receipts `check-hflwk1f7`, `check-06qj8wnm`, `check-i_6xvct1`, `check-l78h8rlx`).
 
+Later checkpoints: two more load-sensitive test races were root-caused and fixed in the tests
+(`recipes.test.tsx` focus asserted before the post-commit effect; a bench holder file read before
+its non-atomic write finished). The full sequence then passed at `5570b9e5` with LW, F2-d and the
+U1 session features (receipts `check-g5my6or6`, `check-64lwpi5t`, `check-ledmbynl`,
+`check-kgtvxcmj`).
+
 ## What this does and does not close
 
-No stage exit or milestone is claimed. MS1 still needs the lead hibernation/wake lane (LW),
-remote relay inference (F2-d), a real two-host run with a 30B-class model on the Fedora node for
-≥ 6 hours, recorded R3/B3 corpora and calibration. MS2 still needs UI for the new backends, real
+No stage exit or milestone is claimed. The MS1 code path (LW, F2-d, R2-op, F2-c) is now
+fixture-validated; MS1 still needs a local composition rehearsal (in progress), a judge for a
+remote relay, a first real llama-server and real Claude Code run under an owner-approved envelope,
+the ≥ 6-hour two-host run with a 30B-class model on the Fedora node, and recorded R3/B3 evidence. MS2 still needs UI for the new backends, real
 action ports, U2 desktop, C1 browser host, C4 Bridge, U3 authentication, DS2 owner signing and the
 owner's two-week daily-use gate. Residuals per slice are in each `docs/plans/lanes/*.handoff.md`.
