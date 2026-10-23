@@ -752,11 +752,13 @@ test('reader derives done claims and current-head acceptance conservatively', ()
       head: 'h'
     }),
     replayRow(2, {
-      items: { one: 'done' },
+      // A real store leaves a failed verification request at verification_requested; it only
+      // becomes done after a passing gate.
+      items: { one: 'verification_requested' },
       gates: [{ item: 'one', ok: false, head: 'h' }],
       head: 'h'
     }),
-    replayRow(3, { items: { one: 'done' }, gates: [], head: 'h' }),
+    replayRow(3, { items: { one: 'verification_requested' }, gates: [], head: 'h' }),
     replayRow(4, { items: { one: 'open' }, gates: [], head: 'h' })
   ])
   assert.deepEqual(
@@ -767,6 +769,54 @@ test('reader derives done claims and current-head acceptance conservatively', ()
     run.steps.map((step) => step.acceptancePassed),
     [true, false, null, undefined]
   )
+})
+
+test('a real RelayStore verification_requested claim replays as premature_done', async () => {
+  const f = fixture()
+  try {
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: f.relay.clock })
+    const cascade = new RelayJudgeCascade(f.relay, cascadeInput({ journal: store }))
+    f.relay.begin(f.attempt)
+    f.relay.requestVerification(f.attempt, 'one')
+    f.relay.observe(f.attempt, {
+      head: 'b'.repeat(40),
+      files: [],
+      diffstat: '',
+      evidence: { item: 'one', ok: false, output: 'fixture gate failed' }
+    })
+    cascade.bind(f.attempt)
+    const observation = observationAt(1_000_000, { cycle: 1 })
+    await cascade.sample(f.attempt, 'cycle_start', new AbortController().signal, undefined, {
+      observation,
+      policy,
+      signals: evaluateJudgeSignals(observation, policy)
+    })
+    f.db.prepare("UPDATE durable_runs SET state='completed' WHERE id=?").run(f.run.id)
+
+    const rows = store.readRun(f.run.id)
+    assert.equal(rows.length, 1)
+    const packet = JSON.parse(rows[0]!.packet) as {
+      items: Record<string, string>
+      gates: { item: string; ok: boolean; head: string }[]
+      head: string
+    }
+    assert.equal(packet.items.one, 'verification_requested')
+    assert.equal(packet.gates.at(-1)!.ok, false)
+    assert.equal(packet.gates.at(-1)!.head, packet.head)
+
+    const run = readJournalReplay(store, f.run.id)
+    assert.equal(run.steps.length, 1)
+    assert.equal(run.steps[0]!.claimsDone, true)
+    assert.equal(run.steps[0]!.acceptancePassed, false)
+    const scored = score({
+      version: 1,
+      runs: [{ ...run, labels: [{ fault: 'premature_done', firstStep: 0 }] }]
+    })
+    assert.equal(scored.classes.premature_done.tp, 1)
+    assert.equal(scored.classes.premature_done.fn, 0)
+  } finally {
+    f.close()
+  }
 })
 
 test('plugin injection defaults to the journal, preserves explicit/null and is lazy without a cascade', () => {

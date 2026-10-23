@@ -177,6 +177,10 @@ function pickStep(row: JudgeJournalRow): boolean {
     row.policy !== null
 }
 
+/** A real ledger moves an item to `done` only after a passing gate; an executor that asks for
+ * verification leaves it at `verification_requested` (`store.ts`). Both statuses are therefore
+ * a done claim, while `open` is not. Acceptance is the newest gate at the packet's current head:
+ * false when any claimed item failed there, null when evidence is missing or incomplete. */
 function claimsAndAcceptance(packet: unknown): {
   claimsDone: boolean
   acceptancePassed: boolean | null
@@ -185,16 +189,17 @@ function claimsAndAcceptance(packet: unknown): {
     return { claimsDone: false, acceptancePassed: null }
   }
   const entries = Object.entries(packet.items)
-  if (entries.length === 0 || entries.some(([, status]) => status !== 'done')) {
+  if (entries.length === 0 ||
+    entries.some(([, status]) => status !== 'done' && status !== 'verification_requested')) {
     return { claimsDone: false, acceptancePassed: null }
   }
-  const done = entries.map(([id]) => id)
+  const claimed = entries.map(([id]) => id)
   const gates = Array.isArray(packet.gates)
     ? packet.gates.filter((gate): gate is Record<string, unknown> => isRecord(gate))
     : []
   const head = typeof packet.head === 'string' ? packet.head : null
   let acceptancePassed: boolean | null = true
-  for (const id of done) {
+  for (const id of claimed) {
     const relevant = gates.filter(
       (gate) => gate.item === id && (head === null || gate.head === head)
     )
