@@ -232,6 +232,28 @@ test('every judge sample asks for the verdict schema (the one that validates it)
   assert.equal(judgeResultJsonSchema.additionalProperties, false)
 })
 
+test('a verdict wrapped in one Markdown JSON fence is accepted like a bare one; anything else around it is still invalid', async () => {
+  const outcome = async (text: string) => {
+    const f = fixture()
+    try {
+      begin(f)
+      const cascade = new RelayJudgeCascade(f.relay, input(brief(), { model: { admit: async () => true, sample: async () => text } }))
+      cascade.bind(f.attempt)
+      await cascade.sample(f.attempt, 'cycle_start', new AbortController().signal)
+      const row = f.db.prepare('SELECT state,payload FROM relay_judge_requests').get()!
+      return { state: row.state, samples: row.state === 'completed' ? (JSON.parse(String(row.payload)).samples as unknown[]).length : 0 }
+    } finally { f.close() }
+  }
+  // The shape the real Qwen3.8 model answered the probes in: the bare verdict inside a ```json fence.
+  for (const fenced of ['```json\n' + valid() + '\n```', '```\n' + valid() + '\n```', '  ```json\r\n' + valid() + '\r\n```  ']) {
+    assert.deepEqual(await outcome(fenced), { state: 'completed', samples: 2 }, fenced)
+  }
+  assert.deepEqual(await outcome(valid()), { state: 'completed', samples: 2 })
+  for (const bad of ['Here is the verdict:\n```json\n' + valid() + '\n```', '```json\n' + valid() + '\n```\n```json\n' + valid() + '\n```', valid().slice(0, -1)]) {
+    assert.equal((await outcome(bad)).state, 'invalid', bad)
+  }
+})
+
 test('actual executor boundaries create fresh samples, stable sealed refs and requested wake only', async () => {
   const f = fixture(),
     seen: string[] = []
