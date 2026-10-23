@@ -129,8 +129,10 @@ describe('status-strip bell', () => {
 
     // Marking a row read changes the count but is not an arrival.
     await ready()
+    const reads = node.count(/^GET \/api\/notifications$/u)
     fireEvent.click(button(rowOf(6), 'Mark read'))
     await waitFor(() => expect(bellCount()).toBe('4 unread'))
+    await waitFor(() => expect(node.count(/^GET \/api\/notifications$/u)).toBeGreaterThan(reads)) // the re-read after the change has landed
     expect(live.textContent).toBe('2 new notifications. 5 unread')
 
     node.rows.push(notification(8))
@@ -483,7 +485,9 @@ describe('actions follow what the node reports', () => {
     expect(rowOf(1).getAttribute('data-state')).toBe('unread')
     expect(node.effects['wake_leads']).toBeUndefined()
     fireEvent.click(within(failure).getByRole('button', { name: 'Try again' }))
-    await waitFor(() => expect(node.count(/\/actions$/u)).toBe(3)) // two action posts + the availability read
+    await waitFor(() => expect(node.count(/^POST .*\/actions$/u)).toBe(2))
+    // A 501 also re-reads what the node can run: the cached "available" was wrong.
+    expect(node.count(/^GET .*\/actions$/u)).toBeGreaterThanOrEqual(2)
     const keys = node.requests.filter((record) => record.method === 'POST').map((record) => record.idempotencyKey)
     expect(keys).toHaveLength(2)
     expect(new Set(keys).size).toBe(2)
@@ -788,5 +792,81 @@ describe('the page', () => {
     await ready()
     await waitFor(() => expect(node.count(/actions$/u)).toBe(1))
     for (const control of screen.getAllByRole('button')) expect(control.textContent!.trim().length + (control.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0)
+  })
+})
+
+describe('review fixes', () => {
+  it('offline comes from the node not answering, never from the browser flag: loopback stays reachable', async () => {
+    const node = seed()
+    mount(node)
+    await ready()
+    const flag = vi.spyOn(window.navigator, 'onLine', 'get').mockReturnValue(false)
+    const reads = node.count(/^GET \/api\/notifications$/u)
+    await act(async () => { window.dispatchEvent(new Event('offline')) })
+    await waitFor(() => expect(node.count(/^GET \/api\/notifications$/u)).toBeGreaterThan(reads)) // the event triggers a read
+    expect(screen.queryByTestId('notifications-offline')).toBeNull()
+    expect(enabledActionButtons(rowOf(1)).length).toBeGreaterThan(0)
+    // When the node stops answering, the state follows the answer.
+    node.unreachable = true
+    await act(async () => { window.dispatchEvent(new Event('offline')) })
+    await screen.findByTestId('notifications-offline')
+    flag.mockRestore()
+  })
+
+  it('a retry in flight does not blink the offline banner or the disabled actions, and announces nothing new', async () => {
+    const node = seed()
+    mount(node)
+    await ready()
+    node.unreachable = true
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }))
+    await screen.findByTestId('notifications-offline')
+    node.unreachable = false
+    const release = node.hold(/^GET \/api\/notifications$/u)
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }))
+    await waitFor(() => expect(node.count(/^GET \/api\/notifications$/u)).toBeGreaterThanOrEqual(3))
+    expect(screen.getByTestId('notifications-offline')).toBeTruthy() // still shown while the retry is in flight
+    expect((button(rowOf(1), 'Mark read') as HTMLButtonElement).disabled).toBe(true)
+    release()
+    await waitFor(() => expect(screen.queryByTestId('notifications-offline')).toBeNull())
+    expect((button(rowOf(1), 'Mark read') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('does not enable a button for an action the web client cannot send, even if the node reports it available', async () => {
+    const availability = { ...allWireAvailable(), add_prompt: 'available' as const }
+    const node = new FakeNode([notification(1, { actions: ['open', 'add_prompt', 'snooze'] })], availability)
+    mount(node)
+    await ready()
+    await waitFor(() => expect((button(rowOf(1), 'Open') as HTMLButtonElement).disabled).toBe(false))
+    expect((button(rowOf(1), 'Add prompt') as HTMLButtonElement).disabled).toBe(true)
+    expect(reasonOf(button(rowOf(1), 'Add prompt'))).toContain('free text or money intent')
+  })
+
+  it('uses one h1 and h2 row titles, with no skipped level', async () => {
+    mount(seed())
+    await ready()
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(3)
+    expect(screen.queryAllByRole('heading', { level: 3 })).toHaveLength(0)
+  })
+
+  it('shows when what the node can run was read, with its source', async () => {
+    mount(seed())
+    await ready()
+    await waitFor(() => expect(screen.getByTestId('notifications-observed').textContent).toContain('actions supported, read at'))
+    expect(screen.getByTestId('notifications-observed').textContent).toContain('GET /api/notifications/actions')
+  })
+
+  it('returns to a filter and shows what changed meanwhile', async () => {
+    const node = seed()
+    mount(node)
+    await ready()
+    fireEvent.click(screen.getByRole('button', { name: 'Snoozed' }))
+    await waitFor(() => expect(screen.getByText('No notifications are snoozed.')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Unread' }))
+    await waitFor(() => expect((button(rowOf(1), 'Snooze…') as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(button(rowOf(1), 'Snooze…'))
+    fireEvent.click(within(rowOf(1)).getByRole('button', { name: 'In 1 hour' }))
+    await waitFor(() => expect(bellCount()).toBe('2 unread'))
+    fireEvent.click(screen.getByRole('button', { name: 'Snoozed' }))
+    await waitFor(() => expect(rows()).toHaveLength(1))
   })
 })

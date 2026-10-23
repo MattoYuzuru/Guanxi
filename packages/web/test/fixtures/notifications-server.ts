@@ -183,8 +183,9 @@ export class FakeNode {
     if (method === 'GET' && verb === undefined) return { status: 200, body: row }
     if (method !== 'POST') return error(404, 'notification_not_found')
     if (verb === 'read') {
-      if (row.state === 'acted') return error(409, 'notification_acted')
-      return { status: 200, body: this.touch(row, { state: row.state === 'unread' ? 'read' : row.state === 'snoozed' ? 'read' : row.state, snoozedUntil: null }) }
+      // Like the real store: reading an acted (or already read) row is a 200 no-op.
+      if (row.state !== 'unread' && row.state !== 'snoozed') return { status: 200, body: row }
+      return { status: 200, body: this.touch(row, { state: 'read', snoozedUntil: null }) }
     }
     if (verb === 'snooze') {
       const untilMs = (body as { untilMs?: unknown } | null)?.untilMs
@@ -219,6 +220,10 @@ export class FakeNode {
     this.expire()
     const states = query['state'] ? query['state'].split(',') : null
     const limit = Number(query['limit'] ?? 50)
+    const known = ['unread', 'read', 'acted', 'snoozed', 'expired']
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || (states !== null && !states.every((state) => known.includes(state)))) {
+      return { status: 400, body: { code: 'validation_failed' } }
+    }
     let rows = this.rows
       .filter((row) => states === null || states.includes(row.state))
       .sort((a, b) => (b.createdAt - a.createdAt) || (a.id < b.id ? 1 : -1))

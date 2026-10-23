@@ -121,7 +121,7 @@ export function NotificationRow(props: NotificationRowProps) {
       <span data-testid="notification-state" className="rounded-inline border border-divider bg-inset px-2 py-1 font-heading">{stateLabel(row)}</span>
       <span className="text-secondary">{t(`notifications.kind.${row.kind}`)}</span>
     </header>
-    <h3 id={titleId} className="min-w-0 break-words text-14 font-heading">{title}</h3>
+    <h2 id={titleId} className="min-w-0 break-words text-14 font-heading">{title}</h2>
 
     <dl data-testid="notification-facts" className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-1 text-12 sm:grid-cols-2">
       <Fact label={t('notifications.fact.subject')}><Machine>{subjectLabel(row.subject)}</Machine></Fact>

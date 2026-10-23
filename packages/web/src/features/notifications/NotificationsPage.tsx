@@ -7,7 +7,7 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { navigate, paths } from '../../lib/router.tsx'
 import { FILTERS, visibleIds, type ListFilter, type OpResult } from './inbox-store.ts'
 import { NotificationRow } from './NotificationRow.tsx'
-import { useBrowserOnline, useInboxSnapshot, useInboxStore } from './NotificationsProvider.tsx'
+import { useInboxSnapshot, useInboxStore } from './NotificationsProvider.tsx'
 import { failureText, isOffline, pluralText } from './model.ts'
 
 const iso = (ms: number) => new Date(ms).toISOString()
@@ -22,9 +22,9 @@ export function NotificationsPage() {
   useLocale()
   const store = useInboxStore()
   const snapshot = useInboxSnapshot(store)
-  const online = useBrowserOnline()
   const [filter, setFilter] = useState<ListFilter>('unread')
   const [status, setStatus] = useState('')
+  const [manualRefresh, setManualRefresh] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const statusRef = useRef<HTMLParagraphElement>(null)
   const listRef = useRef<HTMLOListElement>(null)
@@ -32,7 +32,7 @@ export function NotificationsPage() {
   const slice = snapshot.lists[filter]
   const ids = visibleIds(snapshot, filter)
   const rows = ids.map((rowId) => snapshot.rows[rowId]).filter((row): row is NotificationWire => row !== undefined)
-  const offline = isOffline(snapshot, filter, online)
+  const offline = isOffline(snapshot, filter)
   const { availability } = snapshot
 
   useEffect(() => { headingRef.current?.focus() }, [])
@@ -108,8 +108,8 @@ export function NotificationsPage() {
     <header className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <h1 id={`${id}-title`} ref={headingRef} tabIndex={-1} className="min-w-0 break-words text-18 font-heading focus-visible:outline-focus">{t('notifications.title')}</h1>
-        <Button variant="secondary" size="sm" loading={refreshing && slice.loaded} loadingLabel={t('notifications.refreshing')}
-          disabled={slice.loading && !slice.loaded} onClick={() => { void store.refresh() }}>{t('notifications.refresh')}</Button>
+        <Button variant="secondary" size="sm" loading={manualRefresh && refreshing && slice.loaded} loadingLabel={t('notifications.refreshing')}
+          disabled={slice.loading && !slice.loaded} onClick={() => { setManualRefresh(true); void store.refresh().finally(() => setManualRefresh(false)) }}>{t('notifications.refresh')}</Button>
       </div>
       <p className="text-12 text-secondary">{t('notifications.description')}</p>
     </header>
@@ -147,6 +147,7 @@ export function NotificationsPage() {
 
     {slice.loaded && slice.observedAt !== null && <p data-testid="notifications-observed" className="text-12 text-secondary">
       {t('notifications.fetched', { time: formatDateTime(iso(slice.observedAt)) })} · <span className="font-mono">{t('notifications.source.list')}</span>
+      {availability.observedAt !== null && <> · {t('notifications.actionsRead', { time: formatDateTime(iso(availability.observedAt)) })} · <span className="font-mono">{t('notifications.source.actions')}</span></>}
     </p>}
 
     {empty && <EmptyState data-testid="notifications-empty" title={t(`notifications.empty.${filter}`)}

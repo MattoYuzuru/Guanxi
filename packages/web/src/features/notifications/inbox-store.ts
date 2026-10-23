@@ -43,6 +43,8 @@ export function classifyFailure(error: unknown, at: number): Failure {
   // `fetch` rejects with a TypeError when no answer arrived at all.
   if (error instanceof TypeError) return { kind: 'offline', code: 'offline', status: null, at }
   if (error instanceof LocalApiShapeError) return { kind: 'contract', code: 'contract_mismatch', status: null, at }
+  // The body is validated before it leaves the browser; a ZodError means nothing was sent.
+  if (error instanceof Error && error.name === 'ZodError') return { kind: 'contract', code: 'validation_failed', status: null, at }
   return { kind: 'contract', code: 'contract_mismatch', status: null, at }
 }
 
@@ -54,7 +56,14 @@ const OUTCOME_UNKNOWN_CODES: ReadonlySet<FailureCode> = new Set<FailureCode>([
   'internal_error', 'notifications_unavailable', 'action_in_progress', 'action_outcome_unknown', 'unexpected_response',
 ])
 export const outcomeUnknown = (failure: Failure): boolean =>
-  failure.kind !== 'server' || OUTCOME_UNKNOWN_CODES.has(failure.code)
+  failure.kind === 'server'
+    ? OUTCOME_UNKNOWN_CODES.has(failure.code)
+    : !(failure.kind === 'contract' && failure.code === 'validation_failed')
+
+/** A read that gets no answer in this long is reported as an unreachable node. */
+export const READ_TIMEOUT_MS = 15_000
+/** Refusals that mean this copy of the row is out of date. */
+const ROW_CHANGED_CODES: ReadonlySet<FailureCode> = new Set<FailureCode>(['notification_acted', 'action_not_offered', 'notification_not_found'])
 
 export interface ListSlice {
   /** Newest first. Visible rows are these ids whose current state matches the filter. */
@@ -80,6 +89,8 @@ export interface RowOp {
 
 export interface AvailabilitySlice {
   loaded: boolean
+  /** Caller clock when the node last reported what it can run. */
+  observedAt: number | null
   loading: boolean
   map: Readonly<Partial<Record<NotificationActionName, Availability>>>
   failure: Failure | null
@@ -162,7 +173,7 @@ export class InboxStore {
   private snapshot: InboxSnapshot = {
     rows: {},
     lists: { unread: emptySlice(), all: emptySlice(), read: emptySlice(), snoozed: emptySlice(), acted: emptySlice() },
-    availability: { loaded: false, loading: false, map: {}, failure: null },
+    availability: { loaded: false, observedAt: null, loading: false, map: {}, failure: null },
     ops: {},
     arrivals: 0,
   }
@@ -171,6 +182,8 @@ export class InboxStore {
   private readonly controllers = new Set<AbortController>()
   /** Intent → Idempotency-Key, kept only while the outcome of the intent is unknown. */
   private readonly intents = new Map<string, string>()
+  /** Lists whose in-flight read began before a change and must be read once more. */
+  private readonly reread = new Set<ListFilter>()
   private active: ListFilter | null = null
   private readonly now: () => number
   private readonly newKey: () => string
@@ -224,39 +237,68 @@ export class InboxStore {
     this.active = filter
     if (filter === null) return Promise.resolve()
     const slice = this.snapshot.lists[filter]
-    return slice.loaded || slice.loading ? Promise.resolve() : this.loadHead(filter)
+    // A list the user left and came back to is shown as it was while it is read again.
+    return slice.loading ? Promise.resolve() : this.loadHead(filter)
   }
 
-  /** Re-reads the Unread list (the badge) and the active list. */
+  /** Re-reads the Unread list (the badge), the active list and, while the page is open, what the node can run. */
   async refresh(): Promise<void> {
     const reads = [this.loadHead('unread')]
     if (this.active !== null && this.active !== 'unread') reads.push(this.loadHead(this.active))
+    if (this.active !== null) reads.push(this.loadAvailability())
     await Promise.all(reads)
   }
 
-  loadHead(filter: ListFilter): Promise<void> {
+  /** After a change this client made: every list already loaded is read again, even if a read is in flight. */
+  private async refreshAfterChange(): Promise<void> {
+    const reads: Promise<void>[] = []
+    for (const filter of FILTERS) {
+      if (filter === 'unread' || filter === this.active || this.snapshot.lists[filter].loaded) reads.push(this.loadHead(filter, true))
+    }
+    await Promise.all(reads)
+  }
+
+  loadHead(filter: ListFilter, afterChange = false): Promise<void> {
     const existing = this.flights.get(filter)
-    if (existing !== undefined) return existing
-    const flight = this.readHead(filter).finally(() => {
+    if (existing !== undefined) {
+      // That read may have been answered before the change; read once more when it ends.
+      if (afterChange) this.reread.add(filter)
+      return existing
+    }
+    const flight = (async () => {
+      do {
+        this.reread.delete(filter)
+        await this.readHead(filter)
+      } while (this.reread.has(filter))
+    })().finally(() => {
       if (this.flights.get(filter) === flight) this.flights.delete(filter)
     })
     this.flights.set(filter, flight)
     return flight
   }
 
-  private async readHead(filter: ListFilter): Promise<void> {
+  /** An abort signal that also fires after READ_TIMEOUT_MS; `timedOut()` tells the two apart. */
+  private timed(): { controller: AbortController; timedOut: () => boolean; done: () => void } {
     const controller = new AbortController()
+    let expired = false
+    const timer = setTimeout(() => { expired = true; controller.abort() }, READ_TIMEOUT_MS)
     this.controllers.add(controller)
-    this.patchSlice(filter, { loading: true, failure: null })
+    return { controller, timedOut: () => expired, done: () => { clearTimeout(timer); this.controllers.delete(controller) } }
+  }
+
+  private async readHead(filter: ListFilter): Promise<void> {
+    const { controller, timedOut, done } = this.timed()
+    // The failure of the last read stays shown until a read succeeds, so a retry does not flicker the state.
+    this.patchSlice(filter, { loading: true })
     try {
       const page = await this.api.list({ states: STATES[filter], limit: PAGE_SIZE[filter] }, controller.signal)
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted) throw new Error('aborted')
       this.applyHead(filter, page.notifications, page.nextCursor)
     } catch (error) {
-      if (controller.signal.aborted) return
-      this.patchSlice(filter, { loading: false, failure: classifyFailure(error, this.now()) })
+      if (controller.signal.aborted && !timedOut()) return
+      this.patchSlice(filter, { loading: false, failure: classifyFailure(timedOut() ? new TypeError('timeout') : error, this.now()) })
     } finally {
-      this.controllers.delete(controller)
+      done()
     }
   }
 
@@ -283,7 +325,14 @@ export class InboxStore {
     let arrivals = before.arrivals
     if (filter === 'unread' && slice.loaded) {
       const known = new Set(slice.ids.filter((id) => before.rows[id]?.state === 'unread'))
-      arrivals += fetched.filter((row) => rows[row.id]?.state === 'unread' && !known.has(row.id)).length
+      const newest = slice.ids.reduce((max, id) => Math.max(max, before.rows[id]?.createdAt ?? 0), 0)
+      // New: never seen and newer than anything held (an older row sliding into the page is not new),
+      // or a snoozed row that came back.
+      arrivals += fetched.filter((row) => {
+        if (rows[row.id]?.state !== 'unread' || known.has(row.id)) return false
+        const held = before.rows[row.id]
+        return held === undefined ? row.createdAt > newest : held.state === 'snoozed'
+      }).length
     }
     // A row that came back from the node supersedes a "done, but not refreshed" note.
     const ops = { ...before.ops }
@@ -302,14 +351,15 @@ export class InboxStore {
   async loadMore(filter: ListFilter): Promise<void> {
     const slice = this.snapshot.lists[filter]
     if (slice.nextCursor === null || slice.loadingMore) return
-    const controller = new AbortController()
-    this.controllers.add(controller)
+    const { controller, timedOut, done } = this.timed()
     this.patchSlice(filter, { loadingMore: true, moreFailure: null })
     try {
       const page = await this.api.list({ states: STATES[filter], limit: PAGE_SIZE[filter], before: slice.nextCursor }, controller.signal)
-      if (controller.signal.aborted) return
-      const rows = mergeRows(this.snapshot.rows, page.notifications)
+      if (controller.signal.aborted) throw new Error('aborted')
       const current = this.snapshot.lists[filter]
+      // A head read that landed meanwhile moved the cursor; this page would leave a gap, so drop it.
+      if (current.nextCursor !== slice.nextCursor) { this.patchSlice(filter, { loadingMore: false }); return }
+      const rows = mergeRows(this.snapshot.rows, page.notifications)
       const seen = new Set(current.ids)
       this.set({
         rows,
@@ -324,29 +374,28 @@ export class InboxStore {
         },
       })
     } catch (error) {
-      if (controller.signal.aborted) return
-      this.patchSlice(filter, { loadingMore: false, moreFailure: classifyFailure(error, this.now()) })
+      if (controller.signal.aborted && !timedOut()) return
+      this.patchSlice(filter, { loadingMore: false, moreFailure: classifyFailure(timedOut() ? new TypeError('timeout') : error, this.now()) })
     } finally {
-      this.controllers.delete(controller)
+      done()
     }
   }
 
   async loadAvailability(): Promise<void> {
     if (this.snapshot.availability.loading) return
-    const controller = new AbortController()
-    this.controllers.add(controller)
-    this.set({ availability: { ...this.snapshot.availability, loading: true, failure: null } })
+    const { controller, timedOut, done } = this.timed()
+    this.set({ availability: { ...this.snapshot.availability, loading: true } })
     try {
       const answer = await this.api.actions(controller.signal)
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted) throw new Error('aborted')
       const map: Partial<Record<NotificationActionName, Availability>> = {}
       for (const item of answer.actions) map[item.action] = item.availability
-      this.set({ availability: { loaded: true, loading: false, map, failure: null } })
+      this.set({ availability: { loaded: true, observedAt: this.now(), loading: false, map, failure: null } })
     } catch (error) {
-      if (controller.signal.aborted) return
-      this.set({ availability: { ...this.snapshot.availability, loading: false, failure: classifyFailure(error, this.now()) } })
+      if (controller.signal.aborted && !timedOut()) return
+      this.set({ availability: { ...this.snapshot.availability, loading: false, failure: classifyFailure(timedOut() ? new TypeError('timeout') : error, this.now()) } })
     } finally {
-      this.controllers.delete(controller)
+      done()
     }
   }
 
@@ -360,6 +409,11 @@ export class InboxStore {
 
   private fail(id: string, kind: RowOp['kind'], failure: Failure, keepsKey: boolean, action?: NotificationActionName): OpResult {
     this.setOp(id, { kind, ...(action ? { action } : {}), status: 'failed', failure, keepsKey })
+    if (failure.kind === 'server' && ROW_CHANGED_CODES.has(failure.code)) {
+      // This copy of the row is out of date (acted elsewhere, gone): read it and the lists again.
+      void this.api.get(id).then((row) => this.putRow(row), () => undefined).then(() => this.refreshAfterChange())
+    }
+    if (failure.kind === 'server' && failure.code === 'not_configured') void this.loadAvailability()
     return { ok: false, busy: false, failure }
   }
 
@@ -373,13 +427,19 @@ export class InboxStore {
 
   private async mutateRow(id: string, kind: 'read' | 'snooze', call: () => Promise<NotificationWire>): Promise<OpResult> {
     if (!this.begin(id, kind)) return { ok: false, busy: true, failure: null }
+    let row: NotificationWire
     try {
-      this.putRow(await call())
+      row = await call()
     } catch (error) {
       return this.fail(id, kind, classifyFailure(error, this.now()), false)
     }
+    this.putRow(row)
+    // The node answers 200 with the row unchanged when it was already acted on; that is not "read".
+    if (kind === 'read' && row.state === 'acted') {
+      return this.fail(id, kind, { kind: 'server', code: 'notification_acted', status: 200, at: this.now() }, false)
+    }
     this.setOp(id, null)
-    await this.refresh()
+    void this.refreshAfterChange()
     return { ok: true, duplicate: false, stale: false }
   }
 
@@ -391,16 +451,17 @@ export class InboxStore {
   async execute(id: string, body: ExecuteNotificationActionBody): Promise<OpResult> {
     const action = body.action
     if (!this.begin(id, 'action', action)) return { ok: false, busy: true, failure: null }
-    const intent = `${id}\u0000${canonical(body)}`
-    const key = this.intents.get(intent) ?? this.newKey()
-    this.intents.set(intent, key)
+    let intent = ''
     let response
     try {
+      intent = `${id}\u0000${canonical(body)}`
+      const key = this.intents.get(intent) ?? this.newKey()
+      this.intents.set(intent, key)
       response = await this.api.execute(id, body, key)
     } catch (error) {
       const failure = classifyFailure(error, this.now())
       const keep = outcomeUnknown(failure)
-      if (!keep) this.intents.delete(intent)
+      if (!keep && intent !== '') this.intents.delete(intent)
       return this.fail(id, 'action', failure, keep, action)
     }
     this.intents.delete(intent)
@@ -414,7 +475,7 @@ export class InboxStore {
       stale = true
     }
     this.setOp(id, stale ? { kind: 'action', action, status: 'stale', failure: null, keepsKey: false } : null)
-    await this.refresh()
+    void this.refreshAfterChange()
     return { ok: true, duplicate: response.duplicate, stale }
   }
 

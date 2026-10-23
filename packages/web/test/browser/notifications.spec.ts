@@ -5,7 +5,7 @@
  */
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { FakeNode, T0, demoRows, installNotificationsApi } from './fixtures/notifications-api.ts'
+import { FakeNode, demoRows, installNotificationsApi } from './fixtures/notifications-api.ts'
 import { allWireAvailable, notification, notificationId } from '../fixtures/notifications-server.ts'
 import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
 
@@ -108,7 +108,7 @@ test('Mark read from the keyboard changes the count in the strip, announces once
   expect(node.count(/^POST .*\/read$/u)).toBe(1)
 })
 
-test('new arrivals are announced politely in the strip, once', async ({ page }) => {
+test('new arrivals are announced politely in the strip, once, and a second identical read adds nothing', async ({ page }) => {
   const node = new FakeNode(demoRows())
   await open(page, node)
   await expect(page.getByTestId('notification-bell-count')).toHaveText('3 unread')
@@ -119,6 +119,10 @@ test('new arrivals are announced politely in the strip, once', async ({ page }) 
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(live).toHaveText('1 new notification. 4 unread')
   await expect(page.getByTestId('notification-bell-count')).toHaveText('4 unread')
+  const reads = node.count(/^GET \/api\/notifications$/u)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect.poll(() => node.count(/^GET \/api\/notifications$/u)).toBeGreaterThan(reads)
+  await expect(live).toHaveText('1 new notification. 4 unread')
 })
 
 test('an action the node cannot run is shown disabled with its reason; the shipped node runs Open and Snooze only', async ({ page }) => {
@@ -181,18 +185,24 @@ test('offline: the strip and the center keep the last known data with its age, a
   await expect(rowOf(page, 1).getByRole('button', { name: 'Pause runs' })).toBeEnabled()
 })
 
-test('the browser going offline disables actions before any request fails', async ({ page, context }) => {
+test('the browser\'s offline event re-reads the node at once; the state follows the node\'s answer, not the flag', async ({ page, context }) => {
   const node = new FakeNode(demoRows())
   await open(page, node, { path: '/notifications' })
   await expect(rows(page)).toHaveCount(3)
-  const before = node.requests.length
+  let reads = node.count(/^GET \/api\/notifications$/u)
+  // A reachable loopback node keeps answering with the network off: no banner, actions stay on.
+  await context.setOffline(true)
+  await expect.poll(() => node.count(/^GET \/api\/notifications$/u)).toBeGreaterThan(reads)
+  await expect(page.getByTestId('notifications-offline')).toHaveCount(0)
+  await expect(rowOf(page, 1).getByRole('button', { name: 'Mark read' })).toBeEnabled()
+  // When the node does not answer, the offline event surfaces it without pressing Refresh.
+  node.unreachable = true
+  reads = node.count(/^GET \/api\/notifications$/u)
+  await context.setOffline(false)
   await context.setOffline(true)
   await expect(page.getByTestId('notifications-offline')).toBeVisible()
   await expect(rowOf(page, 1).getByRole('button', { name: 'Mark read' })).toBeDisabled()
-  expect(node.requests.length).toBe(before)
   await context.setOffline(false)
-  await expect(page.getByTestId('notifications-offline')).toHaveCount(0)
-  await expect(rowOf(page, 1).getByRole('button', { name: 'Mark read' })).toBeEnabled()
 })
 
 test('reduced motion: nothing animates in the center or the strip', async ({ page }) => {
@@ -278,5 +288,4 @@ test('desktop width is clean as well', async ({ page }) => {
   await open(page, new FakeNode(demoRows(), allWireAvailable()), { path: '/notifications' })
   await expect(rows(page)).toHaveCount(3)
   expect(await seriousViolations(page)).toEqual([])
-  expect(T0).toBeGreaterThan(0)
 })

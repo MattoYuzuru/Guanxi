@@ -1,4 +1,4 @@
-import type { NotificationWire } from '@guanxi/contract'
+import { NOTIFICATION_WIRE_ACTIONS, type NotificationWire } from '@guanxi/contract'
 import { formatDateTime } from '../../lib/format.ts'
 import { getActiveLocale, translate as t, type LocaleKey } from '../../lib/locale.ts'
 import type { Availability, AvailabilitySlice, Failure, InboxSnapshot, ListFilter, NotificationActionName } from './inbox-store.ts'
@@ -87,6 +87,8 @@ export function actionStatus(input: {
       ? off('notifications.reason.unchecked', { code: availability.failure.code })
       : off('notifications.reason.checking')
   }
+  // Only the wire actions can be sent; anything else is shown as not exposed whatever the node says.
+  if (!(NOTIFICATION_WIRE_ACTIONS as readonly string[]).includes(action)) return off('notifications.reason.not_exposed', { action: name })
   const known: Availability | undefined = availability.map[action]
   if (known === undefined) return off('notifications.reason.unknownAction', { action: name })
   if (known === 'not_configured') return off('notifications.reason.not_configured', { action: name })
@@ -117,7 +119,10 @@ export function snoozePresets(now: number, resetsAt: string | null): SnoozePrese
 /** `<input type="datetime-local">` value (local wall time) to epoch ms; NaN when incomplete. */
 export const parseLocalDateTime = (value: string): number => (value === '' ? Number.NaN : new Date(value).getTime())
 
-export function isOffline(snapshot: InboxSnapshot, filter: ListFilter, online: boolean): boolean {
-  if (!online) return true
+/**
+ * Offline means a read of this node got no answer. The browser's own `onLine` flag is not used:
+ * the node is on loopback and stays reachable with the network off.
+ */
+export function isOffline(snapshot: InboxSnapshot, filter: ListFilter): boolean {
   return snapshot.lists[filter].failure?.kind === 'offline' || snapshot.lists.unread.failure?.kind === 'offline'
 }

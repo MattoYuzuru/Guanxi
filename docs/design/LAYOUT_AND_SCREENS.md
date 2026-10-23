@@ -130,7 +130,8 @@ limit agents, not the user's own actions.
   palette. It reads the MS2 routes through one shared store, so the strip's count and the Unread list are derived from
   the same rows. It shows state (unread, read, acted, snoozed, expired), severity as text plus a shape, and for every
   row the fact's source, observation time and confidence. Mark read, snooze (presets, until the window resets, or a
-  chosen time) and the typed actions the node reports `available` run from it; `not_configured` and `not_exposed`
+  chosen time) and the typed actions run from it; every action button except Mark read is enabled only while the node
+  reports it `available`, and Offline means the node did not answer, not the browser's network flag; `not_configured` and `not_exposed`
   actions are shown disabled with the reason. Action requests carry an `Idempotency-Key` that is reused only when the
   outcome was unknown. Loading, empty, error, offline and paging states are covered.
 - Not built: filters by kind, project or "waiting for you" (the wire has no such fields), mark all read and a toast for

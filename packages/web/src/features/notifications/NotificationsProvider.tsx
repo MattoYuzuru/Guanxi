@@ -27,10 +27,12 @@ export function NotificationsProvider({
     }, pollMs)
     const wake = () => { void store.refresh() }
     window.addEventListener('online', wake)
+    window.addEventListener('offline', wake)
     window.addEventListener('focus', wake)
     return () => {
       window.clearInterval(poll)
       window.removeEventListener('online', wake)
+      window.removeEventListener('offline', wake)
       window.removeEventListener('focus', wake)
       store.dispose()
     }
@@ -51,24 +53,4 @@ export function useInboxStore(): InboxStore {
 
 export function useInboxSnapshot(store: InboxStore): InboxSnapshot {
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
-}
-
-function onlineNow(): boolean {
-  return typeof navigator === 'undefined' || navigator.onLine !== false
-}
-
-/** `navigator.onLine` with its events; a false reading is certain, a true one is only a hint. */
-export function useBrowserOnline(): boolean {
-  return useSyncExternalStore(
-    (listener) => {
-      window.addEventListener('online', listener)
-      window.addEventListener('offline', listener)
-      return () => {
-        window.removeEventListener('online', listener)
-        window.removeEventListener('offline', listener)
-      }
-    },
-    onlineNow,
-    () => true,
-  )
 }
