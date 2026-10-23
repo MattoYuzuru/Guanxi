@@ -92,6 +92,10 @@ const protectedTests = /(^|\/)(?:[^/]+_test\.go|test_[^/]+\.py|[^/]+_test\.py|co
 export const protectedName = (p: string) => p.split('/').some(s => protectedSegments.has(s)) || /\.(test|spec)\.[^/]+$/.test(p) || protectedFiles.test(p) || protectedTests.test(p)
 /** Native tools that are the session's, not the relay model's. */
 const NOT_RELAY_TOOLS = ['plan', 'queue', 'note_add']
+/** The model-callable tools of a native tool context, with their parameters as strict JSON Schema objects. */
+export function relayToolSpecs(context: NativeToolContext): RelayToolSpec[] {
+  return nativeTools(context).filter(t => !NOT_RELAY_TOOLS.includes(t.name)).map(t => ({ name: t.name, parameters: strictParameters(t.parameters) }))
+}
 export interface WorkspaceObservation { head: string; files: string[]; diffstat: string; nonemptyCommit: boolean }
 export interface RelayWorkspace {
   observe(base: string, baseline: string): Promise<WorkspaceObservation>
@@ -262,7 +266,7 @@ export class GitRelayWorkspace implements RelayWorkspace {
     } finally { if (cleanup) await rm(temp, { recursive: true, force: true }) }
   }
   tools(): RelayToolSpec[] {
-    return nativeTools(this.context).filter(t => !NOT_RELAY_TOOLS.includes(t.name)).map(t => ({ name: t.name, parameters: strictParameters(t.parameters) }))
+    return relayToolSpecs(this.context)
   }
   async tool(name: string, args: Record<string, unknown>, signal?: AbortSignal, options: { pageBytes?: number } = {}): Promise<string> {
     const tool = nativeTools({ ...this.context, ...(options.pageBytes === undefined ? {} : { pageBytes: options.pageBytes }) }).find(t => t.name === name && !NOT_RELAY_TOOLS.includes(name))

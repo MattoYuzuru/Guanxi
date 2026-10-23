@@ -3,7 +3,7 @@ import { z } from 'zod'
 /** Loopback-only client for one llama.cpp `llama-server` instance (ADR-0031 Tier 1 runtime).
  * It follows no redirect, carries no credential, retries nothing and never returns response text
  * in an error: a model prompt, completion or filesystem path must not reach a log. */
-export type LlamaServerErrorCode = 'llama_server_unavailable' | 'llama_server_protocol' | 'llama_server_timeout' | 'llama_server_refused'
+export type LlamaServerErrorCode = 'llama_server_unavailable' | 'llama_server_protocol' | 'llama_server_timeout' | 'llama_server_refused' | 'llama_server_schema_rejected'
 export class LlamaServerError extends Error {
   readonly code: LlamaServerErrorCode
   constructor(code: LlamaServerErrorCode) { super(code); this.name = 'LlamaServerError'; this.code = code }
@@ -147,7 +147,9 @@ export class LlamaServerClient {
     if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) throw new LlamaServerError('llama_server_refused')
     const { status, body } = await this.json('/completion', { method: 'POST',
       body: { prompt, n_predict: maxTokens, stream: false, cache_prompt: this.cachePrompt, ...(jsonSchema ? { json_schema: jsonSchema } : {}) } }, signal, this.completionTimeoutMs, onDispatched)
-    if (status !== 200) throw new LlamaServerError(status === 503 ? 'llama_server_unavailable' : 'llama_server_protocol')
+    // A server that cannot build the grammar answers a request error (4xx, or 500 from the grammar builder). Which schema and why stays in its
+    // own log: no response text is returned, so the cause is only named, not quoted.
+    if (status !== 200) throw new LlamaServerError(status === 503 ? 'llama_server_unavailable' : jsonSchema && status >= 400 ? 'llama_server_schema_rejected' : 'llama_server_protocol')
     const completion = this.parse(completionSchema, body)
     return { content: completion.content, promptTokens: completion.tokens_evaluated, completionTokens: completion.tokens_predicted,
       stopType: completion.stop_type, truncated: completion.truncated }

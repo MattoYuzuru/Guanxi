@@ -9,7 +9,7 @@ async function preflight(w: LiveWorld, role: 'home' | 'executor', extra: string[
   const result = await cli(['preflight', '--config', role === 'home' ? w.homeConfig : w.execConfig, '--json', ...extra], { HOME: w.dir })
   return { code: result.code, report: JSON.parse(result.out) as { ok: boolean; checks: Array<{ id: string; status: string; code?: string; summary: string; fix?: string }>; observed: unknown } }
 }
-const find = (r: { report: { checks: Array<{ id: string; status: string; code?: string; fix?: string }> } }, id: string) => r.report.checks.find(c => c.id === id)
+const find = (r: { report: { checks: Array<{ id: string; status: string; code?: string; summary: string; fix?: string }> } }, id: string) => r.report.checks.find(c => c.id === id)
 /** The relay start was refused as a whole: nothing durable exists, nothing was generated anywhere. */
 async function assertRefusedWithoutInference(w: LiveWorld, response: { status: number; body: any }, code: string, completions = 0) {
   assert.deepEqual([response.status, response.body], [503, { code }])
@@ -98,6 +98,22 @@ test('a model the pairing does not serve is refused before any message is sent',
   assert.deepEqual([response.status, response.body], [503, { code: 'runtime_identity_unknown' }])
   assert.equal(w.toExecutor.requests.length, before, 'the executor was not even contacted')
   assert.equal(w.home.count('SELECT COUNT(*) AS n FROM durable_runs'), 0)
+})
+
+test('preflight sends the probe, work and judge schemas to the executor\'s llama-server and names a grammar it rejects', async t => {
+  const ok = await createLiveWorld(t, { fake: { replies: ['pong'] } })
+  await ok.executor.stop()
+  const good = await preflight(ok, 'executor', ['--completion'])
+  assert.equal(good.code, 0); assert.equal(find(good, 'schemas')?.status, 'ok')
+  const posts = (await ok.fake.requests('/completion')).filter(post => post.body.json_schema)
+  assert.equal(posts.length, 3, 'one one-token generation per schema'); assert.ok(posts.every(post => post.body.n_predict === 1))
+  assert.deepEqual(posts.map(post => Object.keys(post.body.json_schema.properties ?? {}).length > 0 || Array.isArray(post.body.json_schema.anyOf)), [true, true, true])
+  const w = await createLiveWorld(t, { fake: { rejectSchema: true, replies: ['pong'] } })
+  await w.executor.stop()
+  const exec = await preflight(w, 'executor', ['--completion'])
+  assert.equal(exec.code, 1); assert.equal(find(exec, 'completion')?.status, 'ok'); assert.equal(find(exec, 'schemas')?.code, 'response_schema_rejected')
+  assert.match(find(exec, 'schemas')!.summary, /probe response schema/); assert.match(find(exec, 'schemas')!.fix!, /home\.structuredOutput/)
+  assert.ok(!JSON.stringify(exec).includes('SERVER-GRAMMAR-TEXT'), 'the server\'s text is not echoed')
 })
 
 test('a meter mismatch (the server evaluates other tokens than it counted): the first call is refused as truncation_protocol, nothing is accepted and nothing local runs', async t => {

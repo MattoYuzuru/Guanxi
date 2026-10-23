@@ -22,6 +22,8 @@ export interface FakeLlamaState {
   /** Add one to every `/tokenize` answer after this many calls (counter instability). */
   tokenizeSkewAfter: number | null
   truncated: boolean
+  /** Answer a `/completion` that carries a `json_schema` with the 400 llama.cpp gives for a grammar it cannot build (its message is hostile text). */
+  rejectSchema: boolean
   stopType: string
   tokenizeDelayMs: number
   completionDelayMs: number
@@ -62,7 +64,7 @@ export function fakeRender(content: string, state: Pick<FakeLlamaState, 'templat
 
 async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (message: any) => void) {
   const state: FakeLlamaState = { alias: 'fixture', modelPath: '/nonexistent.gguf', nCtx: 16000, buildInfo: 'b0-fixture', loading: false,
-    template: 'chat', evaluatedSkew: 0, tokenizeSkewAfter: null, truncated: false, stopType: 'eos', tokenizeDelayMs: 0, completionDelayMs: 0,
+    template: 'chat', evaluatedSkew: 0, tokenizeSkewAfter: null, truncated: false, rejectSchema: false, stopType: 'eos', tokenizeDelayMs: 0, completionDelayMs: 0,
     replies: ['{}'], propsOverride: undefined, argv: [], env: [], pid: 0, cwd: '', ...initial }
   const requests: FakeLlamaRequest[] = []
   let completions = 0, tokenizes = 0, aborted = 0
@@ -88,6 +90,7 @@ async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (
       return send(response, 200, { tokens: Array.from({ length: fakeTokens(body.content, body.add_special === true) + skew }, (_, i) => i) })
     }
     if (path === '/completion') {
+      if (state.rejectSchema && body.json_schema) return send(response, 400, { error: { code: 400, message: 'Failed to build grammar: SERVER-GRAMMAR-TEXT-secret-path /models/x.gguf', type: 'invalid_request_error' } })
       const n = completions++
       if (state.completionDelayMs) await wait(state.completionDelayMs)
       const entry = state.replies[Math.min(n, state.replies.length - 1)]!

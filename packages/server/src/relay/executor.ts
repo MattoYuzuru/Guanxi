@@ -193,10 +193,14 @@ export class RelayExecutor {
       ...(responseSchema ? { responseSchema } : {}) })) }
     catch (error) {
       // Only a fixed code is recorded: a message may carry provider text or paths.
-      const reason = error instanceof RelayError ? error.code : typeof (error as { code?: unknown })?.code === 'string' && /^[a-z0-9_]{1,64}$/.test((error as { code: string }).code) ? (error as { code: string }).code : 'unknown'
+      const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
+      // K3 keeps a trusted transport's fixed refusal code as `reason`; its own code is the generic provider_failed.
+      const reason = error instanceof RelayError ? error.code : fixed((error as { reason?: unknown })?.reason) ? (error as { reason: string }).reason
+        : fixed((error as { code?: unknown })?.code) ? (error as { code: string }).code : 'unknown'
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
       this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', purpose, reason }) } })
-      throw new RelayError('model_failed')
+      // A grammar the server rejects is rejected for every later call too: say so, instead of letting the probe retry and fail as something else.
+      throw new RelayError(reason === 'response_schema_rejected' ? reason : 'model_failed')
     }
     invariant([reply.inputTokens, reply.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) &&
       (reply.moneyMicros === null || Number.isSafeInteger(reply.moneyMicros) && reply.moneyMicros >= 0), 'usage_invalid')
@@ -244,7 +248,7 @@ export class RelayExecutor {
         { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
       try { correct = !damaged && canonical(parseModelJson((await this.call(a, 'probe', prompt, w, t, signal, this.schemas?.probe)).text)) === canonical(expected) }
-      catch (e) { if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed'].includes(e.code)) throw e }
+      catch (e) { if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed', 'response_schema_rejected'].includes(e.code)) throw e }
       this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe', retry, correct, damaged }) } })
       if (correct) return canonical({ narrative: h.narrative, notes: h.notes })
       damaged = false

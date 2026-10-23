@@ -2,10 +2,13 @@ import type { ConnectionErrorCode } from '@guanxi/contract'
 
 export class ConnectionError extends Error {
   readonly code: ConnectionErrorCode
-  constructor(code: ConnectionErrorCode, message: string) {
+  /** A fixed machine reason a trusted runtime transport gave for a refusal (never provider text). Absent for every other error. */
+  readonly reason?: string
+  constructor(code: ConnectionErrorCode, message: string, reason?: string) {
     super(message)
     this.name = 'ConnectionError'
     this.code = code
+    if (reason !== undefined) this.reason = reason
   }
 }
 export const connectionErrorStatus = {

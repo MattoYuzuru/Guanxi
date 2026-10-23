@@ -20,7 +20,7 @@ import { LlamaServerClient } from '../../src/runtime/llama-server/client.ts'
 import { LlamaServerRuntime } from '../../src/runtime/llama-server/runtime.ts'
 import { Vault } from '../../src/vault/vault.ts'
 import { RUN_TIME, runFixture } from '../fixtures/durable-runs.ts'
-import { reply, startFakeLlama } from '../fixtures/fake-llama-server.ts'
+import { reply, startFakeLlama, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
 import { accepts } from './schema-check.ts'
 import { caps, reserves } from './fixture.ts'
 
@@ -48,7 +48,7 @@ const script = reply((prompt, _call, body) => {
   return body.json_schema ? JSON.stringify(action) : '{action:tool,name:file_read,args:{path:"src/item.txt"}}'
 })
 
-async function fixture(t: { after(fn: () => unknown): void }, limits?: Partial<RelayLimits>) {
+async function fixture(t: { after(fn: () => unknown): void }, limits?: Partial<RelayLimits>, fakeState: Partial<FakeLlamaState> = {}) {
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const parent = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'structured-llama-')))
   const source = join(parent, 'project'), checkouts = join(parent, 'checkouts'), modelPath = join(parent, 'model.gguf')
@@ -56,7 +56,7 @@ async function fixture(t: { after(fn: () => unknown): void }, limits?: Partial<R
   const git = async (args: string[]) => (await exec('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', ...args], { cwd: source })).stdout.trim()
   await git(['init', '-q', '-b', 'main']); await git(['add', '.']); await git(['commit', '-q', '-m', 'fixture'])
   const base = await git(['rev-parse', 'HEAD'])
-  const fake = await startFakeLlama({ alias: 'fixture', modelPath, nCtx: 16000, replies: [script] })
+  const fake = await startFakeLlama({ alias: 'fixture', modelPath, nCtx: 16000, replies: [script], ...fakeState })
   const now = RUN_TIME
   const f = runFixture(':memory:')
   const relay = new RelayStore(f.db, f.store, f.scrubber, () => now), governor = new ResourceGovernor(), life = new AbortController()
@@ -131,4 +131,16 @@ test('the same model without the schema answers in the shapes the real runs prod
   assert.ok(ledger.errors >= 3); assert.equal(ledger.items.one, 'open')
   const posts = await f.fake.requests('/completion')
   assert.ok(posts.length >= 3); assert.ok(posts.every(p => !('json_schema' in p.body)), 'the switch sends no schema')
+})
+
+test('a grammar the server rejects stops the run as response_schema_rejected, which is also the recorded reason of the failed call; the server\'s text stays out', async t => {
+  const f = await fixture(t, undefined, { rejectSchema: true }), receipt = await f.starts.start(f.input)
+  await until(() => f.starts.status(f.input.key).status !== 'running')
+  assert.equal(f.starts.status(f.input.key).status, 'input_required')
+  assert.deepEqual(f.errors(receipt.sessionId!), ['response_schema_rejected'], 'not probe_failed_twice, not model_failed, not an identity problem')
+  const notes = f.log.readAll(receipt.sessionId!, 'person').filter(e => e.type === 'agent.note').map(e => String(e.data.text))
+  assert.ok(notes.some(text => text.includes('"relay":"call_failed_reason"') && text.includes('"reason":"response_schema_rejected"') && text.includes('"purpose":"work"')), JSON.stringify(notes.filter(n => n.includes('call_failed'))))
+  assert.equal(f.relay.read(receipt.runId!).items.one, 'open')
+  assert.equal(JSON.stringify(f.log.readAll(receipt.sessionId!, 'person')).includes('SERVER-GRAMMAR-TEXT'), false)
+  assert.equal((await f.fake.requests('/completion')).length, 1, 'the rejected call is not retried')
 })

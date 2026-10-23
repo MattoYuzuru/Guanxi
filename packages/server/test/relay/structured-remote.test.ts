@@ -157,3 +157,12 @@ test('the largest string the home will count leaves room for the largest schema 
   assert.equal(f.sent.filter(s => s.path === '/attempts/runtime/count').length, before)
   assert.equal(RELAY_RESPONSE_SCHEMA_BYTES, 64 * 1024)
 })
+
+test('a grammar the executor\'s server rejects comes back as the signed terminal reason and as the call\'s reason at the home', async t => {
+  const f = await remoteFixture(t, { fake: { replies: [REPLY], rejectSchema: true } }), r = await f.relay()
+  const error = await r.call('Rejected grammar.', { responseSchema: SCHEMA }).then(() => undefined, (e: unknown) => e as { code?: string; reason?: string })
+  assert.equal(error?.code, 'provider_failed'); assert.equal(error?.reason, 'response_schema_rejected')
+  const [terminal] = terminals(f)
+  assert.equal(terminal!.outcome, 'failed'); assert.equal(terminal!.reason, 'response_schema_rejected')
+  assert.equal((await r.call('Same server, no grammar.')).text, REPLY, 'a call without a schema is unaffected')
+})

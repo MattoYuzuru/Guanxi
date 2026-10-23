@@ -229,6 +229,14 @@ test('a response schema on the request reaches /completion as json_schema, is pi
   assert.equal(await f.fake.count('/completion'), before, 'every refusal happened before the model was asked')
 })
 
+test('a grammar the server rejects is response_schema_rejected, not an identity or availability problem, and a request without a schema is unaffected', async t => {
+  const f = await bound(t, { rejectSchema: true, replies: ['{"ok":true}'] }), schema = { type: 'object' }
+  const constrained = request('rejected grammar', { format: schema })
+  await assert.rejects(f.runtime.transport.chat(constrained, signal(), () => {}, dispatchFor(constrained).dispatch), code('response_schema_rejected'))
+  const plain = request('rejected grammar')
+  assert.equal((await f.runtime.transport.chat(plain, signal(), () => {}, dispatchFor(plain).dispatch)).message?.content, '{"ok":true}')
+})
+
 test('a count that disagrees with the synchronous measure, a truncated prompt or a window overrun never reaches the model as accepted work', async t => {
   const f = await bound(t, { replies: ['{}'] }), prepared = request('disagree about me')
   f.counter.count(prepared)

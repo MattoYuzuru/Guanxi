@@ -61,6 +61,21 @@ test('a response schema is sent as json_schema on /completion and nothing else c
   assert.equal(constrained.content, '{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}')
 })
 
+test('a server that refuses the grammar is named as such, only when a schema was sent, and none of its text is returned', async t => {
+  const fake = await startFakeLlama({ rejectSchema: true }); t.after(() => fake.close())
+  const client = new LlamaServerClient({ baseUrl: fake.url })
+  await assert.rejects(client.complete('x', 1, new AbortController().signal, undefined, INTEGRATOR_SCHEMA),
+    (error: unknown) => error instanceof LlamaServerError && error.code === 'llama_server_schema_rejected' && !String(error.message).includes('SERVER-GRAMMAR-TEXT'))
+  assert.equal((await client.complete('x', 1, new AbortController().signal)).content, '{}', 'the same server answers a request without a schema')
+  await fake.configure({ loading: true })
+  // A loading server is still unavailable, schema or not; and an error answer without a schema is not blamed on one.
+  const bare = createServer((_request, response) => { response.writeHead(400, { 'content-type': 'application/json' }); response.end('{"error":{"code":400}}') })
+  await new Promise<void>(resolve => bare.listen(0, '127.0.0.1', resolve)); t.after(() => { bare.closeAllConnections(); bare.close() })
+  const other = new LlamaServerClient({ baseUrl: `http://127.0.0.1:${(bare.address() as AddressInfo).port}` })
+  await assert.rejects(other.complete('x', 1, new AbortController().signal), code('llama_server_protocol'))
+  await assert.rejects(other.complete('x', 1, new AbortController().signal, undefined, INTEGRATOR_SCHEMA), code('llama_server_schema_rejected'))
+})
+
 test('malformed, oversized, non-JSON and redirected answers are protocol or availability failures without leaking text', async t => {
   const fake = await startFakeLlama(); t.after(() => fake.close())
   const client = new LlamaServerClient({ baseUrl: fake.url })

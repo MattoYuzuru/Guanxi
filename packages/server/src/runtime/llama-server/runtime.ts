@@ -69,6 +69,8 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
   private unavailable(error: unknown, signal?: AbortSignal): never {
     if (signal?.aborted) throw signal.reason ?? error
     if (error instanceof RelayError) throw error
+    // The server understood the request and refused the grammar: not an identity change, not an outage, and retrying cannot help.
+    if (error instanceof LlamaServerError && error.code === 'llama_server_schema_rejected') throw new RelayError('response_schema_rejected')
     if (error instanceof LlamaServerError && error.code === 'llama_server_protocol') throw new RelayError('runtime_identity_unknown')
     throw new RelayError('runtime_meter_unavailable')
   }
