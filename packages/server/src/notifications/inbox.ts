@@ -10,6 +10,7 @@ import {
   type ActionPortContext,
   type ActionPorts,
 } from './actions.ts'
+import type { DeliveryCounts, DeliveryDispatcher } from './dispatcher.ts'
 import type { NotificationService } from './service.ts'
 import {
   NOTIFICATION_ACTIONS,
@@ -42,6 +43,9 @@ export class InboxError extends Error {
 
 export type ActionAvailability = 'available' | 'not_configured' | 'not_exposed'
 
+/** The ingestion surface the inbox exposes; the service may be wrapped by a dispatcher. */
+export type NotificationIngest = Pick<NotificationService, 'store' | 'ingestQuotaFact'>
+
 export interface InboxOptions {
   /** Caller clock in milliseconds. */
   now(): number
@@ -50,6 +54,11 @@ export interface InboxOptions {
    * `open` and `snooze`, whose only effect is the inbox state the store already commits.
    */
   ports?: Partial<ActionPorts>
+  /**
+   * Opt-in delivery dispatcher. When absent, ingestion writes notification rows and nothing
+   * else: no delivery rows and no adapter calls.
+   */
+  delivery?: DeliveryDispatcher
 }
 
 export interface ListInboxOptions {
@@ -122,19 +131,53 @@ function buildPorts(host: Partial<ActionPorts>, store: NotificationStore): Actio
 
 export class NotificationInbox {
   readonly store: NotificationStore
-  /** Kernel callers feed quota facts through this. */
-  readonly ingest: NotificationService
+  /** Kernel callers feed quota facts through this; it dispatches after a committed insert. */
+  readonly ingest: NotificationIngest
+  /** Present only when the host opted into delivery. */
+  readonly delivery?: DeliveryDispatcher
   private readonly options: InboxOptions
   private readonly ports: ActionPorts
   private readonly configured: Set<NotificationAction>
 
   constructor(store: NotificationStore, ingest: NotificationService, options: InboxOptions) {
     this.store = store
-    this.ingest = ingest
     this.options = options
+    this.delivery = options.delivery
+    if (options.delivery === undefined) {
+      this.ingest = ingest
+    } else {
+      const delivery = options.delivery
+      this.ingest = {
+        store: ingest.store,
+        ingestQuotaFact: (accountId, fact, ingestOptions) => {
+          const inserted = ingest.ingestQuotaFact(accountId, fact, ingestOptions)
+          // The notification transaction has committed; delivery is a separate, best-effort
+          // step and the notification row remains the source of truth.
+          if (inserted.length > 0) {
+            try {
+              void delivery.schedule(inserted).catch(() => undefined)
+            } catch {
+              // A planning failure after commit must not make the caller think the ingest failed.
+            }
+          }
+          return inserted
+        },
+      }
+    }
     const host = options.ports ?? {}
     this.configured = configuredActions(host)
     this.ports = buildPorts(host, store)
+  }
+
+  /**
+   * Deliver pending OS deliveries whose planned time has passed. The host calls this from its
+   * own scheduler; the plugin starts no timer. A no-delivery inbox is a no-op.
+   */
+  deliverDue(now: number = this.options.now()): Promise<DeliveryCounts> {
+    if (this.delivery === undefined) {
+      return Promise.resolve({ delivered: 0, failed: 0, unavailable: 0, pending: 0 })
+    }
+    return this.delivery.deliverDue(now)
   }
 
   /** Availability of every action on this node, so a client can disable what would be refused. */

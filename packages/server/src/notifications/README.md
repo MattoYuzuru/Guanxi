@@ -391,3 +391,62 @@ nice -n 10 npx tsc --noEmit -p packages/server
 
 The command runs 99 tests: 13 NC1-e tests and the 86 NC1-a…d tests as the regression envelope.
 `tsc` reports no diagnostics.
+
+## NC1-f: delivery dispatch and opt-in OS delivery at boot
+
+**Status:** implemented · **Updated:** 2026-10-23 · **Scope:** NC1-f
+
+This section supersedes the NC1-e plug-in wiring residual for the OS channel. Settings
+persistence and the settings UI, Web Push, Windows toast and the host scheduler remain later
+work.
+
+### Opt-in configuration
+
+`NotificationsConfig.delivery` is optional. When it is absent, ingestion behaves as before: no
+`notification_deliveries` rows and no adapter call. When it is present, `settings(accountId)`
+supplies the NC1-c `DeliverySettings`; `os` is an `OsNotifier` or `{ unavailable }`.
+
+`start()` exposes `StartOptions.notificationDelivery`. With `{ os: true }` it builds
+`createOsNotifier` for the current platform with the central brand product name; without the
+option the plugin loads with no delivery. The boot default settings use the system IANA zone,
+`['in_app', 'os']`, no quiet hours, no critical bypass and no muted kinds. `runner`, `platform`
+and `resolveBinary` are optional host/test seams; production uses
+`createDefaultCommandRunner` and a PATH lookup.
+
+### Migration and dispatch
+
+v2 creates `notification_deliveries(notification_id, channel, deliver_at, status, code,
+attempted_at)` with primary key `(notification_id, channel)`, a status check
+`pending|delivered|failed|unavailable` and a `(status, deliver_at)` index. v1 is untouched.
+
+After `inbox.ingest.ingestQuotaFact` commits, `dispatcher.ts` plans each returned inserted row
+with the account settings and writes one row per planned channel in a separate transaction.
+`in_app` is recorded `delivered` with code `in_app` (the notification row is the delivery).
+`push` is recorded `unavailable` with code `push_not_configured`. `os` is `pending`, or
+`unavailable` with the adapter's reason when no adapter exists. A due `os` row is attempted
+immediately with `osPayload(notification)`: `delivered` or `failed` with the adapter's code; a
+thrown adapter becomes `failed`/`os_notify_failed`. Terminal rows are never retried.
+
+The primary key makes planning idempotent; the terminal update is guarded by
+`WHERE status='pending'`, and due passes are serialised in process. A second dispatch,
+`deliverDue` or re-ingest therefore cannot call the adapter twice for one row in normal
+operation. Deferred quiet-hours rows keep `attempted_at` null until the host calls
+`inbox.deliverDue(now)`. That call delivers every `pending` row with `deliver_at <= now`, is
+idempotent and returns `{ delivered, failed, unavailable, pending }`. The plugin starts no
+timer; the host owns the scheduler that calls `deliverDue`.
+
+No payload text or adapter message is logged or stored: rows keep a status and a code. The
+per-row primary key and the guarded terminal transition make repeated planning safe, but a
+crash between the notifier returning and the terminal update can still repeat one OS
+notification; a delivery claim/lease is later work.
+
+### NC1-f test evidence
+
+```bash
+nice -n 10 node --test packages/server/test/notifications/*.test.ts packages/server/test/ms2-*.test.ts
+nice -n 10 npx tsc --noEmit -p packages/server
+npx markdownlint-cli2 packages/server/src/notifications/README.md docs/plans/lanes/NC1-f.handoff.md
+```
+
+The required command runs 186 tests: 11 new dispatcher tests, the 99 existing notification
+tests and the 76 MS2 tests. `tsc` reports no diagnostics.

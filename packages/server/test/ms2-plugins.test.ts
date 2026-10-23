@@ -21,13 +21,13 @@ const timers = () => process.getActiveResourcesInfo().filter((name) => name === 
 test('each plugin opens its own private sidecar with its own migration table', async (t) => {
   const f = await ms2Fixture(t)
   const expectations = [
-    [f.paths.notifications, f.inbox()!.store.db, 'nc1_migrations'],
-    [f.paths.voice, f.glossary()!.store.db, 'v1_migrations'],
-    [f.paths.work, f.ledger()!.store.db, 'wg1_migrations'],
+    [f.paths.notifications, f.inbox()!.store.db, 'nc1_migrations', 2],
+    [f.paths.voice, f.glossary()!.store.db, 'v1_migrations', 1],
+    [f.paths.work, f.ledger()!.store.db, 'wg1_migrations', 1],
   ] as const
-  for (const [path, db, table] of expectations) {
+  for (const [path, db, table, versions] of expectations) {
     assert.equal((await stat(path)).mode & 0o777, 0o600, `${path} is owner-only`)
-    assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!['n'], 1)
+    assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!['n'], versions)
     assert.equal(db.prepare('PRAGMA journal_mode').get()!['journal_mode'], 'wal')
     assert.equal(db.prepare('PRAGMA foreign_keys').get()!['foreign_keys'], 1)
   }
