@@ -38,6 +38,23 @@ export interface Ms1LiveLeadWiring {
 }
 export interface Ms1LiveWarmState { state: 'not_applicable' | 'warming' | 'ready' | 'unavailable'; code?: string; observedAt?: number }
 
+/** What `start()` hands back to its caller: public facts and two harmless actions. It reaches neither the private key nor the
+ * federation host options, and nothing in it leads back to the node that holds them. */
+export interface Ms1LiveView {
+  readonly role: 'home' | 'executor'
+  readonly identity: NodeIdentity
+  readonly peer: NodeIdentity
+  readonly model: string
+  readonly connectionId: string
+  readonly leadConnectionId: string
+  readonly hasLead: boolean
+  readonly federationPort: number
+  warmState(): Ms1LiveWarmState
+  startWarming(): Promise<Ms1LiveWarmState>
+  /** The attestation this node gives the dispatch layer for `model`, or null when the model is not served here. */
+  attestedModel(model: string): ReturnType<NonNullable<NonNullable<FederationHostOptions['dispatch']>['localModel']>>
+}
+
 /** One node's share of the MS1 live pairing, built from validated configuration before any file or listener exists.
  *
  * It owns no listener and no process: `start()` asks it for federation options, ensures its connections once the K3
@@ -83,6 +100,16 @@ export class Ms1LiveNode {
   peerChannel(): FederationChannel { return this.channel }
   /** A home asserts that it stays awake: R1 refuses remote attempts and lead hibernation otherwise. */
   get alwaysOn(): boolean { return this.role === 'home' && this.settings.home?.alwaysOn === true }
+  /** The read-only view `start()` returns. */
+  view(): Ms1LiveView {
+    const connections = () => ({ connection: this.connection, lead: this.leadConnection })
+    return Object.freeze({
+      role: this.role, identity: this.identity, peer: this.peer, model: this.model, federationPort: this.federationPort, hasLead: this.hasLead,
+      get connectionId() { return connections().connection }, get leadConnectionId() { return connections().lead },
+      warmState: () => this.warmState(), startWarming: () => this.startWarming(),
+      attestedModel: (model: string) => this.federationHost().dispatch?.localModel?.(model) ?? null,
+    })
+  }
   /** The loopback port of this node's federation listener: the only port the operator forwards. */
   get federationPort(): number { return this.settings.listen.federationPort }
   get hasLead(): boolean { return this.role === 'home' && this.settings.home?.lead !== undefined }

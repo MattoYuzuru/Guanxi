@@ -567,7 +567,7 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 
-  return { url, port: actualPort, host, context, kernel, close, ms1Live: live }
+  return { url, port: actualPort, host, context, kernel, close, ms1Live: live?.view() ?? null }
 }
 
 /**

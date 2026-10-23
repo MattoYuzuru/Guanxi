@@ -116,18 +116,17 @@ test('the executor attests exactly its one configured model to the dispatch laye
   const a = await pairing(t, 'executor')
   const executor = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(a.root, 'data'), webDir: a.root, devOrigins: [], ms1Live: a.settings })
   t.after(() => executor.close())
-  const dispatch = executor.ms1Live!.federationHost().dispatch!
-  const attested = dispatch.localModel!('qwen3.8-27b-iq3s')!
+  const live = executor.ms1Live!
+  const attested = live.attestedModel('qwen3.8-27b-iq3s')!
   assert.deepEqual({ ...attested, observedAt: typeof attested.observedAt }, { connectionId: executor.ms1Live!.connectionId, model: 'qwen3.8-27b-iq3s', placement: 'installed_local', source: 'ms1-live attach configuration (asserted when asked, not observed)', observedAt: 'number' })
-  assert.equal(dispatch.localModel!('qwen3.8-27b-iq3s:latest')!.connectionId, attested.connectionId, 'the same model under its implicit tag')
-  for (const other of ['some-other-model', 'qwen3.8-27b-iq3s:cloud', 'qwen3.8-27b', 'qwen3.8-27b-iq3s-q4', '']) assert.equal(dispatch.localModel!(other), null, `${other || '(empty)'} is not served here`)
-  assert.ok(dispatch.relayRuntime, 'an attached llama-server is the relay runtime')
+  assert.equal(live.attestedModel('qwen3.8-27b-iq3s:latest')!.connectionId, attested.connectionId, 'the same model under its implicit tag')
+  for (const other of ['some-other-model', 'qwen3.8-27b-iq3s:cloud', 'qwen3.8-27b', 'qwen3.8-27b-iq3s-q4', '']) assert.equal(live.attestedModel(other), null, `${other || '(empty)'} is not served here`)
+  assert.ok(executor.kernel.federation!.capabilities().includes('remote-relay-runtime-v1'), 'an attached llama-server is the relay runtime')
 
   const h = await pairing(t, 'home')
   const home = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(h.root, 'data'), webDir: h.root, devOrigins: [], ms1Live: h.settings })
   t.after(() => home.close())
-  const homeDispatch = home.ms1Live!.federationHost().dispatch!
-  assert.equal(homeDispatch.localModel, undefined, 'a home runs no model itself in this mode'); assert.equal(homeDispatch.relayRuntime, undefined)
+  assert.equal(home.ms1Live!.attestedModel('qwen3.8-27b-iq3s'), null, 'a home runs no model itself in this mode')
   assert.ok(home.kernel.federation!.attemptDispatch, 'but it can dispatch')
   assert.ok(!home.kernel.federation!.capabilities().includes('remote-relay-runtime-v1'), 'and does not advertise the relay runtime')
   assert.ok(executor.kernel.federation!.capabilities().includes('remote-relay-runtime-v1'))
@@ -341,4 +340,22 @@ test('relayHost cannot replace what start owns, even from untyped code: runtime,
   assert.equal(host.limits.gateTimeoutMs, 4321, 'a permitted extra passes')
   assert.equal(host['runtime'], undefined); assert.equal(host['allocate'], undefined); assert.equal(host['reserves'], undefined)
   assert.notEqual(host['project'], sentinel); assert.notEqual(host['nodePorts'], sentinel)
+})
+
+
+test('what start returns for an MS1 node is a read-only view: no key, no federation host options, no way back to either', async t => {
+  const { readFileSync } = await import('node:fs')
+  const { root, settings } = await pairing(t)
+  const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: settings })
+  t.after(() => server.close())
+  const view = server.ms1Live as unknown as Record<string, unknown>
+  for (const name of ['federationHost', 'homeRelay', 'leadWiring', 'prepare', 'peerChannel', 'privateKey', 'settings']) assert.equal(view[name], undefined, name)
+  assert.ok(Object.isFrozen(view))
+  const key = readFileSync(settings.node.privateKeyFile, 'utf8').split('\n').filter(line => line && !line.startsWith('-----')).join('').slice(0, 30)
+  const reachable = new Set<string>()
+  const walk = (value: unknown, depth: number) => { if (depth > 4 || value === null || typeof value !== 'object' && typeof value !== 'function') return; for (const name of Reflect.ownKeys(value as object)) { reachable.add(String(name)); try { walk((value as Record<string | symbol, unknown>)[name], depth + 1) } catch { /* getter */ } } }
+  walk(view, 0)
+  assert.ok(!JSON.stringify(view).includes(key), 'no key in the view')
+  assert.ok(!reachable.has('privateKey') && !reachable.has('federationHost'), 'nothing named a key or the host options is reachable from it')
+  assert.equal(server.ms1Live!.role, 'home'); assert.ok(server.ms1Live!.identity.id)
 })
