@@ -58,3 +58,12 @@ concurrent assertions failed, then the file was restored. No independent reviewe
 - Host scheduler calling `deliverDue`; nothing in the plugin wakes it.
 - Cross-process claim/lease: a crash after the notifier returns and before the guarded terminal
   update can repeat one OS notification. The row itself remains exactly-once.
+
+## Independent review (Opus, 2026-10-23)
+
+No P1/P2. Integrator fixed P3-1: a deferred or crash-leftover OS delivery for a notification the user
+already read, acted on or that expired is closed as `unavailable` / `notification_inactive` instead of
+being announced (new test). Residuals: delivery planning errors are swallowed without a code; due-now
+pending rows after a crash wait for a host `deliverDue` caller (none yet, not even at boot); delivery is
+at-least-once across a crash during `notify`; one-process serialisation only; the opted-out boot test's
+runner assertion is vacuous (row count is the real check).

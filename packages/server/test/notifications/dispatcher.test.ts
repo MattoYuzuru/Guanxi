@@ -512,3 +512,21 @@ test('start() opts into OS delivery only when notificationDelivery.os is true', 
     await optedIn.close()
   }
 })
+
+test('a deferred OS delivery is not announced after the user already read the notification', async (t) => {
+  const fake = recordingNotifier()
+  const f = await fixture(t, { os: fake.notifier, settings: settings({ quietHours: { start: '22:00', end: '07:00' } }) })
+  f.clock.now = QUIET_T0
+  const [inserted] = f.inbox.ingest.ingestQuotaFact('acct-a', quotaFact())
+  if (!inserted) assert.fail('fixture did not insert')
+  const [pending] = deliveries(f.store, inserted.id).filter(row => row.channel === 'os')
+  if (!pending) assert.fail('no OS delivery row')
+  f.store.markRead('acct-a', inserted.id)
+  f.clock.now = pending.deliver_at
+  const counts = await f.inbox.deliverDue(pending.deliver_at)
+  assert.equal(counts.delivered, 0)
+  assert.equal(counts.unavailable, 1)
+  assert.equal(fake.calls.length, 0, 'a read notification is not re-announced')
+  const [after] = deliveries(f.store, inserted.id).filter(row => row.channel === 'os')
+  assert.deepEqual([after?.status, after?.code], ['unavailable', 'notification_inactive'])
+})

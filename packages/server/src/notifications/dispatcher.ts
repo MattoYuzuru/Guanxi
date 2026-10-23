@@ -43,6 +43,7 @@ interface DeliveryRow {
   notification_id: string
   channel: string
   account_id: string
+  state: string
 }
 
 interface PlannedDelivery {
@@ -198,7 +199,7 @@ export class DeliveryDispatcher {
   private async deliverDueNow(now: number): Promise<DeliveryCounts> {
     const counts = emptyCounts()
     const due = this.store.db.prepare(`
-      SELECT d.notification_id AS notification_id, d.channel AS channel, n.account_id AS account_id
+      SELECT d.notification_id AS notification_id, d.channel AS channel, n.account_id AS account_id, n.state AS state
       FROM notification_deliveries d
       JOIN notifications n ON n.id = d.notification_id
       WHERE d.status='pending' AND d.deliver_at <= ?
@@ -208,6 +209,12 @@ export class DeliveryDispatcher {
 
     for (const row of due) {
       const channel = row.channel
+      // A notification the user already read, acted on or that expired is not re-announced by a
+      // deferred or crash-leftover OS delivery.
+      if (row.state !== 'unread' && row.state !== 'snoozed') {
+        if (this.transition(row.notification_id, channel, 'unavailable', 'notification_inactive')) counts.unavailable += 1
+        continue
+      }
       if (channel === 'os') {
         if (notifier === null) {
           if (this.transition(row.notification_id, channel, 'unavailable', this.unavailableReason())) {
