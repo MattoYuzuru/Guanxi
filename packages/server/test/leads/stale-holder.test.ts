@@ -1,16 +1,15 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { uptime } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { spawn } from 'node:child_process'
 import { test } from 'node:test'
 import { admissionPolicyDigest } from '../../src/external-agents/admission.ts'
+import { readBootId } from '../../src/external-agents/process.ts'
 import { typedWakeFailure } from '../../src/leads/failure.ts'
 import { leadFixture } from './helpers.ts'
 
 type Fixture = Awaited<ReturnType<typeof leadFixture>>
-const bootMs = () => Math.round((Date.now() - uptime() * 1000) / 1000) * 1000
 async function deadPid() {
   const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' })
   await new Promise(resolve => child.once('close', resolve))
@@ -24,7 +23,7 @@ async function leaveStaleHolder(f: Fixture, phase: 'prepared' | 'spawning') {
     const id = randomUUID()
     db.prepare(`INSERT INTO k5_admission (holder_id,instance_id,owner,adapter,billing_account,kind,policy_digest,created_at,state)
       VALUES (?,?,?,?,?,'run',?,?,'held')`).run(id, 'killed-node', install.ownerAccountId, install.adapter, install.billingAccount, admissionPolicyDigest(install), new Date().toISOString())
-    db.prepare('INSERT INTO k5_admission_process (holder_id,owner_pid,boot_ms,phase) VALUES (?,?,?,?)').run(id, await deadPid(), bootMs(), phase)
+    db.prepare('INSERT INTO k5_admission_process (holder_id,owner_pid,boot_id,phase) VALUES (?,?,?,?)').run(id, await deadPid(), await readBootId(), phase)
   } finally { db.close() }
 }
 const resumed = async (f: Fixture) => (await f.events()).filter(e => e.event === 'prompt' && String(e.text).includes('guanxi.wake/v1'))

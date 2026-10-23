@@ -93,6 +93,12 @@ before the fix (new `stale-holder`, `limits`, `admission-reconcile` tests; mutan
 - **P3-3** MS1 risk, named: a crashed node can leave a detached agent group running a billable turn (pre-existing K5
   behaviour) until the next start reconciles it; `leads` and K5 READMEs say so.
 
+- **Final short round** (P3-a, P3-b, P3-c). The reboot proof is now a real boot identifier (macOS `kern.bootsessionuuid`, Linux
+  `boot_id`, fixed executable, no shell) stored in the v3 facts, not `Date.now() - uptime()`; a clock jump with the same id
+  releases nothing, a missing or unreadable id proves no reboot, and the reboot check runs before the owner-pid checks so a
+  reused owner pid cannot keep a holder after a real reboot. `maxCaps` is validated by name (the four caps, finite
+  non-negative safe integers, no extra or missing key).
+
 Gates for this round at `eaa87468`: typecheck 0 errors, `lint:md` pass, vendor-credential scan pass; `test/leads` 99 tests
 (10 new in `stale-holder`, 4 in `limits`, plus the token, cancel-ignored and boot additions) and K5 `test/external-agents` all pass; heavy
 `npm test` exit 0 (test:core 2426 tests, 2424 pass, 0 fail, 2 skipped), receipt `check-22vzpm8y`; heavy `npm run build` exit 0,

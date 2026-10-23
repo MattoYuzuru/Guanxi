@@ -231,8 +231,11 @@ the boot reconciliation below; it never authorizes a signal by itself.
 There is no wall-clock expiry or inference retry. **Boot reconciliation** (LW cross-check): when a service starts, every
 dispatch first waits for `admissionReady()`, which looks at holders created by another service instance and acts only
 on proof. A holder whose owner pid is dead (signal 0 says gone; a live or unsignalable owner, including another
-instance in this process, keeps it) is released if the machine rebooted since it was written or if it never reached a
-spawn (`prepared`); it stays `cleanup_unconfirmed` if a spawn may have happened unrecorded (`spawning`) or the group
+instance in this process, keeps it) is released if it never reached a spawn (`prepared`). Before any owner check, a holder
+written under a different machine boot identifier (macOS `kern.bootsessionuuid`, Linux `boot_id`, read with a fixed
+executable and no shell; never a wall-clock difference, which an NTP step or a VM resume would fake) is released without
+signalling anything, because every old process is gone and a reused owner pid is someone else. An unreadable id proves no
+reboot and leaves the probing path below in charge; it stays `cleanup_unconfirmed` if a spawn may have happened unrecorded (`spawning`) or the group
 cannot be identified. A recorded group that is already gone releases the holder; a live one is SIGKILLed only when its
 pid has a start time within five seconds of the recorded spawn (a reused pid would not), and the holder is released only
 after ESRCH is observed. A holder without v3 facts (written by an older build) is never touched. Anything unprovable

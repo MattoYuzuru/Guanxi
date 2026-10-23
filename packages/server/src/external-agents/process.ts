@@ -52,6 +52,33 @@ export async function awaitOwnedGroupEmpty(pgid: number | undefined, closed: Pro
   }
 }
 
+/** The kernel's identifier of the current machine boot (macOS `kern.bootsessionuuid`, Linux `boot_id`), or null when it
+ * cannot be read. It changes on a reboot and on nothing else: a wall-clock step, an NTP correction or a VM resume do not. */
+let bootIdRead: Promise<string | null> | null = null
+/** A fixed executable with a fixed argument list and no shell; resolves its stdout or null. */
+function outputOf(executable: string, args: readonly string[]): Promise<string | null> {
+  return new Promise(resolve => {
+    let output = ''
+    let settled = false
+    const done = (value: string | null) => { if (!settled) { settled = true; resolve(value) } }
+    try {
+      const child = spawn(executable, [...args], { env: { PATH: '/usr/sbin:/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'ignore'] })
+      const timer = setTimeout(() => { child.kill('SIGKILL'); done(null) }, 3_000)
+      child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf8') })
+      child.on('error', () => { clearTimeout(timer); done(null) })
+      child.on('close', code => { clearTimeout(timer); done(code === 0 ? output : null) })
+    } catch { done(null) }
+  })
+}
+export function readBootId(): Promise<string | null> {
+  bootIdRead ??= (async () => {
+    const clean = (text: string | null) => { const id = (text ?? '').trim(); return /^[0-9A-Fa-f-]{16,64}$/.test(id) ? id.toLowerCase() : null }
+    if (process.platform === 'linux') return clean(await outputOf('/bin/cat', ['/proc/sys/kernel/random/boot_id']))
+    if (process.platform === 'darwin') return clean(await outputOf('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid']))
+    return null
+  })()
+  return bootIdRead
+}
 /** Signal 0 only: false means the pid is certainly gone, true means "cannot prove dead" (alive, or not ours to signal). */
 export function processMayBeAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH' }

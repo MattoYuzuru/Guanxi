@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
-import { uptime } from 'node:os'
 import { z } from 'zod'
 import type { Connection, ConnectionFact } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
@@ -8,7 +7,7 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
 import { CodexClient } from './codex.ts'
-import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive,
+import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
   type ClaudeAuthProbe, type ProcessCleanup } from './process.ts'
 import { ExternalStore } from './store.ts'
 import { ADAPTERS, API_ENV } from './profiles.ts'
@@ -61,6 +60,8 @@ export class ExternalAgents {
   /** One-time boot reconciliation of holders left by a previous process; every dispatch waits for it. */
   private reconciled: Promise<void> = Promise.resolve()
   private reconcileDone = false
+  /** This machine boot's identifier once read (null: unreadable, so no reboot can be proven). */
+  private bootId: string | null = null
   private readonly configuredAt = new Date().toISOString()
   constructor(connections: Connections, log: SessionLog, scrubber: EgressScrubber, root: string, store: ExternalStore, policy: ExternalPolicy) {
     this.connections = connections; this.log = log; this.scrubber = scrubber; this.root = root; this.store = store
@@ -88,8 +89,6 @@ export class ExternalAgents {
   }
   /** Resolves when boot reconciliation of holders left by a previous process has finished (never rejects). */
   admissionReady(): Promise<void> { return this.reconciled }
-  /** Machine boot time at one-second granularity; a different value (beyond clock noise) means every old process is gone. */
-  private static bootMs() { return Math.round((Date.now() - uptime() * 1000) / 1000) * 1000 }
   /** Same-node boot reconciliation (LW cross-check P2-1). A holder left by a process that is now PROVEN dead must not
    * block the account forever, but the K5 rule stands: occupancy is released only once the old agent group is
    * confirmed gone. Owner alive (this process's other instance, or any process we cannot signal) keeps the holder;
@@ -100,12 +99,15 @@ export class ExternalAgents {
   }
   private async reconcileHolders(): Promise<void> {
     if (process.platform === 'win32') return
-    const bootNow = ExternalAgents.bootMs()
+    this.bootId = await readBootId()
     for (const { holder, process: facts } of this.store.foreignHolders(this.instanceId)) {
       if (!facts) continue
+      // A different boot identifier is the only reboot proof (never a wall-clock difference), and it comes first: after a
+      // reboot a reused owner pid belongs to an unrelated process and every old child is gone.
+      if (this.bootId !== null && facts.bootId !== null && this.bootId !== facts.bootId) { this.store.releaseProven(holder.holderId); continue }
       if (facts.ownerPid === process.pid) continue
       if (processMayBeAlive(facts.ownerPid)) continue
-      if (Math.abs(bootNow - facts.bootMs) > 120_000 || facts.phase === 'prepared') { this.store.releaseProven(holder.holderId); continue }
+      if (facts.phase === 'prepared') { this.store.releaseProven(holder.holderId); continue }
       if (facts.phase === 'spawning' || facts.groupId === null || facts.groupStartedAt === null) { this.store.markUnconfirmed(holder.holderId, 'group_timeout'); continue }
       const state = await probeOrphanGroup(facts.groupId, facts.groupStartedAt)
       if (state === 'gone' || (state === 'ours' && await killOrphanGroup(facts.groupId))) this.store.releaseProven(holder.holderId)
@@ -133,7 +135,7 @@ export class ExternalAgents {
     return this.store.acquire({
       instanceId: this.instanceId, owner: install.ownerAccountId, adapter: install.adapter,
       billingAccount: install.billingAccount, kind, policyDigest: admissionPolicyDigest(install),
-      ceiling: install.concurrency ?? 1, process: { pid: process.pid, bootMs: ExternalAgents.bootMs() },
+      ceiling: install.concurrency ?? 1, process: { pid: process.pid, bootId: this.bootId },
     })
   }
   private finishHolder(holder: AdmissionHolder, cleanup: ProcessCleanup) {

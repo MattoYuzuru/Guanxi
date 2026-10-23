@@ -789,5 +789,5 @@ test('registered canary is absent from the schema, all sidecar data, raw WAL, ev
   const withoutBootFacts = storeSource.replace(/const MIGRATION_V3[\s\S]*?VALUES \(3\);`/, '')
   for (const source of [withoutBootFacts, serviceSource]) assert.equal(/expires_at|pid\s+INTEGER|pgid\s+INTEGER/i.test(source), false)
   assert.deepEqual(sqlAt<{ name: string }>(path, 'PRAGMA table_info(k5_admission_process)').map(row => row.name),
-    ['holder_id', 'owner_pid', 'boot_ms', 'phase', 'group_id', 'group_started_at'])
+    ['holder_id', 'owner_pid', 'boot_id', 'phase', 'group_id', 'group_started_at'])
 })

@@ -144,14 +144,15 @@ export interface AdmissionHolder {
 /** Boot reconciliation facts (v3). They never authorize a signal on their own: see `reconcileAdmission`. */
 export interface AdmissionProcess {
   ownerPid: number
-  bootMs: number
+  /** Real boot identifier of the machine boot that wrote the holder; null when it could not be read (no reboot is then provable). */
+  bootId: string | null
   phase: 'prepared' | 'spawning' | 'running'
   groupId: number | null
   groupStartedAt: number | null
 }
 export interface AdmissionRequest {
   /** The node process that owns the holder; stored so a later boot can prove it dead. */
-  process?: { pid: number; bootMs: number }
+  process?: { pid: number; bootId: string | null }
   instanceId: string
   owner: string
   adapter: AdapterId

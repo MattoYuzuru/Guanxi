@@ -42,7 +42,7 @@ const MIGRATION_V3 = `
           CREATE TABLE k5_admission_process (
             holder_id TEXT PRIMARY KEY,
             owner_pid INTEGER NOT NULL,
-            boot_ms INTEGER NOT NULL,
+            boot_id TEXT,
             phase TEXT NOT NULL CHECK (phase IN ('prepared', 'spawning', 'running')),
             group_id INTEGER,
             group_started_at INTEGER
@@ -201,8 +201,8 @@ export class ExternalStore {
         VALUES(?,?,?,?,?,?,?,?,?,NULL)`)
         .run(holder.holderId, holder.instanceId, holder.owner, holder.adapter, holder.billingAccount, holder.kind,
           holder.policyDigest, holder.createdAt, holder.state)
-      if (request.process) this.db.prepare("INSERT INTO k5_admission_process (holder_id,owner_pid,boot_ms,phase) VALUES (?,?,?,'prepared')")
-        .run(holder.holderId, request.process.pid, request.process.bootMs)
+      if (request.process) this.db.prepare("INSERT INTO k5_admission_process (holder_id,owner_pid,boot_id,phase) VALUES (?,?,?,'prepared')")
+        .run(holder.holderId, request.process.pid, request.process.bootId)
       this.db.exec('COMMIT'); begun = false
       return { holder, admittedRuns: request.kind === 'run' ? runRows.length + 1 : 0 }
     } catch (error) {
@@ -239,13 +239,13 @@ export class ExternalStore {
   /** Holders created by another service instance, with their process facts (null for a pre-v3 holder). */
   foreignHolders(instanceId: string): { holder: AdmissionHolder; process: AdmissionProcess | null }[] {
     const rows = this.db.prepare(`SELECT a.holder_id,a.instance_id,a.owner,a.adapter,a.billing_account,a.kind,a.policy_digest,a.created_at,a.state,
-        p.owner_pid,p.boot_ms,p.phase,p.group_id,p.group_started_at
+        p.owner_pid,p.boot_id,p.phase,p.group_id,p.group_started_at
       FROM k5_admission a LEFT JOIN k5_admission_process p ON p.holder_id=a.holder_id WHERE a.instance_id<>? ORDER BY a.created_at`).all(instanceId) as unknown as
-      (AdmissionRow & { owner_pid: number | null; boot_ms: number | null; phase: AdmissionProcess['phase'] | null; group_id: number | null; group_started_at: number | null })[]
+      (AdmissionRow & { owner_pid: number | null; boot_id: string | null; phase: AdmissionProcess['phase'] | null; group_id: number | null; group_started_at: number | null })[]
     return rows.map(row => ({
       holder: { holderId: row.holder_id, instanceId: row.instance_id, owner: row.owner, adapter: row.adapter as AdapterId, billingAccount: row.billing_account,
         kind: row.kind, policyDigest: row.policy_digest, createdAt: row.created_at, state: row.state },
-      process: row.owner_pid == null ? null : { ownerPid: Number(row.owner_pid), bootMs: Number(row.boot_ms), phase: row.phase!,
+      process: row.owner_pid == null ? null : { ownerPid: Number(row.owner_pid), bootId: row.boot_id == null ? null : String(row.boot_id), phase: row.phase!,
         groupId: row.group_id == null ? null : Number(row.group_id), groupStartedAt: row.group_started_at == null ? null : Number(row.group_started_at) },
     }))
   }
