@@ -45,6 +45,8 @@ targeted suites at merge.
 | U1 session features: new session, finished-unseen, ephemeral side chat | Sonnet | incomplete zero-write proof, side-chat spend outside session budgets, long-send idempotency | web 475, browser 194 |
 | NC1 notification center UI (status-strip entry, provenance on every row, idempotent actions) | Sonnet | polling without backoff, dead node behind the dev proxy not shown offline, joined strings | web 568, browser 215 |
 | Shared `trimZeros` bug (10% shown as "1%") found by the NC1 UI author | integrator | red-then-green unit test | web 477 |
+| MS1 local rehearsal (fixture lead → delegate → remote relay inference → one wake) | Sonnet | wake packet duplicated gate rows (fixed); overclaimed "every boundary" wording; blockers recorded: no remote-relay judge, stale pins | 20 + 1 |
+| V1 glossary editor UI (`/settings/voice/glossary`) | Sonnet | accessibility review: stale preview across scopes, late mutation answers, live-region claim | web 649, browser 224 |
 
 ## Root-caused gate failure
 
@@ -60,14 +62,16 @@ Later checkpoints: two more load-sensitive test races were root-caused and fixed
 (`recipes.test.tsx` focus asserted before the post-commit effect; a bench holder file read before
 its non-atomic write finished). The full sequence then passed at `5570b9e5` with LW, F2-d and the
 U1 session features (receipts `check-g5my6or6`, `check-64lwpi5t`, `check-ledmbynl`,
-`check-kgtvxcmj`), and again at `e2b3a50c` with the notification center UI (`check-_ycff5z_`,
-`check-u_1t9nin`, `check-qlf_v93l` for build; ui:check:browser also passed).
+`check-kgtvxcmj`), again at `e2b3a50c` with the notification center UI (`check-_ycff5z_`, `check-u_1t9nin`,
+`check-qlf_v93l` for build), and at `ffd38274` with the MS1 rehearsal (`check-00bqpo2f`,
+`check-fbqprcv1`, `check-0w5bwl6x`, `check-lm77j9uw`). The glossary editor merged last (`b973b38e`)
+after its own lane gates (browser 224/224) and web 649/649 on main.
 
 ## What this does and does not close
 
 No stage exit or milestone is claimed. The MS1 code path (LW, F2-d, R2-op, F2-c) is now
-fixture-validated; MS1 still needs a local composition rehearsal (in progress), a judge for a
-remote relay, a first real llama-server and real Claude Code run under an owner-approved envelope,
+fixture-validated and composed end to end by the MS1 local rehearsal; MS1 still needs a judge for
+a remote relay, stale executor pin reaping, a first real llama-server and real Claude Code run under an owner-approved envelope,
 the ≥ 6-hour two-host run with a 30B-class model on the Fedora node, and recorded R3/B3 evidence. MS2 still needs UI for the new backends, real
 action ports, U2 desktop, C1 browser host, C4 Bridge, U3 authentication, DS2 owner signing and the
 owner's two-week daily-use gate. Residuals per slice are in each `docs/plans/lanes/*.handoff.md`.

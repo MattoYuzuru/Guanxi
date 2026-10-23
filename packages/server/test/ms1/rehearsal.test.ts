@@ -302,7 +302,7 @@ test('recorded MS1 blocker: the R3 judge model refuses the meter of a remote or 
   assert.doesNotThrow(() => new ConnectionJudgeModel({} as never, 'local', local as never, {} as never, async () => null, 1000), 'a local Ollama meter is accepted, so the refusal above is about the remote seam')
 })
 
-// ---- 7. A kill at every composition boundary, then recovery from disk ----------------------------------------------------
+// ---- 7. A SIGKILL at 15 named home-side boundaries, then recovery from disk ------------------------------------------------
 
 interface Crash {
   name: string

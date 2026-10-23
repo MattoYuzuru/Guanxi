@@ -10,7 +10,8 @@
 One suite, `packages/server/test/ms1/rehearsal.test.ts`, with helpers beside it. It composes the pieces that MS1 needs and
 that were each validated alone (LW, K5, R1, R2/R2-op, F2-b/c/d), and proves that the composition holds the *shape* of the MS1
 gate: lead token totals unchanged between delegate and wake, exactly one wake, all items green in a clean checkout, at least
-six simulated hours with an injected clock, and a kill at every composition boundary.
+six simulated hours with an injected clock, and a SIGKILL at 15 named home-side boundaries
+(no kill during a gate, tool or model call; the executor is never killed).
 
 | File | Role |
 | --- | --- |
@@ -211,3 +212,12 @@ Tests: `packages/server/test/leads/children.test.ts`. Everything else is new und
   lead; then the six-hour run on the Fedora node with R3/B3 evidence, as in `NEXT_AGENT_PROMPT`.
 - The suite takes about three minutes on the Mac (about 30 s for the six-hour case, 3 to 14 s per kill) and needs the container
   runtime; it fails at once with a clear message when that is missing.
+
+## Independent cross-check (Opus, 2026-10-23)
+
+Accepted, no P1. P2 fixed by the integrator: wording now says "a SIGKILL at 15 named home-side
+boundaries" instead of "every boundary" (here, in the leads README and in the test header). P3s
+recorded, not changed: counting-before-dispatch is asserted in total, not per request; "completes
+once" is asserted as at most once in one case; the lead-billing prefix check is trivial in the
+`hibernate:before_commit` case; K5 orphan release is asserted by end state only; the no-call
+windows after stop/cancel are 800 ms.

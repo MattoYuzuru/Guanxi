@@ -20,7 +20,7 @@ commits, then integration with the full gate sequence through the shared heavy l
 
 ## Where things stand
 
-Overnight (2026-10-22/23) 26 reviewed lanes were integrated; see the record for the list and the
+Overnight (2026-10-22/23) 29 reviewed lanes were integrated, including the MS1 local rehearsal; see the record for the list and the
 per-lane hand-offs. For MS1 the code path now has: K4 queue Q0; R2-op (opt-in llama-server runtime
 with exact counting and owned checkouts); F2-c (remote token costs in the R1 ledger); F2-d (relay
 inference on another node over signed, fenced F2 messages with an executor-side exact counter and a
@@ -30,16 +30,21 @@ holders); R3-b/R3-c replay and ETA scorers; B3-a evidence validator. MS2 has bac
 for notifications, voice and work, authorization, plugin manager, MCP client, browser policy, and
 the U1 session features (new session, finished-unseen, ephemeral side chat).
 
-## First unfinished slice: MS1 local rehearsal
+## First unfinished slice: a judge for a remote relay (MS1 blocker)
 
-Compose the MS1 path end to end on loopback fixtures in one test suite: a fixture external lead
-(K5 ACP fixture) calls `guanxi_delegate`; the plan runs through `RelayStarts` on the home node with
-inference on a second local node via F2-d and a fake llama-server; costs land per F2-c; the lead
-wakes exactly once; acceptance gates run in the owned checkout. Assert the MS1 gate *shape*: lead
-token totals unchanged between delegate and wake, exactly one wake, all items green in a clean
-checkout, simulated ≥ 6 h with an injected clock, and a crash at each composition boundary.
-Known gap to close first or record: the R3 judge cascade refuses a remote meter, so a remote relay
-has no judge yet (`docs/plans/lanes/F2-d.handoff.md`).
+The [MS1 local rehearsal](lanes/MS1-rehearsal.handoff.md) now composes the whole MS1 path on
+loopback fixtures (fixture external lead → `guanxi_delegate` → hibernation → relay on the home node
+with inference on a second node via F2-d → exactly one wake, lead ledger unchanged, 6.25 simulated
+hours, 15 real SIGKILL boundaries). It records two blockers, both asserted so they cannot close
+silently:
+
+1. **No judge on a remote relay.** `RelayStarts` builds its executor without a judge, and the judge
+   model refuses a remote meter (`judge_config_invalid`). Design and implement the seam so the R3
+   cascade (signals at least; model layers if feasible) observes a relay whose inference runs on
+   another node, without weakening the fail-closed meter rules. Plan first; independent review.
+2. **Stale executor pins after a home crash.** 8 of 15 kill points leave one pin on the executor
+   for a run that died with the home (bounded by the per-peer cap of 16). Reap pins whose relay run
+   is terminal or unknown to the home, through a signed, fenced message.
 
 ## Then
 
@@ -50,8 +55,8 @@ has no judge yet (`docs/plans/lanes/F2-d.handoff.md`).
 2. **R3 recording:** a privacy-reviewed observation journal is needed before real runs can become
    `recorded` replay corpora (the relay persists only judge signals, not observations). Design
    decision for the owner.
-3. **MS2 UI lanes** on the U1 shell (guanxi-ui skill): notification center, glossary editor, work
-   board; real action ports (`wake_leads` needs a run-to-connection index — check whether LW's
+3. **MS2 UI lanes** on the U1 shell (guanxi-ui skill): the notification center and glossary editor
+   are integrated; the work board remains; real action ports (`wake_leads` needs a run-to-connection index — check whether LW's
    lead bindings provide it), `switch_connection`, `pause_runs`.
 4. **MS2 platform:** U2 Electron shell, C1 playwright-core browser host, C4 Bridge extension, U3
    Better Auth and `can()` on routes, MCP servers under the K4 sandbox, kernel wiring for the

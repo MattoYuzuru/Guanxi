@@ -14,11 +14,15 @@ eval metrics, STT adapter), WG1/WG2 (work ledger, tracker sync), U3 (authorizati
 (skills/AGENTS.md, plugin manager, MCP client) and C1 (browser origin policy, site grants); and
 the MS2 wiring (plugins, REST, contract, web client for notifications, voice and work); F2-d
 (relay inference on another node over signed F2 messages); LW (external lead delegate,
-zero-token hibernation, exactly-once wake, K5 boot reconciliation); and the U1 session features.
+zero-token hibernation, exactly-once wake, K5 boot reconciliation); the U1 session features;
+the notification center and glossary editor UIs; and the MS1 local rehearsal, which composes the
+whole MS1 path on loopback fixtures (one wake, unchanged lead ledger, 6.25 simulated hours, 15
+SIGKILL boundaries) and records the remaining blockers (no judge on a remote relay; stale executor
+pins after a home crash).
 The full gate sequence passed at `5570b9e5` after the X1 indexing timeout was root-caused (macOS
 background QoS starving the worker under the parallel suite) and two test races were fixed. See the
 [2026-10-23 record](evidence/coordination-2026-10-23.md). No stage exit or milestone is
-claimed: MS1 still needs a local composition rehearsal, a judge for a remote relay, a ≥ 6-hour
+claimed: MS1 still needs a judge for a remote relay, stale-pin reaping, a ≥ 6-hour
 30B run on the Fedora node and recorded R3/B3 evidence; MS2 needs UI for the new backends, real action
 ports, U2, C1 host, C4, U3 authentication, DS2 owner signing and two weeks of daily use.
 The [2026-10-22 record](evidence/coordination-2026-10-22.md) keeps the earlier Fedora evidence.
@@ -261,7 +265,7 @@ decision was made.
 | R3 Judge + ETA | ETA/signals and opt-in cascade integrated; replay (R3-b) and ETA calibration (R3-c) scorers integrated 2026-10-23 | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md); gates evaluate only on recorded corpora; a privacy-reviewed observation journal is needed to record real runs; night J3 wake rate remains |
 | F2 Remote attempts | offers, renewable dispatch, remote cost ledger (F2-c) and relay inference on another node (F2-d) integrated 2026-10-23 | [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md); fixture-validated only; real two-host run, TLS between hosts, residency lease, toolful remote steps and a remote-relay judge remain |
 | B3 Relay benchmark | offline evidence validator integrated (B3-a); no measurement | [B3-a hand-off](lanes/B3-a.handoff.md); every gate stays `unevaluated` until a real cohort runs on a non-Mac node (D-194) |
-| V1 Dictation | backend core integrated (V1-a matcher, V1-b store, V1-c eval metrics, V1-d whisper.cpp adapter with D-157 consent); REST via MS2 | owner eval recordings, more STT adapters, `voice.flag_term`, UI remain; exit gate needs owner recordings |
+| V1 Dictation | backend core and glossary editor UI integrated (matcher, store, eval metrics, whisper.cpp adapter with D-157 consent, REST, `/settings/voice/glossary`) | owner eval recordings, more STT adapters, `voice.flag_term` remain; exit gate needs owner recordings |
 | WG1 Work ledger | core integrated (evidence-derived status, strip, query, export); REST via MS2 | `project` mode stays off until the WL A/B; board UI, `work.query` agent tool remain |
 | WG2 Tracker sync | core integrated (GitHub/Jira adapters on fixtures, business-field protection, rate limits) | plugin packaging per P1, credentials UI, polling scheduler, live fixtures remain |
 | U3 Accounts | authorization core integrated (`can()`, grants, remote-bind guard; D-155, D-190) | Better Auth, wiring `can()` into routes, remote bind at boot remain |

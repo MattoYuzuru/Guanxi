@@ -165,7 +165,7 @@ Removing the plugin keeps the tables. Rollback: stop the node, unload the plugin
 injected clocks (up to 24 h of simulated time), plus a `SIGKILL` worker that kills the process at every
 transaction boundary of delegation, resolution/wake/acknowledgement and cancel with a scripted agent.
 The MS1 local rehearsal (`test/ms1/`) composes this service with the public relay start, R1, F2-d and F2-c across two
-loopback nodes and a real SIGKILL at each boundary; see its [hand-off](../../../../docs/plans/lanes/MS1-rehearsal.handoff.md).
+loopback nodes and a real SIGKILL at 15 named home-side boundaries; see its [hand-off](../../../../docs/plans/lanes/MS1-rehearsal.handoff.md).
 Fixture replay is local client validation; real Claude Code behaviour on `session/cancel`, `session/load`,
 usage reporting and billing is unverified. The relay adapter is covered with a fake public relay start; a real
 child additionally needs the operational relay (`operationalRelay`) to admit the start.
