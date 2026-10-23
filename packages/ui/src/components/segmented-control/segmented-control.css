@@ -72,3 +72,9 @@
     color: HighlightText;
   }
 }
+
+/* High contrast: the track takes the pane fill and a control border, so secondary labels keep 7:1. */
+[data-theme$='-hc'] .gx-segmented {
+  border: var(--border-width-regular) solid var(--color-border-control);
+  background-color: var(--color-background-secondary);
+}

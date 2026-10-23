@@ -160,6 +160,37 @@ describe('new-session screen states', () => {
     } finally { vi.useRealTimers() }
   })
 
+  it('keeps a repeated failure quiet: no skeleton flash, the same alert record, and no focus jump', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      let attempts = 0
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const path = String(url)
+        if (path === '/api/agent/projects') { attempts++; return attempts < 3 ? Response.json({ code: 'internal_error' }, { status: 500 }) : Response.json({ projects: [project('p', 'Alpha')] }) }
+        if (path === '/api/connections') return Response.json({ connections: [connection(CONNECTION, 'Fixture model', 'model_api')], costs: [], vault: { unlocked: false, unattendedAvailable: false } })
+        return Response.json({ workspaces: [] })
+      }))
+      render(<NewSessionScreen />)
+      const alert = await screen.findByRole('alert')
+      const recorded = alert.querySelector('time')?.getAttribute('datetime')
+      const outside = document.createElement('button'); document.body.append(outside); outside.focus()
+      let skeletonSeen = false
+      const observer = new MutationObserver(() => { if (screen.queryByTestId('new-session-skeleton')) skeletonSeen = true })
+      observer.observe(document.body, { childList: true, subtree: true })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_100) })
+      await waitFor(() => expect(attempts).toBe(2))
+      // The second, identical failure changes nothing on screen.
+      expect(screen.getByRole('alert')).toBe(alert)
+      expect(alert.querySelector('time')?.getAttribute('datetime')).toBe(recorded)
+      expect(document.activeElement).toBe(outside)
+      await act(async () => { await vi.advanceTimersByTimeAsync(4_100) })
+      await waitFor(() => expect(screen.queryAllByRole('alert')).toHaveLength(0))
+      expect(attempts).toBe(3)
+      observer.disconnect(); outside.remove()
+      expect(skeletonSeen).toBe(false)
+    } finally { vi.useRealTimers() }
+  })
+
   it('names the unreachable node when no answer arrives and never starts a session', async () => {
     const { calls } = install({ network: 'down' })
     render(<NewSessionScreen />)
@@ -186,7 +217,8 @@ describe('new-session screen states', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Repo' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save folders' }))
     const status = await waitFor(() => { const node = document.querySelector('[data-state="node_unreachable"]'); if (!node) throw new Error('not yet'); return node })
-    expect(status.textContent).toMatch(/As of .+, /)
+    expect(status.textContent).toMatch(/Last loaded at .+\./)
+    expect(status.textContent).not.toMatch(/ago|just now/u)
     expect(document.querySelectorAll('[data-state="node_unreachable"]')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Project: Alpha' })).toBeTruthy()
     expect(blocked()).toBe(true)

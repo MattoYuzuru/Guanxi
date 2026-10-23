@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { nativeAgentInputSchema, type AccessMode, type Project } from '@guanxi/contract'
 import { Badge, Composer, EmptyState, ErrorState, Icon } from '@guanxi/ui'
 import { api } from '../../lib/api.ts'
-import { formatRelativeTime, formatTime } from '../../lib/format.ts'
+import { formatTime } from '../../lib/format.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
@@ -129,7 +129,8 @@ export function NewSessionScreen() {
 
   const noProjects = data !== null && data.projects.length === 0
   const noConnections = data !== null && data.connections.length === 0
-  const age = choices.observedAt ? t('newSession.asOf', { time: formatTime(choices.observedAt), age: formatRelativeTime(choices.observedAt) }) : null
+  // An absolute time only: a relative age would go stale on screen (D-203).
+  const age = choices.observedAt ? t('newSession.asOf', { time: formatTime(choices.observedAt) }) : null
   const hint = phase === 'starting' ? t('newSession.starting') : needs.length > 0 ? t(needs[0]!) : t('newSession.ready')
 
   return <div className="new-session" data-layout="centered">

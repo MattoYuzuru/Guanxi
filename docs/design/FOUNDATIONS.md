@@ -280,7 +280,7 @@ targets stay at least 24 px in both.
 | Tier | Root attribute | What it adds |
 | --- | --- | --- |
 | Static (default) | `data-graphics="static"` | The full design: panes, hairlines, shadow stacks, glass on floating layers, the grain tile. No animation beyond the motion tokens. |
-| Max graphics | `data-graphics="max"` | One WebGL canvas behind the chrome with a slow gradient field in the accent and chrome hues (never blue-violet), and glass on the sidebar so text over it keeps contrast. Half-resolution rendering, about 30 fps, paused while the page is hidden. |
+| Max graphics | `data-graphics="max"` | One WebGL canvas behind the chrome with a slow gradient field in the accent and chrome hues (never blue-violet). Muted chrome text takes the secondary tone while it runs, and the field strength (0.26 light, 0.30 dark) is capped so secondary text keeps 4.5:1 over its brightest colour (tested). Half-resolution rendering, about 30 fps, held still for 600 ms after input, paused while the page is hidden. |
 
 Max graphics is opt-in from the customisation popover. It never sits behind reading text (panes
 stay opaque), never blocks input, and falls back to Static under reduced motion, reduced

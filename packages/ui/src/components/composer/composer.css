@@ -124,3 +124,10 @@
   width: var(--layout-container-2xl);
   @apply max-w-full;
 }
+
+@media (forced-colors: active) {
+  .gx-composer:focus-within {
+    outline: var(--focus-ring-width) solid Highlight;
+    outline-offset: var(--focus-ring-offset);
+  }
+}

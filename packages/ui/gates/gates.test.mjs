@@ -131,10 +131,10 @@ test('generator refuses an explicit null iteration override but keeps an omitted
   fadeUp(explicitNull).iterations = null
   await assert.rejects(generate((await ctx.withFiles({ [path]: JSON.stringify(explicitNull) })).tokenOptions), /iterations.*null/)
 })
-test('G3 checks all 30 declared pairs in all themes and every glass backdrop', async () => {
+test('G3 checks all 32 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
   assert.equal(report.ok, true, JSON.stringify(report.errors))
-  assert.equal(report.measurements.length, 4 * (30 + 3 * 2 * 8 * 2))
+  assert.equal(report.measurements.length, 4 * (32 + 3 * 2 * 8 * 2))
   // FOUNDATIONS §1.1–1.3, including text on the accent hover and pressed fills (D-201 working
   // palette, 2026-10-23; the five pane-* pairs measure the same floors on the session pane and
   // the five *-on-subtle pairs check status text on its tinted fill).

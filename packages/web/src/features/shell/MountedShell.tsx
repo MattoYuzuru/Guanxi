@@ -27,7 +27,7 @@ function paletteKeys(): string[] {
  * their lazy boundaries stay intact. There is no Retry anywhere in the chrome: health, runtime,
  * sessions and the inbox refresh quietly and recover by themselves (D-203).
  */
-export function MountedShell(props: { health: Health; children: ReactNode }) {
+export function MountedShell(props: { health: Health; healthStale?: boolean; children: ReactNode }) {
   // The appearance store normally comes from main.tsx; hosts that render App alone (tests,
   // fixtures) still get one, so the customisation popover always has a store.
   return useOptionalAppearance() ? <Shell {...props} /> : <AppearanceProvider><Shell {...props} /></AppearanceProvider>
@@ -35,9 +35,11 @@ export function MountedShell(props: { health: Health; children: ReactNode }) {
 
 function Shell({
   health,
+  healthStale = false,
   children,
 }: {
   health: Health
+  healthStale?: boolean
   children: ReactNode
 }) {
   const shell = useShellController()
@@ -86,6 +88,7 @@ function Shell({
               runtime={runtime.data}
               stale={runtime.error !== null && runtime.data !== null}
               health={health}
+              healthStale={healthStale}
               inbox={<NotificationBell />}
             />
             <span aria-hidden="true" className="mx-1 h-4 w-px bg-hairline" />

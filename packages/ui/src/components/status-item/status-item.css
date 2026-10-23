@@ -28,7 +28,12 @@
   height: var(--icon-size-16);
 }
 
-/* Unknown: the glyph dims and a small dashed ring marks it; the popover says "Unknown". */
+/* Unknown: the glyph dims and a small dashed ring marks it; the popover says "Unknown". A stale
+   value (the latest read failed) keeps its value and gets the same dashed mark. */
+.gx-status-item[data-stale] .gx-status-item-value {
+  color: var(--color-text-secondary);
+}
+
 .gx-status-item[data-tone='unknown'] .gx-status-item-glyph {
   color: var(--color-text-tertiary);
 }

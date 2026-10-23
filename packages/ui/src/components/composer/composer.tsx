@@ -6,7 +6,7 @@
  * Enter sends, Shift+Enter adds a line, and IME composition never sends.
  */
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
-import { useImperativeHandle, useLayoutEffect, useRef, type ComponentProps, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from 'react'
+import { useId, useImperativeHandle, useLayoutEffect, useRef, type ComponentProps, type FormEvent, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { useUiText } from '../../i18n/context.tsx'
 import { cx } from '../../lib/cx.ts'
 import { Icon } from '../icon/icon.tsx'
@@ -73,6 +73,7 @@ export function Composer({
 }: ComposerProps) {
   const t = useUiText()
   const area = useRef<HTMLTextAreaElement>(null)
+  const hintId = useId()
   useImperativeHandle(textareaRef, () => area.current as HTMLTextAreaElement, [])
   const canSend = !disabled && !sendDisabled && !running && value.trim().length > 0
 
@@ -112,7 +113,7 @@ export function Composer({
         id={textareaId}
         className="gx-composer-input"
         aria-label={label}
-        aria-describedby={describedBy}
+        aria-describedby={[describedBy, hintId].filter(Boolean).join(' ')}
         placeholder={placeholder}
         value={value}
         rows={1}
@@ -121,6 +122,7 @@ export function Composer({
         onChange={(event) => onValueChange(event.target.value)}
         onKeyDown={keyDown}
       />
+      <span id={hintId} className="gx-sr-only">{t('ui.composer.newline')}</span>
       <div className="gx-composer-footer">
         <div className="gx-composer-leading">{leading}</div>
         <div className="gx-composer-trailing">

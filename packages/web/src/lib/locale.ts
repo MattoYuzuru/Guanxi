@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@guanxi/contract'
 import { workspaceEnglish, workspaceRussian } from '../features/workspace/messages.ts'
 import { shellEnglish, shellRussian } from '../features/shell/messages.ts'
 import { connectionEnglish, connectionRussian } from '../features/connections/messages.ts'
@@ -276,7 +277,7 @@ const english = {
   'recipes.revise': 'Revise configuration',
   'recipes.revise.confirm': 'Create next revision',
   'recipes.conflict': 'This Recipe has a newer revision. No partial revision was saved.',
-  'recipes.conflict.reloaded': 'Guanxi loaded the current revision. Review it, then save your change again.',
+  'recipes.conflict.reloaded': '{product} loaded the current revision. Review it, then save your change again.',
   'recipes.noExecution': 'Advanced routing and adapter execution are not implemented. A created Job remains queued.',
   'recipes.snapshot.open': 'Prepare queued Job snapshot',
   'recipes.snapshot.confirmation':
@@ -703,7 +704,7 @@ const english = {
   'settings.title': 'Settings',
   'settings.description': 'Saved locally in SQLite. API keys are never returned to the browser.',
   'settings.load.error': 'Settings could not be loaded',
-  'settings.recovering': 'Guanxi tries again by itself; the page appears as soon as the node answers.',
+  'settings.recovering': '{product} tries again by itself; the page appears as soon as the node answers.',
   'settings.save.error': 'Settings could not be saved',
   'settings.save.success': 'Settings saved',
   'settings.save.successHint': 'The new Ollama address applies to the next request.',
@@ -817,7 +818,7 @@ const english = {
   'markdown.copy': 'Copy',
   'markdown.copyFailed': 'Could not copy',
   'common.copy': 'Copy',
-  'common.recovering': 'Guanxi tries again by itself as soon as the node answers.',
+  'common.recovering': '{product} tries again by itself as soon as the node answers.',
   'common.copied': 'Copied',
   'common.close': 'Close',
   'error.contractShape': 'The response from {path} does not match the application contract',
@@ -826,7 +827,7 @@ const english = {
   'error.api.unavailable': 'The requested local service is unavailable.',
   'error.api.notFound': 'The requested item no longer exists.',
   'error.api.loopbackOnly':
-    'The session inspector answers this machine only. Open Guanxi on the computer that runs it.',
+    'The session inspector answers this machine only. Open {product} on the computer that runs it.',
   'error.api.egressNotReady':
     'Secret redaction is not ready: a secret source has not registered its values yet. The trace opens once it has.',
   'error.api.sessionWithheld':
@@ -836,7 +837,7 @@ const english = {
   'error.api.sessionCatchUpFailed':
     'Restoring this trace from the saved chat history failed ({code}). It is retried automatically; the trace opens once it succeeds.',
   'error.api.sessionEventVersionUnsupported':
-    'This trace needs a newer Guanxi client; the saved events are unchanged.',
+    'This trace needs a newer {product} client; the saved events are unchanged.',
   'error.api.conflict': 'The request conflicts with the current saved state. Refresh and try again.',
   'error.api.storage': 'The request could not be saved to local storage.',
   'error.api.validation': 'The request contains an invalid or unsupported value.',
@@ -852,7 +853,7 @@ const english = {
   'health.server.description': 'The interface is running, but the local application server is unavailable.',
   'health.server.whatHappened': 'What happened',
   'health.server.startHint': 'Start the server:',
-  'health.server.reconnecting': 'Guanxi reconnects by itself as soon as the server answers.',
+  'health.server.reconnecting': '{product} reconnects by itself as soon as the server answers.',
   'health.loading': 'Checking Ollama…',
   'health.ollama.notInstalled': 'Ollama is not installed',
   'health.ollama.notRunning': 'Ollama is not running',
@@ -1245,7 +1246,7 @@ const english = {
   'models.override.success.cleared': 'Your assertion was removed.',
   'models.override.success.absent': 'There was no assertion to remove for this exact identity.',
   'models.override.error': 'The change could not be applied. Nothing was recorded.',
-  'models.override.reloaded': 'Guanxi reloaded this model. Check its current facts, then assert again.',
+  'models.override.reloaded': '{product} reloaded this model. Check its current facts, then assert again.',
   'models.override.conflict.title': 'Nothing was changed',
   'models.override.conflict.invalid_model_reference':
     'This model name is not a valid canonical Ollama reference.',
@@ -1761,7 +1762,7 @@ const english = {
   'inspector.queue.kind.inline': 'Inline',
   'inspector.queue.previewDetail': 'Preview: first {shown} of {total}. The rest of the inline text is not shown here.',
   'inspector.incompatible.title': 'This trace uses a newer event format',
-  'inspector.incompatible.description': 'Update Guanxi to continue. The saved trace is unchanged; this client does not advance past the unread event.',
+  'inspector.incompatible.description': 'Update {product} to continue. The saved trace is unchanged; this client does not advance past the unread event.',
   'inspector.incompatible.details': 'Typed error: {code}',
   'inspector.live.incompatible': 'Live updates stopped: the next event needs a newer trace format',
   'inspector.live.on': 'Live',
@@ -2113,7 +2114,7 @@ const russian: Messages = {
   'recipes.revise': 'Изменить конфигурацию',
   'recipes.revise.confirm': 'Создать следующую ревизию',
   'recipes.conflict': 'У сценария уже есть более новая ревизия. Частичная ревизия не сохранена.',
-  'recipes.conflict.reloaded': 'Guanxi загрузил текущую ревизию. Проверьте её и сохраните изменение снова.',
+  'recipes.conflict.reloaded': '{product} загрузил текущую ревизию. Проверьте её и сохраните изменение снова.',
   'recipes.noExecution': 'Расширенная маршрутизация и выполнение адаптера не реализованы. Созданная Job остаётся в очереди.',
   'recipes.snapshot.open': 'Подготовить снимок Job в очереди',
   'recipes.snapshot.confirmation':
@@ -2540,7 +2541,7 @@ const russian: Messages = {
   'settings.title': 'Настройки',
   'settings.description': 'Хранятся локально в SQLite. API-ключ наружу не возвращается.',
   'settings.load.error': 'Не удалось загрузить настройки',
-  'settings.recovering': 'Guanxi повторит попытку сам; страница появится, как только узел ответит.',
+  'settings.recovering': '{product} повторит попытку сам; страница появится, как только узел ответит.',
   'settings.save.error': 'Не удалось сохранить',
   'settings.save.success': 'Настройки сохранены',
   'settings.save.successHint': 'Новый адрес Ollama применяется к следующему запросу.',
@@ -2654,7 +2655,7 @@ const russian: Messages = {
   'markdown.copy': 'Копировать',
   'markdown.copyFailed': 'Не удалось',
   'common.copy': 'Копировать',
-  'common.recovering': 'Guanxi повторит попытку сам, как только узел ответит.',
+  'common.recovering': '{product} повторит попытку сам, как только узел ответит.',
   'common.copied': 'Скопировано',
   'common.close': 'Закрыть',
   'error.contractShape': 'Ответ {path} не соответствует контракту приложения',
@@ -2663,7 +2664,7 @@ const russian: Messages = {
   'error.api.unavailable': 'Запрошенный локальный сервис недоступен.',
   'error.api.notFound': 'Запрошенного объекта больше нет.',
   'error.api.loopbackOnly':
-    'Инспектор сессий отвечает только на этом компьютере. Откройте Guanxi на компьютере, где он запущен.',
+    'Инспектор сессий отвечает только на этом компьютере. Откройте {product} на компьютере, где он запущен.',
   'error.api.egressNotReady':
     'Скрытие секретов ещё не готово: один из источников секретов не передал свои значения. Трасса откроется, когда он это сделает.',
   'error.api.sessionWithheld':
@@ -2673,7 +2674,7 @@ const russian: Messages = {
   'error.api.sessionCatchUpFailed':
     'Не удалось восстановить трассу из сохранённой истории чата ({code}). Повтор выполняется автоматически; трасса откроется после успешного восстановления.',
   'error.api.sessionEventVersionUnsupported':
-    'Для этой трассировки нужен более новый клиент Guanxi; сохранённые события не изменены.',
+    'Для этой трассировки нужен более новый клиент {product}; сохранённые события не изменены.',
   'error.api.conflict': 'Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.',
   'error.api.storage': 'Не удалось сохранить запрос в локальное хранилище.',
   'error.api.validation': 'Запрос содержит недопустимое или неподдерживаемое значение.',
@@ -2689,7 +2690,7 @@ const russian: Messages = {
   'health.server.description': 'Интерфейс запущен, но локальный сервер приложения недоступен.',
   'health.server.whatHappened': 'Что произошло',
   'health.server.startHint': 'Запустите сервер:',
-  'health.server.reconnecting': 'Guanxi переподключится сам, как только сервер ответит.',
+  'health.server.reconnecting': '{product} переподключится сам, как только сервер ответит.',
   'health.loading': 'Проверяем Ollama…',
   'health.ollama.notInstalled': 'Ollama не установлена',
   'health.ollama.notRunning': 'Ollama не запущена',
@@ -3082,7 +3083,7 @@ const russian: Messages = {
   'models.override.success.cleared': 'Ваше утверждение удалено.',
   'models.override.success.absent': 'Для этой exact identity удалять было нечего.',
   'models.override.error': 'Изменение не применилось. Ничего не записано.',
-  'models.override.reloaded': 'Guanxi перечитал эту модель. Проверьте её текущие факты и утвердите снова.',
+  'models.override.reloaded': '{product} перечитал эту модель. Проверьте её текущие факты и утвердите снова.',
   'models.override.conflict.title': 'Ничего не изменено',
   'models.override.conflict.invalid_model_reference':
     'Это имя модели не является корректной канонической ссылкой Ollama.',
@@ -3666,7 +3667,7 @@ const russian: Messages = {
   'inspector.queue.kind.inline': 'Встроено',
   'inspector.queue.previewDetail': 'Предпросмотр: первые {shown} из {total}. Остальная часть встроенного текста здесь не показана.',
   'inspector.incompatible.title': 'Эта трассировка использует более новый формат событий',
-  'inspector.incompatible.description': 'Обновите Guanxi, чтобы продолжить. Сохранённая трассировка не изменена; этот клиент не переходит через непрочитанное событие.',
+  'inspector.incompatible.description': 'Обновите {product}, чтобы продолжить. Сохранённая трассировка не изменена; этот клиент не переходит через непрочитанное событие.',
   'inspector.incompatible.details': 'Типизированная ошибка: {code}',
   'inspector.live.incompatible': 'Обновление в реальном времени остановлено: следующему событию нужен более новый формат трассировки',
   'inspector.live.failed': 'Обновления не запустились; показаны события, загруженные в {time}',
@@ -3710,7 +3711,10 @@ export function translate(
   const source = english[key]
   if (typeof source !== 'string' || source.length === 0) return `[missing translation: ${key}]`
   const localized = activeLocale === 'ru' ? russian[key] : source
-  const value = typeof localized === 'string' && localized.length > 0 ? localized : source
+  const template = typeof localized === 'string' && localized.length > 0 ? localized : source
+  // The product name comes from the brand module (AGENTS.md): `{product}` is filled in here
+  // unless the caller supplies it explicitly.
+  const value = variables && Object.hasOwn(variables, 'product') ? template : template.replaceAll('{product}', PRODUCT_NAME)
   // Existing callers intentionally post-process several templates with String#replace.
   // Keep an omitted variables object as a request for the untranslated template while
   // still validating the safer interpolation path when variables are supplied.

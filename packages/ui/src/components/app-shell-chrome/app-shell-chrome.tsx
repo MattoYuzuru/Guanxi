@@ -189,6 +189,7 @@ export function AppShellChrome({
               className="gx-app-shell-palette gx-focusable"
               data-slot="app-shell-palette"
               aria-label={labels.palette}
+              aria-keyshortcuts={paletteShortcut ? 'Meta+K Control+K' : undefined}
               title={labels.palette}
               onClick={onOpenPalette}
             >

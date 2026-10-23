@@ -112,7 +112,11 @@ describe('Composer', () => {
     const { rerender } = render(<Harness onSend={onSend} sendDisabled />)
     fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'go' } })
     const send = screen.getByRole('button', { name: 'Send' })
-    expect(send.getAttribute('tabindex')).not.toBe('-1')
+    // Blocked, not disabled: it stays focusable so its description can be read.
+    expect(send.hasAttribute('disabled')).toBe(false)
+    expect(send.getAttribute('aria-disabled')).toBe('true')
+    send.focus()
+    expect(document.activeElement).toBe(send)
     fireEvent.click(send)
     expect(onSend).not.toHaveBeenCalled()
     rerender(<Harness onSend={onSend} onStop={onStop} running />)

@@ -32,3 +32,13 @@ describe('displayModelSelection', () => {
     expect(displayModelSelection('k3:not-a-uuid:x')).toBe('k3:not-a-uuid:x')
   })
 })
+
+describe('brand in messages', () => {
+  it('fills {product} from the brand module unless the caller supplies it', async () => {
+    const { translate, setActiveLocale: setLocale } = await import('../../src/lib/locale.ts')
+    const { PRODUCT_NAME } = await import('@guanxi/contract')
+    setLocale('en')
+    expect(translate('health.server.reconnecting')).toBe(`${PRODUCT_NAME} reconnects by itself as soon as the server answers.`)
+    expect(translate('health.server.title', { product: 'X' })).toContain('X')
+  })
+})

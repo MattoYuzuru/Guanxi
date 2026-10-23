@@ -56,7 +56,8 @@ function Bell({ store }: { store: InboxStore }) {
       badgeTone={summary.loaded && summary.failure !== null && summary.count === 0 ? 'warning' : 'accent'}
       aria-current={route.name === 'notifications' ? 'page' : undefined}
       nativeButton={false} render={<Link to={paths.notifications()} />} />
-    <span data-testid="notification-bell-count" className="sr-only">{shown}</span>
+    {/* Test hook only: the link's own name already says this, so it is hidden from assistive technology. */}
+    <span data-testid="notification-bell-count" className="sr-only" aria-hidden="true">{shown}</span>
     <span role="status" aria-live="polite" aria-atomic="true" data-testid="notification-live" className="sr-only">{announcement}</span>
   </>
 }

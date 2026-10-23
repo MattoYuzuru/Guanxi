@@ -54,7 +54,11 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
     // The composer shows focus on the whole card (accent border and halo), not on its text area.
     const target = element.tagName === 'TEXTAREA' ? element.closest('[data-slot="composer"]') as HTMLElement ?? element : element
     const style = getComputedStyle(target)
-    const ring = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0 || style.boxShadow !== 'none'
+    // A resting shadow is not focus: the card counts as focused only with the accent border.
+    const probe = document.createElement('span'); probe.style.color = 'var(--color-border-accent)'; document.body.append(probe)
+    const accent = getComputedStyle(probe).color; probe.remove()
+    const ring = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0
+      || (target !== element && style.borderTopColor === accent)
     return { label: (label ?? '').trim(), ring }
   })
   const tabTo = async (label: string, key = 'Tab') => {

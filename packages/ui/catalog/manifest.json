@@ -142,7 +142,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:39400043da564aa53f77f548921d07611e385374cd704f8e733764702681378e",
+      "sourceHash": "sha256:e7bb0d19197056e7a5228e2676253fbc81f4d34e92e5a40db300e2cc8ac612fa",
       "snapshotHashes": {
         "default-dark": "sha256:ec62c0cf85a5ec5f0cba22074b014ca9318dc6c8e1fa60b3c18e818ea98a9303",
         "default-light": "sha256:7f09f180a4b7b5159b9db12b97a1b570834699c96128cd2fd354184154197515",
@@ -225,9 +225,11 @@
         "--color-background-accent-subtle",
         "--color-background-danger-subtle",
         "--color-background-info-subtle",
+        "--color-background-secondary",
         "--color-background-success-subtle",
         "--color-background-tertiary",
         "--color-background-warning-subtle",
+        "--color-border-control",
         "--color-text-accent",
         "--color-text-danger",
         "--color-text-info",
@@ -242,7 +244,7 @@
         "--spacing-4",
         "--spacing-6"
       ],
-      "sourceHash": "sha256:c51333c5b3f77cd3c2dc09b711b0d9c06b8cc71214cf8390a25b8acfaf94038d",
+      "sourceHash": "sha256:1f6f5e860c107717085cdc2f76373533f4306ea328c65d7f788a38efd3e1dfa2",
       "snapshotHashes": {
         "accent-dark-hc": "sha256:975d12d86b34f4f4196418790aee6dd47bdba469d4b206602079f843176ec918",
         "accent-dark": "sha256:e9f1c13b64fba46735e1eba7d5d0e831de5178f9dd8d27696e510d8a5f35665b",
@@ -741,6 +743,8 @@
         "--elevation-inset-shadow",
         "--elevation-pane-shadow",
         "--focus-halo",
+        "--focus-ring-offset",
+        "--focus-ring-width",
         "--font-line-height-prose",
         "--font-line-height-ui",
         "--font-size-12",
@@ -764,7 +768,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:7e2caa88d313c81cdd12e2e8fedf36ff967a059013e8064aa27f1ee89a70142f",
+      "sourceHash": "sha256:836879a1de57afd846317de2da76d46bf459985268e186730134345b3ad2e3c5",
       "snapshotHashes": {},
       "storedStatus": "review",
       "signature": "absent",
@@ -919,7 +923,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:064e1cd6d6afd764632b95ae600ad638bb8f37909258fdd7ac014f08a5daa760",
+      "sourceHash": "sha256:4a23a436c3ed1a1b183641e5221607c1f7264fd7bd98c9f7ffae146c20d2d933",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:0335cf31f025ef71e959b3418e679b990896a03a3c8d6aae9abde7c15bb59e37",
         "closed-dark": "sha256:4dfd8a3db4648747f3922cb505571961ed34f8d598e79957f1dd3cdfe7f250cb",
@@ -1372,7 +1376,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:a554a4519a4b56682aa3b6a70328b139ee17e164973b697d26bffe66ecc4f212",
+      "sourceHash": "sha256:d54b2763c1c029330322ff17306ba9c3d71b30856516678bdd3f2fba45536dc8",
       "snapshotHashes": {
         "default-dark-hc": "sha256:7ea8c164c7f418a0950d1ec2abbd7843584c66193fe6dee12e96fe6234dcb61a",
         "default-dark": "sha256:7ea8c164c7f418a0950d1ec2abbd7843584c66193fe6dee12e96fe6234dcb61a",
@@ -1407,11 +1411,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 6,
+        "count": 7,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
+          "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationBell.tsx",
           "packages/web/src/features/shell/ShellCustomise.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx"
@@ -1807,7 +1812,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:64199bca51d72a425e05f4a22751945ead11cecbe10afe4652cd4f2b6393ee2e",
+      "sourceHash": "sha256:d735e7f131a0c90e381d8b6cedf12030993f978fd1d86cfd4bf251f61b2bc3cf",
       "snapshotHashes": {},
       "storedStatus": "draft",
       "signature": "absent",
@@ -2027,7 +2032,7 @@
         "--font-size-12",
         "--spacing-4"
       ],
-      "sourceHash": "sha256:dc1a98d09219c48d459691d9dcb85365b097a0d1ab03c61f5e5310e5a4ce7980",
+      "sourceHash": "sha256:6caf751c36e386cec19d91d8b9222e62a712c98480566bffac059379360db8eb",
       "snapshotHashes": {
         "aged-dark": "sha256:b12acb48b357523b03a1fc4480bb689437a9c157e53afd49fda6f86739c69ee9",
         "aged-light": "sha256:c8a6e9a1f06cb11dee63df6997f5f1ec8997d74b0f6040b4a4ead1430dcdd34c",
@@ -2124,6 +2129,7 @@
         "--border-width-regular",
         "--color-background-pressed",
         "--color-background-secondary",
+        "--color-border-control",
         "--color-text-disabled",
         "--color-text-primary",
         "--color-text-secondary",
@@ -2138,7 +2144,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:1f32d1af637c1f3a6d21bff27e51625d9b60e2ce147ce375a67c112214bdad39",
+      "sourceHash": "sha256:a04bc713b838ceba35c9a3b41dfb8a196b7470a3bbf5f0dddd5663d839cbbf74",
       "snapshotHashes": {},
       "storedStatus": "review",
       "signature": "absent",
@@ -2403,6 +2409,18 @@
             "description": "Where the popover opens; the status strip uses `bottom` and `end` at its right edge."
           },
           {
+            "name": "stale",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": "The value is the last good sample and the latest read failed: marked and named so."
+          },
+          {
+            "name": "staleLabel",
+            "type": "string | undefined",
+            "required": false,
+            "description": "Appended to the accessible name while stale, e.g. \"last sample 10:30\"."
+          },
+          {
             "name": "title",
             "type": "string | undefined",
             "required": false,
@@ -2478,7 +2496,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4b18158eb732e09cd1c63596eb8521b49fa9dc1fe0ed921d92dbb10cf3334f10",
+      "sourceHash": "sha256:5d1d6507c916342cff70f31094a9c58cf579883b360a4d8fe0eb6b27111ae5cb",
       "snapshotHashes": {},
       "storedStatus": "review",
       "signature": "absent",
@@ -3016,7 +3034,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4f33e7dfaed74bbd3af98c5c5f9f456dbaebb1b57ac876303ee32bdc2aafb896",
+      "sourceHash": "sha256:f88f76078a1e5ff6415f2b48add6975b842356f82b60e24fd9a0e62516c2614d",
       "snapshotHashes": {
         "error-dark-hc": "sha256:24a114b12782bdb99a8af5aa70ee9c663e5fa4c8500c9ac180f87cd9f84d9fc4",
         "error-dark": "sha256:58540644b5a259189b56e8afb1b4f7e4d63eaa549fa5aaa06701efb94e65df64",
@@ -3215,7 +3233,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:ab7b9456120369c6e1b51d1fd6040bd966dbeb89ecd061a1b7869c641d2f0132",
+      "sourceHash": "sha256:1749e514609a684dbd6144e6d63a2b84e4c2d8f573bf85b4b0b22812f4f62106",
       "snapshotHashes": {
         "default-dark": "sha256:9205498c663e6974e68ca800005bab18f1a0fcd6791c45d8bb1720fc3969b6ad",
         "default-light": "sha256:39cb94954dcb0b9779adea629517723b030874e2d0121c75f7550b2157cd8462",

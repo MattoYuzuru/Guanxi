@@ -46,7 +46,7 @@ export function App() {
   return (
     <UiLocaleProvider locale={locale}>
     <RuntimeProvider>
-      <MountedShell health={data}>
+      <MountedShell health={data} healthStale={health.error !== null}>
         {route.name === 'workspace' && <Suspense fallback={<div role="status">{translate('workspaceLayout.loading')}</div>}><Workspace key={route.projectId ?? 'local'} project={route.projectId} safeMode={new URLSearchParams(window.location.search).get('safe') === '1'}><ChatPage threadId={route.threadId} projectId={route.projectId} health={data} workspace /></Workspace></Suspense>}
         {route.name === 'launcher' && <LauncherPage health={data} />}
         {route.name === 'agent' && <NativeAgentPage key={route.sessionId ?? 'new'} sessionId={route.sessionId} />}

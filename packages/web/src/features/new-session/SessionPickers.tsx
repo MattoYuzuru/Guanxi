@@ -1,6 +1,6 @@
 import type { AccessMode, Connection, Project, Workspace } from '@guanxi/contract'
 import {
-  Button, Icon, Input, Menu, type IconName, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Textarea,
+  Button, Icon, IconButton, Input, Menu, type IconName, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Textarea,
 } from '@guanxi/ui'
 import { useId, type ReactNode } from 'react'
 import { translate as t } from '../../lib/locale.ts'
@@ -134,7 +134,7 @@ export function RunOptions({ project, workspaces, selectedRoots, onRoots, rootsD
   protectedPaths: string; onProtectedPaths: (value: string) => void
 }) {
   return <Popover>
-    <PopoverTrigger render={<Button variant="ghost" size="sm" aria-label={t('newSession.options.button')}><Icon name="more" /></Button>} />
+    <PopoverTrigger render={<IconButton size="sm" label={t('newSession.options.button')} icon={<Icon name="more" />} />} />
     <PopoverContent side="top" align="start" className="w-md">
       <PopoverTitle>{t('newSession.options')}</PopoverTitle>
       <div className="new-session-options flex flex-col gap-3 pt-1">

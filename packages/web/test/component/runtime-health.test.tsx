@@ -371,14 +371,14 @@ describe('Runtime Bar projection', () => {
 describe('shell health projection', () => {
   it('keeps the shell-oriented Ollama degraded states distinct on the runtime icon', () => {
     const unavailable = render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('unavailable')} />)
-    const warning = screen.getByRole('button', { name: 'Среда выполнения' })
+    const warning = screen.getByRole('button', { name: 'Среда выполнения: Ollama выкл.' })
     expect(warning.closest('[data-slot="status-item"]')?.getAttribute('data-tone')).toBe('warning')
     fireEvent.click(warning)
     expect(screen.getByRole('status').textContent).toContain('Ollama недоступна')
     unavailable.unmount()
 
     render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('incompatible')} />)
-    const danger = screen.getByRole('button', { name: 'Среда выполнения' })
+    const danger = screen.getByRole('button', { name: 'Среда выполнения: Не поддерж.' })
     expect(danger.closest('[data-slot="status-item"]')?.getAttribute('data-tone')).toBe('danger')
     fireEvent.click(danger)
     expect(screen.getByRole('alert').textContent).toContain('не поддерживается')

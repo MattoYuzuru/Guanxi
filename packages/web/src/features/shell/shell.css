@@ -224,3 +224,21 @@
   @apply pointer-events-none fixed inset-0 size-full;
   z-index: var(--layer-base);
 }
+
+@media (forced-colors: active) {
+  .shell-nav-item[aria-current='page'],
+  .shell-session-link[aria-current='page'] {
+    outline: var(--border-width-regular) solid Highlight;
+  }
+
+  .shell-status-dot {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+  }
+
+  .shell-unseen-mark,
+  .shell-status-dot:not([data-status='waiting'], [data-status='sleeping'], [data-status='unknown']) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}

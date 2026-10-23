@@ -229,6 +229,18 @@
       "foreground": "color.text.info",
       "background": "color.background.info-subtle",
       "minimum": 4.5
+    },
+    {
+      "name": "on-accent-warning-badge",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.warning",
+      "minimum": 4.5
+    },
+    {
+      "name": "on-accent-danger-badge",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.danger",
+      "minimum": 4.5
     }
   ]
 }

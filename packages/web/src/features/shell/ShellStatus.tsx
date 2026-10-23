@@ -45,16 +45,19 @@ function deviceIcon(platform: string | undefined): IconName {
  * with an absolute time and no "N s ago" counter (D-203). Updates arrive with the shared quiet
  * runtime sample, so nothing here flickers or offers a Retry.
  */
-export function ShellStatusItems({ runtime, stale, health, inbox }: {
+export function ShellStatusItems({ runtime, stale, health, healthStale = false, inbox }: {
   runtime: RuntimeSnapshot | null
   /** The last sample is on screen but the latest read failed. */
   stale: boolean
   health: Health
+  /** The last health answer is on screen but the latest health read failed. */
+  healthStale?: boolean
   inbox?: ReactNode
 }) {
   const profile = runtime?.host.profile
   const sample = runtime?.host.sample
   const observed = runtime ? formatTime(runtime.observedAt) : null
+  const staleLabel = observed ? t('shell.status.staleName', { time: observed }) : undefined
   const provenance = (source: string) => observed === null ? null
     : <Footnote>{stale ? t('shell.status.lastObserved', { time: observed }) : t('shell.status.observed', { source, time: observed })}</Footnote>
 
@@ -68,7 +71,7 @@ export function ShellStatusItems({ runtime, stale, health, inbox }: {
   const memoryValue = available && available.bytes !== null ? formatBytes(available.bytes) : undefined
 
   return <div className="flex min-w-0 flex-wrap items-center gap-0.5" data-testid="shell-status-items">
-    <StatusItem icon={deviceIcon(profile?.platform)} label={t('shell.status.device')} tone={profile ? 'neutral' : 'unknown'}>
+    <StatusItem icon={deviceIcon(profile?.platform)} label={t('shell.status.device')} tone={profile ? 'neutral' : 'unknown'} stale={stale && Boolean(profile)} staleLabel={staleLabel}>
       {profile ? <>
         <Facts rows={[
           [t('shell.status.platform'), <span className="font-mono">{`${profile.platform} ${profile.arch}`}</span>],
@@ -81,7 +84,8 @@ export function ShellStatusItems({ runtime, stale, health, inbox }: {
 
     <StatusItem icon={profile?.unifiedMemory === false ? 'memory-ram' : 'memory-unified'} label={t('shell.status.memory')}
       title={profile?.unifiedMemory ? t('shell.status.unifiedMemory') : t('shell.status.memory')}
-      value={memoryValue} tone={sample ? (sample.pressure.level === 'critical' ? 'danger' : sample.pressure.level === 'warning' ? 'warning' : 'neutral') : 'unknown'}>
+      value={memoryValue} tone={sample ? (sample.pressure.level === 'critical' ? 'danger' : sample.pressure.level === 'warning' ? 'warning' : 'neutral') : 'unknown'}
+      stale={stale && Boolean(sample)} staleLabel={staleLabel}>
       {profile && sample ? <>
         <Facts rows={[
           [t('shell.status.memory.total'), bytes(profile.totalMemoryBytes)],
@@ -94,6 +98,8 @@ export function ShellStatusItems({ runtime, stale, health, inbox }: {
     </StatusItem>
 
     <StatusItem icon="runtime" label={t('shell.status.runtime')} tone={runtimeTone} badge={ollama !== 'reachable' ? true : queued > 0 ? queued : undefined}
+      value={ollama === 'unavailable' ? t('shell.status.runtime.short.unavailable') : ollama === 'incompatible' ? t('shell.status.runtime.short.incompatible') : undefined}
+      stale={(stale && runtime !== null) || healthStale} staleLabel={staleLabel ?? t('shell.status.staleHealth')}
       align="end" wide>
       <div className="flex flex-col gap-2" data-testid="shell-runtime-popover">
         {ollama === 'reachable'

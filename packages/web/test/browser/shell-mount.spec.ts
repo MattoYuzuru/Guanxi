@@ -419,11 +419,8 @@ test.describe('with motion allowed', () => {
     await enableMaxGraphics(page)
     await expect(page.locator('html')).toHaveAttribute('data-graphics', 'max')
     const webgl = await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl')))
-    if (!webgl) {
-      // Without WebGL the static design stays and no canvas is left behind.
-      await expect(page.getByTestId('max-graphics')).toHaveCount(0)
-      return
-    }
+    // Reported as skipped, never as passed, where the browser build has no WebGL.
+    test.skip(!webgl, 'WebGL is unavailable in this browser build')
     const canvas = page.getByTestId('max-graphics')
     await expect(canvas).toHaveCount(1)
     await expect(page.locator('html')).toHaveAttribute('data-graphics-active', '')
@@ -436,6 +433,22 @@ test.describe('with motion allowed', () => {
     await page.reload()
     await expect(page.getByTestId('max-graphics')).toHaveCount(1)
   })
+})
+
+test('without WebGL no canvas is left behind and the chrome stays opaque', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type === 'webgl' ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest)
+    } as typeof original
+  })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await installShellApi(page, createFixture())
+  await page.goto('/agent')
+  await enableMaxGraphics(page)
+  await expect(page.locator('html')).toHaveAttribute('data-graphics', 'max')
+  await expect(page.getByTestId('max-graphics')).toHaveCount(0)
+  await expect(page.locator('html')).not.toHaveAttribute('data-graphics-active', '')
 })
 
 test('reduced motion keeps the static design even with Max graphics on', async ({ page }) => {

@@ -127,7 +127,9 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       if (!initialFocusSuppressedRef.current) target.current?.focus()
     })
     return () => cancelAnimationFrame(frame)
-  }, [projectId, projectContext.data, projectContext.error])
+    // Keyed on whether an error exists, not on the error object: a quiet automatic retry that
+    // fails again must not pull focus back (D-203).
+  }, [projectId, projectContext.data, Boolean(projectContext.error)])
 
   const requestedContextText = query.get('numCtx')
   const requestedContext = parsePositiveSafeInteger(requestedContextText)
@@ -461,7 +463,8 @@ function ThreadPage({
 
   useEffect(() => {
     if (chat.loadError) loadErrorHeadingRef.current?.focus()
-  }, [chat.loadError])
+    // Only when the error first appears; repeated automatic retries keep the user's focus.
+  }, [Boolean(chat.loadError)])
 
   const pickWorkspace = async (next: Workspace | null) => {
     setPickerOpen(false)
@@ -1163,12 +1166,16 @@ function ChatComposer({
         sendLabel={translate('chat.composer.send')}
         stopLabel={translate('chat.composer.stop', { phase: phaseLabel(phase) })}
         leading={agentMode ? (
-          <Switch
-            checked={autoApprove}
-            onCheckedChange={onAutoApprove}
-            disabled={isStreaming}
-            label={<span className="text-12">{translate('chat.composer.autoApprove')}</span>}
-          />
+          <span title={translate('chat.composer.autoApproveHint')} className="inline-flex">
+            <Switch
+              checked={autoApprove}
+              onCheckedChange={onAutoApprove}
+              disabled={isStreaming}
+              aria-describedby="chat-auto-approve-hint"
+              label={<span className="text-12">{translate('chat.composer.autoApprove')}</span>}
+            />
+            <span id="chat-auto-approve-hint" className="sr-only">{translate('chat.composer.autoApproveHint')}</span>
+          </span>
         ) : undefined}
         trailing={<>
           <span className="max-w-3xs truncate font-mono text-12 text-secondary" title={model}>{model}</span>

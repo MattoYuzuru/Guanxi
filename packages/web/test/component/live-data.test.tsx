@@ -38,10 +38,10 @@ describe('retryDelay', () => {
 
 describe('useAsync', () => {
   it('does not re-render a memoised row when a quiet refresh returns equal data', async () => {
-    let renders = 0
+    let renders = 0, loads = 0
     const Row = memo(function Row({ value }: { value: { name: string } }) { renders += 1; return <span>{value.name}</span> })
     function View() {
-      const query = useAsync(async () => ({ row: { name: 'stable' } }), [], { revalidate: { onFocus: true } })
+      const query = useAsync(async () => { loads += 1; return { row: { name: 'stable' } } }, [], { revalidate: { onFocus: true } })
       const flags = useRef<string[]>([])
       flags.current.push(`${query.loading}/${query.refreshing}`)
       return <>{query.data && <Row value={query.data.row} />}<output data-testid="flags">{flags.current.join(',')}</output></>
@@ -49,11 +49,14 @@ describe('useAsync', () => {
     const view = render(<View />)
     await waitFor(() => expect(renders).toBe(1))
     const flagsBefore = view.getByTestId('flags').textContent
+    const loadsBefore = loads
     await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(loads).toBe(loadsBefore + 1))
     await act(async () => { await Promise.resolve() })
     expect(renders).toBe(1)
     // A quiet refresh never shows loading or refreshing.
-    expect(view.getByTestId('flags').textContent!.split(',').slice(flagsBefore!.split(',').length)).not.toContain('false/true')
+    const after = view.getByTestId('flags').textContent!.split(',').slice(flagsBefore!.split(',').length)
+    expect(after.filter(flag => flag !== 'false/false')).toEqual([])
   })
 
   it('keeps the last data and error on screen, then recovers by itself after the backoff', async () => {

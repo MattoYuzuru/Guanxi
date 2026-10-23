@@ -56,3 +56,9 @@
     border-color: CanvasText;
   }
 }
+
+/* High contrast: the neutral badge takes the pane fill with a control border (7:1 text). */
+[data-theme$='-hc'] .gx-badge[data-tone='neutral'] {
+  border-color: var(--color-border-control);
+  background-color: var(--color-background-secondary);
+}

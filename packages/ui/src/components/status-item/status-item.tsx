@@ -37,6 +37,10 @@ export interface StatusItemProps extends Omit<ComponentProps<'div'>, 'className'
   align?: 'start' | 'center' | 'end'
   /** A wider popover for detail lists (runtime admission and models). */
   wide?: boolean
+  /** The value is the last good sample and the latest read failed: marked and named so. */
+  stale?: boolean
+  /** Appended to the accessible name while stale, e.g. "last sample 10:30". */
+  staleLabel?: string
   className?: string
 }
 
@@ -53,15 +57,18 @@ export function StatusItem({
   side = 'bottom',
   align = 'center',
   wide = false,
+  stale = false,
+  staleLabel,
   className,
   ...props
 }: StatusItemProps) {
   const t = useUiText()
   const badgeText = typeof badge === 'number' ? (badge > 99 ? '99+' : String(badge)) : ''
   const showBadge = badge === true || (typeof badge === 'number' && badge > 0)
-  const name = value !== undefined && typeof value === 'string' ? `${label}: ${value}` : tone === 'unknown' ? `${label}: ${t('ui.status.unknownValue')}` : label
+  const base = value !== undefined && typeof value === 'string' ? `${label}: ${value}` : tone === 'unknown' ? `${label}: ${t('ui.status.unknownValue')}` : label
+  const name = stale && staleLabel ? `${base} (${staleLabel})` : base
   return (
-    <div data-slot="status-item" data-tone={tone} className={cx('gx-status-item', className)} {...props}>
+    <div data-slot="status-item" data-tone={tone} data-stale={stale || undefined} className={cx('gx-status-item', className)} {...props}>
       <Popover open={open} onOpenChange={onOpenChange}>
         <Tooltip>
           <TooltipTrigger
@@ -80,7 +87,7 @@ export function StatusItem({
           >
             <span className="gx-status-item-glyph" aria-hidden="true">
               <Icon name={icon} size={16} />
-              {tone === 'unknown' ? <span className="gx-status-item-unknown" /> : null}
+              {tone === 'unknown' || stale ? <span className="gx-status-item-unknown" /> : null}
             </span>
             {value !== undefined ? <span className="gx-status-item-value">{value}</span> : null}
             {showBadge ? (

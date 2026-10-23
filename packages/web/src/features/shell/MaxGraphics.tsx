@@ -7,8 +7,10 @@ import { useOptionalAppearance } from '../../lib/appearance.tsx'
  * code is copied. Costs are bounded: half-resolution rendering, about 30 frames per second,
  * held still for a moment after any input so typing never competes with it, stopped while the
  * page is hidden, and not mounted at all under reduced motion, reduced
- * transparency, increased contrast, forced colours or without WebGL. Panes stay opaque, so no
- * reading text ever sits on it; the sidebar takes glass for contrast (app-shell-chrome.css).
+ * transparency, increased contrast, forced colours, battery saver, GPU compositing off or without
+ * WebGL. Panes stay opaque, so no reading text ever sits on it; chrome text over it uses the
+ * secondary tone (app-shell-chrome.css) and the field's strength is capped so that tone keeps
+ * 4.5:1 over the field's brightest colour (asserted in max-graphics.test.tsx).
  */
 const VERTEX = `attribute vec2 p; void main() { gl_Position = vec4(p, 0.0, 1.0); }`
 const FRAGMENT = `precision mediump float;
@@ -35,6 +37,18 @@ void main() {
 export const MAX_GRAPHICS_FPS = 30
 /** Fraction of the device pixel ratio the canvas renders at; CSS scales it up. */
 export const MAX_GRAPHICS_SCALE = 0.5
+/** Mix strength of the accent field over the chrome, per theme (contrast-tested). */
+export const MAX_GRAPHICS_STRENGTH = { light: 0.26, dark: 0.3 } as const
+
+/** The colour at the field's least-contrasting point, mirroring the fragment shader's mixing. */
+export function worstFieldColor(base: number[], accent: number[], soft: number[], dark: boolean): number[] {
+  const strength = MAX_GRAPHICS_STRENGTH[dark ? 'dark' : 'light']
+  const mix = (a: number[], b: number[], t: number) => a.map((value, index) => value * (1 - t) + (b[index] ?? 0) * t)
+  // Light theme: dark text loses contrast where the accent is strongest and the soft tone absent;
+  // dark theme: light text loses contrast where both lift the chrome.
+  return dark ? mix(mix(base, accent, strength), soft, strength * 0.8) : mix(base, accent, strength)
+}
+
 /** The field holds still this long after any key, pointer or wheel input, so input never waits on it. */
 export const MAX_GRAPHICS_INPUT_QUIET_MS = 600
 
@@ -42,7 +56,8 @@ const QUERIES = ['(prefers-reduced-motion: reduce)', '(prefers-reduced-transpare
 
 /** True when the user or the OS asked for less: then the static design is what they get. */
 export function graphicsSuppressed(root: HTMLElement = document.documentElement): boolean {
-  if (root.dataset.motion === 'reduced' || 'reduceTransparency' in root.dataset || root.dataset.theme?.endsWith('-hc')) return true
+  if (root.dataset.motion === 'reduced' || 'reduceTransparency' in root.dataset || 'batterySaver' in root.dataset
+    || root.dataset.gpuCompositing === 'off' || root.dataset.theme?.endsWith('-hc')) return true
   if (root.dataset.motion === 'full') return QUERIES.slice(1).some(query => window.matchMedia?.(query).matches)
   return QUERIES.some(query => window.matchMedia?.(query).matches)
 }
@@ -74,7 +89,7 @@ export function MaxGraphics() {
     const lists = QUERIES.map(query => window.matchMedia?.(query)).filter(Boolean) as MediaQueryList[]
     lists.forEach(list => list.addEventListener('change', update))
     const observer = new MutationObserver(update)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion', 'data-theme', 'data-reduce-transparency'] })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-motion', 'data-theme', 'data-reduce-transparency', 'data-battery-saver', 'data-gpu-compositing'] })
     update()
     return () => { lists.forEach(list => list.removeEventListener('change', update)); observer.disconnect() }
   }, [])
@@ -116,7 +131,7 @@ export function MaxGraphics() {
       gl.uniform3fv(base, cssColor('--color-background-primary'))
       gl.uniform3fv(accent, cssColor('--color-background-accent'))
       gl.uniform3fv(soft, cssColor(dark ? '--color-background-pressed' : '--color-background-secondary'))
-      gl.uniform1f(strength, dark ? 0.34 : 0.28)
+      gl.uniform1f(strength, MAX_GRAPHICS_STRENGTH[dark ? 'dark' : 'light'])
     }
     const resize = () => {
       const scale = Math.min(window.devicePixelRatio || 1, 2) * MAX_GRAPHICS_SCALE

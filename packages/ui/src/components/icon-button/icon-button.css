@@ -89,3 +89,17 @@
   background-color: var(--color-background-pressed);
   color: var(--color-text-primary);
 }
+
+@media (forced-colors: active) {
+  .gx-icon-button-badge {
+    forced-color-adjust: none;
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  .gx-icon-button[aria-pressed='true'],
+  .gx-icon-button[data-popup-open],
+  .gx-icon-button[aria-current='page'] {
+    outline: var(--border-width-regular) solid Highlight;
+  }
+}

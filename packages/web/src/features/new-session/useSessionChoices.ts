@@ -42,7 +42,8 @@ export function useSessionChoices() {
   const failures = useRef(0)
   useEffect(() => {
     const abort = new AbortController()
-    setLoading(true)
+    // Only the very first read shows a loading state; automatic retries are quiet (D-203).
+    if (!hasChoices.current && failures.current === 0) setLoading(true)
     void (async () => {
       const [projects, connections, workspaces] = await Promise.allSettled([
         agentRequest('/projects', 'GET', undefined, abort.signal) as Promise<{ projects: Project[] }>,
@@ -53,7 +54,9 @@ export function useSessionChoices() {
       if (projects.status === 'rejected' || connections.status === 'rejected') {
         const source: ChoiceSource = projects.status === 'rejected' ? 'projects' : 'connections'
         const reason = projects.status === 'rejected' ? projects.reason : (connections as PromiseRejectedResult).reason
-        setFailure({ source, code: failureCode(reason), kind: failureKind(reason), at: new Date().toISOString() })
+        const next = { source, code: failureCode(reason), kind: failureKind(reason), at: new Date().toISOString() }
+        // The same failure again keeps its first record: no new announcement, no re-render.
+        setFailure(previous => previous && previous.source === next.source && previous.code === next.code && previous.kind === next.kind ? previous : next)
         failures.current += 1
         return
       }
@@ -80,7 +83,8 @@ export function useSessionChoices() {
     window.addEventListener('online', now)
     window.addEventListener('focus', now)
     return () => { clearTimeout(timer); window.removeEventListener('online', now); window.removeEventListener('focus', now) }
-  }, [failure, reload])
+    // `revision` re-arms the timer after every attempt, even when the failure record is reused.
+  }, [failure, reload, revision])
   const status: ChoiceStatus = loading && !hasChoices.current ? 'loading' : failure ? 'failed' : 'ready'
   return { status, choices, observedAt, failure, refreshing: loading && hasChoices.current, reload }
 }
