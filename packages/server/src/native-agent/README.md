@@ -28,7 +28,8 @@ no workload capabilities or inherited credentials, and `--network none`. The tru
 uses a distinct UID with only SETUID/GID, then clears workload capabilities. Its trusted stdio
 bridge reaches only the host's sandbox-runtime method/domain proxy. A workload-only seccomp
 filter denies arbitrary Unix
-sockets and local binding. Successful execution requires confirmed container removal, including
+sockets and local binding, but allows anonymous `AF_UNIX` stream socket pairs so the workload can
+spawn children with piped stdio (plain `node --test` works; ADR-0027 Appendix A). Successful execution requires confirmed container removal, including
 after a worker crash. Stop allows one second for the worker, then forces termination; parent
 container removal/inspection has a five-second deadline. Unconfirmed cleanup fails the session with
 `cleanup_unconfirmed` and retains a private `native-cleanup/<owner-name>.json` root quarantine
@@ -87,6 +88,9 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
   no dedicated Docker-socket mount. Selected roots may contain sockets; workload Unix-socket
   connections are denied. The image uses a digest-pinned Node 26 Debian slim base; run
   `DOCKER_CONTEXT=colima sh packages/server/scripts/prepare-native-execution.sh` to provision it.
+  The image profile is `k4-v2` (guard policy: anonymous stream socket pairs allowed). A host that
+  only has `k4-v1` refuses arbitrary shell with `container_runtime_unavailable` until it rebuilds;
+  the old image is not used and is left in place.
   Commands select the inspected content-addressed image ID, not a mutable tag at execution.
   The absolute Docker CLI is captured and canonicalized at node boot; writable trees containing
   its replacement points refuse both arbitrary and fixed invocations. Installing Docker after
@@ -104,8 +108,12 @@ logs; command output is returned over IPC and scrubbed before the model or sessi
 - Linux requires `bwrap`, `socat` and `rg` on the worker PATH, plus the packaged apply-seccomp
   helper and util-linux
   `setpriv` with `--seccomp-filter` support. After trusted proxy bridges start, a workload-only
-  BPF filter denies bind, listen, ptrace, process_vm_writev, unshare, setns, mount, socketpair
-  and non-INET sockets. x64/arm64 audit ABIs and unknown/x32 syscall numbers are checked;
+  BPF filter denies bind, listen, ptrace, process_vm_writev, unshare, setns, mount and every
+  `socket()` except AF_INET/AF_INET6. `socketpair()` is allowed only for `AF_UNIX` with type
+  `SOCK_STREAM` (CLOEXEC/NONBLOCK flags masked): such a pair is connected at birth and cannot
+  reach a pathname or abstract listener, while a datagram pair could, so datagram, seqpacket and
+  other pairs stay denied. The container guard (`container/guard.c`) implements the same policy.
+  x64/arm64 audit ABIs and unknown/x32 syscall numbers are checked;
   missing/degraded dependencies refuse execution.
   Windows refuses all sandbox execution. Platform validation scope and residuals are in the handoff.
 

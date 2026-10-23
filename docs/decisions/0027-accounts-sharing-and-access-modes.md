@@ -78,3 +78,54 @@ accounts and allowed roots.
 
 Lane 2 §4, lane 5 §1.5 (sandbox runtime) ([research](../research/README.md)); WebAuthn
 Level 3; NIST RBAC/ABAC; Zanzibar (USENIX ATC '19).
+
+## Appendix A: workload syscall filter and child-process pipes (K4-pipes, 2026-10-23)
+
+**Status:** implemented · locally validated on Linux arm64 (kernel 6.8, Colima); x64 shares the
+generator and is validated at instruction level only.
+
+*Problem.* The workload seccomp filter denied `socketpair` outright, so every Node child with
+piped stdio failed with `EPERM` (libuv builds those pipes from `socketpair(AF_UNIX, SOCK_STREAM)`),
+including the per-file subprocesses of `node --test`. In the first two-host MS1 run each acceptance
+gate failed this way and only `--test-isolation=none` passed. No earlier document gives a reason for
+the denial beyond "no arbitrary Unix sockets"; the Linux filter was only made to match the
+container guard.
+
+*Decision.* The filter (container guard `guard.c` and `linuxBindingFilter()`, kept equal) allows
+`socketpair` only when the domain is `AF_UNIX` **and** `type & 0xf` is `SOCK_STREAM`; the
+`SOCK_CLOEXEC` and `SOCK_NONBLOCK` flags are masked off exactly as the kernel does. `socket()` stays
+limited to `AF_INET` and `AF_INET6`; `bind`, `listen`, `ptrace`, `process_vm_writev`, `unshare`,
+`setns` and `mount` stay denied; a foreign audit architecture kills the process and x32 or unknown
+syscall numbers are denied (the guard gained this x32 check). The execution image moved from
+`k4-v1` to `k4-v2`, so a host that did not rebuild fails closed with `container_runtime_unavailable`.
+
+*Security argument.*
+
+1. The intent is unchanged: no path to host services over Unix sockets, no network beyond the
+   proxy, no binding or listening. `socket(AF_UNIX)` remains denied, so a workload cannot create an
+   unconnected Unix socket and `connect` to a pathname or an abstract name. Abstract names are also
+   scoped to the network namespace, which is empty (`--network none`, or `--unshare-net`).
+2. A stream pair is born connected to its own other end. Measured in the image without any filter:
+   `connect` and `sendto` on it fail with `EISCONN` or `ECONNREFUSED`, and none of four listeners
+   (pathname and abstract, stream and datagram) received anything. The same experiment with a
+   **datagram** pair connects to both the pathname and the abstract datagram listener and delivers
+   data, so datagram pairs, seqpacket (not needed) and every other type stay denied. This type check
+   is the load-bearing part of the decision, with an assertion that fails without it.
+3. Descriptor passing (`SCM_RIGHTS`) over a pair reaches only the other end, which is held by the
+   workload's own process tree. The pair gives it nothing a `pipe()` plus descriptors it already
+   holds did not. The trusted runner holds no end of a new pair. Descriptors inherited from the
+   parent (the workload's stdout and stderr are already Unix stream sockets to the runner, created
+   by libuv) are an existing property and are not changed.
+4. On Linux, sandbox-runtime's own filter documents that it blocks only `socket(AF_UNIX)` and
+   `io_uring_*` (read from its README, not re-measured), so the extra `socketpair` rule only
+   removed what that layer allowed.
+   Docker's default profile allows `socketpair` for ordinary containers and denies `io_uring_setup`
+   (observed `EPERM`); the guard relies on that default for io_uring, as before.
+5. Residual risk: the kernel's AF_UNIX stream implementation (including `SCM_RIGHTS` garbage
+   collection and out-of-band data) is now reachable from the workload. That surface is exposed to
+   any default container and was already reachable through the runner's pipes; it is accepted and
+   named, not eliminated. Kernel hardening stays with the host.
+
+*Evidence.* [K4-pipes hand-off](../plans/lanes/K4-pipes.handoff.md); real-kernel tests in
+`packages/server/test/native-agent/seccomp-kernel.test.ts`, instruction-level tests in
+`seccomp.test.ts`, end-to-end tests in `sandbox.test.ts`.
