@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canonical, render } from '../../src/relay/handoff.ts'
+import { byteHash, canonical, render } from '../../src/relay/handoff.ts'
 import { RelayExecutor } from '../../src/relay/executor.ts'
 import {
   JUDGE_JOURNAL_MIGRATION_42,
@@ -537,6 +537,56 @@ test('a failing local journal never changes the completed judge verdict', async 
       .prepare("SELECT state FROM relay_judge_requests WHERE layer='J2'")
       .get()!
     assert.equal(row.state, 'completed')
+  } finally {
+    f.close()
+  }
+})
+
+test('checker, J2 and J3 evaluations are journaled once and a duplicate request is not', async () => {
+  const f = fixture()
+  try {
+    const configured = brief()
+    const bytes = Buffer.from('lead-owned-checker')
+    configured.judges.checker = {
+      base: plan.base,
+      path: 'checks/lead',
+      digest: byteHash(bytes),
+      timeoutMs: 100,
+      outputBytes: 4096
+    }
+    configured.judges.j3.enabled = true
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: f.relay.clock })
+    const cascade = new RelayJudgeCascade(
+      f.relay,
+      cascadeInput({
+        brief: configured,
+        journal: store,
+        checker: {
+          read: async () => ({ base: plan.base, path: 'checks/lead', bytes }),
+          run: async () => validResult()
+        }
+      })
+    )
+    f.relay.begin(f.attempt)
+    cascade.bind(f.attempt)
+    const signal = new AbortController().signal
+    await cascade.sample(f.attempt, 'cycle_start', signal)
+    await cascade.review(f.attempt, 'final', signal)
+    const rows = () =>
+      f.db
+        .prepare('SELECT layer,state,result FROM relay_judge_journal WHERE run_id=? ORDER BY id')
+        .all(f.run.id) as unknown as { layer: string; state: string; result: string }[]
+    assert.deepEqual(
+      rows().map((row) => row.layer),
+      ['J1.5', 'J2', 'J3']
+    )
+    assert.equal(rows().every((row) => row.state === 'completed'), true)
+    assert.equal((JSON.parse(rows()[0]!.result) as { verdict: string }).verdict, 'consistent')
+    assert.equal((JSON.parse(rows()[1]!.result) as { samples: unknown[] }).samples.length, 2)
+    assert.equal((JSON.parse(rows()[2]!.result) as { samples: unknown[] }).samples.length, 1)
+
+    await cascade.sample(f.attempt, 'cycle_start', signal)
+    assert.equal(rows().length, 3)
   } finally {
     f.close()
   }
