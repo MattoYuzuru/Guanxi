@@ -109,7 +109,9 @@ test('Russian copy and no marks when the node reports no finished session', asyn
   const fixture = createSessionFeaturesFixture({ ...world(), locale: 'ru' })
   await open(page, fixture)
   await expect(page.getByTestId('shell-unseen-count').locator('.sr-only')).toHaveText('Завершено, ещё не открыто: 2')
-  await expect(page.locator('[data-unseen="true"]', { hasText: 'Завершена, ещё не открыта' })).toHaveCount(2)
+  // The visible mark is aria-hidden; the words live in each row's description.
+  await expect(marked(page)).toHaveCount(2)
+  await expect(page.locator('[id^="shell-session-"]', { hasText: 'Завершена, ещё не открыта' })).toHaveCount(2)
   await page.unrouteAll({ behavior: 'ignoreErrors' })
   await installSessionFeaturesApi(page, createSessionFeaturesFixture({ locale: 'ru', sessions: [nativeSession('s3', 'Title s3', 'working', 3, AFTER_BASELINE)] }))
   await page.reload()

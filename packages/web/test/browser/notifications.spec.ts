@@ -33,8 +33,10 @@ test('bell to center: the strip shows the unread count, a click opens the center
   await open(page, node)
   await expect(page.getByTestId('notification-bell-count')).toHaveText('3 unread')
   await expect(bell(page)).toHaveAttribute('data-unread', '3')
-  // The bell lives in the status strip's Inbox item, between its name and nothing else.
-  await expect(page.locator('dl').getByText('Inbox', { exact: true })).toHaveCount(1)
+  // D-202: the inbox is one tray icon link in the status strip, named with its count, badge visible.
+  await expect(page.getByTestId('shell-status-items').getByTestId('notification-bell')).toHaveCount(1)
+  await expect(bell(page)).toHaveAccessibleName('Notifications: 3 unread')
+  await expect(bell(page).locator('.gx-icon-button-badge')).toHaveText('3')
   await bell(page).click()
   await expect(page).toHaveURL(/\/notifications$/u)
   await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeFocused()

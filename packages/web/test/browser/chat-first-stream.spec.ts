@@ -17,10 +17,12 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   await page.evaluate(() => {
     document.documentElement.dataset.motion = 'full'
   })
-  await page.getByText('Показать сведения о runtime').click()
+  // The runtime facts live in the status strip's runtime popover (D-202).
+  await page.getByRole('button', { name: /^Среда выполнения/u }).click()
   await expect(
-    page.getByRole('listitem').filter({ hasText: 'fixture:latest' }),
+    page.getByTestId('shell-runtime-popover').getByRole('listitem').filter({ hasText: 'fixture:latest' }),
   ).toContainText('fixture:latest')
+  await page.keyboard.press('Escape')
 
   const createButton = page.getByRole('button', { name: 'Создать диалог' })
   await createButton.focus()
@@ -41,7 +43,10 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
     page.getByRole('status').filter({ hasText: 'отправка' }),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: 'Остановить · отправка' })).toBeVisible()
-  await expect(composer).toBeDisabled()
+  // D-207 composer: while a turn runs, Stop replaces Send; the text area stays editable for the
+  // next prompt, but nothing can be sent until the turn ends.
+  await expect(page.getByRole('button', { name: 'Отправить', exact: true })).toHaveCount(0)
+  await expect(composer).toBeEditable()
 
   await advanceChatFixture(page, 'releaseHeaders')
   await advanceChatFixture(page, 'releaseNext')

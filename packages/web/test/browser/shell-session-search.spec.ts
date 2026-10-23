@@ -56,7 +56,7 @@ test('explicit complete search finds a session beyond 200, preserves query/focus
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
-test('Russian phone search exposes failure/retry and cancellation without claiming complete coverage', async ({ page }) => {
+test('Russian phone search exposes failure, repeats from its own action and cancels without claiming complete coverage', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 })
   let failed = false, held = false, release!: () => void
   const hold = new Promise<void>(done => { release = done })
@@ -74,8 +74,10 @@ test('Russian phone search exposes failure/retry and cancellation without claimi
   const input = page.getByRole('combobox', { name: 'Поиск команд' })
   await input.fill('Older needle')
   await page.getByRole('button', { name: 'Искать во всех доступных сессиях' }).click()
-  await expect(page.getByText('Не удалось загрузить все сессии. Поиск среди загруженных: 50.')).toBeVisible()
-  await page.getByRole('button', { name: 'Повторить загрузку оставшихся сессий' }).click()
+  await expect(page.getByText('Не удалось загрузить все сессии. Поиск среди загруженных: 50; запустите поиск по всем снова, чтобы загрузить остальные.')).toBeVisible()
+  // D-203: no separate Retry button; the same "search all" action repeats the failed page.
+  await expect(page.getByRole('button', { name: /Повторить/u })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Искать во всех доступных сессиях' }).click()
   await expect(page.getByText('Загрузка оставшихся сессий… Уже загружено: 100.')).toBeVisible()
   const aborted = page.waitForEvent('requestfailed', request => new URL(request.url()).searchParams.get('cursor') === 'p100')
   await page.getByRole('button', { name: 'Остановить загрузку сессий' }).click()

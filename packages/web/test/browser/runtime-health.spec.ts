@@ -146,18 +146,24 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
   await expect(navigation).toBeVisible()
   await expect(navigation.getByRole('link')).toHaveCount(4)
   await expect(page.getByRole('link', { name: 'Новая сессия' })).toBeVisible()
-  await expect(page.getByText('Ollama вернула несовместимый ответ')).toBeVisible()
-  const runtime = page.getByRole('region', { name: 'Runtime и ресурсы' })
+  // D-202: the degraded Ollama is the runtime status item, named in text (not only by colour).
+  const trigger = page.getByRole('button', { name: /^Среда выполнения: Не поддерж\./u })
+  await expect(trigger).toBeVisible()
+  expect((await trigger.boundingBox())?.height).toBeGreaterThanOrEqual(24)
+  await trigger.focus()
+  await expect(trigger).toBeFocused()
+  await page.keyboard.press('Enter')
+  const popover = page.getByTestId('shell-runtime-popover')
+  await expect(popover.getByRole('alert')).toContainText('Эта версия Ollama не поддерживается')
+  const runtime = popover.getByRole('region', { name: 'Runtime и ресурсы' })
   await expect(runtime).toContainText('Источник Ollama несовместим')
-  await runtime.getByText('Показать сведения о runtime').click()
   await expect(page.getByText(/Состояние загруженных моделей неизвестно/)).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(page.getByText('Встроенный fallback каталога')).toBeVisible()
   await expect(page.getByText('fixture-catalog')).toBeVisible()
 
-  const retry = page.getByRole('button', { name: 'Проверить снова' })
-  await retry.focus()
-  await expect(retry).toBeFocused()
-  expect((await retry.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+  // D-203: no "Проверить снова" button; health is re-read by itself.
+  await expect(page.getByRole('button', { name: 'Проверить снова' })).toHaveCount(0)
 
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

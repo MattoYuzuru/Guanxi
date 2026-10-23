@@ -649,15 +649,18 @@ test('reset preserves a saved layout clock and persists the default arrangement 
   expect(restored.engineState.groups.find(group => group.zone === 'bottom')!.blocks).toEqual(['guanxi.core/terminal'])
 })
 
-test('a float dragged near the right and bottom retains normalized bounds after save and mode return', async ({ page }) => {
+// D-204 removed experience modes, so the former "mode return" re-activation step no longer
+// exists; the saved geometry must still equal the dropped bounds and the float must stay put.
+test('a float dragged near the right and bottom retains normalized bounds after save', async ({ page }) => {
   await open(page)
   await move(page, 'Terminal', 'Floating')
   const floating = page.locator('.dv-resize-container:visible')
-  const header = floating.locator('.dv-tabs-and-actions-container')
-  const start = await header.boundingBox()
+  // Dockview 8 moves a float only by its dedicated title bar above the tab strip; a press on the
+  // tab strip (tab or empty space) starts a dock drag instead.
+  const start = await floating.locator('.dv-floating-titlebar').boundingBox()
   const root = await page.locator('.workspace-layout').boundingBox()
   expect(start).not.toBeNull(); expect(root).not.toBeNull()
-  await page.mouse.move(start!.x + 40, start!.y + 10)
+  await page.mouse.move(start!.x + start!.width / 2, start!.y + start!.height / 2)
   await page.mouse.down()
   await page.mouse.move(root!.x + root!.width - 220, root!.y + root!.height - 100, { steps: 15 })
   await page.mouse.up()

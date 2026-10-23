@@ -452,8 +452,10 @@ test('without WebGL no canvas is left behind and the chrome stays opaque', async
 })
 
 test('reduced motion keeps the static design even with Max graphics on', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await installShellApi(page, createFixture())
   await page.goto('/agent')
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
   await enableMaxGraphics(page)
   await expect(page.locator('html')).toHaveAttribute('data-graphics', 'max')
   await expect(page.getByTestId('max-graphics')).toHaveCount(0)
