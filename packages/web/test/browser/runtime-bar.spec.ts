@@ -145,7 +145,8 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
   await nextSample(page)
   await expect.poll(() => runtimeCalls).toBeGreaterThan(before)
   // The open popover updates in place.
-  await expect(runtime.getByText(/Источник Ollama недоступен, Наблюдение/)).toBeVisible()
+  // Facts are label and value pairs; the source state is the value's quiet meta (visual pass 5).
+  await expect(runtime.getByText('Источник Ollama недоступен', { exact: true })).toBeVisible()
   await expect(runtime.getByText('Host telemetry доступна с неизвестными полями', { exact: true })).toBeVisible()
   await expect(runtime.getByText(/Активный lease не наблюдался/)).toBeVisible()
 
@@ -243,7 +244,7 @@ test('Runtime Bar truthfully groups Linux NVIDIA devices and preserves a stale s
   await expect(devices.getByText('NVIDIA Тестовая GPU')).toBeVisible()
   await expect(devices).toContainText('GPU-…12345678')
   await expect(devices).not.toContainText('GPU-browser-private-first')
-  await expect(devices).toContainText(/Текущая свободная VRAM устройства:0\s*Б/u)
+  await expect(devices).toContainText(/Текущая свободная VRAM устройства0\s*Б/u)
   await expect(devices).toContainText('не безопасная ёмкость для допуска')
   await expect(runtime).toContainText('Точная identity модели, runtime, контекста и железа неполна')
   expect(resourceActions).toEqual([])
