@@ -24,7 +24,7 @@ Status: autonomous under D-208 and the lane owner's instructions. Base: `631cd5c
   vault key and bounded timeout; fall back to the pi-ai catalog with explicit provenance.
 - Provider streaming may buffer text at the K3 scrubber boundary to avoid partial-secret leaks.
   Durable execution remains independent from subscribers; restart interrupts rather than retries.
-- Prompt locale follows node settings; node identity uses an opaque node ID, project identity
+- Prompt locale follows node settings; node identity defaults to the local-node label, project identity
   uses only a display name. No hostname, filesystem root or credentials enter the prompt.
 - Per-project prompt editing is deferred. B1/ADR-0025 benchmark evidence is unavailable for this
   lane; fake-transport assertions establish dispatch, not model quality or non-inferiority.
