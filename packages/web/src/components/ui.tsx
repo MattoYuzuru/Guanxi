@@ -465,7 +465,7 @@ export function Modal({
         aria-labelledby={labelledBy ?? (title ? headingId : undefined)}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className="legacy-modal flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden outline-none sm:max-h-[calc(100dvh-2rem)]"
+        className="anim-fade-up legacy-modal flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden outline-none sm:max-h-[calc(100dvh-2rem)]"
         style={{ maxWidth: width }}
       >
         {title && (

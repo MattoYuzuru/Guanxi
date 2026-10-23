@@ -23,8 +23,11 @@ test('H1 secondary text on inset passes AA in both themes', async () => {
 test('self-review: soft accent labels and checkpoint cost text pass AA on all neutral surfaces', async () => {
   const ctx = await createContext()
   const ui = await ctx.read('packages/web/src/components/ui.tsx')
-  const badge = ui.match(/accent:\s*'([^']+)'/)[1]
-  assert.match(badge, /text-secondary/, 'soft accent badge must use secondary text')
+  // UI redesign: the soft accent badge is .legacy-badge[data-tone='accent'] on the contrast-gated
+  // accent-subtle fill (G3 pair accent-on-subtle).
+  assert.match(ui, /className=\{cx\('legacy-badge', className\)\}/)
+  const indexCss = await ctx.read('packages/web/src/index.css')
+  assert.match(indexCss, /\.legacy-badge\[data-tone='accent'\] \{\s*background-color: var\(--color-background-accent-subtle\);\s*color: var\(--color-text-accent\);/, 'soft accent badge must use the gated accent pair')
   for (const file of ['packages/web/src/features/projects/ProjectsPage.tsx', 'packages/web/src/features/chat/ChatPage.tsx']) assert.ok((await ctx.read(file)).includes('hover:bg-accent/10 hover:text-secondary'), `${file}: soft hover needs a passing text role`)
   assert.ok((await ctx.read('packages/web/src/features/models/CatalogVariantInstall.tsx')).includes('bg-accent/10 text-secondary'))
   const panel = await ctx.read('packages/web/src/features/context/ContextPanel.tsx')
