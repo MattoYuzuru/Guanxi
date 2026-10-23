@@ -95,7 +95,9 @@ test('close stops only the child this host started, and a stubborn child is kill
 })
 
 test('a child that never reports healthy times out unavailable and is stopped; a child that exits is unavailable and not restarted', async t => {
-  const never = await fixture(t, 'never-ready'), waiting = never.create({ startupTimeoutMs: 600, stopGraceMs: 500 })
+  // The child must answer /props before the host's startup timeout kills it, so the window has to outlast a
+  // `node` start on a busy machine (the full parallel suite): 600 ms was shorter than that and failed under load.
+  const never = await fixture(t, 'never-ready'), waiting = never.create({ startupTimeoutMs: 4_000, stopGraceMs: 500 })
   const pid = (await (async () => { await until(async () => { try { return !!(await never.props(waiting)).__pid } catch { return false } }); return (await never.props(waiting)).__pid })()) as number
   assert.equal(waiting.state().state, 'starting')
   await waiting.settled()
