@@ -19,13 +19,17 @@ journal, TLS, an SSH launcher, any install. No change to defaults: without the o
    `ms1-live start` command) or passed as `StartOptions.ms1Live` (already parsed). Role `home` | `executor`. It names *files*, never
    values: `identityFile`, `privateKeyFile` (must be mode 0600), `peerFile` (the other node's public identity), plus the peer's loopback
    URL, the model, the llama-server attach URL (executor), reserves, dispatch timing and, optionally, a `lead` section. Relative
-   paths resolve against the config file. Every URL must be `http://` loopback with an explicit port.
+   paths resolve against the config file. Every URL must be `http://` loopback with an explicit port. Each node has its owner API
+   port and a separate **federation port**.
 2. **Identity** (`identity.ts`). `init` makes an Ed25519 key pair, writes `node.key` (0600), `identity.json`, a public
    `peer-offer.json` to copy to the other node, and a config template. Scopes are the minimum: `attempts`. Both nodes use one account
-   id (`--account`, default `owner`), trust `owner_device`, not admin. Never overwrites a key.
+   id (`--account`, default `owner`), trust `owner_device`, not admin, exactly the scopes `attempts` and `replicas` (the executor's
+   relay-run pin is a replica-stream binding, found by the first live run); a peer file with more is refused. Never overwrites a key.
 3. **Transport** (`transport.ts`). The `FederationChannel` transport: `fetch` to the peer's configured loopback origin, `redirect:
-   error`, timeout, no other host ever. The operator's SSH `-L`/`-R` forwards are the private authenticated link F1 requires. The
-   server's Host allowlist checks the node's own port, so each side forwards the **same port number** it listens on.
+   error`, a short deadline except observe, count and offer, no other host ever. The operator's SSH `-L`/`-R` forwards are the
+   private authenticated link F1 requires, and they reach a **federation-only listener** (`/api/federation/*`, Host allowlist, 404
+   for anything else) so the unsigned owner API is never exposed to the link (review P1). The peer's Host allowlist checks its own
+   port, so each side forwards the **same port number** it listens on.
 4. **Boot** (`boot.ts`, one narrow block in `index.ts`). With `ms1Live` the federation plugin loads after connections (the executor's
    dispatch needs K3) instead of at kernel boot. Home: ensure the `ms1-executor` local-runtime connection (unattended), build
    `RemoteRelayRuntime`, hand `RelayRuntimePolicy.observer` to the existing `RelayRuntimeSource` and an `OwnedCheckoutAllocator` to the

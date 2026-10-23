@@ -22,8 +22,14 @@ Boundaries worth knowing:
 
 - The configuration is validated, and the key read, **before** the database or any listener exists; a conflicting option, a non-loopback
   host, a world-readable key or a self-pairing is a boot error.
+- **Two listeners per node.** The owner API (workspaces, projects, relay starts, connections) keeps its port and is never forwarded. A
+  second, federation-only listener serves `/api/federation/*` behind the Host allowlist and answers everything else `404`: it is
+  the only port the operator's ssh forward reaches. The main app does not mount federation in this mode.
 - The federation plugin loads after K3 (an executor's dispatch needs a local-runtime connection) instead of at kernel boot, only under
   this option. The home asserts `alwaysOn` (R1 refuses remote attempts otherwise) and has no Ollama fallback: its model-inventory
   callback refuses.
 - The executor serves under the federation identity's account; the home looks its connection up under the local owner.
-- Scopes are the minimum: `attempts` plus `replicas` (the executor's relay-run pin is a replica-stream binding).
+- Scopes are exactly `attempts` plus `replicas` (the executor's relay-run pin is a replica-stream binding), trust `owner_device`, no
+  admin right, on both identities: a peer file with more is refused.
+- `connectionsPolicy` defaults to `{ ownerDevice: true, nodeKeyOptIn: true }` under this option (the relay's connection must be
+  unattended); that is node-wide, each connection still needs its own consent.
