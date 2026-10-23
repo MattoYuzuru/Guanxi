@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "palette-preview",
+  "status": "draft",
+  "approval": null,
+  "requests": []
+}

@@ -1299,6 +1299,82 @@
       "since": "0.1.0"
     },
     {
+      "id": "palette-preview",
+      "title": "PalettePreview",
+      "level": "pattern",
+      "folder": "src/components/palette-preview",
+      "exports": [
+        "PalettePreview",
+        "PalettePreviewProps"
+      ],
+      "componentExports": [
+        "PalettePreview"
+      ],
+      "states": [
+        "porcelain-cobalt",
+        "mist-indigo",
+        "linen-azure"
+      ],
+      "stories": [
+        "porcelain-cobalt",
+        "mist-indigo",
+        "linen-azure"
+      ],
+      "props": {
+        "PalettePreview": [
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "palette",
+            "type": "PaletteCandidateId | undefined",
+            "required": false,
+            "description": "Which generated candidate to show; defaults to the working default."
+          }
+        ]
+      },
+      "cssVariables": [
+        "--border-radius-glass",
+        "--border-radius-inline",
+        "--border-radius-panel",
+        "--border-width-regular",
+        "--color-background-hover",
+        "--color-background-primary",
+        "--color-background-secondary",
+        "--color-border-primary",
+        "--color-text-primary",
+        "--color-text-secondary",
+        "--elevation-2-shadow",
+        "--font-family-mono",
+        "--font-family-sans",
+        "--font-line-height-ui",
+        "--font-size-12",
+        "--font-size-15",
+        "--font-text-size",
+        "--font-weight-heading",
+        "--layout-container-5xl",
+        "--spacing-12",
+        "--spacing-2",
+        "--spacing-4",
+        "--spacing-6",
+        "--spacing-64",
+        "--spacing-8"
+      ],
+      "sourceHash": "sha256:229f7abc25ec45a8f4f2d21b203a34644ecd71f33f680b6a3d41af7555fc74e4",
+      "snapshotHashes": {},
+      "storedStatus": "draft",
+      "signature": "absent",
+      "status": "draft",
+      "usage": {
+        "count": 0,
+        "files": []
+      },
+      "since": "0.1.0"
+    },
+    {
       "id": "popover",
       "title": "Popover",
       "level": "primitive",

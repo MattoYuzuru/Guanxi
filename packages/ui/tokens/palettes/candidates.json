@@ -1,0 +1,287 @@
+[
+  {
+    "id": "porcelain-cobalt",
+    "name": "Porcelain + Cobalt",
+    "summary": "Cool porcelain chrome, white session surface, saturated cobalt accent. Crisp and technical.",
+    "light": {
+      "ramp": {
+        "1": "#FFFFFF",
+        "2": "#EFF3F8",
+        "3": "#EAEEF3",
+        "4": "#E4E8ED",
+        "5": "#DCE0E5",
+        "6": "#D4D8DD",
+        "7": "#C7CBD0",
+        "8": "#A7ABB0",
+        "9": "#84888C",
+        "10": "#696C70",
+        "11": "#4B4E52",
+        "12": "#15191D"
+      },
+      "status": {
+        "accent": "#285DD2",
+        "success": "#17793A",
+        "warning": "#965C00",
+        "danger": "#C23332",
+        "info": "#0070A1"
+      },
+      "onAccent": "#FFFFFF",
+      "states": {
+        "hover": "#2655BC",
+        "pressed": "#234DA7"
+      },
+      "contrast": {
+        "textOnCanvas": 15.85,
+        "textOnSurface": 17.67,
+        "secondary": 7.51,
+        "muted": 4.74,
+        "controlBorder": 3.2,
+        "accentOnCanvas": 5.25,
+        "accentOnSurface": 5.86,
+        "onAccent": 5.86,
+        "onAccentHover": 6.76,
+        "onAccentPressed": 7.8,
+        "success": 4.92,
+        "warning": 4.92,
+        "danger": 4.94,
+        "info": 4.92,
+        "canvasVsSurface": 1.11
+      }
+    },
+    "dark": {
+      "ramp": {
+        "1": "#16191D",
+        "2": "#0D1014",
+        "3": "#1E2126",
+        "4": "#24272C",
+        "5": "#2A2D32",
+        "6": "#32363B",
+        "7": "#3E4146",
+        "8": "#52555B",
+        "9": "#66696F",
+        "10": "#81858B",
+        "11": "#A5A9AF",
+        "12": "#EBF0F8"
+      },
+      "status": {
+        "accent": "#739DEF",
+        "success": "#5DB673",
+        "warning": "#E29E47",
+        "danger": "#EE7D74",
+        "info": "#5EACD8"
+      },
+      "onAccent": "#0D1014",
+      "states": {
+        "hover": "#84A9F1",
+        "pressed": "#95B5F3"
+      },
+      "contrast": {
+        "textOnCanvas": 16.66,
+        "textOnSurface": 15.41,
+        "secondary": 7.47,
+        "muted": 4.75,
+        "controlBorder": 3.2,
+        "accentOnCanvas": 7.08,
+        "accentOnSurface": 6.55,
+        "onAccent": 7.08,
+        "onAccentHover": 8.1,
+        "onAccentPressed": 9.24,
+        "success": 7.63,
+        "warning": 8.37,
+        "danger": 7.1,
+        "info": 7.6,
+        "canvasVsSurface": 1.08
+      }
+    }
+  },
+  {
+    "id": "mist-indigo",
+    "name": "Mist + Indigo",
+    "summary": "Faintly violet mist chrome, white surface, indigo-blue accent. Softer and calmer.",
+    "light": {
+      "ramp": {
+        "1": "#FFFFFF",
+        "2": "#F1F2F9",
+        "3": "#EDEDF4",
+        "4": "#E6E6EE",
+        "5": "#DFDFE6",
+        "6": "#D6D7DE",
+        "7": "#C9CAD1",
+        "8": "#AAAAB1",
+        "9": "#87878E",
+        "10": "#6B6B72",
+        "11": "#4E4E54",
+        "12": "#18181E"
+      },
+      "status": {
+        "accent": "#4D5AC8",
+        "success": "#17793A",
+        "warning": "#965C00",
+        "danger": "#C23332",
+        "info": "#0070A1"
+      },
+      "onAccent": "#FFFFFF",
+      "states": {
+        "hover": "#4752B4",
+        "pressed": "#404A9F"
+      },
+      "contrast": {
+        "textOnCanvas": 15.83,
+        "textOnSurface": 17.67,
+        "secondary": 7.4,
+        "muted": 4.74,
+        "controlBorder": 3.2,
+        "accentOnCanvas": 5.21,
+        "accentOnSurface": 5.81,
+        "onAccent": 5.81,
+        "onAccentHover": 6.7,
+        "onAccentPressed": 7.78,
+        "success": 4.91,
+        "warning": 4.91,
+        "danger": 4.93,
+        "info": 4.91,
+        "canvasVsSurface": 1.12
+      }
+    },
+    "dark": {
+      "ramp": {
+        "1": "#18181E",
+        "2": "#0F0F15",
+        "3": "#202027",
+        "4": "#26262D",
+        "5": "#2C2D33",
+        "6": "#34353B",
+        "7": "#404047",
+        "8": "#54545C",
+        "9": "#686870",
+        "10": "#83838B",
+        "11": "#A7A7AF",
+        "12": "#EFEFFA"
+      },
+      "status": {
+        "accent": "#8899EA",
+        "success": "#5DB673",
+        "warning": "#E29E47",
+        "danger": "#ED7C73",
+        "info": "#5EACD8"
+      },
+      "onAccent": "#0F0F15",
+      "states": {
+        "hover": "#96A5ED",
+        "pressed": "#A5B1EF"
+      },
+      "contrast": {
+        "textOnCanvas": 16.73,
+        "textOnSurface": 15.48,
+        "secondary": 7.4,
+        "muted": 4.7,
+        "controlBorder": 3.2,
+        "accentOnCanvas": 7.09,
+        "accentOnSurface": 6.56,
+        "onAccent": 7.09,
+        "onAccentHover": 8.1,
+        "onAccentPressed": 9.22,
+        "success": 7.64,
+        "warning": 8.38,
+        "danger": 7.03,
+        "info": 7.61,
+        "canvasVsSurface": 1.08
+      }
+    }
+  },
+  {
+    "id": "linen-azure",
+    "name": "Linen + Azure",
+    "summary": "Warm linen chrome, white surface, clear azure accent. Warm frame, cool signal.",
+    "light": {
+      "ramp": {
+        "1": "#FFFFFF",
+        "2": "#F5F2ED",
+        "3": "#F1EDE9",
+        "4": "#EAE7E2",
+        "5": "#E2DFDB",
+        "6": "#DAD7D2",
+        "7": "#CDCAC6",
+        "8": "#ADAAA6",
+        "9": "#8A8783",
+        "10": "#6E6B67",
+        "11": "#514E4A",
+        "12": "#1B1814"
+      },
+      "status": {
+        "accent": "#0064C1",
+        "success": "#17793A",
+        "warning": "#965C00",
+        "danger": "#C23332",
+        "info": "#0070A1"
+      },
+      "onAccent": "#FFFFFF",
+      "states": {
+        "hover": "#035BAC",
+        "pressed": "#065297"
+      },
+      "contrast": {
+        "textOnCanvas": 15.84,
+        "textOnSurface": 17.69,
+        "secondary": 7.41,
+        "muted": 4.75,
+        "controlBorder": 3.2,
+        "accentOnCanvas": 5.23,
+        "accentOnSurface": 5.85,
+        "onAccent": 5.85,
+        "onAccentHover": 6.78,
+        "onAccentPressed": 7.89,
+        "success": 4.91,
+        "warning": 4.91,
+        "danger": 4.93,
+        "info": 4.91,
+        "canvasVsSurface": 1.12
+      }
+    },
+    "dark": {
+      "ramp": {
+        "1": "#1B1816",
+        "2": "#110F0D",
+        "3": "#23211E",
+        "4": "#292624",
+        "5": "#2F2D2A",
+        "6": "#373532",
+        "7": "#43413E",
+        "8": "#575552",
+        "9": "#6C6966",
+        "10": "#878481",
+        "11": "#ABA8A4",
+        "12": "#F3EFEB"
+      },
+      "status": {
+        "accent": "#63A1E5",
+        "success": "#5DB673",
+        "warning": "#E29E47",
+        "danger": "#ED7C73",
+        "info": "#5EACD8"
+      },
+      "onAccent": "#110F0D",
+      "states": {
+        "hover": "#76ACE8",
+        "pressed": "#88B8EB"
+      },
+      "contrast": {
+        "textOnCanvas": 16.72,
+        "textOnSurface": 15.44,
+        "secondary": 7.46,
+        "muted": 4.75,
+        "controlBorder": 3.24,
+        "accentOnCanvas": 7.07,
+        "accentOnSurface": 6.53,
+        "onAccent": 7.07,
+        "onAccentHover": 8.05,
+        "onAccentPressed": 9.2,
+        "success": 7.65,
+        "warning": 8.39,
+        "danger": 7.04,
+        "info": 7.62,
+        "canvasVsSurface": 1.08
+      }
+    }
+  }
+]
