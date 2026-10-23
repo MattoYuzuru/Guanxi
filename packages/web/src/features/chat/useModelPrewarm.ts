@@ -1,7 +1,7 @@
 import type { LocalModel, PrewarmModelResponse } from '@guanxi/contract'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api.ts'
-import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
+import { useRuntimeSelector } from '../health/RuntimeContext.tsx'
 
 export const MODEL_PREWARM_DEBOUNCE_MS = 600
 export const MODEL_PREWARM_CLIENT_TIMEOUT_MS = 35_000
@@ -24,18 +24,15 @@ export function useModelPrewarm(options: {
   contextLength: number
   enabled: boolean | undefined
 }): ModelPrewarmState {
-  const runtime = useRuntimeProjection()
+  // A narrow selector: the chat route re-renders only when normal-priority work appears or goes,
+  // not on every runtime poll (P2, D-203).
+  const normalWorkPresent = useRuntimeSelector((runtime) => Boolean(
+    runtime.data?.governor.activeLease?.priority === 'normal' ||
+      runtime.data?.governor.queued.some((entry) => entry.priority === 'normal'),
+  ))
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
   const [state, setState] = useState<ModelPrewarmState>({ phase: 'idle', reason: null })
   const generationRef = useRef(0)
-  const normalWorkPresent = useMemo(
-    () =>
-      Boolean(
-        runtime.data?.governor.activeLease?.priority === 'normal' ||
-          runtime.data?.governor.queued.some((entry) => entry.priority === 'normal'),
-      ),
-    [runtime.data],
-  )
 
   useEffect(() => {
     const onVisibilityChange = () => setVisible(document.visibilityState !== 'hidden')

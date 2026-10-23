@@ -7,6 +7,7 @@ import { translate as t } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
 import { ollamaHealthState } from '../health/HealthGate.tsx'
 import { RuntimeDetails } from '../health/RuntimeStatus.tsx'
+import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
 import { BrandMark } from '../new-session/BrandMark.tsx'
 
 /** Breadcrumb at the left of the strip: the mark links home, the page name is plain text. */
@@ -45,6 +46,15 @@ function deviceIcon(platform: string | undefined): IconName {
  * with an absolute time and no "N s ago" counter (D-203). Updates arrive with the shared quiet
  * runtime sample, so nothing here flickers or offers a Retry.
  */
+/**
+ * The status items bound to the shared runtime sample. This is the only shell component that reads
+ * the sample, so a poll re-renders the strip and nothing else in the shell (P2, D-203).
+ */
+export function ShellRuntimeStatusItems(props: { health: Health; healthStale?: boolean; inbox?: ReactNode }) {
+  const runtime = useRuntimeProjection()
+  return <ShellStatusItems runtime={runtime.data} stale={runtime.error !== null && runtime.data !== null} {...props} />
+}
+
 export function ShellStatusItems({ runtime, stale, health, healthStale = false, inbox }: {
   runtime: RuntimeSnapshot | null
   /** The last sample is on screen but the latest read failed. */
