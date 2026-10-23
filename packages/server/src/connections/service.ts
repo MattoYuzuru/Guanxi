@@ -1,3 +1,4 @@
+import { fetch as undiciFetch } from 'undici'
 import { endpointFetch, type EndpointResolver } from './endpoint.ts'
 import { normalizeHost } from '../ollama/normalize-host.ts'
 import { ConnectionError } from './errors.ts'
@@ -80,7 +81,8 @@ export class Connections {
     scrubber: EgressScrubber, lifetime: AbortSignal,
     ollama: OllamaAdapter, governor: ResourceGovernor,
     localHost: () => string, pi: PiTransport = piTransport,
-    transport: typeof fetch = globalThis.fetch,
+    // undici's own fetch: endpointFetch pins the address with an undici Agent, which Node 22's bundled fetch refuses.
+    transport: typeof fetch = undiciFetch as unknown as typeof fetch,
     resolveEndpoint?: EndpointResolver) {
     this.store = store
     this.#vault = vault

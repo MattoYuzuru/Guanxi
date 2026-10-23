@@ -413,3 +413,83 @@ test('uncommitted work at a handoff is checkpointed before the seal instead of s
     assert.equal(f.relay.read(f.run.id).head, 'b'.repeat(40))
   } finally { f.close() }
 })
+
+test('a failing dependency gate ends the verify action before the requested item; done dependencies are skipped; a diamond runs each gate once', async () => {
+  const diamond: Plan = { ...plan, items: [
+    { id: 'base', title: 'b', dependsOn: [], acceptance: ['true'], protectedPaths: [] },
+    { id: 'left', title: 'l', dependsOn: ['base'], acceptance: ['true'], protectedPaths: [] },
+    { id: 'right', title: 'r', dependsOn: ['base'], acceptance: ['true'], protectedPaths: [] },
+    { id: 'top', title: 't', dependsOn: ['left', 'right'], acceptance: ['true'], protectedPaths: [] }] }
+  {
+    const verified: string[] = []
+    const f = fixture({ plan: diamond, actions: (_p, n) => canonical(n === 1 ? { action: 'verify', item: 'top' } : { action: 'handoff' }) }); try {
+      const verify = f.workspace.verify.bind(f.workspace)
+      f.workspace.verify = async (p, item, ...rest) => { verified.push(item); return verify(p, item, ...rest) }
+      await f.executor.run(f.attempt)
+      const action = verified.slice(0, 4)
+      assert.deepEqual([...action].sort(), ['base', 'left', 'right', 'top'])
+      assert.equal(action[0], 'base'); assert.equal(action[3], 'top')
+      assert.equal(new Set(action).size, 4, 'each gate ran once in the action')
+      assert.ok(f.prompts.some(p => p.includes('"item":"top","ok":true')), 'the verdict leads the result')
+    } finally { f.close() }
+  }
+  {
+    const verified: string[] = []
+    const f = fixture({ plan: diamond, actions: (_p, n) => canonical(n === 1 ? { action: 'verify', item: 'top' } : { action: 'handoff' }) }); try {
+      const verify = f.workspace.verify.bind(f.workspace)
+      f.workspace.verify = async (p, item, ...rest) => { verified.push(item); const e = await verify(p, item, ...rest); return item === 'left' ? { ...e, ok: false } : e }
+      await f.executor.run(f.attempt).catch(() => undefined)
+      assert.ok(!verified.includes('top'), 'the requested item was not gated after its dependency failed')
+      assert.ok(f.prompts.some(p => p.includes('"failedAt":"left"')))
+    } finally { f.close() }
+  }
+  {
+    const verified: string[] = []
+    const f = fixture({ plan: diamond, actions: (_p, n) => canonical(n === 1 ? { action: 'verify', item: 'base' } : n === 2 ? { action: 'verify', item: 'left' } : { action: 'handoff' }) }); try {
+      const verify = f.workspace.verify.bind(f.workspace)
+      f.workspace.verify = async (p, item, ...rest) => { verified.push(item); return verify(p, item, ...rest) }
+      await f.executor.run(f.attempt)
+      assert.deepEqual(verified.slice(0, 2), ['base', 'left'], 'base, already done at this head, was not re-gated for left')
+    } finally { f.close() }
+  }
+})
+
+test('verify answers alreadyDone only for a clean tree: work written after a pass is checkpointed and re-gated', async () => {
+  let gates = 0
+  const f = fixture({ actions: (_p, n) => canonical(n <= 2 ? { action: 'verify', item: 'one' } : { action: 'handoff' }) }); try {
+    const verify = f.workspace.verify.bind(f.workspace)
+    let dirty = false, checkpoints = 0
+    const checkpoint = f.workspace.checkpoint.bind(f.workspace)
+    f.workspace.checkpoint = async (...args) => { checkpoints++; dirty = false; await checkpoint(...args) }
+    f.workspace.validate = async () => { if (dirty) throw new RelayError('checkout_dirty') }
+    f.workspace.verify = async (...args) => { gates++; const e = await verify(...args); dirty = true; return e }
+    await f.executor.run(f.attempt)
+    assert.equal(checkpoints >= 1, true)
+    assert.ok(gates >= 2, 'the second verify ran a gate on the new checkpoint instead of answering alreadyDone')
+    assert.ok(!f.prompts.some(p => p.includes('"alreadyDone":true')))
+  } finally { f.close() }
+})
+
+test('a protected path in the handoff auto checkpoint stops the run as protected_path', async () => {
+  const f = fixture({ actions: () => canonical({ action: 'handoff' }) }); try {
+    f.workspace.validate = async () => { throw new RelayError('checkout_dirty') }
+    f.workspace.checkpoint = async () => { throw new RelayError('protected_path') }
+    await f.executor.run(f.attempt).catch(() => undefined)
+    assert.ok(errors(f).includes('protected_path'))
+  } finally { f.close() }
+})
+
+test('all items done, then a handoff auto checkpoint: the final gates run again at the new head and the next cycle is told', async () => {
+  let gates = 0
+  const f = fixture({ actions: (_p, n) => canonical(n === 1 ? { action: 'verify', item: 'one' } : { action: 'finish' }) }); try {
+    const verify = f.workspace.verify.bind(f.workspace)
+    let dirty = false
+    f.workspace.checkpoint = async () => { dirty = false }
+    f.workspace.validate = async () => { if (dirty) throw new RelayError('checkout_dirty') }
+    f.workspace.verify = async (...args) => { gates++; const e = await verify(...args); if (gates === 1) dirty = true; return e }
+    const l = await f.executor.run(f.attempt)
+    assert.equal(gates, 2, 'one gate for the action, one final gate after the harness checkpoint')
+    assert.equal(l.items.one, 'done')
+    assert.ok(f.relay.notes(f.run.id).some((n: { text: string }) => n.text.includes('harness checkpointed uncommitted work')))
+  } finally { f.close() }
+})

@@ -414,7 +414,10 @@ refusals) before a `verify` action or a handoff, records an `auto_checkpoint` no
 stops the run as `protected_path`. A tree still dirty right after that checkpoint stops once as
 `checkout_dirty_after_checkpoint`. Gate evidence is bound to a head and a new head reopens every item, so `verify` re-runs the
 gates of an item's not-done dependencies first, in dependency order; an unknown id or an item already done at this head is
-answered to the model instead of stopping the run.
+answered to the model instead of stopping the run (an item counts as done only on a clean tree: work written after it passed is
+checkpointed first and reopens it). When every item was done and a handoff checkpoint reopens them, the final gates run again
+at the new head, and the next cycle gets an `open_issue` note that the harness made that commit. A verify result leads with its
+verdict (`item`, `ok`, `failedAt`) before the gate outputs, so a bounded result never cuts the answer.
 
 Gates materialize raw objects without archive attributes, `.git` or untracked files, restore planner-owned
 protected paths from the base revision and run acceptance argv in K4 Read-only mode.

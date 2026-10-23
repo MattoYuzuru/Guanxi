@@ -157,6 +157,11 @@ test('the default transport waits for completion headers as long as the client d
     assert.ok(timeouts.headersTimeout > Math.max(request, completion) && timeouts.bodyTimeout > Math.max(request, completion))
   }
   assert.ok(llamaServerDispatcherTimeouts(15_000, 30 * 60_000).headersTimeout > 300_000, 'longer than undici\'s default headers timeout')
+  // The default transport really is built with them; an injected transport has none.
+  const built = new LlamaServerClient({ baseUrl: 'http://127.0.0.1:1' })
+  assert.ok(built.dispatcherTimeouts && built.dispatcherTimeouts.headersTimeout > 30 * 60_000 && built.dispatcherTimeouts.bodyTimeout > 30 * 60_000)
+  assert.equal(new LlamaServerClient({ baseUrl: 'http://127.0.0.1:1', fetch: globalThis.fetch }).dispatcherTimeouts, undefined)
+  assert.throws(() => new LlamaServerClient({ baseUrl: 'http://127.0.0.1:1', completionTimeoutMs: 2 ** 31 }), LlamaServerError)
   // A completion whose headers arrive only when generation ends still succeeds through the default transport.
   const server = createServer((_req, res) => { setTimeout(() => {
     res.writeHead(200, { 'content-type': 'application/json' })

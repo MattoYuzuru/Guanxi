@@ -1,3 +1,4 @@
+import { Agent, fetch as undiciFetch } from 'undici'
 import { loopbackBase, Ms1LiveError } from './config.ts'
 
 const ROUTE_PREFIX = '/api/federation/'
@@ -14,7 +15,12 @@ export function loopbackTransport(options: { base: string; timeoutMs: number; me
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0) throw new Ms1LiveError('timeout_invalid', 'link.requestTimeoutMs')
   const messageTimeoutMs = options.messageTimeoutMs ?? options.timeoutMs
   if (!Number.isSafeInteger(messageTimeoutMs) || messageTimeoutMs <= 0) throw new Ms1LiveError('timeout_invalid', 'link.messageTimeoutMs')
-  const transport = options.fetch ?? globalThis.fetch
+  // Node's fetch stops waiting for response headers after 300 s by default, shorter than the slow routes' own deadline
+  // (15 minutes): an undici Agent sized to the longest deadline, paired with undici's own fetch (Node 22 refuses a foreign Agent).
+  const longest = Math.max(options.timeoutMs, messageTimeoutMs) + 5_000
+  const dispatcher = options.fetch ? undefined : new Agent({ headersTimeout: longest, bodyTimeout: longest })
+  const transport: typeof fetch = options.fetch ?? ((url: string | URL, init?: RequestInit) =>
+    undiciFetch(url, { ...init, dispatcher } as unknown as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch
   return async request => {
     const url = new URL(request.url)
     // A logical URL for anything but the federation API is a bug in the caller, never a request to forward.

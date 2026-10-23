@@ -68,24 +68,28 @@ export class LlamaServerClient {
   private readonly requestTimeoutMs: number
   private readonly completionTimeoutMs: number
   private readonly cachePrompt: boolean
+  /** The undici timeouts of the default transport (absent when a transport is injected). */
+  readonly dispatcherTimeouts?: { headersTimeout: number; bodyTimeout: number }
   constructor(options: LlamaServerClientOptions) {
     this.baseUrl = loopbackOrigin(options.baseUrl)
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000
     this.completionTimeoutMs = options.completionTimeoutMs ?? 30 * 60_000
+    for (const ms of [this.requestTimeoutMs, this.completionTimeoutMs]) {
+      // Timer limit: Node clamps longer delays to 1 ms.
+      if (!Number.isSafeInteger(ms) || ms <= 0 || ms > 2_147_483_647) throw new LlamaServerError('llama_server_refused')
+    }
     if (options.fetch) this.transport = options.fetch
     else {
       // A non-streamed completion sends its headers only when generation ends. Node's fetch (undici) gives up waiting for
       // headers after 300 s by default, so every call longer than five minutes failed on a real executor (a 4096-token turn
       // takes ~13 min at ~5 tokens/s). Our own deadline (completionTimeoutMs) stays the authority.
-      const dispatcher = new Agent(llamaServerDispatcherTimeouts(this.requestTimeoutMs, this.completionTimeoutMs))
+      this.dispatcherTimeouts = llamaServerDispatcherTimeouts(this.requestTimeoutMs, this.completionTimeoutMs)
+      const dispatcher = new Agent(this.dispatcherTimeouts)
       // undici's own fetch with its own Agent: the fetch bundled in Node 22 (undici 6) refuses an Agent from the undici
       // package (UND_ERR_INVALID_ARG), so the two must come from the same copy.
       this.transport = ((url: string | URL, init?: RequestInit) => undiciFetch(url, { ...init, dispatcher } as unknown as Parameters<typeof undiciFetch>[1])) as unknown as typeof fetch
     }
     this.cachePrompt = options.cachePrompt ?? true
-    for (const ms of [this.requestTimeoutMs, this.completionTimeoutMs]) {
-      if (!Number.isSafeInteger(ms) || ms <= 0) throw new LlamaServerError('llama_server_refused')
-    }
   }
   private async json(path: string, init: { method: 'GET' | 'POST'; body?: unknown }, signal: AbortSignal | undefined, timeoutMs: number,
     onDispatched?: () => void): Promise<{ status: number; body: unknown }> {
