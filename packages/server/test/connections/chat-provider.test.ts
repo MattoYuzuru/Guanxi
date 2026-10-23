@@ -604,3 +604,15 @@ test('invalid OpenAI root reports its key while other provider keys still import
   assert.deepEqual(result.errors, [{ key: 'OPENAI_API_KEY', code: 'invalid_provider_key' }])
   assert.ok(!JSON.stringify(result).includes(value))
 })
+
+test('one file imports official OpenAI and a separate compatible endpoint without redirecting either', async t => {
+  const f = await setup(t), file = join(f.dir, 'two-openai.env')
+  await writeFile(file, `OPENAI_API_KEY=${canary()}\nOPENAI_COMPAT_API_KEY=${canary()}\nOPENAI_COMPAT_API_URL=https://api.example.invalid/v1`)
+  const result = await importProviderKeysFile(f.service, 'local', file)
+  assert.equal(result.imported.length, 2)
+  const rows = result.imported.map(item => f.store.get('local', item.connectionId))
+  assert.equal(rows[0]!.baseUrl, undefined)
+  assert.equal(rows[1]!.baseUrl, 'https://api.example.invalid/v1')
+  assert.notEqual(rows[0]!.id, rows[1]!.id)
+  assert.deepEqual((await importProviderKeysFile(f.service, 'local', file)).imported.map(item => item.action), ['unchanged', 'unchanged'])
+})

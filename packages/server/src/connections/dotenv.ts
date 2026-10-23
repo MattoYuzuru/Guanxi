@@ -5,7 +5,7 @@ import { assertApiKey } from './pi.ts'
 import { ConnectionError } from './errors.ts'
 import type { Connections } from './service.ts'
 
-const keys = { OPENAI_API_KEY: 'openai', DEEPSEEK_API_KEY: 'deepseek', ANTHROPIC_API_KEY: 'anthropic',
+const keys = { OPENAI_API_KEY: 'openai', OPENAI_COMPAT_API_KEY: 'openai', DEEPSEEK_API_KEY: 'deepseek', ANTHROPIC_API_KEY: 'anthropic',
   OPENROUTER_API_KEY: 'openrouter', GOOGLE_API_KEY: 'google' } as const
 export interface ImportedProvider { provider: Connection['provider']; value: string; baseUrl?: string; allowPrivate?: boolean }
 /** Node's dotenv parser treats shell substitutions and ${variables} as literal data. */
@@ -32,8 +32,9 @@ export function parseProviderKeyFile(text: string) {
       if (!value) continue
       try {
       assertApiKey(provider, value)
-      const baseUrl = provider === 'openai' && data.OPENAI_API_URL
-        ? connectionBaseUrlSchema.parse(data.OPENAI_API_URL).replace(/\/+$/, '') : undefined
+      const endpoint = name === 'OPENAI_COMPAT_API_KEY' ? data.OPENAI_COMPAT_API_URL : provider === 'openai' ? data.OPENAI_API_URL : undefined
+      if (name === 'OPENAI_COMPAT_API_KEY' && !endpoint) throw new Error('compatible_root_required')
+      const baseUrl = endpoint ? connectionBaseUrlSchema.parse(endpoint).replace(/\/+$/, '') : undefined
       entries.push({ provider, value, ...(baseUrl ? { baseUrl, allowPrivate: data.GUANXI_PROVIDER_ALLOW_PRIVATE === '1' } : {}) })
       } catch { errors.push({ key: name, code: 'invalid_provider_key' }) }
     }
