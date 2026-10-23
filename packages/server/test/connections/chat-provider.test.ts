@@ -132,12 +132,12 @@ test('custom connection discovers models with explicit credentials, refuses redi
   const id = await imported(f.service, value, 'https://api.example.invalid/v1')
   const catalog = await f.service.chatModels('local', id)
   assert.deepEqual(catalog.models, ['owner-model'])
-  assert.equal(catalog.source, 'https://api.example.invalid/v1/models')
+  assert.equal(catalog.source, 'api.example.invalid')
   assert.ok(Number.isFinite(Date.parse(catalog.observedAt!)))
   assert.deepEqual(calls, [{ url: 'https://api.example.invalid/v1/models', redirect: 'error', auth: `Bearer ${value}` }])
   await f.service.chatModels('local', id)
   assert.equal(calls.length, 1)
-  assert.equal(f.service.snapshot('local').connections[0]!.baseUrl, 'https://api.example.invalid/v1')
+  assert.equal(f.service.snapshot('local').connections[0]!.baseUrl, 'https://api.example.invalid')
 })
 
 test('custom discovery failure is explicitly unknown and locked/service/keyless connections are absent from picker', async t => {

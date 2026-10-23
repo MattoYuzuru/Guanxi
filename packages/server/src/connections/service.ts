@@ -4,7 +4,7 @@ import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { AssistantMessage, Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
-import type { ConnectionSnapshot, CreateConnection } from '@guanxi/contract'
+import type { Connection, ConnectionSnapshot, CreateConnection } from '@guanxi/contract'
 import type { OllamaAdapter } from '../ollama/plugin.ts'
 import type { OllamaChatRequest, OllamaChatChunk } from '../ollama/types.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
@@ -18,6 +18,10 @@ import type { ImportedProvider } from './dotenv.ts'
 import { SafeTextStream } from './safe-stream.ts'
 import type { Api, Model } from '@earendil-works/pi-ai'
 
+/** Public display projection never exposes owner API-root paths. */
+export function publicConnection(row: Connection): Connection {
+  return { ...row, ...(row.baseUrl ? { baseUrl: new URL(row.baseUrl).origin } : {}) }
+}
 export interface ModelCall {
   model: string; runId: string; requestId: string; background?: boolean
   /** Trusted billing boundary: one K3-visible HTTP attempt, never a provider retry. */
@@ -99,7 +103,7 @@ export class Connections {
   }
   snapshot(accountId: string): ConnectionSnapshot {
     this.assertOpen()
-    return this.scrubber.scrub({ connections: this.store.list(accountId), costs: this.store.costs(accountId),
+    return this.scrubber.scrub({ connections: this.store.list(accountId).map(publicConnection), costs: this.store.costs(accountId),
       vault: { unlocked: this.#vault.unlocked(accountId), unattendedAvailable: this.#vault.unattendedAvailable } })
   }
   create(accountId: string, input: CreateConnection) {
@@ -171,7 +175,7 @@ export class Connections {
       })
       const at = new Date().toISOString()
       const models = this.scrubber.scrub(result)
-      const catalog = { checked: Date.now(), models, source: `${connection.baseUrl.replace(/\/+$/, '')}/models`, observedAt: at, confidence: 'medium' as const, state: 'current' as const }
+      const catalog = { checked: Date.now(), models, source: new URL(connection.baseUrl).host, observedAt: at, confidence: 'medium' as const, state: 'current' as const }
       this.discovered.set(id, catalog)
       return catalog
     } catch {
