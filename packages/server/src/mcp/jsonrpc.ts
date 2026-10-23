@@ -51,6 +51,15 @@ function positiveTimeout(value: number, name: string): number {
   return value
 }
 
+const MAX_SERVER_ERROR_MESSAGE_CHARS = 200
+
+/** Keeps a hostile server message bounded without splitting a code point. */
+function truncateServerMessage(message: string): string {
+  const characters = Array.from(message)
+  if (characters.length <= MAX_SERVER_ERROR_MESSAGE_CHARS) return message
+  return `${characters.slice(0, MAX_SERVER_ERROR_MESSAGE_CHARS - 1).join('')}…`
+}
+
 export class JsonRpcConnection {
   private readonly stdin: Writable
   private readonly stdout: Readable
@@ -302,8 +311,8 @@ export class JsonRpcConnection {
       }
       this.settleReject(message.id, new McpError(
         'mcp_rpc_error',
-        `${pending.method} failed: ${error.message}`,
-        { rpcCode: error.code, data: error.data },
+        `${pending.method} failed: ${truncateServerMessage(error.message)}`,
+        { rpcCode: error.code },
       ))
       return
     }

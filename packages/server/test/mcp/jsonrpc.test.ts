@@ -48,6 +48,32 @@ it('frames a response split across many chunks', async () => {
   stdout.destroy()
 })
 
+it('truncates an untrusted server error message and drops its data', async () => {
+  const stdin = sink()
+  const stdout = new PassThrough()
+  const rpc = new JsonRpcConnection({ stdin, stdout, requestTimeoutMs: 1_000 })
+  const pending = rpc.request('tools/call')
+  const secret = 'SENSITIVE-DATA-MARKER'
+  const serverMessage = `${'E'.repeat(500)}SERVER-SECRET-TAIL`
+  stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    error: { code: -32000, message: serverMessage, data: { secret } },
+  })}\n`)
+
+  const error = await expectCode(pending, 'mcp_rpc_error')
+  assert.equal(error.rpcCode, -32000)
+  const serverPart = error.message.replace(/^tools\/call failed: /, '')
+  assert.ok(Array.from(serverPart).length <= 200)
+  assert.equal(serverPart.includes('SERVER-SECRET-TAIL'), false)
+  assert.equal((error as { data?: unknown }).data, undefined)
+  assert.equal(error.message.includes(secret), false)
+
+  rpc.close()
+  stdin.destroy()
+  stdout.destroy()
+})
+
 it('fails an oversized frame before a newline arrives', async () => {
   const stdin = sink()
   const stdout = new PassThrough()

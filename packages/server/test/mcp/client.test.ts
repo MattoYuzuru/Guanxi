@@ -187,7 +187,7 @@ it('returns structured tool results and JSON-RPC errors without interpretation',
 
   const rpcError = await expectCode(harness.manager.callTool('fake', 'fail'), 'mcp_rpc_error')
   assert.equal(rpcError.rpcCode, -32000)
-  assert.deepEqual(rpcError.data, { kind: 'expected' })
+  assert.equal((rpcError as { data?: unknown }).data, undefined, 'server error data must be dropped')
   assert.match(rpcError.message, /fixture failure/)
 
   const callsBefore = (await messages(harness.log)).filter(message => message.method === 'tools/call').length
@@ -331,7 +331,7 @@ it('never surfaces stderr noise containing the planted sentinel', async (t) => {
     JSON.stringify(echo),
     timeout.message,
     String(timeout.stack ?? ''),
-    JSON.stringify(timeout.data ?? null),
+    JSON.stringify((timeout as { data?: unknown }).data ?? null),
   ].join('\n')
   assert.equal(surfaces.includes(PLANTED_STDERR_SENTINEL), false)
 })

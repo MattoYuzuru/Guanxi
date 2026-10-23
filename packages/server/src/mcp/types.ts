@@ -45,22 +45,24 @@ export type McpErrorCode =
 export interface McpErrorOptions {
   /** JSON-RPC error code returned by the server, if any. */
   rpcCode?: number
-  /** JSON-RPC error data returned by the server, if any. */
-  data?: unknown
 }
 
-/** Error type for every MCP client failure. Never carries stderr. */
+/**
+ * Error type for every MCP client failure. Never carries stderr or raw
+ * server error data.
+ *
+ * SECURITY: `message` can contain a truncated, untrusted string supplied by
+ * an MCP server. Do not render it as trusted text or execute it.
+ */
 export class McpError extends Error {
   readonly code: McpErrorCode
   readonly rpcCode: number | undefined
-  readonly data: unknown
 
   constructor(code: McpErrorCode, message: string, options: McpErrorOptions = {}) {
     super(message)
     this.name = 'McpError'
     this.code = code
     this.rpcCode = options.rpcCode
-    this.data = options.data
   }
 }
 
