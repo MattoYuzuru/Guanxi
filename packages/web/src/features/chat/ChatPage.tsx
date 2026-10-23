@@ -144,13 +144,8 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       ? requestedContext
       : defaultContext
   const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
-  const providerModels = useAsync(signal => api.chatModels(signal), [])
-  useEffect(() => {
-    const timer = setInterval(providerModels.reload, 15_000)
-    const refresh = () => providerModels.reload()
-    window.addEventListener('focus', refresh)
-    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [providerModels.reload])
+  // Provider models stay current by quiet revalidation (D-203): an equal re-read commits nothing.
+  const providerModels = useAsync(signal => api.chatModels(signal), [], { revalidate: { onFocus: true, intervalMs: 15_000 } })
   const providerGroups = mode === 'chat' ? providerModels.data?.groups ?? [] : []
   const providerSelected = providerGroups.some(group => group.models.some(item => item.selection === model))
   const workspaces = useAsync(

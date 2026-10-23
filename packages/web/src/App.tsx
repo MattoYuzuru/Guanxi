@@ -1,7 +1,9 @@
 /**
  * Корень приложения: проверка здоровья, продуктовый shell и разбор маршрута.
  */
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useRef } from 'react'
+import type { Health } from '@guanxi/contract'
+import { sameHealthFacts } from './lib/health-facts.ts'
 import { api } from './lib/api.ts'
 import { useAsync } from './lib/useAsync.ts'
 import { Link, paths, useRoute } from './lib/router.tsx'
@@ -34,7 +36,13 @@ export function App() {
   const route = useRoute()
   // Health stays current by itself (D-203): a quiet re-read every 15 s while visible and on focus,
   // automatic recovery when the node does not answer. Only a node that never answered blocks the app.
-  const health = useAsync((signal) => api.health(signal), [], { revalidate: { onFocus: true, intervalMs: 15_000 } })
+  // An answer whose facts are unchanged keeps the previous object, so the poll renders nothing.
+  const lastHealth = useRef<Health | null>(null)
+  const health = useAsync(async (signal) => {
+    const next = await api.health(signal)
+    if (!sameHealthFacts(lastHealth.current, next)) lastHealth.current = next
+    return lastHealth.current!
+  }, [], { revalidate: { onFocus: true, intervalMs: 15_000 } })
 
   if (health.loading && !health.data) return <HealthLoading />
   if (!health.data) {
