@@ -146,8 +146,12 @@ export function NotificationsPage() {
     </div>}
 
     {slice.loaded && slice.observedAt !== null && <p data-testid="notifications-observed" className="text-12 text-secondary">
-      {t('notifications.fetched', { time: formatDateTime(iso(slice.observedAt)) })} · <span className="font-mono">{t('notifications.source.list')}</span>
-      {availability.observedAt !== null && <> · {t('notifications.actionsRead', { time: formatDateTime(iso(availability.observedAt)) })} · <span className="font-mono">{t('notifications.source.actions')}</span></>}
+      {availability.observedAt === null
+        ? t('notifications.provenance', { time: formatDateTime(iso(slice.observedAt)), source: t('notifications.source.list') })
+        : t('notifications.provenance.actions', {
+          time: formatDateTime(iso(slice.observedAt)), source: t('notifications.source.list'),
+          actionsTime: formatDateTime(iso(availability.observedAt)), actionsSource: t('notifications.source.actions'),
+        })}
     </p>}
 
     {empty && <EmptyState data-testid="notifications-empty" title={t(`notifications.empty.${filter}`)}

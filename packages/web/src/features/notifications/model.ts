@@ -19,12 +19,9 @@ export function pluralText(base: PluralBase, count: number): string {
   return t(`${base}.${form}` as LocaleKey, { count })
 }
 
-/**
- * A percentage with at most one decimal. It does not use the shared `formatPercent`, which drops
- * the zero of a whole number ("10%" becomes "1%"); see the NC1-ui hand-off.
- */
+/** A percentage (0..100) with at most one decimal, in the active locale's own percent format. */
 export function percentText(value: number): string {
-  return `${new Intl.NumberFormat(getActiveLocale(), { maximumFractionDigits: 1 }).format(value)}%`
+  return new Intl.NumberFormat(getActiveLocale(), { style: 'percent', maximumFractionDigits: 1 }).format(value / 100)
 }
 
 export function windowLabel(window: NotificationWire['facts']['window']): string {

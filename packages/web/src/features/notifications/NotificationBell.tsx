@@ -27,7 +27,8 @@ function Bell({ store }: { store: InboxStore }) {
   const seenArrivals = useRef<number | null>(null)
 
   const countText = summary.atLeast
-    ? t('notifications.unread.atLeast', { count: summary.count })
+    // Everything loaded is handled but the node holds more: a bound of 0 would read as "none".
+    ? summary.count === 0 ? t('notifications.unread.moreOnNode') : t('notifications.unread.atLeast', { count: summary.count })
     : summary.count === 0 ? t('notifications.bell.none') : pluralText('notifications.unread', summary.count)
 
   useEffect(() => {
@@ -36,15 +37,15 @@ function Bell({ store }: { store: InboxStore }) {
     if (snapshot.arrivals <= seenArrivals.current) return
     const added = snapshot.arrivals - seenArrivals.current
     seenArrivals.current = snapshot.arrivals
-    setAnnouncement(`${pluralText('notifications.new', added)}. ${countText}`)
+    setAnnouncement(t('notifications.bell.arrival', { added: pluralText('notifications.new', added), summary: countText }))
   }, [snapshot.arrivals, summary.loaded, countText])
 
   const visible = !summary.loaded
     ? summary.failure ? t('shell.status.unknown') : t('notifications.bell.loading')
     : countText
-  const stale = summary.loaded && summary.failure !== null && summary.observedAt !== null
-    ? t('notifications.bell.stale', { time: formatDateTime(new Date(summary.observedAt).toISOString()) })
-    : null
+  const shown = summary.loaded && summary.failure !== null && summary.observedAt !== null
+    ? t('notifications.bell.staleSummary', { summary: visible, time: formatDateTime(new Date(summary.observedAt).toISOString()) })
+    : visible
 
   return <>
     <Link to={paths.notifications()} data-testid="notification-bell" data-unread={summary.loaded ? summary.count : undefined}
@@ -52,8 +53,7 @@ function Bell({ store }: { store: InboxStore }) {
       className="inline-flex min-h-8 min-w-0 flex-wrap items-center gap-1 rounded-control px-2 py-1 text-12 hover:bg-inset focus-visible:outline-focus">
       <span className="sr-only">{t('notifications.navigation')}: </span>
       {summary.loaded && summary.count > 0 && <span aria-hidden="true">●</span>}
-      <span data-testid="notification-bell-count" className={summary.count > 0 ? 'font-heading' : undefined}>{visible}</span>
-      {stale !== null && <span className="text-secondary">· {stale}</span>}
+      <span data-testid="notification-bell-count" className={summary.count > 0 ? 'font-heading' : undefined}>{shown}</span>
     </Link>
     <span role="status" aria-live="polite" aria-atomic="true" data-testid="notification-live" className="sr-only">{announcement}</span>
   </>

@@ -140,7 +140,7 @@ export function NotificationRow(props: NotificationRowProps) {
       <Fact label={t('notifications.fact.observedAt')}><time dateTime={facts.observedAt}>{formatDateTime(facts.observedAt)}</time></Fact>
       <Fact label={t('notifications.fact.confidence')}>
         <span data-testid="notification-confidence">{t(`notifications.confidence.${facts.confidence}`)}</span>
-        {facts.confidence === 'estimated' && <span className="text-secondary"> · {t('notifications.confidence.estimatedHint')}</span>}
+        {facts.confidence === 'estimated' && <span className="block text-secondary">{t('notifications.confidence.estimatedHint')}</span>}
       </Fact>
       <Fact label={t('notifications.fact.raised')}><time dateTime={new Date(row.createdAt).toISOString()}>{formatDateTime(new Date(row.createdAt).toISOString())}</time></Fact>
     </dl>
@@ -179,7 +179,7 @@ export function NotificationRow(props: NotificationRowProps) {
     {op?.status === 'failed' && op.failure && <div role="alert" data-testid="notification-failure" className="flex min-w-0 flex-col gap-2 rounded-control border border-danger p-2 text-12">
       <p className="break-words">{t('notifications.failed', { action: actionLabel, reason: failureText(op.failure) })}</p>
       {op.keepsKey && <p className="text-secondary">{t('notifications.failed.keepKey')}</p>}
-      <p className="text-secondary">{t('notifications.failed.at', { time: formatDateTime(new Date(op.failure.at).toISOString()) })} · <Machine>{op.failure.code}</Machine></p>
+      <p className="break-words text-secondary">{t('notifications.failed.at', { time: formatDateTime(new Date(op.failure.at).toISOString()), code: op.failure.code })}</p>
       <div className="flex flex-wrap gap-2">
         {retryRef.current && <Button size="sm" disabled={pending} onClick={() => { void retryRef.current?.() }}>{t('notifications.retry')}</Button>}
         <Button size="sm" variant="ghost" onClick={() => props.onDismiss(row)}>{t('notifications.dismiss')}</Button>
