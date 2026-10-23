@@ -1,4 +1,4 @@
-import { definePlugin } from '@guanxi/kernel'
+import { definePlugin, interval } from '@guanxi/kernel'
 import type { Db } from '../store/db.ts'
 import type { SessionLog } from '../session-log/log.ts'
 import type { Connections } from '../connections/service.ts'
@@ -16,8 +16,10 @@ import { RelayStarts, type RelayStartHost } from './start.ts'
 import type { EtaInput } from './eta.ts'
 import type { RelayJudgeInput } from './judge-host.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
+import { JudgeJournalStore } from './judge-journal.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
+const JOURNAL_PURGE_INTERVAL_MS = 10 * 60 * 1_000
 export interface RelayConfig { db: Db; limits?: Partial<RelayLimits>; startHost?: RelayStartHost }
 export interface RelayInput {
   connectionId: string; model: string; meter: RuntimeMeter; workspace: RelayWorkspace; reserves: Reserves; limits?: Partial<RelayLimits>
@@ -35,6 +37,18 @@ export const relayPlugin = definePlugin<RelayConfig>({
     const connections = ctx.service<Connections>('connections.registry')
     const scrubber = ctx.service<EgressScrubber>('egress.scrubber')
     const store = new RelayStore(config.db, runs.store, scrubber)
+    // D-199 journal is owned by this node and bounded by the reasoning retention. It is
+    // constructed even before a judge runs so a periodic purge can empty an old node.
+    const journal = new JudgeJournalStore(config.db, { scrubber })
+    const purgeJournal = () => {
+      try {
+        journal.purgeExpired()
+      } catch {
+        // The next tick retries; a local sidecar purge never stops the relay.
+      }
+    }
+    purgeJournal()
+    interval(ctx, purgeJournal, JOURNAL_PURGE_INTERVAL_MS)
     const publicStarts = new RelayStarts(config.db, runs.store, ctx.service<SessionLog>('session.log'), connections, scrubber, store,
       config.startHost ?? { project: async () => { throw new Error('relay_project_unavailable') }, nodePorts: () => [] })
     const active = new Map<string, { executor: RelayExecutor; promise: Promise<unknown> }>()
@@ -47,7 +61,13 @@ export const relayPlugin = definePlugin<RelayConfig>({
         invariant(!closed && !active.has(a.run_id), 'relay_busy')
         invariant(!input.eta || input.eta.scope.model === input.model, 'eta_model')
         const limits = { ...DEFAULT_RELAY_LIMITS, ...config.limits, ...input.limits }
-        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits, input.eta, input.judgeSignals, input.cascade)
+        const cascade = input.cascade
+          ? {
+              ...input.cascade,
+              journal: input.cascade.journal === undefined ? journal : input.cascade.journal
+            }
+          : undefined
+        const executor = new RelayExecutor(store, new ConnectionRelayModel(connections, input.connectionId, input.model, input.meter), input.workspace, input.reserves, scrubber, limits, input.eta, input.judgeSignals, cascade)
         const promise = executor.run(a)
         active.set(a.run_id, { executor, promise })
         try { return await promise } finally { active.delete(a.run_id) }
