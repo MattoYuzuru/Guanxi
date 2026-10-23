@@ -97,7 +97,7 @@ The full test failures are environment-bound, not journal-bound:
 `external-agents/admission-reconcile` 4, `native-agent/agent` 3, `indexing/tools-lsp` 3,
 `relay/operational-relay` 1, `native-agent/sandbox` 1, `indexing/process` 1. They are process
 start-time/`ps`, Unix-socket, nested-sandbox and worker tests; the same failures reproduce on
-main `0ab58729` (spot-checked `admission-reconcile`, `native-agent/sandbox` + `indexing/process`,
+main `0ab58729` (spot-checked `admission-reconcile`, `native-agent/sandbox`, `indexing/process`,
 and `operational-relay`). No failure mentions the journal or cascade. This sandbox denies
 `ps`/nested-sandbox operations, so these tests could not be made green here.
 
