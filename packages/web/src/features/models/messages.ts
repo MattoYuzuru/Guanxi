@@ -50,6 +50,8 @@ export const modelsEnglish = {
   'models.facts.cloud': 'Ollama cloud',
   'models.facts.basis': 'Basis',
   'models.facts.reason': 'Reason',
+  'models.facts.gatedAtSelection': 'Gated, re-read at selection',
+  'models.facts.licenseAtSelection': 'License, re-read at selection',
 } as const
 
 export const modelsRussian: Record<keyof typeof modelsEnglish, string> = {
@@ -100,4 +102,6 @@ export const modelsRussian: Record<keyof typeof modelsEnglish, string> = {
   'models.facts.cloud': 'Облако Ollama',
   'models.facts.basis': 'Основание',
   'models.facts.reason': 'Причина',
+  'models.facts.gatedAtSelection': 'Gated при выборе',
+  'models.facts.licenseAtSelection': 'Лицензия при выборе',
 }

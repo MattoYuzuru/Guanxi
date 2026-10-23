@@ -1130,11 +1130,17 @@ export function RepositoryCard({
                   </p>
                 )}
               </div>
+              {/*
+                The card above already states gated and license; repeat them only when the
+                selection-time re-read disagrees, so a fact is never listed twice.
+              */}
               <FactList
                 className="mt-2"
                 facts={[
-                  { label: translate('hf.repository.gated'), value: gatedLabel(state.result.repository) },
-                  { label: translate('hf.repository.license'), value: licenseLabel(state.result.repository) },
+                  gatedLabel(state.result.repository) !== gatedLabel(repository)
+                    && { label: translate('models.facts.gatedAtSelection'), value: gatedLabel(state.result.repository), tone: 'warning' },
+                  licenseLabel(state.result.repository) !== licenseLabel(repository)
+                    && { label: translate('models.facts.licenseAtSelection'), value: licenseLabel(state.result.repository), tone: 'warning' },
                 ]}
               />
               {state.result.repository.license.state === 'declared' ? (

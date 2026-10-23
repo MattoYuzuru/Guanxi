@@ -809,7 +809,8 @@ describe('P2-K exact GGUF file/revision selection', () => {
     expect(screen.getAllByText('llama-2-7b.Q4_K_M.gguf').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText(/4 КБ/u).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Можно явно начать скачивание')).toBeTruthy()
-    expect(screen.getAllByText(/apache-2.0/u)).toHaveLength(2)
+    // The card states the license once; the selection repeats it only when its re-read disagrees.
+    expect(screen.getAllByText(/apache-2.0/u)).toHaveLength(1)
     expect(screen.getByText(/стартовая проверка железа приложением/u)).toBeTruthy()
     expect(screen.getByText(/оценочная уверенность/u)).toBeTruthy()
 
@@ -848,6 +849,28 @@ describe('P2-K exact GGUF file/revision selection', () => {
     expect(resolveCount).toBe(1)
     resolve?.(json(confirmedSelectionResult()))
     await waitFor(() => expect(screen.getByText('Выбранная цель')).toBeTruthy())
+  })
+
+  it('states gated and license once; the selection repeats them only when its re-read disagrees', async () => {
+    let selection = confirmedSelectionResult()
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('/discovery/hugging-face/search')) return json(listed())
+      return json(selection)
+    }))
+    const first = render(<HuggingFaceDiscovery contextLength={8_192} />)
+    fireEvent.click(await searchAndOpenFileList())
+    await waitFor(() => expect(screen.getByText('Выбранная цель')).toBeTruthy())
+    // The fixture repository is open; the card states it and the selection does not repeat it.
+    expect(screen.getAllByText('Открытый', { exact: true })).toHaveLength(1)
+    expect(factPairs().filter(([label]) => label === 'Gated при выборе')).toHaveLength(0)
+    first.unmount()
+
+    selection = confirmedSelectionResult({ repository: { ...repository(), gated: { state: 'gated', mode: 'manual' } } })
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    fireEvent.click(await searchAndOpenFileList())
+    await waitFor(() => expect(screen.getByText('Выбранная цель')).toBeTruthy())
+    expect(factPairs().filter(([label]) => label === 'Gated при выборе')).toHaveLength(1)
   })
 
   it('recomputes fit when the context window changes, and discards a stale superseded re-check', async () => {
