@@ -239,6 +239,66 @@ have no automatic expiry. Cross-session delegation references refuse deletion ra
 silently dropping another run's promise. Reasoning uses only K2 reasoning rows, with its seven-day
 maximum and the sooner parent TTL; it never enters provider history, outputs or cost metadata.
 
+## Ephemeral side chat (U1)
+
+**Status:** implemented and locally validated (2026-10-23); native sessions only. Decision:
+D-135, [ADR-0036](../../../../docs/decisions/0036-workspace-layout-and-experience-modes.md),
+screen W4. Code: [`side-chat.ts`](side-chat.ts), the `sideChat*` methods of `NativeAgents`, the three
+routes below and `packages/contract/src/side-chat.ts`. Tests: `test/native-agent/side-chat.test.ts`,
+`test/side-chat-contract.test.ts`.
+
+| Route | Effect on the session log |
+| --- | --- |
+| `POST /api/agent/:id/side-chat/respond` | none: stateless, tool-free, answers through the session's own K3 connection and model |
+| `POST /api/agent/:id/side-chat/save` | exactly one `agent.note` carrying the encoded transcript (history only), idempotent per `operationId` |
+| `POST /api/agent/:id/side-chat/send` | exactly one queued or started prompt whose id is derived from the `operationId`, idempotent across retries and restarts |
+
+- **Context.** Rendered from the `remote_agent` view of the log (prompts and assistant messages only; never
+  reasoning, tool calls, tool results or notes), up to the log head, declared untrusted data (a closing marker
+  inside session text is escaped; prompts read as excerpts are announced to the model). The caller chooses
+  none, the whole session or the last N turns.
+- **Fit proof.** The total UTF-8 bytes of the instructions, the transcript and the whole draft conversation,
+  plus 16 bytes of framing per message, must be at most `window - maxTokens` for a hosted model (a byte is at
+  least one token). A local runtime has no separate output limit, so its bound is the whole context setting and
+  a `length` stop is returned with `truncated: true`. An unprovable request is refused with `context_too_large`
+  and its numbers before dispatch, never cut. The framing allowance is a conservative constant, not a measured
+  per-template figure.
+- **Writes.** `respond` adds no row and no file. The test opens every `*.sqlite` file under the data directory
+  read-only (the node database, `connections.sqlite`, `native-projects.sqlite` and any file that appears) and
+  compares per-table row counts, plus the file list (sqlite files by name, others with sizes), before and after
+  completed, failed and canceled requests and after a restart. The one intended exception is the K3 receipt
+  (`connections.sqlite:costs`), checked apart: exactly one row per completed request. The native fixture does
+  not load the sidecars production boot adds (`notifications`, `voice`, `work`, project index); the side-chat code
+  imports none of them, but that is argued from the code, not asserted by a test that boots `start()`.
+- **Spend attribution and budget.** The receipt is keyed `side-chat:<sessionId>:<uuid>` (the client's
+  `requestId` only correlates the response). Native run budgets are per run and a side chat has no run, so each
+  limit (`maxModelCalls`, `maxTokens`, `maxCostMicrounits`) applies to the session's cumulative side-chat spend,
+  counted from those receipts before dispatch; reaching one refuses with the content-free `budget_exhausted`
+  (HTTP 429). A receipt with an unknown cost cannot be proven inside a money limit, as for runs. Receipts are
+  written when a request completes, so a request canceled after the provider billed it leaves none: K3
+  under-accounting on cancel, a known residual not changed here.
+- **Concurrency.** At most `GUANXI_SIDE_CHAT_MAX_CONCURRENT` `respond` requests per session run at once
+  (positive integer up to 999, default 1, strictly parsed); more are refused with `too_many_requests` (429)
+  before the provider is called. The slot is released on completion, failure and client abort.
+- **Save** goes through the running turn's append FIFO when a turn is active (a failure there is returned, never
+  thrown into the FIFO, so it cannot abort the turn) and through the R1 home transaction otherwise. When the
+  session has no live writer the log may also record its own `writer.acquired` handover event; the note itself is
+  always exactly one event. The native replay ignores `agent.note`, so a saved side chat is never agent context.
+  A transcript whose encoded note exceeds `SIDE_CHAT_SAVE_MAX_BYTES` (256 KiB) is refused with `too_large` and its
+  numbers; nothing is truncated or appended.
+- **Send** reuses the existing FIFO. A caller-chosen queue item id is queued at most once, and a prompt event
+  with the derived message id is the durable receipt: a retry after a lost response or a restart reports
+  `already_sent`. A pending queue item is reported as `queued` (duplicate) only while a turn is running; with
+  nothing running (the turn stopped, failed or the node restarted) a retry starts a fresh turn with the same
+  prompt id, which also settles the stranded item. Changed text under the same operation id is
+  `operation_conflict` (a long text, stored as an artifact, is compared by its stored checksum, not by the excerpt).
+  The answer (`queued`, `started`, `already_sent`) is what `prompt()` actually did, not what an earlier check saw.
+  Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
+  retryable `session_busy`, and a request that lands between turns gets `session_busy`. The pre-checks inside the
+  FIFO return their errors instead of throwing, so they cannot abort the main turn. Origin is recorded as `queued`.
+- **Not covered.** Legacy Chat Jobs have no side-chat route (the web panel is mounted on native sessions only);
+  the answer is not streamed; the opened-in-browser transcript is not durable by design.
+
 ## CLI
 
 Start the node normally, then:

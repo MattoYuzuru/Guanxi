@@ -12,6 +12,8 @@ export interface ShellSidebarProps {
   location: string
   sessions: readonly SessionPageItem[]
   pinned: readonly string[]
+  /** Ids of sessions that finished and have not been opened since (derived by the host). */
+  unseen: ReadonlySet<string>
   loading: boolean
   loadingMore: boolean
   error: boolean
@@ -36,6 +38,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
     ...(['today', 'yesterday', 'earlier'] as const).map(key => ({ key,
       sessions: props.sessions.filter(session => !pinned.has(session.sessionId) && sessionDateGroup(session.createdAt) === key) })),
   ]
+  const unseenLabel = t(props.hasMore || props.omitted ? 'shell.unseen.countAtLeast' : 'shell.unseen.count', { count: props.unseen.size })
   return <div className="flex min-w-0 flex-col gap-3">
     <nav aria-label={t('shell.navigation')}>
       <ul className="flex flex-col gap-1">
@@ -47,11 +50,14 @@ export function ShellSidebar(props: ShellSidebarProps) {
         </Link></li>)}
       </ul>
     </nav>
+    {props.rail && props.unseen.size > 0 && <p data-testid="shell-unseen-rail" className="px-2 text-12">
+      <span aria-hidden="true">● {props.unseen.size}</span><span className="sr-only">{unseenLabel}</span></p>}
     <div hidden={props.rail}>
       <SidebarSlot />
       <section aria-label={t('shell.sessions')} className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-1">
           <h2 className="text-14 font-heading">{t('shell.sessions')}</h2>
+          {props.unseen.size > 0 && <p data-testid="shell-unseen-count" className="text-12">{unseenLabel}</p>}
           <Button variant="ghost" size="sm" disabled={props.loading || props.loadingMore} onClick={props.onRefresh}>
             {t('shell.sessions.refresh')}
           </Button>
@@ -72,6 +78,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
                   <Link to={sessionNavigationPath(session.navigation)} aria-current={props.location === sessionNavigationPath(session.navigation) ? 'page' : undefined}
                     className="block min-h-8 break-words rounded-control px-2 py-1 text-14 hover:bg-inset focus-visible:outline-focus">{title}</Link>
                   <p className="px-2 text-12 text-secondary">{t(`shell.status.${sessionStatus(session)}`)}</p>
+                  {props.unseen.has(session.sessionId) && <p data-unseen="true" className="px-2 text-12 font-heading"><span aria-hidden="true">● </span>{t('shell.unseen.row')}</p>}
                   {session.execution && <p className="px-2 text-12 text-secondary">{t('shell.status.source', { time: formatDateTime(session.execution.observedAt) })}</p>}
                 </div>
                 <Button size="sm" variant="ghost" aria-pressed={pinned.has(session.sessionId)}

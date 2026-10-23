@@ -11,6 +11,8 @@ export function useShellSessions(location: string) {
   const [searchingAll, setSearchingAll] = useState(false)
   const [paginationReady, setPaginationReady] = useState(false)
   const [error, setError] = useState(false), [observedAt, setObservedAt] = useState<string | null>(null)
+  // Counts successful page reads so consumers can tell a fresh read from a stale one.
+  const [reads, setReads] = useState(0)
   const [revision, setRevision] = useState(0)
   const epoch = useRef(0), pending = useRef<AbortController | null>(null), busy = useRef(false)
   const nextCursor = useRef<string | null>(null), consumedCursors = useRef(new Set<string>())
@@ -33,7 +35,7 @@ export function useShellSessions(location: string) {
       setPaginationReady(true)
       consumedCursors.current.clear()
       setOmitted(page.omitted.withheld || page.omitted.catchingUp)
-      setObservedAt(new Date().toISOString())
+      setObservedAt(new Date().toISOString()); setReads(value => value + 1)
     }).catch(() => { if (current === epoch.current && !abort.signal.aborted) setError(true) })
       .finally(() => { if (current === epoch.current && !abort.signal.aborted) { busy.current = false; setLoading(false) } })
     return () => { abort.abort(); pending.current?.abort(); epoch.current++; busy.current = false }
@@ -53,7 +55,7 @@ export function useShellSessions(location: string) {
         setSessions(previous => [...new Map([...previous, ...page.sessions].map(session => [session.sessionId, session])).values()])
         nextCursor.current = page.nextCursor; setCursor(page.nextCursor)
         setOmitted(previous => previous || page.omitted.withheld || page.omitted.catchingUp)
-        setObservedAt(new Date().toISOString())
+        setObservedAt(new Date().toISOString()); setReads(value => value + 1)
         requested = page.nextCursor
       } while (all && requested)
     } catch { if (current === epoch.current && !abort.signal.aborted) setError(true) }
@@ -64,7 +66,7 @@ export function useShellSessions(location: string) {
     setCursor(null); setPaginationReady(false); setLoading(true); setLoadingMore(false); setSearchingAll(false); setError(false)
     setRevision(value => value + 1)
   }
-  return { sessions, loading, loadingMore, searchingAll, paginationReady, error, omitted, observedAt, hasMore: Boolean(cursor),
+  return { sessions, loading, loadingMore, searchingAll, paginationReady, error, omitted, observedAt, reads, hasMore: Boolean(cursor),
     loadMore: () => loadPages(false), searchAll: () => {
       if (!paginationReady && !busy.current) { reload(); return Promise.resolve() }
       return loadPages(true)

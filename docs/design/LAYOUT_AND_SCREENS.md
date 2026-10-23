@@ -107,3 +107,18 @@ limit agents, not the user's own actions.
 | C1 | Connections | Keys, subscription agents and services with health, balances, windows and limits; secrets shown only as references; the **Browser** page lists site grants with source, last use and live-sync indicator (ADR-0035). |
 | T1 | Settings | General, Appearance (theme, density, transparency, motion, fonts per role), Voice and glossary, Notifications (channels, quiet hours), Machines, Accounts, Plugins, Developer. |
 | T2 | Developer area | Visible only with Developer mode on (D-137): live component catalog with every state, theme, density, contrast and transparency regime; approvals; token inspector; slot map; plugin inspector; event-log tail; feature flags. |
+
+## 7. Implementation status (U1 session features, 2026-10-23)
+
+- **E1 New session** is implemented at `/agent` (`packages/web/src/features/new-session`): project picker with
+  folder state, composer with Enter to start, connection, model ID, access mode, a Run options disclosure
+  (folders, network hosts, local context, attachment ids, protected paths), chips for non-default values,
+  recent projects (per browser, opaque ids), and the loading, empty, error, `node_unreachable` and degraded
+  states. Not built: microphone, model or role presets, and the machine, worktree, branch, effort, budget,
+  judge and ledger options, because no node API accepts them yet.
+- **Finished-unseen** status is derived from the node's durable run state and log head against the head this
+  browser last showed (`features/shell/seen.ts`); it has no timers and needs a session-list read to update.
+- **W4 Side chat** is implemented as a docked panel on native sessions
+  (`features/side-chat`), ephemeral by construction, with Save to session log and Send to main. See the
+  [native-agent README](../../packages/server/src/native-agent/README.md#ephemeral-side-chat-u1) for the node
+  seam. The floating placement and legacy Chat threads are not built.

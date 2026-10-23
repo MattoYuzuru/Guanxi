@@ -21,13 +21,14 @@ import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
 import { InspectorPage } from './features/inspector/InspectorPage.tsx'
 import { NativeAgentPage } from './features/native-agent/NativeAgentPage.tsx'
+import { UiLocaleProvider } from '@guanxi/ui'
 import { translate } from './lib/locale.ts'
 import { useLocale } from './lib/locale-context.tsx'
 
 const Workspace = lazy(() => import('./features/workspace/Workspace.tsx').then(module => ({ default: module.Workspace })))
 
 export function App() {
-  useLocale()
+  const { locale } = useLocale()
   const route = useRoute()
   const health = useAsync((signal) => api.health(signal), [])
   const [retrying, setRetrying] = useState(false)
@@ -47,6 +48,7 @@ export function App() {
   const { data } = health
 
   return (
+    <UiLocaleProvider locale={locale}>
     <RuntimeProvider>
       <MountedShell health={data} retrying={retrying} onRetry={retry}>
         {route.name === 'workspace' && <Suspense fallback={<div role="status">{translate('workspaceLayout.loading')}</div>}><Workspace key={route.projectId ?? 'local'} project={route.projectId} safeMode={new URLSearchParams(window.location.search).get('safe') === '1'}><ChatPage threadId={route.threadId} projectId={route.projectId} health={data} workspace /></Workspace></Suspense>}
@@ -96,5 +98,6 @@ export function App() {
         )}
       </MountedShell>
     </RuntimeProvider>
+    </UiLocaleProvider>
   )
 }

@@ -17,9 +17,10 @@ export const nativeAgentPlugin = definePlugin<{ db: Db; host: NativeHost; dataDi
       create: agents.create.bind(agents), deleteSession: agents.deleteSession.bind(agents), setRetention: agents.setRetention.bind(agents), leaveSession: agents.leaveSession.bind(agents), prompt: agents.prompt.bind(agents), progress: agents.progress.bind(agents),
       result: agents.result.bind(agents), wait: agents.wait.bind(agents), stop: agents.stop.bind(agents),
       queue: agents.queue.bind(agents), removeQueued: agents.removeQueued.bind(agents),
+      sideChatRespond: agents.sideChatRespond.bind(agents), sideChatSave: agents.sideChatSave.bind(agents), sideChatSend: agents.sideChatSend.bind(agents),
       projects: agents.projects.bind(agents), setRoots: agents.setRoots.bind(agents), shutdown: agents.close.bind(agents),
     }))
     ctx.effect(() => () => agents.close(), 'native.close')
   },
 })
-export type NativeAgentService = Pick<NativeAgents, 'leaveSession' | 'setRetention' | 'deleteSession' | 'create' | 'prompt' | 'progress' | 'result' | 'wait' | 'stop' | 'queue' | 'removeQueued' | 'setRoots' | 'projects'> & { shutdown(): Promise<void> }
+export type NativeAgentService = Pick<NativeAgents, 'leaveSession' | 'setRetention' | 'deleteSession' | 'create' | 'prompt' | 'progress' | 'result' | 'wait' | 'stop' | 'queue' | 'removeQueued' | 'setRoots' | 'projects' | 'sideChatRespond' | 'sideChatSave' | 'sideChatSend'> & { shutdown(): Promise<void> }

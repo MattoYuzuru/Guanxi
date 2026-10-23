@@ -11,6 +11,7 @@ import { readShellPreferences, writeShellPreferences } from './preferences.ts'
 import type { ShellCommand, ShellSessionSearch } from './ShellPalette.tsx'
 import { sessionNavigationPath } from './sessionNavigation.ts'
 import { useShellSessions } from './useShellSessions.ts'
+import { useUnseenSessions } from './useUnseenSessions.ts'
 
 /** Host behavior without any layout-engine import or draft catalog component dependency. */
 export function useShellController() {
@@ -19,6 +20,7 @@ export function useShellController() {
   const [preferences, setPreferences] = useState(readShellPreferences)
   const [paletteOpen, updatePaletteOpen] = useState(false), [modelsRequested, setModelsRequested] = useState(false)
   const sessions = useShellSessions(location)
+  const unseen = useUnseenSessions(sessions.sessions, location, sessions.reads, !sessions.hasMore && !sessions.omitted && !sessions.error)
   const setPaletteOpen = useCallback((next: boolean) => {
     if (!next) sessions.cancelSearch()
     updatePaletteOpen(next)
@@ -85,7 +87,7 @@ export function useShellController() {
     hasMore: sessions.hasMore, searching: sessions.searchingAll, error: sessions.error,
     refreshFailed: sessions.error && !sessions.paginationReady, omitted: sessions.omitted,
     search: () => { if (!sessions.paginationReady) sessions.reload(); else void sessions.searchAll() }, cancel: sessions.cancelSearch }
-  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, workspace, preference, setPreference,
+  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, unseen, workspace, preference, setPreference,
     togglePin: (id: string) => setPreferences(previous => ({ ...previous, pinned: previous.pinned.includes(id)
       ? previous.pinned.filter(value => value !== id) : [...previous.pinned, id] })) }
 }

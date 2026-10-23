@@ -1,8 +1,18 @@
 import { nativeRetentionSchema, deleteNativeSessionResponseSchema, agentProgressSchema, type NativeAgentInput } from '@guanxi/contract'
+/** Carries the node's content-free error code so screens can explain the failure. */
+export class AgentRequestError extends Error {
+  readonly status: number
+  readonly code: string
+  constructor(status: number, code: string) { super('agent_unavailable'); this.status = status; this.code = code }
+}
 export async function agentRequest(path: string, method = 'GET', body?: unknown, signal?: AbortSignal) {
   const response = await fetch(`/api/agent${path}`, { method, headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal })
-  if (!response.ok) throw new Error('agent_unavailable')
+  if (!response.ok) {
+    const parsed: unknown = await response.json().catch(() => null)
+    const code = parsed && typeof parsed === 'object' && 'code' in parsed && typeof parsed.code === 'string' ? parsed.code : 'agent_unavailable'
+    throw new AgentRequestError(response.status, code)
+  }
   return response.json()
 }
 export const nativeApi = {

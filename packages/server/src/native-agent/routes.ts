@@ -3,12 +3,18 @@ import { z } from 'zod'
 import { nativeAgentInputSchema, nativeAgentPromptSchema, nativeProjectRootsInputSchema, deleteNativeSessionResponseSchema, nativeRetentionInputSchema, nativeRetentionSchema } from '@guanxi/contract'
 import { isLoopbackPeer } from '../session-log/routes.ts'
 import { NativeAgentError } from './service.ts'
+import { SideChatError } from './side-chat.ts'
 import type { NativeAgentService } from './plugin.ts'
 const text = nativeAgentPromptSchema
 export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins: readonly string[] = []) {
   const app = new Hono()
-  app.onError((error, c) => c.json({ code: error instanceof NativeAgentError ? error.code : error instanceof z.ZodError || error instanceof SyntaxError ? 'validation_failed' : 'agent_unavailable' },
-    error instanceof NativeAgentError && error.code.endsWith('not_found') ? 404 : error instanceof NativeAgentError && ['session_busy','writer_busy','cleanup_unconfirmed'].includes(error.code) ? 409 : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 503))
+  const status = { session_not_found: 404, session_unavailable: 409, session_busy: 409, operation_conflict: 409, context_too_large: 413, validation_failed: 400,
+    budget_exhausted: 429, too_many_requests: 429, too_large: 413, quota_exhausted: 429, cancelled: 499, model_failed: 502, connection_unavailable: 503, egress_unavailable: 503, agent_unavailable: 503 } as const
+  app.onError((error, c) => {
+    if (error instanceof SideChatError) return c.json({ code: error.code, ...(error.details ? { details: error.details } : {}) }, status[error.code] as 400)
+    return c.json({ code: error instanceof NativeAgentError ? error.code : error instanceof z.ZodError || error instanceof SyntaxError ? 'validation_failed' : 'agent_unavailable' },
+      error instanceof NativeAgentError && error.code.endsWith('not_found') ? 404 : error instanceof NativeAgentError && ['session_busy','writer_busy','cleanup_unconfirmed'].includes(error.code) ? 409 : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 503)
+  })
   app.use('*', async (c, next) => {
     if (!isLoopbackPeer(c)) return c.json({ code: 'loopback_only' }, 403)
     c.header('Cache-Control', 'no-store')
@@ -30,6 +36,10 @@ export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins:
   app.post('/:id/prompts', async c => { await service().prompt(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
   app.post('/:id/stop', c => { service().stop(c.req.param('id')); return c.json({ ok: true }) })
   app.post('/:id/queue', async c => { await service().queue(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
+  // Ephemeral side chat: `respond` is stateless; `save` and `send` are the only durable actions.
+  app.post('/:id/side-chat/respond', async c => c.json(await service().sideChatRespond(c.req.param('id'), await c.req.json(), c.req.raw.signal)))
+  app.post('/:id/side-chat/save', async c => c.json(await service().sideChatSave(c.req.param('id'), await c.req.json())))
+  app.post('/:id/side-chat/send', async c => c.json(await service().sideChatSend(c.req.param('id'), await c.req.json()), 202))
   app.delete('/:id/queue/:item', async c => { await service().removeQueued(c.req.param('id'), c.req.param('item')); return c.json({ ok: true }) })
   return app
 }
