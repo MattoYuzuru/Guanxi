@@ -138,3 +138,13 @@ test('the reporter finds the relay run through the start key, reads only ledger 
   assert.equal(reporter.report('none'), null)
   assert.equal(reporter.report('preparing'), null, 'a start without a run has no ledger yet')
 })
+
+test('the report holds one gate result per item for the current head: the relay re-proves done items, the lead hears each once, in plan order', () => {
+  const ledger = { plan: { items: [{ id: 't1', title: 'One' }, { id: 't2', title: 'Two' }] }, items: { t1: 'done', t2: 'done' }, head: 'h2',
+    // The relay verifies t2, then re-verifies every item when the whole plan is done: the ledger is an append-only log of runs.
+    evidence: [{ item: 't1', head: 'h2', ok: true, output: 'first t1' }, { item: 't2', head: 'h2', ok: true, output: 'first t2' },
+      { item: 't2', head: 'h2', ok: false, output: 'flaky t2' }, { item: 't1', head: 'h2', ok: true, output: 'final t1' }, { item: 't2', head: 'h2', ok: true, output: 'final t2' }],
+    diffstat: '', proposals: [], cycle: 2, tokens: 1, moneyMicros: 0, unknownCosts: 0 }
+  const report = relayStartsChildReporter({ status: () => status('completed') }, { read: () => ledger as never }).report('child-1')!
+  assert.deepEqual(report.gates, [{ item: 't1', ok: true, head: 'h2', output: 'final t1' }, { item: 't2', ok: true, head: 'h2', output: 'final t2' }])
+})
