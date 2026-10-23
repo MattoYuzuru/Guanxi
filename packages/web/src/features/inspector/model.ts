@@ -172,11 +172,11 @@ export function eventDetail(event: SessionEvent): string | null {
     case 'tool.approval':
       return event.data.toolCallId
     case 'assistant.started':
-      return `${event.data.model} · ${event.data.step}`
+      return `${event.data.model}, ${event.data.step}`
     case 'run.lifecycle':
-      return `${event.data.runId} · ${event.data.state} · ${event.data.action}`
+      return `${event.data.runId}, ${event.data.state}, ${event.data.action}`
     case 'job.lifecycle':
-      return event.data.phase ? `${event.data.state} · ${event.data.phase}` : event.data.state
+      return event.data.phase ? `${event.data.state}, ${event.data.phase}` : event.data.state
     case 'usage':
       return `${event.data.promptTokens} → ${event.data.evalTokens}`
     case 'context':

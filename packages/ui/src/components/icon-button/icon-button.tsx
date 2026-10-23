@@ -22,6 +22,9 @@ export interface IconButtonProps
   /** Controls the tooltip; the catalog uses it to show the open state. */
   tooltipOpen?: boolean
   tooltipSide?: 'top' | 'bottom' | 'left' | 'right'
+  /** A count (capped at 99+) or `true` for a quiet dot; hidden from assistive technology, so put the fact in `label`. */
+  badge?: number | boolean
+  badgeTone?: 'accent' | 'warning' | 'danger'
   className?: string
 }
 
@@ -33,9 +36,12 @@ export function IconButton({
   pressed,
   tooltipOpen,
   tooltipSide = 'top',
+  badge,
+  badgeTone = 'accent',
   className,
   ...props
 }: IconButtonProps) {
+  const showBadge = badge === true || (typeof badge === 'number' && badge > 0)
   return (
     <Tooltip open={tooltipOpen}>
       <TooltipTrigger
@@ -48,12 +54,19 @@ export function IconButton({
             aria-pressed={pressed}
             className={cx('gx-button gx-icon-button gx-focusable', className)}
             {...props}
+            // An icon link (render={<a/>}, nativeButton={false}) keeps the link role; Base UI would say button.
+            role={props.nativeButton === false ? (props.role ?? 'link') : props.role}
           />
         }
       >
         <span className="gx-icon-button-glyph" aria-hidden="true">
           {icon}
         </span>
+        {showBadge ? (
+          <span className="gx-icon-button-badge" data-tone={badgeTone === 'accent' ? undefined : badgeTone} aria-hidden="true">
+            {typeof badge === 'number' ? (badge > 99 ? '99+' : String(badge)) : ''}
+          </span>
+        ) : null}
       </TooltipTrigger>
       <TooltipContent side={tooltipSide}>{label}</TooltipContent>
     </Tooltip>

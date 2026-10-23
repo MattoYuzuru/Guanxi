@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CatalogModel, Settings } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { applySettingsPatch } from '../helpers/settings.ts'
 import { z } from 'zod'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { Glossary } from '../../src/features/settings/Glossary.tsx'
@@ -30,6 +31,7 @@ import {
 } from '../../src/lib/format.ts'
 import { sseStream } from '../../src/lib/sse.ts'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
+import { chooseValue } from '../helpers/select.ts'
 
 const SETTINGS: Settings = {
   ollamaHost: 'http://127.0.0.1:11434',
@@ -236,14 +238,14 @@ describe('locale catalogs', () => {
       </LocaleProvider>,
     )
     await waitFor(() => expect(
-      screen.getAllByRole('heading', { name: 'Without a Project', exact: true }),
+      screen.getAllByRole('heading', { name: 'Without a Project' }),
     ).toHaveLength(2))
 
     resolveSettings(SETTINGS)
     await waitFor(() => expect(
-      screen.getAllByRole('heading', { name: 'Без проекта', exact: true }),
+      screen.getAllByRole('heading', { name: 'Без проекта' }),
     ).toHaveLength(2))
-    expect(screen.queryByRole('heading', { name: 'Without a Project', exact: true })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Without a Project' })).toBeNull()
   })
 
   it('refilters memoized Project icons after delayed settings bootstrap', async () => {
@@ -302,15 +304,13 @@ const TARGET_GLOSSARY_KEYS = [
   'connection',
   'workspace',
   'block',
-  'developer-mode',
-  'visual-mode',
   'layout',
   'side-chat',
   'lease',
 ] as const
 
 describe('Settings language and glossary', () => {
-  it('shows an initial Settings load failure and retries through the authoritative loader', async () => {
+  it('shows an initial Settings load failure and recovers by itself through the authoritative loader', async () => {
     const getSettings = vi.spyOn(api, 'getSettings')
       .mockRejectedValueOnce(new Error('safe settings load failure'))
       .mockResolvedValueOnce(SETTINGS)
@@ -324,8 +324,10 @@ describe('Settings language and glossary', () => {
     )
 
     expect(await screen.findByText('safe settings load failure')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    expect(await screen.findByLabelText('Язык')).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
+    expect(screen.getByText(/Guanxi tries again by itself/u)).toBeTruthy()
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(await screen.findByLabelText('Язык', undefined, { timeout: 5_000 })).toBeTruthy()
     expect(getSettings).toHaveBeenCalledTimes(2)
   })
 
@@ -333,9 +335,7 @@ describe('Settings language and glossary', () => {
     const getSettings = vi.spyOn(api, 'getSettings').mockResolvedValue(SETTINGS)
     const listModels = vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     const updateSettings = vi.spyOn(api, 'updateSettings').mockImplementation(async (patch) => ({
-      ...SETTINGS,
-      ...patch,
-      locale: patch.locale ?? SETTINGS.locale,
+      ...applySettingsPatch(SETTINGS, patch),
       localeSource: 'user_setting',
     }))
 
@@ -353,7 +353,7 @@ describe('Settings language and glossary', () => {
     })
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
     language.focus()
-    fireEvent.change(language, { target: { value: 'en' } })
+    await chooseValue(language, 'en')
     expect(document.activeElement).toBe(language)
     expect(document.documentElement.lang).toBe('en')
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy()
@@ -385,7 +385,7 @@ describe('Settings language and glossary', () => {
       </LocaleProvider>,
     )
     const language = await screen.findByLabelText('Язык')
-    fireEvent.change(language, { target: { value: 'en' } })
+    await chooseValue(language, 'en')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(language.matches(':disabled')).toBe(true)
     resolveUpdate({ ...SETTINGS, locale: 'en' })
@@ -410,10 +410,10 @@ describe('Settings language and glossary', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Could not connect to the Guanxi server')).toBeTruthy()
     expect(screen.queryByText('Settings saved')).toBeNull()
-    fireEvent.change(language, { target: { value: 'ru' } })
+    await chooseValue(language, 'ru')
     expect(await screen.findByText('Не удалось соединиться с сервером Guanxi')).toBeTruthy()
     expect(screen.queryByText('Could not connect to the Guanxi server')).toBeNull()
-    fireEvent.change(language, { target: { value: 'en' } })
+    await chooseValue(language, 'en')
     expect(await screen.findByText('Could not connect to the Guanxi server')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('Settings saved')).toBeTruthy()
@@ -466,8 +466,6 @@ describe('Settings language and glossary', () => {
       ['connection', 'Connection', 'Подключение'],
       ['workspace', 'Workspace', 'Рабочее пространство'],
       ['block', 'Block', 'Блок'],
-      ['developer-mode', 'Developer mode', 'Режим разработчика'],
-      ['visual-mode', 'Visual mode', 'Визуальный режим'],
       ['layout', 'Layout', 'Раскладка'],
       ['side-chat', 'Side chat', 'Боковой чат'],
       ['lease', 'Lease', 'Lease'],
@@ -497,12 +495,10 @@ describe('Settings language and glossary', () => {
     expect(keysFor('fenced handover', 'en')).toContain('lease')
     expect(keysFor('second holder', 'en')).toContain('lease')
     expect(keysFor('Save to session log', 'en')).toContain('side-chat')
-    expect(keysFor('model-autonomy mode', 'en')).toContain('visual-mode')
     expect(keysFor('does not require a filesystem folder', 'en')).toContain('workspace')
     expect(keysFor('только дописываемой', 'ru')).toContain('session')
     expect(keysFor('второго владельца', 'ru')).toContain('lease')
     expect(keysFor('Сохранить в журнал сессии', 'ru')).toContain('side-chat')
-    expect(keysFor('автономии модели', 'ru')).toContain('visual-mode')
     expect(keysFor('не требует папки', 'ru')).toContain('workspace')
 
     expect(searchGlossary(glossaryEntries, 'definitely absent', 'en')).toEqual([])
@@ -588,12 +584,8 @@ describe('Settings language and glossary', () => {
     expect(sideChat.ru.definition).toContain('Сохранить в журнал сессии')
     expect(sideChat.ru.definition).toContain('Отправить в основной чат')
 
-    const visual = entryFor('visual-mode')
-    expect(visual.en.definition).toMatch(/not a model-autonomy mode/u)
-    expect(visual.en.definition)
-      .toMatch(/does not grant the model extra freedom, permissions or decisions/u)
-    expect(visual.ru.definition).toMatch(/не режим автономии модели/u)
-    expect(visual.ru.definition).toMatch(/не даёт модели дополнительной свободы, прав или решений/u)
+    // D-204: one interface; the glossary has no experience modes to explain.
+    expect(glossaryEntries.filter(entry => entry.key.endsWith('-mode'))).toHaveLength(0)
 
     const workspace = entryFor('workspace')
     expect(workspace.en.definition).toMatch(/not a Project/u)

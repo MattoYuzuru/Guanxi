@@ -4,11 +4,13 @@
 
 .gx-tooltip {
   max-width: var(--layout-container-xs);
-  padding: var(--spacing-4) var(--spacing-8);
+  padding: var(--spacing-2) var(--spacing-8);
   border-radius: var(--border-radius-inline);
   background-color: var(--color-background-inverse);
+  box-shadow: var(--elevation-2-shadow);
   color: var(--color-text-inverse);
   font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
   line-height: var(--font-line-height-ui);
   transition-duration: var(--motion-duration-moderate);
 }

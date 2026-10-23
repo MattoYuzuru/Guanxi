@@ -306,7 +306,7 @@ function SkipRow({ count, colSpan }: { count: number; colSpan: number }) {
         colSpan={colSpan}
         className="border-y border-divider bg-inset px-2 py-0.5 text-center text-secondary select-none"
       >
-        · · · {translate(key, { count })} · · ·
+        {translate(key, { count })}
       </td>
     </tr>
   )

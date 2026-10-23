@@ -128,8 +128,9 @@ for (const deferNetworkStart of [false, true]) {
     const initialGate = new Promise<void>((resolve) => {
       releaseInitial = resolve
     })
-    // Every initial read fails until the explicit keyboard retry; StrictMode may
-    // have reached the route once or twice, so the initial count is observed.
+    // Every initial read fails until the test lets the automatic recovery succeed (D-203: no
+    // Retry button); StrictMode may have reached the route once or twice, so the initial count
+    // is observed.
     let failProjectReads = true
     let projectReads = 0
     let retryReads = 0
@@ -186,13 +187,15 @@ for (const deferNetworkStart of [false, true]) {
         .some((read) => read.abortedAtNetworkStart === true)).toBe(true)
     }
 
-    // Switch to the empty projection only after the error is committed and
-    // focused, immediately before the explicit keyboard retry.
+    // Switch to the empty projection only after the error is committed and focused. There is
+    // no Retry button; regaining focus triggers the quiet recovery read at once (a backoff
+    // timer would also recover, only later).
+    await expect(page.getByRole('button', { name: /^(Повторить|Обновить)/u })).toHaveCount(0)
     failProjectReads = false
-    await page.getByRole('button', { name: 'Повторить', exact: true }).press('Enter')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await expect(page.getByText('Проектов пока нет')).toBeVisible()
     await expect.poll(() => retryReads).toBe(1)
-    expect(projectReads).toBe(initialReadCount + 1)
+    expect(projectReads).toBeGreaterThanOrEqual(initialReadCount + 1)
 
     const name = page.getByRole('textbox', { name: 'Название проекта' })
     await name.fill('Keyboard Project')

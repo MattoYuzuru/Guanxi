@@ -1,0 +1,42 @@
+/* Models feature: structured facts (label and value, the value by weight, no punctuation joins). */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.model-facts {
+  display: grid;
+  /* A token minimum for labels, so stacked lists in one card share a value column. */
+  grid-template-columns: minmax(var(--layout-fact-label), max-content) minmax(0, 1fr);
+  gap: var(--spacing-2) var(--spacing-12);
+  margin: 0;
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-ui);
+}
+
+.model-fact {
+  display: contents;
+}
+
+.model-fact dt {
+  color: var(--color-text-tertiary);
+}
+
+.model-fact dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-label);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.model-fact dd[data-mono] {
+  font-family: var(--font-family-mono);
+}
+
+.model-fact dd[data-tone='warning'] {
+  color: var(--color-text-warning);
+}
+
+.model-fact dd[data-tone='muted'] {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-regular);
+}

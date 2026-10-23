@@ -7,6 +7,7 @@
  * там «локальной» ФС у браузера просто не будет.
  */
 import { useState } from 'react'
+import { Icon } from '@guanxi/ui'
 import type { Workspace } from '@guanxi/contract'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -251,9 +252,7 @@ function DirectoryBrowser({ onPick }: { onPick: (workspace: Workspace) => void }
                 )}
                 title={entry.isDirectory ? translate('workspace.entryHint') : entry.path}
               >
-                <span aria-hidden className="w-3.5 shrink-0 text-center text-2xs">
-                  {entry.isDirectory ? '▸' : '·'}
-                </span>
+                <Icon name={entry.isDirectory ? 'folder' : 'file'} size={14} aria-hidden="true" className="shrink-0 text-muted" />
                 <span className="min-w-0 flex-1 truncate font-mono text-2xs">{entry.name}</span>
                 {entry.isGitRepo && (
                   <Badge tone="accent" title={translate('workspace.git')}>

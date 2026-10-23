@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 
-test('Project Chat grouping, create retry and sourced hard reload stay isolated', async ({ page }) => {
+test('Project Chat grouping, create retry, automatic recovery and sourced hard reload stay isolated', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.emulateMedia({ reducedMotion: 'reduce', forcedColors: 'active' })
   const observedAt = '2026-08-10T10:00:00.000Z'
@@ -234,7 +234,9 @@ test('Project Chat grouping, create retry and sourced hard reload stay isolated'
   await expect(safeState).toBeFocused()
   await expect(page.getByText(/не соответствует контракту/u)).toHaveCount(1)
   mismatch = 'typed'
-  await page.getByRole('button', { name: 'Повторить', exact: true }).click()
+  // D-203: no Retry button; the failed read recovers by itself (here on reconnect).
+  await expect(page.getByRole('button', { name: /^(Повторить|Обновить)/u })).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
   await expect(page.getByText('Запрос конфликтует с текущим сохранённым состоянием. Обновите данные и повторите.')).toHaveCount(1)
   expect(createCalls).toBe(2)
   expect(workspaceReads).toBe(0)

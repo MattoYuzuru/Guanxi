@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -13,9 +14,10 @@ import {
   type Attachment,
   type Project,
 } from '@guanxi/contract'
-import { Badge, Button, Callout, EmptyState, Skeleton, cx } from '../../components/ui.tsx'
+import { Badge, Button, Callout, EmptyState, Select, Skeleton, cx } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatBytes, formatDateTime } from '../../lib/format.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -42,6 +44,7 @@ export function AttachmentsPage() {
   const projects = useAsync((signal) => api.listProjects(signal), [])
   const policy = useAsync((signal) => api.artifactTransferPolicy(signal), [])
   const [scope, setScope] = useState<ArtifactScope>({ scope: 'projectless' })
+  const scopeId = useId()
   const selectedScope = scope.scope === 'project' ? scope.projectId : 'projectless'
 
   return (
@@ -59,26 +62,23 @@ export function AttachmentsPage() {
         </Callout>
       </div>
 
-      <PolicyProjection policy={policy.data ?? null} loading={policy.loading} error={policy.error} onRetry={policy.reload} />
+      <PolicyProjection policy={policy.data ?? null} loading={policy.loading} error={policy.error} />
 
-      <label className="mt-5 block max-w-md text-xs font-medium">
-        {translate('attachments.scope.label')}
-        <select
+      <div className="mt-5 max-w-md text-xs font-medium">
+        <label htmlFor={scopeId} className="block">{translate('attachments.scope.label')}</label>
+        <Select
+          id={scopeId}
           value={selectedScope}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-          onChange={(event) => {
-            const value = event.target.value
-            setScope(value === 'projectless'
-              ? { scope: 'projectless' }
-              : { scope: 'project', projectId: value })
-          }}
-        >
-          <option value="projectless">{translate('attachments.scope.projectless')}</option>
-          {projects.data?.projects.map((project) => (
-            <option key={project.id} value={project.id}>{project.name}</option>
-          ))}
-        </select>
-      </label>
+          className="mt-1"
+          onChange={(value) => setScope(value === 'projectless'
+            ? { scope: 'projectless' }
+            : { scope: 'project', projectId: value })}
+          options={[
+            { value: 'projectless', label: translate('attachments.scope.projectless') },
+            ...(projects.data?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
+          ]}
+        />
+      </div>
       {projects.loading ? (
         <p role="status" className="mt-1 text-2xs text-muted">
           {translate('attachments.projects.loading')}
@@ -86,12 +86,9 @@ export function AttachmentsPage() {
       ) : null}
       {projects.error ? (
         <div className="mt-2" role="alert">
-          <Callout
-            tone="warning"
-            title={translate('attachments.projects.error')}
-            action={<Button size="sm" onClick={projects.reload}>{translate('attachments.retry')}</Button>}
-          >
+          <Callout tone="warning" title={translate('attachments.projects.error')}>
             {errorMessage(projects.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         </div>
       ) : null}
@@ -110,12 +107,10 @@ function PolicyProjection({
   policy,
   loading,
   error,
-  onRetry,
 }: {
   policy: ArtifactTransferPolicy | null
   loading: boolean
   error: unknown
-  onRetry(): void
 }) {
   if (loading) {
     return <p role="status" className="mt-4 text-xs">{translate('attachments.policy.loading')}</p>
@@ -123,12 +118,9 @@ function PolicyProjection({
   if (error || policy === null) {
     return (
       <div role="alert" className="mt-4">
-        <Callout
-          tone="warning"
-          title={translate('attachments.policy.error')}
-          action={<Button size="sm" onClick={onRetry}>{translate('attachments.retry')}</Button>}
-        >
+        <Callout tone="warning" title={translate('attachments.policy.error')}>
           {errorMessage(error)}
+          <span className="mt-1 block">{translate('common.recovering')}</span>
         </Callout>
       </div>
     )
@@ -197,11 +189,15 @@ function AttachmentScopePanel({
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
     : translate('attachments.scope.projectless'), [locale, projects, scope])
 
+  // A recovery read after a failure keeps the error on screen until it succeeds (D-203).
+  const loadFailed = useRef(false)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setLoadError(null)
-    setAttachments(null)
+    if (!loadFailed.current) {
+      setLoading(true)
+      setLoadError(null)
+      setAttachments(null)
+    }
     api.listAttachments(scope, ATTACHMENT_LIST_LIMIT, controller.signal).then(
       (response) => {
         if (controller.signal.aborted) return
@@ -211,8 +207,11 @@ function AttachmentScopePanel({
           || response.projectId !== expectedProject
           || response.attachments.some((attachment) => !matchesScope(attachment, scope))
         ) {
+          loadFailed.current = true
           setLoadError(translate('attachments.scopeMismatch'))
         } else {
+          loadFailed.current = false
+          setLoadError(null)
           setAttachments(response.attachments)
           setTruncated(response.truncated)
         }
@@ -220,12 +219,14 @@ function AttachmentScopePanel({
       },
       (cause) => {
         if (controller.signal.aborted) return
+        loadFailed.current = true
         setLoadError(errorMessage(cause))
         setLoading(false)
       },
     )
     return () => controller.abort('attachment-scope-changed')
   }, [reload, scope])
+  useAutoRecover(loadError, () => setReload((value) => value + 1))
 
   useEffect(() => () => abortRef.current?.abort('attachment-page-unmounted'), [])
   useEffect(() => {
@@ -357,9 +358,7 @@ function AttachmentScopePanel({
           {translate('attachments.error.title')}
         </h2>
         <p className="mt-1 break-words text-xs text-secondary">{loadError}</p>
-        <Button className="mt-3" onClick={() => setReload((value) => value + 1)}>
-          {translate('attachments.retry')}
-        </Button>
+        <p className="mt-2 text-12 text-secondary">{translate('common.recovering')}</p>
       </section>
     )
   }
@@ -409,7 +408,7 @@ function AttachmentScopePanel({
         {intent ? (
           <div className="mt-3 min-w-0">
             <p className="break-words text-xs">
-              {intent.file.name} · {formatBytes(intent.file.size)}
+              {intent.file.name}, {formatBytes(intent.file.size)}
             </p>
             {uploading ? (
               <progress
@@ -427,9 +426,7 @@ function AttachmentScopePanel({
               >
                 {uploading
                   ? translate('attachments.upload.uploading')
-                  : uploadError
-                    ? translate('attachments.upload.retry')
-                    : translate('attachments.upload.start')}
+                  : translate('attachments.upload.start')}
               </Button>
               {uploading ? (
                 <Button onClick={() => abortRef.current?.abort('user-cancelled')}>
@@ -498,9 +495,6 @@ function AttachmentScopePanel({
                     <p className="break-words text-2xs text-danger">
                       {downloadErrors[attachment.artifact.id]}
                     </p>
-                    <Button size="sm" className="mt-1" onClick={() => void download(attachment)}>
-                      {translate('attachments.download.retry')}
-                    </Button>
                   </div>
                 ) : null}
               </article>

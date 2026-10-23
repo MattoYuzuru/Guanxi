@@ -99,7 +99,7 @@ test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page
 
   await page.goto('/')
   const pager = page.getByRole('navigation', { name: 'Страницы каталога' })
-  await expect(pager.getByText('Страница 1 из 84 · на странице 12 · всего найдено 1000')).toBeVisible()
+  await expect(pager.getByText('Страница 1 из 84, на странице 12, всего найдено 1000')).toBeVisible()
   await expect(page.locator('[aria-label="Каталог моделей"] .embla-slide')).toHaveCount(12)
   await expect(page.locator('[role="tab"][aria-label^="Модель "]')).toHaveCount(12)
   await expect(pager.getByRole('button')).toHaveCount(2)
@@ -108,7 +108,7 @@ test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page
   await page.getByRole('button', { name: 'Добавить к сравнению synthetic-0000:q4' }).press('Enter')
   const next = pager.getByRole('button', { name: 'Следующая страница' })
   await next.press('Enter')
-  await expect(pager.getByText('Страница 2 из 84 · на странице 12 · всего найдено 1000')).toBeVisible()
+  await expect(pager.getByText('Страница 2 из 84, на странице 12, всего найдено 1000')).toBeVisible()
   await expect(next).toBeFocused()
   await page.getByRole('button', { name: 'Добавить к сравнению synthetic-0012:q4' }).press('Enter')
   const compare = page.getByRole('button', { name: 'Сравнить точные варианты (2/2)' })

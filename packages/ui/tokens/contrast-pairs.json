@@ -12,8 +12,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 14.43,
-        "dark": 14.61
+        "light": 15.85,
+        "dark": 16.66
       }
     },
     {
@@ -28,8 +28,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 4.72,
-        "dark": 7.01
+        "light": 4.74,
+        "dark": 5.14
       }
     },
     {
@@ -38,8 +38,8 @@
       "background": "color.background.primary",
       "minimum": 3,
       "measured": {
-        "light": 3.51,
-        "dark": 4.09
+        "light": 3.2,
+        "dark": 3.46
       }
     },
     {
@@ -48,8 +48,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 5.12,
-        "dark": 8.39
+        "light": 5.25,
+        "dark": 7.08
       }
     },
     {
@@ -58,8 +58,8 @@
       "background": "color.background.accent",
       "minimum": 4.5,
       "measured": {
-        "light": 5.49,
-        "dark": 8.39
+        "light": 5.86,
+        "dark": 7.08
       }
     },
     {
@@ -68,8 +68,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 5.11,
-        "dark": 8.43
+        "light": 4.92,
+        "dark": 7.63
       }
     },
     {
@@ -78,8 +78,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 5.05,
-        "dark": 9.12
+        "light": 4.92,
+        "dark": 8.37
       }
     },
     {
@@ -88,8 +88,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 5.14,
-        "dark": 7.09
+        "light": 4.94,
+        "dark": 7.1
       }
     },
     {
@@ -98,8 +98,8 @@
       "background": "color.background.primary",
       "minimum": 4.5,
       "measured": {
-        "light": 5.31,
-        "dark": 8.16
+        "light": 4.92,
+        "dark": 7.6
       }
     },
     {
@@ -156,8 +156,8 @@
       "background": "color.background.accent-hover",
       "minimum": 4.5,
       "measured": {
-        "light": 6.28,
-        "dark": 9.08
+        "light": 6.76,
+        "dark": 8.1
       }
     },
     {
@@ -166,9 +166,81 @@
       "background": "color.background.accent-pressed",
       "minimum": 4.5,
       "measured": {
-        "light": 7.11,
-        "dark": 9.9
+        "light": 7.8,
+        "dark": 9.24
       }
+    },
+    {
+      "name": "pane-text",
+      "foreground": "color.text.primary",
+      "background": "color.background.secondary",
+      "minimum": 4.5
+    },
+    {
+      "name": "pane-secondary",
+      "foreground": "color.text.secondary",
+      "background": "color.background.secondary",
+      "minimum": 7
+    },
+    {
+      "name": "pane-muted",
+      "foreground": "color.text.tertiary",
+      "background": "color.background.secondary",
+      "minimum": 4.5
+    },
+    {
+      "name": "pane-control-border",
+      "foreground": "color.border.control",
+      "background": "color.background.secondary",
+      "minimum": 3
+    },
+    {
+      "name": "pane-accent",
+      "foreground": "color.text.accent",
+      "background": "color.background.secondary",
+      "minimum": 4.5
+    },
+    {
+      "name": "accent-on-subtle",
+      "foreground": "color.text.accent",
+      "background": "color.background.accent-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "success-on-subtle",
+      "foreground": "color.text.success",
+      "background": "color.background.success-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "warning-on-subtle",
+      "foreground": "color.text.warning",
+      "background": "color.background.warning-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "danger-on-subtle",
+      "foreground": "color.text.danger",
+      "background": "color.background.danger-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "info-on-subtle",
+      "foreground": "color.text.info",
+      "background": "color.background.info-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "on-accent-warning-badge",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.warning",
+      "minimum": 4.5
+    },
+    {
+      "name": "on-accent-danger-badge",
+      "foreground": "color.text.on-accent",
+      "background": "color.background.danger",
+      "minimum": 4.5
     }
   ]
 }

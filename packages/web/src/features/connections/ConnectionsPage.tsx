@@ -1,9 +1,10 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import type { Connection, ConnectionBalance, ConnectionSnapshot, ConnectionErrorCode } from '@guanxi/contract'
 // DS1-b is not merged. Reuse existing primitives until its integration.
 import { Button, Field, Input, Select } from '../../components/ui.tsx'
 import { getActiveLocale, translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { connectionApi, ConnectionRequestError } from './api.ts'
 import './connections.css'
 
@@ -25,9 +26,11 @@ export function balanceLabel(balance: ConnectionBalance | null): string {
 }
 
 export function ConnectionsView({ snapshot, loading = false, error = false, errorCode, offline = false, busy = false, saved = false,
-  retry, mutate }: {
+  recovering = false, mutate }: {
   snapshot: ConnectionSnapshot | null; loading?: boolean; error?: boolean; errorCode?: ConnectionErrorCode; offline?: boolean; busy?: boolean; saved?: boolean
-  retry: () => void; mutate: (action: () => Promise<unknown>) => Promise<void>
+  /** A failed read that Guanxi repeats by itself (D-203); there is no Retry button. */
+  recovering?: boolean
+  mutate: (action: () => Promise<unknown>) => Promise<void>
 }) {
   const base = useId()
   const [name, setName] = useState('')
@@ -45,7 +48,7 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
       <p>{translate(offline ? 'connections.offline' : errorCode ? `connections.error.${errorCode}` : 'connections.error')}</p>
       {errorCode === 'vault_locked'
         ? <Button type="button" onClick={() => void mutate(connectionApi.unlock)} disabled={busy}>{translate('connections.vault.unlock')}</Button>
-        : <Button type="button" onClick={retry} disabled={busy}>{translate('connections.retry')}</Button>}
+        : recovering ? <p className="mt-1 text-12">{translate('connections.recovering')}</p> : null}
     </div>}
     {snapshot && <>
       <div className="my-4 flex flex-wrap items-center gap-3">
@@ -130,16 +133,32 @@ export function ConnectionsPage() {
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
   const [revision, setRevision] = useState(0)
+  // A failed read recovers by itself; its error stays on screen until a read succeeds (D-203).
+  const [loadFailure, setLoadFailure] = useState<object | null>(null)
+  const loadFailed = useRef(false)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setError(false); setErrorCode(undefined)
+    if (!loadFailed.current) {
+      setLoading(true)
+      setError(false); setErrorCode(undefined)
+    }
     void connectionApi.list(controller.signal).then(data => {
-      if (!controller.signal.aborted) setSnapshot(data)
-    }).catch(error => { if (!controller.signal.aborted) { setError(true); setErrorCode(error instanceof ConnectionRequestError ? error.code : undefined) } })
+      if (controller.signal.aborted) return
+      loadFailed.current = false; setLoadFailure(null)
+      setError(false); setErrorCode(undefined)
+      setSnapshot(data)
+    }).catch(error => {
+      if (controller.signal.aborted) return
+      setError(true); setErrorCode(error instanceof ConnectionRequestError ? error.code : undefined)
+      // A locked vault needs the user; anything else is repeated by itself.
+      const recoverable = !(error instanceof ConnectionRequestError && error.code === 'vault_locked')
+      loadFailed.current = recoverable
+      setLoadFailure(recoverable ? {} : null)
+    })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [revision])
+  useAutoRecover(loadFailure, () => setRevision(value => value + 1))
   const mutate = async (action: () => Promise<unknown>) => {
     setBusy(true); setError(false); setErrorCode(undefined); setSaved(false)
     try { await action(); setSnapshot(await connectionApi.list()); setSaved(true) }
@@ -147,7 +166,7 @@ export function ConnectionsPage() {
     finally { setBusy(false) }
   }
   return <ConnectionsView snapshot={snapshot} loading={loading} error={error} errorCode={errorCode} offline={!navigator.onLine} busy={busy} saved={saved}
-    retry={() => setRevision(value => value + 1)} mutate={mutate} />
+    recovering={loadFailure !== null} mutate={mutate} />
 }
 
 /** Keep unrelated Settings usable without opening or querying Connections. */

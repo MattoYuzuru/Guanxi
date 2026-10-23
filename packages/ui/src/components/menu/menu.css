@@ -11,7 +11,7 @@
   max-height: var(--available-height);
   padding: var(--spacing-4);
   overflow-y: auto;
-  border-radius: var(--border-radius-control);
+  border-radius: var(--border-radius-panel);
   outline: none;
 }
 
@@ -21,7 +21,7 @@
   gap: var(--spacing-8);
   min-height: var(--row-height);
   padding-inline: var(--spacing-8);
-  border-radius: var(--border-radius-inline);
+  border-radius: var(--border-radius-control);
   color: var(--color-text-primary);
   font-size: var(--font-text-size);
   line-height: var(--font-line-height-ui);
@@ -31,8 +31,19 @@
 }
 
 .gx-menu-item svg {
+  flex: none;
   width: var(--icon-size-16);
   height: var(--icon-size-16);
+  color: var(--color-text-secondary);
+}
+
+/* Trailing value or shortcut, right-aligned in the item. */
+.gx-menu-item-end {
+  margin-left: auto;
+  padding-left: var(--spacing-12);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-variant-numeric: tabular-nums;
 }
 
 .gx-menu-item[data-highlighted] {
@@ -43,8 +54,12 @@
   color: var(--color-text-danger);
 }
 
+.gx-menu-item[data-variant='danger'] svg {
+  color: currentColor;
+}
+
 .gx-menu-item[data-variant='danger'][data-highlighted] {
-  background-color: var(--color-background-danger);
+  background-color: var(--color-background-danger-subtle);
 }
 
 .gx-menu-item[data-disabled] {
@@ -60,8 +75,8 @@
 
 .gx-menu-separator {
   height: var(--border-width-regular);
-  margin: var(--spacing-4) 0;
-  background-color: var(--color-border-primary);
+  margin: var(--spacing-4) var(--spacing-8);
+  background-color: var(--color-border-secondary);
 }
 
 @media (forced-colors: active) {

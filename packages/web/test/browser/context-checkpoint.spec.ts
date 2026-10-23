@@ -122,9 +122,9 @@ test('context checkpoint reconciles a lost POST response exactly and survives ha
       value: () => undefined,
     })
     window.fetch = async (input, init) => {
-      const rawUrl = typeof input === 'string' ? input : input.url
+      const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const url = new URL(rawUrl, window.location.origin)
-      const method = (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET')
+      const method = (init?.method ?? (input instanceof Request ? input.method : undefined) ?? 'GET')
         .toUpperCase()
       const created = sessionStorage.getItem('p3m:created') === 'true'
       const checkpointId = sessionStorage.getItem('p3m:checkpoint-id')

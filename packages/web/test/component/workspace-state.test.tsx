@@ -6,6 +6,9 @@ import type { WorkspaceLayoutHandle } from '../../src/features/workspace/Workspa
 import type { LayoutDocument } from '@guanxi/contract'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { WORKSPACE_MODE } from '../../src/features/workspace/Workspace.tsx'
+import { workspaceEnglish, workspaceRussian } from '../../src/features/workspace/messages.ts'
+import { glossaryEntries as GLOSSARY } from '../../src/lib/glossary.ts'
 
 const control = vi.hoisted(() => ({ failSnapshot: false }))
 vi.mock('../../src/lib/locale-context.tsx', () => ({ useLocale: () => ({ locale: 'en', setLocale() {} }) }))
@@ -51,6 +54,23 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     expect(api.saveLayout).not.toHaveBeenCalled()
   })
 
+  it('one interface (D-204): reads layouts for the one pinned mode once and never switches mode (P2)', async () => {
+    render(<Workspace><p>Chat content</p></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    expect(api.layouts).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(api.layouts).mock.calls.map(call => call[0].mode)).toEqual([WORKSPACE_MODE])
+    expect(document.querySelectorAll('.workspace')).toHaveLength(1)
+    expect(document.querySelector('.workspace')!.getAttribute('data-mode')).toBe(WORKSPACE_MODE)
+  })
+
+  it('carries no experience-mode copy in the workspace catalogue or the glossary (D-204, P2)', () => {
+    const keys = [...Object.keys(workspaceEnglish), ...Object.keys(workspaceRussian)]
+    expect(keys.filter(key => /^workspaceLayout\.(mode|developer|visual)$/u.test(key))).toEqual([])
+    expect(GLOSSARY.map(entry => entry.key).filter(key => /-mode$/u.test(key))).toEqual([])
+    const text = GLOSSARY.flatMap(entry => [entry.en, entry.ru]).map(item => `${item.term} ${item.definition} ${item.example}`).join(' ')
+    expect(text).not.toMatch(/Developer mode|Visual mode|режим(е|а)? разработчика|визуальн(ый|ом) режим/iu)
+  })
+
   it('aborts the old load and ignores its delayed rejection after a newer account has loaded', async () => {
     let rejectOld!: (error: Error) => void
     vi.mocked(api.layoutGeometry).mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject }))
@@ -65,7 +85,7 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     expect(screen.getByTestId('adapter-boundary').getAttribute('data-account')).toBe('second')
   })
 
-  it('retains one busy Retry during a pending load and replaces its observed record only on a new failure', async () => {
+  it('recovers a failed load by itself with no Retry, keeps one alert and replaces its observed record only on a new failure', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-22T12:00:00.000Z'))
     let rejectRetry!: (error: Error) => void
@@ -74,17 +94,18 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     render(<Workspace><p>Chat content</p></Workspace>)
     const error = await screen.findByRole('alert')
     const first = error.querySelector('time')!.getAttribute('datetime')
-    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
-    const busy = await screen.findByRole('button', { name: 'Retrying…' })
-    expect(busy.getAttribute('aria-busy')).toBe('true')
-    fireEvent.click(busy)
-    expect(api.layoutContext).toHaveBeenCalledTimes(2)
+    // D-203: no Retry button; regaining focus (or the backoff timer) reads again.
+    expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(api.layoutContext).toHaveBeenCalledTimes(2))
+    // The pending read keeps the first record and shows no second alert.
     expect(error.querySelector('time')!.getAttribute('datetime')).toBe(first)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     vi.setSystemTime(new Date('2026-10-22T13:00:00.000Z'))
     await act(async () => { rejectRetry(new Error('private-second-sentinel')); await Promise.resolve() })
-    await screen.findByRole('button', { name: 'Retry' })
+    await waitFor(() => expect(screen.getByRole('alert').querySelector('time')!.getAttribute('datetime')).toBe('2026-10-22T13:00:00.000Z'))
     expect(screen.getAllByRole('alert')).toHaveLength(1)
-    expect(error.querySelector('time')!.getAttribute('datetime')).toBe('2026-10-22T13:00:00.000Z')
-    expect(error.textContent).not.toContain('private-')
+    expect(screen.getByRole('alert').textContent).not.toContain('private-')
+    expect(screen.queryAllByRole('button', { name: /retry/iu })).toHaveLength(0)
   })
 })

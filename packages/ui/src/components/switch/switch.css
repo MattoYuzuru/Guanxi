@@ -1,22 +1,32 @@
 @reference '../../styles/tailwind-reference.css';
 
+/*
+ * Switch (D-200). Exact geometry keeps the knob centred in its track in both states: a 32 × 18
+ * px track with a 1 px border and 2 px padding has a 26 × 12 px content box, so the 12 px knob
+ * fills its height (3 px from the outer edge above and below) and travels 26 − 12 = 14 px,
+ * leaving 3 px at the leading edge when off and at the trailing edge when on. The off track uses
+ * the control-boundary colour (3:1) because the track itself identifies the control. The browser
+ * gate measures both states.
+ */
 .gx-switch {
   position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
+  box-sizing: border-box;
   @apply w-8;
   height: var(--icon-size-18);
   padding: var(--spacing-2);
-  border: var(--border-width-regular) solid var(--color-border-control);
+  border: var(--border-width-regular) solid transparent;
   @apply rounded-full;
-  background-color: var(--color-background-tertiary);
+  background-color: var(--color-border-control);
   cursor: inherit;
   @apply transition-colors;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-easing-standard);
 }
 
+/* Keeps a 24 px target when the switch has no visible label. */
 .gx-switch::after {
   content: '';
   position: absolute;
@@ -25,39 +35,45 @@
 
 .gx-switch-thumb {
   display: block;
+  box-sizing: border-box;
   width: var(--spacing-12);
   height: var(--spacing-12);
   @apply rounded-full;
-  background-color: var(--color-text-secondary);
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
   @apply transition;
   /* Spatial: the reduced-motion token is 0 ms, so the thumb jumps instead of sliding. */
-  transition-duration: var(--motion-duration-fast);
+  transition-duration: var(--motion-duration-moderate);
   transition-timing-function: var(--motion-easing-standard);
 }
 
 .gx-switch:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-switch:not([data-disabled]) {
-  background-color: var(--color-background-hover);
+  background-color: var(--color-text-tertiary);
 }
 
 .gx-switch[data-checked] {
-  border-color: var(--color-border-accent);
   background-color: var(--color-background-accent);
+}
+
+.gx-switch[data-checked]:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-switch[data-checked]:not([data-disabled]) {
+  background-color: var(--color-background-accent-hover);
 }
 
 .gx-switch[data-checked] .gx-switch-thumb {
   background-color: var(--color-text-on-accent);
-  /* 32 px track − 2 × 2 px padding − 2 × 1 px border − 12 px thumb. */
+  /* 32 px track − 2 × 1 px border − 2 × 2 px padding − 12 px knob = 14 px. */
   @apply translate-x-3.5;
 }
 
 .gx-switch[data-disabled] {
-  border-color: var(--color-border-primary);
   background-color: var(--color-background-disabled);
 }
 
 .gx-switch[data-disabled] .gx-switch-thumb {
   background-color: var(--color-text-disabled);
+  box-shadow: none;
 }
 
 @media (forced-colors: active) {

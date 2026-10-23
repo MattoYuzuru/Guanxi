@@ -18,7 +18,7 @@ export interface ErrorStateProps extends Omit<ComponentProps<'div'>, 'className'
   occurredAt: string
   /** Whether this is the failure time or the time the client observed it. */
   timeMeaning?: 'occurred' | 'observed'
-  /** The next action, usually a Button (Retry, Open settings). */
+  /** The next step the user must take (Open settings). Never Retry: transient failures recover by themselves (D-203). */
   action?: ReactNode
   /** Copyable technical details; shown in a disclosure. */
   details?: string
@@ -64,8 +64,7 @@ export function ErrorState({
       </div>
       <p className="gx-error-state-meta">
         <span>{t('ui.error.source', { source: '' })}</span>
-        <span className="gx-error-state-source">{source}</span>
-        <span aria-hidden="true"> · </span>
+        <span className="gx-error-state-source">{source}</span>{' '}
         {timeMeaning === 'observed' ? <span>{t('ui.error.observed')}</span> : null}
         <time dateTime={Number.isNaN(time.getTime()) ? undefined : time.toISOString()}>{timeLabel}</time>
       </p>

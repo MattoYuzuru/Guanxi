@@ -5,9 +5,15 @@ import { ChatPage } from '../../src/features/chat/ChatPage.tsx'
 import { RuntimeProvider } from '../../src/features/health/RuntimeContext.tsx'
 import { api } from '../../src/lib/api.ts'
 import { runtimeSnapshotFixture } from '../fixtures/runtime.ts'
+import { chooseValue, optionGroups, optionLabels, optionValues, selectedValue } from '../helpers/select.ts'
 
 const connectionId = 'ad07f428-d220-45a2-89be-6ec819c8592c'
 const selection = chatModelSelection(connectionId, 'owner-model')
+const picker = () => screen.findByRole('combobox', { name: 'Модель для нового диалога' })
+/** Waits until the model picker offers `value` (the list is opened and closed to read it). */
+async function offered(value: string) {
+  await waitFor(async () => expect(await optionValues(await picker())).toContain(value))
+}
 beforeEach(() => {
   window.history.replaceState(null, '', '/')
   vi.spyOn(api, 'getSettings').mockResolvedValue({ defaultModel: null, prewarmEnabled: false } as never)
@@ -23,9 +29,9 @@ it('groups provider models, creates with the opaque selection and does not prewa
   const create = vi.spyOn(api, 'createThread').mockResolvedValue({ id: 'created-provider-chat' } as never)
   const prewarm = vi.spyOn(api, 'prewarmModel')
   render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{ ollama: { running: false } } as Health} /></RuntimeProvider>)
-  const option = await screen.findByRole('option', { name: 'owner-model' })
-  expect(option.closest('optgroup')?.label).toBe('Owner API')
-  expect(screen.getAllByRole('option', { name: 'owner-model' })).toHaveLength(1)
+  await offered(selection)
+  expect(await optionGroups(await picker())).toEqual([{ label: 'Owner API', options: ['owner-model'] }])
+  expect((await optionLabels(await picker())).filter(label => label === 'owner-model')).toHaveLength(1)
   const button = await screen.findByRole('button', { name: 'Создать диалог' })
   await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false))
   fireEvent.click(button)
@@ -38,8 +44,8 @@ it('keeps local choices when provider discovery fails', async () => {
   vi.mocked(api.chatModels).mockRejectedValue(new Error('offline'))
   vi.mocked(api.listModels).mockResolvedValue({ models: [{ name: 'local-model', capabilities: ['completion'], contextLimit: { state: 'unknown' }, fit: { level: 'unknown' } }] } as never)
   render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
-  expect(await screen.findByRole('option', { name: 'local-model' })).toBeTruthy()
-  expect(screen.getAllByRole('option', { name: 'local-model' })).toHaveLength(1)
+  await offered('local-model')
+  expect((await optionLabels(await picker())).filter(label => label === 'local-model')).toHaveLength(1)
 })
 
 
@@ -47,11 +53,12 @@ it('switches from a selected provider to a visible local model before Agent crea
   vi.mocked(api.listModels).mockResolvedValue({ models: [{ name: 'local-model', capabilities: ['completion'], contextLimit: { state: 'unknown' }, fit: { level: 'unknown' } }] } as never)
   const create = vi.spyOn(api, 'createThread').mockResolvedValue({ id: 'created-agent' } as never)
   render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
-  const option = await screen.findByRole('option', { name: 'owner-model' })
-  fireEvent.change(option.closest('select')!, { target: { value: selection } })
+  await offered(selection)
+  await chooseValue(await picker(), selection)
+  expect(selectedValue(await picker())).toBe(selection)
   const modes = screen.getAllByRole('button', { pressed: false })
   fireEvent.click(modes[0]!)
-  await waitFor(() => expect(screen.queryByRole('option', { name: 'owner-model' })).toBeNull())
+  await waitFor(async () => expect(await optionLabels(await picker())).not.toContain('owner-model'))
   fireEvent.click(screen.getByRole('button', { name: 'Создать диалог' }))
   await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
   expect(create.mock.calls[0]![0].model).toBe('local-model')
@@ -62,14 +69,13 @@ it('switches from a selected provider to a visible local model before Agent crea
 it('reselects a visible local model when quiet refresh removes a locked provider', async () => {
   vi.mocked(api.listModels).mockResolvedValue({ models: [{ name: 'local-model', capabilities: ['completion'], contextLimit: { state: 'unknown' }, fit: { level: 'unknown' } }] } as never)
   render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
-  const option = await screen.findByRole('option', { name: 'owner-model' })
-  const select = option.closest('select')!
-  fireEvent.change(select, { target: { value: selection } })
-  expect(select.value).toBe(selection)
+  await offered(selection)
+  await chooseValue(await picker(), selection)
+  expect(selectedValue(await picker())).toBe(selection)
   vi.mocked(api.chatModels).mockResolvedValue({ groups: [] })
   fireEvent(window, new Event('focus'))
-  await waitFor(() => expect(screen.queryByRole('option', { name: 'owner-model' })).toBeNull())
-  await waitFor(() => expect(select.value).toBe('local-model'))
+  await waitFor(async () => expect(await optionLabels(await picker())).not.toContain('owner-model'))
+  await waitFor(async () => expect(selectedValue(await picker())).toBe('local-model'))
 })
 
 
@@ -80,9 +86,12 @@ it('keeps equally named connections in separate groups by connection identity', 
     ...snapshot.groups[0]!, id: 'second-connection', models: [{ ...snapshot.groups[0]!.models[0]!, selection: 'second-selection', modelId: 'second-model' }],
   }] })
   render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
-  await screen.findByRole('option', { name: 'second-model' })
-  expect(screen.getAllByRole('group', { name: 'Owner API' })).toHaveLength(2)
-  expect(screen.getByRole('option', { name: 'owner-model' }).closest('optgroup')).not.toBe(screen.getByRole('option', { name: 'second-model' }).closest('optgroup'))
+  await offered('second-selection')
+  // Two groups with the same visible name, one per connection identity, each with its own model.
+  expect(await optionGroups(await picker())).toEqual([
+    { label: 'Owner API', options: ['owner-model'] },
+    { label: 'Owner API', options: ['second-model'] },
+  ])
 })
 
 it('enables provider composer with Ollama down and dispatches without a local resource decision', async () => {

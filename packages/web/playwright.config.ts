@@ -12,7 +12,8 @@ export default defineConfig({
   use: {
     baseURL,
     ...devices['Desktop Chrome'],
-    reducedMotion: 'reduce',
+    // A browser-context option: under `use` directly it was not a known option and was ignored.
+    contextOptions: { reducedMotion: 'reduce' },
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },

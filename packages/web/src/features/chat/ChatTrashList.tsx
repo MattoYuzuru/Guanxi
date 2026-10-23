@@ -10,6 +10,9 @@ import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 
+/** Quiet re-read period of a mounted Trash list. */
+export const TRASH_REFRESH_MS = 30_000
+
 export function ChatTrashList({
   projectId,
   onRestored,
@@ -36,24 +39,30 @@ export function ChatTrashList({
       signal,
     ),
     [projectId],
+    // Stays current by itself (D-203): a quiet re-read on focus and on an interval, so a pending
+    // hard deletion's outcome appears without a Refresh button.
+    { revalidate: { onFocus: true, intervalMs: TRASH_REFRESH_MS } },
   )
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoreError, setRestoreError] = useState<string | null>(null)
-  const [retryChat, setRetryChat] = useState<ChatTrashItem | null>(null)
   const [restoredIds, setRestoredIds] = useState<ReadonlySet<string>>(() => new Set())
   const restoringRef = useRef(false)
   const sectionRef = useRef<HTMLElement>(null)
   const errorRef = useRef<HTMLDivElement>(null)
   const listErrorRef = useRef<HTMLDivElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const deletionRefreshRef = useRef(false)
 
   useEffect(() => {
     if (restoreError) requestAnimationFrame(() => errorRef.current?.focus())
   }, [restoreError])
 
+  // When the list recovers while its error had focus, focus returns to the heading.
+  const errorHadFocus = useRef(false)
+  // Keyed on whether an error is shown, not on the error object: each failed re-read is a new
+  // object, and focus must move to the announcement once, not on every attempt (P2).
+  const listFailed = Boolean(trash.error)
   useEffect(() => {
-    if (!trash.error) return
+    if (!listFailed) return
     requestAnimationFrame(() => {
       const activeElement = document.activeElement
       if (
@@ -62,34 +71,29 @@ export function ChatTrashList({
         sectionRef.current?.contains(activeElement)
       ) {
         listErrorRef.current?.focus()
+        errorHadFocus.current = true
       }
     })
-  }, [trash.error])
+  }, [listFailed])
 
   useEffect(() => {
     if (!trash.data || trash.error) return
+    if (errorHadFocus.current) {
+      errorHadFocus.current = false
+      requestAnimationFrame(() => headingRef.current?.focus())
+    }
     const visibleIds = new Set(trash.data.chats.map(({ chatId }) => chatId))
     setRestoredIds((current) => {
       const unresolved = new Set([...current].filter((chatId) => visibleIds.has(chatId)))
       return unresolved.size === current.size ? current : unresolved
     })
-    if (deletionRefreshRef.current) {
-      deletionRefreshRef.current = false
-      requestAnimationFrame(() => headingRef.current?.focus())
-    }
   }, [trash.data, trash.error])
-
-  const refreshDeletion = () => {
-    deletionRefreshRef.current = true
-    trash.reload()
-  }
 
   const restore = async (chat: ChatTrashItem) => {
     if (restoringRef.current) return
     restoringRef.current = true
     setRestoringId(chat.chatId)
     setRestoreError(null)
-    setRetryChat(null)
     try {
       const result = await api.restoreChat(chat.chatId, {
         lifecycleVersion: CHAT_LIFECYCLE_VERSION,
@@ -103,7 +107,6 @@ export function ChatTrashList({
       requestAnimationFrame(() => headingRef.current?.focus())
     } catch (error) {
       setRestoreError(errorMessage(error))
-      setRetryChat(chat)
     } finally {
       restoringRef.current = false
       setRestoringId(null)
@@ -114,6 +117,7 @@ export function ChatTrashList({
   const deletionPending = chats.some(
     (chat) => chat.reason === 'session_left' && chat.hardDeletion.state === 'pending_maintenance',
   )
+
   return (
     <section
       ref={sectionRef}
@@ -131,19 +135,12 @@ export function ChatTrashList({
           {translate('chat.trash.loading')}
         </p>
       ) : null}
-      {trash.refreshing ? (
-        <p role="status" className="mt-2 text-2xs text-muted">
-          {translate('chat.trash.refreshingDeletion')}
-        </p>
-      ) : null}
       {trash.error ? (
         <div ref={listErrorRef} tabIndex={-1} className="mt-2 outline-none" role="alert">
           <p className="break-words text-2xs text-danger">
             {translate('chat.trash.loadError')}: {errorMessage(trash.error)}
           </p>
-          <Button className="mt-1" size="sm" onClick={trash.reload}>
-            {translate('chat.trash.retryList')}
-          </Button>
+          <p className="mt-1 text-12 text-muted">{translate('common.recovering')}</p>
         </div>
       ) : null}
       {restoreError ? (
@@ -151,11 +148,6 @@ export function ChatTrashList({
           <Callout tone="danger" title={translate('chat.trash.restoreError')}>
             <span className="break-words">{restoreError}</span>
           </Callout>
-          {retryChat ? (
-            <Button className="mt-1" size="sm" onClick={() => void restore(retryChat)}>
-              {translate('chat.trash.retryRestore')}
-            </Button>
-          ) : null}
         </div>
       ) : null}
       {!trash.loading && !trash.error && chats.length === 0 ? (
@@ -172,13 +164,13 @@ export function ChatTrashList({
             >
               <strong className="block min-w-0 break-words text-xs">{chat.title}</strong>
               <span className="mt-1 block break-words text-muted">
-                {translate(`chat.trash.reason.${chat.reason}`)} ·{' '}
+                {translate(`chat.trash.reason.${chat.reason}`)},{' '}
                 <time dateTime={chat.tombstonedAt}>{formatDateTime(chat.tombstonedAt)}</time>
               </span>
               <span className="block break-words text-muted">
                 {translate('chat.trash.activity')}:{' '}
                 <time dateTime={chat.activityBasis.at}>{formatDateTime(chat.activityBasis.at)}</time>
-                {' · '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
+                {', '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
               </span>
               {chat.reason === 'session_left' ? (
                 <>
@@ -187,11 +179,11 @@ export function ChatTrashList({
                     <time dateTime={chat.recovery.deadline}>
                       {formatDateTime(chat.recovery.deadline)}
                     </time>
-                    {' · '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
+                    {', '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
                   </span>
                   <span className="block break-words text-muted">
                     {translate(`chat.trash.deletion.${chat.hardDeletion.state}`)}
-                    {' · '}{translate('chat.trash.noBlobGc')}
+                    {', '}{translate('chat.trash.noBlobGc')}
                   </span>
                 </>
               ) : null}
@@ -209,15 +201,7 @@ export function ChatTrashList({
         </ol>
       ) : null}
       {deletionPending ? (
-        <Button
-          className="mt-2"
-          size="sm"
-          loading={trash.refreshing}
-          disabled={trash.refreshing}
-          onClick={refreshDeletion}
-        >
-          {translate('chat.trash.refreshDeletion')}
-        </Button>
+        <p role="status" className="mt-2 text-12 text-muted">{translate('chat.trash.watchingDeletion')}</p>
       ) : null}
       {(trash.data?.deletions?.length ?? 0) > 0 ? (
         <div className="mt-3" aria-live="polite">
@@ -225,9 +209,9 @@ export function ChatTrashList({
           <ol className="mt-1 min-w-0 space-y-1">
             {(trash.data?.deletions ?? []).map((deletion) => (
               <li key={deletion.chatId} className="min-w-0 break-words text-2xs text-muted">
-                {translate('chat.trash.deleted.item')} ·{' '}
+                {translate('chat.trash.deleted.item')},{' '}
                 <time dateTime={deletion.deletedAt}>{formatDateTime(deletion.deletedAt)}</time>
-                {' · '}{translate('chat.trash.noBlobGc')}
+                {', '}{translate('chat.trash.noBlobGc')}
               </li>
             ))}
           </ol>

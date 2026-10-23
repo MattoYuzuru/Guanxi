@@ -156,7 +156,7 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
   await expect(page.getByRole('heading', { name: 'Доказательства установленной модели' })).toBeVisible()
   await expect(page.getByText('sha256:fixture').first()).toBeVisible()
   await expect(page.getByText(/Provider declarations расходятся/u)).toBeVisible()
-  await expect(page.getByText('Устарело · offline').first()).toBeVisible()
+  await expect(page.getByText('Устарело, offline').first()).toBeVisible()
   await expect(page.getByText(/7-дневного stale window/u)).toBeVisible()
   await expect(page.getByText(/не является controlled probe/u)).toBeVisible()
   await expect(page.getByText(/ручная проверка может ненадолго загрузить/u)).toBeVisible()

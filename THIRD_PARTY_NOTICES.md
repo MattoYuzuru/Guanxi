@@ -39,3 +39,11 @@ Rules:
 - `dockview-core` and `dockview-react` 8.6.1, MIT, Copyright (c) 2021 mathuo.
 - Source: [Dockview at a9e3092](https://github.com/dockview/dockview/tree/a9e3092fbd5c61aef69ca0922a86bf0be53cb891). Installed npm dependencies; no source copied.
 - Used only through the WorkspaceLayout adapter. The proprietary enterprise package is denied.
+
+## Lucide icons (UI redesign)
+
+- `lucide-react`, ISC, Copyright (c) Lucide Contributors (portions MIT, Copyright (c) 2013–2023
+  Cole Bemis, Feather). Installed npm dependency of `@guanxi/ui`; glyphs are imported, not
+  copied. The registry in `packages/ui/src/components/icon/icon.tsx` maps semantic names to them.
+- Guanxi's own domain glyphs in the same file (unified memory, free memory pages, relay, lease,
+  hibernating lead) are original drawings on Lucide's 24 px grid; no Lucide path data is copied.

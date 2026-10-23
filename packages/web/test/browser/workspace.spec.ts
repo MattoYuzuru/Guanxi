@@ -177,18 +177,11 @@ test('Terminal and Browser retain input and the same DOM node across move, float
   }
 })
 
-test('modes retain separate arrangements; both themes/densities leave geometry unchanged; reduced drag motion', async ({ page }) => {
+test('one interface without an experience-mode switch (D-204); both themes/densities leave geometry unchanged; reduced drag motion', async ({ page }) => {
   await open(page)
-  await move(page, 'Terminal', 'Top')
-  const developer = await state(page)
-  await pick(page, 'Experience mode', 'Visual')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'visual')
-  const visual = await state(page)
-  expect(visual.scope.mode).toBe('visual')
-  expect(visual.engineState.groups.find(g => g.zone === 'right')!.blocks).toEqual(['guanxi.core/plan', 'guanxi.core/subagents'])
-  await pick(page, 'Experience mode', 'Developer')
+  await expect(page.getByRole('button', { name: 'Experience mode', exact: true })).toHaveCount(0)
   await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'developer')
-  expect((await state(page)).engineState).toEqual(developer.engineState)
+  await move(page, 'Terminal', 'Top')
   await move(page, 'Terminal', 'Bottom')
   await expect(page.getByTestId('workspace-announcement')).toHaveText('Terminal moved to Bottom.')
   const arrangement = (doc: LayoutDocument) => JSON.parse(JSON.stringify(doc.engineState, (key, value) => ['size', 'width', 'height'].includes(key) ? undefined : value))
@@ -257,20 +250,20 @@ test('30 blocks restore within 2000ms; unknown/unloaded and safe-mode blocks are
   await expect(page.getByText('Plugin blocks are disabled in safe mode.', { exact: true })).toHaveCount(19)
 })
 
-test('node unavailable state is truthful and retry remains reachable', async ({ page }) => {
+test('node unavailable state is truthful and recovers by itself, with no Retry (D-203)', async ({ page }) => {
   await setup(page, undefined, true)
   await page.goto('/workspace')
   await expect(page.getByRole('alert').filter({ hasText: 'Layouts could not be loaded' })).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: 'Guanxi tries again by itself' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /Retry/u })).toHaveCount(0)
   await expect(page.locator('.dv-dockview')).toHaveCount(0)
 })
 
 for (const [path, mode, source] of [
   ['/api/layouts/context', '', 'layout-context: GET /api/layouts/context'],
-  ['/api/layouts', 'developer', 'load-developer-layouts: GET /api/layouts'],
-  ['/api/layouts', 'visual', 'load-visual-layouts: GET /api/layouts'],
+  ['/api/layouts', 'developer', 'load-layouts: GET /api/layouts'],
   ['/api/layouts/geometry', '', 'load-layout-geometry: GET /api/layouts/geometry'],
-]) test(`workspace state failure ${source} preserves observed facts, safe details and actual Retry`, async ({ page, context }, testInfo) => {
+]) test(`workspace state failure ${source} preserves observed facts and safe details, then recovers by itself`, async ({ page, context }, testInfo) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.clock.setFixedTime(new Date('2026-10-22T12:00:00.000Z'))
   await setup(page)
@@ -299,7 +292,9 @@ for (const [path, mode, source] of [
     await expect(error).toContainText('Observed')
     await page.screenshot({ path: testInfo.outputPath('actual-layout-context-error.png') })
   }
-  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  // D-203: no Retry button; regaining focus re-reads at once (the first timed re-read waits 10 s).
+  await expect(error.getByRole('button', { name: /Retry/u })).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.locator('.dv-tab')).toHaveCount(11)
   await expect(error).toHaveCount(0)
 })
@@ -348,7 +343,9 @@ test('workspace state recovered-winner geometry failure retains the acknowledged
   const error = page.locator('[data-slot="error-state"]')
   await expect(error).toHaveCount(1)
   await expect(error.locator('.gx-error-state-source')).toHaveText('recover-layout-geometry: GET /api/layouts/geometry')
-  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  // A failed save keeps the user's own action, named by its verb (D-203: never "Retry").
+  await expect(error.getByRole('button', { name: /Retry/u })).toHaveCount(0)
+  await error.getByRole('button', { name: 'Save layout', exact: true }).click()
   await expect(error).toHaveCount(0)
   expect(await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').length)).toBe(1)
   expect((await state(page)).rev).toBe(900)
@@ -366,7 +363,8 @@ test('workspace state activation retry applies an acknowledged recovery exactly 
   const error = page.locator('[data-slot="error-state"]')
   await expect(error).toHaveCount(1)
   await expect(error.locator('.gx-error-state-source')).toHaveText('activate-layout-geometry: GET /api/layouts/geometry')
-  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error.getByRole('button', { name: /Retry/u })).toHaveCount(0)
+  await error.getByRole('button', { name: 'Switch layout', exact: true }).click()
   await expect(error).toHaveCount(0)
   expect(await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').length)).toBe(1)
   await page.getByRole('button', { name: 'Named layout', exact: true }).click()
@@ -383,7 +381,8 @@ test('workspace state known-successful Save-as geometry failure retries only geo
   const error = page.locator('[data-slot="error-state"]')
   await expect(error).toHaveCount(1)
   await expect(error.locator('.gx-error-state-source')).toHaveText('save-layout-geometry: PUT /api/layouts/geometry')
-  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error.getByRole('button', { name: /Retry/u })).toHaveCount(0)
+  await error.getByRole('button', { name: 'Save layout', exact: true }).click()
   await expect(error).toHaveCount(0)
   const calls = await page.evaluate(() => (window as any).__STATE_FAULT__.calls)
   expect(calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT')).toHaveLength(1)
@@ -400,7 +399,8 @@ test('workspace state unconfirmed Save-as retry preserves the original document 
   const error = page.locator('[data-slot="error-state"]')
   await expect(error).toHaveCount(1)
   await expect(error.locator('.gx-error-state-source')).toHaveText('save-layout: PUT /api/layouts')
-  await error.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(error.getByRole('button', { name: /Retry/u })).toHaveCount(0)
+  await error.getByRole('button', { name: 'Save layout', exact: true }).click()
   await expect(error).toHaveCount(0)
   const ids: string[] = await page.evaluate(() => (window as any).__STATE_FAULT__.calls.filter((call: any) => call.path === '/api/layouts' && call.method === 'PUT').map((call: any) => call.id))
   expect(ids).toHaveLength(2)
@@ -429,7 +429,8 @@ test('workspace discovers the node account before resolving and saving a layout'
   layout.name = 'Owner layout'
   await open(page, layout)
   expect((await state(page)).scope.account).toBe('owner')
-  expect(await page.evaluate(() => (window as any).__LAYOUT_READS__.map((row: any) => row.account))).toEqual(['owner', 'owner'])
+  // One interface (D-204): one layout read, for the one pinned mode.
+  expect(await page.evaluate(() => (window as any).__LAYOUT_READS__.map((row: any) => [row.account, row.mode]))).toEqual([['owner', 'developer']])
   await page.getByRole('button', { name: 'Save layout', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(1)
   expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document.scope.account)).toBe('owner')
@@ -456,9 +457,7 @@ test('explicit save scopes preserve pane state, isolate modes and persist the sc
   const deviceScope = { account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' }
   expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__[1].document.scope)).toEqual(deviceScope)
   expect((await state(page)).id).not.toBe(originalId)
-  await pick(page, 'Experience mode', 'Visual')
-  expect((await state(page)).scope.mode).toBe('visual')
-  await pick(page, 'Experience mode', 'Developer')
+  await expect(page.getByRole('button', { name: 'Experience mode', exact: true })).toHaveCount(0)
   expect((await state(page)).scope).toEqual(deviceScope)
   await page.reload()
   await expect(page.locator('.workspace')).toBeVisible()
@@ -508,7 +507,7 @@ test('a different-block LWW winner is applied to the engine and can be saved aga
   expect(await page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(2)
 })
 
-test('named/mode selections restore scoped float geometry and a future engine falls back', async ({ page }) => {
+test('named selections restore scoped float geometry and a future engine falls back', async ({ page }) => {
   const query = { account: 'local', device: 'device-a', mode: 'developer' as const, deviceClass: 'desktop' as const }
   const developer = builtInLayout(query)
   const floated = (doc: LayoutDocument, id: string, name: string) => {
@@ -528,14 +527,14 @@ test('named/mode selections restore scoped float geometry and a future engine fa
   await expect(page.locator('.dv-resize-container:visible')).toHaveCount(1)
   await expect.poll(() => page.locator('.dv-resize-container:visible').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(420)
   expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
-  await pick(page, 'Experience mode', 'Visual')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'visual')
-  expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
-  await expect.poll(() => page.locator('.dv-resize-container:visible').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(460)
-  await pick(page, 'Experience mode', 'Developer')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'developer')
-  await expect.poll(() => page.locator('.dv-resize-container:visible').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(420)
-  expect((await state(page)).engineState.groups.find(group => group.zone === 'floating')!.active).toBe('guanxi.core/terminal')
+  // One interface (D-204): the other preset's stored layout is not offered as a named layout.
+  await page.getByRole('button', { name: 'Named layout', exact: true }).click()
+  // The menu is open and listing this preset's documents before the absence is checked.
+  await expect(page.getByRole('menuitem', { name: 'Future engine', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Named geometry', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Visual geometry', exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
   await pick(page, 'Named layout', 'Future engine')
   await expect(page.locator('.dv-resize-container:visible')).toHaveCount(0)
   expect((await state(page)).engineState.major).toBe(8)
@@ -555,7 +554,12 @@ test('move cancellation and hiding return focus; existing tabs update with local
   await page.getByRole('menuitem', { name: 'Move block to…', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Block', exact: true })).toHaveText('Terminal')
   await page.keyboard.press('Escape')
-  await page.evaluate(async () => { const { requestBlockMove } = await import('/src/features/workspace/commands.ts'); requestBlockMove('guanxi.core/terminal') })
+  await page.evaluate(async () => {
+    // A Vite dev-server URL, imported in the page; the type comes from the same module on disk.
+    const commands = '/src/features/workspace/commands.ts'
+    const { requestBlockMove } = await import(/* @vite-ignore */ commands) as typeof import('../../src/features/workspace/commands.ts')
+    requestBlockMove('guanxi.core/terminal')
+  })
   await expect(page.getByRole('dialog', { name: 'Move block', exact: true }).getByRole('button', { name: 'Block', exact: true })).toHaveText('Terminal')
   await page.keyboard.press('Escape')
   await paneMove.click()
@@ -583,10 +587,6 @@ test('a real reduced-motion drag preview has no spatial transition', async ({ pa
   expect(await preview.evaluate(node => node.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length)).toBe(0)
   await page.mouse.up()
   await expect.poll(async () => (await state(page)).engineState.groups.filter(group => group.zone === 'center').length).toBe(2)
-  await pick(page, 'Experience mode', 'Visual')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'visual')
-  await pick(page, 'Experience mode', 'Developer')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'developer')
   expect((await state(page)).engineState.groups.filter(group => group.zone === 'center')).toHaveLength(2)
 })
 
@@ -606,12 +606,19 @@ test('a restored popout reopens with device-local geometry on its same-origin pa
   await expect(page.getByLabel('Browser address draft', { exact: true })).toBeAttached()
 })
 
+/** Loads the plugin fixture in the page from its Vite dev-server URL; typed by the same module on disk. */
+async function loadWorkspacePluginFixture() {
+  const url = '/test/browser/fixtures/workspace-plugin.tsx'
+  const fixture = await import(/* @vite-ignore */ url) as typeof import('./fixtures/workspace-plugin.tsx')
+  await fixture.load()
+}
+
 test('loaded plugin panes become exact placeholders on unload and are ignored in safe mode', async ({ page }) => {
   const doc = builtInLayout({ account: 'local', device: 'device-a', mode: 'developer', deviceClass: 'desktop' })
   doc.blocks['plugin-instance'] = { contribution: 'test.workspace/pane', pluginVersion: '0.1.0', priority: 12, params: {} }
   doc.engineState.groups[0]!.blocks.push('plugin-instance')
   await open(page, doc)
-  await page.evaluate(async () => { const fixture = await import('/test/browser/fixtures/workspace-plugin.tsx'); await fixture.load() })
+  await page.evaluate(loadWorkspacePluginFixture)
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(1)
   await page.evaluate(async () => { await (window as any).__GUANXI_KERNEL__.unload('test.workspace') })
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(0)
@@ -619,7 +626,7 @@ test('loaded plugin panes become exact placeholders on unload and are ignored in
   expect(Object.keys((await state(page)).blocks)).toHaveLength(12)
   await page.goto('/workspace?safe=1')
   await expect(page.locator('.workspace')).toBeVisible()
-  await page.evaluate(async () => { const fixture = await import('/test/browser/fixtures/workspace-plugin.tsx'); await fixture.load() })
+  await page.evaluate(loadWorkspacePluginFixture)
   await expect(page.getByText('Plugin pane fixture', { exact: true })).toHaveCount(0)
   await expect(page.getByText('Plugin blocks are disabled in safe mode.', { exact: true })).toHaveCount(1)
 })
@@ -658,15 +665,18 @@ test('reset preserves a saved layout clock and persists the default arrangement 
   expect(restored.engineState.groups.find(group => group.zone === 'bottom')!.blocks).toEqual(['guanxi.core/terminal'])
 })
 
-test('a float dragged near the right and bottom retains normalized bounds after save and mode return', async ({ page }) => {
+// D-204 removed experience modes, so the former "mode return" re-activation step no longer
+// exists; the saved geometry must still equal the dropped bounds and the float must stay put.
+test('a float dragged near the right and bottom retains normalized bounds after save', async ({ page }) => {
   await open(page)
   await move(page, 'Terminal', 'Floating')
   const floating = page.locator('.dv-resize-container:visible')
-  const header = floating.locator('.dv-tabs-and-actions-container')
-  const start = await header.boundingBox()
+  // Dockview 8 moves a float only by its dedicated title bar above the tab strip; a press on the
+  // tab strip (tab or empty space) starts a dock drag instead.
+  const start = await floating.locator('.dv-floating-titlebar').boundingBox()
   const root = await page.locator('.workspace-layout').boundingBox()
   expect(start).not.toBeNull(); expect(root).not.toBeNull()
-  await page.mouse.move(start!.x + 40, start!.y + 10)
+  await page.mouse.move(start!.x + start!.width / 2, start!.y + start!.height / 2)
   await page.mouse.down()
   await page.mouse.move(root!.x + root!.width - 220, root!.y + root!.height - 100, { steps: 15 })
   await page.mouse.up()
@@ -679,10 +689,6 @@ test('a float dragged near the right and bottom retains normalized bounds after 
   const box = Object.values(saved)[0]!
   expect(Math.abs(box.left - (bounds!.x - root!.x))).toBeLessThan(2)
   expect(Math.abs(box.top - (bounds!.y - root!.y))).toBeLessThan(2)
-  await pick(page, 'Experience mode', 'Visual')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'visual')
-  await pick(page, 'Experience mode', 'Developer')
-  await expect(page.locator('.workspace')).toHaveAttribute('data-mode', 'developer')
   const restored = await floating.boundingBox()
   expect(restored).not.toBeNull()
   for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(restored![key] - bounds![key])).toBeLessThan(2)
@@ -748,12 +754,12 @@ test('popout-native shortcuts follow its current tab after a merge and the origi
 
 test('choice menus preserve focus when tabbing away or clicking an outside field', async ({ page }) => {
   await open(page)
-  const mode = page.getByRole('button', { name: 'Experience mode', exact: true })
-  const density = page.getByRole('button', { name: 'Density', exact: true })
+  const mode = page.getByRole('button', { name: 'Density', exact: true })
+  const density = page.getByRole('button', { name: 'Save scope', exact: true })
   await mode.focus()
   await page.keyboard.press('Enter')
   await page.keyboard.press('Home')
-  await expect(page.getByRole('menuitem', { name: 'Developer', exact: true })).toBeFocused()
+  await expect(page.getByRole('menuitem', { name: 'Compact', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('menu')).toHaveCount(0)
   await expect(density).toBeFocused()

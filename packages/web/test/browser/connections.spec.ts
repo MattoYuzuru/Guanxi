@@ -27,7 +27,8 @@ test('Connections handles timestamp-free balances, keyboard creation, reload and
   await page.goto('/settings')
   await page.getByRole('button', { name: 'Подключения', exact: true }).click()
   const section = page.getByRole('region', { name: 'Подключения', exact: true })
-  await expect(section).toHaveCSS('border-radius', '16px')
+  // The panel radius token is 12 px since D-200 (concentric 6/8/12/14 radii).
+  await expect(section).toHaveCSS('border-radius', '12px')
   await expect(section.getByRole('heading', { level: 2 })).toHaveCSS('font-size', '15px')
   await expect(section.getByTestId('connection-balance')).toHaveText('Неизвестно')
   await expect(section.getByText(/99999/)).toHaveCount(0)

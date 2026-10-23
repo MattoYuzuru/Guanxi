@@ -6,9 +6,9 @@
   gap: var(--spacing-6);
   min-height: var(--target-minimum);
   padding-inline: var(--spacing-8);
-  border: var(--border-width-regular) solid var(--color-border-primary);
+  border: var(--border-width-regular) solid transparent;
   @apply rounded-full;
-  background-color: var(--color-background-secondary);
+  background-color: var(--color-background-tertiary);
   color: var(--color-text-primary);
   font-size: var(--font-size-12);
   font-weight: var(--font-weight-label);

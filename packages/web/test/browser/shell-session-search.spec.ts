@@ -56,7 +56,7 @@ test('explicit complete search finds a session beyond 200, preserves query/focus
   await expect(page.getByRole('dialog')).toHaveCount(0)
 })
 
-test('Russian phone search exposes failure/retry and cancellation without claiming complete coverage', async ({ page }) => {
+test('Russian phone search exposes failure, repeats from its own action and cancels without claiming complete coverage', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 })
   let failed = false, held = false, release!: () => void
   const hold = new Promise<void>(done => { release = done })
@@ -74,8 +74,10 @@ test('Russian phone search exposes failure/retry and cancellation without claimi
   const input = page.getByRole('combobox', { name: 'Поиск команд' })
   await input.fill('Older needle')
   await page.getByRole('button', { name: 'Искать во всех доступных сессиях' }).click()
-  await expect(page.getByText('Не удалось загрузить все сессии. Поиск среди загруженных: 50.')).toBeVisible()
-  await page.getByRole('button', { name: 'Повторить загрузку оставшихся сессий' }).click()
+  await expect(page.getByText('Не удалось загрузить все сессии. Поиск среди загруженных: 50; запустите поиск по всем снова, чтобы загрузить остальные.')).toBeVisible()
+  // D-203: no separate Retry button; the same "search all" action repeats the failed page.
+  await expect(page.getByRole('button', { name: /Повторить/u })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Искать во всех доступных сессиях' }).click()
   await expect(page.getByText('Загрузка оставшихся сессий… Уже загружено: 100.')).toBeVisible()
   const aborted = page.waitForEvent('requestfailed', request => new URL(request.url()).searchParams.get('cursor') === 'p100')
   await page.getByRole('button', { name: 'Остановить загрузку сессий' }).click()
@@ -98,7 +100,7 @@ test('Russian phone search exposes failure/retry and cancellation without claimi
   await expect(page.getByRole('button', { name: 'Open commands' })).toBeFocused()
 })
 
-test('retry after a failed first-page refresh replaces stale rows before scanning only the new tail', async ({ page }) => {
+test('a failed first-page re-read (here after a navigation) is recovered by Search all, which replaces stale rows before scanning only the new tail', async ({ page }) => {
   const cursors: (string | null)[] = []
   let firstPages = 0
   const item = (id: number, title: string) => ({ ...session(id), title })
@@ -117,15 +119,21 @@ test('retry after a failed first-page refresh replaces stale rows before scannin
   await trigger.click()
   const input = page.getByRole('combobox', { name: 'Search commands' })
   await expect(page.getByRole('option', { name: 'Session: Old head', exact: true })).toHaveCount(1)
-  await input.fill('Refresh sessions')
-  await page.keyboard.press('Enter')
+  // D-203: there is no Refresh command; a navigation re-reads the first page (and here it fails).
+  await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.evaluate(() => {
+    history.pushState(null, '', `${location.pathname}${location.search}&moved=1`)
+    dispatchEvent(new PopStateEvent('popstate'))
+  })
+  await expect.poll(() => firstPages).toBe(2)
   await trigger.click()
-  await expect(page.getByText('Could not refresh sessions. Searching 1 previously loaded sessions.')).toBeVisible()
+  await expect(page.getByText('Could not refresh sessions. Searching 1 previously loaded sessions; the list recovers by itself.')).toBeVisible()
   await expect(page.getByText(/Searching all \d+ sessions available/)).toHaveCount(0)
   await input.fill('Session: Fresh')
   await expect(page.getByRole('option')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Retry refreshing sessions' }).click()
+  await expect(page.getByRole('button', { name: /retry/iu })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Search all available sessions' }).click()
   await expect(page.getByText('Searching 1 loaded sessions. Older sessions are not loaded yet.')).toBeVisible()
   expect(cursors).toEqual([null, null, null])
   await expect(page.getByRole('option', { name: 'Session: Fresh head', exact: true })).toHaveCount(1)

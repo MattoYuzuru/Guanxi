@@ -28,6 +28,9 @@
   border: var(--border-width-regular) solid var(--material-border);
   border-top-color: var(--material-edge);
   border-bottom-color: var(--material-seam);
+  /* Side hairlines keep a floating layer's edge visible over a white pane (D-200). */
+  border-left-color: var(--color-border-secondary);
+  border-right-color: var(--color-border-secondary);
   box-shadow: var(--elevation-2-shadow);
   color: var(--material-text);
 }

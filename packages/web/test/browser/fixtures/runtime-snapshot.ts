@@ -1,4 +1,13 @@
-import type { Settings } from '@guanxi/contract'
+import type { runtimeSnapshotSchema, Settings } from '@guanxi/contract'
+import type { z } from 'zod'
+
+/** What the node sends: the schema's input, so fields the schema defaults may be absent. */
+export type RuntimeSnapshotWire = z.input<typeof runtimeSnapshotSchema>
+type Governor = RuntimeSnapshotWire['governor']
+type Lease = NonNullable<Governor['activeLease']>
+type Waiter = Governor['queued'][number]
+type ModelRow = NonNullable<RuntimeSnapshotWire['models']>[number]
+type MemoryFact = z.input<typeof runtimeSnapshotSchema>['host']['profile']['discreteVramBytes']
 
 export function browserSettings(overrides: Partial<Settings> = {}): Settings {
   return {
@@ -16,9 +25,9 @@ export function browserSettings(overrides: Partial<Settings> = {}): Settings {
   }
 }
 
-export function runtimeBrowserSnapshot() {
+export function runtimeBrowserSnapshot(): RuntimeSnapshotWire {
   const observedAt = '2026-08-02T12:00:00.000Z'
-  const unknownMemory = (basis: string) => ({
+  const unknownMemory = (basis: MemoryFact['basis']): MemoryFact => ({
     bytes: null,
     source: 'not_reported',
     observedAt,
@@ -135,10 +144,10 @@ export function runtimeBrowserSnapshot() {
   }
 }
 
-export function activeRuntimeBrowserSnapshot() {
+export function activeRuntimeBrowserSnapshot(): RuntimeSnapshotWire {
   const base = runtimeBrowserSnapshot()
   const observedAt = base.observedAt
-  const activeLease = {
+  const activeLease: Lease = {
     leaseId: 'lease-browser-active',
     ticketId: 'ticket-browser-active',
     owner: { kind: 'job', jobId: 'job-browser-active' },
@@ -148,7 +157,7 @@ export function activeRuntimeBrowserSnapshot() {
     acquiredAt: observedAt,
     state: 'active',
   }
-  const queued = [1, 2].map((position) => ({
+  const queued = [1, 2].map((position): Waiter => ({
     ticketId: `ticket-browser-${position}`,
     owner: { kind: 'operation', operationId: `operation-browser-${position}` },
     operation: position === 1 ? 'model_warm' : 'compaction',
@@ -158,7 +167,7 @@ export function activeRuntimeBrowserSnapshot() {
     enqueuedAt: observedAt,
     reason: position === 1 ? 'single_permit_busy' : 'fifo_predecessor',
   }))
-  const currentFit = {
+  const currentFit: ModelRow['currentFit'] = {
     state: 'observed',
     basis: 'current_loaded_configuration',
     reason: 'observed_current_residency',
@@ -170,7 +179,7 @@ export function activeRuntimeBrowserSnapshot() {
     pressureLevel: 'normal',
     futureAdmissionGuarantee: false,
   }
-  const row = {
+  const row: ModelRow = {
     name: 'browser-active:latest',
     digest: 'sha256:browser-active',
     sizeBytes: 5_000_000_000,
@@ -190,7 +199,7 @@ export function activeRuntimeBrowserSnapshot() {
     artifactIdentity: 'unknown',
     currentFit,
   }
-  const unknownRow = {
+  const unknownRow: ModelRow = {
     ...row,
     name: 'browser-unknown-owner:latest',
     digest: 'sha256:browser-unknown',
@@ -257,7 +266,7 @@ export function activeRuntimeBrowserSnapshot() {
         normalizedModelName: row.normalizedName,
         leaseId: activeLease.leaseId,
         owner: activeLease.owner,
-        runtimeDigest: row.digest,
+        runtimeDigest: 'sha256:browser-active',
         requestedContext: 16_384,
         observedContext: 16_384,
         identityBasis: 'exact_normalized_model_reference',
@@ -269,7 +278,7 @@ export function activeRuntimeBrowserSnapshot() {
         normalizedModelName: unknownRow.normalizedName,
         leaseId: null,
         owner: null,
-        runtimeDigest: unknownRow.digest,
+        runtimeDigest: 'sha256:browser-unknown',
         requestedContext: null,
         observedContext: null,
         identityBasis: 'runtime_observation_only',
@@ -279,8 +288,10 @@ export function activeRuntimeBrowserSnapshot() {
   }
 }
 
-export function degradedRuntimeBrowserSnapshot() {
+export function degradedRuntimeBrowserSnapshot(): RuntimeSnapshotWire {
   const active = activeRuntimeBrowserSnapshot()
+  const lease = active.governor.activeLease
+  if (!lease) throw new Error('the active fixture always holds a lease')
   return {
     ...active,
     source: {
@@ -305,12 +316,12 @@ export function degradedRuntimeBrowserSnapshot() {
       },
       {
         code: 'active_not_observed',
-        modelName: active.governor.activeLease.model.name,
-        normalizedModelName: active.governor.activeLease.model.name,
-        leaseId: active.governor.activeLease.leaseId,
-        owner: active.governor.activeLease.owner,
+        modelName: lease.model.name,
+        normalizedModelName: lease.model.name,
+        leaseId: lease.leaseId,
+        owner: lease.owner,
         runtimeDigest: null,
-        requestedContext: active.governor.activeLease.requestedContext,
+        requestedContext: lease.requestedContext,
         observedContext: null,
         identityBasis: 'none',
         artifactIdentity: 'unknown',
@@ -413,7 +424,7 @@ export function linuxNvidiaRuntimeBrowserSnapshot(
             : 'all_rows_malformed',
       },
     },
-    models: base.models.map((model) => ({
+    models: (base.models ?? []).map((model) => ({
       ...model,
       currentFit: {
         ...model.currentFit,

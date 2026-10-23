@@ -1,16 +1,25 @@
 @reference '../../styles/tailwind-reference.css';
 
+/*
+ * Buttons (D-200). Secondary is a white control on a hairline with a one-pixel shadow and an
+ * inner top highlight; primary is a solid accent fill with the same highlight; ghost has no
+ * chrome until hover. Text labels identify the control, so the decorative hairline may sit
+ * below 3:1; the focus ring always reaches 3:1.
+ */
 .gx-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-6);
+  box-sizing: border-box;
   min-width: var(--target-minimum);
   min-height: var(--control-height);
   padding-inline: var(--spacing-12);
-  border: var(--border-width-regular) solid var(--color-border-control);
+  border: var(--border-width-regular) solid var(--color-border-primary);
   border-radius: var(--border-radius-control);
   background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
   color: var(--color-text-primary);
   font-family: inherit;
   font-size: var(--font-text-size);
@@ -19,6 +28,7 @@
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
   @apply transition-colors;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-easing-standard);
@@ -27,6 +37,7 @@
 .gx-button[data-size='sm'] {
   min-height: var(--target-minimum);
   padding-inline: var(--spacing-8);
+  border-radius: var(--border-radius-inline);
   font-size: var(--font-size-12);
 }
 
@@ -38,50 +49,87 @@
 
 .gx-button:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-button:not([data-disabled]) {
-  background-color: var(--color-background-hover);
+  border-color: var(--color-border-control);
+  background-color: var(--color-background-tertiary);
 }
 
 .gx-button:active:not([data-disabled]),
 [data-gx-force~='active'] .gx-button:not([data-disabled]) {
   background-color: var(--color-background-pressed);
+  box-shadow: none;
 }
 
 .gx-button[data-variant='primary'] {
-  border-color: var(--color-border-accent);
+  border-color: var(--color-background-accent);
   background-color: var(--color-background-accent);
+  box-shadow: var(--elevation-inset-shadow), var(--elevation-control-shadow);
   color: var(--color-text-on-accent);
 }
 
 .gx-button[data-variant='primary']:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-button[data-variant='primary']:not([data-disabled]) {
+  border-color: var(--color-background-accent-hover);
   background-color: var(--color-background-accent-hover);
 }
 
 .gx-button[data-variant='primary']:active:not([data-disabled]),
 [data-gx-force~='active'] .gx-button[data-variant='primary']:not([data-disabled]) {
+  border-color: var(--color-background-accent-pressed);
   background-color: var(--color-background-accent-pressed);
 }
 
 .gx-button[data-variant='ghost'] {
   border-color: transparent;
   background-color: transparent;
+  box-shadow: none;
+  color: var(--color-text-secondary);
+}
+
+.gx-button[data-variant='ghost']:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-button[data-variant='ghost']:not([data-disabled]) {
+  border-color: transparent;
+  background-color: var(--color-background-hover);
+  color: var(--color-text-primary);
+}
+
+.gx-button[data-variant='ghost']:active:not([data-disabled]),
+[data-gx-force~='active'] .gx-button[data-variant='ghost']:not([data-disabled]) {
+  background-color: var(--color-background-pressed);
 }
 
 .gx-button[data-variant='danger'] {
-  border-color: var(--color-border-danger);
   color: var(--color-text-danger);
 }
 
 .gx-button[data-variant='danger']:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-button[data-variant='danger']:not([data-disabled]) {
-  background-color: var(--color-background-danger);
+  border-color: var(--color-border-danger);
+  background-color: var(--color-background-secondary);
+}
+
+.gx-button[data-variant='danger']:active:not([data-disabled]),
+[data-gx-force~='active'] .gx-button[data-variant='danger']:not([data-disabled]) {
+  background-color: var(--color-background-pressed);
+}
+
+.gx-button[aria-pressed='true']:not([data-variant='primary']) {
+  border-color: var(--color-border-control);
+  background-color: var(--color-background-pressed);
+  box-shadow: none;
+  color: var(--color-text-primary);
 }
 
 .gx-button[data-disabled]:not([data-loading]) {
-  border-color: var(--color-border-primary);
+  border-color: var(--color-border-secondary);
   background-color: var(--color-background-disabled);
+  box-shadow: none;
   color: var(--color-text-disabled);
   cursor: not-allowed;
+}
+
+.gx-button[data-variant='ghost'][data-disabled]:not([data-loading]) {
+  border-color: transparent;
+  background-color: transparent;
 }
 
 .gx-button[data-loading] {

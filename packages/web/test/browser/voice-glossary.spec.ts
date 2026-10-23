@@ -13,8 +13,8 @@ import type { GlossaryNode } from '../fixtures/glossary-node.ts'
 
 const PATH = '/settings/voice/glossary'
 const COPY = {
-  en: { newEntry: 'New entry', canonical: 'Canonical term', variants: 'Spoken forms', form: 'New glossary entry', entries: 'Entries', save: 'Create entry', dictated: 'Dictated text', retry: 'Retry' },
-  ru: { newEntry: 'Новая запись', canonical: 'Канонический термин', variants: 'Произносимые формы', form: 'Новая запись глоссария', entries: 'Записи', save: 'Создать запись', dictated: 'Надиктованный текст', retry: 'Повторить' },
+  en: { newEntry: 'New entry', canonical: 'Canonical term', variants: 'Spoken forms', form: 'New glossary entry', entries: 'Entries', save: 'Create entry', dictated: 'Dictated text' },
+  ru: { newEntry: 'Новая запись', canonical: 'Канонический термин', variants: 'Произносимые формы', form: 'Новая запись глоссария', entries: 'Записи', save: 'Создать запись', dictated: 'Надиктованный текст' },
 } as const
 
 async function open(page: Page, node: GlossaryNode, options: { locale?: 'en' | 'ru'; theme?: 'light' | 'dark'; path?: string } = {}) {
@@ -303,7 +303,7 @@ test('loading, empty, error and offline states are single, accessible and recove
   await expect(page.getByRole('button', { name: 'New entry' })).toHaveCount(1)
   expect(await seriousViolations(page), 'empty').toEqual([])
 
-  // Error: a rejected list names its source and code; Retry recovers.
+  // Error: a rejected list names its source and code, and recovers by itself (D-203: no Retry).
   await page.unrouteAll({ behavior: 'ignoreErrors' })
   const broken = seedGlossary(createGlossaryNode())
   broken.fail.set('GET /', { status: 503, code: 'glossary_unavailable' }) // persistent: the dev build may read twice before the page settles
@@ -312,8 +312,9 @@ test('loading, empty, error and offline states are single, accessible and recove
   await expect(page.getByRole('alert')).toContainText('GET /api/voice/glossary')
   await expect(page.getByRole('alert')).toContainText('glossary_unavailable')
   expect(await seriousViolations(page), 'error').toEqual([])
+  await expect(page.getByRole('button', { name: /^(Retry|Reload)/u })).toHaveCount(0)
   broken.fail.delete('GET /')
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await ready(page)
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(page.getByRole('article')).toHaveCount(3)
@@ -330,7 +331,8 @@ test('loading, empty, error and offline states are single, accessible and recove
   await expect(entryButton(page, 'Edit Hono')).toHaveAccessibleDescription(/disabled until the connection returns/u)
   expect(await seriousViolations(page), 'offline').toEqual([])
   broken.down = false
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^(Retry|Reload)/u })).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.locator('[data-state="node_unreachable"]')).toHaveCount(0)
   await expect(entryButton(page, 'Edit Hono')).toBeEnabled()
 })
@@ -375,7 +377,7 @@ test('phone width (320 px) with 200% text keeps everything inside the viewport w
     expect(overflow.document, `${label} document overflow`).toBeLessThanOrEqual(0)
     expect(overflow.page, `${label} glossary page overflow`).toBeLessThanOrEqual(1)
     expect(overflow.past, `${label} elements past the right edge`).toEqual([])
-    const small = await page.getByTestId('glossary-page').locator('button, select, summary, input, textarea, a').evaluateAll(
+    const small = await page.getByTestId('glossary-page').locator('button, select, summary, input:not([aria-hidden="true"][tabindex="-1"]), textarea, a').evaluateAll(
       (elements) => elements.filter((element) => {
         const box = element.getBoundingClientRect()
         return box.width > 0 && (box.height < 24 || box.width < 24)

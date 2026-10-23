@@ -61,7 +61,10 @@ beforeEach(() => {
     autoApproveTools: false,
     enableBash: false,
     prewarmEnabled: false,
-    webSearch: { provider: 'none', baseUrl: null, apiKey: null },
+    locale: 'en',
+    localeSource: 'default',
+    webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
+    theme: 'system',
   })
   vi.spyOn(api, 'listModels').mockResolvedValue({
     models: [{
@@ -154,7 +157,9 @@ describe('Project Chat Web boundary', () => {
     expect(api.getProjectChat).toHaveBeenCalledWith(PROJECT.id, CHAT.id, expect.any(AbortSignal))
     expect(api.getThread).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить)/u })).toHaveLength(0)
+    // D-203: the failed read recovers by itself (here on reconnect); the heading keeps focus.
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     await waitFor(() => expect(api.getProjectChat).toHaveBeenCalledTimes(2))
     const retryHeading = await screen.findByRole('heading', {
       name: 'Не удалось безопасно открыть чат проекта',

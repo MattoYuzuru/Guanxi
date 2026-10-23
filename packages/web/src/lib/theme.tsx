@@ -1,7 +1,7 @@
 /**
- * Тема. Источник истины — настройки на сервере (`settings.theme`), но применять
- * её надо мгновенно и без сети, поэтому дублируем в localStorage: тот же ключ
- * читает инлайн-скрипт в index.html до первой отрисовки.
+ * Theme. The single source of truth is this device store (localStorage `guanxi.theme`, read by the
+ * inline script in index.html before first paint). The chrome toggle and the Settings field both
+ * write it; Settings Save mirrors the value to the node's `settings.theme` and never overwrites it.
  */
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Settings } from '@guanxi/contract'
@@ -33,6 +33,8 @@ type ThemeContextValue = {
   preference: ThemePreference
   resolved: 'light' | 'dark'
   setPreference: (next: ThemePreference) => void
+  /** D-205: swaps light and dark only, by setting the opposite of the theme on screen. */
+  toggle: () => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -65,8 +67,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolved: 'light' | 'dark' =
     preference === 'dark' || (preference === 'system' && systemDark) ? 'dark' : 'light'
 
+  const toggle = useCallback(() => setPreference(resolved === 'dark' ? 'light' : 'dark'), [resolved, setPreference])
+
   return (
-    <ThemeContext.Provider value={{ preference, resolved, setPreference }}>
+    <ThemeContext.Provider value={{ preference, resolved, setPreference, toggle }}>
       {children}
     </ThemeContext.Provider>
   )

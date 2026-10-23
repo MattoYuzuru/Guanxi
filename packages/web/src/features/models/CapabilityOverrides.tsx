@@ -23,6 +23,7 @@ import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
+import { FactList } from './Facts.tsx'
 
 const CAPABILITIES = modelCapabilitySchema.options
 
@@ -34,7 +35,8 @@ type Intent =
   | { kind: 'remove'; capability: ModelCapability }
 
 type Feedback =
-  | { kind: 'outcome'; outcome: ModelCapabilityOverrideOutcome }
+  /** `reread`: the model was already re-read after this outcome (identity drift); no second re-read. */
+  | { kind: 'outcome'; outcome: ModelCapabilityOverrideOutcome; reread?: boolean }
   | { kind: 'error'; message: string }
   | { kind: 'export'; state: 'copied' | 'downloaded' | 'failed' }
 
@@ -68,9 +70,13 @@ function exactIdentity(model: ModelDetail): ExactIdentity | null {
 export function CapabilityOverrides({
   model,
   onRefresh,
+  carriedOutcome = null,
 }: {
   model: ModelDetail
-  onRefresh: () => void
+  /** Re-reads the model; a drift outcome is passed along so it survives the remount. */
+  onRefresh: (carried?: ModelCapabilityOverrideOutcome) => void
+  /** A drift conflict from before the re-read, still shown so the user knows nothing changed. */
+  carriedOutcome?: ModelCapabilityOverrideOutcome | null
 }) {
   const [overrides, setOverrides] = useState<ModelCapabilityOverride[]>(
     model.descriptor.overrides,
@@ -78,7 +84,9 @@ export function CapabilityOverrides({
   const [draft, setDraft] = useState<ModelCapability>(CAPABILITIES[0]!)
   const [intent, setIntent] = useState<Intent | null>(null)
   const [pending, setPending] = useState(false)
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [feedback, setFeedback] = useState<Feedback | null>(
+    carriedOutcome ? { kind: 'outcome', outcome: carriedOutcome, reread: true } : null,
+  )
   const addRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
   const removeRefs = useRef(new Map<ModelCapability, HTMLButtonElement | null>())
@@ -305,14 +313,16 @@ export function CapabilityOverrides({
                   {translate('models.override.remove')}
                 </Button>
               </div>
-              <p className="mt-1 min-w-0 break-all text-secondary">
-                {translate('models.override.created')} {formatDateTime(override.createdAt)} ·{' '}
-                {translate('models.override.updated')} {formatDateTime(override.updatedAt)}
-              </p>
-              <p className="mt-1 min-w-0 break-all font-mono text-secondary">
-                {override.normalizedModelReference} · {override.artifactDigest} · Ollama{' '}
-                {override.runtimeVersion}
-              </p>
+              <FactList
+                className="mt-1"
+                facts={[
+                  { label: translate('models.override.created'), value: formatDateTime(override.createdAt) },
+                  { label: translate('models.override.updated'), value: formatDateTime(override.updatedAt) },
+                  { label: translate('models.facts.reference'), value: override.normalizedModelReference, mono: true },
+                  { label: translate('models.facts.digest'), value: override.artifactDigest, mono: true },
+                  { label: translate('models.facts.runtime'), value: `Ollama ${override.runtimeVersion}` },
+                ]}
+              />
             </li>
           ))}
         </ul>
@@ -448,8 +458,16 @@ function Feedback({
   onRefresh,
 }: {
   feedback: Feedback
-  onRefresh: () => void
+  onRefresh: (carried?: ModelCapabilityOverrideOutcome) => void
 }) {
+  // Identity drift means the shown model is stale: re-read it at once instead of asking the user
+  // to press Reload (D-203). Once per conflict outcome.
+  const drifted = feedback.kind === 'outcome' && !feedback.reread && feedback.outcome.state === 'conflict'
+    && (feedback.outcome.reason === 'digest_expectation_mismatch' || feedback.outcome.reason === 'runtime_expectation_mismatch')
+    ? feedback.outcome : null
+  const refreshRef = useRef(onRefresh)
+  refreshRef.current = onRefresh
+  useEffect(() => { if (drifted) refreshRef.current(drifted) }, [drifted])
   if (feedback.kind === 'export') {
     if (feedback.state === 'failed') {
       return (
@@ -484,9 +502,7 @@ function Feedback({
         <p className="mt-1">{conflictReason(outcome.reason)}</p>
         {outcome.reason === 'digest_expectation_mismatch'
           || outcome.reason === 'runtime_expectation_mismatch' ? (
-            <Button variant="ghost" size="sm" className="mt-1" onClick={onRefresh}>
-              {translate('models.override.refresh')}
-            </Button>
+            <p className="mt-1 text-secondary">{translate('models.override.reloaded')}</p>
           ) : null}
       </>
     )

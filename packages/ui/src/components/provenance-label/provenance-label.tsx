@@ -1,5 +1,6 @@
 /*
- * Guanxi pattern. "source · age" for every number (principle 1, Truth over confidence):
+ * Guanxi pattern. Source and observation time for every number (principle 1, Truth over confidence),
+ * as an absolute time: views stay current by themselves, so no "N s ago" caption (D-203);
  * unknown renders as Unknown plus the source that would answer it, never as 0 or a blank.
  */
 import type { ComponentProps } from 'react'
@@ -18,7 +19,7 @@ export interface ProvenanceLabelProps extends Omit<ComponentProps<'span'>, 'clas
   observedAt: string | null
   /** Reference time for the age; defaults to now. Stories pass a fixed time. */
   now?: string
-  /** After this many seconds the label switches to "as of HH:MM, N min ago". */
+  /** After this many seconds the label switches to the aged "as of HH:MM" warning. */
   staleAfterSeconds?: number
   /** Guanxi metered or inferred the value. */
   estimated?: boolean
@@ -79,14 +80,12 @@ export function ProvenanceLabel({
   } else {
     const reference = now ? new Date(now) : new Date()
     const seconds = Math.max(0, (reference.getTime() - observed.getTime()) / 1000)
-    const age = formatAge(seconds, locale)
     state = seconds > staleAfterSeconds ? 'aged' : 'fresh'
     const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(observed)
-    const ageText = state === 'aged' ? t('ui.provenance.asOf', { time, age }) : age
+    const ageText = state === 'aged' ? t('ui.provenance.asOf', { time }) : time
     body = (
       <>
-        {sourceNode}
-        <span aria-hidden="true"> · </span>
+        {sourceNode}{' '}
         <time dateTime={observed.toISOString()} title={observed.toISOString()}>
           {ageText}
         </time>

@@ -41,6 +41,9 @@ beforeEach(() => {
     projectId: query.scope === 'project' ? query.projectId : null,
     chats: [],
     hasMore: false,
+    deletionVersion: 1,
+    deletions: [],
+    deletionsHaveMore: false,
   }))
   vi.spyOn(api, 'listProjectChats').mockResolvedValue({
     ownershipVersion: 1,
@@ -89,7 +92,7 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('textbox', { name: 'Название проекта' })).toBeTruthy()
   })
 
-  it('focuses a contained error and retries into the empty projection', async () => {
+  it('focuses a contained error and recovers by itself into the empty projection', async () => {
     vi.spyOn(api, 'listProjectsWithPresentation')
       .mockRejectedValueOnce(new Error('safe list failure'))
       .mockResolvedValue({ presentationVersion: 1, projects: [] })
@@ -99,7 +102,8 @@ describe('ProjectsPage', () => {
     await waitFor(() => expect(heading).toBe(document.activeElement))
     expect(screen.getByRole('alert').textContent).toContain('safe list failure')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findByText('Проектов пока нет')).toBeTruthy()
     expect(api.listProjectsWithPresentation).toHaveBeenCalledTimes(2)
   })
@@ -131,7 +135,7 @@ describe('ProjectsPage', () => {
     expect(api.listProjectsWithPresentation).toHaveBeenCalledTimes(2)
   })
 
-  it('shows an exact bounded Chat group and contains error/retry per Project', async () => {
+  it('shows an exact bounded Chat group and contains error and recovery per Project', async () => {
     vi.spyOn(api, 'listProjectsWithPresentation').mockResolvedValue({
       presentationVersion: 1,
       projects: [PROJECT],
@@ -179,7 +183,8 @@ describe('ProjectsPage', () => {
 
     render(<ProjectsPage />)
     expect(await screen.findByText(/scoped list failed/u)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     await screen.findByText('Newer Chat')
     const group = screen.getByRole('region', { name: 'Чаты проекта' })
     const links = Array.from(group.querySelectorAll('a'))

@@ -13,6 +13,11 @@
           stored === 'dark' ||
           (stored === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
+        // Appearance (density, graphics tier, motion) before first paint, so nothing jumps.
+        var appearance = JSON.parse(localStorage.getItem('guanxi.appearance.v1') || '{}')
+        document.documentElement.dataset.density = appearance.density === 'compact' ? 'compact' : 'comfortable'
+        document.documentElement.dataset.graphics = appearance.graphics === 'max' ? 'max' : 'static'
+        if (appearance.motion === 'reduced' || appearance.motion === 'full') document.documentElement.dataset.motion = appearance.motion
       } catch (e) {}
     </script>
   </head>

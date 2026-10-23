@@ -58,7 +58,10 @@ beforeEach(() => {
     autoApproveTools: false,
     enableBash: false,
     prewarmEnabled: false,
-    webSearch: { provider: 'none', baseUrl: null, apiKey: null },
+    locale: 'en',
+    localeSource: 'default',
+    webSearch: { provider: 'none', baseUrl: null, hasApiKey: false },
+    theme: 'system',
   })
   vi.spyOn(api, 'listModels').mockResolvedValue({
     models: [{
@@ -92,7 +95,11 @@ describe('Project Chat focus ordering', () => {
     act(() => model.focus())
     fireEvent.submit(create.closest('form')!)
     expect(api.createProjectChat).toHaveBeenCalledTimes(1)
-    expect(create.hasAttribute('disabled')).toBe(true)
+    // A loading design-system Button stays focusable (aria-disabled + aria-busy) instead of disabled.
+    expect(create.hasAttribute('disabled') || create.getAttribute('aria-disabled') === 'true').toBe(true)
+    expect(create.getAttribute('aria-busy')).toBe('true')
+    fireEvent.submit(create.closest('form')!)
+    expect(api.createProjectChat).toHaveBeenCalledTimes(1)
     expect(model).toBe(document.activeElement)
     expect(frames.pending()).toBe(1)
     await frames.flush()

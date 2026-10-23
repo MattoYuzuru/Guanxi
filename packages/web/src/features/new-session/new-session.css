@@ -1,0 +1,126 @@
+/* E1 New session (D-207): the composer centred on the pane, scope above it, one hint below. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.new-session {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  @apply min-h-full w-full;
+  padding: var(--spacing-32) var(--spacing-16);
+}
+
+.new-session-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+  @apply w-full;
+  max-width: var(--layout-container-2xl);
+  min-width: 0;
+}
+
+.new-session-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-12);
+  text-align: center;
+}
+
+.new-session-mark {
+  width: var(--spacing-32);
+  height: var(--spacing-32);
+  color: var(--color-text-primary);
+}
+
+.new-session-title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-heading-3-size);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--font-heading-3-line-height);
+  text-wrap: balance;
+}
+
+.new-session-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  min-width: 0;
+}
+
+.new-session-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-6);
+}
+
+.new-session-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.new-session-hint,
+.new-session-note {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  text-align: center;
+}
+
+.new-session-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-6);
+  color: var(--color-text-secondary);
+}
+
+.new-session-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: 0 var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-label);
+  text-decoration: none;
+}
+
+.new-session-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.new-session-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+
+.new-session-skeleton span {
+  display: block;
+  height: var(--spacing-24);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-hover);
+}
+
+.new-session-skeleton span:last-child {
+  height: var(--spacing-64);
+  border-radius: var(--border-radius-glass);
+}
+
+.new-session-options {
+  max-height: var(--layout-container-md);
+  overflow-y: auto;
+}

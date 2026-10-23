@@ -1,3 +1,4 @@
+import { parseChatModelSelection } from '@guanxi/contract'
 /** Locale-aware common formatting. Units remain base-1024 compatibility labels. */
 import { getActiveLocale, translate, type LocaleKey } from './locale.ts'
 
@@ -178,3 +179,11 @@ function currentLocale(): 'en' | 'ru' {
 }
 
 export { NBSP }
+
+/**
+ * The model name to show for a thread's model selection: a provider selection
+ * (`k3:<connection>:<model>`) shows its model id only, never the raw selection.
+ */
+export function displayModelSelection(selection: string): string {
+  return parseChatModelSelection(selection)?.modelId ?? selection
+}

@@ -286,7 +286,7 @@ test('switching the theme recolours a sandboxed T2 plugin through MCP Apps varia
   const iframe = page.locator('iframe.gx-catalog-t2-frame')
   await expect(iframe).toHaveAttribute('data-plugin-initialized', '')
   await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts')
-  const document = await iframe.getAttribute('srcdoc')
+  const srcdoc = await iframe.getAttribute('srcdoc')
   const plugin = page.frameLocator('iframe.gx-catalog-t2-frame')
   const colours = () =>
     plugin.locator('body').evaluate(() => ({
@@ -317,7 +317,7 @@ test('switching the theme recolours a sandboxed T2 plugin through MCP Apps varia
         probe.remove()
         return result
       },
-      [theme, pluginTheme],
+      [theme, pluginTheme] as const,
     )
   const light = await host('light', 'light')
   expect(light.background).not.toBe(light.card)
@@ -335,7 +335,7 @@ test('switching the theme recolours a sandboxed T2 plugin through MCP Apps varia
   await expect.poll(colours).toEqual(lightHc)
 
   // The plugin document never changed; only host variables did.
-  expect(await iframe.getAttribute('srcdoc')).toBe(document)
+  expect(await iframe.getAttribute('srcdoc')).toBe(srcdoc)
   await expect(page.locator('iframe.gx-catalog-t2-frame')).toHaveCount(1)
 })
 

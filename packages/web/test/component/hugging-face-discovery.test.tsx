@@ -6,6 +6,7 @@ import {
   HuggingFaceDiscovery,
   RepositoryCard,
 } from '../../src/features/models/HuggingFaceDiscovery.tsx'
+import { factPairs } from '../helpers/facts.ts'
 
 const originalFetch = globalThis.fetch
 const OBSERVED_AT = '2026-08-07T12:00:00.000Z'
@@ -302,7 +303,7 @@ describe('Marketplace Hugging Face discovery section', () => {
     expect(screen.getByText(/Содержит файлы GGUF/u)).toBeTruthy()
   })
 
-  it('renders each transport failure distinguishably with a retry', async () => {
+  it('renders each transport failure distinguishably and keeps Search as the next step', async () => {
     const reasons: Array<[string, RegExp]> = [
       ['rate_limited', /ограничивает частоту запросов/u],
       ['provider_unavailable', /Провайдер недоступен/u],
@@ -319,12 +320,13 @@ describe('Marketplace Hugging Face discovery section', () => {
       submitSearch()
       const alert = await screen.findByRole('alert')
       expect(alert.textContent).toMatch(message)
-      expect(screen.getByRole('button', { name: /Повторить/u })).toBeTruthy()
+      expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+      expect((screen.getByRole('button', { name: /Выполнить поиск/u }) as HTMLButtonElement).disabled).toBe(false)
       view.unmount()
     }
   })
 
-  it('retries through the same explicit intent after a failure', async () => {
+  it('repeats a failed search from Search with the same explicit intent', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(json(failed('rate_limited')))
       .mockResolvedValueOnce(json(listed()))
@@ -333,7 +335,8 @@ describe('Marketplace Hugging Face discovery section', () => {
     submitSearch()
     await screen.findByRole('alert')
 
-    fireEvent.click(screen.getByRole('button', { name: /Повторить/u }))
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    submitSearch()
     expect(await screen.findByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).page).toBe(1)
@@ -371,7 +374,7 @@ describe('Marketplace Hugging Face discovery section', () => {
       expect(alert.textContent).toMatch(/компьютер офлайн/u)
     } finally {
       if (online) Object.defineProperty(navigator, 'onLine', online)
-      else delete (navigator as Navigator & { onLine?: boolean }).onLine
+      else Reflect.deleteProperty(navigator, 'onLine')
     }
   })
 
@@ -531,8 +534,9 @@ describe('Marketplace Hugging Face discovery section', () => {
     expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
     expect(screen.queryByText(/Подходящих репозиториев нет/u)).toBeNull()
 
-    // Retry repeats the failed page and cursor, not a fresh page-1 search.
-    fireEvent.click(screen.getByRole('button', { name: /Повторить/u }))
+    // Load the next page repeats the failed page and cursor, not a fresh page-1 search.
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: /Загрузить следующую страницу/u }))
     expect(await screen.findByText('Second/Repo-GGUF')).toBeTruthy()
     expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({
       query: 'llama gguf', page: 2, pageSize: 10, cursor: 'CURSOR-2',
@@ -613,10 +617,11 @@ describe('Marketplace Hugging Face discovery section', () => {
     render(<HuggingFaceDiscovery contextLength={8_192} />)
     submitSearch()
     const alert = await screen.findByRole('alert')
-    // The alert carries the framing and the retry, not just a bare sentence.
+    // The alert carries the framing and the reason, not just a bare sentence; the next step is
+    // the Search button itself (D-203: no Retry inside the alert).
     expect(alert.textContent).toMatch(/Не удалось прочитать Hugging Face/u)
     expect(alert.textContent).toMatch(/ограничивает частоту запросов/u)
-    expect(alert.querySelector('button')).toBeTruthy()
+    expect(alert.querySelector('button')).toBeNull()
   })
 
   it('distinguishes unreadable metadata from an absent declaration', async () => {
@@ -804,7 +809,8 @@ describe('P2-K exact GGUF file/revision selection', () => {
     expect(screen.getAllByText('llama-2-7b.Q4_K_M.gguf').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText(/4 КБ/u).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Можно явно начать скачивание')).toBeTruthy()
-    expect(screen.getAllByText(/apache-2.0/u)).toHaveLength(2)
+    // The card states the license once; the selection repeats it only when its re-read disagrees.
+    expect(screen.getAllByText(/apache-2.0/u)).toHaveLength(1)
     expect(screen.getByText(/стартовая проверка железа приложением/u)).toBeTruthy()
     expect(screen.getByText(/оценочная уверенность/u)).toBeTruthy()
 
@@ -843,6 +849,28 @@ describe('P2-K exact GGUF file/revision selection', () => {
     expect(resolveCount).toBe(1)
     resolve?.(json(confirmedSelectionResult()))
     await waitFor(() => expect(screen.getByText('Выбранная цель')).toBeTruthy())
+  })
+
+  it('states gated and license once; the selection repeats them only when its re-read disagrees', async () => {
+    let selection = confirmedSelectionResult()
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async (input) => {
+      const url = String(input)
+      if (url.includes('/discovery/hugging-face/search')) return json(listed())
+      return json(selection)
+    }))
+    const first = render(<HuggingFaceDiscovery contextLength={8_192} />)
+    fireEvent.click(await searchAndOpenFileList())
+    await waitFor(() => expect(screen.getByText('Выбранная цель')).toBeTruthy())
+    // The fixture repository is open; the card states it and the selection does not repeat it.
+    expect(screen.getAllByText('Открытый', { exact: true })).toHaveLength(1)
+    expect(factPairs().filter(([label]) => label === 'Gated при выборе')).toHaveLength(0)
+    first.unmount()
+
+    selection = confirmedSelectionResult({ repository: { ...repository(), gated: { state: 'gated', mode: 'manual' } } })
+    render(<HuggingFaceDiscovery contextLength={8_192} />)
+    fireEvent.click(await searchAndOpenFileList())
+    await waitFor(() => expect(screen.getByText('Выбранная цель')).toBeTruthy())
+    expect(factPairs().filter(([label]) => label === 'Gated при выборе')).toHaveLength(1)
   })
 
   it('recomputes fit when the context window changes, and discards a stale superseded re-check', async () => {
@@ -909,7 +937,7 @@ describe('P2-K exact GGUF file/revision selection', () => {
         },
       },
     })))
-    await waitFor(() => expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy())
+    await waitFor(() => expect(factPairs()).toContainEqual(['Окно контекста', '32k']))
   })
 
   it('supersedes the initial pending selection when the context changes', async () => {
@@ -958,15 +986,15 @@ describe('P2-K exact GGUF file/revision selection', () => {
         },
       },
     })))
-    await waitFor(() => expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy())
-    expect(screen.queryByText(/выбранный контекст 8k/u)).toBeNull()
+    await waitFor(() => expect(factPairs()).toContainEqual(['Окно контекста', '32k']))
+    expect(factPairs()).not.toContainEqual(['Окно контекста', '8k'])
 
     pending[0]?.resolve(json(confirmedSelectionResult()))
     await Promise.resolve()
-    expect(screen.getByText(/выбранный контекст 32k/u)).toBeTruthy()
+    expect(factPairs()).toContainEqual(['Окно контекста', '32k'])
   })
 
-  it('shows a typed refusal with retry when a fresh re-check no longer confirms the target', async () => {
+  it('shows a typed refusal and selects again from its own button when a fresh re-check no longer confirms the target', async () => {
     let attempts = 0
     vi.stubGlobal('fetch', routedFetch({
       selection: () => {
@@ -985,9 +1013,8 @@ describe('P2-K exact GGUF file/revision selection', () => {
     const article = screen.getByText('TheBloke/Llama-2-7B-GGUF').closest('article')!
     expect(article.querySelector('[role="status"]')?.textContent)
       .toContain('Повторная проверка больше не находит этот файл в перечне.')
-    const retry = screen.getByRole('button', { name: 'Повторить' })
-    expect(retry).toBeTruthy()
-    fireEvent.click(retry)
+    expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: /Выбрать этот файл/u }))
     await screen.findByText('Выбранная цель')
     expect(article.querySelector('[role="status"]')?.textContent)
       .toContain('Выбранная цель: llama-2-7b.Q4_K_M.gguf')
@@ -1269,7 +1296,7 @@ describe('P2-L exact GGUF download projection', () => {
 
   it('collapses duplicate activation and cancels one connection-owned stream', async () => {
     let calls = 0
-    let signal: AbortSignal | null = null
+    const captured: { signal: AbortSignal | null } = { signal: null }
     const encoder = new TextEncoder()
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -1283,7 +1310,7 @@ describe('P2-L exact GGUF download projection', () => {
     vi.stubGlobal('fetch', routedFetch({
       download: (_body, currentSignal) => {
         calls += 1
-        signal = currentSignal
+        captured.signal = currentSignal
         return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
       },
     }))
@@ -1298,8 +1325,8 @@ describe('P2-L exact GGUF download projection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
     const cancelled = await screen.findByText('Скачивание отменено')
     expect(cancelled).toBeTruthy()
-    expect(signal?.aborted).toBe(true)
-    expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+    expect(captured.signal?.aborted).toBe(true)
+    expect(screen.getByRole('button', { name: 'Скачать точный GGUF' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.textContent).toContain('Скачивание отменено'))
   })
 
@@ -1307,7 +1334,7 @@ describe('P2-L exact GGUF download projection', () => {
     let releaseOld!: () => void
     const oldGate = new Promise<void>((resolve) => { releaseOld = resolve })
     let calls = 0
-    let oldSignal: AbortSignal | null = null
+    const old: { signal: AbortSignal | null } = { signal: null }
     const encoder = new TextEncoder()
     const oldStream = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -1331,7 +1358,7 @@ describe('P2-L exact GGUF download projection', () => {
       download: (_body, signal) => {
         calls += 1
         if (calls === 1) {
-          oldSignal = signal
+          old.signal = signal
           return new Response(oldStream, { headers: { 'content-type': 'text/event-stream' } })
         }
         return downloadEvents()
@@ -1342,10 +1369,10 @@ describe('P2-L exact GGUF download projection', () => {
     expect(await screen.findByText(/Общий размер остаётся неизвестным/u)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить скачивание' }))
     expect(await screen.findByText('Скачивание отменено')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить скачивание' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Скачать точный GGUF' }))
     expect(await screen.findByText('Staging artifact скачан и проверен')).toBeTruthy()
     expect(calls).toBe(2)
-    expect(oldSignal?.aborted).toBe(true)
+    expect(old.signal?.aborted).toBe(true)
 
     releaseOld()
     await waitFor(() => {
@@ -1419,7 +1446,7 @@ describe('P2-L exact GGUF download projection', () => {
       fireEvent.click(await confirmTarget())
       expect(await screen.findByText(message)).toBeTruthy()
       expect(screen.getByText('TheBloke/Llama-2-7B-GGUF')).toBeTruthy()
-      expect(screen.getByRole('button', { name: 'Повторить скачивание' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Скачать точный GGUF' })).toBeTruthy()
       await waitFor(() => expect(document.activeElement?.textContent).toMatch(message))
       view.unmount()
     }

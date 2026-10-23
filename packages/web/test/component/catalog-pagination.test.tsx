@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CatalogModel, Health, ListCatalogResponse } from '@guanxi/contract'
 import { CATALOG_DEFAULT_PAGE_SIZE, listModelsResponse } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,7 +17,7 @@ const HEALTH: Health = {
   appVersion: 'test',
   application: { state: 'reachable', source: 'application_http', observedAt: AT },
   ollama: {
-    installed: true, running: true, state: 'reachable', source: 'ollama_api_version',
+    installed: true, installSource: 'runtime_response', running: true, state: 'reachable', source: 'ollama_api_version',
     observedAt: AT, version: '0.12.6', host: 'http://fixture.invalid', installHint: null,
   },
   hardware: {
@@ -127,7 +127,7 @@ function mockInstallFlow(target: string, digest: string) {
   }))
   let releaseRefresh!: () => void
   const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve })
-  const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+  const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => {
     const page = response(params.page ?? 1, 25)
     if (!installed) return page
     await refreshGate
@@ -167,11 +167,11 @@ afterEach(() => {
 describe('bounded catalog paging', () => {
   it('renders one bounded page and constant pager controls for 1,000 logical rows', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
-    const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params) =>
+    const catalog = vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) =>
       response(params.page ?? 1),
     )
     const { container } = render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 84 · на странице 12 · всего найдено 1000')
+    await screen.findByText('Страница 1 из 84, на странице 12, всего найдено 1000')
     expect(catalog).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 1, pageSize: 12 }), expect.any(AbortSignal),
     )
@@ -184,14 +184,14 @@ describe('bounded catalog paging', () => {
 
   it('keeps two exact snapshots across distant pages and resets on accepted query changes', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => response(params.page ?? 1, 25))
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => response(params.page ?? 1, 25))
     render(<LauncherPage health={HEALTH} />)
     await screen.findByRole('button', { name: 'Добавить к сравнению synthetic-0000:q4' })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить к сравнению synthetic-0000:q4' }))
     const pager = screen.getByRole('navigation', { name: 'Страницы каталога' })
     for (let page = 2; page <= 3; page += 1) {
       fireEvent.click(within(pager).getByRole('button', { name: 'Следующая страница' }))
-      await screen.findByText(`Страница ${page} из 3 · на странице ${page === 3 ? 1 : 12} · всего найдено 25`)
+      await screen.findByText(`Страница ${page} из 3, на странице ${page === 3 ? 1 : 12}, всего найдено 25`)
     }
     fireEvent.click(screen.getByRole('button', { name: 'Добавить к сравнению synthetic-0024:q4' }))
     const compare = screen.getByRole('button', { name: 'Сравнить точные варианты (2/2)' })
@@ -216,15 +216,15 @@ describe('bounded catalog paging', () => {
   it('shows source shrink as an explicit empty requested page without optimistic count', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     let totalItems = 13
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) =>
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) =>
       response(params.page ?? 1, totalItems),
     )
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 2 · на странице 12 · всего найдено 13')
+    await screen.findByText('Страница 1 из 2, на странице 12, всего найдено 13')
     totalItems = 5
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
     expect(await screen.findByText('Эта страница каталога больше недоступна')).toBeTruthy()
-    expect(screen.getByText('Страница 2 из 1 · на странице 0 · всего найдено 5')).toBeTruthy()
+    expect(screen.getByText('Страница 2 из 1, на странице 0, всего найдено 5')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Вернуться на первую страницу' })).toBeTruthy()
   })
 
@@ -235,30 +235,30 @@ describe('bounded catalog paging', () => {
       signal: AbortSignal
       resolve: (value: ListCatalogResponse) => void
     }> = []
-    vi.spyOn(api, 'listCatalog').mockImplementation((params, signal) =>
+    vi.spyOn(api, 'listCatalog').mockImplementation((params = {}, signal) =>
       new Promise((resolve) => requests.push({ page: params.page ?? 1, signal: signal!, resolve })),
     )
     render(<LauncherPage health={HEALTH} />)
     await waitFor(() => expect(requests).toHaveLength(1))
     requests[0]!.resolve(response(1, 25))
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
 
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
     await waitFor(() => expect(requests).toHaveLength(2))
     expect(requests[0]!.signal.aborted).toBe(true)
     requests[0]!.resolve(response(1, 1))
     requests[1]!.resolve(response(2, 25))
-    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
-    expect(screen.queryByText('Страница 1 из 1 · на странице 1 · всего найдено 1')).toBeNull()
+    await screen.findByText('Страница 2 из 3, на странице 12, всего найдено 25')
+    expect(screen.queryByText('Страница 1 из 1, на странице 1, всего найдено 1')).toBeNull()
   })
 
   it('keeps the real exact pull owned while page navigation is blocked', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     const catalog = vi.spyOn(api, 'listCatalog').mockResolvedValue(response(1, 25))
-    let pullSignal: AbortSignal | null = null
+    const pull: { signal: AbortSignal | null } = { signal: null }
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(async (input, init) => {
       if (String(input).endsWith('/start')) {
-        pullSignal = init?.signal ?? null
+        pull.signal = init?.signal ?? null
         return await new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener(
             'abort',
@@ -282,10 +282,10 @@ describe('bounded catalog paging', () => {
     expect(next.disabled).toBe(true)
     fireEvent.click(next)
     expect(catalog).toHaveBeenCalledTimes(1)
-    expect(pullSignal?.aborted).toBe(false)
+    expect(pull.signal?.aborted).toBe(false)
 
     view.unmount()
-    await waitFor(() => expect(pullSignal?.aborted).toBe(true))
+    await waitFor(() => expect(pull.signal?.aborted).toBe(true))
   })
 
   it('keeps the page and the install result mounted through the post-install refresh', async () => {
@@ -293,9 +293,9 @@ describe('bounded catalog paging', () => {
     const digest = 'sha256:exact-0012'
     const { catalog, releaseRefresh } = mockInstallFlow(target, digest)
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
-    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 2 из 3, на странице 12, всего найдено 25')
     const variant = screen.getAllByRole('button', { name: 'Выбрать вариант q4' })[0]!
     fireEvent.click(variant)
     expect(screen.getByText(target)).toBeTruthy()
@@ -316,8 +316,8 @@ describe('bounded catalog paging', () => {
     await waitFor(() => expect(screen.getAllByText(digest)).toHaveLength(2))
     expect(variant.isConnected).toBe(true)
     expect(within(dialog).getByText(digest)).toBeTruthy()
-    expect(screen.getByText('Страница 2 из 3 · на странице 12 · всего найдено 25')).toBeTruthy()
-    expect(catalog.mock.calls.slice(callsBeforeInstall).map(([params]) => params.page))
+    expect(screen.getByText('Страница 2 из 3, на странице 12, всего найдено 25')).toBeTruthy()
+    expect(catalog.mock.calls.slice(callsBeforeInstall).map(([params]) => params?.page))
       .toEqual([2])
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Готово' }))
@@ -333,7 +333,7 @@ describe('bounded catalog paging', () => {
     const digest = 'sha256:exact-0000'
     const { releaseRefresh } = mockInstallFlow(target, digest)
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить к сравнению synthetic-0001:q4' }))
     expect(screen.getByRole('button', { name: 'Сравнить точные варианты (1/2)' })).toBeTruthy()
     const variant = screen.getAllByRole('button', { name: 'Выбрать вариант q4' })[0]!
@@ -369,7 +369,7 @@ describe('bounded catalog paging', () => {
       models: installed ? [installedModel('qwen3:8b', 'sha256:fixture')] : [],
     }))
     let gate: Promise<void> | null = null
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => {
       if (gate) await gate
       return response(params.page ?? 1, 25)
     })
@@ -389,7 +389,7 @@ describe('bounded catalog paging', () => {
     // hidden: the AddFromOllama dialog marks the page behind it aria-hidden.
     const carousel = () => screen.queryByRole('group', { name: 'Каталог моделей', hidden: true })
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
 
     // A new query is loading: the old cards are replaced by the skeleton.
     let release!: () => void
@@ -413,11 +413,11 @@ describe('bounded catalog paging', () => {
     await waitFor(() => expect(carousel()).not.toBeNull())
   })
 
-  it('replaces the cards with a skeleton for page, query, explicit refresh and retry', async () => {
+  it('replaces the cards with a skeleton for page and query, and recovers a failed read quietly', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     let gate: Promise<void> | null = null
     let failNext = false
-    vi.spyOn(api, 'listCatalog').mockImplementation(async (params) => {
+    vi.spyOn(api, 'listCatalog').mockImplementation(async (params = {}) => {
       if (gate) await gate
       if (failNext) {
         failNext = false
@@ -435,14 +435,14 @@ describe('bounded catalog paging', () => {
     }
     const carousel = () => screen.queryByRole('group', { name: 'Каталог моделей' })
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
     expect(carousel()).not.toBeNull()
 
     let release = hold()
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
     await waitFor(() => expect(carousel()).toBeNull())
     release()
-    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 2 из 3, на странице 12, всего найдено 25')
     expect(carousel()).not.toBeNull()
 
     release = hold()
@@ -453,22 +453,22 @@ describe('bounded catalog paging', () => {
     release()
     await waitFor(() => expect(carousel()).not.toBeNull())
 
-    release = hold()
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
-    await waitFor(() => expect(carousel()).toBeNull())
-    release()
-    await waitFor(() => expect(carousel()).not.toBeNull())
-
+    // D-203: no Refresh or Retry button. A failed read keeps its error on screen, with no
+    // skeleton flash and no stale cards, until a quiet recovery read replaces it.
+    expect(screen.queryAllByRole('button', { name: /^(Обновить|Повторить)$/u })).toHaveLength(0)
     failNext = true
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
-    await screen.findByText('Каталог недоступен')
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Поиск по каталогу моделей' }), {
+      target: { value: 'synthetic-2' },
+    })
+    await screen.findByText('Каталог недоступен', undefined, { timeout: 2_000 })
+    expect(carousel()).toBeNull()
     release = hold()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
-    // The error is gone and no stale cards are shown while the retry is pending.
-    await waitFor(() => expect(screen.queryByText('Каталог недоступен')).toBeNull())
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(screen.getByText('Каталог недоступен')).toBeTruthy()
     expect(carousel()).toBeNull()
     release()
     await waitFor(() => expect(carousel()).not.toBeNull())
+    expect(screen.queryByText('Каталог недоступен')).toBeNull()
   })
 
   it('keeps legacy full responses compatible while bounding their client DOM page', () => {

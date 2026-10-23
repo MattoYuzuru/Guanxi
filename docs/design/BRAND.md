@@ -48,10 +48,13 @@ name as ordinary UI text.
 
 | Name | Value | Use |
 | --- | --- | --- |
-| Ink | `#182322` (`oklch(0.245 0.016 189)`) | logo, light-theme text, dark-theme canvas |
+| Ink | `#182322` (`oklch(0.245 0.016 189)`) | logo only (the mark is never recoloured) |
 | Ivory | `#F4F2E9` (`oklch(0.960 0.012 96)`) | logo on dark surfaces only — never a UI canvas, because cream with a serif display and a terracotta accent is the most common AI-generated look |
-| Verdigris | `#187363` light / `#78CAB7` dark | the single UI accent: primary actions, selection, focus |
-| Frost | `#EBF4F5` | light-theme canvas |
+| Cobalt | `#285DD2` light / `#739DEF` dark | the single UI accent: primary actions, selection, focus (D-201, **pending owner approval**) |
+| Porcelain | `#EFF3F8` chrome, `#FFFFFF` session pane | light-theme chrome and pane (D-201, pending owner approval) |
+
+Verdigris (`#187363` / `#78CAB7`) and Frost (`#EBF4F5`) were the UI accent and canvas until
+D-201 (2026-10-23) retired them; the logo keeps Ink and Ivory.
 
 Full palettes and their contrast values are in [FOUNDATIONS](FOUNDATIONS.md).
 

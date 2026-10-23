@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { pickValue } from './fixtures/select.ts'
 
 test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layout safe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
@@ -169,8 +170,13 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   const loadError = page.getByRole('heading', { name: 'Не удалось загрузить сценарии' })
   await expect(loadError).toBeFocused()
   await expect(page.getByText('Не удалось сохранить запрос в локальное хранилище.')).toHaveCount(1)
-  await page.getByRole('button', { name: 'Повторить', exact: true }).press('Enter')
-  await expect(page.getByText('В этой области нет сценариев')).toHaveCount(1)
+  // D-203: no Retry button; the failed read recovers by itself (focus asks again at once;
+  // StrictMode may leave one more armed failure, so focus repeats until it lands).
+  await expect(page.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  await expect(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect(page.getByText('В этой области нет сценариев')).toHaveCount(1, { timeout: 1_000 })
+  }).toPass()
   await expect(page.getByText('Основа снимка в очереди; выполнение не подключено')).toHaveCount(1)
 
   await page.getByRole('textbox', { name: 'Название сценария' }).fill('Browser Recipe')
@@ -206,6 +212,7 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   await page.getByRole('button', { name: 'Подготовить снимок Job в очереди' }).press('Enter')
   const confirmSnapshot = page.getByRole('button', { name: 'Создать снимок Job в очереди' })
   await confirmSnapshot.evaluate((button) => {
+    if (!(button instanceof HTMLButtonElement)) throw new Error('the confirm control is a button')
     button.click()
     button.click()
   })
@@ -220,7 +227,9 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   }))
   expect(errorOutline.style).toBe('solid')
   expect(errorOutline.width).not.toBe('0px')
-  await page.getByRole('button', { name: 'Повторить тот же запрос Job' }).press('Enter')
+  // The failed create keeps its own Confirm button (same Job intent); no separate Retry.
+  await expect(page.getByRole('button', { name: /^Повторить/u })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Создать снимок Job в очереди' }).press('Enter')
   await expect.poll(() => snapshotCalls).toBe(2)
   expect(snapshotBodies[0]).toEqual(snapshotBodies[1])
   expect(snapshotBodies[0]).toMatchObject({
@@ -288,12 +297,13 @@ test('Recipe revisions stay scoped, conflict-safe, truthful and constrained-layo
   expect((reviseBodies[0] as { expectedRevision: number }).expectedRevision).toBe(1)
   const conflict = page.getByRole('alert').filter({ hasText: 'Частичная ревизия не сохранена' })
   await expect(conflict).toBeFocused()
-  await expect(page.getByText('Ревизия 1')).toHaveCount(1)
-  await page.getByRole('button', { name: 'Загрузить текущую ревизию' }).press('Enter')
+  // D-203: the conflict reads the current revision by itself; no Reload button.
+  await expect(page.getByRole('button', { name: 'Загрузить текущую ревизию' })).toHaveCount(0)
   await expect(page.getByText('Ревизия 2')).toHaveCount(1)
+  await expect(conflict).toContainText('Guanxi загрузил текущую ревизию')
   await expect(page.getByText('Ревизия 1')).toHaveCount(0)
 
-  await page.getByRole('combobox', { name: 'Область' }).selectOption(project.id)
+  await pickValue(page, page.getByRole('combobox', { name: 'Область' }), project.id)
   await expect(page.getByText(ownedId)).toHaveCount(1)
   await expect(page.getByText(id)).toHaveCount(0)
   await expect(page.getByRole('heading', { name: project.name })).toHaveCount(1)

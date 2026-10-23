@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import type { CatalogSourceHealth, Health, RuntimeCurrentFitReason } from '@guanxi/contract'
-import { describe, expect, it, vi } from 'vitest'
-import { OllamaHealthNotice } from '../../src/features/health/HealthGate.tsx'
-import { RuntimeStatusView } from '../../src/features/health/RuntimeStatus.tsx'
+import { describe, expect, it } from 'vitest'
+import { RuntimeDetails } from '../../src/features/health/RuntimeStatus.tsx'
+import { ShellStatusItems } from '../../src/features/shell/ShellStatus.tsx'
 import { CatalogSourceNotice } from '../../src/features/launcher/LauncherPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import {
@@ -24,6 +24,7 @@ function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
     },
     ollama: {
       installed: state !== 'unavailable',
+      installSource: state !== 'unavailable' ? 'runtime_response' : null,
       running: state === 'reachable',
       state,
       source: 'ollama_api_version',
@@ -53,18 +54,9 @@ function health(state: 'reachable' | 'unavailable' | 'incompatible'): Health {
   }
 }
 
+/** The runtime popover body (D-202): the same projections the runtime bar used to disclose. */
 function renderRuntime(data = runtimeSnapshotFixture()) {
-  const view = render(
-    <RuntimeStatusView
-      data={data}
-      error={null}
-      loading={false}
-      refreshing={false}
-      onRetry={() => undefined}
-    />,
-  )
-  fireEvent.click(screen.getByText(/Показать сведения о runtime|Show runtime details/u))
-  return view
+  return render(<RuntimeDetails snapshot={data} stale={false} />)
 }
 
 describe('Runtime Bar projection', () => {
@@ -79,6 +71,28 @@ describe('Runtime Bar projection', () => {
     expect(screen.getByText(/возможен внешний клиент, но это не доказано/)).toBeTruthy()
     expect(screen.getByText(/identity артефакта остаётся неизвестной/)).toBeTruthy()
     expect(screen.queryByRole('link', { name: /Job|операц/u })).toBeNull()
+  })
+
+  it('lists facts as label and value pairs, never joined with commas, in flat sections (visual pass 5)', () => {
+    const view = renderRuntime()
+    const details = screen.getByRole('region', { name: 'Runtime и ресурсы' })
+    // Each fact value stands alone: no value carries a comma-joined list of other facts.
+    const values = [...details.querySelectorAll('dd .runtime-fact-value')].map(node => node.textContent ?? '')
+    expect(details.querySelectorAll('dd')).toHaveLength(values.length)
+    expect(values.length).toBeGreaterThan(10)
+    // Locale date-times ("02 авг., 15:00") are one value, not a joined list.
+    expect(values.filter(text => /, /u.test(text) && !/\d{1,2}:\d{2}/u.test(text))).toEqual([])
+    // Queue rows: a heading per waiter and a description list, no prose line of joined facts.
+    const queue = within(details).getByRole('list', { name: 'FIFO-очередь' })
+    const rows = within(queue).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    for (const row of rows) expect(row.querySelectorAll('dl')).toHaveLength(1)
+    // Sections are separated by hairlines, not nested bordered boxes.
+    const sections = [...details.querySelectorAll(':scope > section')]
+    expect(sections).toHaveLength(3)
+    expect(sections.every(section => section.classList.contains('runtime-section'))).toBe(true)
+    expect(details.querySelectorAll('.rounded-md')).toHaveLength(0)
+    void view
   })
 
   it('shows prewarm purpose and lowest priority without claiming a durable Job owner', () => {
@@ -210,7 +224,7 @@ describe('Runtime Bar projection', () => {
   it('labels current residency as observed without promising future admission', () => {
     renderRuntime(runtimeSnapshotFixture((snapshot) => {
       snapshot.models = [runtimeModel('active_lease', 'observed')]
-      snapshot.decisions = [snapshot.decisions[0]]
+      snapshot.decisions = snapshot.decisions.slice(0, 1)
     }))
 
     expect(screen.getByText('Только текущая загруженная конфигурация/residency')).toBeTruthy()
@@ -232,7 +246,7 @@ describe('Runtime Bar projection', () => {
         const model = runtimeModel('active_lease', 'unknown')
         if (model.currentFit.state === 'unknown') model.currentFit.reason = reason
         snapshot.models = [model]
-        snapshot.decisions = [snapshot.decisions[0]]
+        snapshot.decisions = snapshot.decisions.slice(0, 1)
       }))
       expect(view.container.textContent).toContain(label)
       expect(view.container.textContent).not.toContain(reason)
@@ -248,8 +262,8 @@ describe('Runtime Bar projection', () => {
     expect(host.textContent).toContain('Старая оценка usable memory')
     expect(host.textContent).toContain('free pages, не safe capacity для новой модели')
     expect(host.textContent).toContain('compatibility estimate, не текущая доступность')
-    expect(host.textContent).toContain('Discrete VRAM:Неизвестно')
-    expect(host.textContent).not.toContain('Discrete VRAM:0')
+    expect(host.textContent).toContain('Discrete VRAMНеизвестно')
+    expect(host.textContent).not.toContain('Discrete VRAM0')
     expect(host.textContent).toContain('не сообщает количество accelerator devices')
   })
 
@@ -258,14 +272,14 @@ describe('Runtime Bar projection', () => {
     const devices = screen.getByRole('region', { name: 'Устройства NVIDIA' })
     expect(within(devices).getByText('NVIDIA RTX 4090')).toBeTruthy()
     expect(within(devices).getByText('NVIDIA Тестовая GPU')).toBeTruthy()
-    expect(devices.textContent).toContain('Индекс устройства у провайдера:2')
-    expect(devices.textContent).toContain('Индекс устройства у провайдера:7')
+    expect(devices.textContent).toContain('Индекс устройства у провайдера2')
+    expect(devices.textContent).toContain('Индекс устройства у провайдера7')
     expect(devices.textContent).toContain('GPU-…12345678')
     expect(devices.textContent).not.toContain('GPU-sensitive-first')
-    expect(devices.textContent).toMatch(/Текущая свободная VRAM устройства:0\s*Б/u)
+    expect(devices.textContent).toMatch(/Текущая свободная VRAM устройства0\s*Б/u)
     expect(devices.textContent).toContain('наблюдение из указанного источника')
     expect(devices.textContent).toContain('фиксированный запрос GPU через nvidia-smi')
-    expect(devices.textContent).toContain('Наблюдалось:')
+    expect(within(devices).getAllByText('Наблюдалось', { selector: 'dt' })).toHaveLength(2)
     expect(
       screen.getAllByText('Точная identity модели, runtime, контекста и железа неполна').length,
     ).toBe(2)
@@ -278,7 +292,7 @@ describe('Runtime Bar projection', () => {
       ['available' as const, 'Телеметрия NVIDIA доступна'],
       ['partial' as const, 'Телеметрия NVIDIA неполна'],
       ['unavailable' as const, 'Телеметрия NVIDIA недоступна'],
-    ]
+    ] as const
     for (const [state, label] of cases) {
       const view = renderRuntime(linuxNvidiaRuntimeSnapshot(state))
       expect(view.container.textContent).toContain(label)
@@ -315,7 +329,7 @@ describe('Runtime Bar projection', () => {
     expect(screen.queryByRole('region', { name: 'NVIDIA devices' })).toBeNull()
   })
 
-  it('renders every returned NVIDIA device inside one contained list without a UI ceiling', () => {
+  it('renders every returned NVIDIA device inside one contained list without a UI ceiling', async () => {
     const snapshot = linuxNvidiaRuntimeSnapshot()
     const prototype = snapshot.host.nvidia.devices[0]!
     snapshot.host.nvidia.devices = Array.from({ length: 257 }, (_, index) => ({
@@ -328,71 +342,50 @@ describe('Runtime Bar projection', () => {
     const devices = screen.getByRole('region', { name: 'Устройства NVIDIA' })
     expect(within(devices).getAllByRole('listitem')).toHaveLength(257)
     expect(within(devices).getByText('NVIDIA device 256')).toBeTruthy()
-    expect(within(devices).getByRole('list').className).toContain('overflow-y-auto')
+    // The device list scrolls inside its own region (runtime.css) instead of a UI ceiling.
+    expect(within(devices).getByRole('list').classList.contains('runtime-scroll')).toBe(true)
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync(`${process.cwd()}/src/features/health/runtime.css`, 'utf8')
+    expect(/\.runtime-scroll\s*\{[^}]*overflow-y:\s*auto/u.test(css)).toBe(true)
   })
 
-  it('keeps the confirmed NVIDIA sample and timestamps during stale retry failure', () => {
-    const retry = vi.fn()
+  it('keeps the confirmed NVIDIA sample unchanged when a later read fails, and leaks no error text', () => {
     const data = linuxNvidiaRuntimeSnapshot()
-    const view = render(
-      <RuntimeStatusView data={data} error={null} loading={false} refreshing onRetry={retry} />,
-    )
-    fireEvent.click(screen.getByText('Показать сведения о runtime'))
+    const view = render(<RuntimeDetails snapshot={data} stale={false} />)
     const before = screen.getByRole('region', { name: 'Устройства NVIDIA' }).textContent
-    view.rerender(
-      <RuntimeStatusView
-        data={data}
-        error={new Error('secret stderr path /Users/private')}
-        loading={false}
-        refreshing={false}
-        onRetry={retry}
-      />,
-    )
+    view.rerender(<RuntimeDetails snapshot={data} stale />)
     expect(screen.getByRole('region', { name: 'Устройства NVIDIA' }).textContent).toBe(before)
-    expect(screen.getByRole('alert').textContent).toContain('sample устарел')
     expect(view.container.textContent).not.toContain('/Users/private')
   })
 
-  it('keeps confirmed content during refresh/failure and exposes only transition alerts', () => {
-    const retry = vi.fn()
+  it('updates in place with no refreshing caption, no transition alert and no Retry (D-203)', () => {
     const data = runtimeSnapshotFixture()
-    const view = render(
-      <RuntimeStatusView data={data} error={null} loading={false} refreshing onRetry={retry} />,
-    )
-    expect(screen.getByRole('status').textContent).toContain('последний подтверждённый sample')
+    const view = render(<RuntimeDetails snapshot={data} stale={false} />)
     expect(view.container.textContent).toContain('fixture:latest')
-    view.rerender(
-      <RuntimeStatusView
-        data={data}
-        error={new Error('secret endpoint /api/runtime?token=private')}
-        loading={false}
-        refreshing={false}
-        onRetry={retry}
-      />,
-    )
-    expect(screen.getByRole('alert').textContent).toContain('sample устарел')
+    view.rerender(<RuntimeDetails snapshot={data} stale />)
     expect(view.container.textContent).toContain('fixture:latest')
-    expect(view.container.textContent).not.toContain('secret endpoint')
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить runtime-проверку' }))
-    expect(retry).toHaveBeenCalledTimes(1)
+    expect(screen.queryAllByRole('status')).toHaveLength(0)
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /retry|повтор/iu })).toHaveLength(0)
   })
 
-  it('provides keyboard disclosure plus English fallback and curated Russian copy', () => {
+  it('says it is checking before the first sample, and that the node did not answer when none arrived', () => {
     setActiveLocale('en')
-    const english = render(
-      <RuntimeStatusView
-        data={runtimeSnapshotFixture()}
-        error={null}
-        loading={false}
-        refreshing={false}
-        onRetry={() => undefined}
-      />,
-    )
+    const view = render(<RuntimeDetails snapshot={null} stale={false} />)
+    expect(screen.getByRole('status').textContent).toBe('Checking the current runtime sample…')
+    view.rerender(<RuntimeDetails snapshot={null} stale />)
+    expect(screen.getByRole('status').textContent).not.toBe('Checking the current runtime sample…')
+    setActiveLocale('ru')
+  })
+
+  it('opens from the runtime status icon with English fallback and curated Russian copy', () => {
+    setActiveLocale('en')
+    const english = render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('reachable')} />)
+    const trigger = screen.getByRole('button', { name: 'Runtime' })
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+    fireEvent.click(trigger)
     expect(screen.getByRole('region', { name: 'Runtime and resources' })).toBeTruthy()
-    const disclosure = screen.getByText('Show runtime details')
-    disclosure.focus()
-    expect(document.activeElement).toBe(disclosure)
-    fireEvent.click(disclosure)
     expect(screen.getByRole('heading', { name: 'Live admission' })).toBeTruthy()
     english.unmount()
 
@@ -403,17 +396,19 @@ describe('Runtime Bar projection', () => {
 })
 
 describe('shell health projection', () => {
-  it('keeps the shell-oriented Ollama degraded states distinct', () => {
-    const unavailable = render(
-      <OllamaHealthNotice health={health('unavailable')} onRetry={() => undefined} retrying={false} />,
-    )
-    expect(within(unavailable.container).getByText('Ollama недоступна')).toBeTruthy()
+  it('keeps the shell-oriented Ollama degraded states distinct on the runtime icon', () => {
+    const unavailable = render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('unavailable')} />)
+    const warning = screen.getByRole('button', { name: 'Среда выполнения: Ollama выкл.' })
+    expect(warning.closest('[data-slot="status-item"]')?.getAttribute('data-tone')).toBe('warning')
+    fireEvent.click(warning)
+    expect(screen.getByRole('status').textContent).toContain('Ollama недоступна')
     unavailable.unmount()
 
-    render(
-      <OllamaHealthNotice health={health('incompatible')} onRetry={() => undefined} retrying={false} />,
-    )
-    expect(screen.getByRole('alert').textContent).toContain('несовместимый ответ')
+    render(<ShellStatusItems runtime={runtimeSnapshotFixture()} stale={false} health={health('incompatible')} />)
+    const danger = screen.getByRole('button', { name: 'Среда выполнения: Не поддерж.' })
+    expect(danger.closest('[data-slot="status-item"]')?.getAttribute('data-tone')).toBe('danger')
+    fireEvent.click(danger)
+    expect(screen.getByRole('alert').textContent).toContain('не поддерживается')
   })
 })
 

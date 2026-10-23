@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "icon",
+  "status": "review",
+  "approval": null,
+  "requests": []
+}

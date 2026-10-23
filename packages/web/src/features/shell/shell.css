@@ -1,0 +1,244 @@
+/* Shell sidebar (D-200, D-202): rows sit on the chrome; the current row is a quiet raised chip. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.shell-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+  min-width: 0;
+  min-height: 0;
+}
+
+.shell-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell-nav-item,
+.shell-session-link {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0 var(--spacing-8);
+  border-radius: var(--border-radius-control);
+  color: var(--color-text-secondary);
+  font-size: var(--font-text-size);
+  text-decoration: none;
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.shell-sidebar[data-rail] .shell-nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.shell-nav-item:hover,
+.shell-session-link:hover {
+  background-color: var(--color-background-hover);
+  color: var(--color-text-primary);
+}
+
+.shell-nav-item[aria-current='page'],
+.shell-session-link[aria-current='page'] {
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-label);
+}
+
+.shell-nav-item:focus-visible,
+.shell-session-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: 0;
+}
+
+.shell-sidebar-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  min-width: 0;
+}
+
+.shell-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  min-width: 0;
+}
+
+.shell-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  padding: 0 var(--spacing-8);
+}
+
+.shell-section-label {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.shell-session-group .shell-section-label {
+  padding: var(--spacing-4) var(--spacing-8);
+}
+
+.shell-session-group ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell-note {
+  margin: 0;
+  padding: 0 var(--spacing-8);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-prose);
+}
+
+.shell-session-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.shell-session-link {
+  flex: 1 1 auto;
+  padding-right: var(--spacing-32);
+}
+
+.shell-session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pin control appears on hover and focus, and stays visible on pinned rows. */
+.shell-session-pin {
+  position: absolute;
+  right: var(--spacing-4);
+  opacity: 0;
+}
+
+.shell-session-row:hover .shell-session-pin,
+.shell-session-row:focus-within .shell-session-pin,
+.shell-session-row[data-pinned] .shell-session-pin {
+  opacity: 1;
+}
+
+/* Session status: fill, ring or dash carry the state with the colour (FOUNDATIONS §1.2). */
+.shell-status-dot {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--spacing-6);
+  height: var(--spacing-6);
+  border: var(--border-width-regular) solid currentColor;
+  border-radius: var(--border-radius-inline);
+  background-color: currentColor;
+  color: var(--color-text-tertiary);
+}
+
+.shell-status-dot[data-status='running'],
+.shell-status-dot[data-status='queued'] {
+  color: var(--color-text-accent);
+}
+
+.shell-status-dot[data-status='waiting'] {
+  background-color: transparent;
+  color: var(--color-text-warning);
+}
+
+.shell-status-dot[data-status='sleeping'],
+.shell-status-dot[data-status='unknown'] {
+  border-style: dashed;
+  background-color: transparent;
+}
+
+.shell-status-dot[data-status='finished'] {
+  color: var(--color-text-success);
+}
+
+.shell-status-dot[data-status='error'] {
+  color: var(--color-text-danger);
+}
+
+.shell-unseen-mark {
+  flex: none;
+  width: var(--spacing-6);
+  height: var(--spacing-6);
+  margin-left: auto;
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-accent);
+}
+
+.shell-unseen-count,
+.shell-unseen-rail {
+  margin: 0;
+  min-width: var(--spacing-16);
+  padding: 0 var(--spacing-4);
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-accent-subtle);
+  color: var(--color-text-accent);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-heading);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.shell-unseen-rail {
+  align-self: center;
+}
+
+.shell-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  padding: 0 var(--spacing-8);
+}
+
+.shell-skeleton span {
+  display: block;
+  height: var(--spacing-20);
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-hover);
+}
+
+/* Max graphics canvas (D-206): fixed behind the chrome, never interactive, half-resolution. */
+.max-graphics {
+  @apply pointer-events-none fixed inset-0 size-full;
+  z-index: var(--layer-base);
+}
+
+@media (forced-colors: active) {
+  .shell-nav-item[aria-current='page'],
+  .shell-session-link[aria-current='page'] {
+    outline: var(--border-width-regular) solid Highlight;
+  }
+
+  .shell-status-dot {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+  }
+
+  .shell-unseen-mark,
+  .shell-status-dot:not([data-status='waiting'], [data-status='sleeping'], [data-status='unknown']) {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}

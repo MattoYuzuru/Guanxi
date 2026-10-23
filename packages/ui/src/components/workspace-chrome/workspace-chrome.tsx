@@ -55,7 +55,8 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
   if (props.loading) return <div className="gx-workspace-loading" aria-busy="true">
     <span role="status" aria-label={props.title} className="gx-sr-only">{props.title}</span>
     <div data-slot="workspace-loading-geometry" aria-hidden="true" className="gx-workspace-loading-geometry">
-      <div className="gx-workspace-toolbar">{Array.from({ length: 11 }, (_, index) => index === 6
+      {/* One placeholder per toolbar control (the experience-mode field left with D-204). */}
+      <div className="gx-workspace-toolbar">{Array.from({ length: 10 }, (_, index) => index === 5
         ? <div key={index} className="gx-workspace-field"><span className="gx-workspace-loading-label">{'\u00a0'}</span><span className="gx-workspace-loading-control" /></div>
         : <span key={index} className="gx-workspace-loading-control" />)}</div>
       <div className="gx-workspace-loading-content" />

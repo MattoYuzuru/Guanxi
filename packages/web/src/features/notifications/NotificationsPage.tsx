@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { formatDateTime, formatRelativeTime } from '../../lib/format.ts'
 import { translate as t } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { navigate, paths } from '../../lib/router.tsx'
 import { FILTERS, visibleIds, type ListFilter, type OpResult } from './inbox-store.ts'
 import { NotificationRow } from './NotificationRow.tsx'
@@ -24,7 +25,6 @@ export function NotificationsPage() {
   const snapshot = useInboxSnapshot(store)
   const [filter, setFilter] = useState<ListFilter>('unread')
   const [status, setStatus] = useState('')
-  const [manualRefresh, setManualRefresh] = useState(false)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const statusRef = useRef<HTMLParagraphElement>(null)
   const listRef = useRef<HTMLOListElement>(null)
@@ -87,7 +87,6 @@ export function NotificationsPage() {
       if (ok && body.action === 'open' && row.subject.type === 'connection') navigate(paths.settings())
       return ok
     },
-    onRecheck: () => { void store.loadAvailability() },
     onDismiss: (row: NotificationWire) => store.dismissOp(row.id),
   }
 
@@ -100,7 +99,10 @@ export function NotificationsPage() {
   const empty = slice.loaded && rows.length === 0
   const initialFailure = !slice.loaded && slice.failure !== null
   const loading = !slice.loaded && slice.failure === null
-  const refreshing = slice.loading
+  // The inbox stays current by itself (the provider polls with backoff); on this page a failed
+  // first read and failed action availability are also asked again at once on focus (D-203).
+  useAutoRecover(initialFailure ? slice.failure : null, () => { void store.refresh() })
+  useAutoRecover(!availability.loaded && availability.failure ? availability.failure : null, () => { void store.loadAvailability() })
   const now = Date.now()
 
   return <section aria-labelledby={`${id}-title`} data-testid="notifications-page"
@@ -108,8 +110,6 @@ export function NotificationsPage() {
     <header className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <h1 id={`${id}-title`} ref={headingRef} tabIndex={-1} className="min-w-0 break-words text-18 font-heading focus-visible:outline-focus">{t('notifications.title')}</h1>
-        <Button variant="secondary" size="sm" loading={manualRefresh && refreshing && slice.loaded} loadingLabel={t('notifications.refreshing')}
-          disabled={slice.loading && !slice.loaded} onClick={() => { setManualRefresh(true); void store.refresh().finally(() => setManualRefresh(false)) }}>{t('notifications.refresh')}</Button>
       </div>
       <p className="text-12 text-secondary">{t('notifications.description')}</p>
     </header>
@@ -136,9 +136,8 @@ export function NotificationsPage() {
     </div>}
 
     {initialFailure && !offline && slice.failure && <ErrorState data-testid="notifications-error" title={`${t('notifications.error.title')}. ${failureText(slice.failure)}`}
-      source={t('notifications.source.list')} occurredAt={iso(slice.failure.at)} timeMeaning="observed" details={slice.failure.code}
-      action={<Button onClick={() => { void store.refresh() }}>{t('notifications.retry')}</Button>} />}
-    {initialFailure && offline && <div><Button onClick={() => { void store.refresh() }}>{t('notifications.retry')}</Button></div>}
+      source={t('notifications.source.list')} occurredAt={iso(slice.failure.at)} timeMeaning="observed" details={slice.failure.code} />}
+    {initialFailure && <p data-testid="notifications-recovering" className="text-12 text-secondary">{t('notifications.recovering')}</p>}
 
     {slice.loaded && !offline && slice.failure && <div role="alert" data-testid="notifications-stale" className="flex min-w-0 flex-col gap-2 rounded-panel border border-danger bg-surface p-3 text-12">
       <p className="break-words">{t('notifications.error.stale', { code: slice.failure.code, time: slice.observedAt === null ? t('notifications.fact.unknown') : formatDateTime(iso(slice.observedAt)) })}</p>
@@ -155,9 +154,7 @@ export function NotificationsPage() {
     </p>}
 
     {empty && <EmptyState data-testid="notifications-empty" title={t(`notifications.empty.${filter}`)}
-      action={filter === 'all'
-        ? <Button onClick={() => { void store.refresh() }}>{t('notifications.refresh')}</Button>
-        : <Button onClick={() => setFilter('all')}>{t('notifications.empty.showAll')}</Button>} />}
+      action={filter === 'all' ? undefined : <Button onClick={() => setFilter('all')}>{t('notifications.empty.showAll')}</Button>} />}
 
     {slice.loaded && rows.length > 0 && <>
       <ol ref={listRef} aria-label={t('notifications.list.label')} data-testid="notifications-list" className="flex min-w-0 flex-col gap-3">

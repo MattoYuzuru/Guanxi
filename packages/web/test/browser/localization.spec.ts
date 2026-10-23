@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test'
 import { RUNTIME_IDLE_POLL_INTERVAL_MS } from '../../src/features/health/useRuntimePolling.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { fetchReads, installFetchLifecycle } from './fixtures/fetch-lifecycle.ts'
+import { pickValueByKeyboard } from './fixtures/select.ts'
+import { closeNavigation, openNavigation } from './fixtures/shell-navigation.ts'
 
 // Advance after each committed locale transition; together these windows stay below
 // the legitimate idle poll while exposing short timer-driven refetches.
@@ -132,7 +134,9 @@ for (const deferNetworkStart of [false, true]) {
     // Network cross-check: requests outside the tracked fetch (XHR, other realms) still count.
     if (deferNetworkStart) expect(routeReads).toEqual({ health: 1, runtime: 1, models: 1 })
     await expect(page).toHaveTitle('Guanxi')
+    await openNavigation(page)
     await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
+    await closeNavigation(page)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
 
     const glossarySearch = page.getByRole('textbox', { name: 'Search glossary' })
@@ -155,12 +159,14 @@ for (const deferNetworkStart of [false, true]) {
     })
     await language.focus()
     const readsBeforePreview = settingsReads
-    await language.selectOption('ru')
+    await pickValueByKeyboard(page, language, 'ru', { clockStepMs: 20 })
     await expect(languageControl).toBeFocused()
     expect(settingsReads).toBe(readsBeforePreview)
     expect(settingsWrites).toBe(0)
     await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
+    await openNavigation(page)
     await expect(page.getByRole('link', { name: 'Модели', exact: true })).toHaveCount(1)
+    await closeNavigation(page)
     await expect(page.getByRole('status').filter({ hasText: 'Предпросмотр языка' })).toHaveCount(1)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
     await page.clock.runFor(localeTimerWindowMs)
@@ -215,7 +221,8 @@ for (const deferNetworkStart of [false, true]) {
     await expect.poll(() => settingsReads).toBe(2)
     expect(settingsWrites).toBe(2)
     await expect(page.getByRole('heading', { name: 'Глоссарий', exact: true })).toHaveCount(1)
-    await expect(page.locator('#settings-glossary-results article')).toHaveCount(29)
+    // 27 entries: D-204 removed the two experience-mode entries (Developer mode, Visual mode).
+    await expect(page.locator('#settings-glossary-results article')).toHaveCount(27)
 
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     const persistedLanguage = page.getByRole('combobox', { name: 'Язык' })
@@ -323,7 +330,7 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   await page.goto('/attachments')
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'Without a Project', exact: true })).toHaveCount(1)
-  await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /^Runtime/u })).toHaveCount(1)
   await expect.poll(() => settingsReads).toBe(1)
   await expect.poll(() => Object.values(routeReads).every((count) => count > 0)).toBe(true)
   const readsBeforeLocale = { ...routeReads }
@@ -334,8 +341,8 @@ test('delayed persisted locale rerenders the complete non-Settings route', async
   await expect(page.getByRole('heading', { name: 'Без проекта', exact: true })).toHaveCount(1)
   await expect(page.getByRole('heading', { name: 'Without a Project', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Attachments', exact: true })).toHaveCount(0)
-  await expect(page.getByText('Runtime и ресурсы', { exact: true })).toHaveCount(1)
-  await expect(page.getByText('Runtime and resources', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Среда выполнения/u })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /^Runtime/u })).toHaveCount(0)
   expect(settingsReads).toBe(1)
   expect(routeReads).toEqual(readsBeforeLocale)
   expect(forbiddenEffects).toEqual([])

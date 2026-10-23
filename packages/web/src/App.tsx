@@ -1,7 +1,9 @@
 /**
  * Корень приложения: проверка здоровья, продуктовый shell и разбор маршрута.
  */
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useRef } from 'react'
+import type { Health } from '@guanxi/contract'
+import { sameHealthFacts } from './lib/health-facts.ts'
 import { api } from './lib/api.ts'
 import { useAsync } from './lib/useAsync.ts'
 import { Link, paths, useRoute } from './lib/router.tsx'
@@ -32,19 +34,19 @@ const Workspace = lazy(() => import('./features/workspace/Workspace.tsx').then(m
 export function App() {
   const { locale } = useLocale()
   const route = useRoute()
-  const health = useAsync((signal) => api.health(signal), [])
-  const [retrying, setRetrying] = useState(false)
+  // Health stays current by itself (D-203): a quiet re-read every 15 s while visible and on focus,
+  // automatic recovery when the node does not answer. Only a node that never answered blocks the app.
+  // An answer whose facts are unchanged keeps the previous object, so the poll renders nothing.
+  const lastHealth = useRef<Health | null>(null)
+  const health = useAsync(async (signal) => {
+    const next = await api.health(signal)
+    if (!sameHealthFacts(lastHealth.current, next)) lastHealth.current = next
+    return lastHealth.current!
+  }, [], { revalidate: { onFocus: true, intervalMs: 15_000 } })
 
-  const retry = () => {
-    setRetrying(true)
-    health.reload()
-    // Кнопка не должна мигать быстрее, чем человек успевает заметить нажатие.
-    setTimeout(() => setRetrying(false), 400)
-  }
-
-  if (health.loading) return <HealthLoading />
-  if (health.error || !health.data) {
-    return <HealthUnreachable error={health.error} onRetry={retry} />
+  if (health.loading && !health.data) return <HealthLoading />
+  if (!health.data) {
+    return <HealthUnreachable error={health.error} />
   }
 
   const { data } = health
@@ -52,7 +54,7 @@ export function App() {
   return (
     <UiLocaleProvider locale={locale}>
     <RuntimeProvider>
-      <MountedShell health={data} retrying={retrying} onRetry={retry}>
+      <MountedShell health={data} healthStale={health.error !== null}>
         {route.name === 'workspace' && <Suspense fallback={<div role="status">{translate('workspaceLayout.loading')}</div>}><Workspace key={route.projectId ?? 'local'} project={route.projectId} safeMode={new URLSearchParams(window.location.search).get('safe') === '1'}><ChatPage threadId={route.threadId} projectId={route.projectId} health={data} workspace /></Workspace></Suspense>}
         {route.name === 'launcher' && <LauncherPage health={data} />}
         {route.name === 'agent' && <NativeAgentPage key={route.sessionId ?? 'new'} sessionId={route.sessionId} />}

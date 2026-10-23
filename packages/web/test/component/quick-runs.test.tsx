@@ -4,6 +4,7 @@ import type { Project, QuickRun } from '@guanxi/contract'
 import { QuickRunsPage } from '../../src/features/quick-runs/QuickRunsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { chooseValue } from '../helpers/select.ts'
 
 const AT = '2026-08-13T10:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -56,7 +57,7 @@ afterEach(() => {
 })
 
 describe('QuickRunsPage', () => {
-  it('distinguishes loading, focused error/retry and exact empty state', async () => {
+  it('distinguishes loading, focused error with automatic recovery and exact empty state', async () => {
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     const second = deferred<{
       quickRunVersion: 1
@@ -74,7 +75,9 @@ describe('QuickRunsPage', () => {
     await waitFor(() => expect(error).toBe(document.activeElement))
     expect(screen.getByRole('alert').textContent).toContain('safe Quick Run list failure')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    // D-203: no Retry button; the failed read is repeated by itself (here on focus).
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     await act(async () => second.resolve({
       quickRunVersion: 1,
       scope: 'projectless',
@@ -107,8 +110,8 @@ describe('QuickRunsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Quick Run' })).toBeTruthy()
     expect(screen.getByText('Metadata is ready; execution is not')).toBeTruthy()
     const scope = screen.getByRole('combobox', { name: 'Scope' })
-    fireEvent.change(scope, { target: { value: PROJECT.id } })
-    await screen.findByText('Exact Project')
+    await chooseValue(scope, PROJECT.id)
+    await screen.findByRole('heading', { name: 'Exact Project' })
 
     const create = screen.getByRole('button', { name: 'Create metadata' })
     const form = create.closest('form')!
@@ -131,7 +134,7 @@ describe('QuickRunsPage', () => {
     animationFrame.mockRestore()
   })
 
-  it('coalesces retention mutation, focuses failure and retries the exact policy without Save', async () => {
+  it('coalesces retention mutation, focuses failure and repeats the exact policy from its own mode button without Save', async () => {
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     vi.spyOn(api, 'listQuickRuns').mockResolvedValue({
       quickRunVersion: 1,
@@ -155,7 +158,8 @@ describe('QuickRunsPage', () => {
     expect(alert.textContent).toContain('safe retention mutation failure')
     await waitFor(() => expect(alert).toBe(document.activeElement))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить изменение retention' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Сессия' }))
     await waitFor(() => expect(api.updateQuickRunRetention).toHaveBeenCalledTimes(2))
     expect(api.updateQuickRunRetention).toHaveBeenNthCalledWith(1, ID, {
       quickRunVersion: 1,

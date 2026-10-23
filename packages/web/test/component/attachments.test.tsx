@@ -4,6 +4,7 @@ import type { ArtifactTransferPolicy, Attachment, Project } from '@guanxi/contra
 import { AttachmentsPage } from '../../src/features/attachments/AttachmentsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
+import { chooseValue } from '../helpers/select.ts'
 
 const AT = '2026-08-14T14:00:00.000Z'
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -80,7 +81,7 @@ afterEach(() => {
 })
 
 describe('AttachmentsPage', () => {
-  it('shows observed policy, focused list error/retry and exact empty state', async () => {
+  it('shows observed policy, a focused list error that recovers by itself and exact empty state', async () => {
     vi.spyOn(api, 'listProjects').mockResolvedValue({ projects: [] })
     vi.spyOn(api, 'artifactTransferPolicy').mockResolvedValue(POLICY)
     vi.spyOn(api, 'listAttachments')
@@ -94,7 +95,8 @@ describe('AttachmentsPage', () => {
     const heading = await screen.findByRole('heading', { name: 'Не удалось загрузить вложения' })
     await waitFor(() => expect(heading).toBe(document.activeElement))
     expect(screen.getByRole('alert').textContent).toContain('safe attachment list failure')
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findByText('В этой области нет вложений')).toBeTruthy()
     expect(screen.getByText('Вложений: 0')).toBeTruthy()
     expect(api.listAttachments).toHaveBeenCalledTimes(2)
@@ -116,9 +118,7 @@ describe('AttachmentsPage', () => {
 
     render(<AttachmentsPage />)
     await screen.findByText('В этой области нет вложений')
-    fireEvent.change(screen.getByRole('combobox', { name: 'Область' }), {
-      target: { value: LEGACY_PROJECT.id },
-    })
+    await chooseValue(screen.getByRole('combobox', { name: 'Область' }), LEGACY_PROJECT.id)
     await screen.findByRole('heading', { name: LEGACY_PROJECT.name })
     const file = new File(['exact'], 'exact.txt', { type: 'text/plain' })
     fireEvent.change(screen.getByLabelText('Выберите или перетащите один локальный файл'), {
@@ -131,7 +131,8 @@ describe('AttachmentsPage', () => {
     await act(async () => first.reject(new Error('lost upload response')))
     const error = await screen.findByRole('alert')
     expect(error.textContent).toContain('lost upload response')
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить тот же upload intent' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Загрузить вложение' }))
     await waitFor(() => expect(api.uploadAttachment).toHaveBeenCalledTimes(2))
     const calls = vi.mocked(api.uploadAttachment).mock.calls
     expect(calls[0]?.[2]).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
@@ -165,7 +166,7 @@ describe('AttachmentsPage', () => {
     expect(await screen.findByRole('progressbar', { name: 'Идёт загрузка вложения' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Отменить загрузку' }))
     expect(await screen.findByText('Загрузка вложения отменена.')).toBeTruthy()
-    const retry = screen.getByRole('button', { name: 'Повторить тот же upload intent' })
+    const retry = screen.getByRole('button', { name: 'Загрузить вложение' })
     expect(retry).toBeTruthy()
     await waitFor(() => expect(retry).toBe(document.activeElement))
   })

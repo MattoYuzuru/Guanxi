@@ -10,7 +10,8 @@ import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { builtInLayout } from './defaults.ts'
-import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND, WORKSPACE_MODE_COMMAND } from './commands.ts'
+import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND } from './commands.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { clearWorkspaceShellState, publishWorkspaceShellState } from './shell-state.ts'
 import { layoutSaveScope, layoutSaveScopes, layoutScopeForSave, type LayoutSaveScope } from './scopes.ts'
 import { paneRegistry } from './renderers.ts'
@@ -18,6 +19,8 @@ import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
 import { workspaceFailure, workspaceStep, type WorkspaceFailure } from './failure.ts'
 import './workspace.css'
+
+const WORKSPACE_RECOVERY = { baseMs: 10_000, maxMs: 60_000 } as const
 
 type SaveAttempt = { document: LayoutDocument; geometry: LayoutGeometry; basedOn?: LayoutClock; result?: Awaited<ReturnType<typeof api.saveLayout>>; applied?: boolean }
 type ActivationAttempt = { remembered?: boolean; response?: Awaited<ReturnType<typeof api.saveLayout>>; next?: LayoutDocument; applied?: boolean }
@@ -51,6 +54,12 @@ export interface WorkspaceProps {
 }
 
 /** Node-owned documents; browser memory owns pane lifetimes, never credentials or processes. */
+/**
+ * One interface (D-204): the workspace has one experience mode. Layouts stay stored under the
+ * `developer` scope so documents saved before D-204 keep resolving; no view ever switches it.
+ */
+export const WORKSPACE_MODE: ExperienceMode = 'developer'
+
 export function Workspace({ children, account, project, safeMode = false }: WorkspaceProps) {
   const { locale, setLocale } = useLocale()
   const { resolved: theme } = useTheme()
@@ -58,7 +67,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
   const [device] = useState(deviceId)
   const [nodeAccount, setNodeAccount] = useState(account ?? 'local')
   const [deviceClass] = useState<LayoutQuery['deviceClass']>(() => phone ? 'phone' : 'desktop')
-  const [mode, setMode] = useState<ExperienceMode>('developer')
+  const mode = WORKSPACE_MODE
   const [documents, setDocuments] = useState<Partial<Record<ExperienceMode, LayoutDocument>>>({})
   const [list, setList] = useState<LayoutList>({ documents: [], active: [] })
   const [geometry, setGeometry] = useState<LayoutGeometry>({})
@@ -115,17 +124,13 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       const ownedAccount = account ?? (await workspaceStep('layout-context', () => api.layoutContext(controller.signal))).account
       if (controller.signal.aborted) return
       const queryFor = (nextMode: ExperienceMode): LayoutQuery => ({ account: ownedAccount, ...(project ? { project } : {}), device, deviceClass, mode: nextMode })
-      const lists = await Promise.all((['developer', 'visual'] as const).map(next => workspaceStep(next === 'developer' ? 'load-developer-layouts' : 'load-visual-layouts', () => api.layouts(queryFor(next), controller.signal))))
-      const nextDocuments: Partial<Record<ExperienceMode, LayoutDocument>> = {}
-      for (let i = 0; i < 2; i++) {
-        const nextMode = i === 0 ? 'developer' : 'visual'
-        nextDocuments[nextMode] = await workspaceStep('resolve-layout', () => resolveLayout(lists[i]!, queryFor(nextMode), builtInLayout(queryFor(nextMode))))
-      }
-      const current = nextDocuments[mode]!
+      const layouts = await workspaceStep('load-layouts', () => api.layouts(queryFor(mode), controller.signal))
+      const current = await workspaceStep('resolve-layout', () => resolveLayout(layouts, queryFor(mode), builtInLayout(queryFor(mode))))
+      const nextDocuments: Partial<Record<ExperienceMode, LayoutDocument>> = { [mode]: current }
       const local = await workspaceStep('load-layout-geometry', () => api.layoutGeometry(current.scope, device, current.id, controller.signal))
       if (controller.signal.aborted) return
       setNodeAccount(ownedAccount)
-      setList({ documents: lists.flatMap(row => row.documents), active: lists.flatMap(row => row.active) })
+      setList({ documents: layouts.documents.filter(row => row.scope.mode === mode), active: layouts.active.filter(row => row.scope.mode === mode) })
       setDocuments(nextDocuments)
       setSaveScopes({})
       geometryCache.current.set(`${layoutScopeKey(current.scope)}#${current.id}`, local.geometry)
@@ -136,9 +141,12 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setLoading(false)
     }).catch(error => { if (!controller.signal.aborted) { setLoadError(workspaceFailure(error, 'load-workspace')); setLoading(false) } })
     return () => loadController.current?.abort()
-    // Initial hydration and explicit retry only; mode changes use the loaded documents.
+    // Initial hydration and automatic recovery only (D-203).
   }, [account, project, device, deviceClass])
   useEffect(load, [load])
+  // Layout reads fail mostly while the node restarts: the first automatic re-read waits 10 s so a
+  // failure is readable (and copyable) before it is replaced; focus or reconnect re-reads at once.
+  useAutoRecover(loadError, () => { load() }, WORKSPACE_RECOVERY)
 
   function snapshot(): LayoutDocument {
     const current = latestDocument.current!
@@ -168,7 +176,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     return next
   }
   function compatible(candidate: LayoutDocument): LayoutDocument {
-    return candidate.engineState.major === WORKSPACE_ENGINE_MAJOR ? candidate : builtInLayout(query(candidate.scope.mode))
+    return candidate.engineState.major === WORKSPACE_ENGINE_MAJOR && candidate.scope.mode === mode ? candidate : builtInLayout(query(mode))
   }
   async function activateDocument(candidate: LayoutDocument, persist = false, attempt: ActivationAttempt = {}) {
     if (operationBusy.current) return
@@ -201,7 +209,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       setGeometry(local)
       setDocuments(previous => ({ ...previous, [next.scope.mode]: next }))
       setSaveScopes(previous => ({ ...previous, [next.scope.mode]: layoutSaveScope(next.scope) }))
-      setMode(next.scope.mode)
       setName(next.name)
       setSelected('guanxi.core/chat')
       setGeneration(value => value + 1)
@@ -265,9 +272,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     setGeometry({})
     setDocuments(previous => ({ ...previous, [mode]: next }))
     setGeneration(value => value + 1)
-  }
-  function switchMode(next: ExperienceMode) {
-    if (next !== mode && documents[next]) void activateDocument(documents[next]!)
   }
   function openMove(id?: string) {
     if (phone || operationBusy.current) return
@@ -364,10 +368,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       if (!phone) engine.current?.focus(id)
       focusPendingPane(id)
     }
-    const changeMode = (event: Event) => {
-      const next: unknown = (event as CustomEvent<{ mode?: unknown }>).detail?.mode
-      if (!loading && !loadError && (next === 'developer' || next === 'visual')) switchMode(next)
-    }
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return
       if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
@@ -375,9 +375,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     }
     window.addEventListener(MOVE_BLOCK_COMMAND, command)
     window.addEventListener(REVEAL_BLOCK_COMMAND, reveal)
-    window.addEventListener(WORKSPACE_MODE_COMMAND, changeMode)
     window.addEventListener('keydown', keyboard)
-    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal); window.removeEventListener(WORKSPACE_MODE_COMMAND, changeMode); window.removeEventListener('keydown', keyboard) }
+    return () => { window.removeEventListener(MOVE_BLOCK_COMMAND, command); window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal); window.removeEventListener('keydown', keyboard) }
   })
 
   useEffect(() => {
@@ -394,9 +393,13 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       : failure.operation === 'snapshot-layout' || failure.operation === 'resolve-layout' || failure.operation === 'prepare-layout-save' ? 'workspaceLayout.localError'
         : failure.operation === 'kernel-ready' ? 'workspaceLayout.kernelError'
           : failure.operation === 'save-layout' || failure.operation === 'activate-layout' || failure.operation === 'save-workspace' ? 'workspaceLayout.saveError' : 'workspaceLayout.error')
-  const errorState = (failure: WorkspaceFailure, retry: () => void, busy = false) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure}
-    action={{ label: translate('workspaceLayout.retry'), onClick: retry, busy, loadingLabel: translate('workspaceLayout.retrying') }} />
-  if (!doc) return <UiLocaleProvider locale={locale}>{loadError ? errorState(loadError, load, loading)
+  // D-203: a failed read recovers by itself (useAutoRecover above) and shows no button; a failed
+  // save or switch keeps the user's own action, named by its verb, never "Retry".
+  const loadErrorState = (failure: WorkspaceFailure) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure} />
+  const actionErrorState = (failure: WorkspaceFailure, repeat: () => void, busy = false) => <WorkspaceChrome kind="state" title={failureTitle(failure)} error failure={failure}
+    action={{ label: translate(failure.operation === 'activate-layout' || failure.operation === 'activate-layout-geometry' ? 'workspaceLayout.switchAgain' : 'workspaceLayout.save'),
+      onClick: repeat, busy, loadingLabel: translate('workspaceLayout.saving') }} />
+  if (!doc) return <UiLocaleProvider locale={locale}>{loadError ? loadErrorState(loadError)
     : <WorkspaceChrome kind="state" title={translate('workspaceLayout.loading')} loading />}</UiLocaleProvider>
   for (const id of Object.keys(doc.blocks)) if (!paneHosts.current.has(id)) { const host = document.createElement('div'); host.className = 'workspace-retained-pane'; paneHosts.current.set(id, host) }
   for (const host of paneHosts.current.values()) { host.dataset.theme = theme; host.dataset.density = doc.density; host.lang = locale }
@@ -421,7 +424,6 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
     <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={loading || saving || switching} fields={[
-      { label: translate('workspaceLayout.mode'), value: mode, choices: (['developer', 'visual'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => { void switchMode(next as ExperienceMode) } },
       { label: translate('workspaceLayout.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
       { label: translate('workspaceLayout.saveScope'), value: saveScopes[mode] ?? layoutSaveScope(doc.scope), choices: layoutSaveScopes(query(mode)).map(id => ({ id, label: translate(`workspaceLayout.scope.${id}`) })), onChange: next => setSaveScopes(previous => ({ ...previous, [mode]: next as LayoutSaveScope })) },
       { label: translate('workspaceLayout.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName') : row.name })), onChange: id => {
@@ -436,8 +438,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       { label: translate('workspaceLayout.move'), onClick: () => openMove(), disabled: phone },
       { label: translate('workspaceLayout.reset'), onClick: reset },
     ]} />
-    {loadError && errorState(loadError, load, loading)}
-    {saveError && errorState(saveError, () => retryOperation.current(), saving || switching)}
+    {loadError && loadErrorState(loadError)}
+    {saveError && actionErrorState(saveError, () => retryOperation.current(), saving || switching)}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
     {doc.engineState.groups.some(group => group.zone === 'popout') && <p>{translate('workspaceLayout.popoutRestore')}</p>}
     <div className="workspace-content" inert={loading || saving || switching || undefined}>

@@ -7,7 +7,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { FakeNode, demoRows, installNotificationsApi } from './fixtures/notifications-api.ts'
 import { allWireAvailable, notification, notificationId } from '../fixtures/notifications-server.ts'
-import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
+import { choosePaletteCommand, openStatusOverflow } from './fixtures/shell-navigation.ts'
 
 async function open(page: Page, node: FakeNode, options: { locale?: 'en' | 'ru'; theme?: 'light' | 'dark'; path?: string } = {}) {
   const fixture = await installNotificationsApi(page, node, { locale: options.locale ?? 'en', theme: options.theme ?? 'light' })
@@ -33,8 +33,10 @@ test('bell to center: the strip shows the unread count, a click opens the center
   await open(page, node)
   await expect(page.getByTestId('notification-bell-count')).toHaveText('3 unread')
   await expect(bell(page)).toHaveAttribute('data-unread', '3')
-  // The bell lives in the status strip's Inbox item, between its name and nothing else.
-  await expect(page.locator('dl').getByText('Inbox', { exact: true })).toHaveCount(1)
+  // D-202: the inbox is one tray icon link in the status strip, named with its count, badge visible.
+  await expect(page.getByTestId('shell-status-items').getByTestId('notification-bell')).toHaveCount(1)
+  await expect(bell(page)).toHaveAccessibleName('Notifications: 3 unread')
+  await expect(bell(page).locator('.gx-icon-button-badge')).toHaveText('3')
   await bell(page).click()
   await expect(page).toHaveURL(/\/notifications$/u)
   await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeFocused()
@@ -60,9 +62,8 @@ test('keyboard alone: tab to the bell, open the center, snooze a row from the ke
   await page.keyboard.press('Enter')
   await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeFocused()
   await expect(rows(page)).toHaveCount(3)
-  // Filters come first in the tab order, then the first row's controls.
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeFocused()
+  // Filters come first in the tab order (there is no Refresh button, D-203), then the first row's controls.
+  await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toHaveCount(0)
   for (const name of ['Unread', 'All', 'Read', 'Snoozed', 'Acted on']) {
     await page.keyboard.press('Tab')
     await expect(page.getByRole('button', { name, exact: true })).toBeFocused()
@@ -138,7 +139,7 @@ test('an action the node cannot run is shown disabled with its reason; the shipp
   expect(node.count(/^POST /u)).toBe(0)
 })
 
-test('an available action runs once with its key; a lost answer is retried with the same key and the effect still happens once', async ({ page }) => {
+test('an available action runs once with its key; a lost answer is repeated from its own button with the same key and the effect still happens once', async ({ page }) => {
   const node = new FakeNode(demoRows(), allWireAvailable())
   await open(page, node, { path: '/notifications' })
   const row = rowOf(page, 1)
@@ -146,7 +147,9 @@ test('an available action runs once with its key; a lost answer is retried with 
   node.failNext(/^POST .*\/actions$/u, 'lose')
   await row.getByRole('button', { name: 'Pause runs' }).click()
   await expect(row.getByTestId('notification-failure')).toContainText('reuses the same request key')
-  await row.getByTestId('notification-failure').getByRole('button', { name: 'Try again' }).click()
+  // The failed action keeps its own button (same key while the outcome is unknown); no Try again.
+  await expect(row.getByTestId('notification-failure').getByRole('button', { name: /try again|retry/iu })).toHaveCount(0)
+  await row.getByRole('button', { name: 'Pause runs' }).click()
   await expect(page.getByTestId('notifications-status')).toContainText('had already been done')
   const posts = node.requests.filter((record) => record.method === 'POST')
   expect(posts.map((record) => record.idempotencyKey)).toHaveLength(2)
@@ -170,17 +173,18 @@ test('offline: the strip and the center keep the last known data with its age, a
   await expect(rows(page)).toHaveCount(3)
   await expect(rowOf(page, 1).getByRole('button', { name: 'Pause runs' })).toBeEnabled()
   node.unreachable = true
-  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   const banner = page.getByTestId('notifications-offline')
   await expect(banner).toContainText('Offline: the node is unreachable (node_unreachable).')
   await expect(banner).toContainText(/Showing the last known notifications as of .+, .+ ago|Showing the last known notifications as of .+, just now/u)
   await expect(rows(page)).toHaveCount(3)
-  await expect(page.getByTestId('notification-bell')).toContainText('last known')
+  await expect(page.getByTestId('notification-bell-count')).toContainText('last known')
+  await expect(page.getByTestId('notification-bell')).toHaveAttribute('aria-label', /last known/u)
   for (const button of await rowOf(page, 1).getByRole('button').all()) await expect(button).toBeDisabled()
   await expect(rowOf(page, 1).getByRole('button', { name: 'Pause runs' })).toHaveAccessibleDescription(/^Offline: actions need the node\./u)
   expect(node.count(/^POST /u)).toBe(0)
   node.unreachable = false
-  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(banner).toHaveCount(0)
   await expect(rowOf(page, 1).getByRole('button', { name: 'Pause runs' })).toBeEnabled()
 })
@@ -195,7 +199,7 @@ test('the browser\'s offline event re-reads the node at once; the state follows 
   await expect.poll(() => node.count(/^GET \/api\/notifications$/u)).toBeGreaterThan(reads)
   await expect(page.getByTestId('notifications-offline')).toHaveCount(0)
   await expect(rowOf(page, 1).getByRole('button', { name: 'Mark read' })).toBeEnabled()
-  // When the node does not answer, the offline event surfaces it without pressing Refresh.
+  // When the node does not answer, the offline event surfaces it by itself.
   node.unreachable = true
   reads = node.count(/^GET \/api\/notifications$/u)
   await context.setOffline(false)
@@ -245,7 +249,8 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(rowOf(page, 1).getByTestId('snooze-form')).toBeVisible()
       await check('snooze form open')
       expect(await seriousViolations(page), 'snooze form, 200% text').toEqual([])
-      // The status strip with the bell holds up at the same size.
+      // The status strip with the bell holds up at the same size (on a phone, in the status overflow).
+      await openStatusOverflow(page)
       await expect(bell(page)).toBeVisible()
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
     })
@@ -259,12 +264,12 @@ for (const theme of ['light', 'dark'] as const) {
       expect(await seriousViolations(page), 'empty').toEqual([])
       // Error.
       node.failNext(/^GET \/api\/notifications$/u, { status: 503, body: { code: 'notifications_unavailable' } })
-      await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : 'Обновить', exact: true }).click()
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')))
       await expect(page.getByTestId('notifications-stale')).toBeVisible()
       expect(await seriousViolations(page), 'stale error').toEqual([])
       // Offline.
       node.unreachable = true
-      await page.getByRole('button', { name: locale === 'en' ? 'Refresh' : 'Обновить', exact: true }).click()
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')))
       await expect(page.getByTestId('notifications-offline')).toBeVisible()
       expect(await seriousViolations(page), 'offline').toEqual([])
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
@@ -279,8 +284,9 @@ test('a first-load error is accessible too', async ({ page }) => {
   await open(page, node, { path: '/notifications' })
   await expect(page.getByTestId('notifications-error')).toBeVisible()
   expect(await seriousViolations(page)).toEqual([])
+  await expect(page.getByRole('button', { name: /^(Try again|Refresh)$/u })).toHaveCount(0)
   restore()
-  await page.getByTestId('notifications-error').getByRole('button', { name: 'Try again' }).click()
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(rows(page)).toHaveCount(3)
 })
 

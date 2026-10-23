@@ -9,16 +9,16 @@
   },
   "packages/web/src/components/ui.tsx": {
     "guanxi/no-inline-colours": {
-      "count": 7
+      "count": 6
     },
     "guanxi/no-literal-styles": {
-      "count": 7
+      "count": 2
     },
     "guanxi/reuse-primitives": {
-      "count": 7
+      "count": 4
     },
     "guanxi/semantic-classes": {
-      "count": 21
+      "count": 6
     }
   },
   "packages/web/src/features/agent/ApprovalPrompt.tsx": {
@@ -52,7 +52,7 @@
   },
   "packages/web/src/features/attachments/AttachmentsPage.tsx": {
     "guanxi/reuse-primitives": {
-      "count": 2
+      "count": 1
     },
     "guanxi/semantic-classes": {
       "count": 1
@@ -63,7 +63,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 10
+      "count": 9
     }
   },
   "packages/web/src/features/chat/ChatRetentionInfo.tsx": {
@@ -90,11 +90,6 @@
   "packages/web/src/features/health/HealthGate.tsx": {
     "guanxi/semantic-classes": {
       "count": 1
-    }
-  },
-  "packages/web/src/features/health/RuntimeStatus.tsx": {
-    "guanxi/semantic-classes": {
-      "count": 6
     }
   },
   "packages/web/src/features/inspector/InspectorPage.tsx": {
@@ -193,16 +188,13 @@
     }
   },
   "packages/web/src/features/quick-runs/QuickRunsPage.tsx": {
-    "guanxi/reuse-primitives": {
-      "count": 2
-    },
     "guanxi/semantic-classes": {
       "count": 1
     }
   },
   "packages/web/src/features/recipes/RecipesPage.tsx": {
     "guanxi/reuse-primitives": {
-      "count": 9
+      "count": 7
     },
     "guanxi/semantic-classes": {
       "count": 2
@@ -210,7 +202,7 @@
   },
   "packages/web/src/index.css": {
     "guanxi/no-literal-css": {
-      "count": 112
+      "count": 62
     }
   }
 }
