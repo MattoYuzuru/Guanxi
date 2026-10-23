@@ -88,13 +88,11 @@ export const ModelCard = memo(function ModelCard({
           )}
         </div>
 
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted">
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-2xs text-muted">
           {local ? (
             <>
               <span title={translate('model.family')}>{local.family}</span>
-              <Dot />
               <span title={translate('model.parameters')}>{local.parameterSize}</span>
-              <Dot />
               <span title={translate('model.quantization')}>{local.quantization}</span>
             </>
           ) : (
@@ -193,10 +191,6 @@ export const ModelCard = memo(function ModelCard({
     </article>
   )
 })
-
-function Dot() {
-  return <span className="text-control">·</span>
-}
 
 /** Кнопка «Установить» в карточке каталога, когда скачивание ещё не начато. */
 export function InstallButton({ onClick }: { onClick: () => void }) {

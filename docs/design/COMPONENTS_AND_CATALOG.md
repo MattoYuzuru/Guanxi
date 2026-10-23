@@ -14,7 +14,7 @@ they never import its internals, `@base-ui/react`, `lucide-react` or `motion` di
 | Level | What | Examples |
 | --- | --- | --- |
 | primitive | accessible building blocks, copied in once from shadcn/ui on Base UI and owned by Guanxi | Button, IconButton, Input, Textarea, Select, Combobox, Checkbox, Switch, Radio, Slider, Tabs, Tooltip, Popover, Menu, Dialog, Sheet, Toast, Badge, Chip, Kbd, Progress, Skeleton, Separator, ScrollArea, Table, Tree |
-| pattern | compositions with Guanxi meaning | Composer, ControlRow, ContextRing, StatusPill, ProvenanceLabel ("source · age"), EmptyState, ErrorState, OfflineState, ToolRow, DiffView, CodeBlock, TerminalView, TraceRow, BlockCard, PaneFrame, NotificationRow, ActionToast, CommandPalette, ModelPicker, AccessModePicker, ProjectPicker, VoiceButton, AttachmentChip, Sparkline, Meter, ProcessTree, LeaseBadge, NodeCard, BoardCard |
+| pattern | compositions with Guanxi meaning | Composer, ControlRow, ContextRing, StatusPill, ProvenanceLabel (source and age), EmptyState, ErrorState, OfflineState, ToolRow, DiffView, CodeBlock, TerminalView, TraceRow, BlockCard, PaneFrame, NotificationRow, ActionToast, CommandPalette, ModelPicker, AccessModePicker, ProjectPicker, VoiceButton, AttachmentChip, Sparkline, Meter, ProcessTree, LeaseBadge, NodeCard, BoardCard |
 | feature | screen parts owned by one feature | session header, new-session screen, settings pages |
 | block | layout contributions with card and pane (LAYOUT_AND_SCREENS §5) | Context, Changes, Plan, Processes, … |
 

@@ -183,7 +183,7 @@ export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Ca
           {facts && <p className="text-12 text-secondary">{facts.include === 'none'
             ? t('sideChat.provenance.none', { time: formatTime(facts.observedAt) })
             : t('sideChat.provenance', { seq: facts.upToSeq, turns: facts.turns, bytes: facts.bytes, time: formatTime(facts.observedAt) })}
-            {facts.excerpted > 0 ? ` · ${t('sideChat.provenance.excerpts', { count: facts.excerpted })}` : ''}</p>}
+            {facts.excerpted > 0 ? `, ${t('sideChat.provenance.excerpts', { count: facts.excerpted })}` : ''}</p>}
           {turn.truncated && <p className="text-12">{t('sideChat.truncated')}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" aria-label={t('sideChat.send.named', { n: index + 1 })} disabled={send !== undefined || saving} loading={send?.status === 'sending'}

@@ -10,7 +10,7 @@ since: 0.1.0
 
 ## Purpose
 
-States where a number came from and how old it is: "source · age".
+States where a number came from and how old it is: the source in mono, then its age, separated by spacing rather than a glyph (D-202).
 
 ## When to use
 

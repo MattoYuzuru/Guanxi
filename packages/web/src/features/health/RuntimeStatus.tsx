@@ -98,15 +98,15 @@ function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
                 className="min-w-0 border-l-2 border-control pl-2"
               >
                 <p className="font-medium">
-                  {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
-                  · {operationLabel(waiter.operation)}
+                  {translate('runtime.queue.position').replace('{position}', String(index + 1))}
+                 , {operationLabel(waiter.operation)}
                 </p>
                 <p className="break-words font-mono text-secondary">
                   {waiter.model.name}
                 </p>
                 <p className="text-secondary">
-                  {ownerLabel(waiter.owner)} · {priorityLabel(waiter.priority)} · {translate('runtime.context')}:{' '}
-                  {formatContextLength(waiter.requestedContext)} · {translate('runtime.wait')}:{' '}
+                  {ownerLabel(waiter.owner)}, {priorityLabel(waiter.priority)}, {translate('runtime.context')}:{' '}
+                  {formatContextLength(waiter.requestedContext)}, {translate('runtime.wait')}:{' '}
                   {formatElapsed(waiter.enqueuedAt)}
                 </p>
               </li>
@@ -132,7 +132,7 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
         {translate('runtime.models.title')}
       </h3>
       <p className="mt-0.5 text-muted">
-        {sourceStateLabel(snapshot.source.state)} · {translate('runtime.source.ollama')}
+        {sourceStateLabel(snapshot.source.state)}, {translate('runtime.source.ollama')}
       </p>
 
       {snapshot.models === null ? (
@@ -202,11 +202,11 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
       </h3>
       <p className="mt-0.5 font-medium">{hostStateLabel(host)}</p>
       <p className="text-muted">
-        {host.profile.platform}/{host.profile.arch} · {host.profile.accelerator}
+        {host.profile.platform}/{host.profile.arch}, {host.profile.accelerator}
       </p>
       {nvidia.state === 'unknown' || nvidia.state === 'unsupported' ? (
         <p className="text-muted">
-          {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)} ·{' '}
+          {nvidiaStateLabel(nvidia.state)}, {nvidiaReasonLabel(nvidia.reason)},{' '}
           {translate('runtime.host.devicesUnknown')}
         </p>
       ) : null}
@@ -226,7 +226,7 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
           </h4>
           <p className="text-muted">
             {nvidiaStateLabel(nvidia.state)}
-            {nvidia.reason === null ? '' : ` · ${nvidiaReasonLabel(nvidia.reason)}`} ·{' '}
+            {nvidia.reason === null ? '' : `, ${nvidiaReasonLabel(nvidia.reason)}`},{' '}
             {translate('runtime.nvidia.freeWarning')}
           </p>
           <ul
@@ -254,7 +254,7 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
         </section>
       ) : nvidia.state === 'unavailable' ? (
         <p className="mt-2 font-medium text-danger">
-          {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)}
+          {nvidiaStateLabel(nvidia.state)}, {nvidiaReasonLabel(nvidia.reason)}
         </p>
       ) : null}
       {host.missingFields.length > 0 ? (
@@ -271,7 +271,7 @@ function MemoryFact({ label, fact }: { label: string; fact: RuntimeMemoryFact })
   return (
     <Fact
       label={label}
-      value={`${fact.bytes === null ? translate('runtime.unknown') : formatBytes(fact.bytes)} · ${confidenceLabel(fact.confidence)} · ${memorySourceLabel(fact.source)} · ${memoryBasisLabel(fact.basis)}`}
+      value={`${fact.bytes === null ? translate('runtime.unknown') : formatBytes(fact.bytes)}, ${confidenceLabel(fact.confidence)}, ${memorySourceLabel(fact.source)}, ${memoryBasisLabel(fact.basis)}`}
     />
   )
 }
@@ -301,7 +301,7 @@ function formatElapsed(iso: string): string {
 }
 
 function allocationLabel(bytes: number | null): string {
-  return `${bytes === null ? translate('runtime.unknown') : formatBytes(bytes)} · ${translate('runtime.confidence.observed')} · ${translate('runtime.source.ollama')}`
+  return `${bytes === null ? translate('runtime.unknown') : formatBytes(bytes)}, ${translate('runtime.confidence.observed')}, ${translate('runtime.source.ollama')}`
 }
 
 function ownerLabel(owner: RuntimeResourceOwner): string {

@@ -191,7 +191,7 @@ export function ChatReasoningArtifacts({
                 {data.generatedAnswers.map((answer) => (
                   <li key={answer.messageId} className="break-words">
                     <time dateTime={answer.createdAt}>{formatDateTime(answer.createdAt)}</time>
-                    {' · '}{formatBytes(answer.byteSize)}
+                    {', '}{formatBytes(answer.byteSize)}
                   </li>
                 ))}
               </ul>
@@ -206,7 +206,7 @@ export function ChatReasoningArtifacts({
                 {data.artifacts.map((artifact) => (
                   <li key={artifact.id} className="min-w-0 rounded-lg border border-divider p-3 text-xs">
                     <p className="break-words font-medium">
-                      {translate('chat.reasoning.artifactLabel')} · {formatBytes(artifact.byteSize)}
+                      {translate('chat.reasoning.artifactLabel')}, {formatBytes(artifact.byteSize)}
                     </p>
                     <p className="mt-1 break-all text-secondary">{artifact.checksum}</p>
                     <p className="mt-1 break-words text-secondary">

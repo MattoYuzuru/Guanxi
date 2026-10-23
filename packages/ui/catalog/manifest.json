@@ -142,20 +142,20 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:72c08ee677167b3d2817f83a58c17c66767e80d9f3985ce98ac1cde3ed92d670",
+      "sourceHash": "sha256:8dffb98124e2e26a23983f8d4260fb3c34cdbceaa43e839395d6b1d6437262ca",
       "snapshotHashes": {
         "default-dark": "sha256:d8cb99f4a94a3e153145d578218821a6bb3f24a95a6fae3465e4760b3ea249f9",
         "default-light": "sha256:be9060a69277f0ab395f857a7195d8bf0b4226ee1e62861f63b03094631209d7",
-        "error-dark": "sha256:b73df7b78ef5d39c54d943fe4c0684211b48dc1d97136a15f31ffaadecce5853",
-        "error-light": "sha256:fa1946419241567014284ebf023d9c6079dc2f698dd9baef546aa4b9fa2dbd67",
+        "error-dark": "sha256:fcaa9b204f749c9978dca96e0a05b91bc766c12834a71179f547114e080e12c3",
+        "error-light": "sha256:35e8852cacf83cf414055fb26d18a2cc218afbab4fff9f5107762101e9b99d26",
         "hidden-dark": "sha256:5dd1b52c43e9a07b019cdf43eea4407e2a890c28c3d7377f6ebb72760f5104f9",
         "hidden-light": "sha256:373a4a0a0f6b466142466f532dcaca44628af7e9c5c8d3504d244600ed3cbeb9",
         "loading-dark": "sha256:23a22d900beead867799295540364eddfe506454400075f0ab2cd9479e853cbb",
         "loading-light": "sha256:f1abf3a3fa1cf26a38f8aad77da536e34a74afa937b3dba44f6b03b71961486f",
         "offline-dark": "sha256:3ef17ea331689cea5daf5240d86ac465dd78b7174c6b901c1bd48b67ef1ab8a7",
         "offline-light": "sha256:e5fae5897187ce4c62eac7413573b46505b6de962c4156ac868f23960112403d",
-        "phone-dark": "sha256:ab945a453e4cb24916a6d9b1ecfcd26db9e804be3bee6dabd72fcbc554a1371c",
-        "phone-light": "sha256:7c166fe6119af25cd73a23e55fe66775f9a9e0b6a5fc2ecff7840ef02436df8e",
+        "phone-dark": "sha256:9c17e7b318123902de0e63b6af35304253d58660ff917500033ac9199bb41d78",
+        "phone-light": "sha256:1cbefcc6ed3fec98f33fe00592fca4bae925397fa4aa62a154e6c8a98b2b72b7",
         "rail-dark": "sha256:d6cebbf87d02de0d8d223d4bcbe23ccbf885429e48dbea24ec15c5f2b8ff7ffd",
         "rail-light": "sha256:b3b6293f4537894cf5b731cc5017b096e9be7d877d51dab37cb1d1c3965fb307",
         "right-dark": "sha256:a5a1d5a6b7b0ef9642a1e7f07ad121b8409f4e923e10f9941c97dc16088fa9c5",
@@ -1052,12 +1052,12 @@
       "states": [
         "default",
         "with-details",
-        "retrying"
+        "acting"
       ],
       "stories": [
         "default",
         "with-details",
-        "retrying"
+        "acting"
       ],
       "props": {
         "ErrorState": [
@@ -1136,14 +1136,14 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:a4f762a3940035e46cd74ba6acc359ad1c106a4c3e81267622864feadf83002d",
+      "sourceHash": "sha256:ba4184a49195a792e91dfb82a3ca90813f3095a9d112a4a37f0831d6f41e1838",
       "snapshotHashes": {
-        "default-dark": "sha256:2fa188620770783a3bdef90607f864c011c97461c0fedb23819126ee8b1dbdee",
-        "default-light": "sha256:321ad33cdc53904ec4a2d76ff362905f829e6b279595018e4c2f098ca063a6d3",
-        "retrying-dark": "sha256:f2eb1bdea3f54e422a9445dc89f1365fcafc782e2abb9cc4d73990cb1a19b640",
-        "retrying-light": "sha256:505cdb91f7572628154b0a8842541c0dc0bd51e1ae8b87b4aac64eab3e8a10e3",
-        "with-details-dark": "sha256:fbe91d16789415da893f64a56c6da4e3cd6cb225807749c27cd7f86721af296b",
-        "with-details-light": "sha256:43ccb3f955740e5e088cd025aa14a352ef404f1d8e426116648e7598bb050bcf"
+        "acting-dark": "sha256:61f6605aa54801fafab40be17990985e0049b3f9bacd07296cfad20d4a56b89a",
+        "acting-light": "sha256:2a5ec87fe1f8b2138220fab37d256f610b32771941949c4aee1efc1607e10a3a",
+        "default-dark": "sha256:01038e364825b8ed6e19eb4e3a9043084ae2dea3691e6de6d466eefad6e11e5d",
+        "default-light": "sha256:36224212a24edf23e313947e80f0ca80aa0d9fe8adad008bf283694f865b39b5",
+        "with-details-dark": "sha256:1ecdfff5129c1d0c2b7a607c0104db1aa846eeef29f46dd1b2a20346b358126e",
+        "with-details-light": "sha256:a7b83b823434b561a77fd2547397cd84db1d0fc67725c8b40978667aeeb0109c"
       },
       "storedStatus": "review",
       "signature": "absent",
@@ -1233,13 +1233,13 @@
       "sourceHash": "sha256:38810d757cf15b2a699693642977513c29658d9079fd8722d70f8059542864f1",
       "snapshotHashes": {
         "domain-dark-hc": "sha256:9ce961d0ad6a335017eb032d7882f3cda69832a276a4f880e5f2852535b10882",
-        "domain-dark": "sha256:fc7dafce8cf607b22dc7cdb96def5cde5afa32240964c7144fc07a9c75e1cefe",
+        "domain-dark": "sha256:9ce961d0ad6a335017eb032d7882f3cda69832a276a4f880e5f2852535b10882",
         "domain-light-hc": "sha256:abd700666a2dd66b88ec23b9338953b1453afbaadef7420b2c01622f580aa7c4",
-        "domain-light": "sha256:58af0f6ad61b08327014ab0be1c063fa29a48c6588c196c1a8359dbcc7d13ba5",
+        "domain-light": "sha256:abd700666a2dd66b88ec23b9338953b1453afbaadef7420b2c01622f580aa7c4",
         "set-dark-hc": "sha256:6c24881465c660b89909f7fd5eebfaf6da458136b9d9d300120532c1ceb7f178",
-        "set-dark": "sha256:602d185c397d473fa3867a9700d17c8c9c01a9b31c72bc126290401e2de4bc90",
+        "set-dark": "sha256:6c24881465c660b89909f7fd5eebfaf6da458136b9d9d300120532c1ceb7f178",
         "set-light-hc": "sha256:59529587f3bc04e3b7ab37133976e19c727504df1283240ac9127a9f8eba410b",
-        "set-light": "sha256:01e0fff7e30df0f0265bebec37625f4f728074b875f3700037e187984c012340",
+        "set-light": "sha256:59529587f3bc04e3b7ab37133976e19c727504df1283240ac9127a9f8eba410b",
         "sizes-dark-hc": "sha256:21dcff46fc55e657495209adcfc0e9ac989c4ba816216ea5af45901b1e383d47",
         "sizes-dark": "sha256:21dcff46fc55e657495209adcfc0e9ac989c4ba816216ea5af45901b1e383d47",
         "sizes-light-hc": "sha256:e8d69452ecb4236f3b6edd05df1cf29be534e4c784ac97966e23b436a1b875cd",
@@ -1249,9 +1249,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 9,
+        "count": 10,
         "files": [
           "packages/web/src/components/ui.tsx",
+          "packages/web/src/features/agent/WorkspacePicker.tsx",
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
@@ -2072,16 +2073,16 @@
         "--font-size-12",
         "--spacing-4"
       ],
-      "sourceHash": "sha256:6caf751c36e386cec19d91d8b9222e62a712c98480566bffac059379360db8eb",
+      "sourceHash": "sha256:d37c538d48b24106561f3007cd38909ef91777a017b8f57b5e0d1a7505018a34",
       "snapshotHashes": {
-        "aged-dark": "sha256:814c37b552d85f8476b00ed893dd3064782a662ce63733e2e374e13e2a4b59f2",
-        "aged-light": "sha256:77c9fb2e5bb31f94ad8d958057d4c5346e9d4ab26c068c556298ae3b08d0ab6a",
-        "estimated-dark": "sha256:43dbc688bdfc59ff200f6ec80bebfb9373833316847c1698bea8343a22a92076",
-        "estimated-light": "sha256:8a86387587e09addda350e09a37a6981fd24b515631c221fa6c273c957863169",
-        "fresh-dark": "sha256:32763f8f92ee7b597506b538f777598f8ff3e7ff581fdff7a5573d4c80b6cfb9",
-        "fresh-light": "sha256:e42506bf624b73f60be3fae868ce7c82f489c2013be98519c9d6db95f60809e1",
-        "unknown-dark": "sha256:066e2a3d99c5f028fe115a9748b701ad59e1ac7d7c12fb1c14745af8f48bb900",
-        "unknown-light": "sha256:bc5078cbc8a46a01c8e6ebdee87e3beae324c10c52f3baed760bbbe27ae1809d"
+        "aged-dark": "sha256:d8a878a166220d97341e61107776dc29f3ad8c7696afbc11c966727ef52c21ff",
+        "aged-light": "sha256:02f8a94defa6a17ac1ec7d8c5724652d5a012f5c3db49901e13681e0baffd2be",
+        "estimated-dark": "sha256:913b88c77d57da8febd7fd107484ec0f1d284fc13090cdbc58dc9137d8b96c8c",
+        "estimated-light": "sha256:573e1219778d52c9c3c381460fbcef7fd96b9ce34d1a2301fc0a199e59c4653d",
+        "fresh-dark": "sha256:b003206eb67e04d8bac65a6fd9fe49cb23dd2229b10360f073fa9e263e7e43ff",
+        "fresh-light": "sha256:5d1c88fbfde23d2a55b273556cd9ab8f48257b53a8cd862e7e154f21976a7b34",
+        "unknown-dark": "sha256:6ef4b2a0e5d3fba6c7eaadcbd40533af5ac0aad438344b01f7276c0aadfff95c",
+        "unknown-light": "sha256:65fbb3772a1e42127f2d0e5dd857e07d20f28c09465679c28741805d480003b6"
       },
       "storedStatus": "draft",
       "signature": "absent",
@@ -3303,7 +3304,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:7ba8e7f282ce0a506e61dc43ebd267b6a807b0c3142d6354d49804e94022fe83",
+      "sourceHash": "sha256:96bac948c57ff6930d9ce313ffe356b2f4e184f9c25d6603eafd5881b0a45511",
       "snapshotHashes": {
         "default-dark": "sha256:45f730b8a2c91349e4eb3b032a40279036228b389a620dfdf4b85b6831fb5b6d",
         "default-light": "sha256:d071cc5cda394099a646cbf8af5460c1abf2026efe7ac0492752087ccf7793d8",
@@ -3311,8 +3312,8 @@
         "draft-light": "sha256:ae1b9d9e0bc156a5033b5feee3e8dc3622f2f043806a13a0b8755489633e7f2b",
         "empty-dark": "sha256:2e6dfdb1d2e753281561982815bb461a8338029fa4ba2302e5784df1d1e01b9b",
         "empty-light": "sha256:8632cd9056a207ee246f7e6ece26f53c8eebfdee96ae666d85abc9e7ddae7919",
-        "error-dark": "sha256:fa27573d33b1211dae89d81b3b184bea4e03d9e800ee7181d406c60eb82866ce",
-        "error-light": "sha256:12651882f5bda761c3dc5db0732894c8352e604b93b3dfc2fafdb38b304e3643",
+        "error-dark": "sha256:d7ac5cb77d0fd69b4dc7d2482039a999d14d885885619d7b0162c6963c7f5c39",
+        "error-light": "sha256:d25c09789834372611ae14fc98fa320be4442379c91c112d7278a22f6f6aab6d",
         "loading-dark": "sha256:6123d7b6000c4989c804130a9a2644f22e9c23ffca88cd7999263a3f7501eaaf",
         "loading-light": "sha256:74582b703c3debd6876d9ac2bedf41636c2a80c647a386e6a065d019f2bd9e43",
         "mover-dark": "sha256:83877b25b6515e491b516acb461ff7fc7dc35e48360ae04b3e86e2b4e864c26a",

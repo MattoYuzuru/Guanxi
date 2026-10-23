@@ -48,7 +48,7 @@ export function FitBadge({ fit }: { fit: FitVerdict }) {
     >
       <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {fitLabel(fit.level)}
-      <span className="opacity-70">· {translate(basis.label)}</span>
+      <span className="opacity-70">({translate(basis.label)})</span>
     </span>
   )
 }

@@ -168,13 +168,10 @@ function ModelProfile({
       <header className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="font-mono text-lg font-semibold tracking-tight">{model.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-secondary">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary">
             <span>{model.family}</span>
-            <span className="text-control">·</span>
             <span>{model.parameterSize}</span>
-            <span className="text-control">·</span>
             <span>{model.quantization}</span>
-            <span className="text-control">·</span>
             <span title={formatDateTime(model.modifiedAt)}>
               {translate('model.modified', { time: formatRelativeTime(model.modifiedAt) })}
             </span>
@@ -316,23 +313,23 @@ function ModelProfile({
             <p className="mt-2 text-2xs text-muted">
               {model.contextLimit.state === 'declared' ? (
                 <>
-                  {translate('context.limit.declared')}: {formatContextLength(model.contextLimit.value)} ·{' '}
+                  {translate('context.limit.declared')}: {formatContextLength(model.contextLimit.value)},{' '}
                   {model.contextLimit.source === 'ollama_api_tags'
                     ? translate('context.limit.source.tags')
-                    : translate('context.limit.source.show')}{' '}
-                  · {translate('context.limit.confidence.declared')} ·{' '}
+                    : translate('context.limit.source.show')}
+                 , {translate('context.limit.confidence.declared')},{' '}
                   {formatDateTime(model.contextLimit.observedAt)}
                 </>
               ) : model.contextLimit.source === 'conflicting_provider_declarations' ? (
                 <>
-                  {translate('context.limit.conflicting')} ·{' '}
-                  {translate('context.limit.confidence.unknown')} ·{' '}
+                  {translate('context.limit.conflicting')},{' '}
+                  {translate('context.limit.confidence.unknown')},{' '}
                   {formatDateTime(model.contextLimit.observedAt)}
                 </>
               ) : (
                 <>
-                  {translate('context.limit.unknown')} ·{' '}
-                  {translate('context.limit.confidence.unknown')} ·{' '}
+                  {translate('context.limit.unknown')},{' '}
+                  {translate('context.limit.confidence.unknown')},{' '}
                   {formatDateTime(model.contextLimit.observedAt)}
                 </>
               )}

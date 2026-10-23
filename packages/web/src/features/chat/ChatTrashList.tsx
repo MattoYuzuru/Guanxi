@@ -161,13 +161,13 @@ export function ChatTrashList({
             >
               <strong className="block min-w-0 break-words text-xs">{chat.title}</strong>
               <span className="mt-1 block break-words text-muted">
-                {translate(`chat.trash.reason.${chat.reason}`)} ·{' '}
+                {translate(`chat.trash.reason.${chat.reason}`)},{' '}
                 <time dateTime={chat.tombstonedAt}>{formatDateTime(chat.tombstonedAt)}</time>
               </span>
               <span className="block break-words text-muted">
                 {translate('chat.trash.activity')}:{' '}
                 <time dateTime={chat.activityBasis.at}>{formatDateTime(chat.activityBasis.at)}</time>
-                {' · '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
+                {', '}{translate(`chat.retention.activity.${chat.activityBasis.source}`)}
               </span>
               {chat.reason === 'session_left' ? (
                 <>
@@ -176,11 +176,11 @@ export function ChatTrashList({
                     <time dateTime={chat.recovery.deadline}>
                       {formatDateTime(chat.recovery.deadline)}
                     </time>
-                    {' · '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
+                    {', '}{translate(`chat.trash.recovery.${chat.recovery.state}`)}
                   </span>
                   <span className="block break-words text-muted">
                     {translate(`chat.trash.deletion.${chat.hardDeletion.state}`)}
-                    {' · '}{translate('chat.trash.noBlobGc')}
+                    {', '}{translate('chat.trash.noBlobGc')}
                   </span>
                 </>
               ) : null}
@@ -206,9 +206,9 @@ export function ChatTrashList({
           <ol className="mt-1 min-w-0 space-y-1">
             {(trash.data?.deletions ?? []).map((deletion) => (
               <li key={deletion.chatId} className="min-w-0 break-words text-2xs text-muted">
-                {translate('chat.trash.deleted.item')} ·{' '}
+                {translate('chat.trash.deleted.item')},{' '}
                 <time dateTime={deletion.deletedAt}>{formatDateTime(deletion.deletedAt)}</time>
-                {' · '}{translate('chat.trash.noBlobGc')}
+                {', '}{translate('chat.trash.noBlobGc')}
               </li>
             ))}
           </ol>

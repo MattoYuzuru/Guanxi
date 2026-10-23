@@ -70,10 +70,10 @@ describe('ephemeral labelling and storage', () => {
   it('shows where the answer was read from: log head, turns, bytes and time, never as a bare number', async () => {
     render(<SideChatPanel sessionId="s1" />)
     await ask('q')
-    expect(screen.getByText(/Read from the session log up to event 12 · 2 turns · 345 bytes · observed/)).toBeTruthy()
+    expect(screen.getByText(/Read from the session log up to event 12: 2 turns, 345 bytes, observed/)).toBeTruthy()
     install(() => answer('x', { include: 'none', turns: 0, bytes: 0, excerpted: 2 }))
     await ask('q2')
-    expect(screen.getByText(/No session context was sent · observed.*Prompts read as bounded excerpts: 2/)).toBeTruthy()
+    expect(screen.getByText(/No session context was sent \(observed.*Prompts read as bounded excerpts: 2/)).toBeTruthy()
   })
   it('says so when the model stopped at its output limit', async () => {
     install(() => answer('cut', {}, true))
@@ -348,7 +348,7 @@ describe('inspector rendering of a saved side chat', () => {
   it('renders the saved transcript for people and leaves every other note as it was', () => {
     setActiveLocale('en')
     const saved = eventDetail(note(encodeSideChatSavedNote('11111111-1111-4111-8111-111111111111', [{ role: 'user', text: 'Q?' }, { role: 'assistant', text: 'A.' }])))
-    expect(saved).toBe('Saved side chat · 2 messages · history only, never sent to the agent\nYou: Q?\nSide chat: A.')
+    expect(saved).toBe('Saved side chat: 2 messages, history only, never sent to the agent\nYou: Q?\nSide chat: A.')
     expect(eventDetail(note('{"relay":"cap"}'))).toBe('{"relay":"cap"}')
     expect(eventDetail(note('plain'))).toBe('plain')
   })

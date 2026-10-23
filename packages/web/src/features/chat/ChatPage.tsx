@@ -328,7 +328,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           {contextBlocked && selectedModel?.contextLimit.state === 'declared' ? (
             <Callout tone="danger" title={translate('context.limit.exceeded')}>
               {translate('context.limit.declared')}: {' '}
-              {formatInteger(selectedModel.contextLimit.value)} · {' '}
+              {formatInteger(selectedModel.contextLimit.value)},{' '}
               {selectedModel.contextLimit.source === 'ollama_api_tags'
                 ? translate('context.limit.source.tags')
                 : translate('context.limit.source.show')}
@@ -353,7 +353,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
                   ...(workspaces.data?.workspaces ?? []).map((workspace) => ({
                     value: workspace.id,
                     label: workspace.exists
-                      ? `${workspace.name} · ${workspace.rootPath}`
+                      ? `${workspace.name}, ${workspace.rootPath}`
                       : translate('chat.create.workspaceMissing', { name: workspace.name }),
                     disabled: !workspace.exists,
                   })),
@@ -901,7 +901,7 @@ function TurnOutcomeView({ message }: { message: Message }) {
     return (
       <p className="mt-1.5 text-2xs text-muted" role="status">
         {translate('chat.turn.status.completed')}
-        {reason ? ` · ${translate('chat.turn.reason')}: ${reason}` : ''}
+        {reason ? `, ${translate('chat.turn.reason')}: ${reason}` : ''}
       </p>
     )
   }

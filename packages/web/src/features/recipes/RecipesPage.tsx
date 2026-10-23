@@ -562,7 +562,7 @@ function RecipeCard({
         <dt className="text-muted">{translate('recipes.operation.label')}</dt><dd>{translate(`recipes.operation.${configuration.operation}`)}</dd>
         <dt className="text-muted">{translate('recipes.model.label')}</dt><dd className="break-words">{configuration.model.state === 'explicit' ? configuration.model.reference : translate('recipes.model.none')}</dd>
         <dt className="text-muted">{translate('recipes.retention')}</dt><dd>{translate(`recipes.retention.${configuration.retention.mode}`)}</dd>
-        <dt className="text-muted">{translate('recipes.provenance')}</dt><dd className="break-all font-mono text-2xs">sha256:{recipe.currentRevision.canonical.sha256} · {recipe.currentRevision.canonical.byteSize} B</dd>
+        <dt className="text-muted">{translate('recipes.provenance')}</dt><dd className="break-all font-mono text-2xs">sha256:{recipe.currentRevision.canonical.sha256}, {recipe.currentRevision.canonical.byteSize} B</dd>
         <dt className="text-muted">{translate('recipes.updated')}</dt><dd><time dateTime={recipe.updatedAt}>{formatDateTime(recipe.updatedAt)}</time></dd>
       </dl>
       <p className="mt-3 whitespace-pre-wrap break-words text-xs">{configuration.instructions || translate('recipes.instructions.empty')}</p>
@@ -602,7 +602,7 @@ function RecipeCard({
           <div className="mt-2 rounded-md border border-control p-2">
             <p className="text-xs">{translate('recipes.snapshot.confirmation')}</p>
             <p className="mt-1 break-all text-2xs text-muted">
-              {recipe.id} · {translate('recipes.revision')} {recipe.currentRevision.revision}
+              {recipe.id}, {translate('recipes.revision')} {recipe.currentRevision.revision}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" loading={snapshotLoading} onClick={() => void createSnapshot()}>

@@ -23,7 +23,7 @@ it('renders observed balances with source, observation time and confidence, incl
   setActiveLocale('en')
   render(<ConnectionsView snapshot={{ ...snapshot, connections: [{ ...connection, balance: { amount: 0, currency: 'USD', source: 'fixture-api', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'high' } }] }} mutate={mutate} />)
   expect(screen.getByTestId('connection-balance').textContent).toBe('0 USD')
-  expect(screen.getByText(/fixture-api · observed/).textContent).toContain('high confidence')
+  expect(screen.getByText(/fixture-api, observed/).textContent).toContain('high confidence')
 })
 it.each(['en', 'ru'] as const)('names controls and shows empty state in %s', locale => {
   setActiveLocale(locale)
@@ -149,7 +149,7 @@ it.each([
     source: 'currency-cost-fixture', observedAt, confidence: 'medium' }],
   }} mutate={mutate} />)
   expect(screen.getByTestId('connection-balance').textContent).toBe(balance)
-  expect(screen.getByText(/currency-cost-fixture/).textContent).toContain(`${cost} ·`)
+  expect(screen.getByText(/currency-cost-fixture/).textContent).toContain(`${cost},`)
 })
 
 it('shows only the immutable API host for a compatible connection', () => {

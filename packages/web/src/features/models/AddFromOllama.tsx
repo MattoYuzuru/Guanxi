@@ -329,7 +329,7 @@ function PullProgress({ progress, target }: { progress: Progress | null; target:
       <p className="font-mono text-2xs text-muted">
         {percent === null ? translate('models.addOllama.progress.unknown') : formatPercent(percent, percent < 10 ? 1 : 0)}
         {progress?.completedBytes !== null && progress?.completedBytes !== undefined
-          ? ` · ${formatBytes(progress.completedBytes)}`
+          ? `, ${formatBytes(progress.completedBytes)}`
           : ''}
       </p>
     </div>

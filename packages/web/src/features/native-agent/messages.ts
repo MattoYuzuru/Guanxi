@@ -2,10 +2,10 @@ export const nativeEnglish = {
   'native.retention': 'Session retention',
   'native.retentionDescription': 'Seven days uses your last activity and moves the session to Trash. Leaving a Session keeps it recoverable for 24 hours, then removes its trace and files. Keep retains it until you delete it.',
   'native.retention.keep': 'Keep', 'native.retention.ttl': '7 days', 'native.retention.session': 'Session',
-  'native.retention.active': 'Retained', 'native.retention.trash': 'In Trash · choose Keep or 7 days to restore', 'native.retention.deleting': 'Deletion pending · cleanup will retry',
+  'native.retention.active': 'Retained', 'native.retention.trash': 'In Trash. Choose Keep or 7 days to restore', 'native.retention.deleting': 'Deletion pending; cleanup will retry',
   'native.leave': 'Leave session',
 
-  'native.input_required': 'Interrupted · your decision is required',
+  'native.input_required': 'Interrupted: your decision is required',
   'native.delete': 'Delete session',
   'native.deleteDescription': 'Permanently removes this session, its trace, scratch files, attachments and output artifacts. Stop the session first. Quarantined folders require runtime recovery.',
   'native.sessionError': 'This session failed. Open the trace for details, then send a prompt to continue.',
@@ -29,7 +29,7 @@ export const nativeEnglish = {
   'native.noQueue': 'No queued prompts.', 'native.summary': 'Latest response', 'native.noSummary': 'Waiting for a response.',
   'native.trace': 'Open trace', 'native.source': 'Session log, observed {time}', 'native.noRoots': 'No folders, scratch only',
   'native.roots': 'Project folders: {count}', 'native.running': 'Running', 'native.completed': 'Completed', 'native.failed': 'Failed',
-  'native.cancelled': 'Cancelled', 'native.interrupted': 'Interrupted · send a prompt to continue',
+  'native.cancelled': 'Cancelled', 'native.interrupted': 'Interrupted: send a prompt to continue',
   'native.pending': 'Pending', 'native.active': 'Active', 'native.verification_requested': 'Verification requested',
   'native.attachments': 'Project attachment IDs (comma-separated; upload in Attachments)', 'native.protected': 'Protected paths (one per line)',
 } as const
@@ -37,10 +37,10 @@ export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
   'native.retention': 'Хранение сессии',
   'native.retentionDescription': 'Через семь дней после вашего последнего действия сессия попадёт в корзину. После выхода из режима «Сессия» её можно восстановить в течение 24 часов, затем трасса и файлы удалятся. «Хранить» сохраняет сессию до явного удаления.',
   'native.retention.keep': 'Хранить', 'native.retention.ttl': '7 дней', 'native.retention.session': 'Сессия',
-  'native.retention.active': 'Сохранена', 'native.retention.trash': 'В корзине · выберите «Хранить» или «7 дней» для восстановления', 'native.retention.deleting': 'Ожидает удаления · очистка будет повторена',
+  'native.retention.active': 'Сохранена', 'native.retention.trash': 'В корзине. Выберите «Хранить» или «7 дней» для восстановления', 'native.retention.deleting': 'Ожидает удаления; очистка будет повторена',
   'native.leave': 'Выйти из сессии',
 
-  'native.input_required': 'Прервано · требуется ваше решение',
+  'native.input_required': 'Прервано: требуется ваше решение',
   'native.delete': 'Удалить сессию',
   'native.deleteDescription': 'Безвозвратно удаляет сессию, трассу, временные файлы, вложения и выходные артефакты. Сначала остановите сессию. Для заблокированных папок нужно восстановить контейнерный движок.',
   'native.sessionError': 'Сессия завершилась с ошибкой. Откройте трассу для подробностей и отправьте запрос, чтобы продолжить.',
@@ -64,7 +64,7 @@ export const nativeRussian: Record<keyof typeof nativeEnglish, string> = {
   'native.noQueue': 'Очередь пуста.', 'native.summary': 'Последний ответ', 'native.noSummary': 'Ожидается ответ.',
   'native.trace': 'Открыть трассу', 'native.source': 'Журнал сессии, наблюдение {time}', 'native.noRoots': 'Без папок, запись только в scratch',
   'native.roots': 'Папок проекта: {count}', 'native.running': 'Выполняется', 'native.completed': 'Завершено', 'native.failed': 'Ошибка',
-  'native.cancelled': 'Остановлено', 'native.interrupted': 'Прервано · отправьте запрос для продолжения',
+  'native.cancelled': 'Остановлено', 'native.interrupted': 'Прервано: отправьте запрос для продолжения',
   'native.pending': 'Ожидает', 'native.active': 'В работе', 'native.verification_requested': 'Требуется проверка',
   'native.attachments': 'ID вложений проекта (через запятую; загрузка в разделе «Вложения»)', 'native.protected': 'Защищённые пути (по одному на строку)',
 }

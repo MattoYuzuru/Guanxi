@@ -395,12 +395,12 @@ export function ResourceConflictDialog({
             {queued.map((waiter, index) => (
               <li key={waiter.ticketId} className="min-w-0 border-l-2 border-control pl-2 text-2xs">
                 <p className="font-medium">
-                  {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
-                  · {operationLabel(waiter.operation)}
+                  {translate('runtime.queue.position').replace('{position}', String(index + 1))}
+                 , {operationLabel(waiter.operation)}
                 </p>
                 <p className="break-words font-mono text-secondary">{waiter.model.name}</p>
                 <p className="text-secondary">
-                  {ownerLabel(waiter.owner)} · {translate('runtime.context')}:{' '}
+                  {ownerLabel(waiter.owner)}, {translate('runtime.context')}:{' '}
                   {formatContextLength(waiter.requestedContext)}
                 </p>
               </li>

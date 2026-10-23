@@ -53,8 +53,8 @@ export function InstalledEvidenceDetails({
         <dd>
           {descriptor.installation.state === 'installed'
             ? translate('models.evidence.installed')
-            : translate('models.evidence.unknown')}{' '}
-          · {evidenceSourceLabel(descriptor.installation.source)} ·{' '}
+            : translate('models.evidence.unknown')}
+         , {evidenceSourceLabel(descriptor.installation.source)},{' '}
           {formatDateTime(descriptor.installation.observedAt)}
         </dd>
         <dt className="text-muted">{translate('models.evidence.capabilities')}</dt>
@@ -74,8 +74,8 @@ export function InstalledEvidenceDetails({
                 >
                   <span className="font-medium">
                     {evidenceSourceLabel(declaration.source)}
-                  </span>{' '}
-                  · {translate('models.evidence.declaredConfidence')} ·{' '}
+                  </span>
+                 , {translate('models.evidence.declaredConfidence')},{' '}
                   {formatDateTime(declaration.observedAt)}
                   <div className="mt-1 flex flex-wrap gap-1">
                     {declaration.capabilities.length === 0 ? (
@@ -87,8 +87,8 @@ export function InstalledEvidenceDetails({
                   <p className="mt-1 break-all text-secondary">
                     {declaration.basis.artifact.state === 'exact_digest'
                       ? declaration.basis.artifact.digest
-                      : translate('models.evidence.identityUnknown')}{' '}
-                    · {declaration.basis.runtime.state === 'sourced'
+                      : translate('models.evidence.identityUnknown')}
+                   , {declaration.basis.runtime.state === 'sourced'
                       ? `Ollama ${declaration.basis.runtime.version}`
                       : translate('models.evidence.runtimeUnknown')}
                   </p>
@@ -110,7 +110,7 @@ export function InstalledEvidenceDetails({
             <p className="text-muted">
               {translate('models.evidence.observed')} {formatDateTime(freshness.observedAt)}
               {'validatedAt' in freshness
-                ? ` · ${translate('models.evidence.validated')} ${formatDateTime(freshness.validatedAt)}`
+                ? `, ${translate('models.evidence.validated')} ${formatDateTime(freshness.validatedAt)}`
                 : ''}
             </p>
           ) : null}

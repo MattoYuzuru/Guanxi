@@ -166,12 +166,12 @@ describe('inspector page', () => {
     const timeline = await screen.findByRole('list', { name: 'Session events in order' })
     await waitFor(() => expect(within(timeline).getAllByRole('listitem')).toHaveLength(events.length))
     expect(within(timeline).getAllByText('Durable run')).toHaveLength(1)
-    expect(within(timeline).getAllByText('lead-r1 · waiting_children · delegated')).toHaveLength(1)
+    expect(within(timeline).getAllByText('lead-r1, waiting_children, delegated')).toHaveLength(1)
     view.unmount()
     render(<InspectorPage sessionId={SESSION_ID} />)
     const replay = await screen.findByRole('list', { name: 'Session events in order' })
     await waitFor(() => expect(within(replay).getAllByRole('listitem')).toHaveLength(events.length))
-    expect(within(replay).getAllByText('lead-r1 · waiting_children · delegated')).toHaveLength(1)
+    expect(within(replay).getAllByText('lead-r1, waiting_children, delegated')).toHaveLength(1)
   })
 
   it('keeps the live region to the state: streamed events change the timeline, not the announcement', async () => {

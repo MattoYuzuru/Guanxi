@@ -171,7 +171,7 @@ describe('installed model evidence projection', () => {
       <InstalledEvidenceDetails descriptor={unknown} />
     </>)
     expect(view.container.textContent).toContain('Проверенный persistent cache')
-    expect(view.container.textContent).toContain('Устарело · offline')
+    expect(view.container.textContent).toContain('Устарело, offline')
     expect(view.container.textContent).toContain('вне 7-дневного stale window')
     expect(view.container.innerHTML).not.toContain('color-fit-green')
   })

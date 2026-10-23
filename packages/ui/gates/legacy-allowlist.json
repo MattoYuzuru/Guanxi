@@ -57,7 +57,7 @@
   "G5|packages/web/src/features/agent/WorkspacePicker.tsx|font-medium": 2,
   "G5|packages/web/src/features/agent/WorkspacePicker.tsx|rounded": 1,
   "G5|packages/web/src/features/agent/WorkspacePicker.tsx|rounded-md": 3,
-  "G5|packages/web/src/features/agent/WorkspacePicker.tsx|text-2xs": 7,
+  "G5|packages/web/src/features/agent/WorkspacePicker.tsx|text-2xs": 6,
   "G5|packages/web/src/features/agent/WorkspacePicker.tsx|text-xs": 4,
   "G5|packages/web/src/features/attachments/AttachmentsPage.tsx|file:rounded-md": 1,
   "G5|packages/web/src/features/attachments/AttachmentsPage.tsx|file:text-xs": 1,

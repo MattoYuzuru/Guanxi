@@ -127,7 +127,7 @@ function CompareColumn({
       <Fact label={translate('catalog.compare.parameters')} value={variant.parameterSize ?? unknown()} />
       <Fact label={translate('catalog.compare.claimedContext')} value={variant.contextLength === null ? unknown() : formatContextLength(variant.contextLength)} />
       <Fact label={translate('catalog.compare.fit')} value={fitText(variant)} />
-      <Fact label={translate('catalog.compare.source')} value={`${sourceText(variant)} · ${freshnessText(variant)}`} />
+      <Fact label={translate('catalog.compare.source')} value={`${sourceText(variant)}, ${freshnessText(variant)}`} />
       <Fact label={translate('catalog.compare.observed')} value={variant.sourceObservedAt ? formatDateTime(variant.sourceObservedAt) : unknown()} />
       <Fact label={translate('catalog.compare.fetched')} value={variant.sourceFetchedAt ? formatDateTime(variant.sourceFetchedAt) : unknown()} />
       <Fact label={translate('catalog.compare.installation')} value={installationText(variant)} />
@@ -154,18 +154,18 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 function fitText(variant: CatalogVariant): string {
-  if (variant.fit.state === 'unknown') return `${unknown()} · ${variant.fit.reason}`
-  return `${translate(`catalog.filters.value.${variant.fit.verdict.level}` as LocaleKey)} · ${translate('catalog.compare.claimedFitBasis')} · ${formatContextLength(variant.fit.contextLength)}`
+  if (variant.fit.state === 'unknown') return `${unknown()}, ${variant.fit.reason}`
+  return `${translate(`catalog.filters.value.${variant.fit.verdict.level}` as LocaleKey)}, ${translate('catalog.compare.claimedFitBasis')}, ${formatContextLength(variant.fit.contextLength)}`
 }
 
 function installationText(variant: CatalogVariant): string {
   if (variant.installation.state === 'installed') {
-    return `${translate('catalog.filters.value.installed')} · ${variant.installation.digest} · ${formatDateTime(variant.installation.observedAt)}`
+    return `${translate('catalog.filters.value.installed')}, ${variant.installation.digest}, ${formatDateTime(variant.installation.observedAt)}`
   }
   if (variant.installation.state === 'not_installed') {
-    return `${translate('catalog.filters.value.not_installed')} · ${formatDateTime(variant.installation.observedAt)}`
+    return `${translate('catalog.filters.value.not_installed')}, ${formatDateTime(variant.installation.observedAt)}`
   }
-  return `${unknown()} · ${variant.installation.reason}`
+  return `${unknown()}, ${variant.installation.reason}`
 }
 
 function sourceText(variant: CatalogVariant): string {

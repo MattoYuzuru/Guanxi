@@ -313,11 +313,11 @@ export function CapabilityOverrides({
                 </Button>
               </div>
               <p className="mt-1 min-w-0 break-all text-secondary">
-                {translate('models.override.created')} {formatDateTime(override.createdAt)} ·{' '}
+                {translate('models.override.created')} {formatDateTime(override.createdAt)},{' '}
                 {translate('models.override.updated')} {formatDateTime(override.updatedAt)}
               </p>
               <p className="mt-1 min-w-0 break-all font-mono text-secondary">
-                {override.normalizedModelReference} · {override.artifactDigest} · Ollama{' '}
+                {override.normalizedModelReference}, {override.artifactDigest}, Ollama{' '}
                 {override.runtimeVersion}
               </p>
             </li>

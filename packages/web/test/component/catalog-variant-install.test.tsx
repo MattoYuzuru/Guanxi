@@ -173,7 +173,7 @@ describe('variant-first Marketplace install', () => {
     expect(view.queryByText('fixture:a')).toBeNull()
     expect(view.getByText('fixture:b')).toBeTruthy()
     expect(view.getByText(/Не влезает по текущей оценке/u)).toBeTruthy()
-    expect(view.getByText(/Локальный cache рекомендаций · устаревший sample/u)).toBeTruthy()
+    expect(view.getByText(/Локальный cache рекомендаций, устаревший sample/u)).toBeTruthy()
 
     fireEvent.click(view.getByRole('button', { name: 'Проверить точную установку' }))
     expect(view.getAllByText('fixture:b')).toHaveLength(2)

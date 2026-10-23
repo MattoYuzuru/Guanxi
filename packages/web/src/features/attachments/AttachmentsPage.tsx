@@ -409,7 +409,7 @@ function AttachmentScopePanel({
         {intent ? (
           <div className="mt-3 min-w-0">
             <p className="break-words text-xs">
-              {intent.file.name} · {formatBytes(intent.file.size)}
+              {intent.file.name}, {formatBytes(intent.file.size)}
             </p>
             {uploading ? (
               <progress

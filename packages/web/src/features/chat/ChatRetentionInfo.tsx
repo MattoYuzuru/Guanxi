@@ -247,7 +247,7 @@ export function ChatRetentionInfo({
                   <time dateTime={projection.lastUserActivity.at}>
                     {formatDateTime(projection.lastUserActivity.at)}
                   </time>
-                  {' · '}
+                  {', '}
                   {translate(`chat.retention.activity.${projection.lastUserActivity.source}`)}
                 </dd>
                 <dt className="text-muted">{translate('chat.retention.expiry')}</dt>
@@ -255,7 +255,7 @@ export function ChatRetentionInfo({
                   {projection.expiresAt ? (
                     <time dateTime={projection.expiresAt}>{formatDateTime(projection.expiresAt)}</time>
                   ) : translate('chat.retention.expiry.none')}
-                  {' · '}
+                  {', '}
                   {projection.expirySource === 'server_calculated'
                     ? translate('chat.retention.expiry.server')
                     : translate('chat.retention.expiry.policy')}

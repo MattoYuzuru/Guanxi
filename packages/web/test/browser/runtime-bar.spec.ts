@@ -140,7 +140,7 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
   await nextSample(page)
   await expect.poll(() => runtimeCalls).toBeGreaterThan(before)
   // The open popover updates in place.
-  await expect(runtime.getByText(/Источник Ollama недоступен · Наблюдение/)).toBeVisible()
+  await expect(runtime.getByText(/Источник Ollama недоступен, Наблюдение/)).toBeVisible()
   await expect(runtime.getByText('Host telemetry доступна с неизвестными полями', { exact: true })).toBeVisible()
   await expect(runtime.getByText(/Активный lease не наблюдался/)).toBeVisible()
 

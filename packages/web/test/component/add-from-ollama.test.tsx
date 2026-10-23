@@ -172,7 +172,7 @@ describe('Add from Ollama Marketplace flow', () => {
     ))
     expect(await screen.findByText('Ollama скачивает данные модели.')).toBeTruthy()
     expect(screen.getByLabelText('Прогресс Ollama pull')).toBeTruthy()
-    expect(screen.getByText('25% · 25 Б')).toBeTruthy()
+    expect(screen.getByText('25%, 25 Б')).toBeTruthy()
     streamController.enqueue(encoder.encode(
       `id: 1\nevent: guanxi\ndata: ${JSON.stringify({
         type: 'done', seq: 1, data: { name: 'qwen3:8b' },

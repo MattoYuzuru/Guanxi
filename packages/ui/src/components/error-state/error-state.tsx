@@ -64,8 +64,7 @@ export function ErrorState({
       </div>
       <p className="gx-error-state-meta">
         <span>{t('ui.error.source', { source: '' })}</span>
-        <span className="gx-error-state-source">{source}</span>
-        <span aria-hidden="true"> · </span>
+        <span className="gx-error-state-source">{source}</span>{' '}
         {timeMeaning === 'observed' ? <span>{t('ui.error.observed')}</span> : null}
         <time dateTime={Number.isNaN(time.getTime()) ? undefined : time.toISOString()}>{timeLabel}</time>
       </p>

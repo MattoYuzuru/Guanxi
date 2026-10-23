@@ -416,7 +416,7 @@ function VariantFacts({
       <p className="text-2xs text-secondary">
         {translate('models.catalogVariant.claimedSize')}: {' '}
         {variant.sizeBytes === null ? translate('models.catalogVariant.unknown') : formatBytes(variant.sizeBytes)}
-        {' · '}{translate('models.catalogVariant.parameters')}: {' '}
+        {', '}{translate('models.catalogVariant.parameters')}: {' '}
         {variant.parameterSize ?? translate('models.catalogVariant.unknown')}
       </p>
       {variant.contextLength !== null ? (
@@ -426,14 +426,14 @@ function VariantFacts({
       ) : null}
       <VariantFit variant={variant} />
       <p className="text-2xs text-secondary">
-        {sourceLabel(variant)} · {freshnessLabel(variant)}
+        {sourceLabel(variant)}, {freshnessLabel(variant)}
       </p>
       <p className="text-2xs text-secondary">
         {translate('models.catalogVariant.source.observed')}: {' '}
         {variant.sourceObservedAt
           ? formatDateTime(variant.sourceObservedAt)
           : translate('models.catalogVariant.unknown')}
-        {' · '}{translate('models.catalogVariant.source.fetched')}: {' '}
+        {', '}{translate('models.catalogVariant.source.fetched')}: {' '}
         {variant.sourceFetchedAt
           ? formatDateTime(variant.sourceFetchedAt)
           : translate('models.catalogVariant.unknown')}
@@ -485,9 +485,9 @@ function VariantFit({ variant }: { variant: CatalogVariant }) {
   const verdict = variant.fit.verdict
   return (
     <p className="text-2xs text-secondary">
-      {translate(`models.catalogVariant.fit.${verdict.level}`)} · {' '}
-      {formatBytes(verdict.requiredBytes)} / {formatBytes(verdict.usableBytes)} · {' '}
-      {formatContextLength(verdict.contextLength)} · {translate('models.catalogVariant.fit.claimed')}
+      {translate(`models.catalogVariant.fit.${verdict.level}`)},{' '}
+      {formatBytes(verdict.requiredBytes)} / {formatBytes(verdict.usableBytes)},{' '}
+      {formatContextLength(verdict.contextLength)}, {translate('models.catalogVariant.fit.claimed')}
     </p>
   )
 }
@@ -512,7 +512,7 @@ function PullProgress({ variant, progress }: { variant: SelectedVariant; progres
           ? translate('models.catalogVariant.progress.unknown')
           : formatPercent(percent, 1)}
         {progress?.completedBytes !== null && progress?.completedBytes !== undefined
-          ? ` · ${formatBytes(progress.completedBytes)}`
+          ? `, ${formatBytes(progress.completedBytes)}`
           : ''}
       </p>
     </div>

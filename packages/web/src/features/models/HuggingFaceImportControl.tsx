@@ -348,13 +348,13 @@ function ImportTerminal({
         <div className="mt-2 min-w-0 text-2xs text-secondary">
           <p>{translate('hf.import.installed')}</p>
           <p className="mt-1 min-w-0 break-all font-mono">
-            {state.provenance.installation.normalizedModelReference} · {state.provenance.installation.digest}
+            {state.provenance.installation.normalizedModelReference}, {state.provenance.installation.digest}
           </p>
           <p className="mt-1">
             {translate('hf.import.runtimeVerified')}
           </p>
           <p className="mt-1">
-            {translate('hf.import.runtimeVersion')} · {state.provenance.installation.runtimeVersion}
+            {translate('hf.import.runtimeVersion')}, {state.provenance.installation.runtimeVersion}
           </p>
           <p className="mt-1">
             {translate('hf.import.observed')} {formatDateTime(state.provenance.installation.observedAt)}
@@ -388,7 +388,7 @@ function ProbeObservation({ probe }: { probe: CompletionProbeEvidence }) {
     <div className="mt-2 text-2xs text-muted">
       <p>{translate('hf.import.probeEvidence')}</p>
       <p className="mt-1">
-        {translate(`models.probe.state.${probe.status}` as LocaleKey)} ·{' '}
+        {translate(`models.probe.state.${probe.status}` as LocaleKey)},{' '}
         {translate(`models.probe.reason.${probe.reason}` as LocaleKey)}
       </p>
       <p className="mt-1">{translate('models.probe.observed')} {formatDateTime(probe.observedAt)}</p>
@@ -400,7 +400,7 @@ function TargetObservation({ target }: { target: HuggingFaceImportTargetObservat
   return (
     <p className="mt-1 min-w-0 break-all font-mono text-2xs text-muted">
       {target.state === 'exact'
-        ? `${target.normalizedModelReference} · ${target.digest}`
+        ? `${target.normalizedModelReference}, ${target.digest}`
         : translate(`hf.import.target.${target.state}` as LocaleKey)}
     </p>
   )

@@ -42,7 +42,7 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   await expect(
     page.getByRole('status').filter({ hasText: 'отправка' }),
   ).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Остановить · отправка' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Остановить (отправка)' })).toBeVisible()
   // D-207 composer: while a turn runs, Stop replaces Send; the text area stays editable for the
   // next prompt, but nothing can be sent until the turn ends.
   await expect(page.getByRole('button', { name: 'Отправить', exact: true })).toHaveCount(0)
@@ -98,7 +98,7 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
 
   await expect(page.getByText('Persisted canonical answer', { exact: true })).toBeVisible()
   await expect(page.getByText('Live stream draft', { exact: true })).toHaveCount(0)
-  await expect(page.getByText(/завершён · Причина остановки/)).toBeVisible()
+  await expect(page.getByText(/завершён, Причина остановки/)).toBeVisible()
   await expect(composer).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Отправить' })).toBeVisible()
 

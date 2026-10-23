@@ -171,7 +171,7 @@ describe('bounded catalog paging', () => {
       response(params.page ?? 1),
     )
     const { container } = render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 84 · на странице 12 · всего найдено 1000')
+    await screen.findByText('Страница 1 из 84, на странице 12, всего найдено 1000')
     expect(catalog).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 1, pageSize: 12 }), expect.any(AbortSignal),
     )
@@ -191,7 +191,7 @@ describe('bounded catalog paging', () => {
     const pager = screen.getByRole('navigation', { name: 'Страницы каталога' })
     for (let page = 2; page <= 3; page += 1) {
       fireEvent.click(within(pager).getByRole('button', { name: 'Следующая страница' }))
-      await screen.findByText(`Страница ${page} из 3 · на странице ${page === 3 ? 1 : 12} · всего найдено 25`)
+      await screen.findByText(`Страница ${page} из 3, на странице ${page === 3 ? 1 : 12}, всего найдено 25`)
     }
     fireEvent.click(screen.getByRole('button', { name: 'Добавить к сравнению synthetic-0024:q4' }))
     const compare = screen.getByRole('button', { name: 'Сравнить точные варианты (2/2)' })
@@ -220,11 +220,11 @@ describe('bounded catalog paging', () => {
       response(params.page ?? 1, totalItems),
     )
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 2 · на странице 12 · всего найдено 13')
+    await screen.findByText('Страница 1 из 2, на странице 12, всего найдено 13')
     totalItems = 5
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
     expect(await screen.findByText('Эта страница каталога больше недоступна')).toBeTruthy()
-    expect(screen.getByText('Страница 2 из 1 · на странице 0 · всего найдено 5')).toBeTruthy()
+    expect(screen.getByText('Страница 2 из 1, на странице 0, всего найдено 5')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Вернуться на первую страницу' })).toBeTruthy()
   })
 
@@ -241,15 +241,15 @@ describe('bounded catalog paging', () => {
     render(<LauncherPage health={HEALTH} />)
     await waitFor(() => expect(requests).toHaveLength(1))
     requests[0]!.resolve(response(1, 25))
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
 
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
     await waitFor(() => expect(requests).toHaveLength(2))
     expect(requests[0]!.signal.aborted).toBe(true)
     requests[0]!.resolve(response(1, 1))
     requests[1]!.resolve(response(2, 25))
-    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
-    expect(screen.queryByText('Страница 1 из 1 · на странице 1 · всего найдено 1')).toBeNull()
+    await screen.findByText('Страница 2 из 3, на странице 12, всего найдено 25')
+    expect(screen.queryByText('Страница 1 из 1, на странице 1, всего найдено 1')).toBeNull()
   })
 
   it('keeps the real exact pull owned while page navigation is blocked', async () => {
@@ -293,9 +293,9 @@ describe('bounded catalog paging', () => {
     const digest = 'sha256:exact-0012'
     const { catalog, releaseRefresh } = mockInstallFlow(target, digest)
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
-    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 2 из 3, на странице 12, всего найдено 25')
     const variant = screen.getAllByRole('button', { name: 'Выбрать вариант q4' })[0]!
     fireEvent.click(variant)
     expect(screen.getByText(target)).toBeTruthy()
@@ -316,7 +316,7 @@ describe('bounded catalog paging', () => {
     await waitFor(() => expect(screen.getAllByText(digest)).toHaveLength(2))
     expect(variant.isConnected).toBe(true)
     expect(within(dialog).getByText(digest)).toBeTruthy()
-    expect(screen.getByText('Страница 2 из 3 · на странице 12 · всего найдено 25')).toBeTruthy()
+    expect(screen.getByText('Страница 2 из 3, на странице 12, всего найдено 25')).toBeTruthy()
     expect(catalog.mock.calls.slice(callsBeforeInstall).map(([params]) => params.page))
       .toEqual([2])
 
@@ -333,7 +333,7 @@ describe('bounded catalog paging', () => {
     const digest = 'sha256:exact-0000'
     const { releaseRefresh } = mockInstallFlow(target, digest)
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
     fireEvent.click(screen.getByRole('button', { name: 'Добавить к сравнению synthetic-0001:q4' }))
     expect(screen.getByRole('button', { name: 'Сравнить точные варианты (1/2)' })).toBeTruthy()
     const variant = screen.getAllByRole('button', { name: 'Выбрать вариант q4' })[0]!
@@ -389,7 +389,7 @@ describe('bounded catalog paging', () => {
     // hidden: the AddFromOllama dialog marks the page behind it aria-hidden.
     const carousel = () => screen.queryByRole('group', { name: 'Каталог моделей', hidden: true })
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
 
     // A new query is loading: the old cards are replaced by the skeleton.
     let release!: () => void
@@ -435,14 +435,14 @@ describe('bounded catalog paging', () => {
     }
     const carousel = () => screen.queryByRole('group', { name: 'Каталог моделей' })
     render(<LauncherPage health={HEALTH} />)
-    await screen.findByText('Страница 1 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 1 из 3, на странице 12, всего найдено 25')
     expect(carousel()).not.toBeNull()
 
     let release = hold()
     fireEvent.click(screen.getByRole('button', { name: 'Следующая страница' }))
     await waitFor(() => expect(carousel()).toBeNull())
     release()
-    await screen.findByText('Страница 2 из 3 · на странице 12 · всего найдено 25')
+    await screen.findByText('Страница 2 из 3, на странице 12, всего найдено 25')
     expect(carousel()).not.toBeNull()
 
     release = hold()

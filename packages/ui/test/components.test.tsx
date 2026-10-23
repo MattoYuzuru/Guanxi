@@ -70,17 +70,17 @@ describe('patterns', () => {
 
   it('renders an unknown value as Unknown with its source, never as zero', () => {
     const { container } = render(<ProvenanceLabel source="model metadata" observedAt={null} />)
-    expect(container.textContent).toBe('Unknown · would come from model metadata')
+    expect(container.textContent).toBe('Unknown (would come from model metadata)')
     expect(container.textContent).not.toMatch(/\b0\b/)
   })
 
   it('shows source and age, switches to "as of" when old, and marks estimates', () => {
     const now = '2026-10-20T14:08:00.000Z'
     const fresh = render(<ProvenanceLabel source="ollama /api/ps" observedAt="2026-10-20T14:07:48.000Z" now={now} />)
-    expect(fresh.container.textContent).toBe('ollama /api/ps · 12 sec. ago')
+    expect(fresh.container.textContent).toBe('ollama /api/ps 12 sec. ago')
     fresh.unmount()
     const aged = render(<ProvenanceLabel source="node" observedAt="2026-10-20T14:02:00.000Z" now={now} estimated />)
-    expect(aged.container.textContent).toMatch(/^node · as of .+, 6 min\. agoestimated$/)
+    expect(aged.container.textContent).toMatch(/^node as of .+, 6 min\. agoestimated$/)
     expect(aged.container.querySelector('[data-state="aged"]')).not.toBeNull()
   })
 })

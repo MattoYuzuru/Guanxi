@@ -685,7 +685,7 @@ function HuggingFaceDownloadControl({
           <div className="mt-2">
             {ratio === null ? (
               <p className="text-2xs text-secondary">
-                {formatBytes(state.completedBytes)} · {translate('hf.download.totalUnknown')}
+                {formatBytes(state.completedBytes)}, {translate('hf.download.totalUnknown')}
               </p>
             ) : (
               <>
@@ -728,7 +728,7 @@ function HuggingFaceDownloadControl({
       {state.kind === 'completed' ? (
         <div className="mt-1 min-w-0 text-2xs text-secondary">
           <p>
-            {formatBytes(state.provenance.observedSizeBytes)} · {translate('hf.download.format')}{' '}
+            {formatBytes(state.provenance.observedSizeBytes)}, {translate('hf.download.format')}{' '}
             v{state.provenance.format.version}
           </p>
           <p className="mt-1 min-w-0 break-all font-mono">
@@ -741,7 +741,7 @@ function HuggingFaceDownloadControl({
           </p>
           <p className="mt-1">
             {translate('hf.repository.license')}: {licenseStateLabel(state.provenance.license)}
-            {' · '}
+            {', '}
             {translate('hf.repository.gated')}: {gatedStateLabel(state.provenance.gated)}
           </p>
           <p className="mt-1 min-w-0 break-all font-mono">
@@ -961,7 +961,7 @@ export function RepositoryCard({
           </p>
           <p className="mt-0.5 text-2xs text-secondary">
             {translate('hf.repository.source')}: {translate('hf.repository.source.value')}
-            {' · '}
+            {', '}
             {translate('hf.repository.observed')}: {formatDateTime(repository.observedAt)}
           </p>
         </div>
@@ -1085,20 +1085,20 @@ export function RepositoryCard({
                 {translate('hf.select.size')}:{' '}
                 {state.result.selection.sizeBytes === null
                   ? translate('hf.repository.files.size.unknown')
-                  : `${formatBytes(state.result.selection.sizeBytes)} · ${translate('hf.select.size.source')}`}
+                  : `${formatBytes(state.result.selection.sizeBytes)}, ${translate('hf.select.size.source')}`}
               </p>
               <div className="mt-2">
                 {state.result.fit.state === 'calculated' ? (
                   <div className="text-2xs">
                     <p className="font-medium">
                       {translate(SELECTION_FIT_LEVEL_KEYS[state.result.fit.verdict.level])}
-                      {' · '}
+                      {', '}
                       {formatUtilization(state.result.fit.verdict.utilization)}
                     </p>
                     <p className="mt-0.5 text-secondary">
                       {formatBytes(state.result.fit.verdict.requiredBytes)} /{' '}
                       {formatBytes(state.result.fit.verdict.usableBytes)}
-                      {' · '}
+                      {', '}
                       {translate('hf.select.fit.context')}{' '}
                       {formatContextLength(state.result.fit.contextLength)}
                     </p>
@@ -1108,12 +1108,12 @@ export function RepositoryCard({
                     <p className="mt-1 text-secondary">
                       {translate('hf.select.fit.hardware')}:{' '}
                       {translate('hf.select.fit.hardware.source')}
-                      {' · '}
+                      {', '}
                       {translate('hf.repository.observed')}:{' '}
                       {formatDateTime(state.result.fit.hardware.observedAt)}
-                      {' · '}
+                      {', '}
                       {translate('hf.select.fit.hardware.confidence')}
-                      {' · '}
+                      {', '}
                       {translate('hf.select.fit.calculated')}:{' '}
                       {formatDateTime(state.result.fit.calculatedAt)}
                     </p>
@@ -1128,7 +1128,7 @@ export function RepositoryCard({
               </div>
               <p className="mt-2 text-2xs text-secondary">
                 {translate('hf.repository.gated')}: {gatedLabel(state.result.repository)}
-                {' · '}
+                {', '}
                 {translate('hf.repository.license')}: {licenseLabel(state.result.repository)}
               </p>
               {state.result.repository.license.state === 'declared' ? (

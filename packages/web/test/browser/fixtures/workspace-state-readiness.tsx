@@ -31,8 +31,8 @@ function Fixture() {
     <EmptyState title={t('story.empty.title')} icon={<svg aria-label={t('story.iconButton.settings')} viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" /></svg>}
       action={<Button onClick={() => setEmptyActions(n => n + 1)}>{t('story.empty.action')}</Button>} />
     <ErrorState title={t('story.workspace.error')} source="GET /api/layouts" occurredAt="2026-10-22T12:00:00.000Z"
-      timeMeaning="observed" details={details} action={<Button loading={pending} loadingLabel={t('story.error.retrying')}
-        onClick={() => { setPending(true); setRetries(n => n + 1) }}>{t('story.error.retry')}</Button>} />
+      timeMeaning="observed" details={details} action={<Button loading={pending} loadingLabel={t('story.error.acting')}
+        onClick={() => { setPending(true); setRetries(n => n + 1) }}>{t('story.error.action')}</Button>} />
     <Button data-testid="change-details" onClick={() => { setDetails('source=fixture-geometry\nstatus=502'); setPending(false) }}>{t('story.button.label')}</Button>
     <output data-testid="value">{value}</output><output data-testid="changes">{changes}</output>
     <output data-testid="empty-actions">{emptyActions}</output><output data-testid="retries">{retries}</output>

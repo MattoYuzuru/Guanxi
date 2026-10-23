@@ -220,11 +220,11 @@ function ProbeResult({ evidence }: { evidence: CompletionProbeEvidence }) {
       <p className="mt-1">{probeReason(evidence)}</p>
       <p className="mt-1 min-w-0 break-all font-mono text-muted">
         {evidence.basis.state === 'exact'
-          ? `${translate('models.probe.identity.reference')}: ${evidence.basis.normalizedModelReference} · ${translate('models.probe.identity.digest')}: ${evidence.basis.artifactDigest} · ${translate('models.probe.identity.runtime')}: Ollama ${evidence.basis.runtimeVersion} · ${translate('models.probe.identity.context')}: ${formatContextLength(evidence.basis.contextLength)} · ${translate('models.probe.identity.definition')}: v${evidence.basis.probeDefinitionVersion}`
+          ? `${translate('models.probe.identity.reference')}: ${evidence.basis.normalizedModelReference}, ${translate('models.probe.identity.digest')}: ${evidence.basis.artifactDigest}, ${translate('models.probe.identity.runtime')}: Ollama ${evidence.basis.runtimeVersion}, ${translate('models.probe.identity.context')}: ${formatContextLength(evidence.basis.contextLength)}, ${translate('models.probe.identity.definition')}: v${evidence.basis.probeDefinitionVersion}`
           : translate('models.probe.identity.unknown')}
       </p>
       <p className="mt-1 text-muted">
-        {translate('models.probe.observed')} {formatDateTime(evidence.observedAt)} ·{' '}
+        {translate('models.probe.observed')} {formatDateTime(evidence.observedAt)},{' '}
         {translate('models.probe.confidence')} {probeConfidence(evidence.confidence)}
       </p>
     </>

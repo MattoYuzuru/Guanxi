@@ -444,7 +444,7 @@ export function LauncherPage({ health }: { health: Health }) {
                   ? `${translate('catalog.empty.filtered.description')} ${[
                       query ? `${translate('catalog.search.summary')}: ${query}` : '',
                       ...filterSummary(filters),
-                    ].filter(Boolean).join(' · ')}`
+                    ].filter(Boolean).join(', ')}`
                   : undefined
               }
               action={
@@ -688,11 +688,11 @@ export function CatalogSourceNotice({
         {source && (
           <p className="mt-1 text-2xs">
             {source.source}
-            {' · '}
+            {', '}
             {translate('catalog.source.observedAt')}: {formatDateTime(source.observedAt)}
             {source.fetchedAt && (
               <>
-                {' · '}
+                {', '}
                 {translate('catalog.source.fetchedAt')}: {formatDateTime(source.fetchedAt)}
               </>
             )}

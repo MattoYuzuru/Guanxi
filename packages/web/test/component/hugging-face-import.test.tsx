@@ -158,7 +158,7 @@ describe('explicit Hugging Face staged import control', () => {
     expect(await screen.findByText('Установлено и проверено runtime')).toBeTruthy()
     expect(screen.getAllByText(/Установка наблюдалась в новом локальном sample/u)).toHaveLength(1)
     expect(screen.getAllByText(/Фиксированный completion probe получил/u)).toHaveLength(1)
-    expect(screen.getAllByText(/owner\/model:latest · manifest-digest/u)).toHaveLength(1)
+    expect(screen.getAllByText(/owner\/model:latest, manifest-digest/u)).toHaveLength(1)
     expect(onInstalled).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: 'Проверить локальный импорт' })).toBeNull()
     expect(screen.queryAllByRole('button', { name: /Повторить/u })).toHaveLength(0)

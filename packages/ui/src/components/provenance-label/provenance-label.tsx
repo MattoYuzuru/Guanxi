@@ -1,5 +1,5 @@
 /*
- * Guanxi pattern. "source · age" for every number (principle 1, Truth over confidence):
+ * Guanxi pattern. "source, age" for every number (principle 1, Truth over confidence):
  * unknown renders as Unknown plus the source that would answer it, never as 0 or a blank.
  */
 import type { ComponentProps } from 'react'
@@ -85,8 +85,7 @@ export function ProvenanceLabel({
     const ageText = state === 'aged' ? t('ui.provenance.asOf', { time, age }) : age
     body = (
       <>
-        {sourceNode}
-        <span aria-hidden="true"> · </span>
+        {sourceNode}{' '}
         <time dateTime={observed.toISOString()} title={observed.toISOString()}>
           {ageText}
         </time>
