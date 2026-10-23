@@ -87,7 +87,7 @@ export function NewSessionScreen() {
 
   const needs: LocaleKey[] = []
   if (choices.status === 'loading') needs.push('newSession.need.choices')
-  else if (data === null) needs.push('newSession.need.choices')
+  else if (data === null) needs.push('newSession.need.choicesRecovering')
   else {
     if (!projectId) needs.push('newSession.need.project')
     if (!connectionId) needs.push('newSession.need.connection')
