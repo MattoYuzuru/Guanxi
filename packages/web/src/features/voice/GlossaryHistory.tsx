@@ -40,7 +40,7 @@ export function GlossaryHistory({ entry, panelId }: { entry: StoredGlossaryEntry
   const { revisions, failure, loading } = state
   const ordered = revisions === null ? null : [...revisions].sort((a, b) => b.revision - a.revision)
   return <section id={panelId} aria-labelledby={`${panelId}-title`} aria-busy={loading} className="flex min-w-0 flex-col gap-2 rounded-control border border-divider bg-inset p-3" data-testid="glossary-history">
-    <h4 id={`${panelId}-title`} className="text-14 font-heading">{t('voiceGlossary.history.title', { name: entry.entry.canonical })}</h4>
+    <h4 id={`${panelId}-title`} className="min-w-0 break-words text-14 font-heading">{t('voiceGlossary.history.title', { name: entry.entry.canonical })}</h4>
     {ordered === null && loading && <p role="status" className="text-12 text-secondary">{t('voiceGlossary.history.loading')}</p>}
     {failure && <ErrorState title={t('voiceGlossary.history.error')} source={t('voiceGlossary.source.history')} occurredAt={failure.at} timeMeaning="observed"
       details={failure.code} action={<Button size="sm" onClick={() => setAttempt((value) => value + 1)} loading={loading}>{t('voiceGlossary.retry')}</Button>} />}
