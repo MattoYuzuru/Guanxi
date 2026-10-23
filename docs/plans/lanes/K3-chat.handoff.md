@@ -1,7 +1,8 @@
 # K3-chat review fixes — handoff
 
-Status: implemented with fake-provider regressions; final gates in progress.
+Status: locally validated; all requested gates passed; independent review closed.
 Branch: `claude/chat-provider-models`. Review-fix base: `1ee33db3`.
+Final tested code candidate: `8a14c9d64145724a1f36626eeb96ca80d308c656`; this final handoff is a docs-only follow-up.
 No push, merge, real dotenv, owner data, live provider/model calls or remote-host access.
 
 ## Scope and commits
@@ -34,8 +35,9 @@ production workaround. No assertion was weakened to turn a failure green.
 ## New / regression envelope
 
 **New:** 23 server/CLI cases, 4 web component cases and 1 mocked browser case.
-**Affected regression envelope:** 130 server/CLI (23 new / 107 existing), 54 web components
-(4 new / 50 existing), plus 9 existing operational-relay cases after the gate repair below. Focused runs already cover generated credentials, temporary SQLite
+**Affected envelope:** 139 server/CLI (23 new / 116 existing), 54 web components
+(4 new / 50 existing). The 139 include 9 existing operational-relay cases after the gate repair
+below. All passed, zero skips. The separate browser envelope passed 225 cases: 1 new / 224 existing. Focused runs already cover generated credentials, temporary SQLite
 and fake keychains/transports only. The DNS pin test talks to its own ephemeral loopback HTTP
 fixture, preserving Host without another DNS lookup. It does not call a provider.
 
@@ -50,7 +52,34 @@ Ollama down and no local resource decision; a mocked browser case checks the sam
 ## Gates
 
 Node 26.9.0 on the current Mac, lane ports 5236/4436, isolated `.lane-data`.
-Final results and locked receipts will be recorded after execution.
+
+| Gate | Final result |
+| --- | --- |
+| `npm run typecheck` | pass, all workspaces; final HTTP assertion delta also passed `npx tsc --noEmit -p packages/server` |
+| `npm run lint:md` | pass, Markdown and links, repeated after final handoff |
+| `npm run check:licenses` | pass, 675 packages, zero not allowed |
+| `npm run lint:js` | pass, zero errors, four pre-existing noInlineConfig warnings |
+| Affected server/CLI tests | 139/139 passed, no skips |
+| Affected web component tests | 54/54 passed, no skips |
+| `npm run ui:check` | pass directly after token correction and inside final full gate |
+| Locked `npm run test` | pass; core 2,738 passed / 2 expected Linux-only skips; web components 659 passed; all other phases passed |
+| Locked `npm run test:web:browser` | 225/225 mocked Chromium cases passed, no skips |
+
+Full gate includes UI fast gates/self-tests, codemods, server/CLI, kernel, web components, UI and
+bench. The core envelope contains 2,740 cases: 23 new / 2,717 existing (including the two
+platform skips). Those skips are Linux worker nice/IO priority and Linux proxy long-TMPDIR
+scratch; no K3-chat test is skipped. The full web component envelope is 4 new / 655 existing.
+
+Final locked receipts (each `ok: true`, exit 0, no timeout, clean candidate before/after and
+`source_changed: false`):
+
+```text
+/Users/yuzuru/.local/state/agent-dev/check-xjqctzxc/result.json
+/Users/yuzuru/.local/state/agent-dev/check-e09y5hkh/result.json
+```
+
+The browser gate took 4.3 minutes. It uses mocked APIs without Ollama, GPU or paid provider
+access; it is not production validation. No build gate was requested or claimed in this round.
 
 Required order: `typecheck`, `lint:md`, `check:licenses`, `lint:js`, affected tests, then:
 
@@ -74,6 +103,9 @@ Inspector follow-up `c636e2e4` removes a fabricated percentage and renders provi
 or Unknown in both facts and timeline; `adf2566c` asserts the exact unknown observation note.
 Reviewer closed this and the contract-validated browser fixture through `016f4770`.
 The G5 fix below was also independently checked: existing semantic token, no suppression growth.
+Reviewer confirmed `ac42360b` keeps every relay assertion and timeout unchanged, and confirmed
+`8a14c9d6` exercises HTTP refusal before registry creation. No outstanding review findings.
+Heavy gates were executed by the author after review; no source changed while they ran.
 Heavy gates and live behavior were outside that review.
 
 ## Gate repairs and failed attempts
@@ -91,7 +123,7 @@ Heavy gates and live behavior were outside that review.
   correctly described that path and the injected removal failure never ran. Independent
   review confirmed this exact ordering. A temporary 50 ms pre-allocation scheduling probe
   reproduced the same failure, then passed with the fix; the probe was removed.
-  The separate test fix waits for `runtime/scratch`, created after the ownership marker,
+  Separate test fix `ac42360b` waits for `runtime/scratch`, created after the ownership marker,
   in both branches. Every outcome/count assertion and timeout stays unchanged; no relay
   production code changes. Its complete 9-case file passes, zero skips. This is an
   investigated synchronization defect, not a known-flake exemption.
@@ -133,5 +165,6 @@ UI: existing ChatPage, ContextPanel/ContextChip and InspectorPage only; no new c
 CSS, review-status change or suppression allowance. Catalog search found ProvenanceLabel draft;
 existing semantic text is retained. Browser gate is mocked Chromium, not a live runtime check.
 
-Next: finish the current review-fix gates and evidence, then hand off to the integrator. Do not
-merge or push. Later K3-aware compaction/reasoning and prompt benchmarking remain separate work.
+Next: the integrator reviews and incorporates this lane, then runs its own integration gates.
+No merge or push was performed here. Later K3-aware compaction/reasoning and prompt
+benchmarking remain separate work; Q-K3-chat stays open until its ADR-0025/B1 result.
