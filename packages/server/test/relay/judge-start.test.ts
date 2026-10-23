@@ -24,7 +24,7 @@ const exec = promisify(execFile), sha = (text: string) => createHash('sha256').u
 const judgePrompt = (prompt: string) => prompt.startsWith(`<|user|>\n${JUDGE_PROMPT}`)
 
 /** The remote relay of `remote-relay.test.ts`, with a judge source on the start host. */
-async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState>; judge?: () => RelayStartJudgeSource | undefined } = {}) {
+async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { hostClockSkew?: number; fake?: Partial<FakeLlamaState>; judge?: () => RelayStartJudgeSource | undefined } = {}) {
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const parent = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'judge-start-')))
   const source = join(parent, 'project'), checkouts = join(parent, 'checkouts')
@@ -39,7 +39,7 @@ async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOpt
   const input: RelayStartInput = { key: 'remote-judge-key', projectId: 'project', connectionId: f.homeConnection.id, model: 'fixture', consent: 'full-access', domains: [],
     plan: { revision: 'r1', base, goal: 'Read the fixture and run acceptance.',
       items: [{ id: 'one', title: 'fixture', dependsOn: [], acceptance: ['/usr/bin/true'], protectedPaths: [] }], protectedPaths: [] }, caps }
-  const host = { runtime: f.source, reserves, clock: () => f.home.time, nodePorts: () => [4432, 5232],
+  const host = { runtime: f.source, reserves, clock: () => f.home.time + (options.hostClockSkew ?? 0), nodePorts: () => [4432, 5232],
     project: async (id: string) => ({ projectId: id, roots: [source], source: 'fixture project/workspace store', observedAt: f.home.time }),
     allocate: (async (policy, signal) => { allocations++; return allocator.allocate(policy, signal) }) as NonNullable<ConstructorParameters<typeof RelayStarts>[6]['allocate']>,
     ...(options.judge ? { judge: options.judge() } : {}) }
@@ -289,4 +289,11 @@ test('an asynchronous judge source that rejects is refused and its rejection is 
   const child = await exec(process.execPath, [new URL('./judge-start-reject-child.ts', import.meta.url).pathname])
   assert.equal(child.stdout, 'refused: judge_config_invalid\nalive\n')
   assert.equal(child.stderr, '', 'no unhandled-rejection report, and none of the source\'s own text')
+})
+
+test('the judge context carries the relay store\'s clock, the one the ledger and the signals deadline are in', async t => {
+  const seen: number[] = []
+  const f = await fixture(t, { hostClockSkew: 7, judge: () => context => { seen.push(context.clock()); return undefined } })
+  await f.starts.start(f.input); assert.equal((await f.finish()).status, 'completed')
+  assert.deepEqual(seen, [f.relayStore.clock()], 'not the start host\'s own clock, which may be kept apart from the store\'s')
 })

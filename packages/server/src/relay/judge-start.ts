@@ -21,7 +21,7 @@ export interface RelayStartJudgeContext {
   readonly meter: RuntimeMeter
   /** The runtime and counter facts admitted for this start (the same ones persisted with it). */
   readonly runtime: Readonly<{ fact: RelayRuntimeFact; meterFact: RelayMeterFact }>
-  /** The start host's clock, in the same units as the relay store's. */
+  /** The relay store's clock: the ledger, the wall deadline and the judge's observations are all in it. */
   readonly clock: () => number
   readonly connections: Connections
   readonly scrubber: EgressScrubber

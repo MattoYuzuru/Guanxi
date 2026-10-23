@@ -181,7 +181,7 @@ export class RelayStarts {
       // R3: the judge is admitted, and the executor (which opens the additive judge ledger) is built, before the signed
       // pin or the run exist, so a judge that cannot be admitted refuses the start with nothing to undo.
       const judge = prepareStartJudge(this.host.judge, { input, policy, meter, runtime: { fact: runtime.fact, meterFact: runtime.meterFact },
-        clock: this.clock, connections: this.connections, scrubber: this.scrubber })
+        clock: this.store.clock, connections: this.connections, scrubber: this.scrubber })
       const executor = new RelayExecutor(this.store, new ConnectionRelayModel(this.connections, input.connectionId, input.model, meter), workspace,
         policy.reserves, this.scrubber, this.host.limits as RelayLimits, undefined, judge?.signals, judge?.cascade)
       // A remote executor needs the relay run pinned by a signed message before it will answer for it. That is a remote
