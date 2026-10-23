@@ -1,7 +1,7 @@
 import { LocalApiError, LocalApiShapeError } from '../../src/lib/local-api.ts'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  InboxStore, READ_TIMEOUT_MS, classifyFailure, outcomeUnknown, unreadSummary, visibleIds, type InboxApi,
+  ACTION_TIMEOUT_MS, InboxStore, READ_TIMEOUT_MS, classifyFailure, outcomeUnknown, unreadSummary, visibleIds, type InboxApi,
 } from '../../src/features/notifications/inbox-store.ts'
 import { T0, notification, notificationId } from '../fixtures/notifications-server.ts'
 
@@ -276,5 +276,74 @@ describe('inbox store', () => {
     const result = await store.execute(notificationId(1), { action: 'open', args: {} })
     expect(result.ok).toBe(false)
     expect(store.getSnapshot().ops[notificationId(1)]?.status).toBe('failed')
+  })
+
+  it('starts no follow-up read after the store was disposed during a mutation, and works again after resume', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const list = vi.fn(async () => page([notification(1)]))
+    const markRead = vi.fn(async () => { await gate; return notification(1, { state: 'read', updatedAt: T0 + 999_999_999 }) })
+    const store = new InboxStore(fakeApi({ list: list as unknown as InboxApi['list'], markRead }))
+    await store.refresh()
+    const before = list.mock.calls.length
+    const done = store.markRead(notificationId(1))
+    store.dispose()
+    release()
+    await done
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(list.mock.calls.length).toBe(before)
+    store.resume()
+    await store.refresh()
+    expect(list.mock.calls.length).toBe(before + 1)
+  })
+
+  it('a posted action that never answers is an unknown outcome: it keeps the key and the next try reuses it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const keys: string[] = []
+      const execute = vi.fn((_id: string, _body: unknown, key: string, signal?: AbortSignal) => new Promise<never>((_resolve, reject) => {
+        keys.push(key)
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      }))
+      let n = 0
+      const store = new InboxStore(fakeApi({ execute: execute as unknown as InboxApi['execute'] }), { newKey: () => `key-${String(++n).padStart(6, '0')}` })
+      const first = store.execute(notificationId(1), { action: 'pause_runs', args: {} })
+      await vi.advanceTimersByTimeAsync(ACTION_TIMEOUT_MS + 1)
+      expect(await first).toMatchObject({ ok: false, failure: { kind: 'offline', code: 'timeout' } })
+      expect(store.getSnapshot().ops[notificationId(1)]).toMatchObject({ status: 'failed', keepsKey: true })
+      const second = store.execute(notificationId(1), { action: 'pause_runs', args: {} })
+      await vi.advanceTimersByTimeAsync(ACTION_TIMEOUT_MS + 1)
+      await second
+      expect(keys).toEqual(['key-000001', 'key-000001'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('forgets the kept keys of a notification once it reads back as acted', async () => {
+    let row = notification(1)
+    const keys: string[] = []
+    const execute = vi.fn(async (_id: string, _body: unknown, key: string) => { keys.push(key); throw new TypeError('Failed to fetch') })
+    let n = 0
+    const store = new InboxStore(fakeApi({ list: vi.fn(async () => page([row])), execute: execute as unknown as InboxApi['execute'] }), { newKey: () => `key-${String(++n).padStart(6, '0')}` })
+    await store.refresh()
+    await store.execute(notificationId(1), { action: 'pause_runs', args: {} })
+    store.dismissOp(notificationId(1))
+    row = notification(1, { state: 'acted', updatedAt: T0 + 999_999_999 })
+    await store.refresh()
+    await store.execute(notificationId(1), { action: 'pause_runs', args: {} })
+    expect(keys).toEqual(['key-000001', 'key-000002'])
+  })
+
+  it('classifies an empty 5xx and a gateway status as an unreachable node', () => {
+    const at = (status: number, code: string) => classifyFailure(new LocalApiError(status, code as 'internal_error'), 0)
+    expect(at(500, 'unexpected_response')).toMatchObject({ kind: 'offline' })
+    expect(at(503, 'unexpected_response')).toMatchObject({ kind: 'offline' })
+    expect(at(502, 'unexpected_response')).toMatchObject({ kind: 'offline' })
+    expect(at(502, 'port_failed')).toMatchObject({ kind: 'server', code: 'port_failed' })
+    expect(at(504, 'unexpected_response')).toMatchObject({ kind: 'offline' })
+    expect(at(500, 'internal_error')).toMatchObject({ kind: 'server', code: 'internal_error' })
+    expect(at(503, 'notifications_unavailable')).toMatchObject({ kind: 'server' })
+    expect(at(404, 'unexpected_response')).toMatchObject({ kind: 'server', code: 'unexpected_response' })
   })
 })

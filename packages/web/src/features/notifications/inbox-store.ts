@@ -28,7 +28,7 @@ const STATES: Readonly<Record<ListFilter, readonly NotificationState[] | undefin
   unread: ['unread'], all: undefined, read: ['read'], snoozed: ['snoozed'], acted: ['acted'],
 }
 
-export type FailureCode = NotificationErrorCode | 'offline' | 'contract_mismatch' | 'unexpected_response'
+export type FailureCode = NotificationErrorCode | 'offline' | 'timeout' | 'contract_mismatch' | 'unexpected_response'
 export interface Failure {
   /** `offline`: the request never got an answer. `server`: the node answered with a `{ code }`. */
   kind: 'offline' | 'server' | 'contract'
@@ -39,7 +39,13 @@ export interface Failure {
 }
 
 export function classifyFailure(error: unknown, at: number): Failure {
-  if (error instanceof LocalApiError) return { kind: 'server', code: error.code as FailureCode, status: error.status, at }
+  if (error instanceof LocalApiError) {
+    // Behind a dev proxy or gateway a dead node answers with an empty 5xx (or an HTML 502/504) instead
+    // of the node's `{ code }`; that is "no answer from the node", the same as a refused connection.
+    // A 5xx that does carry a `{ code }` (503 notifications_unavailable, 502 port_failed) is the node.
+    if (error.status >= 500 && error.code === 'unexpected_response') return { kind: 'offline', code: 'offline', status: error.status, at }
+    return { kind: 'server', code: error.code as FailureCode, status: error.status, at }
+  }
   // `fetch` rejects with a TypeError when no answer arrived at all.
   if (error instanceof TypeError) return { kind: 'offline', code: 'offline', status: null, at }
   if (error instanceof LocalApiShapeError) return { kind: 'contract', code: 'contract_mismatch', status: null, at }
@@ -62,6 +68,8 @@ export const outcomeUnknown = (failure: Failure): boolean =>
 
 /** A read that gets no answer in this long is reported as an unreachable node. */
 export const READ_TIMEOUT_MS = 15_000
+/** An action that gets no answer in this long has an unknown outcome; its key is kept for the retry. */
+export const ACTION_TIMEOUT_MS = 30_000
 /** Refusals that mean this copy of the row is out of date. */
 const ROW_CHANGED_CODES: ReadonlySet<FailureCode> = new Set<FailureCode>(['notification_acted', 'action_not_offered', 'notification_not_found'])
 
@@ -185,6 +193,7 @@ export class InboxStore {
   /** Lists whose in-flight read began before a change and must be read once more. */
   private readonly reread = new Set<ListFilter>()
   private active: ListFilter | null = null
+  private disposed = false
   private readonly now: () => number
   private readonly newKey: () => string
 
@@ -202,12 +211,18 @@ export class InboxStore {
 
   /** Cancels in-flight reads; the store stays usable (a remount can read again). */
   dispose(): void {
+    this.disposed = true
     for (const controller of this.controllers) controller.abort()
     this.controllers.clear()
     this.flights.clear()
     const lists = { ...this.snapshot.lists }
     for (const filter of FILTERS) lists[filter] = { ...lists[filter], loading: false, loadingMore: false }
     this.set({ lists, availability: { ...this.snapshot.availability, loading: false } })
+  }
+
+  /** Undoes `dispose` for a remount (StrictMode runs an effect's cleanup and setup again). */
+  resume(): void {
+    this.disposed = false
   }
 
   private set(patch: Partial<InboxSnapshot>): void {
@@ -228,6 +243,15 @@ export class InboxStore {
 
   private putRow(row: NotificationWire): void {
     this.set({ rows: mergeRows(this.snapshot.rows, [row]) })
+    this.pruneIntents()
+  }
+
+  /** An acted notification takes no further action, so keys kept for retries of its actions are dead. */
+  private pruneIntents(): void {
+    for (const intent of [...this.intents.keys()]) {
+      const id = intent.slice(0, intent.indexOf('\u0000'))
+      if (this.snapshot.rows[id]?.state === 'acted') this.intents.delete(intent)
+    }
   }
 
   /* ───────────────────────────────── reads ──────────────────────────────── */
@@ -251,6 +275,8 @@ export class InboxStore {
 
   /** After a change this client made: every list already loaded is read again, even if a read is in flight. */
   private async refreshAfterChange(): Promise<void> {
+    // A change that finished after the page went away must not start reads nobody will use.
+    if (this.disposed) return
     const reads: Promise<void>[] = []
     for (const filter of FILTERS) {
       if (filter === 'unread' || filter === this.active || this.snapshot.lists[filter].loaded) reads.push(this.loadHead(filter, true))
@@ -278,10 +304,10 @@ export class InboxStore {
   }
 
   /** An abort signal that also fires after READ_TIMEOUT_MS; `timedOut()` tells the two apart. */
-  private timed(): { controller: AbortController; timedOut: () => boolean; done: () => void } {
+  private timed(ms = READ_TIMEOUT_MS): { controller: AbortController; timedOut: () => boolean; done: () => void } {
     const controller = new AbortController()
     let expired = false
-    const timer = setTimeout(() => { expired = true; controller.abort() }, READ_TIMEOUT_MS)
+    const timer = setTimeout(() => { expired = true; controller.abort() }, ms)
     this.controllers.add(controller)
     return { controller, timedOut: () => expired, done: () => { clearTimeout(timer); this.controllers.delete(controller) } }
   }
@@ -346,6 +372,7 @@ export class InboxStore {
         [filter]: { ...slice, ids, nextCursor: cursor, loaded: true, loading: false, observedAt: this.now(), failure: null },
       },
     })
+    this.pruneIntents()
   }
 
   async loadMore(filter: ListFilter): Promise<void> {
@@ -373,6 +400,7 @@ export class InboxStore {
           },
         },
       })
+      this.pruneIntents()
     } catch (error) {
       if (controller.signal.aborted && !timedOut()) return
       this.patchSlice(filter, { loadingMore: false, moreFailure: classifyFailure(timedOut() ? new TypeError('timeout') : error, this.now()) })
@@ -411,9 +439,9 @@ export class InboxStore {
     this.setOp(id, { kind, ...(action ? { action } : {}), status: 'failed', failure, keepsKey })
     if (failure.kind === 'server' && ROW_CHANGED_CODES.has(failure.code)) {
       // This copy of the row is out of date (acted elsewhere, gone): read it and the lists again.
-      void this.api.get(id).then((row) => this.putRow(row), () => undefined).then(() => this.refreshAfterChange())
+      if (!this.disposed) void this.api.get(id).then((row) => this.putRow(row), () => undefined).then(() => this.refreshAfterChange())
     }
-    if (failure.kind === 'server' && failure.code === 'not_configured') void this.loadAvailability()
+    if (failure.kind === 'server' && failure.code === 'not_configured' && !this.disposed) void this.loadAvailability()
     return { ok: false, busy: false, failure }
   }
 
@@ -453,16 +481,20 @@ export class InboxStore {
     if (!this.begin(id, 'action', action)) return { ok: false, busy: true, failure: null }
     let intent = ''
     let response
+    const timer = this.timed(ACTION_TIMEOUT_MS)
     try {
       intent = `${id}\u0000${canonical(body)}`
       const key = this.intents.get(intent) ?? this.newKey()
       this.intents.set(intent, key)
-      response = await this.api.execute(id, body, key)
+      response = await this.api.execute(id, body, key, timer.controller.signal)
     } catch (error) {
-      const failure = classifyFailure(error, this.now())
+      // No answer in time: the node may still have acted, so the outcome is unknown and the key stays.
+      const failure = timer.timedOut() ? { kind: 'offline' as const, code: 'timeout' as const, status: null, at: this.now() } : classifyFailure(error, this.now())
       const keep = outcomeUnknown(failure)
       if (!keep && intent !== '') this.intents.delete(intent)
       return this.fail(id, 'action', failure, keep, action)
+    } finally {
+      timer.done()
     }
     this.intents.delete(intent)
     if (response.status === 'failed') {
