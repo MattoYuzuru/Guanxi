@@ -14,6 +14,7 @@ import { egressScrubberPlugin } from '../../src/egress/plugin.ts'
 import type { EgressScrubber } from '../../src/egress/types.ts'
 import {
   ConnectionJudgeModel,
+  DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS,
   type InstalledJudgeAttestation
 } from '../../src/relay/judge-model.ts'
 import type { JudgeRole } from '../../src/relay/delegation-brief.ts'
@@ -496,4 +497,30 @@ test('a refresh that finds another loaded window or another model identity is a 
     await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 'second', prompt: 'fixture 2', check: () => {} }), change === 'window' ? /judge_window_unknown/ : /judge_local_unavailable/)
     assert.equal(r.requests.length, 1, 'the second evaluation never started')
   }
+})
+
+test('a stuck runtime is stopped at the sample\'s wall limit and acknowledged before the judge reports judge_sample_timeout', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true })
+  let settled = false
+  r.meter.transport.chat = async (_request: Record<string, unknown>, signal: AbortSignal, onDispatched: () => void, dispatch: { prepare(): Record<string, any> }) => {
+    dispatch.prepare(); onDispatched()
+    await new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => setTimeout(() => { settled = true; reject(signal.reason) }, 30), { once: true }))
+    throw new Error('unreachable')
+  }
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const role = { ...r.role, sampleTimeoutMs: 80 }, input = { accountId: account, role, signal: new AbortController().signal }
+  await model.admit(input)
+  const began = Date.now()
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 'stuck', prompt: 'fixture', check: () => {} }), /judge_sample_timeout/)
+  assert.ok(settled, 'the runtime\'s own cancel had settled when the judge answered')
+  assert.ok(Date.now() - began < 2000)
+  assert.equal(f.governor.snapshot().activeLease, null)
+  // The owner's cancel is not a timeout.
+  const owner = new AbortController(), pending = model.sample({ ...input, signal: owner.signal, runId: 'run', requestId: 'canceled', prompt: 'fixture 2', check: () => {} })
+  setTimeout(() => owner.abort(new Error('owner stop')), 20)
+  await assert.rejects(pending, error => !/judge_sample_timeout/.test(String(error)))
+})
+test('the default sample limit is far below a remote call\'s deadline, and a role may set its own', () => {
+  assert.ok(DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS > 0 && DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS <= 10 * 60_000)
+  assert.throws(() => new ConnectionJudgeModel(noConnections, account, { countIsExact: true, observe: transportMeter.observe, count: () => 1 } as never, noScrubber, async () => null, 1000, () => now, undefined, { sampleTimeoutMs: 0 }), /judge_config_invalid/)
 })

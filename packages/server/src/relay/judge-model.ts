@@ -3,7 +3,7 @@ import type { RuntimeMeter } from './model.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { canonical, hash } from './handoff.ts'
 import type { OllamaChatRequest } from '../ollama/types.ts'
-import { invariant } from './types.ts'
+import { invariant, RelayError } from './types.ts'
 import type { JudgeRole } from './delegation-brief.ts'
 import { observeUntilAbort } from './judge-await.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
@@ -38,6 +38,8 @@ export interface InstalledJudgeAttestation {
   confidence: 'high'
   unattended: true
 }
+/** Default wall limit of one judge sample (a role may set its own): well below the 30 minutes a remote call may take. */
+export const DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS = 5 * 60_000
 /** The one runtime that counts and serves a transport-carrying meter (R2-op llama-server, F2-d remote node). The judge
  * dispatches through that meter's own transport, so a role must name the same connection and the same model, or the
  * count would be made by one runtime and the request run on another. */
@@ -60,6 +62,7 @@ export class ConnectionJudgeModel implements JudgeModel {
   private readonly maxAgeMs: number
   private readonly now: () => number
   private readonly runtime?: JudgeRuntimeBinding
+  private readonly sampleTimeoutMs: number
   constructor(
     connections: Connections,
     ownerAccountId: string,
@@ -68,8 +71,11 @@ export class ConnectionJudgeModel implements JudgeModel {
     attest: (input: JudgeModelInput) => Promise<InstalledJudgeAttestation | null>,
     maxAgeMs: number,
     now = Date.now,
-    runtime?: JudgeRuntimeBinding
+    runtime?: JudgeRuntimeBinding,
+    options: { sampleTimeoutMs?: number } = {}
   ) {
+    this.sampleTimeoutMs = options.sampleTimeoutMs ?? DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS
+    invariant(Number.isSafeInteger(this.sampleTimeoutMs) && this.sampleTimeoutMs > 0, 'judge_config_invalid')
     this.connections = connections
     this.ownerAccountId = ownerAccountId
     this.meter = meter
@@ -175,7 +181,19 @@ export class ConnectionJudgeModel implements JudgeModel {
     })
     return true
   }
-  async sample(input: Parameters<JudgeModel['sample']>[0]): Promise<string> {
+  /** One sample is bounded in wall time. The limit aborts the same signal the owner's cancel does, so the runtime is stopped
+   * and acknowledged before this settles (a stuck executor cannot hold a cycle for its whole call deadline); the outcome is
+   * the one fixed code `judge_sample_timeout`, which the cascade records as an unavailable verdict. */
+  async sample(raw: Parameters<JudgeModel['sample']>[0]): Promise<string> {
+    const timeout = AbortSignal.timeout(raw.role.sampleTimeoutMs ?? this.sampleTimeoutMs)
+    try {
+      return await this.run({ ...raw, signal: AbortSignal.any([raw.signal, timeout]) })
+    } catch (error) {
+      if (timeout.aborted && !raw.signal.aborted) throw new RelayError('judge_sample_timeout')
+      throw error
+    }
+  }
+  private async run(input: Parameters<JudgeModel['sample']>[0]): Promise<string> {
     const admission = this.admitted.get(hash({ account: input.accountId, role: input.role }))
     invariant(admission, 'judge_local_unavailable')
     this.bound(input.role)

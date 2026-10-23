@@ -297,3 +297,17 @@ test('the judge context carries the relay store\'s clock, the one the ledger and
   await f.starts.start(f.input); assert.equal((await f.finish()).status, 'completed')
   assert.deepEqual(seen, [f.relayStore.clock()], 'not the start host\'s own clock, which may be kept apart from the store\'s')
 })
+
+test('a slow executor cannot hold a cycle: each judge sample is stopped at its own wall limit, acknowledged, and the run goes on', async t => {
+  const f = await fixture(t, { fake: { completionDelayMs: 1500 }, judge: () => context => ({ cascade: {
+    brief: startBrief(context.input, { executorNodeId: 'target', j2: judgeRole(context.input.connectionId, context.input.model, { sampleTimeoutMs: 250 }) }),
+    model: relayJudgeModel(context, { accountId: 'local', maxAgeMs: 10_000 }) } }) })
+  const receipt = await f.starts.start(f.input), status = await f.finish()
+  assert.equal(status.status, 'completed', JSON.stringify(f.errors(receipt.sessionId!))); assert.equal(f.relayStore.read(receipt.runId!).items.one, 'done')
+  const rows = f.home.db.prepare('SELECT state,payload FROM relay_judge_requests WHERE run_id=?').all(receipt.runId!) as Array<{ state: string; payload: string }>
+  assert.equal(rows.length, 2); assert.ok(rows.every(row => row.state === 'unavailable' && JSON.parse(row.payload).code === 'judge_sample_timeout'))
+  const judged = f.grants().filter(grant => grant.job.messages[0]!.content.startsWith(JUDGE_PROMPT))
+  assert.equal(judged.length, 2, 'one sample was started per boundary, the second never was')
+  assert.ok(judged.every(grant => f.home.runs.get(grant.offer.runId).state === 'canceled'), 'and each was cancelled with the executor\'s acknowledgement')
+  assert.equal(f.tg.snapshot().activeLease, null)
+})

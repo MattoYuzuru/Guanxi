@@ -117,8 +117,8 @@ export function relayRuntimeAttestor(context: Pick<RelayStartJudgeContext, 'inpu
 /** The judge model of a start: the relay's own meter (so count and dispatch share one runtime, local or remote) and its
  * own connection and model as the only runtime it may use. */
 export function relayJudgeModel(context: Readonly<RelayStartJudgeContext>,
-  options: { accountId: string; maxAgeMs: number; attest?: (input: JudgeModelInput) => Promise<InstalledJudgeAttestation | null> }): ConnectionJudgeModel {
+  options: { accountId: string; maxAgeMs: number; sampleTimeoutMs?: number; attest?: (input: JudgeModelInput) => Promise<InstalledJudgeAttestation | null> }): ConnectionJudgeModel {
   return new ConnectionJudgeModel(context.connections, options.accountId, context.meter as RuntimeMeter & { readonly countIsExact: true },
     context.scrubber, options.attest ?? relayRuntimeAttestor(context, options.accountId), options.maxAgeMs, context.clock,
-    { connectionId: context.input.connectionId, model: context.input.model })
+    { connectionId: context.input.connectionId, model: context.input.model }, { sampleTimeoutMs: options.sampleTimeoutMs })
 }
