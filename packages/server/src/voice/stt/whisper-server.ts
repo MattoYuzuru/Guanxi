@@ -21,6 +21,8 @@
  * over-filled; the value is an adapter limit, never a hidden UI or policy cap.
  */
 
+import { randomUUID } from 'node:crypto'
+import { request as httpRequest, type IncomingMessage } from 'node:http'
 import { z } from 'zod'
 import {
   applyGlossary,
@@ -61,8 +63,13 @@ export const WHISPER_SERVER_PROMPT_TOKEN_LIMIT = 224
 export const WHISPER_SERVER_MAX_PROMPT_CHARS = WHISPER_SERVER_PROMPT_TOKEN_LIMIT * 2
 export const WHISPER_SERVER_MAX_JSON_BYTES = 16 * 1024 * 1024
 export const WHISPER_SERVER_REQUEST_TIMEOUT_MS = 15_000
+/**
+ * One `/inference` call. The adapter's own deadline is authoritative: the previous transport
+ * used global fetch, whose hidden 300 s response-header timeout fired first and surfaced as
+ * `stt_unavailable`; this transport has no such cap.
+ */
 export const WHISPER_SERVER_TRANSCRIBE_TIMEOUT_MS = 10 * 60_000
-/** Node's timers and AbortSignal.timeout accept at most a signed 32-bit millisecond delay. */
+/** Node's timers accept at most a signed 32-bit millisecond delay. */
 export const WHISPER_SERVER_MAX_TIMEOUT_MS = 2_147_483_647
 
 /** The one place that names the whisper.cpp server wire fields this adapter sends or reads. */
@@ -112,7 +119,6 @@ export interface WhisperServerAdapterOptions {
   model?: string
   /** Privacy class used by the D-157 glossary gate. Defaults to a local connection. */
   connection?: SttConnection
-  fetch?: typeof fetch
   /** Health and other short reads. */
   requestTimeoutMs?: number
   /** One `/inference` call. */
@@ -133,7 +139,40 @@ interface RawConfidenceSpan {
 
 interface JsonRequestInit {
   method: 'GET' | 'POST'
-  body?: FormData
+  /** Already-serialised request body; the transport copies nothing. */
+  body?: Uint8Array
+  contentType?: string
+}
+
+/** Serialise one multipart body, copying the audio bytes exactly once. */
+function inferenceBody(
+  req: SttRequest,
+  prompt: string | undefined,
+): { body: Buffer; contentType: string } {
+  const boundary = `----guanxi-${randomUUID()}`
+  const field = (name: string, value: string): Buffer => Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+    'utf8',
+  )
+  const parts: Uint8Array[] = [
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="${WHISPER_SERVER_API.fileField}"; filename="${FILENAMES[req.mimeType]}"\r\nContent-Type: ${req.mimeType}\r\n\r\n`,
+      'utf8',
+    ),
+    req.audio,
+    Buffer.from('\r\n', 'utf8'),
+    field(WHISPER_SERVER_API.responseFormatField, WHISPER_SERVER_API.responseFormat),
+    field(
+      WHISPER_SERVER_API.languageField,
+      req.language === undefined ? WHISPER_SERVER_API.autoLanguage : req.language,
+    ),
+  ]
+  if (prompt !== undefined) parts.push(field(WHISPER_SERVER_API.promptField, prompt))
+  parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'))
+  return {
+    body: Buffer.concat(parts),
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  }
 }
 
 function segmentConfidence(segment: ParsedSegment): number | null {
@@ -236,7 +275,6 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
   readonly maxPromptChars: number
   private readonly model: string
   private readonly connection: SttConnection
-  private readonly transport: typeof fetch
   private readonly requestTimeoutMs: number
   private readonly transcribeTimeoutMs: number
   private readonly maxResponseBytes: number
@@ -270,10 +308,6 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
     // `glossaryAllowed` throws a content-free TypeError for an invalid shape.
     glossaryAllowed(this.connection)
 
-    this.transport = options.fetch === undefined ? globalThis.fetch : options.fetch
-    if (typeof this.transport !== 'function') {
-      throw new TypeError('Whisper server fetch must be a function')
-    }
     this.requestTimeoutMs = positiveInteger(
       options.requestTimeoutMs === undefined
         ? WHISPER_SERVER_REQUEST_TIMEOUT_MS
@@ -355,27 +389,15 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
       throw new SttError('stt_protocol')
     }
 
-    const form = new FormData()
-    form.set(
-      WHISPER_SERVER_API.fileField,
-      new Blob([req.audio], { type: req.mimeType }),
-      FILENAMES[req.mimeType],
-    )
-    form.set(WHISPER_SERVER_API.responseFormatField, WHISPER_SERVER_API.responseFormat)
-    form.set(
-      WHISPER_SERVER_API.languageField,
-      req.language === undefined ? WHISPER_SERVER_API.autoLanguage : req.language.trim(),
-    )
-    if (plan.prompt !== undefined) {
-      form.set(WHISPER_SERVER_API.promptField, plan.prompt)
-    }
-
+    const form = inferenceBody(req, plan.prompt)
     const { status, body } = await this.jsonRequest(
       WHISPER_SERVER_API.inferencePath,
-      { method: 'POST', body: form },
+      { method: 'POST', body: form.body, contentType: form.contentType },
       signal,
       this.transcribeTimeoutMs,
     )
+    // node:http does not follow redirects; keep the old transport's refusal classification.
+    if (status >= 300 && status < 400) throw new SttError('stt_unavailable')
     if (status === 503) throw new SttError('stt_unavailable')
     if (status !== 200) throw new SttError('stt_protocol')
 
@@ -456,6 +478,7 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
       signal,
       this.requestTimeoutMs,
     )
+    if (status >= 300 && status < 400) throw new SttError('stt_unavailable')
     if (status === 503) throw new SttError('stt_unavailable')
     if (status !== 200) throw new SttError('stt_protocol')
     if (body === null || typeof body !== 'object' || Array.isArray(body)
@@ -471,71 +494,125 @@ export class WhisperServerAdapter implements TranscribingSttAdapter {
     timeoutMs: number,
   ): Promise<{ status: number; body: unknown }> {
     this.assertNotAborted(signal)
-    let deadline: AbortSignal | undefined
-    let sawResponse = false
+    let request: ReturnType<typeof httpRequest>
     try {
-      deadline = AbortSignal.timeout(timeoutMs)
-      const composed = signal === undefined
-        ? deadline
-        : AbortSignal.any([signal, deadline])
-      const response = await this.transport(this.baseUrl + path, {
+      request = httpRequest(new URL(this.baseUrl + path), {
         method: init.method,
-        redirect: 'error',
-        signal: composed,
-        headers: { accept: 'application/json' },
-        ...(init.body === undefined ? {} : { body: init.body }),
+        // A one-shot agent keeps one call to one loopback origin independent of any pool.
+        agent: false,
+        headers: {
+          accept: 'application/json',
+          connection: 'close',
+          ...(init.body === undefined ? {} : {
+            'content-type': init.contentType ?? 'application/octet-stream',
+            'content-length': String(init.body.byteLength),
+          }),
+        },
       })
-      sawResponse = true
-
-      if (response.status !== 200) {
-        await response.body?.cancel().catch(() => undefined)
-        return { status: response.status, body: null }
-      }
-
-      const type = response.headers.get('content-type') ?? ''
-      if (!type.toLowerCase().startsWith('application/json')) {
-        await response.body?.cancel().catch(() => undefined)
-        throw new SttError('stt_protocol')
-      }
-
-      const declared = response.headers.get('content-length')
-      if (declared !== null) {
-        const bytes = Number(declared)
-        if (!Number.isSafeInteger(bytes) || bytes < 0) {
-          await response.body?.cancel().catch(() => undefined)
-          throw new SttError('stt_protocol')
-        }
-        if (bytes > this.maxResponseBytes) {
-          await response.body?.cancel().catch(() => undefined)
-          throw new SttError('stt_protocol')
-        }
-      }
-
-      const chunks: Uint8Array[] = []
-      let size = 0
-      if (response.body !== null) {
-        for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
-          size += chunk.byteLength
-          if (size > this.maxResponseBytes) {
-            await response.body.cancel().catch(() => undefined)
-            throw new SttError('stt_protocol')
-          }
-          chunks.push(chunk)
-        }
-      }
-      try {
-        return { status: 200, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }
-      } catch {
-        throw new SttError('stt_protocol')
-      }
-    } catch (error) {
-      if (error instanceof SttError) throw error
-      if (signal?.aborted || deadline?.aborted) throw new SttError('stt_timeout')
-      // Once a 200 arrived, a body-read failure means the answer was truncated, not that the
-      // server was unreachable.
-      if (sawResponse) throw new SttError('stt_protocol')
+    } catch {
       throw new SttError('stt_unavailable')
     }
+
+    return await new Promise((resolve, reject) => {
+      let settled = false
+      let sawResponse = false
+      let timedOut = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+
+      const finish = (action: () => void): void => {
+        if (settled) return
+        settled = true
+        if (timer !== undefined) clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        action()
+      }
+      const fail = (): void => {
+        if (timedOut || signal?.aborted) finish(() => reject(new SttError('stt_timeout')))
+        // Once a 200 arrived, a body-read failure means the answer was truncated, not that the
+        // server was unreachable.
+        else if (sawResponse) finish(() => reject(new SttError('stt_protocol')))
+        else finish(() => reject(new SttError('stt_unavailable')))
+      }
+      const onAbort = (): void => {
+        request.destroy()
+        fail()
+      }
+      const protocolFailure = (): void => {
+        finish(() => reject(new SttError('stt_protocol')))
+      }
+
+      // The adapter owns the whole deadline, headers and body alike. There is no transport
+      // default here: global fetch's hidden 300 s header timeout cannot fire first.
+      timer = setTimeout(() => {
+        timedOut = true
+        request.destroy()
+        fail()
+      }, timeoutMs)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) onAbort()
+
+      request.on('error', fail)
+      request.on('close', () => { if (!settled && !sawResponse) fail() })
+      request.on('response', (response: IncomingMessage) => {
+        sawResponse = true
+        const status = response.statusCode ?? 0
+        if (status !== 200) {
+          response.resume()
+          response.on('error', fail)
+          response.on('aborted', fail)
+          response.on('end', () => finish(() => resolve({ status, body: null })))
+          return
+        }
+
+        const type = String(response.headers['content-type'] ?? '')
+        if (!type.toLowerCase().startsWith('application/json')) {
+          response.destroy()
+          protocolFailure()
+          return
+        }
+
+        const declaredHeader = response.headers['content-length']
+        if (declaredHeader !== undefined) {
+          const declared = Number(declaredHeader)
+          if (!Number.isSafeInteger(declared) || declared < 0 || declared > this.maxResponseBytes) {
+            response.destroy()
+            protocolFailure()
+            return
+          }
+        }
+
+        const chunks: Buffer[] = []
+        let size = 0
+        response.on('data', (chunk: Buffer) => {
+          size += chunk.byteLength
+          if (size > this.maxResponseBytes) {
+            response.destroy()
+            protocolFailure()
+            return
+          }
+          chunks.push(chunk)
+        })
+        response.on('error', fail)
+        response.on('aborted', fail)
+        response.on('end', () => {
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+          } catch {
+            protocolFailure()
+            return
+          }
+          finish(() => resolve({ status: 200, body: parsed }))
+        })
+      })
+
+      try {
+        request.end(init.body)
+      } catch {
+        request.destroy()
+        fail()
+      }
+    })
   }
 
   private observedAt(): string {

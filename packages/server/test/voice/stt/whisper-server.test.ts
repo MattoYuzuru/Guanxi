@@ -112,7 +112,6 @@ describe('WhisperServerAdapter construction', () => {
       { baseUrl: base, maxPromptChars: 1.5 },
       { baseUrl: base, maxPromptChars: null },
       { baseUrl: base, maxResponseBytes: 0 },
-      { baseUrl: base, fetch: null },
       { baseUrl: base, now: 5 },
     ]) {
       assert.throws(
@@ -752,6 +751,43 @@ describe('request and transport failures', () => {
       adapter(fake, { transcribeTimeoutMs: 30 }).transcribe(request()),
       failure('stt_timeout'),
     )
+  })
+
+  it('does not inherit global fetch\'s hidden 300 s header timeout', async (t) => {
+    const fake = await startFakeWhisperServer()
+    t.after(() => fake.close())
+    const hiddenCap = Object.assign(new Error('headers timeout'), {
+      name: 'HeadersTimeoutError',
+      code: 'UND_ERR_HEADERS_TIMEOUT',
+    })
+    t.mock.method(globalThis, 'fetch', async () => { throw hiddenCap })
+    const result = await adapter(fake, { transcribeTimeoutMs: 2_000 }).transcribe(request())
+    assert.equal(result.text, DEFAULT_VERBOSE_JSON.text)
+    assert.equal(fake.requests.length, 1)
+  })
+
+  it('maps a header delay past the adapter deadline to timeout, not unavailable', async (t) => {
+    const fake = await startFakeWhisperServer({
+      inference: { body: DEFAULT_VERBOSE_JSON, delayMs: 1_000 },
+    })
+    t.after(() => fake.close())
+    const started = Date.now()
+    await assert.rejects(
+      adapter(fake, { transcribeTimeoutMs: 300 }).transcribe(request()),
+      failure('stt_timeout'),
+    )
+    const elapsed = Date.now() - started
+    assert.ok(elapsed >= 250, `waited for most of the deadline (${elapsed} ms)`)
+    assert.ok(elapsed < 900, `did not wait for the delayed headers (${elapsed} ms)`)
+  })
+
+  it('succeeds when headers arrive inside a longer adapter deadline', async (t) => {
+    const fake = await startFakeWhisperServer({
+      inference: { body: DEFAULT_VERBOSE_JSON, delayMs: 1_000 },
+    })
+    t.after(() => fake.close())
+    const result = await adapter(fake, { transcribeTimeoutMs: 2_000 }).transcribe(request())
+    assert.equal(result.text, DEFAULT_VERBOSE_JSON.text)
   })
 
   it('maps a caller abort during inference to timeout', async (t) => {
