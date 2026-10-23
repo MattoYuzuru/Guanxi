@@ -59,7 +59,7 @@ export class Federation {
   /** F2-reap, home side: relay runs whose session in THIS process still needs its executor pin. Everything else in the journal is dead. */
   private readonly livePins = new Set<string>()
   private reconciling: Promise<RelayPinReconciliation> | undefined
-  private readonly maintenance: Array<ReturnType<typeof setTimeout>> = []
+  readonly #maintenance: Array<ReturnType<typeof setTimeout>> = []
   constructor(options: FederationOptions) {
     this.configOpsPerRequest = options.configOpsPerRequest ?? 256
     if (!Number.isSafeInteger(this.configOpsPerRequest) || this.configOpsPerRequest < 1) throw new FederationError('invalid_config_budget')
@@ -410,7 +410,7 @@ export class Federation {
       try { await this.reconcileRelayPins() } catch { /* retried at the next tick */ }
     }
     const first = setTimeout(() => { void tick() }, 0), every = setInterval(() => { void tick() }, periodMs)
-    first.unref(); every.unref(); this.maintenance.push(first, every)
+    first.unref(); every.unref(); this.#maintenance.push(first, every)
   }
   async receiveRelayCount(context: PeerContext, raw: unknown) {
     const request = relayRuntimeCountSchema.parse(raw), runtime = this.relayRuntime(context, request.binding)
@@ -481,5 +481,5 @@ export class Federation {
     if (canonical(dispatch.binding(input.id)) !== canonical(ref)) throw new FederationError('dispatch_binding')
     return dispatch.cancel(input.id)
   }
-  close(): void { if (this.closed) return; for (const timer of this.maintenance) { clearTimeout(timer); clearInterval(timer) } this.lifetime.abort(); this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
+  close(): void { if (this.closed) return; for (const timer of this.#maintenance) { clearTimeout(timer); clearInterval(timer) } this.lifetime.abort(); this.attemptDispatch?.close(); this.attemptOffers?.close(); this.closed = true }
 }
