@@ -135,8 +135,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
       active.throwIfAborted(); this.fence()
       invariant(normalizeOllamaModelReference(evidence.model) === this.model && evidence.digest && evidence.source, 'runtime_identity_unknown')
       const identity = canonical([evidence.digest, evidence.runtimeVersion, evidence.contextTokens])
-      // Remembered answers belong to one served identity.
-      if (this.identity && this.identity !== identity) { this.cache.clear(); this.proven = '' }
+      // Remembered answers are tagged with the identity they were counted under and used only while it is the served one.
       this.identity = identity
       const observation = { model: this.model, digest: evidence.digest, contextTokens: evidence.contextTokens, runtimeVersion: evidence.runtimeVersion,
         source: REMOTE_RELAY_PROPS_SOURCE, observedAt: sent }

@@ -359,3 +359,30 @@ No real model, paid provider, remote host, toolful F2 workspace bridge or live p
 is included. Monthly owner-labelled judge calibration, precision >=0.8/recall >=0.9, >=20-run
 ETA P80 coverage 0.7–0.9, B3 quality gates, operational night wake and the >=6-hour MS1 envelope
 remain unearned.
+
+## Remote relay runtime (F2-d)
+
+`RemoteRelayRuntime` (`remote-runtime.ts`) is a `RelayRuntimeObserver` factory for a llama-server on
+**another owned node**. `RelayRuntimeSource` asks it for one session per start (`open()`); the
+session is the observer, the exact counter and the chat transport, and it binds every request to the
+relay run and its fence once `RelayStarts` has created the run (`bind`, inside the creation
+transaction). Facts come only from the executor's signed evidence (see the
+[remote attempts README](../remote-attempts/README.md#relay-inference-on-another-node-f2-d)). There
+is no byte count, catalog value or local-runtime fallback: an unreachable, unsigned, unpinned or
+mismatching executor is `runtime_meter_unavailable`, `runtime_identity_unknown`,
+`runtime_identity_changed` or `runtime_counter_mismatch`, and the home never evaluates a request.
+
+**Asynchronous exact count.** The R2-op `Atomics.wait` bridge is not used over F2: the signing key
+and transport live on the main thread, and blocking the home event loop for a network round trip
+would also stop the lease renewals that keep the fence alive. The meter gains `countAsync`;
+`budget.request` is one generator driven synchronously (local meters, identical behaviour) or by
+`requestAsync` (remote). The synchronous `count` K3 needs in `onPrepared` is a lookup of exact answers
+already obtained for the identical bytes and refuses on a miss. The answers belong to one served
+identity and are dropped when it changes.
+
+**Dispatch.** `LocalChatTransport.remote` (K3) lifts the loopback requirement and the home permit:
+the executor's own governor admits the call through its F2 reservation. The final scrub, fence check,
+fenced start observation and the signed dispatch request share one synchronous stretch
+(`FederationChannel.dispatch(grant, beforeSend)`); while a call is pending the transport heartbeats the
+fence so a lost relay attempt aborts and cancels it. `ConnectionJudgeModel` refuses a meter that needs
+a runtime transport, so a judge call can never be counted by one runtime and run on another.

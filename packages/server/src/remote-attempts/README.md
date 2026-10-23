@@ -127,3 +127,44 @@ cost row and child completion commit in one transaction; a replay adds no second
 usage records nothing and still completes. The observation belongs to the child run's fenced
 attempt, so the lead's totals are unchanged. Local inference keeps an unknown monetary cost;
 no price is invented.
+
+## Relay inference on another node (F2-d)
+
+Protocol **1.4** and the capability `remote-relay-runtime-v1` let a **home** node run the R2 relay
+(lead, workspace, tools and acceptance gates stay there) while every model call is executed and
+counted by the **executor** node's operational llama-server (R2-op `LlamaServerRuntime`). Only an
+executor whose host passed `dispatch.relayRuntime` advertises it. Nothing else of that runtime is
+reachable; the model call itself is the existing F2-b dispatch.
+
+- **`POST /attempts/runtime/observe` and `/count`** (home to executor, signed like every F2
+  request). The body carries a `binding` (home, executor, model and, once the relay run exists,
+  the run plus its R1 fence) and a fresh `challenge`. The executor answers with **signed evidence**
+  (its key, over the whole entry) that echoes both. The home accepts it only if the pinned executor
+  key verifies, the entry names that executor, the binding and challenge are exactly the asked ones
+  and, for a count, the content hash is the asked string. A replayed, forged, re-attributed or
+  re-bound answer is not evidence. Observation time is the home's send time, so clock skew never
+  makes a fact look fresh or stale.
+- **Pins.** The executor needs the relay run pinned (explicit F1 binding, same session, owner, home
+  and epoch) before any bound request. Before the run exists only the fixed admission probe
+  (`RELAY_RUNTIME_PROBE`) may be counted. The host supplies `onBind` to provision the pin; a refusal
+  there rolls the whole start back. Automatic pin propagation is not built.
+- **Counted jobs.** The count response carries `contentSha256`, `renderedSha256` and `tokens` and
+  the runtime identity. The dispatch job (immutable, covered by the grant hash) repeats them as
+  `counted`, with the served `digest` and loaded `contextTokens`. The executor re-observes,
+  re-renders and re-counts, and refuses before `/completion` unless every one is identical, then
+  refuses a reply whose `tokens_evaluated` differs. The terminal event echoes `renderedSha256`,
+  carries `doneReason` and, for a refusal, a fixed `reason` code. A counted job needs
+  `offer.parentRunId`; the executor derives the child's pin from the pinned relay run.
+- **Per-call child runs.** Each model call is a fresh child run with one dispatch, so the F2-b
+  fence, renewal, event receipt and cancel machinery applies unchanged. F2-c records the remote
+  tokens on the child's ledger with its terminal receipt. The relay run keeps its own call
+  accounting (cap enforcement), so child and relay ledgers must never be summed together.
+- **Cancel.** Abort or loss of the relay fence cancels the child at the home first, then sends the
+  direct signed cancel and does not settle the call until the executor acknowledges it, or the
+  configured wait (at least the holder TTL) has elapsed, after which the holder has fenced itself.
+- **Executor loss.** An executor that stops renewing leaves the child `interrupted` (R1 expiry); the
+  call fails closed and the relay stops with its ledger retained.
+
+No migration: the job, offer and events are JSON inside ledger-37 rows. The executor role and the
+home role are independent host options. Limits and residuals are in the
+[F2-d hand-off](../../../../docs/plans/lanes/F2-d.handoff.md).

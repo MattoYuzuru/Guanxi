@@ -217,6 +217,8 @@ test('a changed model, build or window invalidates the meter and its remembered 
     await f.fake.configure({ nCtx: 16000, buildInfo: 'b0-fixture' })
   }
   await f.fake.configure({ buildInfo: 'b1-other' })
+  assert.equal(await code(r.model.observe()), 'runtime_identity_changed')
+  assert.throws(() => r.model.count('remembered'), /runtime_count_invalid/, 'an answer counted under the previous build is not an answer under this one')
   const offers = f.seen.filter(p => p === '/attempts/offers').length
   assert.equal(await code(r.call('after the change')), 'provider_failed', 'the dispatch-time observation saw another build')
   assert.equal(await code(r.model.observe()), 'runtime_identity_changed')
@@ -418,4 +420,13 @@ test('the home refuses a terminal result that does not echo the counted renderin
     assert.ok(outcome instanceof Error, `${name}: the forged terminal must not produce a reply`)
     assert.equal((outcome as { code?: string }).code, 'provider_failed', name)
   }
+})
+
+test('a count made by a server that is no longer the observed one is refused, not remembered', async t => {
+  const f = await remoteFixture(t), r = await f.relay()
+  await f.fake.configure({ buildInfo: 'b2-swapped' })                  // swapped after the last observation, before the count
+  assert.equal(await code(r.model.countAsync!('counted by someone else')), 'runtime_identity_changed')
+  await f.fake.configure({ buildInfo: 'b0-fixture' })
+  assert.throws(() => r.model.count('counted by someone else'), /runtime_count_invalid/)
+  assert.equal(await r.model.countAsync!('counted by someone else'), exact('counted by someone else'))
 })
