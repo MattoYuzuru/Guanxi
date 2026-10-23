@@ -349,11 +349,15 @@ export class JsonRpcConnection {
   }
 
   private cancel(id: number, error: McpError, reason: 'timeout' | 'aborted'): void {
-    if (!this.pending.has(id)) return
-    try {
-      this.notify('notifications/cancelled', { requestId: id, reason })
-    } catch {
-      // The connection may already be closing; the request still rejects.
+    const pending = this.pending.get(id)
+    if (pending === undefined) return
+    // `initialize` is the first request; a cancellation has no negotiated peer yet.
+    if (pending.method !== 'initialize') {
+      try {
+        this.notify('notifications/cancelled', { requestId: id, reason })
+      } catch {
+        // The connection may already be closing; the request still rejects.
+      }
     }
     this.settleReject(id, error)
   }

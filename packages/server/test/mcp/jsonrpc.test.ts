@@ -90,6 +90,19 @@ it('truncates an untrusted server error message and drops its data', async () =>
   stdout.destroy()
 })
 
+it('never sends notifications/cancelled for initialize', async () => {
+  const stdin = capture()
+  const stdout = new PassThrough()
+  const rpc = new JsonRpcConnection({ stdin, stdout, requestTimeoutMs: 30 })
+  const error = await expectCode(rpc.request('initialize'), 'mcp_timeout')
+  assert.match(error.message, /initialize/)
+  assert.equal(stdin.chunks.some(chunk => chunk.includes('notifications/cancelled')), false)
+
+  rpc.close()
+  stdin.destroy()
+  stdout.destroy()
+})
+
 it('echoes a 128-character server request id and refuses a longer one', async () => {
   const stdin = capture()
   const stdout = new PassThrough()
