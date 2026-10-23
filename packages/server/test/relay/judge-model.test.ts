@@ -334,3 +334,38 @@ test('queued governor window expiry refuses at final preparation while inventory
     lease.release()
   }
 })
+
+// ---- R3-remote: a meter that names a runtime transport ---------------------------------------------------------------------
+
+const noScrubber = {} as EgressScrubber, noConnections = {} as Connections
+const transport = { id: 'llama-server', host: 'federation://executor', usageSource: 'federation:llama-server:/completion', remote: { nodeId: 'executor' },
+  chat: async () => { throw new Error('not dispatched here') } }
+const transportMeter = { countIsExact: true as const, localOnly: true, transport, count: () => 1, countAsync: async () => 1,
+  observe: async () => ({ tokens: 16000, framingTokens: 0, source: 'fixture:loaded', observedAt: now, confidence: 'high' as const }) }
+const binding = { connectionId: 'relay-connection', model: 'fixture' }
+const build = (meter: unknown, runtime?: { connectionId: string; model: string }) =>
+  new ConnectionJudgeModel(noConnections, account, meter as never, noScrubber, async () => null, 1000, () => now, runtime)
+
+test('a transport meter is accepted only bound to the one connection and model its runtime serves; a stock meter is unchanged', () => {
+  assert.doesNotThrow(() => build(transportMeter, binding), 'consistent: counted and served by the same runtime')
+  assert.doesNotThrow(() => build({ ...transportMeter, countAsync: undefined }, binding), 'a local llama-server counts synchronously and is dispatched through its transport')
+  assert.doesNotThrow(() => build({ countIsExact: true, observe: transportMeter.observe, count: () => 1 }), 'a stock Ollama meter needs no binding')
+  assert.throws(() => build(transportMeter), /judge_config_invalid/, 'a transport with no named runtime')
+  assert.throws(() => build(transportMeter, { connectionId: '', model: 'fixture' }), /judge_config_invalid/)
+  assert.throws(() => build(transportMeter, { connectionId: 'c', model: 'bad model!' }), /judge_config_invalid/)
+  assert.throws(() => build({ ...transportMeter, transport: undefined }, binding), /judge_config_invalid/, 'counted asynchronously by a runtime the dispatch would not use')
+  assert.throws(() => build({ countIsExact: true, observe: transportMeter.observe, count: () => 1, countAsync: async () => 1 }), /judge_config_invalid/)
+  assert.throws(() => build({ ...transportMeter, countIsExact: false }, binding), /judge_config_invalid/, 'no exact source')
+  assert.throws(() => build({ ...transportMeter, countIsExact: undefined }, binding), /judge_config_invalid/)
+})
+test('a role that is not served by the runtime that counts is refused at admission, before any attestation or call', async () => {
+  let attested = 0
+  const model = new ConnectionJudgeModel(noConnections, account, transportMeter as never, noScrubber, async () => { attested++; return null }, 1000, () => now, binding)
+  const role = { connectionId: 'relay-connection', model: 'fixture', windowTokens: 16000, maxInputTokens: 12000, maxOutputTokens: 1000, temperature: 0, tokenReserve: 13000, moneyReserveMicros: 0 }
+  const signal = new AbortController().signal
+  for (const other of [{ connectionId: 'another-connection' }, { model: 'another-model' }, { model: 'fixture:cloud' }])
+    await assert.rejects(model.admit({ accountId: account, role: { ...role, ...other }, signal }), /judge_config_invalid/)
+  assert.equal(attested, 0)
+  assert.equal(await model.admit({ accountId: account, role: { ...role, model: ' FIXTURE ' }, signal }), false, 'the same model by another spelling reaches attestation (which declined)')
+  assert.equal(attested, 1)
+})

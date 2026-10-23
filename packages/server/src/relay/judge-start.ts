@@ -10,7 +10,7 @@ import { ConnectionJudgeModel, type InstalledJudgeAttestation, type JudgeModelIn
 import type { JudgeSignalPolicy } from './judge-signals.ts'
 import { canonical, hash } from './handoff.ts'
 import type { RuntimeMeter } from './model.ts'
-import type { RelayStartPolicy } from './start.ts'
+import type { RelayStartHost, RelayStartPolicy } from './start.ts'
 import { RelayError } from './types.ts'
 
 /** What a host needs to build the judge of ONE public relay start. Everything here is T0: it is read from the start's
@@ -37,6 +37,11 @@ export interface RelayStartJudge {
  * start has done anything irreversible. Returning nothing leaves that start without a judge. Throwing, or returning a
  * configuration that cannot be admitted, refuses the start with `judge_config_invalid`. */
 export type RelayStartJudgeSource = (context: Readonly<RelayStartJudgeContext>) => RelayStartJudge | undefined
+
+/** The plugin-level default: a judge source set on the start host wins, otherwise the default is used. */
+export function startHostWithJudge(host: RelayStartHost, fallback: RelayStartJudgeSource | undefined): RelayStartHost {
+  return host.judge || !fallback ? host : { ...host, judge: fallback }
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const refused = (): never => { throw new RelayError('judge_config_invalid') }

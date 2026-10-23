@@ -16,7 +16,7 @@ import { RelayStarts, type RelayStartHost } from './start.ts'
 import type { EtaInput } from './eta.ts'
 import type { RelayJudgeInput } from './judge-host.ts'
 import type { RelayCascadeInput } from './judge-cascade.ts'
-import type { RelayStartJudgeSource } from './judge-start.ts'
+import { startHostWithJudge, type RelayStartJudgeSource } from './judge-start.ts'
 
 export const RELAY_SERVICE = 'agent.relay'
 /** `judge` is the default judge source of the public start; a `startHost.judge` replaces it for that host. */
@@ -39,7 +39,7 @@ export const relayPlugin = definePlugin<RelayConfig>({
     const store = new RelayStore(config.db, runs.store, scrubber)
     const startHost = config.startHost ?? { project: async () => { throw new Error('relay_project_unavailable') }, nodePorts: () => [] }
     const publicStarts = new RelayStarts(config.db, runs.store, ctx.service<SessionLog>('session.log'), connections, scrubber, store,
-      startHost.judge || !config.judge ? startHost : { ...startHost, judge: config.judge })
+      startHostWithJudge(startHost, config.judge))
     const active = new Map<string, { executor: RelayExecutor; promise: Promise<unknown> }>()
     let closed = false
     ctx.provide(RELAY_SERVICE, Object.freeze({
