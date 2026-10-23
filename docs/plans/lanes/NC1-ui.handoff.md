@@ -25,7 +25,7 @@ route or contract field:
   `Idempotency-Key` belongs to the intent and is reused only when the outcome was unknown (lost answer, 500, 503, 409
   `action_in_progress` or `action_outcome_unknown`, unparseable answer); after 501, 502 `port_failed`, a stored `failed`
   result and every other definite answer a new attempt is a new intent. Switch connection offers the other connections.
-- `messages.ts`: 174 English keys and a curated Russian record of the same keys (plural forms from `Intl.PluralRules`).
+- `messages.ts`: 173 English keys and a curated Russian record of the same keys (plural forms from `Intl.PluralRules`).
 - Shell edits (shared): `ShellStatus.tsx` takes an optional `inbox` node, `MountedShell.tsx` mounts
   `NotificationsProvider` and the bell, `useShellController.ts` adds the palette command, `lib/router.tsx` and `App.tsx` add
   the route, `lib/locale.ts` registers the messages, `docs/design/LAYOUT_AND_SCREENS.md` section 8, the MS2 line in
@@ -65,8 +65,8 @@ Targeted specs during development ran directly on the lane ports (small, outside
 - **Regression envelope:** web vitest 475 in 52 files and browser 194 (the prior U1 baselines), all unchanged and green.
   One envelope edit: `localization.spec.ts` now lets the shell's `GET /api/notifications` pass its request guard (an
   empty list answer); every other request is still forbidden there.
-- Mutation checks: seven mutations (always dropping the key, newest-fetched wins, badge off by one, enabling not_configured
-  actions, one shape for all severities, no busy guard, dropping the guard) each failed at least one assertion; reverted.
+- Mutation checks: six mutations (always dropping the key, newest-fetched wins, badge off by one, enabling not_configured
+  actions, one shape for all severities, no busy guard) each failed at least one assertion; reverted.
 
 ## Independent verification
 
