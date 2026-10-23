@@ -67,6 +67,34 @@ ADR-0019 implementation note, runs and K5 READMEs, `test/resource-governor.test.
 - Codex leads are refused; `acp` MCP transport, power assertions, F2 handover and UI are out of scope. Notices (`notify`) are a hook; NC1 wiring is later.
 - Not promoted: ADR-0019, 0021 and D-142 stay as they are; no PHASE_STATUS or NEXT_AGENT_PROMPT edits.
 
+## Independent cross-check fixes
+
+An independent Opus cross-check requested changes (no P1, two P2). Each item is its own commit with a test that failed
+before the fix (new `stale-holder`, `limits`, `admission-reconcile` tests; mutants listed in the commit evidence).
+
+- **P2-1, one node crash blocked the wake and the account** (`9aace231`, `8656d073`). K5 gains append-only v3
+  (`k5_admission_process`: owner pid, machine boot time, spawn phase, group id and its start time) and a boot
+  reconciliation every dispatch waits for. A dead previous owner's holder is released only on proof (rebooted machine, never
+  spawned, group gone, or a live group whose pid start time matches the recorded spawn and is SIGKILLed until ESRCH);
+  live owners, unrecorded spawns, mismatching start times and holders without v3 facts stay occupied
+  (`cleanup_unconfirmed`), keeping the K5 cleanup-uncertainty rule. The K5 "no boot sweep" test and README were rewritten
+  for this rule. In the lead service `deferWake` now has a ceiling (`wakeFailureLimit`, default 5): the lead moves to
+  `input_required` with `admission_stuck`, `quota_exhausted` or `agent_unavailable` (P3-4), the wake and packet kept,
+  and a person's `resume` continues it. Test: a seeded stale holder, restart, the wake is delivered once on the first try.
+- **P2-2, the lead set the relay's limits** (`6da733fd`). Immutable owner `limits` (`maxCaps` with all four required,
+  `maxDeadlineMs`, `allowDetach` default false), mandatory with `leads.relay`. `guanxi_delegate` refuses null or larger
+  caps, a longer deadline and detach before hibernating with `delegation_exceeds_policy: <field>`; without `allowDetach`
+  the owner's cancel always cancels the child; `validateExecutor` receives the whole brief. Tests for each field.
+- **P3-1** token redaction: the per-turn bearer token is registered with the egress scrubber from the moment the agent
+  holds it until the grant ends (registering earlier would redact the `Authorization` header of the very request that
+  carries it). Test: an agent that echoes its MCP configuration leaves no token in any K2 event or table.
+- **P3-2** test: an agent that ignores `session/cancel` is stopped after the grace period, `usage_unobserved` is noted, the
+  ledger is unchanged and no process or holder remains.
+- **P3-3** MS1 risk, named: a crashed node can leave a detached agent group running a billable turn (pre-existing K5
+  behaviour) until the next start reconciles it; `leads` and K5 READMEs say so.
+
+Gates for this round are recorded in the report of the final commit; earlier receipts above are for `62ccf831`.
+
 ## Next slice
 
 Wire `leads.relay` plus `operationalRelay` in a launcher with a real `validateExecutor`, run the MS1 six-hour scenario with
