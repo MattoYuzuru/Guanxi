@@ -76,6 +76,12 @@ export class ConnectionStore {
       .run(JSON.stringify(safe), safe.id, safe.accountId)
     return safe
   }
+  /** Trusted import only; no HTTP mutation exposes this owner network consent. */
+  setImportedNetworkPolicy(accountId: string, id: string, allowPrivate: boolean): Connection {
+    const row = this.get(accountId, id)
+    if (!row.baseUrl) throw new ConnectionError('validation_failed', 'Custom endpoint required')
+    return this.write({ ...row, allowPrivate })
+  }
   setUnattended(accountId: string, id: string, unattended: boolean): Connection {
     return this.write({ ...this.get(accountId, id), unattended })
   }

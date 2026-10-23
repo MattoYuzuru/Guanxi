@@ -139,6 +139,8 @@ export class Connections {
         for (const [index, { entry, row, same }] of prepared.entries()) {
           const connection = row ?? this.store.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
             provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
+          if (row?.baseUrl && row.allowPrivate !== (entry.allowPrivate ?? false))
+            this.store.setImportedNetworkPolicy(accountId, row.id, entry.allowPrivate ?? false)
           if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
           if (!row) this.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)')
             .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)

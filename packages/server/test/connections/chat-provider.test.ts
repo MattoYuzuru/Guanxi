@@ -630,3 +630,18 @@ test('boot survives provider import failure and logs only a fixed code with mode
     assert.ok(!JSON.stringify(warnings).includes(value))
   } finally { await node.close() }
 })
+
+test('trusted reimport persists and revokes private-network consent for an existing endpoint', async t => {
+  const f = await setup(t), file = join(f.dir, 'consent.env'), value = canary()
+  const body = `OPENAI_API_KEY=${value}\nOPENAI_API_URL=https://192.168.1.2/v1`
+  let id = ''
+  for (const consent of [false, true, false]) {
+    await writeFile(file, `${body}\nGUANXI_PROVIDER_ALLOW_PRIVATE=${consent ? '1' : '0'}`)
+    const result = await importProviderKeysFile(f.service, 'local', file)
+    id ||= result.imported[0]!.connectionId
+    assert.equal(result.imported[0]!.connectionId, id)
+    assert.equal(f.store.get('local', id).allowPrivate, consent)
+    const persisted = new ConnectionStore(join(f.dir, 'connections.sqlite'), f.scrubber)
+    try { assert.equal(persisted.get('local', id).allowPrivate, consent) } finally { persisted.close() }
+  }
+})
