@@ -315,6 +315,22 @@ const MIGRATION_V1 = `
   INSERT INTO nc1_migrations VALUES(1);
 `
 
+/** v2 is append-only: the delivery ledger for ADR-0033 decision 8. v1 is never rewritten. */
+const MIGRATION_V2 = `
+  CREATE TABLE notification_deliveries(
+    notification_id TEXT NOT NULL REFERENCES notifications(id),
+    channel TEXT NOT NULL,
+    deliver_at INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending','delivered','failed','unavailable')),
+    code TEXT,
+    attempted_at INTEGER,
+    PRIMARY KEY(notification_id, channel)
+  );
+  CREATE INDEX notification_deliveries_due
+    ON notification_deliveries(status, deliver_at);
+  INSERT INTO nc1_migrations VALUES(2);
+`
+
 /** A separate SQLite file with its own migration table, like the K3 connection store. */
 export class NotificationStore {
   readonly db: DatabaseSync
@@ -335,6 +351,9 @@ export class NotificationStore {
       try {
         if (!this.db.prepare('SELECT version FROM nc1_migrations WHERE version=1').get()) {
           this.db.exec(MIGRATION_V1)
+        }
+        if (!this.db.prepare('SELECT version FROM nc1_migrations WHERE version=2').get()) {
+          this.db.exec(MIGRATION_V2)
         }
         this.db.exec('COMMIT')
       } catch (error) {
