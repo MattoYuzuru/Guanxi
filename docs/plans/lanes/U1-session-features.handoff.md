@@ -65,6 +65,31 @@ state chrome in English; discard confirmation not described; browser-offline gat
 load reason outside the alert; folder-save message; unknown start outcome; live regions; label-in-name; focus
 loss; 320 px and long names; stale manifest. Fixed in `eda6a089`, tests in `9dd7a6dc`.
 
+## Independent cross-check fixes (Opus, 2026-10-23)
+
+No P1; two P2s and six P3s, each fixed with a red test commit first (`073e976f`, web tests commit) and a
+fix commit (`3cca5818` server, `eda46401` web).
+
+- **P2-1 zero-write proof.** The test now opens every `*.sqlite` under the data directory read-only
+  (`test.sqlite`, `connections.sqlite`, `native-projects.sqlite`, any new file), compares per-table counts and
+  the file list (sqlite by name), and checks the K3 receipt table apart (exactly +1 per completed request). The
+  production sidecars (`notifications`, `voice`, `work`, index) are not loaded by the native fixture and booting
+  `start()` needs a live provider, so that part is argued from the code (the seam imports none), not asserted.
+  README and this hand-off say so.
+- **P2-2 spend.** Receipts are `side-chat:<session>:<uuid>`; run-budget limits apply to the session's cumulative
+  side-chat spend and refuse with `budget_exhausted` before dispatch; per-session concurrency
+  `GUANXI_SIDE_CHAT_MAX_CONCURRENT` (default 1) refuses with `too_many_requests`. Tests: exact limits, prefix
+  isolation, node-level refusal that never reaches the provider, slot release on completion, failure and abort.
+- **P3-1** the receipt assertion no longer claims canceled requests leave none; K3 under-accounting on cancel after
+  billing is a recorded residual (K3 unchanged). **P3-2** long Send compares the stored artifact checksum (same
+  first 8 KiB, different tail gives `operation_conflict`). **P3-3** `onSent` makes the session page re-read its
+  status and resume polling. **P3-4** Save is bounded at 256 KiB (`too_large`, no truncation; boundary tested at
+  the exact byte). **P3-5** seen heads absent from a complete list read are pruned (persisted despite the
+  max-merge write; a partial page never prunes); recents keep ten. **P3-6** Send's answer comes from
+  `prompt()`'s real outcome (`started`, `queued`, `duplicate`).
+
+Gates after the fixes are listed under "Gates after cross-check fixes" below.
+
 ## Shared edits
 
 - `packages/server/src/native-agent/service.ts` (queue returns a status, optional ids on `queue`, `prompt`,
@@ -93,6 +118,11 @@ loss; 320 px and long names; stale manifest. Fixed in `eda6a089`, tests in `9dd7
 - Chromium only; no physical assistive technology; the side-chat browser spec runs against a mock node, the
   real node's zero-write property is proven by the server tests.
 - The X1 indexing test is load-sensitive (inherited).
+
+## Gates after cross-check fixes
+
+Filled in by the final run of this round; see the report. Residuals added by this round: K3 under-accounting for
+a request canceled after billing; production sidecars not covered by the zero-write test.
 
 ## Next
 

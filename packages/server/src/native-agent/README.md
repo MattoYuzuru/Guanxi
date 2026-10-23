@@ -263,21 +263,37 @@ routes below and `packages/contract/src/side-chat.ts`. Tests: `test/native-agent
   a `length` stop is returned with `truncated: true`. An unprovable request is refused with `context_too_large`
   and its numbers before dispatch, never cut. The framing allowance is a conservative constant, not a measured
   per-template figure.
-- **Writes.** `respond` adds no row to the node database and no file; K3 records its usual usage receipt in the
-  connection store under a fresh `side-chat:<uuid>` run id (metadata, no content; the client's `requestId` only
-  correlates the response, so a retry is never rejected as a conflicting receipt). The test compares every node
-  database table's row count and the data directory's file list before and after completed, failed and canceled
-  requests, and counts the connection-store receipts separately (one per completed request, none otherwise).
+- **Writes.** `respond` adds no row and no file. The test opens every `*.sqlite` file under the data directory
+  read-only (the node database, `connections.sqlite`, `native-projects.sqlite` and any file that appears) and
+  compares per-table row counts, plus the file list (sqlite files by name, others with sizes), before and after
+  completed, failed and canceled requests and after a restart. The one intended exception is the K3 receipt
+  (`connections.sqlite:costs`), checked apart: exactly one row per completed request. The native fixture does
+  not load the sidecars production boot adds (`notifications`, `voice`, `work`, project index); the side-chat code
+  imports none of them, but that is argued from the code, not asserted by a test that boots `start()`.
+- **Spend attribution and budget.** The receipt is keyed `side-chat:<sessionId>:<uuid>` (the client's
+  `requestId` only correlates the response). Native run budgets are per run and a side chat has no run, so each
+  limit (`maxModelCalls`, `maxTokens`, `maxCostMicrounits`) applies to the session's cumulative side-chat spend,
+  counted from those receipts before dispatch; reaching one refuses with the content-free `budget_exhausted`
+  (HTTP 429). A receipt with an unknown cost cannot be proven inside a money limit, as for runs. Receipts are
+  written when a request completes, so a request canceled after the provider billed it leaves none: K3
+  under-accounting on cancel, a known residual not changed here.
+- **Concurrency.** At most `GUANXI_SIDE_CHAT_MAX_CONCURRENT` `respond` requests per session run at once
+  (positive integer up to 999, default 1, strictly parsed); more are refused with `too_many_requests` (429)
+  before the provider is called. The slot is released on completion, failure and client abort.
 - **Save** goes through the running turn's append FIFO when a turn is active (a failure there is returned, never
   thrown into the FIFO, so it cannot abort the turn) and through the R1 home transaction otherwise. When the
   session has no live writer the log may also record its own `writer.acquired` handover event; the note itself is
   always exactly one event. The native replay ignores `agent.note`, so a saved side chat is never agent context.
+  A transcript whose encoded note exceeds `SIDE_CHAT_SAVE_MAX_BYTES` (256 KiB) is refused with `too_large` and its
+  numbers; nothing is truncated or appended.
 - **Send** reuses the existing FIFO. A caller-chosen queue item id is queued at most once, and a prompt event
   with the derived message id is the durable receipt: a retry after a lost response or a restart reports
   `already_sent`. A pending queue item is reported as `queued` (duplicate) only while a turn is running; with
   nothing running (the turn stopped, failed or the node restarted) a retry starts a fresh turn with the same
   prompt id, which also settles the stranded item. Changed text under the same operation id is
-  `operation_conflict`. Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
+  `operation_conflict` (a long text, stored as an artifact, is compared by its stored checksum, not by the excerpt).
+  The answer (`queued`, `started`, `already_sent`) is what `prompt()` actually did, not what an earlier check saw.
+  Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
   retryable `session_busy`, and a request that lands between turns gets `session_busy`. The pre-checks inside the
   FIFO return their errors instead of throwing, so they cannot abort the main turn. Origin is recorded as `queued`.
 - **Not covered.** Legacy Chat Jobs have no side-chat route (the web panel is mounted on native sessions only);
