@@ -102,6 +102,7 @@ export function describeConfigError(error: Ms1LiveError): string {
     lead_key_import_failed: 'The provider key file could not be imported (see the doctor); the lead will not start on a half-imported vault.',
     lead_connection_not_found: 'No connection of that name or id exists in this node\'s K3 registry.',
     lead_connection_ambiguous: 'More than one Anthropic API-key connection exists: name the one that pays in home.lead.connection.',
+    lead_connection_not_imported: 'The key file named for the lead was imported into a different connection than the one named in home.lead.connection; drop home.lead.connection or the key file.',
     lead_connection_invalid: 'That connection cannot pay for Claude Code: it must be an Anthropic API-key connection on the default API root.',
     lead_vault_locked: 'The vault could not be unlocked, so the stored Anthropic key cannot be used.', unattended_unavailable: 'The connections policy does not allow unattended access, which the relay\'s connection needs.', option_conflict: 'This option cannot be combined with another one that was also given.',
     listen_not_loopback: 'In this mode the node listens on loopback only.', connection_conflict: 'A connection of that name exists but is not what this mode needs.',

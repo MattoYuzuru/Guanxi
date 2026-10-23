@@ -199,3 +199,24 @@ test('the command explains a lead without a key by code, field and summary, and 
   assert.match(event.summary, /No Anthropic API key is available/)
   await assert.rejects(fetch(`http://127.0.0.1:${api}/api/health`), 'the owner API listener is closed')
 })
+
+test('a key file that was imported pays for the lead: a named older connection, or an ambiguity, cannot take its place', async t => {
+  const w = await pair(t)
+  const key = fakeKey()
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${key}\n`)
+  const dataDir = join(w.root, 'data')
+  const run = (settings: Ms1LiveSettings) => start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
+  const first = await run(w.settings())
+  const connections = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
+  const imported = first.ms1Live!.leadConnectionId
+  const older = connections.create('local', { name: 'older-anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
+  await connections.saveSecret('local', older.id, fakeKey())
+  await first.close()
+  const outcome = async (connection?: string) => run(w.settings(config => { if (connection) config.home.lead.connection = connection })).then(async server => { const id = server.ms1Live!.leadConnectionId; await server.close(); return id }, error => error)
+  // Two connections hold keys, but the file just imported belongs to one of them: it pays, without naming it.
+  assert.equal(await outcome(), imported)
+  assert.equal(await outcome('anthropic (dotenv)'), imported)
+  // Naming another connection while a file was imported would pay with a key this boot did not import.
+  const refused = await outcome('older-anthropic')
+  assert.ok(refused instanceof Ms1LiveError && refused.code === 'lead_connection_not_imported' && refused.field === 'home.lead.connection', `got ${refused instanceof Error ? refused.message : refused}`)
+})

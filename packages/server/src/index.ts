@@ -314,11 +314,11 @@ export async function start(options: StartOptions = {}) {
     })
     // An explicit option and `GUANXI_PROVIDER_KEYS_FILE` come first; an MS1 API-key lead's own file is the fallback.
     const providerKeysFile = options.providerKeysFile || process.env.GUANXI_PROVIDER_KEYS_FILE || live?.providerKeysFile
-    let providerKeysFailed = false, anthropicImported = false
+    let providerKeysFailed = false, anthropicImported: string | undefined
     if (providerKeysFile) {
       try {
         const result = await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
-        anthropicImported = result.imported.some(item => item.provider === 'anthropic')
+        anthropicImported = result.imported.find(item => item.provider === 'anthropic')?.connectionId
         if (result.errors?.length) throw new Error('provider_key_import_failed')
       } catch {
         providerKeysFailed = true
@@ -337,10 +337,10 @@ export async function start(options: StartOptions = {}) {
       // older key in the vault (only the absence of any file does: the key is then the one imported earlier).
       if (live.leadUsesApiKey) {
         if (providerKeysFailed) throw new Ms1LiveError('lead_key_import_failed', 'home.lead.providerKeysFile')
-        if (providerKeysFile && !anthropicImported) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
+        if (providerKeysFile && anthropicImported === undefined) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
       }
       live.prepare(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!)
-      if (live.leadUsesApiKey) await live.prepareLeadKey(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!)
+      if (live.leadUsesApiKey) await live.prepareLeadKey(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!, anthropicImported)
       await kernel.node.plugin(createFederationPlugin({ ...live.federationHost(), db }))
       kernel = { ...kernel, federation: kernel.node.service<Federation>(FEDERATION_SERVICE) ?? null }
       if (!kernel.federation) throw new FederationError('federation_unavailable', 503)
