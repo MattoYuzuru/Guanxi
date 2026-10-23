@@ -57,3 +57,17 @@ it('switches from a selected provider to a visible local model before Agent crea
   expect(create.mock.calls[0]![0].model).toBe('local-model')
   expect(create.mock.calls[0]![0].mode).toBe('agent')
 })
+
+
+it('reselects a visible local model when quiet refresh removes a locked provider', async () => {
+  vi.mocked(api.listModels).mockResolvedValue({ models: [{ name: 'local-model', capabilities: ['completion'], contextLimit: { state: 'unknown' }, fit: { level: 'unknown' } }] } as never)
+  render(<RuntimeProvider loader={async () => runtimeSnapshotFixture()}><ChatPage threadId={null} health={{} as Health} /></RuntimeProvider>)
+  const option = await screen.findByRole('option', { name: 'owner-model' })
+  const select = option.closest('select')!
+  fireEvent.change(select, { target: { value: selection } })
+  expect(select.value).toBe(selection)
+  vi.mocked(api.chatModels).mockResolvedValue({ groups: [] })
+  fireEvent(window, new Event('focus'))
+  await waitFor(() => expect(screen.queryByRole('option', { name: 'owner-model' })).toBeNull())
+  await waitFor(() => expect(select.value).toBe('local-model'))
+})

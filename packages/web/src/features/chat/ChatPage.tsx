@@ -167,8 +167,9 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   })
 
   useEffect(() => {
-    if (model && !(mode === 'agent' && parseChatModelSelection(model))) return
-    if (mode === 'agent' && parseChatModelSelection(model)) setModel('')
+    const providerInvalid = parseChatModelSelection(model) && (mode === 'agent' || !providerModels.loading && !providerSelected)
+    if (model && !providerInvalid) return
+    if (providerInvalid) setModel('')
     if (availableModels.length === 0) {
       const first = providerGroups[0]?.models[0]?.selection
       if (first) setModel(first)
@@ -182,7 +183,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
         availableModels[0]?.name ??
         '',
     )
-  }, [availableModels, providerGroups, model, mode, settings.data?.defaultModel])
+  }, [availableModels, providerGroups, providerModels.loading, providerSelected, model, mode, settings.data?.defaultModel])
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
