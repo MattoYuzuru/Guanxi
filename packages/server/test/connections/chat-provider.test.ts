@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Hono } from 'hono'
-import { connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
+import { PRODUCT_NAME, connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
 import { parseProviderKeys, importProviderKeysFile } from '../../src/connections/dotenv.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
 import { Connections } from '../../src/connections/service.ts'
@@ -193,8 +193,7 @@ test('durable fake-provider turn scrubs context, streams safely, saves usage and
   const barrier = new Promise<void>(resolve => { release = resolve })
   const f = await setup(t, { complete: async (model, context, options, onText) => {
     calls++
-    assert.ok(context.systemPrompt?.includes('Guanxi'))
-    assert.ok(context.systemPrompt?.includes('Node: local'))
+    assert.equal(context.systemPrompt, harnessSystemPrompt())
     assert.ok(!JSON.stringify(context).includes(value))
     assert.equal(options.apiKey, value)
     onText?.('early safe text ')
@@ -262,19 +261,42 @@ test('custom transport refuses request escape before forwarding a credential', a
   assert.equal(calls, 1) // Discovery only.
 })
 
-test('local dispatch gets localized harness identity without project paths', async t => {
-  let prompt = ''
+test('plain Chat orientation is bounded English with brand and no execution access', () => {
+  const prompt = harnessSystemPrompt()
+  assert.ok(Buffer.byteLength(prompt, 'utf8') <= 300)
+  assert.ok(prompt.includes(PRODUCT_NAME))
+  assert.match(prompt, /Node=local; OS=/)
+  assert.match(prompt, /cwd=none; roots=0; mode=chat/)
+  assert.match(prompt, /Tools=none\. Skills=off/)
+  assert.match(prompt, /Paths, budgets, AGENTS.md=unavailable/)
+  assert.doesNotMatch(prompt, /[^\x20-\x7e]/)
+  assert.doesNotMatch(prompt, /[\\/]|\d{4}-\d{2}-\d{2}|quota|remaining|timestamp|Respond|You run/)
+})
+
+test('local dispatch starts with identical orientation bytes across turns and a locale change', async t => {
+  const requests: { role: string; content: string }[][] = []
   const f = await setup(t), chat = chatFixture(f, t, { async *chatStream(request) {
-    prompt = request.messages[0]!.content
+    requests.push(request.messages.map(({ role, content }) => ({ role, content })))
     yield { model: request.model, created_at: new Date().toISOString(), message: { role: 'assistant', content: 'ok' }, done: true }
   } })
-  chat.context.settings.update({ locale: 'ru' })
   const thread = chat.create('local-model')
-  const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'hello' }) })
-  await response.text()
-  assert.match(prompt, /Guanxi/); assert.match(prompt, /Узел: local/); assert.match(prompt, /Инструменты и разрешения/)
-  const projectPrompt = harnessSystemPrompt('en', '/private/work/Project')
-  assert.match(projectPrompt, /Project: "Project"/); assert.ok(!projectPrompt.includes('/private'))
+  const value = canary()
+  const contents = [`hello /private/work/${value} at 2026-10-23T12:34:56Z quota=987`, 'second turn']
+  for (const [index, content] of contents.entries()) {
+    chat.context.settings.update({ locale: index === 0 ? 'en' : 'ru' })
+    const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) })
+    assert.equal(response.status, 200)
+    await response.text()
+  }
+  assert.equal(requests.length, 2)
+  for (const messages of requests) {
+    assert.deepEqual(messages[0], { role: 'system', content: harnessSystemPrompt() })
+    assert.equal(messages.filter(message => message.role === 'system').length, 1)
+    assert.ok(!messages[0]!.content.includes(value))
+    assert.equal(messages[1]!.content, contents[0])
+  }
+  assert.deepEqual(Buffer.from(requests[0]![0]!.content), Buffer.from(requests[1]![0]!.content))
+  assert.equal(requests[1]!.at(-1)!.content, contents[1])
 })
 
 test('provider Stop is durable and terminal recovery never redispatches inference', async t => {
@@ -325,12 +347,12 @@ test('fresh owner interrupts an executing provider association and retains outpu
 
 
 test('real pi-ai compatible wire streams through fake fetch without invented model token ceilings', async t => {
-  const value = canary(); let dispatched = false
+  const value = canary(), requests: { role: string; content: string }[][] = []
   const f = await setup(t, piTransport, async (url, init) => {
     if (String(url).endsWith('/models')) return Response.json({ data: [{ id: 'owner-model' }] })
-    dispatched = true
     assert.ok(new Headers(init?.headers).get('Authorization') === `Bearer ${value}`)
     const body = JSON.parse(String(init?.body))
+    requests.push(body.messages)
     assert.equal(body.model, 'owner-model')
     assert.equal(body.max_tokens, undefined); assert.equal(body.max_completion_tokens, undefined)
     return new Response([
@@ -339,13 +361,25 @@ test('real pi-ai compatible wire streams through fake fetch without invented mod
     ].map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
   })
   const id = await imported(f.service, value, 'https://api.example.invalid/v1')
-  const chunks: string[] = []
-  const result = await f.service.complete('local', id, { messages: [{ role: 'user', content: 'hello', timestamp: Date.now() }] }, {
-    model: 'owner-model', runId: 'real-wire', requestId: 'real-wire', onText: text => chunks.push(text),
-  })
-  assert.equal(dispatched, true)
-  assert.equal(chunks.join(''), 'fake streamed reply')
-  assert.equal(result.stopReason, 'stop')
+  const chat = chatFixture(f, t), thread = chat.create(chatModelSelection(id, 'owner-model'))
+  for (const locale of ['en', 'ru'] as const) {
+    chat.context.settings.update({ locale })
+    const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: `hello ${value} /private/project at 2026-10-23T12:34:56Z quota=987` }) })
+    assert.equal(response.status, 200)
+    await response.text()
+    assert.equal(chat.context.threads.messages(thread.id).at(-1)!.content, 'fake streamed reply')
+    assert.equal(chat.context.threads.messages(thread.id).at(-1)!.turnStatus, 'completed')
+  }
+  assert.equal(requests.length, 2)
+  for (const messages of requests) {
+    assert.deepEqual(messages[0], { role: 'system', content: harnessSystemPrompt() })
+    assert.equal(messages.filter(message => message.role === 'system').length, 1)
+    assert.equal(messages[1]!.role, 'user')
+    assert.ok(!JSON.stringify(messages).includes(value))
+  }
+  assert.deepEqual(Buffer.from(requests[0]![0]!.content), Buffer.from(requests[1]![0]!.content))
+  assert.equal(requests[1]!.length, 4)
 })
 
 

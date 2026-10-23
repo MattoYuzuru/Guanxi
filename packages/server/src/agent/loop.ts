@@ -44,7 +44,6 @@ import { parseToolCalls } from './tool-parser.ts'
 
 export interface RunTurnParams {
   thread: Thread
-  harnessPrompt?: string
   workspace: Workspace | null
   client: Pick<OllamaClient, 'chatStream'>
   store: ThreadStore
@@ -250,7 +249,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           toolNames: registry.list().map((tool) => tool.name),
           supportsNativeTools: params.modelSupportsTools,
         })
-      : (params.harnessPrompt ?? harnessSystemPrompt('en'))
+      : harnessSystemPrompt()
 
   const persistedMessages = store
     .activeContextMessages(thread.id)

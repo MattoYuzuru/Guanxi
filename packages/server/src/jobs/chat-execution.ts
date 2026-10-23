@@ -1,7 +1,6 @@
 import { parseChatModelSelection } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
 import { providerChatClient } from '../connections/chat.ts'
-import { harnessSystemPrompt } from '../agent/harness-prompt.ts'
 import type { ProjectService } from '../projects/service.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type {
@@ -344,10 +343,6 @@ export class ChatJobExecutionOwner {
         thread,
         workspace,
         client: provider ? providerChatClient(this.dependencies.connections!(), provider, association.job.id) : this.dependencies.ollama(),
-        harnessPrompt: harnessSystemPrompt(settings.locale, (() => {
-          const projectId = this.dependencies.threads.getWithOwnership(thread.id)?.projectId
-          return projectId ? this.dependencies.projects?.get(projectId)?.name : null
-        })()),
         store: this.dependencies.threads,
         registry,
         approvals: this.dependencies.approvals,

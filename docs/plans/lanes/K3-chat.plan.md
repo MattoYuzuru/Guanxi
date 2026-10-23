@@ -10,7 +10,8 @@ Status: autonomous under D-208 and the lane owner's instructions. Base: `631cd5c
 - Expose generic chat model groups combining Ollama and usable K3 connections, including
   model-list provenance; retain the existing picker styling.
 - Route provider Chat through K3 completion and the existing durable Job/SSE projection.
-- Prepend a short English/Russian harness identity prompt to local and provider Chat.
+- Prepend the existing ADR-0021 English light orientation to local and provider Chat,
+  with only the brand-module product name added (integrator correction).
 
 ## Defaults
 
@@ -24,10 +25,12 @@ Status: autonomous under D-208 and the lane owner's instructions. Base: `631cd5c
   vault key and bounded timeout; fall back to the pi-ai catalog with explicit provenance.
 - Provider streaming may buffer text at the K3 scrubber boundary to avoid partial-secret leaks.
   Durable execution remains independent from subscribers; restart interrupts rather than retries.
-- Prompt locale follows node settings; node identity defaults to the local-node label, project identity
-  uses only a display name. No hostname, filesystem root or credentials enter the prompt.
-- Per-project prompt editing is deferred. B1/ADR-0025 benchmark evidence is unavailable for this
-  lane; fake-transport assertions establish dispatch, not model quality or non-inferiority.
+- Plain Chat uses the shared orientation source with truthful no-tools/no-execution facts.
+  Its English prefix is bounded to 300 UTF-8 bytes, first before history, and byte-stable across
+  turns and locale changes. No paths, secrets, project metadata or volatile values enter it.
+- Per-project prompt editing is deferred. This reuses the ADR-0021 baseline, not a new prompt;
+  any expansion needs an ADR-0025 bench result. Fake-transport assertions establish dispatch,
+  not model quality, cache hits or non-inferiority.
 
 ## Boundaries and migration
 

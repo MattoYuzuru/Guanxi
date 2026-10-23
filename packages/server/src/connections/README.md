@@ -185,11 +185,15 @@ idempotent replay, explicit Stop and interrupted recovery without inference cont
 Provider reasoning text is not projected into legacy Chat; provider compaction is explicitly
 refused until a K3-aware compaction implementation exists.
 
-Both local and provider Chat prepend `agent/harness-prompt.ts`, localized by node UI settings:
-product name from the brand module, the local-node label, project display name only, and the
-harness's ownership of tools/permissions. This is a fixed default; per-project editing is
-future work. D-208 authorizes this default while ADR-0025 benchmark evidence is unavailable;
-request assertions are not evidence of model quality or benchmark non-inferiority.
+Both local and provider Chat prepend the plain-chat variant of `native-agent/orientation.ts`
+through `agent/harness-prompt.ts`. This is the ADR-0021 §8 light-orientation baseline, with only
+the product name from the brand module added. It states the local node/OS and the absence of
+execution cwd, roots, tools, skills and available path/budget/AGENTS.md details. The English
+model-facing prefix is bounded to 300 UTF-8 bytes and independent of UI locale, project metadata
+and per-turn state. It stays byte-identical before history on every turn for prefix-cache reuse.
+Any future volatile facts belong at the end of the latest user turn, outside this prefix.
+Any expansion requires an ADR-0025 bench result; request assertions prove dispatch, not model
+quality, cache hits or benchmark non-inferiority. Per-project prompt editing remains future work.
 
 Rollback preserves migration 3, the sidecar and OS wrapping keys. Older binaries cannot consume
 new connection fields/provider model selections: do not downgrade a node with provider Chats.
