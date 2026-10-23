@@ -8,6 +8,7 @@ import type { LocalChatTransport } from '../connections/service.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../ollama/types.ts'
 import type { RunStore } from '../runs/store.ts'
 import type { Attempt } from '../runs/types.ts'
+import { FEDERATION_BODY_BYTES } from '../federation/routes.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { invariant, RelayError } from './types.ts'
 import type { RelayExactCounter, RelayRuntimeObservation, RelayRuntimeObserver, RelayRuntimeSession } from './runtime.ts'
@@ -16,6 +17,8 @@ import { abortableRead } from './runtime.ts'
 export const REMOTE_RELAY_COUNTER_SOURCE = 'federation:llama-server:/apply-template+/tokenize'
 export const REMOTE_RELAY_PROPS_SOURCE = 'federation:llama_server_props'
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
+/** A signed F2 message is one HTTP body. Leave room for the binding, grant and job fields around the message. */
+const CONTENT_BUDGET_BYTES = FEDERATION_BODY_BYTES - 32 * 1024
 
 export interface RemoteRelayRuntimeOptions {
   /** The home node's federation service: its signed channel, its R1 store and its dispatch ledger. */
@@ -31,11 +34,12 @@ export interface RemoteRelayRuntimeOptions {
   callDeadlineMs?: number
   /** How long the executor may take to admit a call (its governor queue). Default one minute. */
   reservationMs?: number
-  /** Granularity of the fence heartbeat and executor-loss check while a call is pending. Default 25 ms. */
+  /** Granularity of the fence heartbeat and executor-loss check while a call is pending. Default 250 ms. */
   pollMs?: number
-  /** After a cancel, how long to retry an unconfirmed ACK before relying on the holder's own expiry.
-   * Must be at least the dispatch holder TTL for the guarantee to hold; default is the TTL given here. */
-  cancelWaitMs: number
+  /** After a cancel, how long to retry an unconfirmed ACK before relying on the holder's own expiry. A holder can
+   * outlive the last renewal the home granted by one TTL, so anything shorter than the dispatch holder TTL would let
+   * the next offer overlap a running inference; that is refused at construction. Default is the holder TTL. */
+  cancelWaitMs?: number
   /** Distinct exact answers remembered per session. Default 512. */
   cacheEntries?: number
   /** Host seam called synchronously when the relay run exists, inside its creation transaction. The executor
@@ -48,14 +52,18 @@ export class RemoteRelayRuntime implements RelayRuntimeObserver {
   readonly remote: { readonly nodeId: string }
   readonly host: string
   readonly model: string
-  private readonly options: RemoteRelayRuntimeOptions
+  private readonly options: RemoteRelayRuntimeOptions & { cancelWaitMs: number }
   constructor(options: RemoteRelayRuntimeOptions) {
     const model = normalizeOllamaModelReference(options.model)
     invariant(model && !/:cloud$/i.test(options.model) && options.executorNodeId, 'relay_local_model_required')
-    for (const ms of [options.cancelWaitMs, options.callDeadlineMs ?? 1, options.reservationMs ?? 1, options.pollMs ?? 1, options.cacheEntries ?? 1]) {
+    let holderTtl: number
+    try { holderTtl = options.federation.holderTtlMs() } catch { throw new RelayError('runtime_meter_unavailable') }
+    const cancelWaitMs = options.cancelWaitMs ?? holderTtl
+    for (const ms of [cancelWaitMs, options.callDeadlineMs ?? 1, options.reservationMs ?? 1, options.pollMs ?? 1, options.cacheEntries ?? 1]) {
       invariant(Number.isSafeInteger(ms) && ms > 0, 'relay_policy_invalid')
     }
-    this.options = Object.freeze({ ...options }); this.model = model
+    invariant(cancelWaitMs >= holderTtl, 'relay_policy_invalid')
+    this.options = Object.freeze({ ...options, cancelWaitMs }); this.model = model
     this.remote = Object.freeze({ nodeId: options.executorNodeId })
     this.host = `federation://${encodeURIComponent(options.executorNodeId)}`
   }
@@ -69,12 +77,15 @@ export class RemoteRelayRuntime implements RelayRuntimeObserver {
 }
 
 interface Counted { evidence: CountedRequest; identity: string }
+/** The string is larger than one signed F2 message can carry (a transport budget, not a model limit). */
+class OverBudget extends Error { constructor() { super('over_budget') } }
+type ResolvedOptions = RemoteRelayRuntimeOptions & { cancelWaitMs: number }
 class RemoteRelaySession implements RelayRuntimeSession {
   readonly remote: { readonly nodeId: string }
   readonly transport: LocalChatTransport
   readonly model: string
   readonly host: string
-  private readonly options: RemoteRelayRuntimeOptions
+  private readonly options: ResolvedOptions
   private readonly channel: FederationChannel
   private readonly lifetime = new AbortController()
   private readonly clock: () => number
@@ -83,7 +94,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
   private identity = ''
   private proven = ''
   private fact: RelayRuntimeObservation | undefined
-  constructor(options: RemoteRelayRuntimeOptions, model: string, host: string, channel: FederationChannel) {
+  constructor(options: ResolvedOptions, model: string, host: string, channel: FederationChannel) {
     this.options = options; this.model = model; this.host = host; this.channel = channel
     this.clock = options.clock ?? Date.now
     this.remote = Object.freeze({ nodeId: options.executorNodeId })
@@ -152,6 +163,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
   private async countRemote(content: string, signal: AbortSignal): Promise<Counted> {
     const key = sha256(content), known = this.cache.get(key)
     if (known && known.identity === this.identity) return known
+    // Caught by the callers: a string no signed message can carry has no exact count here.
+    if (Buffer.byteLength(JSON.stringify(content)) > CONTENT_BUDGET_BYTES) throw new OverBudget()
     const active = this.signalFor(signal)
     active.throwIfAborted()
     try {
@@ -178,7 +191,14 @@ class RemoteRelaySession implements RelayRuntimeSession {
     return { identity: { model: seen.model, digest: seen.digest, runtimeVersion: seen.runtimeVersion }, placement: 'installed_local',
       source: REMOTE_RELAY_COUNTER_SOURCE, observedAt: seen.observedAt, confidence: 'high',
       count: request => this.lookup(this.message(request)),
-      countAsync: async (request, active) => (await this.countRemote(this.message(request), active)).evidence.tokens }
+      // A string no signed message can carry has no exact count. It is reported above every ceiling, so the packer
+      // shrinks it and nothing larger than the transport budget is ever dispatched; the answer is never remembered.
+      countAsync: async (request, active) => {
+        try { return (await this.countRemote(this.message(request), active)).evidence.tokens } catch (error) {
+          if (error instanceof OverBudget) return Number.MAX_SAFE_INTEGER
+          throw error
+        }
+      } }
   }
   /** Synchronous exact count: a lookup of an answer the executor already gave for these exact bytes. There is no
    * estimate and no fallback; a string the executor has not counted is refused. */
@@ -208,32 +228,39 @@ class RemoteRelaySession implements RelayRuntimeSession {
     const job: LocalInferenceJob = { kind: 'local_inference', model: request.model, context: window!, outputTokens: limit!,
       deadline: this.clock() + (this.options.callDeadlineMs ?? 30 * 60_000), messages: [{ role: 'user', content }], counted: counted.evidence }
     let offerId: string | undefined, dispatched = false
+    // Requests that may still be processed by the executor after this call was aborted. A cancel must follow them.
+    const inFlight: Promise<unknown>[] = []
     const ref = () => ({ id: offerId!, homeNodeId: federation.identity.id, executorNodeId: this.options.executorNodeId })
     try {
       runs.create({ id: childId, sessionId: session })
-      const offer = federation.prepareDispatch(childId, this.options.executorNodeId, job, this.options.reservationMs ?? 60_000, attempt.run_id)
+      const offer = federation.prepareDispatch(childId, this.options.executorNodeId, job, this.options.reservationMs ?? 60_000, { runId: attempt.run_id, epoch: attempt.epoch })
       offerId = offer.id
       // The audit link from the relay run to its child, in the same fenced transaction as a fence check.
       runs.mutate(attempt, (_db, emit) => emit({ type: 'agent.note', data: { text: canonical({ relay: 'remote_call', child: childId, offer: offer.id, executor: this.options.executorNodeId }) } }))
-      const receipt = await abortableRead(this.channel.offer(offer), active)
+      const offering = this.channel.offer(offer)
+      inFlight.push(offering)
+      const receipt = await abortableRead(offering, active)
       invariant(receipt.status === 'reserved' && receipt.reservation, 'runtime_meter_unavailable')
       const grant = federation.grantDispatch(offer.id, receipt)
       // Negotiation happens first; then the final scrub, fence and shape checks, the R1-fenced start observation and
       // the signed request are one synchronous stretch. Nothing queued on this event loop can run between them.
       dispatched = true
-      await abortableRead(this.channel.dispatch(grant, () => {
+      const sending = this.channel.dispatch(grant, () => {
+        this.fence()
         active.throwIfAborted()
         invariant(canonical(dispatch.prepare()) === canonical(first), 'runtime_request_changed')
         onDispatched()
-      }), active)
+      })
+      inFlight.push(sending)
+      await abortableRead(sending, active)
       const terminal = await federation.attemptDispatch!.awaitTerminal(offer.id, active, () => {
         // A deposed relay attempt aborts the call; an executor that stopped renewing leaves its child interrupted.
+        this.fence()
         onDispatched()
-        runs.tick()
-        const child = runs.get(childId)
-        if (child.state === 'interrupted') throw new RelayError('runtime_meter_unavailable')
         if (this.clock() >= job.deadline) throw new RelayError('model_failed')
-      }, this.options.pollMs ?? 25)
+        runs.tick()
+        if (runs.get(childId).state === 'interrupted') throw new RelayError('runtime_meter_unavailable')
+      }, this.options.pollMs ?? 250)
       active.throwIfAborted()
       if (terminal.outcome !== 'completed') throw new RelayError(terminal.reason ?? (terminal.outcome === 'canceled' ? 'relay_stopped' : 'model_failed'))
       // The executor evaluated the rendering and the token count that were counted, or the call is not accepted.
@@ -243,25 +270,29 @@ class RemoteRelaySession implements RelayRuntimeSession {
         message: { role: 'assistant', content: terminal.content }, prompt_eval_count: terminal.inputTokens!, eval_count: terminal.outputTokens! }
     } catch (error) {
       // The call settles only after the executor acknowledged the cancel (or its holder has provably expired).
-      await this.stop(childId, offerId ? ref() : undefined, dispatched)
+      await this.stop(childId, offerId ? ref() : undefined, dispatched, inFlight)
       throw error
     }
   }
   /** Cancel at the home first, so renewals and late results are refused, then ask the executor directly and wait for its
    * ACK. Without an ACK the wait ends when the holder TTL has elapsed: by then the holder has fenced itself. */
-  private async stop(childId: string, ref: { id: string; homeNodeId: string; executorNodeId: string } | undefined, dispatched: boolean): Promise<void> {
+  private async stop(childId: string, ref: { id: string; homeNodeId: string; executorNodeId: string } | undefined, dispatched: boolean, inFlight: Promise<unknown>[]): Promise<void> {
     // An executor that stopped renewing leaves its child `interrupted` (R1 expiry); that is a loss, not a cancel.
     try { if (this.options.runs.get(childId).state !== 'interrupted') this.options.runs.cancel(childId) } catch { /* A deposed home cannot cancel; the holder fences itself on its next renewal. */ }
     if (!ref) return
     const end = Date.now() + this.options.cancelWaitMs
+    // Never wait on the executor beyond the window in which its holder is guaranteed to have fenced itself.
+    const bounded = <T>(pending: Promise<T>): Promise<T> => abortableRead(pending, AbortSignal.timeout(Math.max(1, end - Date.now())))
     const missing = (error: unknown) => error instanceof FederationError && error.code === 'peer_refused' && error.status === 404
+    // A request that was aborted here may still be processed there; cancel only after it has been, or after the window.
+    await bounded(Promise.allSettled(inFlight)).catch(() => undefined)
     for (;;) {
       try {
         let state: { status: string } | undefined
         // A 404 means the executor never accepted the grant: only its reservation can still be held.
-        if (dispatched) try { state = await this.channel.cancelDispatch({ ...ref, expiresAt: this.clock() + 60_000 }) } catch (error) { if (!missing(error)) throw error }
+        if (dispatched) try { state = await bounded(this.channel.cancelDispatch({ ...ref, expiresAt: this.clock() + 60_000 })) } catch (error) { if (!missing(error)) throw error }
         if (state && ['canceled', 'lost', 'completed', 'failed'].includes(state.status)) return
-        if (!state) { await this.channel.cancelOffer({ offerId: ref.id, homeNodeId: ref.homeNodeId, executorNodeId: ref.executorNodeId }); return }
+        if (!state) { await bounded(this.channel.cancelOffer({ offerId: ref.id, homeNodeId: ref.homeNodeId, executorNodeId: ref.executorNodeId })); return }
       } catch (error) {
         if (missing(error)) return
       }

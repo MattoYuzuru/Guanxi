@@ -214,10 +214,16 @@ export class Federation {
     this.clean(offer)
     if (peer.trust !== 'owner_device' || peer.accountId !== this.identity.accountId || offer.homeNodeId !== peer.id || offer.executorNodeId !== this.identity.id)
       throw new FederationError('owner_mismatch', 403)
-    // A relay model call is a child run: its pin derives from the already pinned relay run (same session, owner, home and epoch).
-    const binding = this.replicas.binding(offer.parentRunId ?? offer.runId)
+    // A relay model call is a child run: its pin derives from the already pinned relay run (same session, owner, home and
+    // epoch). The child is a different run id, and never one that is pinned in its own right (that is some other run's state).
+    if (offer.parent) {
+      let own = true
+      try { this.replicas.binding(offer.runId) } catch { own = false }
+      if (own || offer.runId === offer.parent.runId) throw new FederationError('not_home')
+    }
+    const binding = this.replicas.binding(offer.parent?.runId ?? offer.runId)
     if (binding.kind !== 'run' || binding.sessionId !== offer.sessionId || binding.ownerAccountId !== peer.accountId ||
-      binding.homeNodeId !== peer.id || binding.homeEpoch !== offer.fence.epoch) throw new FederationError('not_home')
+      binding.homeNodeId !== peer.id || binding.homeEpoch !== offer.fence.epoch || (offer.parent && binding.homeEpoch !== offer.parent.epoch)) throw new FederationError('not_home')
   }
   async receiveAttemptOffer(context: PeerContext, input: RemoteAttemptOffer) {
     const offers = this.offers(), offer = remoteAttemptOfferSchema.parse(input)
@@ -235,12 +241,18 @@ export class Federation {
     if (!this.attemptDispatch) throw new FederationError('contract_feature_unavailable', 426)
     return this.attemptDispatch
   }
-  prepareDispatch(runId: string, executor: string, job: LocalInferenceJob, reservationMs: number, parentRunId?: string): RemoteAttemptOffer {
+  prepareDispatch(runId: string, executor: string, job: LocalInferenceJob, reservationMs: number, parent?: { runId: string; epoch: number }): RemoteAttemptOffer {
     const target = this.peer(executor)
     this.clean(job)
     if (target.trust !== 'owner_device' || target.accountId !== this.identity.accountId || !target.scopes.includes('attempts')) throw new FederationError('owner_mismatch', 403)
-    if (job.counted && !parentRunId) throw new FederationError('dispatch_binding')
-    return this.dispatches().prepare(runId, executor, job, reservationMs, parentRunId)
+    if (!!job.counted !== !!parent) throw new FederationError('dispatch_binding')
+    return this.dispatches().prepare(runId, executor, job, reservationMs, parent)
+  }
+  /** How long a holder can outlive the last renewal the home granted it: the window a cancel without ACK must wait out. */
+  holderTtlMs(): number {
+    const dispatch = this.#options.dispatch
+    if (!dispatch) throw new FederationError('contract_feature_unavailable', 426)
+    return dispatch.ttlMs
   }
   /** F2-d home side: the signed channel to a pinned owner-device executor that may serve relay inference. */
   relayChannel(executorNodeId: string): FederationChannel {

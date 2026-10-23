@@ -74,8 +74,9 @@ export const remoteAttemptOfferSchema = z.object({
   fence: z.object({ attemptId: federationId, epoch: integer.positive(), token: integer.positive() }).strict(),
   expiresAt: integer, mode: z.literal('strict'),
   resource: z.object({ kind: z.literal('local_inference'), model: z.string().trim().min(1), requestedContext: integer.positive() }).strict(),
-  /** F2-d: a relay model call is a child run. Its executor-side pin derives from this already pinned relay run. */
-  parentRunId: federationId.optional(),
+  /** F2-d: a relay model call is a child run. Its executor-side pin derives from this already pinned relay run and
+   * its home epoch. Only a counted dispatch may use it, and never for a run id that is pinned in its own right. */
+  parent: z.object({ runId: federationId, epoch: integer.positive() }).strict().optional(),
 }).strict()
 export type RemoteAttemptOffer = z.infer<typeof remoteAttemptOfferSchema>
 export const remoteAttemptReceiptSchema = z.object({

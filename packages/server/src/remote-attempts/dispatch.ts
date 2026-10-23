@@ -9,9 +9,8 @@ import type { Connections } from '../connections/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import type { AttemptOffers } from './offers.ts'
 import { canonical, hash, signValue, FederationError } from '../federation/crypto.ts'
-import type { ExecutorRelayRuntime } from './relay-runtime.ts'
+import { sha256Hex, type ExecutorRelayRuntime } from './relay-runtime.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
-import { RelayError } from '../relay/types.ts'
 
 export interface LocalModelAttestation {
   connectionId: string; model: string; placement: 'installed_local'; source: string; observedAt: number
@@ -95,10 +94,10 @@ export class AttemptDispatch {
     return this.runs.asRemoteExecutor(a, offer.executorNodeId, () => body(a))
   }
   /** The fresh token, binding, immutable job and offer intent commit together. */
-  prepare(runId: string, executorNodeId: string, raw: LocalInferenceJob, reservationMs: number, parentRunId?: string): RemoteAttemptOffer {
+  prepare(runId: string, executorNodeId: string, raw: LocalInferenceJob, reservationMs: number, parent?: { runId: string; epoch: number }): RemoteAttemptOffer {
     this.ready()
     const job = localInferenceJobSchema.parse(raw)
-    if (job.counted && !parentRunId) throw new FederationError('dispatch_binding')
+    if (!!job.counted !== !!parent || parent?.runId === runId) throw new FederationError('dispatch_binding')
     if (job.deadline <= this.clock() || !Number.isSafeInteger(reservationMs) || reservationMs <= 0) throw new FederationError('dispatch_deadline')
     return this.runs.startRemote(runId, executorNodeId, (a, db) => {
       if (job.deadline <= this.clock()) throw new FederationError('dispatch_deadline')
@@ -106,7 +105,7 @@ export class AttemptDispatch {
       const offer: RemoteAttemptOffer = { id: randomUUID(), runId, sessionId: run.session_id, homeNodeId: this.node, executorNodeId,
         fence: { attemptId: a.id, epoch: a.epoch, token: a.token }, mode: 'strict',
         expiresAt: Math.min(job.deadline, this.clock() + reservationMs, Number(lease.expires_at)),
-        resource: { kind: 'local_inference', model: job.model, requestedContext: job.context }, ...(parentRunId ? { parentRunId } : {}) }
+        resource: { kind: 'local_inference', model: job.model, requestedContext: job.context }, ...(parent ? { parent } : {}) }
       db.prepare('INSERT INTO remote_home_offers VALUES (?,?)').run(offer.id, canonical(offer))
       db.prepare('INSERT INTO remote_dispatch_home VALUES (?,?,?,?,NULL)').run(offer.id, canonical(offer), canonical(job), canonical(a))
       return offer
@@ -274,7 +273,10 @@ export class AttemptDispatch {
       g.offer.resource.model !== g.job.model || g.offer.resource.requestedContext !== g.job.context || g.job.deadline <= this.clock()) throw new FederationError('dispatch_binding')
     this.attestation(g.job)
     // A counted job is a relay model call: it needs a pinned parent and the llama-server that counted it.
-    if (g.job.counted && (!g.offer.parentRunId || !this.policy.relayRuntime || normalizeOllamaModelReference(g.job.model) !== this.policy.relayRuntime.model)) throw new FederationError('dispatch_binding')
+    // Its content hash is the first link of the counted chain: the message the home counted is the message in this grant.
+    if (!!g.job.counted !== !!g.offer.parent) throw new FederationError('dispatch_binding')
+    if (g.job.counted && (!this.policy.relayRuntime || normalizeOllamaModelReference(g.job.model) !== this.policy.relayRuntime.model ||
+      g.job.messages.length !== 1 || g.job.messages[0]!.role !== 'user' || g.job.counted.contentSha256 !== sha256Hex(g.job.messages[0]!.content))) throw new FederationError('dispatch_binding')
     if (!this.policy.connections) throw new FederationError('local_executor_unavailable')
     const old = this.db.prepare('SELECT grant FROM remote_dispatch_holders WHERE id=?').get(g.id)
     if (old) { if (old.grant !== canonical(signed)) throw new FederationError('dispatch_conflict'); return this.state(g.id) }
@@ -323,7 +325,7 @@ export class AttemptDispatch {
       if (!result.done || result.message?.role !== 'assistant' || typeof result.message.content !== 'string') throw new FederationError('local_result_invalid')
       // The evaluated rendering and token count must be the counted ones; the transport has already refused otherwise.
       const evaluated = expected?.evidence()?.renderedSha256
-      if (counted && (evaluated !== counted.renderedSha256 || result.prompt_eval_count !== counted.tokens)) throw new RelayError('truncation_protocol')
+      if (counted && (evaluated !== counted.renderedSha256 || result.prompt_eval_count !== counted.tokens)) throw new FederationError('truncation_protocol')
       this.emit(h, { kind: 'terminal', outcome: 'completed', content: result.message?.content ?? '', inputTokens: result.prompt_eval_count ?? null,
         outputTokens: result.eval_count ?? null, source, ...(evaluated ? { renderedSha256: evaluated } : {}),
         ...(counted && result.done_reason ? { doneReason: result.done_reason === 'length' ? 'length' as const : 'stop' as const } : {}) })
@@ -332,7 +334,7 @@ export class AttemptDispatch {
       if (!this.closed) {
         const state = this.state(g.id).status
         // A fixed machine reason, never message text: it names which counted-request invariant refused the call.
-        const code = expected?.evidence()?.failure ?? (error instanceof RelayError ? error.code : error instanceof FederationError ? error.code : undefined)
+        const code = expected?.evidence()?.failure ?? (error instanceof FederationError ? error.code : undefined)
         const reason = counted && code && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : undefined
         this.emit(h, { kind: 'terminal', outcome: h.controller.signal.aborted ? 'canceled' : 'failed', content: '', inputTokens: null, outputTokens: null, source,
           ...(reason && !h.controller.signal.aborted ? { reason } : {}) })

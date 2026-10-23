@@ -130,22 +130,24 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
       source: LLAMA_SERVER_COUNTER_SOURCE, observedAt: seen.observedAt, confidence: 'high', count: request => this.countRequest(request) }
   }
   /** The template proof, once per served identity. */
-  private async prove(seen: RelayRuntimeObservation, signal: AbortSignal): Promise<void> {
+  private async prove(seen: RelayRuntimeObservation, signal: AbortSignal, bridge = true): Promise<void> {
     const key = canonical([seen.digest, seen.runtimeVersion, seen.contextTokens])
-    if (this.proven === key) return
+    if ((bridge ? this.proven : this.provenAsync) === key) return
     try {
       const rendered = await this.client.render(PROBE, signal)
       invariant(occurrences(rendered, PROBE) === 1 && rendered.length > PROBE.length, 'runtime_counter_mismatch')
       const tokens = await this.client.countTokens(rendered, signal)
-      invariant(tokens > 0 && this.bridge.count(PROBE, true) === tokens, 'runtime_counter_mismatch')
+      // The worker bridge is the local counter's own implementation, so only that path proves it agrees.
+      invariant(tokens > 0 && (!bridge || this.bridge.count(PROBE, true) === tokens), 'runtime_counter_mismatch')
     } catch (error) { this.unavailable(error, signal) }
-    this.proven = key
+    if (bridge) this.proven = key; else this.provenAsync = key
   }
   /** F2-d executor side: identity, template proof, rendering and exact token count of one user message in
    * one asynchronous step. The caller keeps the rendered text only to hash it; a dispatch re-renders. */
   async measure(content: string, signal: AbortSignal): Promise<{ observation: RelayRuntimeObservation; rendered: string; tokens: number }> {
     const observation = await this.observe(this.model, signal)
-    await this.prove(observation, signal)
+    // No synchronous bridge here: this runs inside a federation request handler on a node that must keep renewing leases.
+    await this.prove(observation, signal, false)
     try {
       const rendered = await this.client.render(content, signal)
       const tokens = await this.client.countTokens(rendered, signal)
@@ -153,6 +155,7 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
     } catch (error) { return this.unavailable(error, signal) }
   }
   private proven = ''
+  private provenAsync = ''
   private message(request: Readonly<OllamaChatRequest>): string {
     invariant(request.think === false && request.messages.length === 1 && request.messages[0]!.role === 'user' &&
       typeof request.messages[0]!.content === 'string', 'runtime_request_changed')
@@ -182,25 +185,28 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
     await dispatch.authorizeDispatch()
     signal.throwIfAborted()
     const first = dispatch.prepare(), content = this.message(first)
+    const window = first.options?.num_ctx, limit = first.options?.num_predict
+    invariant(Number.isSafeInteger(window) && Number.isSafeInteger(limit) && limit! > 0, 'runtime_request_changed')
     if (expected) {
-      // The count was made under one served model and window; this dispatch must run on exactly that one.
+      // The count was made under one served model and window; this dispatch must run on exactly that one, and the
+      // window it claims is the loaded one, whatever the home asked for.
       try {
         const now = await this.observe(this.model, signal)
         invariant(now.digest === expected.digest && now.contextTokens === expected.contextTokens, 'runtime_identity_changed')
+        invariant(window === now.contextTokens, 'context_ceiling')
       } catch (error) { this.unavailable(error, signal) }
     }
-    const window = first.options?.num_ctx, limit = first.options?.num_predict
-    invariant(Number.isSafeInteger(window) && Number.isSafeInteger(limit) && limit! > 0, 'runtime_request_changed')
-    // Asynchronous renderer and tokenizer evidence. Any disagreement with the synchronous count the
-    // executor used for its ceiling is a refusal before the model sees a token.
+    // Asynchronous renderer and tokenizer evidence. Any disagreement with the count the dispatch is bound to is a
+    // refusal before the model sees a token. A remote job is bound to the home's exact count; the synchronous worker
+    // bridge would block this node's event loop, which also carries its lease renewals, so it is not used for it.
     let rendered: string
     try {
       rendered = await this.client.render(content, signal)
       const tokens = await this.client.countTokens(rendered, signal)
-      invariant(tokens === this.countRequest(first), 'runtime_counter_mismatch')
+      invariant(tokens === (expected ? expected.tokens : this.countRequest(first)), 'runtime_counter_mismatch')
       invariant(tokens + limit! <= window!, 'context_ceiling')
       // The home counted this exact rendering; anything else is not the request it admitted.
-      if (expected) invariant(createHash('sha256').update(rendered).digest('hex') === expected.renderedSha256 && tokens === expected.tokens, 'runtime_counter_mismatch')
+      if (expected) invariant(createHash('sha256').update(rendered).digest('hex') === expected.renderedSha256, 'runtime_counter_mismatch')
     } catch (error) { this.unavailable(error, signal) }
     // The final scrub, fence and shape checks run again and the POST is issued in the same
     // synchronous stretch: nothing can be revoked between them and the request.
