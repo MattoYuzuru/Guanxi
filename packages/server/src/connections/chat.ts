@@ -17,7 +17,7 @@ export async function assertChatSelection(host: ChatModelHost, model: string, nu
   if (model.startsWith('k3:') && !selection) throw new ConnectionError('validation_failed', 'Invalid provider selection')
   if (!selection) return host.models().assertContextAllowed(model, numCtx, signal)
   if (!host.connections) throw new ConnectionError('egress_unavailable', 'Connections unavailable')
-  await host.connections().assertChatModel('local', selection.connectionId, selection.modelId)
+  await host.connections().assertChatModel('local', selection.connectionId, selection.modelId, signal)
 }
 export async function providerChatGroups(connections: Connections, signal?: AbortSignal): Promise<ChatModelsResponse['groups']> {
   const snapshot = connections.snapshot('local')

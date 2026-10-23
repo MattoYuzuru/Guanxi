@@ -575,3 +575,20 @@ test('provider admission exposes actionable connection codes and HTTP statuses',
     assert.equal((await response.json() as { code: string }).code, code)
   }
 })
+
+test('send request cancellation reaches custom model discovery', async t => {
+  let observed: AbortSignal | undefined, release!: () => void, started!: () => void
+  const barrier = new Promise<void>(resolve => { release = resolve })
+  const entered = new Promise<void>(resolve => { started = resolve })
+  const f = await setup(t, undefined, async (_url, init) => {
+    observed = init!.signal!; started(); await barrier
+    return Response.json({ data: [{ id: 'owner-model' }] })
+  })
+  const id = await imported(f.service, canary(), 'https://api.example.invalid/v1'), chat = chatFixture(f, t)
+  const thread = chat.create(chatModelSelection(id, 'owner-model')), controller = new AbortController()
+  const pending = chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', signal: controller.signal,
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'fixture' }) })
+  await entered
+  try { controller.abort(); assert.equal(observed!.aborted, true) }
+  finally { release(); await (await pending).text() }
+})

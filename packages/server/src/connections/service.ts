@@ -204,11 +204,11 @@ export class Connections {
       observedAt: model ? new Date().toISOString() : this.discovered.get(id)?.observedAt ?? null,
       confidence: model ? 'medium' as const : 'unknown' as const }
   }
-  async assertChatModel(accountId: string, id: string, modelId: string) {
+  async assertChatModel(accountId: string, id: string, modelId: string, signal?: AbortSignal) {
     const connection = this.store.get(accountId, id)
     if (connection.kind !== 'model_api' || !connection.secretRef) throw new ConnectionError('policy_denied', 'A model API key is required')
     if (!this.#vault.unlocked(accountId)) throw new ConnectionError('vault_locked', 'Unlock Connections in Settings')
-    const catalog = await this.chatModels(accountId, id)
+    const catalog = await this.chatModels(accountId, id, signal)
     if (!catalog.models.includes(modelId)) throw new ConnectionError('connection_not_found', 'Provider model unavailable')
   }
   setUnattended(accountId: string, id: string, unattended: boolean) {
