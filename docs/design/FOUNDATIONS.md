@@ -1,11 +1,19 @@
 # Foundations
 
-**Status:** accepted values (D-127–D-129); built as DTCG tokens in stage DS1 · **Updated:** 2026-10-20
+**Status:** accepted structure (D-127–D-129); colour values follow D-201 (working palette Porcelain +
+Cobalt, **pending owner approval**); radii, elevation and graphics tiers follow D-200–D-206 · **Updated:** 2026-10-23
 
 These are the values the token source (`packages/ui/tokens/`, ADR-0034) is generated from.
 Feature code and plugins use **semantic** names only (right-hand columns), never the raw steps.
 Evidence: [03 typography and identity](../research/2026-10-20-design/03-typography-and-identity.md),
-[02 design-system tooling](../research/2026-10-20-design/02-design-system-tooling.md) §§3, 7.
+[02 design-system tooling](../research/2026-10-20-design/02-design-system-tooling.md) §§3, 7,
+[2026-10-23 redesign research](research/2026-10-23-redesign.md).
+
+**Palette swaps are token-only (D-201).** The ramps, accent and status colours below are generated
+by `packages/ui/tokens/palettes/generate.mjs` (three candidates; the catalog's `palette-preview`
+shows them) and written by `apply.mjs <candidate>`, which also rewrites these tables; then
+`npm run tokens:build` and `apply.mjs --measure`. Step 1 is the session pane (white in light, a
+deep neutral in dark); step 2 is the chrome tone the panes float on.
 
 ## 1. Colour
 
@@ -15,34 +23,35 @@ Twelve steps per theme: 1 raised surface · 2 canvas · 3–5 fills (rest, hover
 6–8 borders (7 = decorative divider, below 3:1 on purpose) · 9 control border (≥ 3:1) ·
 10 muted text (≥ 4.5:1) · 11 secondary text (≥ 7:1) · 12 primary text.
 
-| Step | Light (Glacier, frost) | Dark (brand ink) |
+| Step | Light (Porcelain) | Dark |
 | --- | --- | --- |
-| 1 | `#F3FCFE` | `#0F1A19` |
-| 2 | `#EBF4F5` canvas | `#182322` canvas |
-| 3 | `#E2EBED` | `#1F2A29` |
-| 4 | `#DAE3E5` | `#25302F` |
-| 5 | `#CEDCDE` | `#2C3837` |
-| 6 | `#C5D2D4` | `#34403F` |
-| 7 | `#B3C1C3` | `#414D4C` |
-| 8 | `#94A1A3` | `#54615F` |
-| 9 | `#768385` | `#798281` |
-| 10 | `#626E70` | `#A3ADAC` |
-| 11 | `#445051` | `#C3CDCC` |
-| 12 | `#182322` ink | `#EEF5F6` frost |
+| 1 | `#FFFFFF` pane | `#16191D` pane |
+| 2 | `#EFF3F8` canvas | `#0D1014` canvas |
+| 3 | `#EAEEF3` | `#1E2126` |
+| 4 | `#E4E8ED` | `#24272C` |
+| 5 | `#DCE0E5` | `#2A2D32` |
+| 6 | `#D4D8DD` | `#32363B` |
+| 7 | `#C7CBD0` | `#3E4146` |
+| 8 | `#A7ABB0` | `#52555B` |
+| 9 | `#84888C` | `#66696F` |
+| 10 | `#696C70` | `#81858B` |
+| 11 | `#4B4E52` | `#A5A9AF` |
+| 12 | `#15191D` ink | `#EBF0F8` paper |
 
-Measured contrast (WCAG 2.2, 2026-10-20): light text 14.43:1, muted 4.72:1, control border
-3.51:1 on the light canvas; dark text 14.61:1, muted 7.01:1, control border 4.09:1 on ink.
+Measured contrast (WCAG 2.2, 2026-10-23): light text 15.85:1, muted 4.74:1, control border
+3.20:1 on the light canvas; dark text 16.66:1, muted 5.14:1, control border 3.46:1 on the dark canvas.
+The "pane-*" pairs check the same floors on the session pane (step 1).
 
 ### 1.2 Accent and status
 
 | Role | Light | Dark | Contrast on canvas (light / dark) |
 | --- | --- | --- | --- |
-| accent (verdigris) | `#187363` | `#78CAB7` | 5.12 / 8.39 |
-| text on accent fill | `#F3FCFE` | `#182322` | 5.49 / 8.39 |
-| success | `#2B7440` | `#7CCD8E` | 5.11 / 8.43 |
-| warning | `#925B0C` | `#F0BA59` | 5.05 / 9.12 |
-| danger | `#BA362E` | `#FD8C7E` | 5.14 / 7.09 |
-| info | `#236997` | `#83BFEC` | 5.31 / 8.16 |
+| accent (cobalt) | `#285DD2` | `#739DEF` | 5.25 / 7.08 |
+| text on accent fill | `#FFFFFF` | `#0D1014` | 5.86 / 7.08 |
+| success | `#17793A` | `#5DB673` | 4.92 / 7.63 |
+| warning | `#965C00` | `#E29E47` | 4.92 / 8.37 |
+| danger | `#C23332` | `#EE7D74` | 4.94 / 7.10 |
+| info | `#0070A1` | `#5EACD8` | 4.92 / 7.60 |
 
 Status colours mean the same thing in every theme. A status is never shown by colour alone:
 it always pairs with a label, an icon or a shape (run-status dots use fill, ring and dash).
@@ -63,11 +72,11 @@ palette is removed so `bg-red-500` does not exist.
 | `background-hover` | step 4 | step 4 | hover on neutral fills and ghost controls |
 | `background-pressed` | step 5 | step 5 | pressed or active neutral fills |
 | `background-ghost` | transparent | transparent | ghost controls at rest |
-| `background-accent-hover` | `#18695B` | `#88D0C0` | accent mixed 12% toward ink (light) or white (dark) |
-| `background-accent-pressed` | `#186053` | `#98D7C8` | accent mixed 24% the same way |
+| `background-accent-hover` | `#2655BC` | `#84A9F1` | accent mixed 12% toward ink (light) or white (dark) |
+| `background-accent-pressed` | `#234DA7` | `#95B5F3` | accent mixed 24% the same way |
 
-Text on accent stays ≥ 4.5:1 on every accent state (measured: light 6.28 / 7.11, dark 9.08 /
-9.90); the contrast gate checks these pairs. State colours change with `duration.fast`.
+Text on accent stays ≥ 4.5:1 on every accent state (measured: light 6.76 / 7.80, dark 8.10 /
+9.24); the contrast gate checks these pairs. State colours change with `duration.fast`.
 
 ### 1.4 Themes
 
@@ -75,6 +84,10 @@ Text on accent stays ≥ 4.5:1 on every accent state (measured: light 6.28 / 7.1
 at least 7:1 and 4.5:1, use 1 px solid borders and a solid material; they are computed in DS1 and
 checked by the contrast gate. `system` follows the OS; `prefers-contrast: more` selects HC;
 `forced-colors` uses system colours.
+
+The stored preference defaults to `system` (D-205). The theme button in the chrome swaps light and
+dark only: it sets the explicit opposite of the theme on screen, drawn as a sun or a moon icon,
+never an emoji or a Unicode glyph. "Follow the system" lives in the customisation popover.
 
 ### 1.5 Data visualisation
 
@@ -137,8 +150,9 @@ data-only plugin).
 - **Container widths** (`max-w-*`, `w-*`): 3xs 16rem, 2xs 18rem, xs 20rem, sm 24rem, md 28rem,
   lg 32rem, xl 36rem, 2xl 42rem, 3xl 48rem, 4xl 56rem, 5xl 64rem, 6xl 72rem, 7xl 80rem. This is
   Tailwind's scale, kept as Guanxi tokens so existing layouts do not change.
-- **Radius** grows with the layer: inline (chips, tags, kbd) 6 · controls 10 · panels and cards
-  16 · glass layers, sheets and dialogs 20 · app tile 21.9%.
+- **Radius** grows with the layer: inline (chips, tags, kbd) 6 · controls 8 · panels, panes and cards
+  12 · glass layers, menus, popovers, sheets and dialogs 14 · app tile 21.9% (D-200: tighter,
+  concentric radii; a child never has a larger radius than its parent).
 - **Focus ring:** 2 px solid `ring-primary` (the accent) with a 2 px offset, outside the
   element; in forced colours the system `Highlight` colour. Never removed without a visible
   replacement.
@@ -147,9 +161,15 @@ data-only plugin).
   sheets 50 · toasts 60 · tooltips 70. Components use these tokens only; nothing invents a
   z-index.
 - **Borders:** 1 px. Decorative dividers use step 7; control boundaries step 9.
-- **Elevation:** 0 canvas (step 2) · 1 raised (step 1 with a 1 px rule, no shadow) · 2 popover
-  (glass with `0 1px 2px` and `0 8px 24px` shadows in ink at 8–10%) · 3 dialog (strong glass with
-  a scrim of ink at 32%, never a blurred scrim). Shadows use ink, never pure black.
+- **Elevation:** 0 canvas (step 2, the chrome tone) · 1 pane (step 1 with a 1 px
+  `border-secondary` hairline and the `elevation.pane.shadow` stack: ink at 4% `0 1px 2px` and
+  5% `0 6px 20px` in light, black at 32% and 24% in dark) · 2 popover (glass with `0 1px 2px` and
+  `0 8px 24px` shadows in ink at 8–10%) · 3 dialog (strong glass with a scrim of ink at 32%, never
+  a blurred scrim). Shadows use ink in light, never pure black; dark uses black because ink is
+  the light text colour there. Raised controls may add `elevation.control.shadow` (one 1 px layer)
+  and an `elevation.highlight` inner top edge (white at 70% light, 6% dark).
+- **Hairlines:** `border-secondary` (step 6, Tailwind `border-hairline`) separates panes and rows
+  decoratively and is deliberately below 3:1; control boundaries keep `border-control` (step 9).
 
 ## 4. Glass material (D-127)
 
@@ -226,11 +246,16 @@ zero duration alone would not stop an infinite loop.
 
 ## 6. Icons
 
-- **Lucide** (ISC), 24 px grid, rendered at 16 / 18 / 20 px with stroke 1.75 and
+- **One registry:** `Icon` in `@guanxi/ui` maps semantic names (`device-laptop`, `memory-unified`,
+  `keep-awake`, `inbox`, `permission-read` …) to glyphs. Features never import Lucide.
+- **Lucide** (ISC), 24 px grid, rendered at 12–24 px (16 by default) with stroke 1.75 and
   `absoluteStrokeWidth`.
-- Guanxi-specific icons are drawn on Lucide's grid and rules: connection/relay (two nodes joined
-  by a 45° line with a gap, quoting the detached arm), fleet machine, lease, hibernating lead,
-  judge, handoff.
+- Guanxi-specific icons are drawn on Lucide's grid and rules. Implemented: unified memory (one
+  die with CPU and GPU cores over a shared pool), free memory pages (a dashed page in front of a
+  full one), connection/relay (two nodes joined by a 45° line with a gap), lease and hibernating
+  lead. Still to draw: fleet machine, judge, handoff.
+- Status and controls prefer an icon with a tooltip or an anchored popover to a labelled
+  bordered button (D-202); values next to an icon carry the visual weight.
 - Icons never imitate the logo, and the logo never sits in an icon slot.
 - Every icon-only control has an accessible name and a tooltip.
 
@@ -248,3 +273,14 @@ zero duration alone would not stop an infinite loop.
 Defaults (D-131): the chat and new-session screens are comfortable; dense panes (processes,
 terminal, trace, board, files) are compact. The user can switch everything to one preset. Hit
 targets stay at least 24 px in both.
+
+## 8. Graphics tiers (D-206)
+
+| Tier | Root attribute | What it adds |
+| --- | --- | --- |
+| Static (default) | `data-graphics="static"` | The full design: panes, hairlines, shadow stacks, glass on floating layers, the grain tile. No animation beyond the motion tokens. |
+| Max graphics | `data-graphics="max"` | One WebGL canvas behind the chrome with a slow gradient field in the accent and chrome hues (never blue-violet), and glass on the sidebar so text over it keeps contrast. Half-resolution rendering, about 30 fps, paused while the page is hidden. |
+
+Max graphics is opt-in from the customisation popover. It never sits behind reading text (panes
+stay opaque), never blocks input, and falls back to Static under reduced motion, reduced
+transparency, increased contrast, forced colours, battery saver or when WebGL is unavailable.

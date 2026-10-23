@@ -37,3 +37,4 @@ export {
 export type { UiMessageKey } from './i18n/messages.ts'
 export * from './components/workspace-chrome/index.ts'
 export * from './components/palette-preview/index.ts'
+export * from './components/icon/index.ts'

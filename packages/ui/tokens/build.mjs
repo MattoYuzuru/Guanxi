@@ -56,7 +56,7 @@ const aliases = {
   canvas: 'color-background-primary', surface: 'color-background-secondary', inset: 'color-background-tertiary',
   foreground: 'color-text-primary', secondary: 'color-text-secondary', muted: 'color-text-tertiary',
   accent: 'color-background-accent', 'accent-foreground': 'color-text-on-accent',
-  control: 'color-border-control', divider: 'color-border-primary', focus: 'color-ring-primary',
+  control: 'color-border-control', divider: 'color-border-primary', hairline: 'color-border-secondary', focus: 'color-ring-primary',
   warning: 'color-text-warning', danger: 'color-text-danger', success: 'color-text-success', info: 'color-text-info',
 }
 function themeCSS(flat, animations) {
@@ -72,7 +72,7 @@ function themeCSS(flat, animations) {
     const iterations = animation.iterations === 'infinite' ? ' infinite' : animation.iterations > 1 ? ` ${animation.iterations}` : ''
     lines.push(`  --animate-${animation.utility}: ${animation.keyframes} var(--${animation.duration.replaceAll('.', '-')}) var(--${animation.easing.replaceAll('.', '-')})${iterations};`)
   }
-  lines.push('  --shadow-popover: var(--elevation-2-shadow);', '  --blur-glass: var(--material-glass-blur);', '  --blur-tinted: var(--material-tinted-blur);', '  --leading-ui: var(--font-line-height-ui);', '  --leading-prose: var(--font-line-height-prose);')
+  lines.push('  --shadow-popover: var(--elevation-2-shadow);', '  --shadow-pane: var(--elevation-pane-shadow);', '  --shadow-control: var(--elevation-control-shadow);', '  --blur-glass: var(--material-glass-blur);', '  --blur-tinted: var(--material-tinted-blur);', '  --leading-ui: var(--font-line-height-ui);', '  --leading-prose: var(--font-line-height-prose);')
   lines.push('  --font-sans: var(--font-family-sans);', '  --font-mono: var(--font-family-mono);')
   lines.push('  --default-font-family: var(--font-family-sans);', '  --default-mono-font-family: var(--font-family-mono);', '  --default-transition-duration: var(--motion-duration-moderate);', '  --default-transition-timing-function: var(--motion-easing-standard);')
   let output = header + `@theme inline {\n${lines.join('\n')}\n}\n`

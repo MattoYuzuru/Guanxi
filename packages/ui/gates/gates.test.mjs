@@ -38,7 +38,8 @@ test('G1 rejects wrong types, mismatched alias types, missing and inconsistent f
   for (const change of [
     d => { d.primitive.color.neutral.light['1'].$type = 'unknown' },
     d => { delete d.primitive.color.neutral.light['1'].$value.hex },
-    d => { d.primitive.color.neutral.light['1'].$value.hex = '#FFFFFF' },
+    // A fallback that disagrees with its OKLCH components (whatever the current palette is).
+    d => { const value = d.primitive.color.neutral.light['1'].$value; value.hex = value.hex === '#000000' ? '#FFFFFF' : '#000000' },
     d => { d.primitive.color.neutral.light['1'].$value.components = ['wrong', 0, 0] },
   ]) assert.equal((await execute(checks.G1, await mutateJSON(path, change))).ok, false)
   const mismatch = await mutateJSON('packages/ui/tokens/base.tokens.json', d => { d.font.size['12'].$value = '{font.weight.regular}' })
@@ -130,12 +131,13 @@ test('generator refuses an explicit null iteration override but keeps an omitted
   fadeUp(explicitNull).iterations = null
   await assert.rejects(generate((await ctx.withFiles({ [path]: JSON.stringify(explicitNull) })).tokenOptions), /iterations.*null/)
 })
-test('G3 checks all 20 declared pairs in all themes and every glass backdrop', async () => {
+test('G3 checks all 25 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
   assert.equal(report.ok, true, JSON.stringify(report.errors))
-  assert.equal(report.measurements.length, 4 * (20 + 3 * 2 * 8 * 2))
-  // FOUNDATIONS §1.1–1.3, including text on the accent hover and pressed fills (2026-10-20).
-  const baseline = { light: [14.43, 4.72, 3.51, 5.12, 6.28, 7.11], dark: [14.61, 7.01, 4.09, 8.39, 9.08, 9.9] }
+  assert.equal(report.measurements.length, 4 * (25 + 3 * 2 * 8 * 2))
+  // FOUNDATIONS §1.1–1.3, including text on the accent hover and pressed fills (D-201 working
+  // palette, 2026-10-23; the five pane-* pairs measure the same floors on the session pane).
+  const baseline = { light: [15.85, 4.74, 3.2, 5.25, 6.76, 7.8], dark: [16.66, 5.14, 3.46, 7.08, 8.1, 9.24] }
   for (const [theme, values] of Object.entries(baseline)) assert.deepEqual(['text', 'muted', 'control-border', 'accent', 'on-accent-hover', 'on-accent-pressed'].map(pair => report.measurements.find(m => m.theme === theme && m.pair === pair).ratio), values)
   for (const theme of ['light-hc', 'dark-hc']) assert.ok(report.measurements.filter(m => m.theme === theme).every(m => m.ratio >= 7))
   const missing = await mutateJSON('packages/ui/tokens/contrast-pairs.json', d => { d.pairs = d.pairs.filter(p => p.name !== 'warning') })
