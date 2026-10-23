@@ -171,14 +171,10 @@
     @apply min-h-full;
   }
 
+  /* One row: the drawer toggle, the breadcrumb, the overflow and the palette icon. */
   .gx-app-shell-status {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding-inline: var(--spacing-8);
-  }
-
-  .gx-app-shell-status-actions {
-    flex: 1 1 100%;
-    justify-content: flex-start;
   }
 
   /* Phone: the sidebar and the pane span the shell edge to edge (the G14 phone geometry). */
@@ -204,8 +200,66 @@
   }
 }
 
+/* Narrow shell (data-narrow, measured on the shell): the navigation is a drawer over a scrim, and
+   the status strip holds one overflow control. The drawer never animates its position. */
+.gx-app-shell-chrome[data-narrow] .gx-app-shell-sidebar[data-drawer='open'] {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: var(--layer-dialog);
+  width: var(--layout-container-2xs);
+  @apply max-w-full;
+  padding-block: var(--spacing-8);
+  border-radius: 0 var(--border-radius-panel) var(--border-radius-panel) 0;
+  background-color: var(--color-background-primary);
+  box-shadow: var(--elevation-pane-shadow);
+}
+
+.gx-app-shell-chrome[data-narrow][data-side='right'] .gx-app-shell-sidebar[data-drawer='open'] {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  border-radius: var(--border-radius-panel) 0 0 var(--border-radius-panel);
+}
+
+.gx-app-shell-chrome[data-narrow] .gx-app-shell-sidebar:focus {
+  outline: none;
+}
+
+.gx-app-shell-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-scrim);
+  background-color: var(--scrim-color);
+  opacity: var(--scrim-opacity);
+}
+
+.gx-app-shell-chrome[data-narrow] .gx-app-shell-status-actions {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+/* The overflow lists the strip's items in one column. */
+.gx-app-shell-overflow {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-4);
+  width: auto;
+}
+
+/* Keycaps mean nothing on a touch screen: the palette entry is the search icon alone. */
+@media (pointer: coarse) {
+  .gx-app-shell-palette .gx-kbd {
+    display: none;
+  }
+}
+
 @media (forced-colors: active) {
   .gx-app-shell-main {
     border-color: CanvasText;
+  }
+
+  .gx-app-shell-chrome[data-narrow] .gx-app-shell-sidebar[data-drawer='open'] {
+    border: var(--border-width-regular) solid CanvasText;
   }
 }

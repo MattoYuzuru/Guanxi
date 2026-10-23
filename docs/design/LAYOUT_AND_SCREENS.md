@@ -168,5 +168,7 @@ limit agents, not the user's own actions.
   response) in the scrolling column; the composer docked at the bottom.
 - **Chat threads:** the shared composer docked with auto-approve at its lower left and model and context at its lower
   right; trace, chat info and new chat as icon buttons; per-message details behind an info icon.
-- Not built in this lane: the fleet map (D-209), provider models in the picker (D-208, the picker's suggestion list is
-  generic), a drawer sidebar on phones (the sidebar still stacks above the pane under 640 px).
+- **Phone (under 640 px of shell width):** the navigation is a drawer over an inert page, the status strip is one row
+  with a single overflow control for the status items, and touch screens show no ⌘K keycaps.
+- Not built in this lane: the fleet map (D-209) and provider models in the picker (D-208, the picker's suggestion list
+  is generic).

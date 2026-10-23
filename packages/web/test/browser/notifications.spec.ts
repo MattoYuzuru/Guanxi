@@ -7,7 +7,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { FakeNode, demoRows, installNotificationsApi } from './fixtures/notifications-api.ts'
 import { allWireAvailable, notification, notificationId } from '../fixtures/notifications-server.ts'
-import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
+import { choosePaletteCommand, openStatusOverflow } from './fixtures/shell-navigation.ts'
 
 async function open(page: Page, node: FakeNode, options: { locale?: 'en' | 'ru'; theme?: 'light' | 'dark'; path?: string } = {}) {
   const fixture = await installNotificationsApi(page, node, { locale: options.locale ?? 'en', theme: options.theme ?? 'light' })
@@ -249,7 +249,8 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(rowOf(page, 1).getByTestId('snooze-form')).toBeVisible()
       await check('snooze form open')
       expect(await seriousViolations(page), 'snooze form, 200% text').toEqual([])
-      // The status strip with the bell holds up at the same size.
+      // The status strip with the bell holds up at the same size (on a phone, in the status overflow).
+      await openStatusOverflow(page)
       await expect(bell(page)).toBeVisible()
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
     })

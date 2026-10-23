@@ -53,6 +53,8 @@ function Shell({
     moveLeft: t('shell.sidebar.left'),
     moveRight: t('shell.sidebar.right'),
     palette: t('shell.palette'),
+    navigation: t('shell.navigation.open'),
+    more: t('shell.more'),
   }
 
   return (
@@ -65,9 +67,9 @@ function Shell({
         sidebarLabel={t('shell.sidebar.label')}
         labels={labels}
         paletteShortcut={paletteKeys()}
-        sidebar={
+        sidebar={({ rail }) =>
           <ShellSidebar
-            rail={shell.preferences.visibility === 'rail'}
+            rail={rail}
             location={shell.location}
             newSessionPath={shell.newSessionPath}
             sessions={shell.sessions.sessions}

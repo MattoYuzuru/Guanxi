@@ -24,6 +24,8 @@ export interface PopoverContentProps
   side?: ComponentProps<typeof PopoverPrimitive.Positioner>['side']
   align?: ComponentProps<typeof PopoverPrimitive.Positioner>['align']
   sideOffset?: number
+  /** Keep the content mounted (hidden) while closed, so its children keep their state. */
+  keepMounted?: boolean
 }
 
 export function Popover(props: PopoverProps) {
@@ -42,12 +44,13 @@ export function PopoverContent({
   side = 'bottom',
   align = 'start',
   sideOffset = 6,
+  keepMounted,
   className,
   ...props
 }: PopoverContentProps) {
   const container = usePortalContainer()
   return (
-    <PopoverPrimitive.Portal container={container}>
+    <PopoverPrimitive.Portal container={container} keepMounted={keepMounted}>
       <PopoverPrimitive.Positioner
         side={side}
         align={align}

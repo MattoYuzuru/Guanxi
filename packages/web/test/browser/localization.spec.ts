@@ -4,6 +4,7 @@ import { RUNTIME_IDLE_POLL_INTERVAL_MS } from '../../src/features/health/useRunt
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
 import { fetchReads, installFetchLifecycle } from './fixtures/fetch-lifecycle.ts'
 import { pickValueByKeyboard } from './fixtures/select.ts'
+import { closeNavigation, openNavigation } from './fixtures/shell-navigation.ts'
 
 // Advance after each committed locale transition; together these windows stay below
 // the legitimate idle poll while exposing short timer-driven refetches.
@@ -133,7 +134,9 @@ for (const deferNetworkStart of [false, true]) {
     // Network cross-check: requests outside the tracked fetch (XHR, other realms) still count.
     if (deferNetworkStart) expect(routeReads).toEqual({ health: 1, runtime: 1, models: 1 })
     await expect(page).toHaveTitle('Guanxi')
+    await openNavigation(page)
     await expect(page.getByRole('link', { name: 'Models', exact: true })).toHaveCount(1)
+    await closeNavigation(page)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('en')
 
     const glossarySearch = page.getByRole('textbox', { name: 'Search glossary' })
@@ -161,7 +164,9 @@ for (const deferNetworkStart of [false, true]) {
     expect(settingsReads).toBe(readsBeforePreview)
     expect(settingsWrites).toBe(0)
     await expect(page.getByRole('heading', { name: 'Настройки', exact: true })).toHaveCount(1)
+    await openNavigation(page)
     await expect(page.getByRole('link', { name: 'Модели', exact: true })).toHaveCount(1)
+    await closeNavigation(page)
     await expect(page.getByRole('status').filter({ hasText: 'Предпросмотр языка' })).toHaveCount(1)
     await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('ru')
     await page.clock.runFor(localeTimerWindowMs)

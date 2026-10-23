@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 import { PROJECT_PRESENTATION_VERSION, SESSION_ROUTES } from '@guanxi/contract'
 import { SHELL_PREFERENCES_KEY } from '../../src/features/shell/preferences.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
-import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
+import { choosePaletteCommand, closeNavigation, openNavigation } from './fixtures/shell-navigation.ts'
 
 const observedAt = '2026-10-22T12:00:00.000Z'
 const health = {
@@ -362,6 +362,9 @@ for (const locale of ['en', 'ru'] as const) {
     const navigation = page.getByRole('navigation', {
       name: locale === 'en' ? 'Main navigation' : 'Главная навигация',
     })
+    // On a phone the navigation is a drawer (visual pass, item 4): closed until asked for.
+    await expect(navigation).toHaveCount(0)
+    await openNavigation(page)
     await expect(navigation).toBeVisible()
     await expectEmptySessionList(page, locale)
     expect(await navigation.getByRole('link').count()).toBe(4)
@@ -392,6 +395,9 @@ for (const locale of ['en', 'ru'] as const) {
     expect(layout.main.right).toBeLessThanOrEqual(layout.viewport)
     expect(layout.reducedMotion).toBe(true)
     await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'))
+    await closeNavigation(page)
+    await expect(navigation).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 }
 

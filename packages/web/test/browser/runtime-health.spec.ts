@@ -1,6 +1,7 @@
 import { SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { closeNavigation, closeStatusOverflow, openNavigation, openStatusOverflow } from './fixtures/shell-navigation.ts'
 
 test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow viewport', async ({
   page,
@@ -142,10 +143,13 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
 
   await page.goto('/')
 
+  await openNavigation(page)
   const navigation = page.getByRole('navigation', { name: 'Главная навигация' })
   await expect(navigation).toBeVisible()
   await expect(navigation.getByRole('link')).toHaveCount(4)
   await expect(page.getByRole('link', { name: 'Новая сессия' })).toBeVisible()
+  await closeNavigation(page)
+  await openStatusOverflow(page)
   // D-202: the degraded Ollama is the runtime status item, named in text (not only by colour).
   const trigger = page.getByRole('button', { name: /^Среда выполнения: Не поддерж\./u })
   await expect(trigger).toBeVisible()
@@ -159,6 +163,7 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
   await expect(runtime).toContainText('Источник Ollama несовместим')
   await expect(page.getByText(/Состояние загруженных моделей неизвестно/)).toBeVisible()
   await page.keyboard.press('Escape')
+  await closeStatusOverflow(page)
   await expect(page.getByText('Встроенный fallback каталога')).toBeVisible()
   await expect(page.getByText('fixture-catalog')).toBeVisible()
 

@@ -48,10 +48,13 @@ content when `visibility` is `rail`.
 - `hidden` — the sidebar stays mounted with `hidden` and `inert`; Show and Palette remain in the
   always-visible status strip.
 - `right` — the same expanded shell with the sidebar after main in the DOM and visually.
-- `phone` — the 639 px workspace breakpoint stacks status, sidebar and main in the host's
-  DOM/focus order (a right sidebar follows main) and removes the fixed column widths; the phone
-  story renders a narrow, tokenised frame. Host content remains responsible for staying within
-  its own width.
+- `phone` — at the 639 px workspace breakpoint, measured on the shell itself, the strip is one
+  row: a navigation toggle, the breadcrumb, one overflow control (`labels.more`) that holds the
+  status actions, and the search icon without keycaps. The navigation is a drawer: closed by
+  default, opened over a scrim with the page inert, closed by Escape, the scrim or a followed link,
+  with focus returned to the toggle. A drawer is never a rail: a function `sidebar` receives
+  `{ rail: false }`. Keycaps are also hidden on any coarse pointer. Host content remains
+  responsible for staying within its own width.
 - `loading` — the status strip announces loading and the main surface is `aria-busy`; the
   fixture declares no run status and renders no transcript.
 - `offline` — a visible not-connected status and one sentence about unavailable live data; it
@@ -73,8 +76,12 @@ content when `visibility` is `rail`.
   actions are native Buttons, so their normal keyboard activation is preserved.
 - The status strip and sidebar use the shared glass material; the main surface is opaque. Text
   and control contrast come from the catalogued primitives and generated tokens.
-- Geometry uses CSS only. No viewport listener or JavaScript ceiling resets controlled state on
-  resize.
+- Geometry uses CSS, plus one ResizeObserver on the shell itself for the narrow flow (not a
+  viewport listener). Resizing never resets the controlled side or visibility; a drawer closes
+  when the shell becomes wide.
+- The phone drawer moves focus into the sidebar when it opens, makes the strip and main inert,
+  and returns focus to its toggle when it closes. The overflow popover is named by `labels.more`
+  and stays mounted while closed, so the status items keep their state.
 
 ## Content and i18n
 
@@ -100,5 +107,5 @@ reduced-motion tokens; nothing in the shell loops or animates layout.
 - Do keep the main reading surface opaque and glass limited to the sidebar and status.
 - Don't use this pattern as a docking engine or move another plugin's blocks.
 - Don't replace the status Show and Palette actions with conditional shell rendering.
-- Don't add a JavaScript width listener for the phone flow; the existing 639 px breakpoint is
-  the single source for the narrow layout.
+- Don't add a viewport listener for the phone flow; the shell measures itself against the existing
+  639 px breakpoint (`APP_SHELL_NARROW_MAX`), the single source for the narrow layout.

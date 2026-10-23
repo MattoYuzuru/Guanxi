@@ -6,17 +6,18 @@ import {
   degradedRuntimeBrowserSnapshot,
   linuxNvidiaRuntimeBrowserSnapshot,
 } from './fixtures/runtime-snapshot.ts'
-import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
+import { choosePaletteCommand, closeStatusOverflow, openNavigation, openStatusOverflow } from './fixtures/shell-navigation.ts'
 
 /*
  * D-202/D-203: the runtime bar became the status strip's runtime item. Its popover holds the same
  * projection (region "Runtime и ресурсы"), the shared sample refreshes on its own (a page that
  * becomes visible reads at once), and there is no "Повторить runtime-проверку" button.
  */
-const runtimeTrigger = (page: Page) => page.getByRole('button', { name: /^Среда выполнения/u })
+// A CSS locator: on a phone the item lives in the status overflow, which stays mounted while closed.
+const runtimeTrigger = (page: Page) => page.locator('[data-slot="status-item"] button[aria-label^="Среда выполнения"]')
 async function openRuntime(page: Page) {
   const popover = page.getByTestId('shell-runtime-popover')
-  if (!(await popover.isVisible().catch(() => false))) await runtimeTrigger(page).click()
+  if (!(await popover.isVisible().catch(() => false))) { await openStatusOverflow(page); await runtimeTrigger(page).click() }
   await expect(popover).toBeVisible()
   return popover.getByRole('region', { name: 'Runtime и ресурсы' })
 }
@@ -121,6 +122,10 @@ test('Runtime Bar projects resources, survives navigation, and recovers independ
   await runtimeTrigger(page).evaluate((element) => {
     element.setAttribute('data-navigation-sentinel', 'preserved')
   })
+
+  await closeStatusOverflow(page)
+
+  await openNavigation(page)
 
   await page.getByRole('link', { name: 'Настройки' }).click()
   await expect(page).toHaveURL(/\/settings$/u)
@@ -257,6 +262,8 @@ test('Runtime Bar truthfully groups Linux NVIDIA devices and preserves a stale s
   await expect(page.getByTestId('shell-runtime-popover')).not.toContainText('private-runtime-sentinel')
 
   await page.keyboard.press('Escape')
+  await closeStatusOverflow(page)
+  await openNavigation(page)
   await page.getByRole('link', { name: 'Настройки' }).click()
   await openRuntime(page)
   await expect(devices).toBeVisible()

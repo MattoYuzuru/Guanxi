@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { closeStatusOverflow, openNavigation } from './fixtures/shell-navigation.ts'
 
 const CUSTOM_CONTEXT = 1_048_577
 
@@ -115,6 +116,10 @@ test('custom context survives keyboard entry, exact requests, save, reload, and 
   await expect.poll(() => modelContexts.includes(CUSTOM_CONTEXT)).toBe(true)
   await expect.poll(() => catalogContexts.includes(CUSTOM_CONTEXT)).toBe(true)
   await expect(page.getByText(/Preset-значения — только подсказки/)).toBeVisible()
+
+  await closeStatusOverflow(page)
+
+  await openNavigation(page)
 
   await page.getByRole('link', { name: 'Настройки' }).click()
   const settingsContext = page.getByRole('spinbutton', {

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AppShellChrome,
   Button,
@@ -185,5 +185,79 @@ describe('AppShellChrome', () => {
     await waitFor(() => expect(document.activeElement).toBe(move))
     fireEvent.keyDown(move, { key: 'Enter' })
     await waitFor(() => expect(onSide).toHaveBeenCalledWith('right'))
+  })
+})
+
+describe('AppShellChrome on a phone-width shell (visual pass, item 4)', () => {
+  function narrow(width: number) {
+    class Observer {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) { this.callback([{ contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver); void target }
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', Observer)
+  }
+  function Phone({ visibility = 'expanded' as AppShellVisibility }) {
+    const [rails, setRails] = useState<boolean[]>([])
+    return <>
+      <AppShellChrome side="left" visibility={visibility} sidebarLabel={workspace} labels={{ ...labels, navigation: 'Open navigation', more: 'Status and settings' }}
+        paletteShortcut={['⌘', 'K']} status={<span>Node connected</span>}
+        actions={<Button>Memory</Button>}
+        sidebar={({ rail }) => { if (rails.at(-1) !== rail) queueMicrotask(() => setRails(previous => [...previous, rail])); return <nav aria-label="Main"><a href="#projects">Projects</a></nav> }}
+        onSide={() => {}} onVisibility={() => {}} onOpenPalette={() => {}}>
+        <Button>Main action</Button>
+      </AppShellChrome>
+      <output data-testid="rails">{rails.join(',')}</output>
+    </>
+  }
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps navigation in a closed drawer and the status items behind one overflow control', async () => {
+    narrow(400)
+    render(<Phone visibility="rail" />)
+    expect(screen.getAllByRole('button', { name: 'Open navigation' })).toHaveLength(1)
+    expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull()
+    expect(screen.queryByRole('button', { name: workspace })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Memory' })).toBeNull()
+    expect(document.querySelectorAll('[data-slot="kbd"]')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Status and settings' }))
+    expect(await screen.findByRole('button', { name: 'Memory' })).toBeTruthy()
+    // The drawer always shows the full navigation, never the desktop rail: once the shell is
+    // measured (before the first paint) the host is told rail=false.
+    await waitFor(() => expect(screen.getByTestId('rails').textContent?.split(',').at(-1)).toBe('false'))
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
+    expect(within(await screen.findByRole('navigation', { name: 'Main' })).getAllByRole('link')).toHaveLength(1)
+    expect(screen.getByTestId('rails').textContent?.split(',').at(-1)).toBe('false')
+  })
+
+  it('opens the drawer over an inert page, moves focus in, and closes on Escape or a followed link', async () => {
+    narrow(400)
+    render(<Phone />)
+    const toggle = screen.getByRole('button', { name: 'Open navigation' })
+    fireEvent.click(toggle)
+    const navigation = await screen.findByRole('navigation', { name: 'Main' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(sidebar().contains(document.activeElement)).toBe(true)
+    expect(document.querySelector('[data-slot="app-shell-main"]')!.hasAttribute('inert')).toBe(true)
+    expect(document.querySelectorAll('[data-slot="app-shell-scrim"]')).toHaveLength(1)
+    fireEvent.keyDown(sidebar(), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull())
+    expect(document.activeElement).toBe(toggle)
+    expect(document.querySelector('[data-slot="app-shell-main"]')!.hasAttribute('inert')).toBe(false)
+    fireEvent.click(toggle)
+    fireEvent.click(within(await screen.findByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Projects' }))
+    await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull())
+    void navigation
+  })
+
+  it('stays the desktop layout when the shell is wide', () => {
+    narrow(1200)
+    render(<Phone />)
+    expect(screen.queryByRole('button', { name: 'Open navigation' })).toBeNull()
+    expect(screen.getByRole('navigation', { name: 'Main' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Memory' })).toBeTruthy()
+    expect(document.querySelectorAll('[data-slot="kbd"]')).toHaveLength(1)
   })
 })

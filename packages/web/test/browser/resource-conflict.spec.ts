@@ -1,7 +1,7 @@
 import { chatModelSelection, healthSchema, SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { activeRuntimeBrowserSnapshot, browserSettings } from './fixtures/runtime-snapshot.ts'
-import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
+import { choosePaletteCommand, closeStatusOverflow, openNavigation, openStatusOverflow } from './fixtures/shell-navigation.ts'
 
 type OwnerMode = 'job' | 'operation' | 'unknown'
 
@@ -175,10 +175,15 @@ test('literal Queue flow is one command and remains keyboard/responsive safe', a
   // itself (a page that becomes visible reads at once) and there is no runtime Retry button.
   await expect(page.getByRole('button', { name: /Повторить runtime-проверку/u })).toHaveCount(0)
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await openStatusOverflow(page)
   await page.getByRole('button', { name: /^Среда выполнения/u }).click()
   const runtime = page.getByTestId('shell-runtime-popover').getByRole('region', { name: 'Runtime и ресурсы' })
   await expect(runtime).toContainText('Position 3'.replace('Position', 'Позиция'))
   await page.keyboard.press('Escape')
+
+  await closeStatusOverflow(page)
+
+  await openNavigation(page)
 
   await page.getByRole('link', { name: 'Настройки' }).click()
   await expect(page).toHaveURL(/\/settings$/u)

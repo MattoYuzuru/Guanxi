@@ -1,5 +1,7 @@
 export const shellEnglish = {
   'shell.palette': 'Command palette',
+  'shell.navigation.open': 'Open navigation',
+  'shell.more': 'Status and settings',
   'shell.palette.description': 'Search navigation, sessions, models and workspace commands.',
   'shell.palette.search': 'Search commands',
   'shell.palette.empty': 'No matching commands. Try another search.',
@@ -124,6 +126,8 @@ export const shellEnglish = {
 } as const
 export const shellRussian: Record<keyof typeof shellEnglish, string> = {
   'shell.palette': 'Палитра команд',
+  'shell.navigation.open': 'Открыть навигацию',
+  'shell.more': 'Состояние и настройки',
   'shell.palette.description': 'Поиск разделов, сессий, моделей и команд рабочей области.',
   'shell.palette.search': 'Поиск команд',
   'shell.palette.empty': 'Подходящих команд нет. Попробуйте другой запрос.',
