@@ -64,7 +64,7 @@ export class AcpClient {
     this.capabilities = object(result.agentCapabilities)
     return { ...result, observedVersion }
   }
-  async prompt(model: string, text: string, cwd: string, lead?: LeadTurn): Promise<AgentOutput> {
+  async prompt(model: string, text: string, cwd: string, lead?: LeadTurn, settings: { effort?: string } = {}): Promise<AgentOutput> {
     if (lead && object(this.capabilities.mcpCapabilities).http !== true) throw new ExternalAgentError('mcp_http_unsupported')
     const mcpServers = (lead?.mcpServers ?? []).map(server => ({ type: 'http' as const, name: server.name, url: server.url,
       headers: server.headers.map(header => ({ name: header.name, value: header.value })) }))
@@ -88,7 +88,7 @@ export class AcpClient {
       sessionId = session.sessionId
       if (lead?.seededPrompt !== undefined) mode = 'seeded'
     }
-    const options = Array.isArray(session.configOptions) ? session.configOptions.map(object) : []
+    let options = Array.isArray(session.configOptions) ? session.configOptions.map(object) : []
     const option = options.find(o => o.category === 'model' || o.id === 'model')
     // A loaded session keeps the model it was created with unless the agent reports its options.
     if (model !== 'default' && !(mode === 'load' && !option)) {
@@ -96,6 +96,21 @@ export class AcpClient {
       if (option.currentValue !== model) {
         const selected = object(await this.client.request('session/set_config_option', { sessionId, configId: option.id, value: model }))
         if (!Array.isArray(selected.configOptions) || !selected.configOptions.some(o => object(o).id === option.id && object(o).currentValue === model)) throw new ExternalAgentError('model_selection_failed')
+        // The levels an agent offers depend on the selected model, so the effort is read from the options after the switch.
+        options = selected.configOptions.map(object)
+      }
+    }
+    // Operator-chosen effort, through the agent's own option: the vendor's settings files are never edited. A loaded session that
+    // reports no options keeps the effort it was created with, like its model.
+    const effort = settings.effort
+    if (effort !== undefined) {
+      const level = options.find(o => o.id === 'effort' || o.category === 'thought_level')
+      if (!(mode === 'load' && !level)) {
+        if (!level || level.type !== 'select' || typeof level.id !== 'string' || !optionValues(level.options).includes(effort)) throw new ExternalAgentError('effort_unavailable')
+        if (level.currentValue !== effort) {
+          const selected = object(await this.client.request('session/set_config_option', { sessionId, configId: level.id, value: effort }))
+          if (!Array.isArray(selected.configOptions) || !selected.configOptions.some(o => object(o).id === level.id && object(o).currentValue === effort)) throw new ExternalAgentError('effort_selection_failed')
+        }
       }
     }
     let textOutput = ''

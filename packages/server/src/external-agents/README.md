@@ -162,6 +162,19 @@ unchanged. An agent without `mcpCapabilities.http` fails `mcp_http_unsupported` 
 `lead_adapter_unsupported`. Set `runDeadlineMs` above the longest expected lead turn. A node killed
 mid-turn leaves the holder occupied and may leave an orphan agent group (see the admission section).
 
+**Claude Code on an Anthropic API key (D-211).** The payment connection decides the mode. A K3 `agent`/`cli_login`
+connection is the subscription path above. A K3 `model_api`/`anthropic`/`api_key` connection (for example the one the dotenv
+import creates) makes the launch API-billed: the vault key is injected into the bridge's environment as `ANTHROPIC_API_KEY`
+and nowhere else (no argument, file, event or log; the env is built from nothing, so no ambient key or token passes). K3
+already refuses `sk-ant-oat` tokens as API keys; a connection pinned to another API root, or of another provider, is refused
+(`claude_api_connection_required`). `auth status` must then report `loggedIn` with `authMethod: "api_key"` (CLI 2.1.287
+reports exactly that when only the variable is set); any other method is `claude_api_key_not_in_effect`, and the
+subscription path still accepts only `claude.ai`. Facts: `api_key_login`, and `billing = api_usage` with its source. The
+persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); it never holds the key.
+An API-billed Claude Code runs host tools, so another author is refused (`host_tools_owner_only`) and there is no login to
+prepare. `claudeEffort` (`low`..`max`) sets the bridge's `effort` config option after the model switch, refusing with
+`effort_unavailable` when the bridge does not offer that level; the vendor's settings files are never edited.
+
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a
 subscription launch and records why. The existing `bare` fact is launch-policy metadata only:

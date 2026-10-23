@@ -32,7 +32,9 @@ if (process.argv.slice(2).join(' ') === 'auth status') {
     setInterval(() => {}, 1000)
     await new Promise(() => {})
   }
-  send(config.claudeAuth ?? { loggedIn: true, authMethod: 'claude.ai' })
+  // Like the real CLI (2.1.287): an `ANTHROPIC_API_KEY` in the environment is the active credential. Names only, never values.
+  writeFileSync(join(root, 'auth-env.json'), JSON.stringify({ names: Object.keys(process.env), hasKey: !!process.env.ANTHROPIC_API_KEY }))
+  send(config.claudeAuth ?? (process.env.ANTHROPIC_API_KEY ? { loggedIn: true, authMethod: 'api_key' } : { loggedIn: true, authMethod: 'claude.ai' }))
   process.exit(0)
 }
 let vendorRead = false
@@ -41,7 +43,9 @@ if (config.readVendor) {
   vendorRead = readFileSync(join(process.env.CODEX_HOME, 'auth.json'), 'utf8').length > 0
 }
 writeFileSync(join(root, 'environment.json'), JSON.stringify({
-  names: Object.keys(process.env), vendorRead, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME,
+  names: Object.keys(process.env), vendorRead, argv: process.argv.slice(2),
+  // Whether the key is the one the test stored in the vault; the value itself is never written anywhere.
+  anthropicKeyMatches: !!process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY === config.anthropicKey, HOME: process.env.HOME, CODEX_HOME: process.env.CODEX_HOME,
   CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CLAUDE_CODE_EXECUTABLE: process.env.CLAUDE_CODE_EXECUTABLE,
   hasGeminiKey: !!process.env.GEMINI_API_KEY,
   openCodeConfig: process.env.OPENCODE_CONFIG_CONTENT ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : null,
@@ -138,6 +142,7 @@ let authenticated = tape.adapter !== 'gemini-cli'
 let model = 'default'
 let promptId
 let denials = 0
+const chosen = {}
 const reply = (frame, result) => send({ ...(tape.protocol === 'acp-v1' ? { jsonrpc: '2.0' } : {}), id: frame.id, result })
 const promptDone = () => reply({ id: promptId }, tape.promptResult)
 const lines = createInterface({ input: process.stdin })
@@ -200,9 +205,10 @@ lines.on('line', line => {
       reply(frame, { configOptions: structuredClone(tape.newSession.configOptions) }); return
     }
     if (frame.method === 'session/set_config_option') {
-      model = frame.params.value
+      if (frame.params.configId === 'model') model = frame.params.value
+      chosen[frame.params.configId] = frame.params.value
       const configOptions = structuredClone(tape.newSession.configOptions)
-      configOptions[0].currentValue = model
+      for (const option of configOptions) if (option.id in chosen) option.currentValue = chosen[option.id]
       reply(frame, { configOptions }); return
     }
     if (frame.method === 'session/prompt' && lead) { void leadPrompt(frame); return }

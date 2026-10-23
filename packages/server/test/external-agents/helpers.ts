@@ -16,7 +16,13 @@ import type { VaultKeychain } from '../../src/vault/keychain.ts'
 export const owner = 'fixture-owner'
 export const nodeId = 'fixture-node'
 export const versions = { 'claude-code': '0.94.0', copilot: '1.0.101', 'gemini-cli': '0.65.0', opencode: '1.19.3', goose: '1.55.0', codex: '0.163.0' } as const
-export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'], policy: Partial<ExternalPolicy> = {}, kernelOptions: Pick<ServerKernelOptions, 'runs'> = {}) {
+export interface FixtureExtras {
+  /** Pays the `claude-code` installation with a K3 Anthropic API-key connection (a fake key) instead of the subscription connection. */
+  claudeApi?: boolean
+  /** Extra installation fields, for example `claudeEffort`. */
+  install?: Partial<AgentInstallation>
+}
+export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'], policy: Partial<ExternalPolicy> = {}, kernelOptions: Pick<ServerKernelOptions, 'runs'> = {}, extras: FixtureExtras = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k5-'))
   const db = openDb(join(dir, 'node.sqlite'))
   const kernel = await bootServerKernel(undefined, { db, ...kernelOptions })
@@ -25,6 +31,8 @@ export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'],
     localHost: () => 'http://127.0.0.1:11434', transport: async () => { throw new Error('Network forbidden') } })
   const connections = kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
   const secret = `fixture_${randomBytes(24).toString('hex')}`
+  // A fake key of the shape K3 accepts for Anthropic; registered with the scrubber when the vault injects it.
+  const anthropicKey = `sk-ant-api03-FIXTURE${randomBytes(24).toString('hex')}`
   kernel.scrubber.register('secret://fixture/registered', secret)
   const installations: AgentInstallation[] = []
   const bindings: RoleBinding[] = []
@@ -37,25 +45,26 @@ export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'],
     await chmod(executable, 0o700)
     const tape = JSON.parse(await readFile(new URL(`./fixtures/${adapter}-${versions[adapter]}.json`, import.meta.url), 'utf8'))
     tapes.set(adapter, tape)
-    const subscription = ADAPTERS[adapter].payment === 'subscription'
+    const claudeApi = adapter === 'claude-code' && extras.claudeApi === true
+    const subscription = ADAPTERS[adapter].payment === 'subscription' && !claudeApi
     const row = connections.create(owner, subscription ? { name: adapter, kind: 'agent', provider: adapter as 'codex', auth: 'cli_login' }
-      : { name: adapter, kind: 'model_api', provider: adapter === 'gemini-cli' ? 'google' : 'openai', auth: 'api_key' })
-    if (!subscription) { await connections.unlockVault(owner); connections.saveSecret(owner, row.id, secret) }
+      : { name: adapter, kind: 'model_api', provider: claudeApi ? 'anthropic' : adapter === 'gemini-cli' ? 'google' : 'openai', auth: 'api_key' })
+    if (!subscription) { await connections.unlockVault(owner); connections.saveSecret(owner, row.id, claudeApi ? anthropicKey : secret) }
     const install: AgentInstallation = { adapter, connectionId: row.id, ownerAccountId: owner, nodeId, billingAccount: `${adapter}-account`,
-      executable, version: versions[adapter], ...(adapter === 'claude-code' ? { claudeExecutable: executable } : {}) }
+      executable, version: versions[adapter], ...(adapter === 'claude-code' ? { claudeExecutable: executable } : {}), ...(adapter === 'claude-code' ? extras.install : {}) }
     installations.push(install)
     bindings.push({ backend: adapter, connectionId: row.id, model: adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture', params: {} })
-    await writeFile(join(binaryDir, 'scenario.json'), JSON.stringify({ tape, secret }))
+    await writeFile(join(binaryDir, 'scenario.json'), JSON.stringify({ tape, secret, anthropicKey }))
   }
   let plugin = await kernel.node.plugin(externalAgentPlugin, { dataDir: dir, policy: { nodeId, installations, ...policy } })
   let closed = false
   const close = async () => { if (closed) return; closed = true; await kernel.node.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) }
   t.after(close)
-  return { dir, db, kernel, connections, installations, bindings, secret, tapes, close,
+  return { dir, db, kernel, connections, installations, bindings, secret, anthropicKey, tapes, close,
     service: () => kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!,
     async scenario(adapter: AdapterId, extra: Record<string, unknown>) {
       await rm(join(dir, adapter, 'trace.json'), { force: true })
-      await writeFile(join(dir, adapter, 'scenario.json'), JSON.stringify({ tape: tapes.get(adapter), secret, ...extra }))
+      await writeFile(join(dir, adapter, 'scenario.json'), JSON.stringify({ tape: tapes.get(adapter), secret, anthropicKey, ...extra }))
     },
     async trace(adapter: AdapterId) { return JSON.parse(await readFile(join(dir, adapter, 'trace.json'), 'utf8')) as Record<string, any>[] },
     async reload(changes: Partial<ExternalPolicy> = {}) {
