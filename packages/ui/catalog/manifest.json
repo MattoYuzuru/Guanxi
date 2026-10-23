@@ -114,7 +114,7 @@
         "--spacing-48",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:1aa7b91d64e6bf1a993c8d7728a98f4be6eeacb7e24a13e0532853db74bc2208",
+      "sourceHash": "sha256:6e21bf26b48878b5f65a733cbb232ccabf7c394610a128f26cc6954cce995659",
       "snapshotHashes": {
         "default-dark": "sha256:ec62c0cf85a5ec5f0cba22074b014ca9318dc6c8e1fa60b3c18e818ea98a9303",
         "default-light": "sha256:7f09f180a4b7b5159b9db12b97a1b570834699c96128cd2fd354184154197515",
@@ -194,17 +194,12 @@
       "cssVariables": [
         "--border-radius-inline",
         "--border-width-regular",
-        "--color-background-danger",
-        "--color-background-info",
-        "--color-background-success",
+        "--color-background-accent-subtle",
+        "--color-background-danger-subtle",
+        "--color-background-info-subtle",
+        "--color-background-success-subtle",
         "--color-background-tertiary",
-        "--color-background-warning",
-        "--color-border-accent",
-        "--color-border-danger",
-        "--color-border-info",
-        "--color-border-primary",
-        "--color-border-success",
-        "--color-border-warning",
+        "--color-background-warning-subtle",
         "--color-text-accent",
         "--color-text-danger",
         "--color-text-info",
@@ -214,10 +209,12 @@
         "--font-line-height-ui",
         "--font-size-12",
         "--font-weight-label",
+        "--spacing-12",
+        "--spacing-20",
         "--spacing-4",
         "--spacing-6"
       ],
-      "sourceHash": "sha256:99eb881a8182d8f2a13ba7c46edcdc6fd9cfdb0b23ac2fe9c9ee3774871c9df8",
+      "sourceHash": "sha256:c51333c5b3f77cd3c2dc09b711b0d9c06b8cc71214cf8390a25b8acfaf94038d",
       "snapshotHashes": {
         "accent-dark-hc": "sha256:975d12d86b34f4f4196418790aee6dd47bdba469d4b206602079f843176ec918",
         "accent-dark": "sha256:e9f1c13b64fba46735e1eba7d5d0e831de5178f9dd8d27696e510d8a5f35665b",
@@ -327,24 +324,28 @@
       },
       "cssVariables": [
         "--border-radius-control",
+        "--border-radius-inline",
         "--border-width-regular",
         "--color-background-accent",
         "--color-background-accent-hover",
         "--color-background-accent-pressed",
-        "--color-background-danger",
         "--color-background-disabled",
         "--color-background-hover",
         "--color-background-pressed",
         "--color-background-secondary",
-        "--color-border-accent",
+        "--color-background-tertiary",
         "--color-border-control",
         "--color-border-danger",
         "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-danger",
         "--color-text-disabled",
         "--color-text-on-accent",
         "--color-text-primary",
+        "--color-text-secondary",
         "--control-height",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
         "--font-line-height-ui",
         "--font-size-12",
         "--font-text-size",
@@ -357,7 +358,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:948c5d79d48ef961f34447fa2efd775c1a80e6f51896359719cc77a007819e46",
+      "sourceHash": "sha256:4eca08320b8a79da7ccec6e1f9b67f92c37074d33e57008bdcffbd99ec5012d9",
       "snapshotHashes": {
         "active-dark-hc": "sha256:c3cd7357876d250f26b250140483ce5212df4677b93015fbb2f775a6e8b465b9",
         "active-dark": "sha256:4e172f4417960de8ee3155862a44fec2453050492f52382df7ecc8c9e0afd1a8",
@@ -473,15 +474,17 @@
         "--border-radius-inline",
         "--border-width-regular",
         "--color-background-accent",
+        "--color-background-accent-hover",
         "--color-background-disabled",
-        "--color-background-hover",
         "--color-background-secondary",
-        "--color-border-accent",
         "--color-border-control",
-        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-disabled",
         "--color-text-on-accent",
         "--color-text-primary",
+        "--color-text-tertiary",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
         "--font-line-height-ui",
         "--font-text-size",
         "--icon-size-16",
@@ -492,7 +495,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:0f29391b06ea43c5c1a93082f19944f5b262bf99684aaba83c5951b7318929ee",
+      "sourceHash": "sha256:b127a640277a1f024d03fae637d1d57844ecbcf29f577bd5c2988126e6f1937e",
       "snapshotHashes": {
         "checked-dark-hc": "sha256:045e189d4fad5a1407af55f10cafca77e95f14c53b80ecb6fc5031c46c8525e4",
         "checked-dark": "sha256:e875eee030e045df0979861bcc9a492bcf31102bdf451bb9e9b343a600ec2c6b",
@@ -519,6 +522,217 @@
         "unchecked-light-hc": "sha256:43c5df8bb363aa79a580fb48330a30519b87fecc7069431e650a7aea6c9f2d37",
         "unchecked-light": "sha256:2a2796f59ddc994089632433143de59db74233c2d0ba350bda310681e039b1ff"
       },
+      "storedStatus": "draft",
+      "signature": "absent",
+      "status": "draft",
+      "usage": {
+        "count": 0,
+        "files": []
+      },
+      "since": "0.1.0"
+    },
+    {
+      "id": "composer",
+      "title": "Composer",
+      "level": "pattern",
+      "folder": "src/components/composer",
+      "exports": [
+        "Composer",
+        "ComposerProps"
+      ],
+      "componentExports": [
+        "Composer"
+      ],
+      "states": [
+        "empty",
+        "typing",
+        "running",
+        "disabled",
+        "docked"
+      ],
+      "stories": [
+        "empty",
+        "typing",
+        "running",
+        "disabled",
+        "docked"
+      ],
+      "props": {
+        "Composer": [
+          {
+            "name": "autoFocus",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "describedBy",
+            "type": "string | undefined",
+            "required": false,
+            "description": "Id of an element that explains why sending is blocked."
+          },
+          {
+            "name": "disabled",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": "Disables the whole composer (no node, no session)."
+          },
+          {
+            "name": "header",
+            "type": "ReactNode",
+            "required": false,
+            "description": "Above the text area: attachments or chips for non-default options."
+          },
+          {
+            "name": "label",
+            "type": "string",
+            "required": true,
+            "description": "Accessible name of the text area."
+          },
+          {
+            "name": "layout",
+            "type": "\"centered\" | \"docked\" | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "leading",
+            "type": "ReactNode",
+            "required": false,
+            "description": "Lower-left controls: the simplified permission mode."
+          },
+          {
+            "name": "onSend",
+            "type": "() => void",
+            "required": true,
+            "description": "Called on Enter or Send when sending is allowed."
+          },
+          {
+            "name": "onStop",
+            "type": "(() => void) | undefined",
+            "required": false,
+            "description": "Shown while `running`; Send becomes Stop."
+          },
+          {
+            "name": "onValueChange",
+            "type": "(value: string) => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "placeholder",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "running",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "sendDisabled",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": "Blocks sending but keeps typing; pass the reason so the host can describe it."
+          },
+          {
+            "name": "sendLabel",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "stopLabel",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "textareaId",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "trailing",
+            "type": "ReactNode",
+            "required": false,
+            "description": "Lower-right controls before Send: model, effort, context."
+          },
+          {
+            "name": "value",
+            "type": "string",
+            "required": true,
+            "description": ""
+          }
+        ]
+      },
+      "cssVariables": [
+        "--border-radius-control",
+        "--border-radius-glass",
+        "--border-radius-inline",
+        "--border-width-regular",
+        "--color-background-accent",
+        "--color-background-accent-hover",
+        "--color-background-accent-pressed",
+        "--color-background-danger",
+        "--color-background-disabled",
+        "--color-background-hover",
+        "--color-background-pressed",
+        "--color-background-primary",
+        "--color-background-secondary",
+        "--color-background-tertiary",
+        "--color-background-warning",
+        "--color-border-control",
+        "--color-border-danger",
+        "--color-border-primary",
+        "--color-border-secondary",
+        "--color-ring-primary",
+        "--color-text-danger",
+        "--color-text-disabled",
+        "--color-text-on-accent",
+        "--color-text-primary",
+        "--color-text-secondary",
+        "--color-text-tertiary",
+        "--control-height",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
+        "--elevation-pane-shadow",
+        "--focus-ring-offset",
+        "--focus-ring-width",
+        "--font-line-height-prose",
+        "--font-line-height-ui",
+        "--font-size-12",
+        "--font-size-14",
+        "--font-size-15",
+        "--font-text-size",
+        "--font-weight-heading",
+        "--font-weight-label",
+        "--icon-size-16",
+        "--icon-size-18",
+        "--layout-container-2xl",
+        "--layout-container-2xs",
+        "--motion-duration-fast",
+        "--motion-easing-standard",
+        "--spacing-12",
+        "--spacing-2",
+        "--spacing-24",
+        "--spacing-4",
+        "--spacing-6",
+        "--spacing-64",
+        "--spacing-8",
+        "--target-minimum"
+      ],
+      "sourceHash": "sha256:f473d8a0036f383681246d9e3f848762ae733bb9db587a139d50a5ce650139d8",
+      "snapshotHashes": {},
       "storedStatus": "draft",
       "signature": "absent",
       "status": "draft",
@@ -614,6 +828,7 @@
       "cssVariables": [
         "--border-radius-control",
         "--border-radius-glass",
+        "--border-radius-inline",
         "--border-width-regular",
         "--color-background-accent",
         "--color-background-accent-hover",
@@ -622,21 +837,24 @@
         "--color-background-disabled",
         "--color-background-hover",
         "--color-background-pressed",
+        "--color-background-primary",
         "--color-background-secondary",
         "--color-background-tertiary",
-        "--color-border-accent",
+        "--color-background-warning",
         "--color-border-control",
         "--color-border-danger",
         "--color-border-primary",
-        "--color-text-accent",
+        "--color-border-secondary",
         "--color-text-danger",
         "--color-text-disabled",
         "--color-text-on-accent",
         "--color-text-primary",
         "--color-text-secondary",
         "--control-height",
-        "--font-heading-4-line-height",
-        "--font-heading-4-size",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
+        "--font-heading-5-line-height",
+        "--font-heading-5-size",
         "--font-line-height-prose",
         "--font-line-height-ui",
         "--font-size-12",
@@ -657,13 +875,14 @@
         "--scrim-color",
         "--scrim-opacity",
         "--spacing-12",
+        "--spacing-2",
         "--spacing-20",
         "--spacing-32",
         "--spacing-6",
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:0db134263e13ebdd77f8abcfeab736003f4b5ca7b831c1895a689651826673da",
+      "sourceHash": "sha256:693f95ac4ffeb081c22d206381595557891cd162a0a841b3db7e37b73aed7b78",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:0335cf31f025ef71e959b3418e679b990896a03a3c8d6aae9abde7c15bb59e37",
         "closed-dark": "sha256:4dfd8a3db4648747f3922cb505571961ed34f8d598e79957f1dd3cdfe7f250cb",
@@ -736,6 +955,8 @@
         ]
       },
       "cssVariables": [
+        "--border-radius-panel",
+        "--color-background-tertiary",
         "--color-text-secondary",
         "--color-text-tertiary",
         "--font-line-height-prose",
@@ -743,9 +964,10 @@
         "--icon-size-20",
         "--spacing-12",
         "--spacing-16",
-        "--spacing-24"
+        "--spacing-24",
+        "--spacing-40"
       ],
-      "sourceHash": "sha256:93ef7319b470cbd39eea1a9389cdf39c2b0bff5cf3d165adba8d60adcb8cd99f",
+      "sourceHash": "sha256:e45a80b30c9045f97ab4b2c5a12a73116ce14e30464c28ee138748a0d8ac8907",
       "snapshotHashes": {
         "default-dark": "sha256:7d16dedeae3f0eb4268c810aa33d0dc36486dc14d36e7c73bc77baf18e64b8e6",
         "default-light": "sha256:30d52edca319be48d193d21d28544b9f84a3c13b7e13a30bbd7251cbaeaba2cc"
@@ -791,7 +1013,7 @@
             "name": "action",
             "type": "ReactNode",
             "required": false,
-            "description": "The next action, usually a Button (Retry, Open settings)."
+            "description": "The next step the user must take (Open settings). Never Retry: transient failures recover by themselves (D-203)."
           },
           {
             "name": "className",
@@ -841,9 +1063,10 @@
         "--border-radius-inline",
         "--border-radius-panel",
         "--border-width-regular",
-        "--color-background-secondary",
+        "--color-background-danger-subtle",
         "--color-background-tertiary",
         "--color-border-danger",
+        "--color-border-secondary",
         "--color-text-danger",
         "--color-text-primary",
         "--color-text-secondary",
@@ -855,12 +1078,13 @@
         "--font-weight-heading",
         "--icon-size-18",
         "--spacing-12",
+        "--spacing-2",
         "--spacing-4",
         "--spacing-6",
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:4d9a6cb550e1544becb1cffb7d870889fa51ff5dc01366b2829cbd0135bd870d",
+      "sourceHash": "sha256:a4f762a3940035e46cd74ba6acc359ad1c106a4c3e81267622864feadf83002d",
       "snapshotHashes": {
         "default-dark": "sha256:814f74fdd1ffaa5c740c2e22c7af957433af3e823ba840bd3db7bc1415ef72fa",
         "default-light": "sha256:7820e852e2d5ec16b02307933d56d2a6b10bc5e9c09494643385f5cccc14f335",
@@ -954,7 +1178,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:e1fab4bfad21dc2e89c559b41b36c03cee67aad8a72323b05ff1ad523f65daf7",
+      "sourceHash": "sha256:f3eb09a21f102ae3cdc8b5e0dd1dff907275397b785b97071e3806fb6f8935c8",
       "snapshotHashes": {},
       "storedStatus": "draft",
       "signature": "absent",
@@ -1049,6 +1273,7 @@
       },
       "cssVariables": [
         "--border-radius-control",
+        "--border-radius-inline",
         "--border-width-regular",
         "--color-background-accent",
         "--color-background-accent-hover",
@@ -1057,32 +1282,38 @@
         "--color-background-disabled",
         "--color-background-hover",
         "--color-background-pressed",
+        "--color-background-primary",
         "--color-background-secondary",
         "--color-background-tertiary",
-        "--color-border-accent",
+        "--color-background-warning",
         "--color-border-control",
         "--color-border-danger",
         "--color-border-primary",
-        "--color-text-accent",
+        "--color-border-secondary",
         "--color-text-danger",
         "--color-text-disabled",
         "--color-text-on-accent",
         "--color-text-primary",
+        "--color-text-secondary",
         "--control-height",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
         "--font-line-height-ui",
         "--font-size-12",
         "--font-text-size",
+        "--font-weight-heading",
         "--font-weight-label",
         "--icon-size-16",
         "--icon-size-18",
         "--motion-duration-fast",
         "--motion-easing-standard",
         "--spacing-12",
+        "--spacing-2",
         "--spacing-6",
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:e99ecc55012332e6438b7717ddd7402fd448898d935a2fec5c9c18939df0dfcd",
+      "sourceHash": "sha256:7e6ed7a48b87b3c821cbfacdbdf3c14766ddab906b9daa203b8e24a25bde3b31",
       "snapshotHashes": {
         "default-dark-hc": "sha256:7ea8c164c7f418a0950d1ec2abbd7843584c66193fe6dee12e96fe6234dcb61a",
         "default-dark": "sha256:7ea8c164c7f418a0950d1ec2abbd7843584c66193fe6dee12e96fe6234dcb61a",
@@ -1172,24 +1403,28 @@
         "--border-radius-control",
         "--border-width-regular",
         "--color-background-disabled",
-        "--color-background-primary",
         "--color-background-secondary",
         "--color-background-tertiary",
+        "--color-border-accent",
         "--color-border-control",
         "--color-border-danger",
-        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-disabled",
         "--color-text-primary",
         "--color-text-tertiary",
         "--control-height",
+        "--elevation-control-shadow",
+        "--focus-halo",
+        "--font-line-height-prose",
         "--font-line-height-ui",
         "--font-text-size",
         "--motion-duration-fast",
         "--motion-easing-standard",
         "--spacing-4",
+        "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:5f24603780b3633772faaa4868776d09f80ad086f0c629bfc63d9bce46631474",
+      "sourceHash": "sha256:10c90036eae0a7f15656b74161a78fa13875fb7dad0cd9f8010940397721daba",
       "snapshotHashes": {
         "default-dark-hc": "sha256:d85651eb977b02a457f0afe5bdf720e699faa4ee473cf815347530e4a15dce23",
         "default-dark": "sha256:11cdfc7a3f4022e3ccccf15001dcda9ad419a4d5b7270e34f2ac7b426a2eb49a",
@@ -1232,6 +1467,66 @@
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx"
         ]
+      },
+      "since": "0.1.0"
+    },
+    {
+      "id": "kbd",
+      "title": "Kbd",
+      "level": "primitive",
+      "folder": "src/components/kbd",
+      "exports": [
+        "Kbd",
+        "KbdProps"
+      ],
+      "componentExports": [
+        "Kbd"
+      ],
+      "states": [
+        "default",
+        "combo"
+      ],
+      "stories": [
+        "default",
+        "combo"
+      ],
+      "props": {
+        "Kbd": [
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "keys",
+            "type": "string[]",
+            "required": true,
+            "description": "One entry per key; a combination renders as adjacent keys."
+          }
+        ]
+      },
+      "cssVariables": [
+        "--border-radius-inline",
+        "--border-width-regular",
+        "--color-background-secondary",
+        "--color-border-secondary",
+        "--color-text-secondary",
+        "--font-family-sans",
+        "--font-size-12",
+        "--font-weight-label",
+        "--spacing-2",
+        "--spacing-20",
+        "--spacing-4"
+      ],
+      "sourceHash": "sha256:9a09f29b58aee11d7a3207234525f6a057f9d4aabdb1ec29e1acf15cfe7ff3c7",
+      "snapshotHashes": {},
+      "storedStatus": "draft",
+      "signature": "absent",
+      "status": "draft",
+      "usage": {
+        "count": 0,
+        "files": []
       },
       "since": "0.1.0"
     },
@@ -1337,14 +1632,15 @@
       "cssVariables": [
         "--available-height",
         "--border-radius-control",
-        "--border-radius-inline",
+        "--border-radius-panel",
         "--border-width-regular",
-        "--color-background-danger",
+        "--color-background-danger-subtle",
         "--color-background-hover",
-        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-danger",
         "--color-text-disabled",
         "--color-text-primary",
+        "--color-text-secondary",
         "--color-text-tertiary",
         "--font-line-height-ui",
         "--font-size-12",
@@ -1354,10 +1650,11 @@
         "--layer-popover",
         "--layout-container-3xs",
         "--row-height",
+        "--spacing-12",
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:8517e1c33d392cdb911f3cf50e1868533760103ccd4dd94172bf3ba99d32585a",
+      "sourceHash": "sha256:d3d5c326ff3aa385bf8df9b11a812301920768b885f160eb71928635fc7227dc",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:29af696355c331501d0c23485393c4319ce6b7741fe8d20a75f187ffa9f0b8d1",
         "closed-dark": "sha256:2598f36633288d1c4584299d6aef99ede344ec30385451a3e3aae08a4d7a1974",
@@ -1442,7 +1739,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:06e017c61507e33ca841ea9c0b0f870960e643bc3c85850e7519acbc080b2d52",
+      "sourceHash": "sha256:64199bca51d72a425e05f4a22751945ead11cecbe10afe4652cd4f2b6393ee2e",
       "snapshotHashes": {},
       "storedStatus": "draft",
       "signature": "absent",
@@ -1537,19 +1834,26 @@
       },
       "cssVariables": [
         "--available-width",
-        "--border-radius-panel",
+        "--border-radius-glass",
+        "--border-width-regular",
+        "--color-border-secondary",
+        "--color-text-primary",
         "--color-text-secondary",
+        "--color-text-tertiary",
         "--font-heading-5-line-height",
-        "--font-heading-5-size",
         "--font-line-height-ui",
+        "--font-size-12",
+        "--font-size-13",
         "--font-text-size",
         "--font-weight-heading",
+        "--font-weight-label",
         "--layer-popover",
         "--layout-container-xs",
         "--spacing-12",
-        "--spacing-4"
+        "--spacing-4",
+        "--spacing-8"
       ],
-      "sourceHash": "sha256:9f693b5673c7b4b4fe3eb9502ff760c82cf0c6cee2d09ef9535778e127c6b082",
+      "sourceHash": "sha256:5aa069a2296310df089e828723167cd1f55371e9709d7c1adc5c6f6387083fe8",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:c13d41083539c1aafac3112aca66419b1ea874c00d9803a9c9e38f10aefbeda2",
         "closed-dark": "sha256:803c9b7cdae14663ff359001e53b57e7359c7429ca0663be972c0def3b0e358d",
@@ -1650,7 +1954,7 @@
         "--font-size-12",
         "--spacing-4"
       ],
-      "sourceHash": "sha256:3df740646b5be3c1feaed899f1bfa26248f51ca5ce234b6269c4e8a4abe7c475",
+      "sourceHash": "sha256:dc1a98d09219c48d459691d9dcb85365b097a0d1ab03c61f5e5310e5a4ce7980",
       "snapshotHashes": {
         "aged-dark": "sha256:b12acb48b357523b03a1fc4480bb689437a9c157e53afd49fda6f86739c69ee9",
         "aged-light": "sha256:c8a6e9a1f06cb11dee63df6997f5f1ec8997d74b0f6040b4a4ead1430dcdd34c",
@@ -1661,6 +1965,107 @@
         "unknown-dark": "sha256:0acc1329e3f0332b626d7841b7d80c2f099043d4ac8933837c6cf768965e3a85",
         "unknown-light": "sha256:611dca826352b875d14986e9e4ef9ab9bfefc179734c33585e6e6b1c1ca7cd0f"
       },
+      "storedStatus": "draft",
+      "signature": "absent",
+      "status": "draft",
+      "usage": {
+        "count": 0,
+        "files": []
+      },
+      "since": "0.1.0"
+    },
+    {
+      "id": "segmented-control",
+      "title": "SegmentedControl",
+      "level": "primitive",
+      "folder": "src/components/segmented-control",
+      "exports": [
+        "SegmentedControl",
+        "SegmentedControlProps"
+      ],
+      "componentExports": [
+        "SegmentedControl"
+      ],
+      "states": [
+        "default",
+        "icons",
+        "focus-visible",
+        "disabled"
+      ],
+      "stories": [
+        "default",
+        "icons",
+        "focus-visible",
+        "disabled"
+      ],
+      "props": {
+        "SegmentedControl": [
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "disabled",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "iconOnly",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": "Shows icons only; each label becomes the segment's name and tooltip."
+          },
+          {
+            "name": "label",
+            "type": "string",
+            "required": true,
+            "description": "Accessible name of the group."
+          },
+          {
+            "name": "onValueChange",
+            "type": "(value: Value) => void",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "options",
+            "type": "readonly SegmentedOption<Value>[]",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "value",
+            "type": "Value",
+            "required": true,
+            "description": ""
+          }
+        ]
+      },
+      "cssVariables": [
+        "--border-radius-control",
+        "--border-radius-inline",
+        "--border-width-regular",
+        "--color-background-pressed",
+        "--color-background-secondary",
+        "--color-text-disabled",
+        "--color-text-primary",
+        "--color-text-secondary",
+        "--elevation-control-shadow",
+        "--font-line-height-ui",
+        "--font-size-12",
+        "--font-weight-label",
+        "--motion-duration-fast",
+        "--motion-easing-standard",
+        "--spacing-2",
+        "--spacing-6",
+        "--spacing-8",
+        "--target-minimum"
+      ],
+      "sourceHash": "sha256:e12ab4faf94310b2242bf74ec59b155689abeeaf757b2fc7834b8ec1727bc124",
+      "snapshotHashes": {},
       "storedStatus": "draft",
       "signature": "absent",
       "status": "draft",
@@ -1774,20 +2179,21 @@
         "--anchor-width",
         "--available-height",
         "--border-radius-control",
-        "--border-radius-inline",
+        "--border-radius-panel",
         "--border-width-regular",
         "--color-background-disabled",
         "--color-background-hover",
-        "--color-background-primary",
         "--color-background-secondary",
+        "--color-border-accent",
         "--color-border-control",
         "--color-border-danger",
-        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-accent",
         "--color-text-disabled",
         "--color-text-primary",
         "--color-text-tertiary",
         "--control-height",
+        "--elevation-control-shadow",
         "--font-line-height-ui",
         "--font-size-12",
         "--font-text-size",
@@ -1798,10 +2204,12 @@
         "--motion-duration-fast",
         "--motion-easing-standard",
         "--row-height",
+        "--spacing-2",
         "--spacing-4",
+        "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:53078ec24096395155b11a0c60a6ce2aed08c5ea97ce910247d912fc438a67b7",
+      "sourceHash": "sha256:9f1d6ffe311f025e25374bd88190360a07fcc9c342d5cb22bb60d4d0500afa99",
       "snapshotHashes": {
         "disabled-dark-hc": "sha256:f8886e4dd081e762be86e9dc69792a8baee765183cf56ae59ce3cd37af6851d0",
         "disabled-dark": "sha256:e0068b109437190795855e477a0d12ead28a389617c2c5b8e5da3c0b1e81d149",
@@ -1824,6 +2232,168 @@
         "selected-light-hc": "sha256:5f36beae49d0f226fbc47f38157e6e346a56fd92ab835e2343e36bdafb101b77",
         "selected-light": "sha256:c18438750a0c3e32ccda1290f39be61a57a53217872ca6fa82944ad9be2cad4c"
       },
+      "storedStatus": "draft",
+      "signature": "absent",
+      "status": "draft",
+      "usage": {
+        "count": 0,
+        "files": []
+      },
+      "since": "0.1.0"
+    },
+    {
+      "id": "status-item",
+      "title": "StatusItem",
+      "level": "pattern",
+      "folder": "src/components/status-item",
+      "exports": [
+        "StatusItem",
+        "StatusItemProps"
+      ],
+      "componentExports": [
+        "StatusItem"
+      ],
+      "states": [
+        "default",
+        "value",
+        "unknown",
+        "warning",
+        "badge",
+        "open"
+      ],
+      "stories": [
+        "default",
+        "value",
+        "unknown",
+        "warning",
+        "badge",
+        "open"
+      ],
+      "props": {
+        "StatusItem": [
+          {
+            "name": "align",
+            "type": "\"center\" | \"end\" | \"start\" | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "badge",
+            "type": "number | boolean | undefined",
+            "required": false,
+            "description": "A count (inbox) or `true` for a quiet dot."
+          },
+          {
+            "name": "children",
+            "type": "ReactNode",
+            "required": false,
+            "description": "Popover body: facts, provenance and, when needed, one next step."
+          },
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "icon",
+            "type": "\"code\" | \"search\" | \"stop\" | \"info\" | \"warning\" | \"keyboard\" | \"enter\" | \"send\" | \"timer\" | \"show\" | \"hide\" | \"copy\" | \"speed\" | \"device-laptop\" | \"device-desktop\" | \"device-server\" | \"device-phone\" | \"memory-unified\" | \"memory-ram\" | \"memory-free-pages\" | \"storage\" | \"cpu\" | \"thermal\" | \"quota\" | \"keep-awake\" | \"sleep\" | \"power\" | \"power-off\" | \"battery-charging\" | \"battery-medium\" | \"battery-low\" | \"inbox\" | \"bell\" | \"runtime\" | \"relay\" | \"lease\" | \"hibernating\" | \"network\" | \"offline\" | \"cloud\" | \"cloud-off\" | \"theme-light\" | \"theme-dark\" | \"customise\" | \"command\" | \"sidebar\" | \"sidebar-right\" | \"density-compact\" | \"density-comfortable\" | \"layers\" | \"sparkles\" | \"new\" | \"projects\" | \"folder\" | \"models\" | \"settings\" | \"history\" | \"layout\" | \"attach\" | \"voice\" | \"permission-read\" | \"permission-full\" | \"permission-ok\" | \"lock\" | \"unlock\" | \"effort\" | \"trace\" | \"chat\" | \"agent\" | \"user\" | \"workflow\" | \"branch\" | \"file\" | \"terminal\" | \"package\" | \"globe\" | \"wand\" | \"clock\" | \"check\" | \"close\" | \"plus\" | \"external\" | \"more\" | \"pin\" | \"unpin\" | \"trash\" | \"pause\" | \"play\" | \"expand\" | \"collapse\" | \"chevron-down\" | \"chevron-right\" | \"arrow-down\" | \"unknown\" | \"error\"",
+            "required": true,
+            "description": ""
+          },
+          {
+            "name": "label",
+            "type": "string",
+            "required": true,
+            "description": "Accessible name and tooltip (\"Memory\", \"Keep awake\")."
+          },
+          {
+            "name": "onOpenChange",
+            "type": "((open: boolean) => void) | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "open",
+            "type": "boolean | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "side",
+            "type": "\"left\" | \"right\" | \"top\" | \"bottom\" | undefined",
+            "required": false,
+            "description": "Where the popover opens; the status strip uses `bottom` and `end` at its right edge."
+          },
+          {
+            "name": "title",
+            "type": "string | undefined",
+            "required": false,
+            "description": "Popover heading; defaults to the label."
+          },
+          {
+            "name": "tone",
+            "type": "StatusItemTone | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "value",
+            "type": "ReactNode",
+            "required": false,
+            "description": "A short value shown next to the icon (\"16.8 GB\"); the value carries the weight."
+          }
+        ]
+      },
+      "cssVariables": [
+        "--border-radius-control",
+        "--border-radius-inline",
+        "--border-width-regular",
+        "--color-background-accent",
+        "--color-background-accent-hover",
+        "--color-background-accent-pressed",
+        "--color-background-danger",
+        "--color-background-disabled",
+        "--color-background-hover",
+        "--color-background-pressed",
+        "--color-background-primary",
+        "--color-background-secondary",
+        "--color-background-tertiary",
+        "--color-background-warning",
+        "--color-border-control",
+        "--color-border-danger",
+        "--color-border-primary",
+        "--color-border-secondary",
+        "--color-text-accent",
+        "--color-text-danger",
+        "--color-text-disabled",
+        "--color-text-on-accent",
+        "--color-text-primary",
+        "--color-text-secondary",
+        "--color-text-success",
+        "--color-text-tertiary",
+        "--color-text-warning",
+        "--control-height",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
+        "--font-line-height-ui",
+        "--font-size-12",
+        "--font-text-size",
+        "--font-weight-heading",
+        "--font-weight-label",
+        "--icon-size-16",
+        "--icon-size-18",
+        "--layout-container-2xs",
+        "--motion-duration-fast",
+        "--motion-easing-standard",
+        "--spacing-12",
+        "--spacing-2",
+        "--spacing-6",
+        "--spacing-8",
+        "--target-minimum"
+      ],
+      "sourceHash": "sha256:a8dbbf9d06b218a3b1c6e624e672b426253c7d499ef538afcce9ca9ba726f783",
+      "snapshotHashes": {},
       "storedStatus": "draft",
       "signature": "absent",
       "status": "draft",
@@ -1886,8 +2456,7 @@
       },
       "cssVariables": [
         "--border-width-regular",
-        "--color-background-secondary",
-        "--color-border-primary",
+        "--color-background-tertiary",
         "--color-text-accent",
         "--color-text-danger",
         "--color-text-info",
@@ -1902,7 +2471,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:f73a8a83e349d5475f9aad06bc863a2a7ca2658ebe51783e371783c8e6fd52f7",
+      "sourceHash": "sha256:97e15bfe3a4b428107a91c6c2ef60acbf2ae3013a34e327bf3238805a39b3f38",
       "snapshotHashes": {
         "error-dark": "sha256:539a74b1add99046239127ed23e80e51df08ed7930d0098e125da804ac7e205d",
         "error-light": "sha256:cb29af1d77d676f97685fffaf750c386a09590be6a2d99f6c02d5cdedcb7789d",
@@ -1972,30 +2541,31 @@
         "--border-radius-inline",
         "--border-width-regular",
         "--color-background-accent",
+        "--color-background-accent-hover",
         "--color-background-disabled",
-        "--color-background-hover",
         "--color-background-secondary",
-        "--color-background-tertiary",
-        "--color-border-accent",
         "--color-border-control",
-        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-disabled",
         "--color-text-on-accent",
         "--color-text-primary",
-        "--color-text-secondary",
+        "--color-text-tertiary",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
         "--font-line-height-ui",
         "--font-text-size",
         "--icon-size-16",
         "--icon-size-18",
         "--icon-stroke",
         "--motion-duration-fast",
+        "--motion-duration-moderate",
         "--motion-easing-standard",
         "--spacing-12",
         "--spacing-2",
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:0ccfa638cee2a96eef3cccafde742a272696035fe76fa954db26e2ee7cf5f200",
+      "sourceHash": "sha256:da5cc3bd87a9f92a27d82393ae0649b334d71c7b3bde004cd7269509f511124d",
       "snapshotHashes": {
         "disabled-dark-hc": "sha256:e7827cf132ee6a937b3bcb7b7f2b336ee777dfa53e88c8a271faa20430000039",
         "disabled-dark": "sha256:c7db5e3ed47bceb2d535c0374da2d6359bbc8e54defcd1cf761130b9d16646ee",
@@ -2095,11 +2665,9 @@
         ]
       },
       "cssVariables": [
-        "--border-radius-inline",
         "--border-width-regular",
-        "--color-background-hover",
-        "--color-border-accent",
         "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-disabled",
         "--color-text-primary",
         "--color-text-secondary",
@@ -2113,7 +2681,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:d4eaafe7d98406c96c3c37dac74c996aaeff71e4bfa6e12cb249b14af0a9e37d",
+      "sourceHash": "sha256:6f5ae8cdb8972b49c94fedcf6123277bb7442c3e2bd57513cd6714a0e649a8ac",
       "snapshotHashes": {
         "default-dark-hc": "sha256:65b6764144f0cfc3bf04e8e388980fbd6f9e2d2ed0c2f7d5dac8384d54f3ce18",
         "default-dark": "sha256:ccf08914c9e28d511b60cb5396f7e7be729ac91ba198e93c02a0c6b522a22af7",
@@ -2187,16 +2755,19 @@
         "--border-radius-control",
         "--border-width-regular",
         "--color-background-disabled",
-        "--color-background-primary",
         "--color-background-secondary",
         "--color-background-tertiary",
+        "--color-border-accent",
         "--color-border-control",
         "--color-border-danger",
-        "--color-border-primary",
+        "--color-border-secondary",
         "--color-text-disabled",
         "--color-text-primary",
         "--color-text-tertiary",
         "--control-height",
+        "--elevation-control-shadow",
+        "--focus-halo",
+        "--font-line-height-prose",
         "--font-line-height-ui",
         "--font-text-size",
         "--motion-duration-fast",
@@ -2205,7 +2776,7 @@
         "--spacing-6",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:441fc5850bd56eba2c220b2ab10e100e8fd4db19fe37e474003e091a17372ea5",
+      "sourceHash": "sha256:faa6e21251bdbd0277b615c7b11368b431056ba97b713ad0f43e548ca7c1cf93",
       "snapshotHashes": {
         "default-dark-hc": "sha256:1aa05e6ec45331f8379d40da6b292dcf129846fd14e7e9976966277746084039",
         "default-dark": "sha256:8951269f6fa47914db7e22e6a96a3dcc63e22e568a4e03ca304691af1b1bd466",
@@ -2302,6 +2873,7 @@
       },
       "cssVariables": [
         "--border-radius-control",
+        "--border-radius-inline",
         "--border-radius-panel",
         "--border-width-regular",
         "--color-background-accent",
@@ -2311,13 +2883,14 @@
         "--color-background-disabled",
         "--color-background-hover",
         "--color-background-pressed",
+        "--color-background-primary",
         "--color-background-secondary",
         "--color-background-tertiary",
-        "--color-border-accent",
+        "--color-background-warning",
         "--color-border-control",
         "--color-border-danger",
         "--color-border-primary",
-        "--color-text-accent",
+        "--color-border-secondary",
         "--color-text-danger",
         "--color-text-disabled",
         "--color-text-info",
@@ -2327,6 +2900,8 @@
         "--color-text-success",
         "--color-text-warning",
         "--control-height",
+        "--elevation-control-shadow",
+        "--elevation-inset-shadow",
         "--font-line-height-ui",
         "--font-size-12",
         "--font-text-size",
@@ -2349,7 +2924,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:393e1add06134d350461d3beedd4e48c6087852d05c879bec61cd3a87b045822",
+      "sourceHash": "sha256:25cb932e424649f1f141531cd22a3f782cd1b83075836d8d709b097ee874bab3",
       "snapshotHashes": {
         "error-dark-hc": "sha256:24a114b12782bdb99a8af5aa70ee9c663e5fa4c8500c9ac180f87cd9f84d9fc4",
         "error-dark": "sha256:58540644b5a259189b56e8afb1b4f7e4d63eaa549fa5aaa06701efb94e65df64",
@@ -2446,15 +3021,17 @@
         "--border-width-regular",
         "--color-background-inverse",
         "--color-text-inverse",
+        "--elevation-2-shadow",
         "--font-line-height-ui",
         "--font-size-12",
+        "--font-weight-label",
         "--layer-tooltip",
         "--layout-container-xs",
         "--motion-duration-moderate",
-        "--spacing-4",
+        "--spacing-2",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:3d2fa5702fa03390e14f0d82602ed0f365dd2b0d9fa0be5b278f5ad9e51fa883",
+      "sourceHash": "sha256:eb781a0ca4d3f0ac2ee8cfb68b412abb5ddb5a842fc524ba817efaf23333bece",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:d476f5474eb8d2d26dea246d094b1b6fa76b127014edb3adea869dbfc16a687a",
         "closed-dark": "sha256:4f7e48eaedf25203150e72a0cfb391c5b7230741c5e537d8f87d07572b79fa12",
@@ -2546,7 +3123,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:796f36aaede812fe3be505d8bf7ea649f43cfe3045051bad51c6d083d2f0c9f2",
+      "sourceHash": "sha256:c12b51fb6249fb931eac5074d7378476b1ef2106b81c5180dc176123fd117adf",
       "snapshotHashes": {
         "default-dark": "sha256:9205498c663e6974e68ca800005bab18f1a0fcd6791c45d8bb1720fc3969b6ad",
         "default-light": "sha256:39cb94954dcb0b9779adea629517723b030874e2d0121c75f7550b2157cd8462",

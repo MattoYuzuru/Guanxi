@@ -131,12 +131,13 @@ test('generator refuses an explicit null iteration override but keeps an omitted
   fadeUp(explicitNull).iterations = null
   await assert.rejects(generate((await ctx.withFiles({ [path]: JSON.stringify(explicitNull) })).tokenOptions), /iterations.*null/)
 })
-test('G3 checks all 25 declared pairs in all themes and every glass backdrop', async () => {
+test('G3 checks all 30 declared pairs in all themes and every glass backdrop', async () => {
   const report = await contrast(ctx)
   assert.equal(report.ok, true, JSON.stringify(report.errors))
-  assert.equal(report.measurements.length, 4 * (25 + 3 * 2 * 8 * 2))
+  assert.equal(report.measurements.length, 4 * (30 + 3 * 2 * 8 * 2))
   // FOUNDATIONS §1.1–1.3, including text on the accent hover and pressed fills (D-201 working
-  // palette, 2026-10-23; the five pane-* pairs measure the same floors on the session pane).
+  // palette, 2026-10-23; the five pane-* pairs measure the same floors on the session pane and
+  // the five *-on-subtle pairs check status text on its tinted fill).
   const baseline = { light: [15.85, 4.74, 3.2, 5.25, 6.76, 7.8], dark: [16.66, 5.14, 3.46, 7.08, 8.1, 9.24] }
   for (const [theme, values] of Object.entries(baseline)) assert.deepEqual(['text', 'muted', 'control-border', 'accent', 'on-accent-hover', 'on-accent-pressed'].map(pair => report.measurements.find(m => m.theme === theme && m.pair === pair).ratio), values)
   for (const theme of ['light-hc', 'dark-hc']) assert.ok(report.measurements.filter(m => m.theme === theme).every(m => m.ratio >= 7))

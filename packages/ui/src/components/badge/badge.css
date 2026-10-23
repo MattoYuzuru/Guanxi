@@ -1,9 +1,16 @@
+@reference '../../styles/tailwind-reference.css';
+
+/*
+ * Badge: a quiet tinted label. Tones use the `background-<tone>-subtle` fills (10% of the status
+ * colour in the pane); the contrast gate checks the status text on them at 4.5:1.
+ */
 .gx-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-4);
+  min-height: var(--spacing-20);
   padding: 0 var(--spacing-6);
-  border: var(--border-width-regular) solid var(--color-border-primary);
+  border: var(--border-width-regular) solid transparent;
   border-radius: var(--border-radius-inline);
   background-color: var(--color-background-tertiary);
   color: var(--color-text-secondary);
@@ -11,33 +18,41 @@
   font-weight: var(--font-weight-label);
   line-height: var(--font-line-height-ui);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gx-badge svg {
+  width: var(--spacing-12);
+  height: var(--spacing-12);
 }
 
 .gx-badge[data-tone='accent'] {
-  border-color: var(--color-border-accent);
+  background-color: var(--color-background-accent-subtle);
   color: var(--color-text-accent);
 }
 
 .gx-badge[data-tone='info'] {
-  border-color: var(--color-border-info);
-  background-color: var(--color-background-info);
+  background-color: var(--color-background-info-subtle);
   color: var(--color-text-info);
 }
 
 .gx-badge[data-tone='success'] {
-  border-color: var(--color-border-success);
-  background-color: var(--color-background-success);
+  background-color: var(--color-background-success-subtle);
   color: var(--color-text-success);
 }
 
 .gx-badge[data-tone='warning'] {
-  border-color: var(--color-border-warning);
-  background-color: var(--color-background-warning);
+  background-color: var(--color-background-warning-subtle);
   color: var(--color-text-warning);
 }
 
 .gx-badge[data-tone='danger'] {
-  border-color: var(--color-border-danger);
-  background-color: var(--color-background-danger);
+  background-color: var(--color-background-danger-subtle);
   color: var(--color-text-danger);
+}
+
+@media (forced-colors: active) {
+  .gx-badge {
+    border-color: CanvasText;
+  }
 }

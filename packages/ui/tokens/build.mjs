@@ -15,7 +15,7 @@ export function cssValue(t) {
     case 'dimension': case 'duration': return `${v.value}${v.unit}`
     case 'fontFamily': return (Array.isArray(v) ? v : [v]).map(n => n.includes(' ') ? JSON.stringify(n) : n).join(', ')
     case 'cubicBezier': return `cubic-bezier(${v.join(', ')})`
-    case 'shadow': return (Array.isArray(v) ? v : [v]).map(s => [s.offsetX, s.offsetY, s.blur, s.spread].map(d => `${d.value}${d.unit}`).join(' ') + ` oklch(${s.color.components.join(' ')} / ${s.color.alpha ?? 1})`).join(', ')
+    case 'shadow': return (Array.isArray(v) ? v : [v]).map(s => (s.inset ? 'inset ' : '') + [s.offsetX, s.offsetY, s.blur, s.spread].map(d => `${d.value}${d.unit}`).join(' ') + ` oklch(${s.color.components.join(' ')} / ${s.color.alpha ?? 1})`).join(', ')
     default: return String(v)
   }
 }

@@ -11,13 +11,13 @@
   width: var(--layout-container-xs);
   max-width: var(--available-width);
   padding: var(--spacing-12);
-  border-radius: var(--border-radius-panel);
+  border-radius: var(--border-radius-glass);
   outline: none;
 }
 
 .gx-popover-title {
   margin: 0;
-  font-size: var(--font-heading-5-size);
+  font-size: var(--font-size-13);
   font-weight: var(--font-weight-heading);
   line-height: var(--font-heading-5-line-height);
 }
@@ -27,4 +27,33 @@
   color: var(--color-text-secondary);
   font-size: var(--font-text-size);
   line-height: var(--font-line-height-ui);
+}
+
+/* Key and value rows inside a status popover (D-202): quiet label, emphasised value. */
+.gx-popover-facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-4) var(--spacing-12);
+  margin: var(--spacing-4) 0 0;
+  font-size: var(--font-size-12);
+}
+
+.gx-popover-facts dt {
+  color: var(--color-text-secondary);
+}
+
+.gx-popover-facts dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-label);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.gx-popover-footnote {
+  margin: var(--spacing-4) 0 0;
+  padding-top: var(--spacing-8);
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
 }

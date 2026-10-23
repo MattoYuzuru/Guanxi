@@ -1,0 +1,74 @@
+@reference '../../styles/tailwind-reference.css';
+
+/* A recessed track; the selected segment is a raised white chip (concentric 8 / 6 px radii). */
+.gx-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  gap: var(--spacing-2);
+  box-sizing: border-box;
+  padding: var(--spacing-2);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-pressed);
+}
+
+.gx-segmented-item {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-6);
+  box-sizing: border-box;
+  min-width: var(--target-minimum);
+  min-height: var(--target-minimum);
+  padding-inline: var(--spacing-8);
+  border: 0;
+  border-radius: var(--border-radius-inline);
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+  line-height: var(--font-line-height-ui);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-segmented[data-icon-only] .gx-segmented-item {
+  padding-inline: 0;
+}
+
+.gx-segmented-item:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-segmented-item:not([data-disabled]) {
+  color: var(--color-text-primary);
+}
+
+.gx-segmented-item[data-checked] {
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
+  color: var(--color-text-primary);
+}
+
+.gx-segmented-item[data-disabled] {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-segmented-item svg {
+  flex: none;
+}
+
+@media (forced-colors: active) {
+  .gx-segmented {
+    border: var(--border-width-regular) solid CanvasText;
+  }
+
+  .gx-segmented-item[data-checked] {
+    forced-color-adjust: none;
+    background-color: Highlight;
+    color: HighlightText;
+  }
+}

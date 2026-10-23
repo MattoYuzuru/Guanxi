@@ -1,24 +1,85 @@
+@reference '../../styles/tailwind-reference.css';
+
+/*
+ * Square icon control. The glyph box is centred by grid placement, not by padding, so a 16, 18
+ * or 20 px glyph sits on the exact centre of a 24, 28 or 32 px target in every density; the
+ * browser gate measures this (icon optical centring, D-200).
+ */
 .gx-icon-button {
+  display: inline-grid;
+  place-items: center;
   width: var(--control-height);
-  padding-inline: 0;
+  min-width: var(--control-height);
+  padding: 0;
+  color: var(--color-text-secondary);
 }
 
 .gx-icon-button[data-size='sm'] {
   width: var(--target-minimum);
+  min-width: var(--target-minimum);
   min-height: var(--target-minimum);
 }
 
 .gx-icon-button-glyph {
-  display: inline-flex;
-}
-
-.gx-icon-button-glyph svg {
+  display: grid;
+  place-items: center;
   width: var(--icon-size-18);
   height: var(--icon-size-18);
 }
 
-.gx-icon-button[aria-pressed='true'] {
-  border-color: var(--color-border-accent);
-  background-color: var(--color-background-tertiary);
-  color: var(--color-text-accent);
+.gx-icon-button[data-size='sm'] .gx-icon-button-glyph {
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+.gx-icon-button-glyph svg {
+  display: block;
+  @apply size-full;
+}
+
+.gx-icon-button:hover:not([data-disabled]),
+[data-gx-force~='hover'] .gx-icon-button:not([data-disabled]) {
+  color: var(--color-text-primary);
+}
+
+.gx-icon-button[aria-pressed='true'],
+.gx-icon-button[data-popup-open] {
+  border-color: transparent;
+  background-color: var(--color-background-pressed);
+  box-shadow: none;
+  color: var(--color-text-primary);
+}
+
+/* A quiet dot for "this has something to look at" (unread, warning); never the only cue. */
+.gx-icon-button-badge {
+  position: absolute;
+  top: var(--spacing-2);
+  right: var(--spacing-2);
+  min-width: var(--spacing-12);
+  height: var(--spacing-12);
+  padding-inline: var(--spacing-2);
+  @apply rounded-full;
+  background-color: var(--color-background-accent);
+  box-shadow: 0 0 0 var(--spacing-2) var(--color-background-primary);
+  color: var(--color-text-on-accent);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-heading);
+  line-height: var(--spacing-12);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.gx-icon-button-badge[data-tone='warning'] {
+  background-color: var(--color-background-warning);
+}
+
+.gx-icon-button-badge[data-tone='danger'] {
+  background-color: var(--color-background-danger);
+}
+
+.gx-icon-button-badge:empty {
+  min-width: var(--spacing-6);
+  width: var(--spacing-6);
+  height: var(--spacing-6);
+  padding: 0;
 }

@@ -199,6 +199,36 @@
       "foreground": "color.text.accent",
       "background": "color.background.secondary",
       "minimum": 4.5
+    },
+    {
+      "name": "accent-on-subtle",
+      "foreground": "color.text.accent",
+      "background": "color.background.accent-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "success-on-subtle",
+      "foreground": "color.text.success",
+      "background": "color.background.success-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "warning-on-subtle",
+      "foreground": "color.text.warning",
+      "background": "color.background.warning-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "danger-on-subtle",
+      "foreground": "color.text.danger",
+      "background": "color.background.danger-subtle",
+      "minimum": 4.5
+    },
+    {
+      "name": "info-on-subtle",
+      "foreground": "color.text.info",
+      "background": "color.background.info-subtle",
+      "minimum": 4.5
     }
   ]
 }

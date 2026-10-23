@@ -10,7 +10,12 @@
 }
 
 .gx-empty-state-icon {
-  display: inline-flex;
+  display: inline-grid;
+  place-items: center;
+  width: var(--spacing-40);
+  height: var(--spacing-40);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-tertiary);
   color: var(--color-text-tertiary);
 }
 

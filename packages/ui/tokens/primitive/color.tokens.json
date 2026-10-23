@@ -795,6 +795,132 @@
           "alpha": 0,
           "hex": "#000000"
         }
+      },
+      "subtle": {
+        "light": {
+          "accent": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.9518397635,
+                0.0170015867,
+                267.7897329684
+              ],
+              "hex": "#EAEFFB"
+            }
+          },
+          "success": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.9516892691,
+                0.0140791726,
+                155.5849247363
+              ],
+              "hex": "#E8F2EB"
+            }
+          },
+          "warning": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.9543267706,
+                0.0136146683,
+                78.2624969113
+              ],
+              "hex": "#F5EFE6"
+            }
+          },
+          "danger": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.9511166038,
+                0.0152104718,
+                17.4242358169
+              ],
+              "hex": "#F9EBEB"
+            }
+          },
+          "info": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.9513506698,
+                0.0135244735,
+                226.5616891321
+              ],
+              "hex": "#E6F1F6"
+            }
+          }
+        },
+        "dark": {
+          "accent": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.2673057658,
+                0.0246691537,
+                261.1059764951
+              ],
+              "hex": "#1F2632"
+            }
+          },
+          "success": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.2686355322,
+                0.0174810602,
+                177.8574326868
+              ],
+              "hex": "#1D2926"
+            }
+          },
+          "warning": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.2712154809,
+                0.0108067752,
+                73.4657842895
+              ],
+              "hex": "#2A2621"
+            }
+          },
+          "danger": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.2676550607,
+                0.0145959504,
+                356.108570538
+              ],
+              "hex": "#2C2326"
+            }
+          },
+          "info": {
+            "$type": "color",
+            "$value": {
+              "colorSpace": "oklch",
+              "components": [
+                0.2701320626,
+                0.0213888968,
+                240.1353630262
+              ],
+              "hex": "#1D2830"
+            }
+          }
+        }
       }
     }
   }

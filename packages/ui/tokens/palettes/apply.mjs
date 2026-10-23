@@ -54,7 +54,7 @@ async function measure() {
   const doc = readFileSync(file('docs/design/FOUNDATIONS.md'), 'utf8')
   const m = name => Object.fromEntries(byPair[name].map(item => [item.theme, item.ratio.toFixed(2)]))
   const [text, muted, control, accent, onAccent] = ['text', 'muted', 'control-border', 'accent', 'on-accent'].map(m)
-  let next = doc.replace(/Measured contrast \(WCAG 2\.2[^)]*\): [^\n]*\n[^\n]*\./,
+  let next = doc.replace(/Measured contrast \(WCAG 2\.2[^)]*\): [^\n]*\n[^\n]*\.(?:\nThe "pane-\*" pairs[^\n]*)?/,
     `Measured contrast (WCAG 2.2, ${new Date().toISOString().slice(0, 10)}): light text ${text.light}:1, muted ${muted.light}:1, control border\n` +
     `${control.light}:1 on the light canvas; dark text ${text.dark}:1, muted ${muted.dark}:1, control border ${control.dark}:1 on the dark canvas.\n` +
     `The \"pane-*\" pairs check the same floors on the session pane (step 1).`)
@@ -86,6 +86,11 @@ function apply(id) {
     const ink = built.light.ramp[12], toward = theme === 'dark' ? '#FFFFFF' : ink, hcAccent = built[theme].ramp[11]
     primitive['accent-state'][`${theme}-hc`].hover.$value = colour(mix(hcAccent, toward, 0.12))
     primitive['accent-state'][`${theme}-hc`].pressed.$value = colour(mix(hcAccent, toward, 0.24))
+  }
+  // Subtle status fills (badges, banners): 10% of the status colour mixed into the pane.
+  primitive.subtle ??= { light: {}, dark: {} }
+  for (const theme of ['light', 'dark']) for (const role of ['accent', 'success', 'warning', 'danger', 'info']) {
+    primitive.subtle[theme][role] = { $type: 'color', $value: colour(mix(built[theme].ramp[1], built[theme].status[role], 0.1)) }
   }
   const ink = built.light.ramp[12]
   primitive.material.light.seam.$value = colour(ink, primitive.material.light.seam.$value.alpha)

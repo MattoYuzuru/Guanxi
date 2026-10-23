@@ -18,7 +18,7 @@ export interface ErrorStateProps extends Omit<ComponentProps<'div'>, 'className'
   occurredAt: string
   /** Whether this is the failure time or the time the client observed it. */
   timeMeaning?: 'occurred' | 'observed'
-  /** The next action, usually a Button (Retry, Open settings). */
+  /** The next step the user must take (Open settings). Never Retry: transient failures recover by themselves (D-203). */
   action?: ReactNode
   /** Copyable technical details; shown in a disclosure. */
   details?: string

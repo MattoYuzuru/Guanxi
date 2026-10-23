@@ -16,18 +16,20 @@
   cursor: not-allowed;
 }
 
+/* 16 px box, 1 px control border (3:1), the 12 px check centred by grid placement. */
 .gx-checkbox {
   position: relative;
-  display: inline-flex;
+  display: inline-grid;
   flex: none;
-  align-items: center;
-  justify-content: center;
+  place-items: center;
+  box-sizing: border-box;
   width: var(--icon-size-16);
   height: var(--icon-size-16);
   padding: 0;
   border: var(--border-width-regular) solid var(--color-border-control);
   border-radius: var(--border-radius-inline);
   background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
   color: var(--color-text-on-accent);
   cursor: inherit;
   @apply transition-colors;
@@ -44,26 +46,36 @@
 
 .gx-checkbox:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-checkbox:not([data-disabled]) {
-  background-color: var(--color-background-hover);
+  border-color: var(--color-text-tertiary);
 }
 
 .gx-checkbox[data-checked],
 .gx-checkbox[data-indeterminate] {
-  border-color: var(--color-border-accent);
+  border-color: var(--color-background-accent);
   background-color: var(--color-background-accent);
+  box-shadow: var(--elevation-inset-shadow);
+}
+
+.gx-checkbox[data-checked]:hover:not([data-disabled]),
+.gx-checkbox[data-indeterminate]:hover:not([data-disabled]) {
+  border-color: var(--color-background-accent-hover);
+  background-color: var(--color-background-accent-hover);
 }
 
 .gx-checkbox[data-disabled] {
-  border-color: var(--color-border-primary);
+  border-color: var(--color-border-secondary);
   background-color: var(--color-background-disabled);
+  box-shadow: none;
   color: var(--color-text-disabled);
 }
 
 .gx-checkbox-indicator {
-  display: inline-flex;
+  display: grid;
+  place-items: center;
 }
 
 .gx-checkbox-indicator svg {
+  display: block;
   width: var(--spacing-12);
   height: var(--spacing-12);
   stroke-width: var(--icon-stroke);

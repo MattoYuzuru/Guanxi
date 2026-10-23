@@ -1,0 +1,128 @@
+@reference '../../styles/tailwind-reference.css';
+
+/*
+ * The composer is a floating pane: white, hairline, the pane shadow, 14 px radius. Its text
+ * area is borderless; the whole card shows focus. Opaque on purpose: prompts are reading text.
+ */
+.gx-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  box-sizing: border-box;
+  @apply w-full;
+  min-width: 0;
+  padding: var(--spacing-8) var(--spacing-8) var(--spacing-8) var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-glass);
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-pane-shadow);
+  color: var(--color-text-primary);
+  @apply transition-colors;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-composer:focus-within {
+  border-color: var(--color-border-control);
+}
+
+.gx-composer:has(.gx-composer-input:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.gx-composer[data-disabled] {
+  background-color: var(--color-background-disabled);
+  box-shadow: none;
+}
+
+.gx-composer-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-6);
+  padding-top: var(--spacing-4);
+}
+
+.gx-composer-input {
+  display: block;
+  box-sizing: border-box;
+  @apply w-full;
+  min-height: var(--spacing-24);
+  max-height: var(--layout-container-2xs);
+  margin: 0;
+  padding: var(--spacing-4) var(--spacing-4) 0 0;
+  overflow-y: auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: var(--font-size-14);
+  line-height: var(--font-line-height-prose);
+  resize: none;
+  outline: none;
+}
+
+.gx-composer[data-layout='centered'] .gx-composer-input {
+  min-height: var(--spacing-64);
+  font-size: var(--font-size-15);
+}
+
+.gx-composer-input::placeholder {
+  color: var(--color-text-tertiary);
+  opacity: 1;
+}
+
+.gx-composer-input:disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.gx-composer-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+  min-width: 0;
+}
+
+.gx-composer-leading,
+.gx-composer-trailing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-width: 0;
+}
+
+.gx-composer-trailing {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+/* Send is a round accent button; Stop is a round neutral one with a square glyph. */
+.gx-composer-action {
+  @apply rounded-full;
+}
+
+.gx-composer-action[data-disabled] {
+  border-color: transparent;
+  background-color: var(--color-background-pressed);
+  color: var(--color-text-disabled);
+}
+
+.gx-composer-action[data-variant='primary']:not([data-disabled]) {
+  color: var(--color-text-on-accent);
+}
+
+@media (forced-colors: active) {
+  .gx-composer {
+    border-color: CanvasText;
+  }
+}
+
+/* Catalog only: give the story the width of a session column. */
+.gx-composer-story {
+  width: var(--layout-container-2xl);
+  @apply max-w-full;
+}

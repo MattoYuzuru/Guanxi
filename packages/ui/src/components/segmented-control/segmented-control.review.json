@@ -1,0 +1,7 @@
+{
+  "$schema": "../../../catalog/review.schema.json",
+  "id": "segmented-control",
+  "status": "draft",
+  "approval": null,
+  "requests": []
+}
