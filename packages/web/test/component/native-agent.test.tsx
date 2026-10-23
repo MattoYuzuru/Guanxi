@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { NativeAgentPage, NativeProgress } from '../../src/features/native-agent/NativeAgentPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import type { AgentProgress } from '@guanxi/contract'
+import { nativeEnglish, nativeRussian } from '../../src/features/native-agent/messages.ts'
 const progress: AgentProgress = { sessionId: 'session', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only',
   status: 'running', plan: [{ text: 'Inspect', status: 'verification_requested' }], queue: [{ id: 'q', text: 'Follow up' }],
   summary: 'Response', error: null, observedAt: '2026-10-21T00:00:00.000Z', source: 'session.log', confidence: 'high' }
@@ -70,8 +71,9 @@ it('failed/offline choices announce a self-recovering state, offer no Retry and 
   expect(screen.queryAllByRole('button', { name: /Retry/ })).toHaveLength(0)
 })
 
-it('a failed progress read keeps the last state, offers no Retry and recovers by itself', async () => {
+it('with the browser offline a failed read says so at once, keeps the last state, offers no Retry and recovers by itself', async () => {
   setActiveLocale('en')
+  const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
   let fail = false, reads = 0
   vi.stubGlobal('fetch', vi.fn(async url => {
     if (String(url) === '/api/agent/session') { reads++; if (fail) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
@@ -79,16 +81,17 @@ it('a failed progress read keeps the last state, offers no Retry and recovers by
   }))
   render(<NativeAgentPage sessionId="session" />)
   await screen.findByRole('region', { name: 'Session progress' })
-  // A running session re-reads quietly every 500 ms; the next read fails.
-  fail = true
+  // A running session re-reads quietly every 500 ms; the browser drops offline and the next read fails.
+  fail = true; online.mockReturnValue(false)
   await screen.findByText(/Guanxi reconnects by itself/, undefined, { timeout: 2_000 })
   expect(screen.getByText('Response')).toBeTruthy()
   expect(screen.queryAllByRole('button', { name: /Retry/ })).toHaveLength(0)
   const before = reads
-  fail = false
+  fail = false; online.mockReturnValue(true)
   await act(async () => { window.dispatchEvent(new Event('online')) })
   await waitFor(() => expect(screen.queryByText(/Guanxi reconnects by itself/)).toBeNull())
   expect(reads).toBeGreaterThan(before)
+  online.mockRestore()
 })
 
 it.each(['en', 'ru'] as const)('session errors are visible and localized in %s', locale => {
@@ -178,4 +181,46 @@ it('a Send to main refreshes the session status so a stopped session shows its n
   await waitFor(() => expect(screen.getAllByRole('status').some(node => node.textContent === 'Running')).toBe(true))
   expect(reads).toBe(readsBefore + 1)
   expect(screen.getByRole('button', { name: 'Stop session' })).toBeTruthy()
+})
+
+it('one failed 500 ms poll shows nothing; the offline note appears after three consecutive failures in a slot that exists all along', async () => {
+  setActiveLocale('en')
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    let failing = false
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const path = String(url)
+      if (path === '/api/agent/session') { if (failing) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
+      throw new TypeError('Failed to fetch')
+    }))
+    render(<NativeAgentPage sessionId="session" />)
+    for (let i = 0; i < 5; i++) await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('Response')).toBeTruthy()
+    const slot = document.querySelector('[data-testid="native-connection"]')
+    expect(slot).not.toBeNull()
+    expect(slot!.textContent).toBe('')
+    failing = true
+    // First failure (the next 500 ms poll): a blip, nothing appears.
+    await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+    expect(document.querySelector('[data-testid="native-connection"]')).toBe(slot)
+    expect(slot!.textContent).toBe('')
+    // Second failure after the 2 s back-off: still quiet.
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_100) })
+    expect(slot!.textContent).toBe('')
+    // Third consecutive failure after 4 s: the note says the node is unreachable, in the same element.
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_100) })
+    expect(document.querySelector('[data-testid="native-connection"]')).toBe(slot)
+    expect(slot!.textContent).toContain('reconnects by itself')
+    expect(screen.getByText('Response')).toBeTruthy()
+    // Recovery clears it again.
+    failing = false
+    await act(async () => { window.dispatchEvent(new Event('online')); await vi.advanceTimersByTimeAsync(0) })
+    expect(slot!.textContent).toBe('')
+  } finally { vi.useRealTimers() }
+})
+
+it('the native session catalogue carries no Retry label in either language (D-203)', () => {
+  expect(Object.keys(nativeEnglish).filter(key => /retry/i.test(key))).toEqual([])
+  expect(Object.values(nativeEnglish).filter(text => /^retry$/i.test(text))).toEqual([])
+  expect(Object.values(nativeRussian).filter(text => /^повторить$/i.test(text))).toEqual([])
 })

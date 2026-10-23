@@ -65,6 +65,24 @@
   padding: var(--spacing-8) var(--spacing-16) var(--spacing-16);
 }
 
+.native-session-connection {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--spacing-6);
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.native-session-connection span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .native-session-note {
   display: flex;
   align-items: center;

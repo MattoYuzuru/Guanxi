@@ -57,6 +57,12 @@ export function NativeSessionActions({ progress, busy, remove, retain, leave }: 
       disabled={progress.status === 'running' || progress.error === 'cleanup_unconfirmed'} onClick={remove}>{t('native.delete')}</Button>
   </section>
 }
+/**
+ * Consecutive failed progress reads before the offline note appears while a state is on screen.
+ * One missed 500 ms poll is a blip, not news (D-203); with the 2 s → 4 s back-off the third
+ * failure lands about six seconds after the node stopped answering.
+ */
+export const OFFLINE_AFTER_FAILURES = 3
 /** The new-session screen (E1) lives in its own feature; this route also hosts a running session. */
 export function NativeAgentPage({ sessionId }: { sessionId: string | null }) {
   return sessionId === null ? <NewSessionScreen /> : <NativeSessionPage sessionId={sessionId} />
@@ -74,20 +80,22 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
   useEffect(() => { heading.current?.focus() }, [])
   const [prompt, setPrompt] = useState('')
   const [progress, setProgress] = useState<AgentProgress | null>(null)
-  const [error, setError] = useState(false), [actionError, setActionError] = useState(false)
+  const [offline, setOffline] = useState(false), [actionError, setActionError] = useState(false)
   const [busy, setBusy] = useState(false), [revision, setRevision] = useState(0)
   useEffect(() => {
-    const abort = new AbortController(); let timer: ReturnType<typeof setTimeout>; let failures = 0
+    const abort = new AbortController(); let timer: ReturnType<typeof setTimeout>; let failures = 0; let hasData = false
     const refresh = async () => {
       try {
         const next = await nativeApi.progress(sessionId, abort.signal)
         if (abort.signal.aborted) return
-        failures = 0
-        setProgress(previous => previous === null ? next : replaceEqualDeep(previous, next)); setError(false)
+        failures = 0; hasData = true
+        setProgress(previous => previous === null ? next : replaceEqualDeep(previous, next)); setOffline(false)
         if (next.status === 'running') timer = setTimeout(refresh, 500)
       } catch {
         if (abort.signal.aborted) return
-        failures += 1; setError(true)
+        failures += 1
+        // Without a state on screen, or with the browser offline, say so at once; otherwise wait out blips.
+        if (!hasData || !navigator.onLine || failures >= OFFLINE_AFTER_FAILURES) setOffline(true)
         timer = setTimeout(refresh, retryDelay(failures, DEFAULT_ASYNC_RETRY))
       }
     }
@@ -105,6 +113,10 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
   return <div className="native-session">
     <header className="native-session-header">
       <h1 ref={heading} tabIndex={-1} className="native-session-title">{t('native.progress')}</h1>
+      {/* A persistent slot: the note fills it in place, so nothing below moves when the node drops. */}
+      <p role="status" data-testid="native-connection" className="native-session-connection">
+        {offline && <><Icon name="offline" aria-hidden="true" /><span>{t('native.offline')}</span></>}
+      </p>
       {progress && <Badge tone={progress.status === 'running' ? 'accent' : progress.status === 'completed' ? 'success' : progress.status === 'failed' ? 'danger' : 'neutral'}>
         {t(`native.${progress.status}`)}</Badge>}
       <div className="native-session-actions">
@@ -123,7 +135,6 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
     </header>
     <div className="native-session-scroll">
       <div className="native-session-column">
-        {error && <p role="status" className="native-session-note"><Icon name="offline" />{t(navigator.onLine ? 'native.offline' : 'native.offline')}</p>}
         {actionError && <p role="alert" className="native-session-note">{t('native.error')}</p>}
         {progress && <NativeProgress progress={progress} stop={() => void mutate(() => nativeApi.stop(progress.sessionId))} remove={id => void mutate(() => nativeApi.remove(progress.sessionId, id))} />}
         {progress && <SideChatPanel sessionId={progress.sessionId} onSent={() => setRevision(r => r + 1)} />}
@@ -131,7 +142,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
     </div>
     <div className="native-session-dock">
       <Composer label={t('native.prompt')} placeholder={t(running ? 'native.send' : 'native.continue')} value={prompt} onValueChange={setPrompt}
-        onSend={send} sendDisabled={busy || !progress} disabled={!progress && !error} sendLabel={t(running ? 'native.send' : 'native.continue')}
+        onSend={send} sendDisabled={busy || !progress} disabled={!progress && !offline} sendLabel={t(running ? 'native.send' : 'native.continue')}
         leading={progress ? <Badge>{t(`native.${progress.mode}`)}</Badge> : undefined} />
     </div>
   </div>
