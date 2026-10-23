@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdir, lstat, realpath, stat as statPath } from 'node:fs/promises'
+import { mkdir, lstat, realpath } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { Stream } from '@agentclientprotocol/sdk'
@@ -267,19 +267,6 @@ export class AgentProcess {
     } catch { return { confirmed: false, reason: 'close_error' } }
     return awaitOwnedGroupEmpty(pgid, this.closed, GROUP_ACK_MS)
   }
-}
-
-/** Settings files the vendor CLI reads on its own (user, project and local scope) and whose `env` or `permissions` could redirect a credential
- * or relax the deny-all permission policy. Only their existence is checked: the contents are never opened. */
-export async function vendorSettingsPresent(configDirectory: string): Promise<boolean> {
-  const places = [['config', 'settings.json'], ['config', 'settings.local.json'], ['work', '.claude', 'settings.json'], ['work', '.claude', 'settings.local.json'],
-    ['home', '.claude', 'settings.json'], ['home', '.claude', 'settings.local.json']]
-  for (const place of places) {
-    try { await statPath(join(configDirectory, ...place)); return true } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'ENOTDIR') return true
-    }
-  }
-  return false
 }
 
 export interface ClaudeAuthStatus { loggedIn: boolean; authMethod: string | null; /** Which variable or helper the CLI says supplied the key; unknown values read as `other`. */ apiKeySource: string | null }
