@@ -254,7 +254,8 @@ lines.on('line', line => {
       reply(frame, { turn: { id: 'fixture-turn', status: 'inProgress' } }); return
     }
     if (frame.method === 'session/cancel') {
-      if (lead) { leadLog('cancel', { sessionId: frame.params.sessionId }); toolAbort?.abort(); leadFinish?.('cancelled'); leadFinish = null }
+      // `ignoreCancel`: an agent that never answers the cancel; the node's grace timeout and process kill must cope.
+      if (lead) { leadLog('cancel', { sessionId: frame.params.sessionId }); toolAbort?.abort(); if (!lead.ignoreCancel) leadFinish?.('cancelled'); leadFinish = null }
       return
     }
     if (frame.method === 'turn/interrupt') { reply(frame, {}); return }

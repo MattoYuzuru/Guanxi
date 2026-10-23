@@ -519,3 +519,19 @@ test('an agent that echoes its MCP configuration never leaves the per-turn beare
     .map(table => { try { return JSON.stringify(f.db.prepare(`SELECT * FROM "${table.name}"`).all(), (_k, v) => (v instanceof Uint8Array ? Buffer.from(v).toString('latin1') : v)) } catch { return '' } }).join('\n')
   for (const token of f.tokens) assert.ok(!dump.includes(token))
 })
+
+test('an agent that ignores session/cancel is stopped after the grace period: usage is unobserved, noted, and the ledger is unchanged', async t => {
+  const f = await leadFixture(t, { lead: { ignoreCancel: true }, plugin: { cancelGraceMs: 300 } })
+  const { runId, first } = f.start()
+  const turn = await first
+  assert.equal(turn.outcome, 'hibernated', 'the delegation still commits; the lead decided')
+  const run = f.runs()
+  assert.equal(run.promises(runId).length, 1)
+  assert.deepEqual(run.costEntries(runId), [], 'nothing was reported, so nothing is invented')
+  assert.deepEqual(run.costs(runId), [])
+  const notes = f.kernel.sessionLog!.readAll(runId, 'person').filter(e => e.type === 'agent.note').map(e => String((e.data as { text: string }).text))
+  assert.ok(notes.some(text => text.includes('usage_unobserved')), 'the missing usage is visible')
+  const pids = [...new Set((await f.events()).map(e => Number(e.pid)))]
+  for (const pid of pids) assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'the unresponsive agent was killed')
+  assert.deepEqual(f.service().limits(f.owner, f.binding.connectionId).durableLocalOccupancy, { held: 0, cleanupUnconfirmed: 0, total: 0 })
+})
