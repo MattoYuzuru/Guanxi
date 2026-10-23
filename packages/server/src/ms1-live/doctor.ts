@@ -105,7 +105,14 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
         }
         return ok('llama_alias', `The alias matches; the window is ${props.contextTokens} tokens; build ${props.buildInfo}.`, { window: props.contextTokens, build: props.buildInfo, slots: props.slots })
       }))
-    } else checks.push(skip('llama_alias', 'Skipped: the llama-server is not healthy yet.'))
+      // Attach mode digests the model file on THIS machine: the node's user must be able to read what the server reports.
+      checks.push(await step('model_file', async () => {
+        const props = await client.props(AbortSignal.timeout(6_000))
+        accessSync(props.modelPath, constants.R_OK)
+        return ok('model_file', 'The model file the llama-server reports is readable by this user (attach mode hashes it here).')
+      }, () => ({ code: 'model_file_unreadable', summary: 'The model file the llama-server reports cannot be read by this user.',
+        fix: 'Run the node as a user that can read it; an owner-only parent directory needs traverse (--x) access for this user.' })))
+    } else { checks.push(skip('llama_alias', 'Skipped: the llama-server is not healthy yet.'), skip('model_file', 'Skipped: the llama-server is not healthy yet.')) }
     checks.push(skip('gates', 'Acceptance gates run on the home node; nothing to check here.'))
   } else {
     const home = s.home!

@@ -115,10 +115,10 @@ test('the executor attests exactly its one configured model to the dispatch laye
   const executor = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(a.root, 'data'), webDir: a.root, devOrigins: [], ms1Live: a.settings })
   t.after(() => executor.close())
   const dispatch = executor.ms1Live!.federationHost().dispatch!
-  const attested = dispatch.localModel!('qwen3.8-27b')!
-  assert.deepEqual({ ...attested, observedAt: typeof attested.observedAt }, { connectionId: executor.ms1Live!.connectionId, model: 'qwen3.8-27b', placement: 'installed_local', source: 'ms1-live attach configuration (asserted when asked, not observed)', observedAt: 'number' })
-  assert.equal(dispatch.localModel!('qwen3.8-27b:latest')!.connectionId, attested.connectionId, 'the same model under its implicit tag')
-  for (const other of ['some-other-model', 'qwen3.8-27b:cloud', 'qwen3.8-27b-q4', '']) assert.equal(dispatch.localModel!(other), null, `${other || '(empty)'} is not served here`)
+  const attested = dispatch.localModel!('qwen3.8-27b-iq3s')!
+  assert.deepEqual({ ...attested, observedAt: typeof attested.observedAt }, { connectionId: executor.ms1Live!.connectionId, model: 'qwen3.8-27b-iq3s', placement: 'installed_local', source: 'ms1-live attach configuration (asserted when asked, not observed)', observedAt: 'number' })
+  assert.equal(dispatch.localModel!('qwen3.8-27b-iq3s:latest')!.connectionId, attested.connectionId, 'the same model under its implicit tag')
+  for (const other of ['some-other-model', 'qwen3.8-27b-iq3s:cloud', 'qwen3.8-27b', 'qwen3.8-27b-iq3s-q4', '']) assert.equal(dispatch.localModel!(other), null, `${other || '(empty)'} is not served here`)
   assert.ok(dispatch.relayRuntime, 'an attached llama-server is the relay runtime')
 
   const h = await pairing(t, 'home')
@@ -201,7 +201,7 @@ test('an executor restarted on its data directory reuses its connection, and clo
   // A sparse 8 GiB "model": hashing it takes seconds, and the fake server reports it as its model file.
   mkdirSync(join(root, 'model'), { recursive: true })
   const modelPath = join(root, 'model', 'big.gguf'); writeFileSync(modelPath, ''); truncateSync(modelPath, 8 * 1024 ** 3)
-  const fake = await startFakeLlama({ alias: 'qwen3.8-27b', modelPath, nCtx: 16000 })
+  const fake = await startFakeLlama({ alias: 'qwen3.8-27b-iq3s', modelPath, nCtx: 16000 })
   t.after(() => fake.close())
   const live = { ...settings, executor: { llamaServer: { baseUrl: fake.url } } }
   const dataDir = join(root, 'data')

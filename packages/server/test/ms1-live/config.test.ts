@@ -89,7 +89,7 @@ test('the template that init writes parses, and its reserves fit a 32768-token w
       const result = await cli(['init', '--role', role, '--dir', join(dir, role), '--json'])
       assert.equal(result.code, 0, result.err)
       const settings = loadMs1LiveConfig(join(dir, role, 'ms1-live.json'))
-      assert.equal(settings.role, role); assert.equal(settings.model, 'qwen3.8-27b'); assert.equal(settings.peer.url, role === 'home' ? 'http://127.0.0.1:4562' : 'http://127.0.0.1:4561')
+      assert.equal(settings.role, role); assert.equal(settings.model, 'qwen3.8-27b-iq3s', 'the alias of the Fedora node\'s llama-server unit'); assert.equal(settings.peer.url, role === 'home' ? 'http://127.0.0.1:4562' : 'http://127.0.0.1:4561')
       assert.deepEqual(settings.listen, role === 'home' ? { port: 4551, federationPort: 4561 } : { port: 4552, federationPort: 4562 }, 'the owner API and the forwarded port are different numbers')
       if (role === 'home') {
         const window = (tokens: number) => ({ tokens, framingTokens: 0, source: 'test', observedAt: 1, confidence: 'high' as const })

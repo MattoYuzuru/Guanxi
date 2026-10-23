@@ -123,6 +123,11 @@ not asserted: replacing the home's no-Ollama model-inventory callback (the obser
   Suggested: `npm install --prefix ~/.guanxi-agents/claude-agent-acp @agentclientprotocol/claude-agent-acp@<exact version>`, set
   `home.lead.bridge` to the absolute path of the installed bin (its shebang finds `node` through K5's `PATH`), read its `agentInfo.version`
   by one `initialize` line on stdin, and put that exact value in `home.lead.bridgeVersion`. The test fixture's `0.94.0` is a reconstruction.
+- **Model and effort (D-210 asks for Sonnet 5.5 at medium effort).** `home.lead.model` becomes the ACP role model: `default`, or a value
+  of the bridge's *model* `configOptions` select (`session/new`), else `model_unavailable`; the value for Sonnet 5.5 is not known
+  offline. K5 refuses `params.reasoning` for Claude Code (`service.ts`: `unsupported_parameter`) and the ACP client has no reasoning
+  option, so medium effort **cannot be requested through the role binding**: it must come from the CLI's settings in the private config
+  directory, or from an owner-approved K5 change. Not decided or tested here.
 - Unverified: `session/cancel`, `session/load`, `mcpCapabilities.http` and the billing of the real bridge (LW residuals); whether the
   vendor treats subscription use through a third-party ACP bridge as extra usage (research report 01, D-190).
 
@@ -143,10 +148,13 @@ not asserted: replacing the home's no-Ollama model-inventory callback (the obser
 
 ## Residual risks (named, not closed)
 
-1. **No real llama-server, SSH link or second machine.** The field names of `/props`, `/apply-template`, `/tokenize`, `/completion` (R2-op
-   residual 1) are exercised only against the fixture; `preflight --completion` is the first real check. The first observation hashes
-   11 GB: the executor warms it at start, but the budget on the Fedora box is unmeasured. `llama-server` attach cannot see shards, `--mmproj`
-   or draft models, nor verify `--jinja` or the slot count beyond `/props` (`slots` warns).
+1. **No SSH link, second machine or real end-to-end run.** After this branch was cut, main recorded the first real llama-server runs
+   ([evidence](../evidence/fedora-real-runtime-2026-10-23.md)): the raw protocol and the R2-op classes in attach mode on the real b11496
+   server agree (R2-op residual 1 closed for that build; the first hash took 7.5 s; about 5.2 to 5.6 tokens/s). This lane's tests still
+   use the fixture server, and the two-node path over a real forward is untested; `preflight --completion` re-checks the real server
+   from the executor's own process. The Fedora unit's alias is `qwen3.8-27b-iq3s` (the `init` default now). Attach cannot see shards,
+   `--mmproj` or draft models, nor verify `--jinja` beyond the template round trip; `doctor` checks that the model file is readable by
+   the node's user (attach hashes it locally).
 2. **The Mac must not sleep.** `alwaysOn` is an assertion; leases run on a clock that does not count suspend. Nothing here arranges power.
 3. **Stale pins** after a crash or an unreachable unpin are not reaped (`claude/stale-pin-reaping`); `maxPinsPerPeer` is 16.
 4. **No judge for a remote relay** (`claude/remote-relay-judge`): R3's gates cannot be claimed for MS1 yet. The public start still builds

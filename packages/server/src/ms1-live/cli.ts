@@ -105,7 +105,7 @@ export async function main(argv: readonly string[], io: Io = stdio, env: Readonl
         let result: ReturnType<typeof initNode>
         try {
           result = initNode(dir, { role, ...(text(parsed, 'id') ? { id: text(parsed, 'id')! } : {}), ...(text(parsed, 'account') ? { accountId: text(parsed, 'account')! } : {}), federationPort,
-            config: () => template(role, { port: api, federationPort, peerFederationPort, model: text(parsed, 'model') ?? 'qwen3.8-27b', llama: text(parsed, 'llama-url') ?? 'http://127.0.0.1:8090', peerFile }) })
+            config: () => template(role, { port: api, federationPort, peerFederationPort, model: text(parsed, 'model') ?? 'qwen3.8-27b-iq3s', llama: text(parsed, 'llama-url') ?? 'http://127.0.0.1:8090', peerFile }) })
         } catch (error) { if (error instanceof ZodError) throw new Usage('--id and --account must be 1-200 characters of letters, digits, . _ : -'); throw error }
         report({ ok: true, role, nodeId: result.identity.id, accountId: result.identity.accountId, dir: result.dir, configFile: result.configFile,
           peerOffer: result.peerOffer, privateKeyFile: result.privateKeyFile, apiPort: api, federationPort, peerFederationPort, peerFile },
