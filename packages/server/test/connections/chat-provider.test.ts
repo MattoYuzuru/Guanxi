@@ -8,6 +8,7 @@ import { Hono } from 'hono'
 import { PRODUCT_NAME, ROUTES, contextStateSchema, connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
 import { parseProviderKeys, importProviderKeysFile } from '../../src/connections/dotenv.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
+import type { EndpointResolver } from '../../src/connections/endpoint.ts'
 import { Connections } from '../../src/connections/service.ts'
 import { piModels, piTransport, type PiTransport } from '../../src/connections/pi.ts'
 import { Vault } from '../../src/vault/vault.ts'
@@ -39,7 +40,7 @@ const reply: PiTransport['complete'] = async (model, _context, _options, onText)
     timestamp: Date.now(), stopReason: 'stop', usage: { input: 8, output: 2, totalTokens: 10, cacheRead: 0, cacheWrite: 0,
       cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 } } }
 }
-async function setup(t: { after(fn: () => unknown): void }, pi: PiTransport = { complete: reply }, transport: typeof fetch = async () => { throw new Error('No network') }) {
+async function setup(t: { after(fn: () => unknown): void }, pi: PiTransport = { complete: reply }, transport: typeof fetch = async () => { throw new Error('No network') }, resolve: EndpointResolver = async () => [{ address: '8.8.8.8', family: 4 }]) {
   const dir = await mkdtemp(join(tmpdir(), 'k3-chat-'))
   const scrubber = new SecretScrubber()
   const store = new ConnectionStore(join(dir, 'connections.sqlite'), scrubber)
@@ -48,7 +49,7 @@ async function setup(t: { after(fn: () => unknown): void }, pi: PiTransport = { 
   const governor = new ResourceGovernor()
   const lifetime = new AbortController()
   const service = new Connections(store, vault, {} as never, scrubber, lifetime.signal, {} as OllamaAdapter, governor,
-    () => 'http://127.0.0.1:11434', pi, transport, async () => [{ address: '8.8.8.8', family: 4 }])
+    () => 'http://127.0.0.1:11434', pi, transport, resolve)
   await vault.registerForScrubbing()
   t.after(async () => { lifetime.abort(); await service.close(); vault.close(); store.close(); wrapping.fill(0); await governor.close(); await rm(dir, { recursive: true, force: true }) })
   return { dir, service, scrubber, store, vault, governor }
@@ -644,4 +645,15 @@ test('trusted reimport persists and revokes private-network consent for an exist
     const persisted = new ConnectionStore(join(f.dir, 'connections.sqlite'), f.scrubber)
     try { assert.equal(persisted.get('local', id).allowPrivate, consent) } finally { persisted.close() }
   }
+})
+
+
+test('real pi-ai preserves endpoint policy denial as a connection error with zero transport calls', async t => {
+  let calls = 0
+  const f = await setup(t, piTransport, async () => { calls++; throw new Error('unexpected_network') },
+    async () => [{ address: '10.0.0.1', family: 4 }])
+  const id = await imported(f.service, canary(), 'https://api.example.invalid/v1')
+  await assert.rejects(f.service.complete('local', id, { messages: [{ role: 'user', content: 'fixture', timestamp: Date.now() }] },
+    { model: 'owner-model', runId: 'denied', requestId: 'denied' }), { code: 'policy_denied' })
+  assert.equal(calls, 0)
 })

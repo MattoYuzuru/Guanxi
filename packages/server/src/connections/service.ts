@@ -278,6 +278,7 @@ export class Connections {
       // Per logical call, including any adapter fallback. Never share this counter
       // between concurrent requests, or trust SDK retry settings as the only guard.
       let httpAttempts = 0
+      let boundaryFailure: ConnectionError | undefined
       const dispatchAbort = new AbortController()
       const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
       try {
@@ -305,6 +306,7 @@ export class Connections {
             // Redirects must not forward the credential to a different host.
             ...(model.api === 'google-generative-ai' ? {} : {
               fetch: async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+                try {
                 if (call.singleAttempt && ++httpAttempts > 1) throw new Error('single_attempt_exhausted')
                 if (connection.baseUrl) {
                   const target = new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url)
@@ -317,6 +319,10 @@ export class Connections {
                   : await this.transport(url, { ...init, redirect: 'error', signal })
                 quota ||= response.status === 429
                 return response
+                } catch (error) {
+                  if (error instanceof ConnectionError) boundaryFailure = error
+                  throw error
+                }
               },
             }),
           }, call.onText ? delta => {
@@ -327,6 +333,7 @@ export class Connections {
           } : undefined)
           try { signal.throwIfAborted(); call.onStarted?.() } catch (error) { dispatchAbort.abort(); void pending.catch(() => undefined); throw error }
           const result = await pending
+          if (boundaryFailure) throw boundaryFailure
           if (model.api === 'google-generative-ai' && result.stopReason === 'error') {
             // The SDK serializes its API error JSON into ApiError.message; pi-ai
             // retains that string. Accept only the structured numeric code.
@@ -346,6 +353,7 @@ export class Connections {
           return this.scrubber.scrub(result)
         })
       } catch (error) {
+        if (boundaryFailure) throw boundaryFailure
         if (error instanceof ConnectionError) throw error
         if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Model request cancelled' : 'Model request failed')
