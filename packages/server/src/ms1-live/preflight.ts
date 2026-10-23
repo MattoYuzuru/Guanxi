@@ -7,7 +7,7 @@ import { LlamaServerClient } from '../runtime/llama-server/client.ts'
 import { LlamaServerHost } from '../runtime/llama-server/process.ts'
 import { LLAMA_SERVER_COUNTER_SOURCE } from '../runtime/llama-server/runtime.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
-import { explainProbe, fail, ok, probeFederation, signedHandshake, skip, step, warn, type Check } from './checks.ts'
+import { explainError, explainProbe, fail, ok, probeFederation, signedHandshake, skip, step, warn, type Check } from './checks.ts'
 import type { Ms1LiveSettings } from './config.ts'
 import { readCredentials } from './identity.ts'
 import { loopbackTransport } from './transport.ts'
@@ -118,6 +118,13 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
         counterSource: LLAMA_SERVER_COUNTER_SOURCE, observedAt: new Date(o.observedAt).toISOString() }
       return ok('llama_server', 'The attached llama-server serves the configured model (alias, file digest and window observed).',
         { model: o.model, window: o.contextTokens, build: o.runtimeVersion, digest: o.digest, source: o.source, observedMs: clock() - began })
+    }, error => {
+      const code = (error as { code?: string } | null)?.code
+      if (code === 'runtime_meter_unavailable') return { code: 'llama_server_unavailable', summary: `The llama-server at ${settings.executor!.llamaServer.baseUrl} is not reachable or not ready.`,
+        fix: 'Start llama-server (with --alias <model> --jinja), wait for /health to answer ok, and check executor.llamaServer.baseUrl.' }
+      if (code === 'runtime_identity_unknown') return { code: 'llama_server_identity', summary: 'The llama-server does not serve the configured model, or its model file cannot be read from this machine.',
+        fix: 'Its --alias must equal "model" in the configuration, and its model file must be readable here (attach mode hashes it locally).' }
+      return explainError(error)
     }))
     if (seen.status === 'ok' && observed) {
       const found = observed as PreflightObserved
