@@ -96,8 +96,11 @@ export class LeadService {
     this.store = new LeadStore(options.db)
     const limits = options.limits
     if (limits) {
-      const positive = (value: number) => Number.isSafeInteger(value) && value > 0
-      leadInvariant(positive(limits.maxDeadlineMs) && Object.values(limits.maxCaps).length === 4 && Object.values(limits.maxCaps).every(positive), 'invalid_input')
+      // Each cap by name: four numbers under other names, a missing cap or an extra key are not the four ceilings.
+      const caps = limits.maxCaps as unknown as Record<string, unknown>
+      const names = ['cycles', 'tokens', 'moneyMicros', 'wallMs']
+      leadInvariant(Number.isSafeInteger(limits.maxDeadlineMs) && limits.maxDeadlineMs > 0 && caps && typeof caps === 'object' &&
+        Object.keys(caps).length === names.length && names.every(name => typeof caps[name] === 'number' && Number.isSafeInteger(caps[name]) && (caps[name] as number) >= 0), 'invalid_input')
     }
     this.tools = options.tools ?? new LeadToolServer()
     this.ownsTools = options.tools === undefined

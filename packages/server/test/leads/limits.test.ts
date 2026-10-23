@@ -49,6 +49,10 @@ test('detach is possible only when the owner allows it', async t => {
 })
 
 test('malformed owner ceilings are refused when the service is built', async t => {
-  await assert.rejects(leadFixture(t, { plugin: { limits: { ...limits, maxCaps: { ...limits.maxCaps, tokens: 0 } } } }))
+  await assert.rejects(leadFixture(t, { plugin: { limits: { ...limits, maxCaps: { ...limits.maxCaps, tokens: -1 } } } }))
   await assert.rejects(leadFixture(t, { plugin: { limits: { ...limits, maxDeadlineMs: 1.5 } } }))
+  // Four positive numbers under the wrong names are not the four caps.
+  await assert.rejects(leadFixture(t, { plugin: { limits: { ...limits, maxCaps: { cycle: 1, token: 1, money: 1, wall: 1 } as never } } }))
+  await assert.rejects(leadFixture(t, { plugin: { limits: { ...limits, maxCaps: { cycles: 1, tokens: 1, moneyMicros: 1, wallMs: 1, extra: 1 } as never } } }))
+  await assert.rejects(leadFixture(t, { plugin: { limits: { ...limits, maxCaps: { cycles: 1, tokens: 1, moneyMicros: 1 } as never } } }))
 })
