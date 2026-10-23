@@ -562,6 +562,19 @@ export class JudgeJournalStore implements JudgeJournal {
   }
 }
 
+/** Delete a session's journal rows and completeness markers inside an existing transaction.
+ * This never migrates: the native session delete already cascades through the owning runs, and
+ * this direct session purge is defence in depth for a row whose session and run disagree. */
+export function purgeJournalForSession(db: Db, sessionId: string): void {
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_judge_journal'").get()) return
+  db.prepare('DELETE FROM relay_judge_journal WHERE session_id=?').run(sessionId)
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE name='relay_journal_runs'").get()) {
+    db.prepare(
+      'DELETE FROM relay_journal_runs WHERE run_id IN (SELECT id FROM durable_runs WHERE session_id=?)'
+    ).run(sessionId)
+  }
+}
+
 /** Construct the store only when this database already has the journal table. The relay plugin
  * uses this to purge rows left by an earlier run even when no judge executes on this start. */
 export function journalIfPresent(db: Db, scrubber: EgressScrubber): JudgeJournalStore | null {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { Hono } from 'hono'
@@ -29,6 +30,7 @@ import { cascadeWithJournal, relayPlugin, type RelayService } from '../../src/re
 import { sessionExportSchema } from '@guanxi/contract'
 import { DEFAULT_REASONING_RETENTION_MS } from '../../src/session-log/log.ts'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
+import { NativeSessions } from '../../src/native-agent/sessions.ts'
 import { fixture, plan, reserves, caps } from './fixture.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -463,6 +465,53 @@ test('session, run and expiry purges delete rows; run deletion cascades; duplica
     )
   } finally {
     f.close()
+  }
+})
+
+test('native session deletion purges journal rows by session inside the delete transaction', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'guanxi-r3-journal-purge-'))
+  const f = fixture()
+  try {
+    const sessions = new NativeSessions(f.db, f.log, dir, f.store)
+    const policy = {
+      projectId: 'fixture-project',
+      connectionId: 'fixture-connection',
+      model: 'fixture-model',
+      mode: 'read-only',
+      domains: [],
+      protectedPaths: [],
+      attachmentIds: [],
+      retention: 'keep',
+      scratch: dir,
+      roots: [dir],
+      attachments: []
+    } as Parameters<NativeSessions['create']>[3]
+    const first = sessions.create('session-delete', 'fixture-model', 'keep', policy)
+    first.close()
+    const second = sessions.create('session-keep', 'fixture-model', 'keep', policy)
+    second.close()
+
+    // The row is deliberately misattributed: its run belongs to another session, so the
+    // durable_runs cascade cannot remove it. Only the direct transaction purge can.
+    const keptRun = f.store.create({ id: 'run-keep', sessionId: 'session-keep' })
+    const store = new JudgeJournalStore(f.db, { scrubber: f.scrubber, clock: f.relay.clock })
+    store.record(journalEntry(keptRun.id, 'session-delete', 'orphan-session-row', f.relay.clock()))
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM relay_judge_journal WHERE session_id='session-delete'").get()!.n,
+      1
+    )
+
+    await sessions.remove('session-delete')
+    assert.equal(
+      f.db.prepare("SELECT count(*) AS n FROM relay_judge_journal WHERE session_id='session-delete'").get()!.n,
+      0,
+      'the delete transaction purged by session, not only through the run cascade'
+    )
+    assert.notEqual(f.db.prepare("SELECT 1 FROM durable_runs WHERE id='run-keep'").get(), undefined)
+    assert.equal(f.store.get('run-keep').session_id, 'session-keep')
+  } finally {
+    f.close()
+    await rm(dir, { recursive: true, force: true })
   }
 })
 
