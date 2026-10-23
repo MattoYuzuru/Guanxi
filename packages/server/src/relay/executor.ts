@@ -412,7 +412,17 @@ export class RelayExecutor {
           }
           if (x.action === 'verify') {
             this.store.requestVerification(a, x.item)
-            const e = await this.workspace.verify(l.plan, x.item, signal, this.limits.gateTimeoutMs)
+            let e: Awaited<ReturnType<RelayWorkspace['verify']>>
+            try { e = await this.workspace.verify(l.plan, x.item, signal, this.limits.gateTimeoutMs) } catch (error) {
+              if (!(error instanceof RelayError && error.code === 'checkout_dirty')) throw error
+              // Gates run on a checkpoint. A model that asks for verification with uncommitted work gets the checkpoint it
+              // forgot (the same harness commit as the checkpoint action, with its protected-path checks) instead of a
+              // stopped run; anything else that makes the tree unverifiable still stops it.
+              this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'auto_checkpoint', item: x.item }) } })
+              await this.workspace.checkpoint(signal)
+              this.store.observe(a, await this.workspace.observe(l.plan.base, l.baseline.head))
+              e = await this.workspace.verify(l.plan, x.item, signal, this.limits.gateTimeoutMs)
+            }
             const after = await this.workspace.observe(l.plan.base, l.baseline.head)
             invariant(after.head === e.head, 'gate_head_changed')
             this.store.observe(a, { ...after, evidence: e }); result = canonical(e)

@@ -326,3 +326,30 @@ test('a cancel racing seal preparation ends the run cleanly without stale_lease'
     assert.equal(f.store.get(f.run.id).state, 'canceled')
   } finally { f.close() }
 })
+
+test('verify with uncommitted work checkpoints once and runs the gate instead of stopping the run (real-model behaviour)', async () => {
+  const f = fixture(); try {
+    let dirty = true, checkpoints = 0
+    const verify = f.workspace.verify.bind(f.workspace)
+    f.workspace.checkpoint = async () => { checkpoints++; dirty = false }
+    f.workspace.verify = async (...args) => { if (dirty) throw new RelayError('checkout_dirty'); return verify(...args) }
+    const l = await f.executor.run(f.attempt)
+    assert.equal(l.items.one, 'done')
+    assert.equal(checkpoints, 1)
+    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => String(e.data.text))
+    assert.equal(notes.filter(t => t.includes('"relay":"auto_checkpoint"')).length, 1)
+  } finally { f.close() }
+})
+
+test('verify still stops the run for an unverifiable tree other than uncommitted work', async () => {
+  const f = fixture(); try {
+    let checkpoints = 0
+    f.workspace.checkpoint = async () => { checkpoints++ }
+    f.workspace.verify = async () => { throw new RelayError('protected_path') }
+    await f.executor.run(f.attempt).catch(() => undefined)
+    assert.notEqual(f.relay.read(f.run.id).items.one, 'done')
+    assert.equal(checkpoints, 0, 'no checkpoint is forced for a reason other than uncommitted work')
+    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => String(e.data.text))
+    assert.equal(notes.filter(t => t.includes('"relay":"auto_checkpoint"')).length, 0)
+  } finally { f.close() }
+})
