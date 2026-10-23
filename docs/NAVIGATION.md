@@ -15,6 +15,7 @@
 | Continue implementation | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md) |
 | Hand off to the next agent | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) |
 | Run or join a parallel lane | [lanes](plans/lanes/README.md) |
+| Run the two-node MS1 pairing (Mac home, Fedora executor) | [MS1 live run](operations/ms1-live-run.md) |
 | Check owner choices still open | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) |
 | Change the code that exists today | [legacy docs](legacy/README.md) (Russian): DEVELOPMENT, TESTING, HLD, LLD, RUNTIME_LIFECYCLE |
 | Reuse third-party code | [ADR-0016](decisions/0016-licensing-and-third-party-reuse.md) → [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) |
