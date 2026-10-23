@@ -288,3 +288,5 @@ targets stay at least 24 px in both.
 Max graphics is opt-in from the customisation popover. It never sits behind reading text (panes
 stay opaque), never blocks input, and falls back to Static under reduced motion, reduced
 transparency, increased contrast, forced colours, battery saver or when WebGL is unavailable.
+The OS reduced-motion preference always wins over the in-app motion setting. A lost GPU context
+stops the field until the browser restores it, and the context is released when the layer goes.

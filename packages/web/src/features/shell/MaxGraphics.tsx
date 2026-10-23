@@ -58,7 +58,8 @@ const QUERIES = ['(prefers-reduced-motion: reduce)', '(prefers-reduced-transpare
 export function graphicsSuppressed(root: HTMLElement = document.documentElement): boolean {
   if (root.dataset.motion === 'reduced' || 'reduceTransparency' in root.dataset || 'batterySaver' in root.dataset
     || root.dataset.gpuCompositing === 'off' || root.dataset.theme?.endsWith('-hc')) return true
-  if (root.dataset.motion === 'full') return QUERIES.slice(1).some(query => window.matchMedia?.(query).matches)
+  // The OS preference always wins: an in-app "full" motion setting never overrides an OS that
+  // asks for reduced motion, transparency or contrast (P3).
   return QUERIES.some(query => window.matchMedia?.(query).matches)
 }
 
@@ -82,6 +83,9 @@ export function MaxGraphics() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // No WebGL, or a shader the driver refuses: the static design stays, and no canvas remains.
   const [unsupported, setUnsupported] = useState(false)
+  // A lost context that the browser restores rebuilds the field on the same canvas.
+  const [generation, setGeneration] = useState(0)
+  const run = useRef(0)
 
   // Follow OS and in-app preferences live: reduced motion turns the layer off at once.
   useEffect(() => {
@@ -103,6 +107,7 @@ export function MaxGraphics() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!active || !canvas) return
+    const thisRun = ++run.current
     const gl = canvas.getContext('webgl', { antialias: false, alpha: false, depth: false, powerPreference: 'low-power', preserveDrawingBuffer: false })
     if (!gl) { setUnsupported(true); return }
     const shader = (type: number, source: string) => {
@@ -112,10 +117,12 @@ export function MaxGraphics() {
       return value
     }
     const program = gl.createProgram()!
-    gl.attachShader(program, shader(gl.VERTEX_SHADER, VERTEX))
-    gl.attachShader(program, shader(gl.FRAGMENT_SHADER, FRAGMENT))
+    const shaders = [shader(gl.VERTEX_SHADER, VERTEX), shader(gl.FRAGMENT_SHADER, FRAGMENT)]
+    for (const value of shaders) gl.attachShader(program, value)
     gl.linkProgram(program)
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { setUnsupported(true); return }
+    // The linked program keeps what it needs; the shader objects are released at once.
+    for (const value of shaders) { gl.detachShader(program, value); gl.deleteShader(value) }
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { gl.deleteProgram(program); setUnsupported(true); return }
     gl.useProgram(program)
     const buffer = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
@@ -153,6 +160,12 @@ export function MaxGraphics() {
     }
     const start = () => { cancelAnimationFrame(frame); if (document.visibilityState !== 'hidden') frame = requestAnimationFrame(draw) }
     const visibility = () => { if (document.visibilityState === 'hidden') cancelAnimationFrame(frame); else start() }
+    // The GPU may drop the context (driver reset, memory pressure): stop drawing, ask the browser to
+    // restore it, and rebuild once it is back. Until then the chrome shows its static colour.
+    const lost = (event: Event) => { event.preventDefault(); cancelAnimationFrame(frame) }
+    const restored = () => setGeneration(value => value + 1)
+    canvas.addEventListener('webglcontextlost', lost)
+    canvas.addEventListener('webglcontextrestored', restored)
     const themeObserver = new MutationObserver(palette)
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] })
     window.addEventListener('resize', resize)
@@ -165,12 +178,16 @@ export function MaxGraphics() {
       window.removeEventListener('resize', resize)
       document.removeEventListener('visibilitychange', visibility)
       for (const type of ['keydown', 'pointerdown', 'wheel'] as const) window.removeEventListener(type, quiet, { capture: true })
-      // No loseContext(): StrictMode re-runs this effect on the same canvas, and a lost context
-      // cannot compile again. The context goes with the canvas when the layer unmounts.
+      canvas.removeEventListener('webglcontextlost', lost)
+      canvas.removeEventListener('webglcontextrestored', restored)
       gl.deleteProgram(program)
       gl.deleteBuffer(buffer)
+      // Release the GPU context on a real teardown. StrictMode re-runs this effect on the same
+      // canvas at once, and a lost context cannot compile again, so the release waits a task and
+      // is skipped when the effect has run again in the meantime.
+      setTimeout(() => { if (run.current === thisRun) gl.getExtension('WEBGL_lose_context')?.loseContext() }, 0)
     }
-  }, [active])
+  }, [active, generation])
 
   if (!active) return null
   return <canvas ref={canvasRef} aria-hidden="true" className="max-graphics" data-testid="max-graphics" />

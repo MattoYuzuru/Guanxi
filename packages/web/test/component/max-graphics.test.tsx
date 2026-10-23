@@ -1,8 +1,11 @@
 /** D-206: Max graphics keeps chrome text readable and steps aside whenever the user asks for less. */
 import Color from 'colorjs.io'
-import { describe, expect, it } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { APPEARANCE_KEY, AppearanceProvider } from '../../src/lib/appearance.tsx'
 import flat from '../../../ui/generated/tokens.flat.json'
-import { graphicsSuppressed, MAX_GRAPHICS_STRENGTH, worstFieldColor } from '../../src/features/shell/MaxGraphics.tsx'
+import { graphicsSuppressed, MAX_GRAPHICS_STRENGTH, MaxGraphics, worstFieldColor } from '../../src/features/shell/MaxGraphics.tsx'
 
 const tokens = flat as Record<string, Array<{ name: string; $value: { hex?: string } }>>
 const hex = (context: string, name: string) => tokens[context]!.find(token => token.name === name)!.$value.hex!
@@ -36,5 +39,71 @@ describe('graphicsSuppressed', () => {
       expect(graphicsSuppressed(root), key).toBe(true)
     }
     expect(graphicsSuppressed(document.createElement('div'))).toBe(false)
+  })
+})
+
+function setMatchMedia(matches: (query: string) => boolean) {
+  Object.defineProperty(window, 'matchMedia', { configurable: true, writable: true,
+    value: (query: string) => ({ matches: matches(query), media: query, addEventListener() {}, removeEventListener() {} }) })
+}
+
+describe('graphicsSuppressed and the OS', () => {
+  it('the OS reduced-motion preference always wins, even over the in-app "full" motion setting (P3)', () => {
+    setMatchMedia(query => query === '(prefers-reduced-motion: reduce)')
+    const root = document.createElement('div')
+    root.dataset.motion = 'full'
+    expect(graphicsSuppressed(root)).toBe(true)
+    setMatchMedia(() => false)
+    expect(graphicsSuppressed(root)).toBe(false)
+  })
+})
+
+describe('WebGL lifecycle (P3)', () => {
+  function fakeGl() {
+    const calls: string[] = []
+    const lose = vi.fn(() => { calls.push('loseContext') })
+    let id = 0
+    const gl = new Proxy({
+      VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, ARRAY_BUFFER: 3, STATIC_DRAW: 4, FLOAT: 5, TRIANGLES: 6, LINK_STATUS: 7,
+      getProgramParameter: () => true,
+      getExtension: (name: string) => name === 'WEBGL_lose_context' ? { loseContext: lose } : null,
+      getAttribLocation: () => 0, getUniformLocation: () => ({}),
+      createShader: () => ({ shader: ++id }), createProgram: () => { calls.push('createProgram'); return { program: ++id } }, createBuffer: () => ({}),
+    } as Record<string, unknown>, { get: (target, key: string) => key in target ? target[key] : (...args: unknown[]) => { calls.push(key); void args } })
+    return { gl, calls, lose }
+  }
+  function install() {
+    const fake = fakeGl()
+    const values = new Map([[APPEARANCE_KEY, JSON.stringify({ density: 'comfortable', graphics: 'max', motion: 'system' })]])
+    vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: () => {} })
+    setMatchMedia(() => false)
+    let frames = 0
+    vi.stubGlobal('requestAnimationFrame', () => ++frames)
+    vi.stubGlobal('cancelAnimationFrame', () => { fake.calls.push('cancelAnimationFrame') })
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement, kind: string) {
+      if (kind === '2d') return { fillRect() {}, getImageData: () => ({ data: [240, 243, 248, 255] }), set fillStyle(_value: string) {} } as never
+      return fake.gl as never
+    })
+    return fake
+  }
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
+
+  it('deletes its shaders after linking, survives a lost context and releases the context on teardown, also under StrictMode', async () => {
+    const fake = install()
+    const view = render(<StrictMode><AppearanceProvider><MaxGraphics /></AppearanceProvider></StrictMode>)
+    const canvas = await screen.findByTestId('max-graphics')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(fake.calls.filter(call => call === 'deleteShader').length).toBeGreaterThanOrEqual(2)
+    // StrictMode re-runs the effect on the same canvas: the context must not be lost in between.
+    expect(fake.lose).not.toHaveBeenCalled()
+    const lost = new Event('webglcontextlost', { cancelable: true })
+    act(() => { canvas.dispatchEvent(lost) })
+    expect(lost.defaultPrevented).toBe(true)
+    const programs = fake.calls.filter(call => call === 'createProgram').length
+    await act(async () => { canvas.dispatchEvent(new Event('webglcontextrestored')) })
+    expect(fake.calls.filter(call => call === 'createProgram').length).toBe(programs + 1)
+    view.unmount()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(fake.lose).toHaveBeenCalledTimes(1)
   })
 })
