@@ -128,7 +128,7 @@ before/after of the native session and side chat (from `f7e91d05`) are in
 
 ### Gates (round 2)
 
-All heavy checks ran through `agent-dev run --node 26 --resource heavy` on a clean tree at ``402d9abb``.
+All heavy checks ran through `agent-dev run --node 26 --resource heavy` on a clean tree at `402d9abb`.
 
 | Gate | Result | Receipt |
 | --- | --- | --- |
