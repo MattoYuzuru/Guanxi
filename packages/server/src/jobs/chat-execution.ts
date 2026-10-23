@@ -1,6 +1,6 @@
 import { parseChatModelSelection } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
-import { providerChatClient } from '../connections/chat.ts'
+import { providerChatClient, chatContextWindow } from '../connections/chat.ts'
 import type { ProjectService } from '../projects/service.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import type {
@@ -341,6 +341,7 @@ export class ChatJobExecutionOwner {
 
       for await (const event of runTurn({
         thread,
+        providerContext: chatContextWindow(this.dependencies, thread.model),
         workspace,
         client: provider ? providerChatClient(this.dependencies.connections!(), provider, association.job.id) : this.dependencies.ollama(),
         store: this.dependencies.threads,

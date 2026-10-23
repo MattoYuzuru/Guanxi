@@ -44,6 +44,7 @@ import { parseToolCalls } from './tool-parser.ts'
 
 export interface RunTurnParams {
   thread: Thread
+  providerContext?: import('@guanxi/contract').ContextState['providerContext']
   workspace: Workspace | null
   client: Pick<OllamaClient, 'chatStream'>
   store: ThreadStore
@@ -455,6 +456,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
           buildContextState({
             usedTokens: usage.promptTokens,
             allocatedTokens: thread.options.numCtx,
+            providerContext: params.providerContext,
             usage,
             model: thread.model,
             tracker,
@@ -675,6 +677,7 @@ export async function* runTurn(params: RunTurnParams): AsyncGenerator<ChatStream
         buildContextState({
           usedTokens: usage.promptTokens,
           allocatedTokens: thread.options.numCtx,
+            providerContext: params.providerContext,
           usage,
           model: thread.model,
           tracker,

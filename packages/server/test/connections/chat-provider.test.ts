@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Hono } from 'hono'
-import { PRODUCT_NAME, connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
+import { PRODUCT_NAME, contextStateSchema, connectionBaseUrlSchema, createConnectionSchema, chatModelSelection, chatModelsResponse } from '@guanxi/contract'
 import { parseProviderKeys, importProviderKeysFile } from '../../src/connections/dotenv.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
 import { Connections } from '../../src/connections/service.ts'
@@ -133,7 +133,7 @@ test('custom connection discovers models with explicit credentials, refuses redi
   const catalog = await f.service.chatModels('local', id)
   assert.deepEqual(catalog.models, ['owner-model'])
   assert.equal(catalog.source, 'https://api.example.invalid/v1/models')
-  assert.ok(Number.isFinite(Date.parse(catalog.observedAt)))
+  assert.ok(Number.isFinite(Date.parse(catalog.observedAt!)))
   assert.deepEqual(calls, [{ url: 'https://api.example.invalid/v1/models', redirect: 'error', auth: `Bearer ${value}` }])
   await f.service.chatModels('local', id)
   assert.equal(calls.length, 1)
@@ -515,4 +515,30 @@ test('startup defers queued provider jobs until Connections has loaded', async t
     await settle(() => context.jobService.get(association.job.id)!.status === 'completed')
     assert.equal(calls, 1)
   } finally { await context.maintenance?.close(); await context.chatExecution.shutdown() }
+})
+
+test('provider context uses catalog evidence or unknown, never local numCtx, and cannot compact', async t => {
+  const f = await setup(t), chat = chatFixture(f, t)
+  for (const custom of [false, true]) {
+    const id = await imported(f.service, canary(), custom ? 'https://api.example.invalid/private/v1' : undefined)
+    const model = piModels('openai')[0]!
+    const thread = chat.create(chatModelSelection(id, model.id))
+    for (const path of [`/threads/${thread.id}`, `/threads/${thread.id}/context`]) {
+      const body = await (await chat.app.request(path)).json()
+      const context = contextStateSchema.parse(path.endsWith('/context') ? body : (body as { context: unknown }).context)
+      assert.equal(context.allocatedTokens, custom ? null : model.contextWindow)
+      assert.equal(context.compactable, false)
+      assert.equal(context.providerContext!.confidence, custom ? 'unknown' : 'medium')
+      assert.ok(!JSON.stringify(context).includes('/private/v1'))
+    }
+    const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'fixture' }) })
+    // A custom ID cannot be newly admitted while discovery is unknown.
+    if (!custom) {
+      const frames = (await response.text()).split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)))
+      const context = frames.find(event => event.type === 'context').data
+      assert.equal(context.allocatedTokens, model.contextWindow)
+      assert.equal(context.compactable, false)
+      assert.equal(context.providerContext.source, '@earendil-works/pi-ai@1.3.0')
+    }
+  }
 })

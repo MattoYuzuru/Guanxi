@@ -1,3 +1,4 @@
+import { chatContextWindow } from '../connections/chat.ts'
 import {
   PROJECT_PRESENTATION_VERSION,
   PROJECT_CHAT_OWNERSHIP_VERSION,
@@ -147,6 +148,7 @@ export function projectsRoutes(app: AppContext): Hono {
           lastUsage?.promptTokens ??
           activeMessages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
         allocatedTokens: result.thread.options.numCtx,
+        providerContext: chatContextWindow(app, result.thread.model),
         usage: lastUsage,
         model: result.thread.model,
         tracker: app.tracker,

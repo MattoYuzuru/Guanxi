@@ -1,5 +1,5 @@
 import { chatIdempotencyScope } from '../jobs/chat-execution.ts'
-import { assertChatSelection, providerChatGroups } from '../connections/chat.ts'
+import { assertChatSelection, providerChatGroups, chatContextWindow } from '../connections/chat.ts'
 import { chatModelsResponse, parseChatModelSelection } from '@guanxi/contract'
 /**
  * Роуты тредов: список, создание, история, отправка сообщения, остановка, компакция.
@@ -424,6 +424,7 @@ export function threadsRoutes(app: AppContext): Hono {
           lastUsage?.promptTokens ??
           activeMessages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
         allocatedTokens: thread.options.numCtx,
+        providerContext: chatContextWindow(app, thread.model),
         usage: lastUsage,
         model: thread.model,
         tracker: app.tracker,
@@ -516,6 +517,7 @@ export function threadsRoutes(app: AppContext): Hono {
           lastUsage?.promptTokens ??
           messages.reduce((sum, message) => sum + estimateTokens(message.content), 0),
         allocatedTokens: thread.options.numCtx,
+        providerContext: chatContextWindow(app, thread.model),
         usage: lastUsage,
         model: thread.model,
         tracker: app.tracker,
@@ -651,6 +653,7 @@ export function threadsRoutes(app: AppContext): Hono {
         context: buildContextState({
           usedTokens,
           allocatedTokens: thread.options.numCtx,
+        providerContext: chatContextWindow(app, thread.model),
           usage: null,
           model: thread.model,
           tracker: app.tracker,
@@ -772,6 +775,7 @@ export function threadsRoutes(app: AppContext): Hono {
         context: buildContextState({
           usedTokens,
           allocatedTokens: thread.options.numCtx,
+        providerContext: chatContextWindow(app, thread.model),
           usage: null,
           model: thread.model,
           tracker: app.tracker,

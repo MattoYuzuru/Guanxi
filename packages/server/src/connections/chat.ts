@@ -6,6 +6,12 @@ import type { Connections } from './service.ts'
 import { ConnectionError } from './errors.ts'
 
 export interface ChatModelHost { models(): ModelService; connections?: () => Connections }
+export function chatContextWindow(host: Pick<ChatModelHost, 'connections'>, model: string) {
+  const selection = parseChatModelSelection(model)
+  if (!selection) return undefined
+  try { return host.connections?.().chatContext('local', selection.connectionId, selection.modelId) }
+  catch { return undefined }
+}
 export async function assertChatSelection(host: ChatModelHost, model: string, numCtx: number, signal?: AbortSignal) {
   const selection = parseChatModelSelection(model)
   if (model.startsWith('k3:') && !selection) throw new ConnectionError('validation_failed', 'Invalid provider selection')

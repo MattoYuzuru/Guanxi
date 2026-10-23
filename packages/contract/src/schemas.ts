@@ -2655,8 +2655,10 @@ export type JobEvent = z.infer<typeof jobEventSchema>
 /** Состояние окна контекста — питает шкалу в UI. */
 export const contextStateSchema = z.object({
   usedTokens: z.number().int(),
-  allocatedTokens: z.number().int(),
-  percent: z.number(),
+  allocatedTokens: z.number().int().nullable(),
+  percent: z.number().nullable(),
+  providerContext: z.object({ value: z.number().int().positive().nullable(), source: z.string(),
+    observedAt: z.string().datetime().nullable(), confidence: z.enum(['medium', 'low', 'unknown']) }).strict().optional(),
   cacheHit: z.boolean(),
   cachedTokens: z.number().int(),
   /** Есть ли что сворачивать. */

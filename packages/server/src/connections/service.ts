@@ -191,6 +191,14 @@ export class Connections {
     if (requireReady) this.#vault.assertScrubbingReady('local')
     return this.scrubber.scrub(value)
   }
+  chatContext(accountId: string, id: string, modelId: string) {
+    const connection = this.store.get(accountId, id)
+    const model = connection.baseUrl ? undefined : piModels(connection.provider).find(item => item.id === modelId)
+    return { value: model?.contextWindow ?? null,
+      source: connection.baseUrl ? new URL(connection.baseUrl).host : '@earendil-works/pi-ai@1.3.0',
+      observedAt: model ? new Date().toISOString() : this.discovered.get(id)?.observedAt ?? null,
+      confidence: model ? 'medium' as const : 'unknown' as const }
+  }
   async assertChatModel(accountId: string, id: string, modelId: string) {
     const connection = this.store.get(accountId, id)
     if (connection.kind !== 'model_api' || !connection.secretRef) throw new ConnectionError('policy_denied', 'A model API key is required')
