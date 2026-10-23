@@ -187,6 +187,7 @@
   --layout-container-sm: 24rem;
   --layout-container-xl: 36rem;
   --layout-container-xs: 20rem;
+  --layout-fact-label: 8.5rem;
   --layout-status-value: 3.75rem;
   --material-control: #15191D;
   --material-control: oklch(0.2109981019 0.0100129471 248.3010722686);

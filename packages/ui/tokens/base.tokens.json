@@ -739,6 +739,16 @@
         },
         "$description": "Minimum width of a status-strip value slot: eight tabular digits at the 12 px value size (DTCG dimensions are px or rem only), so a changing value never moves its neighbours (P3)."
       }
+    },
+    "fact": {
+      "label": {
+        "$type": "dimension",
+        "$value": {
+          "value": 8.5,
+          "unit": "rem"
+        },
+        "$description": "Minimum label column of a fact list, so stacked lists in one card share a value column; a longer label widens only its own list."
+      }
     }
   },
   "focus": {

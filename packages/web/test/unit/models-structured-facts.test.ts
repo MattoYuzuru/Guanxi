@@ -23,3 +23,9 @@ describe('models feature facts', () => {
     expect(offenders).toEqual([])
   })
 })
+
+it('stacked fact lists share one value column: the label column has a token minimum (visual pass 5)', () => {
+  const css = readFileSync(resolve(process.cwd(), 'src/features/models/models.css'), 'utf8')
+  const rule = /^\.model-facts\s*\{([^}]*)\}/mu.exec(css)?.[1] ?? ''
+  expect(rule).toMatch(/grid-template-columns:\s*minmax\(var\(--layout-fact-label\), max-content\) minmax\(0, 1fr\)/u)
+})

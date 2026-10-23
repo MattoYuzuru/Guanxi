@@ -120,6 +120,8 @@ Never let slots 4 and 6 be the only difference between two series (deuteranopia)
 - A value that updates in place sits in a fixed slot: the status strip's values reserve
   `--layout-status-value` (3.75 rem, eight tabular digits at 12 px; DTCG dimensions are px or rem
   only), so a changing number never moves its neighbours.
+- Fact lists (label and value pairs) give the label column a minimum of `--layout-fact-label`
+  (8.5 rem), so lists stacked in one card share a value column.
 - Mono is for values a machine produced (paths, hashes, IDs, model names, timings, token counts)
   and code — never for decoration or small labels.
 - Long prose stays under about 72 characters per line.

@@ -3,7 +3,8 @@
 
 .model-facts {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  /* A token minimum for labels, so stacked lists in one card share a value column. */
+  grid-template-columns: minmax(var(--layout-fact-label), max-content) minmax(0, 1fr);
   gap: var(--spacing-2) var(--spacing-12);
   margin: 0;
   font-size: var(--font-size-12);
