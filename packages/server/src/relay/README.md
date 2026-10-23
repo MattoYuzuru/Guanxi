@@ -384,5 +384,58 @@ identity and are dropped when it changes.
 the executor's own governor admits the call through its F2 reservation. The final scrub, fence check,
 fenced start observation and the signed dispatch request share one synchronous stretch
 (`FederationChannel.dispatch(grant, beforeSend)`); while a call is pending the transport heartbeats the
-fence so a lost relay attempt aborts and cancels it. `ConnectionJudgeModel` refuses a meter that needs
-a runtime transport, so a judge call can never be counted by one runtime and run on another.
+fence so a lost relay attempt aborts and cancels it. A judge on such a meter is described in
+[the next section](#judge-on-the-public-start-and-on-a-remote-runtime-r3-remote).
+
+## Judge on the public start and on a remote runtime (R3-remote)
+
+`RelayStartHost.judge` (`judge-start.ts`) carries the R3 judge into `RelayStarts`, local or remote. It is a
+T0 source function called **once per start** with that start's input and policy, the guarded meter the relay's
+own calls use, and the admitted runtime facts. It returns `{ signals?, cascade? }`: the existing
+`RelayJudgeInput` (J0/J1 signals, needs no model) and `RelayCascadeInput` (delegation brief, judge model,
+optional checker). Nothing of it is wire input. `RelayConfig.judge` is the plugin-level default, used only
+when the start host has no `judge` of its own (`startHostWithJudge`). No source, or a source that returns
+nothing, leaves that start exactly as before: no judge event, no judge call, no judge ledger.
+
+**Fail closed before anything exists.** The source runs after the runtime is admitted and before the signed
+pin, the run or its session exist (the allocated checkout is released like any other refusal). The signals
+policy, the brief (`copyBrief` against the start's plan, caps equal to the start's caps) and the model shape
+are validated there, and the executor, which opens the additive judge ledger 38, is built there. Any failure,
+including a source that throws, refuses the start with the one public code `judge_config_invalid`.
+
+**Signals.** `ledgerJudgeInput(policy, clock)` is a ready collector that reports what the relay ledger holds
+(cycle, no-progress streak, wall deadline) and leaves heartbeat, lease, disk and the per-item token budget
+unknown, never healthy. The ledger tracks no repeated-failure, edit-revert, dead-end or protected-path
+facts, so those are reported as zero or empty and this collector can raise only `no_progress` and
+`deadline`; a host that observes more supplies its own collector. A collector that fails keeps its existing
+rule (fixed `judge_observation_unavailable`, run `input_required`, ledger retained).
+
+**Judge model on a transport meter.** `ConnectionJudgeModel` takes a `runtime` binding
+`{ connectionId, model }`. A meter that carries a `transport` (llama-server, remote node) is accepted only
+with that binding, and the judge then names that connection and model or is refused at admission
+(`judge_config_invalid`). The judge never leaves the runtime that counts: the prompt is pre-counted with the
+meter's `countAsync` when it has one (the remote count is a signed round trip, and `meter.count` is then a
+lookup of that answer), the request is dispatched through `meter.transport` itself with `think:false`, the
+meter's `authorizeDispatch` re-observes the runtime first, `onPrepared` pins the exact request (model, options,
+shape) and the count, and the result must echo the counted input tokens. A meter with `countAsync` and no
+transport (counted by one runtime, dispatched on another), a transport without a binding or an inexact
+meter is `judge_config_invalid`. `meter.validatePrepared` is not used for the judge: it pins `num_predict`
+to the relay turn, and the judge has its own output ceiling. `relayJudgeModel(context, ...)` builds this model
+from a start's context; `relayRuntimeAttestor` attests it from a fresh observation of the runtime, and only for
+the relay's own connection and model. The role's `temperature` is not sent to a transport runtime.
+
+**Billing.** A remote judge sample is one more per-call child run on the relay's session, so the
+executor-reported tokens land on that child's R1 ledger atomically with its terminal (F2-c), apart from the
+relay run's own rows and from the lead. The relay run's `run_costs` never include judge calls. The relay caps
+see the judge only through the cascade's existing pre-debit (`tokenReserve` per sample, never settled to
+actuals); the wake packet's token metric therefore includes that reserve. The two views are never summed.
+
+**Degradation.** Unchanged cascade rules: an unavailable, invalid or inconsistent judge gives a verdict row
+(`unavailable`, `invalid`), never an item marked done and never a stopped run. A cancel during a judge call
+waits for the executor's acknowledgement like any remote call, and the request stays `dispatched`
+(the revoked fence cannot append an outcome) until a later judge ledger opening abandons it. A run lost with
+its process never replays a judge call.
+
+**Not covered.** No real model, no Fedora run, no calibration, no checker supervisor, no durable night
+wake; a remote judge call costs a signed round trip pair per sample on the executor (two samples at each of
+two boundaries per cycle by default).
