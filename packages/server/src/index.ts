@@ -1,7 +1,7 @@
 import { recoverChatJobs } from './jobs/chat-recovery.ts'
 import { importProviderKeysFile } from './connections/dotenv.ts'
 export { importLocalProviderKeys } from './connections/import-local.ts'
-import { relayPlugin, RELAY_SERVICE, type RelayService } from './relay/plugin.ts'
+import { relayPlugin, RELAY_SERVICE, type RelayConfig, type RelayService } from './relay/plugin.ts'
 import { relayStartRoutes } from './relay/routes.ts'
 import { RelayRuntimeSource, type RelayRuntimePolicy } from './relay/runtime.ts'
 import { createOperationalRelay, type OperationalRelay, type OperationalRelayOptions } from './relay/operational.ts'
@@ -16,10 +16,11 @@ import { realpath } from 'node:fs/promises'
  * через переменную окружения, а не значение по умолчанию.
  */
 import { federationRoutes } from './federation/routes.ts'
-import { FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
+import { createFederationPlugin, FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
 import type { Federation } from './federation/service.ts'
 import { FederationError } from './federation/crypto.ts'
 import { accessSync, constants, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
@@ -61,6 +62,9 @@ import { workPlugin, WORK_SERVICE } from './work/plugin.ts'
 import type { WorkLedger } from './work/ledger.ts'
 import { workRoutes } from './work/routes.ts'
 import type { ExternalPolicy } from './external-agents/types.ts'
+import { Ms1LiveNode, type Ms1LiveHomeRelay } from './ms1-live/boot.ts'
+import { federationListener } from './ms1-live/listener.ts'
+import { Ms1LiveError, type Ms1LiveSettings } from './ms1-live/config.ts'
 
 export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
@@ -172,6 +176,18 @@ export interface StartOptions {
   /** Explicit opt-in to the operational local relay (llama-server counter plus owned checkouts).
    * Mutually exclusive with `relay`; an absent binary or model keeps the stock refusals. */
   operationalRelay?: OperationalRelayOptions
+  /** Extra relay start-host fields for the trusted host, merged after the ones this function derives (runtime, allocator, reserves,
+   * project resolution and node ports stay owned here). It is the seam for what a relay start gains later, such as a judge source
+   * (`startHost.judge`): that lane adds the field to `RelayStartHost` and every boot, including `ms1Live`, passes it through. */
+  relayHost?: Partial<Omit<RelayStartHost, 'runtime' | 'allocate' | 'reserves' | 'project' | 'nodePorts'>>
+  /** Extra relay plugin configuration (for example `RelayConfig.judge`), merged after `db` and `startHost`. */
+  relayConfig?: Partial<Omit<RelayConfig, 'db' | 'startHost'>>
+  /** Explicit opt-in to one half of the MS1 live pairing (`docs/operations/ms1-live-run.md`): a `home` node whose relay
+   * inference runs on an `executor` node through F2-d, or that `executor`. Loaded and validated from the operator's
+   * configuration (`loadMs1LiveConfig`); it names files and loopback URLs, never a secret value. It builds the federation
+   * node itself, so it excludes `federation`, `relay`, `operationalRelay`, and, when it carries a `lead` section,
+   * `externalAgents` and `leads`. Without it nothing in this block runs. */
+  ms1Live?: Ms1LiveSettings
   /**
    * Explicit opt-in to OS notification delivery. Off by default: without it ingestion writes
    * notification rows only. `runner`, `platform` and `resolveBinary` are host/test seams; the
@@ -222,21 +238,35 @@ export async function start(options: StartOptions = {}) {
   // An uncapped Full-access relay run must never be the lead's choice: the owner's ceilings are mandatory with the relay.
   if (options.leads?.relay && !options.leads.limits) throw new Error('leads.relay requires limits')
   if (options.relay && options.operationalRelay) throw new RelayError('relay_policy_invalid')
-  const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
+  // MS1 live mode: validated and paired before any file, database or listener exists. A bad configuration, key or option
+  // mix is a boot error, never a node that silently runs without its pairing.
+  if (options.ms1Live && (options.federation || options.relay || options.operationalRelay)) throw new Ms1LiveError('option_conflict', 'federation|relay|operationalRelay')
+  const live = options.ms1Live ? Ms1LiveNode.create(options.ms1Live) : null
+  const refuseLive = async (code: string, field: string): Promise<never> => { await live?.close(); throw new Ms1LiveError(code, field) }
+  if (live?.hasLead && (options.externalAgents || options.leads)) await refuseLive('option_conflict', 'externalAgents|leads')
+  const port = options.port ?? apiPortFromEnv(process.env, live?.settings.listen.port ?? DEFAULT_PORT)
   let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
-  const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
+  // The pairing's only link is a loopback port forward: the node never listens elsewhere in this mode.
+  if (live && host !== '127.0.0.1') await refuseLive('listen_not_loopback', 'host')
+  if (live && port === live.federationPort) await refuseLive('ports_collide', 'listen')
+  // A live node holds keys, pins and relay ledgers: it lives beside its configuration unless told otherwise, and never in the owner's
+  // default data directory, which a lane or a rehearsal could otherwise share with a real node by accident.
+  const dataDir = options.dataDir ?? (live && !process.env['GUANXI_DATA_DIR'] ? join(dirname(live.settings.file), 'data') : dataDirFromEnv(process.env))
+  if (live && [join(process.env['HOME'] ?? homedir(), '.guanxi'), join(homedir(), '.guanxi')].includes(resolve(dataDir))) await refuseLive('data_dir_default', 'dataDir')
 
   // The governor, the Ollama adapter (K1), the egress scrubber and the session
   // log (K2) run as kernel plugins; the legacy context consumes their services.
   // The database opens first because the session log plugin is bound to it.
   const dbPath = defaultDbPath(dataDir)
-  const db = openDb(dbPath)
+  let db: ReturnType<typeof openDb>
+  try { db = openDb(dbPath) } catch (error) { await live?.close(); throw error }
   let kernel: Awaited<ReturnType<typeof bootServerKernel>>
   try {
-    kernel = await bootServerKernel(undefined, { db, federation: options.federation, ...(options.leads ? { runs: { alwaysOn: true } } : {}) })
+    kernel = await bootServerKernel(undefined, { db, federation: options.federation, ...(options.leads || live?.alwaysOn ? { runs: { alwaysOn: true } } : {}) })
   } catch (error) {
     db.close()
+    await live?.close()
     throw error
   }
   let context: Awaited<ReturnType<typeof createAppContext>>
@@ -258,6 +288,7 @@ export async function start(options: StartOptions = {}) {
   } catch (error) {
     await kernel.node.dispose().catch(() => undefined)
     db.close()
+    await live?.close()
     throw error
   }
 
@@ -269,11 +300,14 @@ export async function start(options: StartOptions = {}) {
   })
 
   let operationalRelay: OperationalRelay | null = null
+  let liveRelay: Ms1LiveHomeRelay | null = null
+  let externalAgents = options.externalAgents, leads = options.leads
   try {
     await kernel.node.plugin(connectionsPlugin, {
       databasePath: join(dirname(defaultDbPath(dataDir)), 'connections.sqlite'),
       localHost: () => context.settings.get().ollamaHost,
-      policy: options.connectionsPolicy,
+      // Unattended relay calls are the point of the live pairing; K3 still needs each connection's own consent.
+      policy: options.connectionsPolicy ?? (live ? { ownerDevice: true, nodeKeyOptIn: true } : undefined),
     })
     const providerKeysFile = options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE
     if (providerKeysFile) {
@@ -289,11 +323,29 @@ export async function start(options: StartOptions = {}) {
     await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
     operationalRelay = options.operationalRelay ? createOperationalRelay(options.operationalRelay, dirname(dbPath)) : null
-    const relayOptions = options.relay ?? operationalRelay?.relay
-    await kernel.node.plugin(relayPlugin, { db, startHost: {
+    if (live) {
+      // The federation node loads here, not at kernel boot: an executor's dispatch needs the K3 registry (a local-runtime
+      // connection) and a home's relay runtime needs the federation service. Plugin order changes only under this option.
+      live.prepare(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!)
+      await kernel.node.plugin(createFederationPlugin({ ...live.federationHost(), db }))
+      kernel = { ...kernel, federation: kernel.node.service<Federation>(FEDERATION_SERVICE) ?? null }
+      if (!kernel.federation) throw new FederationError('federation_unavailable', 503)
+      if (live.role === 'home') liveRelay = live.homeRelay(kernel.federation, kernel.node.service<DurableRunsService>(DURABLE_RUNS_SERVICE)!.store, dirname(dbPath))
+      const wiring = live.leadWiring()
+      if (wiring) { externalAgents = wiring.externalAgents; leads = wiring.leads }
+    }
+    const relayOptions = options.relay ?? operationalRelay?.relay ?? liveRelay ?? undefined
+    // `relayHost` is typed without the fields start owns, but a JavaScript caller is not held to types.
+    const { runtime: _r, allocate: _a, reserves: _v, project: _p, nodePorts: _n, ...hostExtras } = (options.relayHost ?? {}) as Record<string, unknown>
+    await kernel.node.plugin(relayPlugin, { ...options.relayConfig, db, startHost: {
+      // The pairing's judge (`home.judge`) is the default; a `relayHost.judge` given by the caller replaces it.
+      ...(live?.judgeSource() ? { judge: live.judgeSource() } : {}),
+      ...hostExtras,
       ...(relayOptions ? { reserves: relayOptions.reserves, allocate: relayOptions.allocate,
-        ...(relayOptions.runtime.counter ? { runtime: new RelayRuntimeSource(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!,
-          () => context.models(), relayOptions.runtime) } : {}) } : {}),
+        // A runtime that binds per start (F2-d) has an observer with `open` instead of a counter. In live mode there is no
+        // local fallback at all: the model inventory callback refuses, so a stale remote can never become an Ollama call.
+        ...(relayOptions.runtime.counter || relayOptions.runtime.observer?.open ? { runtime: new RelayRuntimeSource(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!,
+          live ? () => { throw new RelayError('runtime_meter_unavailable') } : () => context.models(), relayOptions.runtime) } : {}) } : {}),
       nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)],
       project: async (id, signal) => {
         signal.throwIfAborted()
@@ -335,9 +387,9 @@ export async function start(options: StartOptions = {}) {
     }))
     await optional('voice', () => kernel.node.plugin(voicePlugin, { databasePath: sidecar('voice.sqlite') }))
     await optional('work', () => kernel.node.plugin(workPlugin, { databasePath: sidecar('work.sqlite') }))
-    if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
-    if (options.leads) {
-      const { alwaysOn: _assertion, relay: relayPolicy, child, ...lead } = options.leads
+    if (externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: externalAgents })
+    if (leads) {
+      const { alwaysOn: _assertion, relay: relayPolicy, child, ...lead } = leads
       const relayService = kernel.node.service<RelayService>(RELAY_SERVICE)
       const runs = kernel.node.service<DurableRunsService>(DURABLE_RUNS_SERVICE)
       if (relayPolicy && (!relayService || !runs)) throw new Error('leads.relay requires the relay service')
@@ -351,6 +403,7 @@ export async function start(options: StartOptions = {}) {
     context.jobService.closeSubscriptions()
     await kernel.node.dispose().catch(() => undefined)
     await operationalRelay?.close().catch(() => undefined)
+    await live?.close().catch(() => undefined)
     context.db.close()
     throw error
   }
@@ -402,6 +455,16 @@ export async function start(options: StartOptions = {}) {
 
   mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
+  const abortStart = async () => {
+    await context.maintenance?.close().catch(() => undefined)
+    await context.chatExecution.shutdown().catch(() => undefined)
+    context.jobService.closeSubscriptions()
+    context.sessionLog?.closeSubscriptions()
+    await kernel.node.dispose().catch(() => undefined)
+    await operationalRelay?.close().catch(() => undefined)
+    await live?.close().catch(() => undefined)
+    context.db.close()
+  }
   let instance!: ReturnType<typeof serve>
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {
@@ -413,14 +476,30 @@ export async function start(options: StartOptions = {}) {
       instance.once('error', onError)
     })
   } catch (error) {
-    await context.maintenance?.close().catch(() => undefined)
-    await context.chatExecution.shutdown().catch(() => undefined)
-    context.jobService.closeSubscriptions()
-    context.sessionLog?.closeSubscriptions()
-    await kernel.node.dispose().catch(() => undefined)
-    await operationalRelay?.close().catch(() => undefined)
-    context.db.close()
+    await abortStart()
     throw error
+  }
+  // MS1 live mode: the signed node-to-node API has its own loopback listener and nothing else. The operator's ssh forward reaches
+  // this port only, so the owner API (workspaces, projects, relay starts, connections) is never reachable through the link.
+  let federationInstance: ReturnType<typeof serve> | undefined
+  if (live) {
+    const federationServer = federationListener({ host, port: live.federationPort, federation: () => kernel.node.service<Federation>(FEDERATION_SERVICE) })
+    try {
+      await new Promise<void>((resolveListening, reject) => {
+        const onError = (error: Error) => reject(error)
+        federationInstance = serve({ fetch: federationServer.fetch, port: live.federationPort, hostname: host }, () => {
+          federationInstance!.off('error', onError)
+          resolveListening()
+        })
+        federationInstance.once('error', onError)
+      })
+    } catch (error) {
+      instance.close()
+      await abortStart()
+      throw error
+    }
+    // After both listeners are up: an executor hashes its model now, not inside the first relay's freshness window.
+    if (live.role === 'executor') void live.startWarming()
   }
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const url = `http://${browserHost}:${actualPort}`
@@ -434,6 +513,15 @@ export async function start(options: StartOptions = {}) {
       const listenerClosed = new Promise<void>((resolveClose) => {
         instance.close(() => resolveClose())
       })
+      const federationClosed = new Promise<void>((resolveClose) => {
+        if (federationInstance) federationInstance.close(() => resolveClose())
+        else resolveClose()
+      })
+      // MS1 live: an inbound observe or count may be waiting on a model-file hash. Stopping the runtime ends that work (the request
+      // is answered with a refusal), and whatever is still open after a short grace is dropped: a close must not last as long as the
+      // slowest request the peer happened to send.
+      const liveClosing = live?.close().catch(() => undefined)
+      if (federationInstance) setTimeout(() => (federationInstance as unknown as { closeAllConnections?: () => void } | undefined)?.closeAllConnections?.(), 1500).unref()
       let shutdownError: unknown = null
       try {
         await context.maintenance?.close()
@@ -450,6 +538,8 @@ export async function start(options: StartOptions = {}) {
         // Inspector streams are open-ended; end them so the listener can close.
         context.sessionLog?.closeSubscriptions()
         await listenerClosed
+        await federationClosed
+        await liveClosing
         // Unload plugins before the database they may use is closed. Each
         // plugin cleanup is bounded by the kernel's step timeout; the HTTP
         // listener close above is not bounded (it waits for open responses).
@@ -460,6 +550,7 @@ export async function start(options: StartOptions = {}) {
         }
         // After the relay plugin aborted and settled its runs: the child must outlive their cleanup.
         await operationalRelay?.close().catch((error: unknown) => { shutdownError ??= error })
+        await live?.close().catch((error: unknown) => { shutdownError ??= error })
         context.db.close()
         process.removeListener('SIGINT', shutdown)
         process.removeListener('SIGTERM', shutdown)
@@ -478,7 +569,7 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 
-  return { url, port: actualPort, host, context, kernel, close }
+  return { url, port: actualPort, host, context, kernel, close, ms1Live: live?.view() ?? null }
 }
 
 /**
