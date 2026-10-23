@@ -310,18 +310,25 @@ decoded under a JSON Schema, and the schema is a pinned part of the request, not
   executor's `expectedTransport` refuses a request whose `format` is another schema or none (`runtime_request_changed`), and its signed
   terminal event echoes `responseSchemaSha256`, which the home compares with what it sent (`truncation_protocol`). An executor older
   than 1.6 is refused by the home channel with `426` instead of dropping the field, and an executor refuses a schema from a home that
-  declares an older minor. Peers without schemas interoperate as before.
+  declares an older minor (`ms1-live preflight` reports `peer_protocol_old` for it unless `home.structuredOutput` is false). Peers without
+  schemas interoperate as before. The order of a schema's keys is the order a grammar writes a reply in (`name` before `args`), so it is
+  preserved end to end: the channel sends the body as the sender built it (its proof signs the sorted hash) and the home keeps the job
+  text unsorted.
 - **Schemas.** `toJsonSchema` converts the Zod subset the relay uses (strict objects, string, number/int, boolean, null, literal,
   enum, nullable, optional, array, record, union, discriminated union, unknown) and throws `json_schema_unsupported` for anything else,
   including an object that would tolerate unknown keys. Numeric bounds are not emitted: the grammar fixes shape and types and Zod still
   validates what is parsed. The work schema is an `anyOf` with one variant per tool that the workspace actually lists (`name` is a
   `const`, `args` is that tool's own parameter object, `additionalProperties: false`) plus the non-tool actions converted from the same
   Zod definitions that validate the reply, so the grammar is narrower than the validator on tool names and arguments. The probe schema
-  has five required keys, `nextStatus` is `open`, `verification_requested` or null, and no expected value appears in it.
+  has five required keys, `nextStatus` is `open`, `verification_requested` or null (the ledger's own statuses minus `done`, tied to
+  its type at compile time), and no ledger-specific value (hash, head, revision, item id) appears in it.
 - **Tools.** `RelayWorkspace.tools()` lists the model-callable native tools (everything but `plan`, `queue`, `note_add`) with their typebox
   parameters, plus the executor's own `work.query(offset?)` and `notes.search(query, offset?)`. `file_read` takes an optional byte
   `offset` (decimal digits, a position this tool returned) and answers `{more, nextOffset, offset, code, stderr, truncated, stdout}`
-  with the text last. The executor passes `pageBytes = floor(T_hard / 4)`, the per-turn bound it applies to every tool result, so a
+  with the text last. `nextOffset` is a position in the file, so it is issued only while the text is the file's own bytes: a page that
+  needs a cursor is refused (`page_cursor_unavailable`) when redaction changed it or it holds a replacement character, and a page
+  ends in front of the first invalid byte; the whole remainder of a file is always returned. A budget that cannot hold one character is
+  `page_too_small`, an offset inside a character `invalid_offset`. The executor passes `pageBytes = floor(T_hard / 4)`, the per-turn bound it applies to every tool result, so a
   page is sized to fit it and is never cut by the executor behind a cursor that says it was read; `tool_output_read` honours the same
   budget. Without a budget (the K4 session) the result is the old one plus the cursor fields.
 - **Prompts (ADR-0025).** The work prompt is generated from the tool list (`name(arg, arg?)`), its examples are valid JSON (the model had

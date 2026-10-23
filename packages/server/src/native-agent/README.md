@@ -141,7 +141,8 @@ format or modality is silently claimed.
 
 `file_read` takes an optional byte `offset` and returns `more` and `nextOffset` with the file text, so a large file is read page by page;
 without a caller-supplied page budget (the relay passes one) the page is the sandbox's own 64 KiB result and an oversized result
-still becomes an output artifact read with `tool_output_read`.
+still becomes an output artifact read with `tool_output_read`. The cursor is a file position, so it is withheld
+(`page_cursor_unavailable`) when redaction or an invalid byte makes the text differ from the bytes it came from.
 
 Command stdout/stderr are bounded to 64 KiB per invocation with an explicit `truncated` flag.
 Every tool result is scrubbed and bounded to 64 KiB. Larger state/query results are stored as
