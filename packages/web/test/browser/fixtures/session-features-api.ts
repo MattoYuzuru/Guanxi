@@ -55,6 +55,10 @@ export interface SessionFeaturesFixture {
   create(body: unknown): { status: number; body: unknown }
   /** Native progress bodies by session id. */
   progress: Record<string, unknown>
+  /** Session-log events by session id (prompt and assistant.message build the native timeline). */
+  events: Record<string, unknown[]>
+  /** Session titles by session id for `GET /api/sessions/:id`. */
+  titles: Record<string, string | null>
   /** `down` aborts every agent and connection request as a refused connection. */
   agentNetwork: 'up' | 'down'
   /** While set, `GET /api/agent/projects` waits for this promise. */
@@ -70,7 +74,7 @@ export function createSessionFeaturesFixture(overrides: Partial<SessionFeaturesF
     projects: [fixtureProject('p', 'Alpha'), fixtureProject('q', 'Beta', ['w1'])],
     connections: [fixtureConnection()],
     workspaces: [fixtureWorkspace('w1', 'Repo'), fixtureWorkspace('w2', 'Docs')],
-    sessions: [], progress: {}, agentNetwork: 'up', holdProjects: null,
+    sessions: [], progress: {}, events: {}, titles: {}, agentNetwork: 'up', holdProjects: null,
     create: () => ({ status: 202, body: { sessionId: 'session-1' } }),
     requests: { create: [], projects: 0, sessionPages: 0, patch: [] },
     ...overrides,
@@ -92,6 +96,23 @@ export async function installSessionFeaturesApi(page: Page, fixture: SessionFeat
     if (path === SESSION_ROUTES.page()) {
       fixture.requests.sessionPages++
       return finish(route, { sessions: fixture.sessions, nextCursor: null, omitted: { withheld: false, catchingUp: false } })
+    }
+    const sessionEvents = /^\/api\/sessions\/([^/]+)\/events$/u.exec(path)
+    if (sessionEvents && method === 'GET') {
+      const sessionId = decodeURIComponent(sessionEvents[1] ?? '')
+      const after = Number(url.searchParams.get('after') ?? '0')
+      const all = (fixture.events[sessionId] ?? []) as { seq: number }[]
+      const events = all.filter(event => event.seq > after)
+      const lastSeq = all.at(-1)?.seq ?? 0
+      return finish(route, { sessionId, events, nextAfter: events.at(-1)?.seq ?? after, lastSeq, hasMore: false })
+    }
+    const sessionSummary = /^\/api\/sessions\/([^/]+)$/u.exec(path)
+    if (sessionSummary && method === 'GET' && !['list', 'search'].includes(sessionSummary[1] ?? '')) {
+      const sessionId = decodeURIComponent(sessionSummary[1] ?? '')
+      const events = (fixture.events[sessionId] ?? []) as { seq: number }[]
+      return finish(route, { sessionId, kind: 'agent', threadId: null, title: fixture.titles[sessionId] ?? null, createdAt: '2026-10-22T10:00:00.000Z',
+        lastSeq: events.at(-1)?.seq ?? 0, lastEventAt: null, counts: {}, eventCount: events.length, reasoningPurged: 0, redactions: 0,
+        tokens: { promptTokens: 0, completionTokens: 0, cachedTokens: 0, samples: 0, context: null } })
     }
     if (path === '/api/models') return finish(route, { models: [] })
     if (path === '/api/threads' && method === 'GET') return finish(route, { ownershipVersion: 1, scope: 'projectless', chats: [] })
@@ -138,5 +159,14 @@ export function completedProgress(sessionId: string, summary = 'Fixture response
     sessionId, projectId: 'p', connectionId: FIXTURE_CONNECTION, model: 'fixture', mode: 'read-only', status: 'completed',
     plan: [{ text: 'Fixture item', status: 'verification_requested' }], queue: [], summary, error: null,
     source: 'session.log', confidence: 'high', observedAt: '2026-10-21T00:00:00.000Z',
+  }
+}
+
+/** A session-log event envelope for fixtures (v1 standard events). */
+export function sessionEvent(sessionId: string, seq: number, type: 'prompt' | 'assistant.message', text: string, createdAt = observedAt) {
+  return {
+    sessionId, seq, id: `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`, spanId: null, parentSpanId: null, jobId: null, writerEpoch: 1, redactions: 0,
+    createdAt, version: 1, type, class: 'standard',
+    data: type === 'prompt' ? { origin: 'typed', messageId: `prompt-${seq}`, text, attachmentCount: 0 } : { messageId: null, step: 0, text },
   }
 }

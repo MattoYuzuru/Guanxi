@@ -1,13 +1,30 @@
-/* W1 native session (D-207): header, scrolling column, composer docked at the bottom. */
+/* W1 native session (D-207): header, message timeline, flat plan and queue, docked composer and
+   an optional side-chat panel. Tokens only. */
 @reference '../../../../ui/src/styles/tailwind-reference.css';
 
 .native-session {
   display: flex;
   flex: 1 1 auto;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
   @apply h-full;
+  container-type: inline-size;
+}
+
+.native-session-layout {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.native-session-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
 .native-session-header {
@@ -20,20 +37,79 @@
   border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
 }
 
-.native-session-title {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-14);
-  font-weight: var(--font-weight-heading);
+.native-session-heading {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-width: 0;
 }
 
-.native-session-title:focus-visible {
+.native-session-crumbs {
+  display: flex;
+  flex: none;
+  min-width: 0;
+}
+
+.native-session-crumb {
+  border-radius: var(--border-radius-inline);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-14);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.native-session-crumb:hover {
+  color: var(--color-text-primary);
+}
+
+.native-session-crumb:focus-visible {
   outline: var(--focus-ring-width) solid var(--color-ring-primary);
   outline-offset: var(--focus-ring-offset);
 }
 
+.native-session-crumb-separator {
+  flex: none;
+  color: var(--color-text-tertiary);
+}
+
+.native-session-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Focus lands on the heading programmatically after navigation; it is not a control, so no ring. */
+.native-session-title:focus {
+  outline: none;
+}
+
+.native-session-connection {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--spacing-6);
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.native-session-connection span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .native-session-actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--spacing-2);
   margin-left: auto;
@@ -56,7 +132,7 @@
 .native-session-column {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-12);
+  gap: var(--spacing-24);
   padding: var(--spacing-24) var(--spacing-16);
 }
 
@@ -74,32 +150,97 @@
   font-size: var(--font-size-12);
 }
 
-.native-progress {
+/* The composer's own Stop shape (round, neutral) with a filled square: a media stop, never a checkbox. */
+.native-stop {
+  @apply rounded-full;
+}
+
+.native-stop svg {
+  fill: currentColor;
+}
+
+/* Timeline. */
+.native-timeline-list {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-12);
-}
-
-.native-progress-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-8);
-}
-
-.native-progress-state {
   margin: 0;
-  font-weight: var(--font-weight-heading);
+  padding: 0;
+  list-style: none;
 }
 
-.native-progress-source {
+.native-message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  min-width: 0;
+}
+
+.native-message-author {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
   margin: 0;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
 }
 
-.native-progress-status .gx-button {
-  margin-left: auto;
+.native-message-body {
+  min-width: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.native-message[data-role='user'] .native-message-body {
+  align-self: flex-start;
+  @apply max-w-full;
+  padding: var(--spacing-8) var(--spacing-12);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-primary);
+}
+
+/* The rail keeps its height so revealing it moves nothing; pointer users see it on hover, keyboard
+   users on focus, touch users always. */
+.native-message-rail {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-tertiary);
+  opacity: 0;
+}
+
+.native-message:hover .native-message-rail,
+.native-message:focus-within .native-message-rail,
+.native-message:last-child .native-message-rail {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .native-message-rail {
+    opacity: 1;
+  }
+}
+
+/* Agent status: the running step, then flat lists separated by hairlines. */
+.native-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+.native-progress-state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-label);
+}
+
+.native-progress-state[data-status='running'] {
+  color: var(--color-text-accent);
 }
 
 .native-progress-alert {
@@ -112,51 +253,46 @@
   font-size: var(--font-size-13);
 }
 
-.native-card,
-.native-response {
+.native-section {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-6);
-  padding: var(--spacing-12);
-  border: var(--border-width-regular) solid var(--color-border-secondary);
-  border-radius: var(--border-radius-panel);
-  background-color: var(--color-background-secondary);
+  gap: var(--spacing-4);
+  min-width: 0;
 }
 
-.native-response {
-  border: 0;
-  padding-inline: 0;
-}
-
-.native-card-title {
+.native-section-title {
   margin: 0;
   color: var(--color-text-tertiary);
   font-size: var(--font-size-12);
   font-weight: var(--font-weight-label);
 }
 
-.native-muted {
-  margin: 0;
-  color: var(--color-text-tertiary);
-  font-size: var(--font-size-13);
-}
-
-.native-plan,
-.native-queue {
+.native-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-4);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.native-plan li,
-.native-queue li {
+.native-list li {
   display: flex;
   align-items: center;
   gap: var(--spacing-8);
+  min-height: var(--spacing-32);
+  padding-block: var(--spacing-4);
+  color: var(--color-text-primary);
   font-size: var(--font-size-13);
+}
+
+.native-list li + li {
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.native-list li > span:not(.sr-only) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .native-plan li[data-status='active'] {
@@ -168,17 +304,49 @@
   color: var(--color-text-secondary);
 }
 
-.native-queue li span {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
+.native-progress-source,
+.native-muted {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
 }
 
-.native-response-text {
-  margin: 0;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-14);
-  line-height: var(--font-line-height-prose);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* Side chat panel: a column beside the session, or a sheet over it in a narrow pane. */
+.native-session-aside {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--layout-container-sm);
+  min-height: 0;
+  border-left: var(--border-width-regular) solid var(--color-border-secondary);
+  background-color: var(--color-background-secondary);
+}
+
+.native-session-aside[hidden] {
+  display: none;
+}
+
+@container (max-width: 1023px) {
+  .native-session-aside {
+    position: absolute;
+    z-index: var(--layer-docked);
+    inset: 0;
+    @apply w-full;
+    border-left: 0;
+  }
+}
+
+/* Phone: the shell scrolls as a page, so the panel is a full-screen sheet with its header in view. */
+@media (max-width: 639px) {
+  .native-session-aside {
+    position: fixed;
+    z-index: var(--layer-dialog);
+    inset: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .native-message[data-role='user'] .native-message-body {
+    border: var(--border-width-regular) solid CanvasText;
+  }
 }
