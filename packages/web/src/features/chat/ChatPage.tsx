@@ -973,6 +973,9 @@ function turnStatusLabel(status: TurnStatus | null): string {
 
 function turnErrorLabel(code: TurnErrorCode): string {
   switch (code) {
+    case 'connection_not_found': case 'vault_locked': case 'policy_denied': case 'egress_unavailable':
+    case 'validation_failed': case 'quota_exhausted': case 'provider_failed':
+      return translate(`connections.error.${code}`)
     case 'ollama_unavailable':
       return translate('chat.turn.error.ollama_unavailable')
     case 'ollama_connect_timeout':

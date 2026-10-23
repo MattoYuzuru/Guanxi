@@ -563,3 +563,15 @@ test('discovery refuses oversized bodies, lists and IDs and contract rejects ove
 test('provider picker route belongs to the shared wire contract', () => {
   assert.equal(ROUTES.threadModels(), '/api/threads/models')
 })
+
+test('provider admission exposes actionable connection codes and HTTP statuses', async t => {
+  const f = await setup(t), chat = chatFixture(f, t)
+  const id = await imported(f.service)
+  for (const [connectionId, status, code] of [[randomUUID(), 404, 'connection_not_found'], [id, 423, 'vault_locked']] as const) {
+    f.service.lockVault('local')
+    const thread = chat.create(chatModelSelection(connectionId, piModels('openai')[0]!.id))
+    const response = await chat.app.request(`/threads/${thread.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: 'fixture' }) })
+    assert.equal(response.status, status)
+    assert.equal((await response.json() as { code: string }).code, code)
+  }
+})

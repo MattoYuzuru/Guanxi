@@ -2461,6 +2461,8 @@ export const turnStopReasonSchema = z.enum([
 export type TurnStopReason = z.infer<typeof turnStopReasonSchema>
 
 export const turnErrorCodeSchema = z.enum([
+  'connection_not_found', 'vault_locked', 'policy_denied', 'egress_unavailable',
+  'validation_failed', 'quota_exhausted', 'provider_failed',
   'ollama_unavailable',
   'ollama_connect_timeout',
   'ollama_load_timeout',
@@ -3305,6 +3307,8 @@ export type Health = z.infer<typeof healthSchema>
 
 export const apiErrorSchema = z.object({
   code: z.enum([
+    'connection_not_found', 'vault_locked', 'policy_denied', 'egress_unavailable',
+    'quota_exhausted', 'provider_failed',
     'ollama_unavailable',
     'model_not_found',
     'job_not_found',

@@ -96,7 +96,7 @@ function cancellationReason(signal: AbortSignal): TurnStopReason {
 }
 
 function safeTurnFailure(error: unknown): { error: TurnError; stopReason: TurnStopReason } {
-  if (error instanceof ConnectionError) return { error: { code: 'upstream_error', message: error.message }, stopReason: 'provider_error' }
+  if (error instanceof ConnectionError) return { error: { code: error.code, message: 'Connection request failed' }, stopReason: 'provider_error' }
   if (error instanceof TerminalPersistenceError) {
     return {
       error: {
