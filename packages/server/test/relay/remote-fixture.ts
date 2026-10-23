@@ -114,10 +114,10 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
     prepared.bind!(attempt)
     const model = new ConnectionRelayModel(h.connections, homeConnection.id, 'fixture', prepared.meter)
     const window = await model.observe(controller.signal)
-    const call = async (prompt: string, extra: { signal?: AbortSignal; maxInput?: number; prime?: boolean; onStarted?: () => void } = {}) => {
+    const call = async (prompt: string, extra: { signal?: AbortSignal; maxInput?: number; maxOutput?: number; prime?: boolean; onStarted?: () => void } = {}) => {
       const signal = extra.signal ?? controller.signal
       if (extra.prime !== false) await model.countAsync!(prompt, signal)
-      return model.call(prompt, { runId: run.id, requestId: randomUUID(), maxOutput: 1000, maxInput: extra.maxInput ?? 14800, window, signal,
+      return model.call(prompt, { runId: run.id, requestId: randomUUID(), maxOutput: extra.maxOutput ?? 1000, maxInput: extra.maxInput ?? 14800, window, signal,
         onStarted: () => { extra.onStarted?.(); home.runs.modelStarted(attempt) } })
     }
     return { run, attempt, prepared, model, window, call, controller }

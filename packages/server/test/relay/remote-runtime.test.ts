@@ -326,6 +326,24 @@ test('no request exceeds the hard ceiling: H tokens dispatch, H plus one is refu
   const offers = f.seen.filter(p => p === '/attempts/offers').length
   assert.equal(await code(r.call(words(H - base + 1))), 'provider_failed', 'K3 wraps the context_ceiling refusal of the final prepared request')
   assert.equal(f.seen.filter(p => p === '/attempts/offers').length, offers); assert.equal((await f.completions()).length, 1)
+  // Input plus the output reserve must also fit the loaded window, at the home before anything is offered...
+  const big = words(15_500 - base)
+  assert.equal(await code(r.call(big, { maxInput: 16_000, maxOutput: 1000 })), 'provider_failed')
+  assert.equal(f.seen.filter(p => p === '/attempts/offers').length, offers); assert.equal((await f.completions()).length, 1)
+})
+
+test('the executor enforces the loaded window itself, whatever the home asked for', async t => {
+  const f = await remoteFixture(t), r = await f.relay(), content = 'Window enforced by the executor.'
+  await r.model.countAsync!(content)
+  const seen = await f.llama.observe(f.llama.model, new AbortController().signal)
+  const counted = { contentSha256: sha(content), renderedSha256: sha(rendered(content)), tokens: exact(content), digest: seen.digest, contextTokens: 16000 }
+  f.home.runs.create({ id: 'greedy', sessionId: 'relay-session' })
+  const offer = f.home.federation.prepareDispatch('greedy', 'target', { kind: 'local_inference', model: 'fixture', context: 16000, outputTokens: 16000,
+    deadline: f.home.time + 30_000, messages: [{ role: 'user', content }], counted }, 4000, 'relay')
+  const channel = f.channel('home'), receipt = await channel.offer(offer)
+  await channel.dispatch(f.home.federation.grantDispatch(offer.id, receipt))
+  const terminal = await f.home.federation.attemptDispatch!.awaitTerminal(offer.id, AbortSignal.timeout(5000), () => undefined, 5)
+  assert.equal(terminal.outcome, 'failed'); assert.equal(terminal.reason, 'context_ceiling'); assert.equal((await f.completions()).length, 0)
 })
 
 test('the host sees one session per start: an unbound use of the factory refuses and closing a session stops its calls', async t => {

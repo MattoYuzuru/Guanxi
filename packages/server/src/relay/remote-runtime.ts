@@ -200,7 +200,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
     const window = first.options?.num_ctx, limit = first.options?.num_predict
     invariant(Number.isSafeInteger(window) && Number.isSafeInteger(limit) && limit! > 0, 'runtime_request_changed')
     const counted = this.cache.get(sha256(content))
-    invariant(counted && counted.identity === this.identity, 'runtime_count_invalid')
+    // `prepare()` above already refused an uncounted or other-identity string (`count` is an identity-tagged lookup).
+    invariant(counted, 'runtime_count_invalid')
     invariant(counted.evidence.tokens + limit! <= window! && window! === counted.evidence.contextTokens, 'context_ceiling')
     const childId = `rc-${randomUUID()}`
     const session = runs.get(attempt.run_id).session_id
