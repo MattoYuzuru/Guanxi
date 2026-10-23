@@ -1,7 +1,7 @@
 /** D-211: the MS1 lead may run Claude Code on the owner's Anthropic API key, imported by K3 into the vault. Fake keys only: no test
  * reads the owner's dotenv file, opens the OS keychain or makes a network call. */
 import assert from 'node:assert/strict'
-import { chmodSync, copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -12,7 +12,7 @@ import { start } from '../../src/index.ts'
 import { Ms1LiveNode } from '../../src/ms1-live/boot.ts'
 import { loadMs1LiveConfig, Ms1LiveError, parseMs1LiveConfig, type Ms1LiveSettings } from '../../src/ms1-live/config.ts'
 import type { VaultKeychain } from '../../src/vault/keychain.ts'
-import { main } from '../../src/ms1-live/cli.ts'
+import { main, setUpLead } from '../../src/ms1-live/cli.ts'
 import { cli, freePort } from './live-world.ts'
 
 const reserves = { turn: 4096, safety: 512, handoff: 3072, tool: 3072, stepMedian: 1536, effective: 24000 }
@@ -335,4 +335,45 @@ test('after start the vault is unlocked for the lead, and a vault that cannot be
   const outcome = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: w.settings(config => { delete config.home.lead.providerKeysFile }), connectionsKeychain: locked })
     .then(server => server.close().then(() => 'started'), error => error)
   assert.ok(outcome instanceof Ms1LiveError && outcome.code === 'lead_vault_locked', `got ${outcome instanceof Error ? `${outcome.name}: ${outcome.message}` : outcome}`)
+})
+
+test('end to end through the start command\'s lead set-up: the fixture agent receives the key from the vault, the lead turn completes, and no announced event or file holds it', async t => {
+  for (const mode of ['api_key', 'oauth_token'] as const) {
+    const w = await pair(t)
+    const secret = mode === 'api_key' ? fakeKey() : fakeToken()
+    writeKeys(w.keyFile, mode === 'api_key' ? `ANTHROPIC_API_KEY=${secret}\n` : `CLAUDE_CODE_OAUTH_TOKEN=${secret}\n`)
+    // The fixture agent stands in for both the ACP bridge and the CLI (it answers `auth status` like 2.1.287 does for the variable it is given).
+    const agentDir = join(w.root, 'agent')
+    mkdirSync(agentDir)
+    const agent = join(agentDir, 'fixture-agent.mjs')
+    writeFileSync(agent, `#!${process.execPath}\n` + readFileSync(new URL('../external-agents/fixture-process.mjs', import.meta.url), 'utf8'))
+    chmodSync(agent, 0o700)
+    const tape = JSON.parse(readFileSync(new URL('../external-agents/fixtures/claude-code-0.94.0.json', import.meta.url), 'utf8'))
+    tape.newSession.configOptions.push({ id: 'effort', category: 'thought_level', name: 'Effort', type: 'select', currentValue: 'default', options: ['low', 'medium', 'high'].map(value => ({ value, name: value })) })
+    const scenario = { tape, lead: { loadSession: true }, anthropicKey: mode === 'api_key' ? secret : undefined, oauthToken: mode === 'oauth_token' ? secret : undefined }
+    writeFileSync(join(agentDir, 'scenario.json'), JSON.stringify(scenario))
+    const settings = w.settings(config => { config.home.lead.auth = mode; config.home.lead.bridge = agent; config.home.lead.claudeExecutable = agent; config.home.lead.model = 'model-fixture'; config.home.lead.runDeadlineMs = 60_000 })
+    const server = await start({ port: 0, host: '127.0.0.1', dataDir: join(w.root, 'data'), webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
+    t.after(() => server.close())
+    const api = async (path: string, body: unknown, method = 'POST') => (await fetch(server.url + path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).json() as Promise<any>
+    const workspace = await api('/api/workspaces', { rootPath: w.root, name: 'w' })
+    const project = await api('/api/projects', { name: 'p' })
+    await api(`/api/agent/projects/${project.id}/roots`, { workspaceIds: [workspace.id] }, 'PATCH')
+    const events: Array<Record<string, any>> = []
+    const first = new Promise<Record<string, any>>(resolve => setUpLead(server, settings, {}, 'start the lead', project.id, event => { events.push(event); if (event['event'] === 'lead-first') resolve(event) }))
+    const done = await first
+    assert.equal(done['outcome'], 'completed', JSON.stringify(events))
+    const auth = events.find(event => event['event'] === 'lead-auth')!
+    assert.deepEqual([auth['mode'], auth['billing'], auth['keySource']], [mode, mode === 'api_key' ? 'api_usage' : 'subscription', 'home.lead.providerKeysFile'])
+    assert.equal(events.some(event => event['event'] === 'lead-login'), false, 'nothing to sign in to')
+    const text = JSON.stringify(events)
+    assert.equal(text.includes(secret), false); assert.equal(text.includes(secret.slice(-20)), false)
+    const environment = JSON.parse(readFileSync(join(agentDir, 'environment.json'), 'utf8'))
+    assert.equal(environment[mode === 'api_key' ? 'anthropicKeyMatches' : 'oauthTokenMatches'], true, 'the vault key reached the agent process')
+    assert.equal(environment.names.includes(mode === 'api_key' ? 'CLAUDE_CODE_OAUTH_TOKEN' : 'ANTHROPIC_API_KEY'), false)
+    assert.equal(environment.subprocessScrub, '1')
+    for (const path of [...filesUnder(join(w.root, 'data')), ...filesUnder(agentDir).filter(file => !file.endsWith('scenario.json'))]) {
+      const bytes = readFileSync(path); assert.equal(bytes.includes(secret), false, path); assert.equal(bytes.includes(secret.slice(-20)), false, path)
+    }
+  }
 })

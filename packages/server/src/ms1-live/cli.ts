@@ -169,27 +169,7 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   if (live.role === 'executor') void live.startWarming().then(state => emit({ event: 'warm', state: state.state, ...(state.code ? { code: state.code } : {}) }))
   if (live.hasLead) {
     try {
-      const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
-      const lead = settings.home!.lead!
-      if (lead.auth !== 'subscription') {
-        // Nothing to sign in to: the credential comes from the K3 vault at launch. Ids, policy and where the file was named, never a value.
-        const source = env['GUANXI_PROVIDER_KEYS_FILE'] ? 'GUANXI_PROVIDER_KEYS_FILE' : lead.providerKeysFile ? 'home.lead.providerKeysFile' : 'vault'
-        emit({ event: 'lead-auth', mode: lead.auth, billing: lead.auth === 'api_key' ? 'api_usage' : 'subscription', keySource: source, connectionId: live.leadConnectionId, ...(lead.effort ? { effort: lead.effort } : {}) })
-      } else {
-        // Only paths and the argv of the vendor's own sign-in: the login itself happens in the vendor CLI, in its private config directory.
-        const login = await external.prepareLogin(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, live.leadConnectionId)
-        emit({ event: 'lead-login', hint: 'run this once, as is, in a terminal if the lead is not signed in', executable: login.executable, args: login.args, environment: login.environment })
-      }
-      if (prompt && project) {
-        external.setProjectRoles(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, project, { lead: { backend: 'claude-code', connectionId: live.leadConnectionId, model: settings.home!.lead!.model, params: {} } })
-        const leads = server.kernel.node.service<LeadHostService>(LEAD_SERVICE)!
-        if (leads.sessions().length) emit({ event: 'lead-exists', hint: 'a lead already exists on this node; it was not started again' })
-        else {
-          const started = leads.startLead({ ownerAccountId: LOCAL_ACCOUNT_ID, actorAccountId: LOCAL_ACCOUNT_ID, projectId: project, prompt })
-          emit({ event: 'lead-started', runId: started.runId })
-          started.first.then(result => emit({ event: 'lead-first', outcome: result.outcome, code: result.code }), error => emit({ event: 'lead-first', outcome: 'failed', code: String((error as { code?: unknown })?.code ?? 'error') }))
-        }
-      }
+      await setUpLead(server, settings, env, prompt, project, emit)
     } catch (error) {
       // A node that cannot do what it was asked to do (a lead that cannot start) must not be left running half-configured.
       emit({ event: 'failed', code: typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : 'lead_setup_failed' })
@@ -200,4 +180,31 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   // `start()` installed the SIGINT/SIGTERM handlers that close the node cleanly; this process now lives until one arrives.
   await new Promise<never>(() => undefined)
   return 0
+}
+
+/** The lead half of `start`: announce how the lead is paid (never a credential) and, when asked, bind the role and start one lead. */
+export async function setUpLead(server: Awaited<ReturnType<typeof start>>, settings: Ms1LiveSettings, env: Readonly<Record<string, string | undefined>>,
+  prompt: string | null, project: string | undefined, emit: (event: Record<string, unknown>) => void): Promise<void> {
+  const live = server.ms1Live!
+  const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
+  const lead = settings.home!.lead!
+  if (lead.auth !== 'subscription') {
+    // Nothing to sign in to: the credential comes from the K3 vault at launch. Ids, policy and where the file was named, never a value.
+    const source = env['GUANXI_PROVIDER_KEYS_FILE'] ? 'GUANXI_PROVIDER_KEYS_FILE' : lead.providerKeysFile ? 'home.lead.providerKeysFile' : 'vault'
+    emit({ event: 'lead-auth', mode: lead.auth, billing: lead.auth === 'api_key' ? 'api_usage' : 'subscription', keySource: source, connectionId: live.leadConnectionId, ...(lead.effort ? { effort: lead.effort } : {}) })
+  } else {
+    // Only paths and the argv of the vendor's own sign-in: the login itself happens in the vendor CLI, in its private config directory.
+    const login = await external.prepareLogin(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, live.leadConnectionId)
+    emit({ event: 'lead-login', hint: 'run this once, as is, in a terminal if the lead is not signed in', executable: login.executable, args: login.args, environment: login.environment })
+  }
+  if (prompt && project) {
+    external.setProjectRoles(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, project, { lead: { backend: 'claude-code', connectionId: live.leadConnectionId, model: settings.home!.lead!.model, params: {} } })
+    const leads = server.kernel.node.service<LeadHostService>(LEAD_SERVICE)!
+    if (leads.sessions().length) emit({ event: 'lead-exists', hint: 'a lead already exists on this node; it was not started again' })
+    else {
+      const started = leads.startLead({ ownerAccountId: LOCAL_ACCOUNT_ID, actorAccountId: LOCAL_ACCOUNT_ID, projectId: project, prompt })
+      emit({ event: 'lead-started', runId: started.runId })
+      started.first.then(result => emit({ event: 'lead-first', outcome: result.outcome, code: result.code }), error => emit({ event: 'lead-first', outcome: 'failed', code: String((error as { code?: unknown })?.code ?? 'error') }))
+    }
+  }
 }
