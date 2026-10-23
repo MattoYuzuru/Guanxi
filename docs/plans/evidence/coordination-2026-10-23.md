@@ -64,8 +64,10 @@ its non-atomic write finished). The full sequence then passed at `5570b9e5` with
 U1 session features (receipts `check-g5my6or6`, `check-64lwpi5t`, `check-ledmbynl`,
 `check-kgtvxcmj`), again at `e2b3a50c` with the notification center UI (`check-_ycff5z_`, `check-u_1t9nin`,
 `check-qlf_v93l` for build), and at `ffd38274` with the MS1 rehearsal (`check-00bqpo2f`,
-`check-fbqprcv1`, `check-0w5bwl6x`, `check-lm77j9uw`). The glossary editor merged last (`b973b38e`)
-after its own lane gates (browser 224/224) and web 649/649 on main.
+`check-fbqprcv1`, `check-0w5bwl6x`, `check-lm77j9uw`). The glossary editor merged last (`b973b38e`).
+After one more focus-race test fix, the final full sequence passed at `ab812361` (`check-fdbjb5qr`,
+`check-il86ga1w`, `check-o3q6nsuf`, `check-jugzwjxy`). All 35 merged lane clones were moved to the
+Trash; `Guanxi-lanes` keeps only infra, prompts, reviews and logs.
 
 ## What this does and does not close
 
