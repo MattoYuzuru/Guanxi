@@ -102,6 +102,9 @@ test('a local relay with the judge on is the same relay plus judge events: its o
   }
   const rows = judged.db.prepare('SELECT layer,state FROM relay_judge_requests WHERE run_id=?').all(b.runId!) as Array<{ layer: string; state: string }>
   assert.deepEqual(rows.map(r => [r.layer, r.state]), [['J2', 'completed'], ['J2', 'completed']])
+  // The executor default reaches a real public start: no caller injected a journal here.
+  const journal = judged.db.prepare('SELECT layer,state,phase FROM relay_judge_journal WHERE run_id=? ORDER BY id').all(b.runId!) as Array<{ layer: string; state: string; phase: string }>
+  assert.deepEqual(journal.map(r => [r.layer, r.state, r.phase]), [['J2', 'completed', 'cycle_start'], ['J2', 'completed', 'pre_seal']])
   // The runtime is observed again before every judge sample, as before every relay call: per boundary the attestation, the
   // admitted window and one authorization for each of the two samples.
   assert.equal(judged.observations() - plain.observations(), 2 * (2 + 2), 'two boundaries, each with two admission observations and two authorizations')

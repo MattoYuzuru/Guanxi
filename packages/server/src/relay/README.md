@@ -166,9 +166,10 @@ Only the reviewed `judge-signals.ts` pure module evaluates the observation. On s
 executor appends exactly one `agent.note` with
 `{relay:'judge_signals', phase, cycle, signals, unknownFacts}` through the existing R1-fenced
 transaction. `unknownFacts` names `heartbeat`, `lease`, `deadline`, `disk` and `tokenBudget` for
-each missing observation field, so an empty `signals` array is not a health claim. The full
-observation and the `protectedPathEdits` / `outOfScopeEdits` values are never persisted or
-logged.
+each missing observation field, so an empty `signals` array is not a health claim. Without a
+journal (the default for a bare cascade) the full observation and the `protectedPathEdits` /
+`outOfScopeEdits` values are never persisted or logged; the optional local journal below is the
+only place they may be stored (D-199).
 
 A collector rejection or an invalid observation fails the cycle closed with the fixed
 `judge_observation_unavailable` or `judge_observation_invalid` code respectively; no judge note
@@ -180,6 +181,61 @@ consume late outcomes and cannot hold disposal open; this adds no timer or new c
 authority. Resourceful checker/model ownership uses the distinct settlement contract below. Fixture tests prove wiring,
 detached inputs, cancellation/fence behavior and seal consistency only; they are not real host
 observations, a calibrated classifier, or the R3 precision/recall/night-wake gates.
+
+## Local judge observation journal (D-199)
+
+The cascade has one optional local sink. When a relay executor receives a `cascade`, it supplies
+a lazy `JudgeJournal` unless the caller explicitly passes `journal: null`; the relay plugin does
+the same for a public start. Construction (`BEGIN IMMEDIATE`, DDL, version check) happens on the
+first `record()`, never while a start or executor is assembled: a foreign ledger value, an open
+transaction or `SQLITE_BUSY` disables the local sidecar and leaves the judged relay untouched.
+If a journal table already exists, a load-time probe still constructs the store (inside the
+purge guard) so the retention purge runs on a restart without a judge. A bare
+`RelayJudgeCascade` has no journal and creates no journal table. The sink is the single
+`request()` evaluation point: one row per actually evaluated J1.5 checker/J2/J3 request, not per
+model sample and not for a duplicate request that reuses a stored result.
+
+`judge-journal.ts` owns independent additive ledger **43** (`relay_journal_migrations`), so
+`user_version`, ledger 42 (F2-reap) and every earlier ledger are untouched. A row holds
+run/session/attempt ids, cycle, phase, layer, reason, request key, the exact scrubbed evidence
+packet the judge received (paths included), the detached host `JudgeObservation` and signal
+policy, the J0/J1 signals, `summary.unknownFacts` and the collector's declared `unobserved`
+facts, the terminal state and result (sample verdicts, checker result or a fixed
+unavailable/invalid code), and start/finish timestamps. `UPDATE` is refused by a trigger. A
+journal write is best-effort after the fenced judge result is persisted, so a local sidecar
+failure never turns a valid verdict into `unavailable`. A failed write increments the run's
+counter in `relay_journal_runs`; `readJournalReplay` then carries `incomplete: true` and the R3
+gate refuses the corpus as `incomplete_corpus` rather than scoring a short one as complete.
+
+The journal is not an export. No route, contract, event, wake packet, handoff, federation
+message or log line reads it. Every packet/observation/result/signal is scrubbed at insert and
+again on read, and the scrubber must be ready at both points, so a registered secret never
+enters a row or comes back out of one; paths intentionally remain (D-199). Rows expire under the
+implemented D-113 reasoning retention (7 days, shortened by a parent Thread TTL); expired rows
+are unreadable even before the purge. The plugin purges every 10 minutes once a journal exists,
+and `purgeRun` / `purgeSession` are the explicit run paths; the native session delete also
+calls the non-migrating session purge inside its home-fenced transaction, and `ON DELETE
+CASCADE` from `durable_runs` removes rows with the owning run. `secure_delete` zeroes the freed
+pages.
+
+For local calibration, `readJournalReplay` / `readJournalCorpus` turn a finished run's J2 rows
+into the strict R3-b v1 corpus with `origin: 'recorded'`. A real store leaves an unverified
+executor claim at `verification_requested` and only moves an item to `done` after a passing
+gate, so both statuses are recognised as a claim; `acceptancePassed` is the newest gate at the
+packet's current head. Steps are ordered by attempt ordinal, cycle, phase and insertion id, so a
+recovery attempt is never stitched onto the previous attempt; equal `observedAt` values from a
+same-millisecond host clock are valid. `unknownFacts` is carried into the step and a detector
+whose source fact was unobserved reports an unknown step instead of treating the zero as
+healthy. Labels are never invented: a caller supplies the owner's ground truth later. A
+finished but unlabelled run therefore scores, but does not evaluate the R3 gate.
+`judge-journal.test.ts` proves default/off and plugin-injection wiring, append-only rows,
+read-time expiry and re-scrubbing, all three purge paths plus the native delete transaction,
+completed and unavailable/invalid/abandoned rows, real-store premature-done replay, per-attempt
+ordering, equal timestamps, unknown-fact markers, incomplete-corpus refusal, and that a planted
+journal path and a registered secret appear in no wake packet (built from the real child
+reporter), real session-export route, relay handoff, signed F2 dispatch grant (built through
+`AttemptDispatch.prepare`/`grant`) or captured test log. Source guards fail if those egress
+producers start reading the journal.
 
 ## Runtime and context
 
