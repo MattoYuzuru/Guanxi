@@ -116,7 +116,7 @@ export function parseRoute(pathWithSearch: string): Route {
 
 export const paths = {
   workspace: (id?: string | null, project?: string | null) => `/workspace${id ? `/${encodeURIComponent(id)}` : ''}${project ? `?project=${encodeURIComponent(project)}` : ''}`,
-  agent: (id?: string | null) => id ? `/agent/${encodeURIComponent(id)}` : '/agent',
+  agent: (id?: string | null, project?: string | null) => id ? `/agent/${encodeURIComponent(id)}` : `/agent${project ? `?project=${encodeURIComponent(project)}` : ''}`,
   launcher: () => '/',
   model: (name: string) => `/models/${encodeURIComponent(name)}`,
   chat: (threadId?: string | null) =>

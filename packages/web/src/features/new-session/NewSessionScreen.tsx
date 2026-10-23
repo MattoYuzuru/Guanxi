@@ -6,7 +6,8 @@ import { formatTime } from '../../lib/format.ts'
 import { useAsync } from '../../lib/useAsync.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
-import { Link, navigate, paths } from '../../lib/router.tsx'
+import { Link, navigate, paths, useLocation } from '../../lib/router.tsx'
+import { projectFromLocation } from '../../lib/current-project.ts'
 import { agentRequest, AgentRequestError, nativeApi } from '../native-agent/api.ts'
 import { BrandMark } from './BrandMark.tsx'
 import { ModelPicker, PermissionMenu, ProjectPicker, RunOptions, type ModelSuggestion } from './SessionPickers.tsx'
@@ -30,13 +31,14 @@ function ChoicesSkeleton() {
 
 /**
  * E1 New session (D-207): an empty session is the composer, centred. The current project is
- * preselected (the most recent one); the permission mode sits at the composer's lower left, the
+ * preselected (the routed one, else the most recent); the permission mode sits at the composer's lower left, the
  * model, connection and context at its lower right, and the run options one click away. Choices
  * stay current and recover by themselves; there is no Retry.
  */
 export function NewSessionScreen() {
   useLocale()
   const choices = useSessionChoices()
+  const routedProject = projectFromLocation(useLocation())
   const [recent, setRecent] = useState(readRecentProjects)
   const [projectId, setProjectId] = useState(''), [connectionId, setConnectionId] = useState(''), [model, setModel] = useState('')
   const [mode, setMode] = useState<AccessMode>('read-only'), [prompt, setPrompt] = useState('')
@@ -50,12 +52,15 @@ export function NewSessionScreen() {
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const failureRef = useRef<HTMLDivElement>(null)
   const data = choices.choices
-  // A new session opens in the current project: the most recent one that still exists, else the only one.
+  // A new session opens in the current project: the one the route names (the shell passes the open
+  // session's or routed project), else the most recent one that still exists, else the only one.
   useEffect(() => {
     if (!data || projectId) return
-    const current = recent.find(id => data.projects.some(project => project.id === id)) ?? (data.projects.length === 1 ? data.projects[0]!.id : '')
+    const exists = (id: string | null): id is string => id !== null && data.projects.some(project => project.id === id)
+    const current = (exists(routedProject) ? routedProject : undefined)
+      ?? recent.find(exists) ?? (data.projects.length === 1 ? data.projects[0]!.id : '')
     if (current) setProjectId(current)
-  }, [data, projectId, recent])
+  }, [data, projectId, recent, routedProject])
   // One connection needs no choice.
   useEffect(() => { if (data && !connectionId && data.connections.length === 1) setConnectionId(data.connections[0]!.id) }, [data, connectionId])
   const project: Project | undefined = data?.projects.find(item => item.id === projectId)

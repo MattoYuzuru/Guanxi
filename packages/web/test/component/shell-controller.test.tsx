@@ -9,6 +9,7 @@ import { useShellController } from '../../src/features/shell/useShellController.
 import { SHELL_PREFERENCES_KEY } from '../../src/features/shell/preferences.ts'
 import { clearWorkspaceShellState, publishWorkspaceShellState } from '../../src/features/workspace/shell-state.ts'
 import { MOVE_BLOCK_COMMAND, REVEAL_BLOCK_COMMAND } from '../../src/features/workspace/commands.ts'
+import { clearCurrentProject, publishCurrentProject } from '../../src/lib/current-project.ts'
 const writer = Symbol('shell-test')
 const wrapper = ({ children }: PropsWithChildren) => <ThemeProvider>{children}</ThemeProvider>
 
@@ -19,7 +20,7 @@ beforeEach(() => {
   vi.spyOn(inspectorApi, 'page').mockResolvedValue({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
   vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
 })
-afterEach(() => { clearWorkspaceShellState(writer); vi.unstubAllGlobals() })
+afterEach(() => { clearWorkspaceShellState(writer); clearCurrentProject(writer); vi.unstubAllGlobals() })
 
 describe('shell host commands', () => {
   it('retains the four core palette commands while hidden, persists preferences and fetches models only after explicit open', async () => {
@@ -59,6 +60,20 @@ describe('shell host commands', () => {
     expect(result.current.commands.find(command => command.id === 'move:first')?.reason).toContain('ordered block tabs')
     window.removeEventListener(REVEAL_BLOCK_COMMAND, reveal)
     window.removeEventListener(MOVE_BLOCK_COMMAND, move)
+  })
+  it('opens a new session in the current project: the open session\'s project, else the routed project (P2)', async () => {
+    window.history.replaceState(null, '', '/projects/p1/chats')
+    const { result } = renderHook(useShellController, { wrapper })
+    await waitFor(() => expect(result.current.sessions.loading).toBe(false))
+    expect(result.current.newSessionPath).toBe('/agent?project=p1')
+    act(() => publishCurrentProject(writer, 'p2'))
+    expect(result.current.newSessionPath).toBe('/agent?project=p2')
+    act(() => result.current.commands.find(command => command.id === 'new')!.execute())
+    expect(window.location.pathname + window.location.search).toBe('/agent?project=p2')
+    act(() => clearCurrentProject(writer))
+    window.history.replaceState(null, '', '/settings')
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')))
+    await waitFor(() => expect(result.current.newSessionPath).toBe('/agent'))
   })
   it('recovers a failed session read by itself and offers no refresh command (D-203)', async () => {
     vi.mocked(inspectorApi.page).mockRejectedValueOnce(new Error('offline'))

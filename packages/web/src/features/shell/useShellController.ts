@@ -4,6 +4,7 @@ import { translate as t } from '../../lib/locale.ts'
 import { navigate, paths, useLocation } from '../../lib/router.tsx'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
+import { projectFromLocation, useCurrentProject } from '../../lib/current-project.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { requestBlockMove, requestBlockReveal } from '../workspace/commands.ts'
 import { workspaceShellState } from '../workspace/shell-state.ts'
@@ -20,6 +21,9 @@ export function useShellController() {
   const [preferences, setPreferences] = useState(readShellPreferences)
   const [paletteOpen, updatePaletteOpen] = useState(false), [modelsRequested, setModelsRequested] = useState(false)
   const sessions = useShellSessions(location)
+  // D-207: a new session opens in the current project (the open session's, else the routed one).
+  const currentProject = useCurrentProject() ?? projectFromLocation(location)
+  const newSessionPath = paths.agent(null, currentProject)
   const unseen = useUnseenSessions(sessions.sessions, location, sessions.reads, !sessions.hasMore && !sessions.omitted && !sessions.error)
   const setPaletteOpen = useCallback((next: boolean) => {
     if (!next) sessions.cancelSearch()
@@ -39,7 +43,7 @@ export function useShellController() {
     return () => window.removeEventListener('keydown', keyboard)
   }, [paletteOpen, setPaletteOpen])
   const commands: ShellCommand[] = [
-    { id: 'new', label: t('shell.new'), execute: () => navigate(paths.agent()) },
+    { id: 'new', label: t('shell.new'), execute: () => navigate(newSessionPath) },
     { id: 'projects', label: t('shell.projects'), execute: () => navigate(paths.projects()) },
     { id: 'models', label: t('shell.models'), execute: () => navigate(paths.launcher()) },
     { id: 'settings', label: t('shell.settings'), execute: () => navigate(paths.settings()) },
@@ -84,7 +88,7 @@ export function useShellController() {
     hasMore: sessions.hasMore, searching: sessions.searchingAll, error: sessions.error,
     refreshFailed: sessions.error && !sessions.paginationReady, omitted: sessions.omitted,
     search: () => { if (!sessions.paginationReady) sessions.reload(); else void sessions.searchAll() }, cancel: sessions.cancelSearch }
-  return { location, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, unseen, workspace, preference, setPreference,
+  return { location, newSessionPath, preferences, setPreferences, paletteOpen, setPaletteOpen, commands, sessionSearch, sessions, unseen, workspace, preference, setPreference,
     togglePin: (id: string) => setPreferences(previous => ({ ...previous, pinned: previous.pinned.includes(id)
       ? previous.pinned.filter(value => value !== id) : [...previous.pinned, id] })) }
 }

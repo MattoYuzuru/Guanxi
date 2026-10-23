@@ -69,6 +69,7 @@ function Shell({
           <ShellSidebar
             rail={shell.preferences.visibility === 'rail'}
             location={shell.location}
+            newSessionPath={shell.newSessionPath}
             sessions={shell.sessions.sessions}
             unseen={shell.unseen}
             pinned={shell.preferences.pinned}

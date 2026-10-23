@@ -11,6 +11,8 @@ import './shell.css'
 export interface ShellSidebarProps {
   rail: boolean
   location: string
+  /** Where "New session" goes: the new-session screen in the current project (D-207). */
+  newSessionPath?: string
   sessions: readonly SessionPageItem[]
   pinned: readonly string[]
   /** Ids of sessions that finished and have not been opened since (derived by the host). */
@@ -50,7 +52,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
     <nav aria-label={t('shell.navigation')}>
       <ul className="shell-nav">
         {CORE.map(item => <li key={item.key}>
-          <Link to={item.to} aria-label={t(`shell.${item.key}`)}
+          <Link to={item.key === 'new' ? props.newSessionPath ?? item.to : item.to} aria-label={t(`shell.${item.key}`)}
             aria-current={coreCurrent(item.key, props.location) ? 'page' : undefined}
             title={props.rail ? t(`shell.${item.key}`) : undefined}
             className="shell-nav-item">

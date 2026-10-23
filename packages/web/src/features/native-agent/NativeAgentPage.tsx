@@ -11,7 +11,11 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { NewSessionScreen } from '../new-session/NewSessionScreen.tsx'
 import { SideChatPanel } from '../side-chat/SideChatPanel.tsx'
 import { nativeApi } from './api.ts'
+import { clearCurrentProject, publishCurrentProject } from '../../lib/current-project.ts'
+import { rememberProject } from '../new-session/recent.ts'
 import { NativeTimeline, useSessionHeading, useSessionTimeline } from './NativeTimeline.tsx'
+
+const CURRENT_PROJECT_WRITER = Symbol('native-session')
 
 const PLAN_ICON = { verification_requested: 'check', active: 'play', pending: 'unknown' } as const
 
@@ -112,6 +116,15 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
     return () => { abort.abort(); clearTimeout(timer); window.removeEventListener('online', wake) }
   }, [sessionId, revision])
   const running = progress?.status === 'running'
+  // Opening a session makes its project the current one (D-207): the shell's New session goes
+  // there, and it becomes the most recent project for the next visit.
+  const sessionProject = progress?.projectId ?? null
+  useEffect(() => {
+    if (!sessionProject) return
+    rememberProject(sessionProject)
+    publishCurrentProject(CURRENT_PROJECT_WRITER, sessionProject)
+    return () => clearCurrentProject(CURRENT_PROJECT_WRITER)
+  }, [sessionProject])
   const messages = useSessionTimeline(sessionId, running, revision)
   const { title, project } = useSessionHeading(sessionId, progress?.projectId ?? null, progress !== null && !running)
   useEffect(() => { if (sideOpen) aside.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus() }, [sideOpen])

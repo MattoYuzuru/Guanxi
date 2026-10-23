@@ -4,6 +4,8 @@ import { NativeAgentPage, NativeProgress } from '../../src/features/native-agent
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import type { AgentProgress } from '@guanxi/contract'
 import { nativeEnglish, nativeRussian } from '../../src/features/native-agent/messages.ts'
+import { RECENT_PROJECTS_KEY } from '../../src/features/new-session/recent.ts'
+import { useCurrentProject } from '../../src/lib/current-project.ts'
 const progress: AgentProgress = { sessionId: 'session', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only',
   status: 'running', plan: [{ text: 'Inspect', status: 'verification_requested' }], queue: [{ id: 'q', text: 'Follow up' }],
   summary: 'Response', error: null, observedAt: '2026-10-21T00:00:00.000Z', source: 'session.log', confidence: 'high' }
@@ -262,6 +264,19 @@ it('the session header is the title with its project as a breadcrumb, not "Sessi
   expect(screen.queryByRole('heading', { name: 'Session progress' })).toBeNull()
 })
 
+it('opening a session makes its project current and most recent, and leaving clears it (P2)', async () => {
+  setActiveLocale('en')
+  const values = new Map<string, string>([[RECENT_PROJECTS_KEY, JSON.stringify(['other'])]])
+  stubTimeline({ title: 'Fix the nightly build', events: [logEvent(1, 'prompt', 'Why does it fail?')] })
+  vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } })
+  function Current() { return <output data-testid="current">{useCurrentProject() ?? 'none'}</output> }
+  const view = render(<><Current /><NativeAgentPage sessionId="session" /></>)
+  await screen.findByRole('heading', { level: 1, name: 'Fix the nightly build' })
+  expect(screen.getByTestId('current').textContent).toBe('p')
+  expect(JSON.parse(values.get(RECENT_PROJECTS_KEY)!)).toEqual(['p', 'other'])
+  view.rerender(<Current />)
+  expect(screen.getByTestId('current').textContent).toBe('none')
+})
 it('without a log title the first prompt names the session, and markdown renders with no literal backticks', async () => {
   setActiveLocale('en')
   stubTimeline({ events: [logEvent(1, 'prompt', 'Pin `libvips` please\nsecond line'), logEvent(2, 'assistant.message', 'Pinned **libvips** in `ci/Dockerfile`.\n\n- step one\n- step two')] })
