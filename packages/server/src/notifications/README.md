@@ -147,9 +147,9 @@ the 13 existing NC1-a rule tests as the regression envelope.
 
 ### Still later
 
-Plugin/boot wiring, HTTP routes and the `packages/contract` schema, the web/desktop
-notification center, real ports for R1 wakes and run pause/resume and K3 role rebinding,
-run-policy automatic reactions with undo, quiet hours, OS/push delivery and the other
+Plugin/boot wiring, HTTP routes and the `packages/contract` schema landed in MS2 (below). The
+web/desktop notification center, real ports for R1 wakes and run pause/resume and K3 role
+rebinding, run-policy automatic reactions with undo, quiet hours, OS/push delivery and the other
 attention kinds remain later NC1 work. NC1 is not complete.
 
 ## NC1-c: delivery planning, quiet hours and channel settings
@@ -260,8 +260,77 @@ producer tests. Each slice's hand-off records its own new / regression split.
 ## Still later
 
 - Settings persistence and the notification-settings UI; per-platform OS adapters; Web Push.
-- Plugin/boot wiring, HTTP routes and `packages/contract` schemas (MS2 wiring lane).
+- Delivery planning has no route or contract yet (the inbox routes landed in MS2, below).
 - Wiring the producers to K5 quota events and K3 balance probe results; Codex window-length
   evidence; local metering for providers without quota APIs; an automatic Claude producer.
 
 NC1 is not complete.
+
+## MS2: plugin, REST routes and wire contract
+
+**Status:** implemented, locally validated · **Updated:** 2026-10-23 · **Scope:** MS2 backend wiring
+
+`plugin.ts` provides `guanxi.notifications` (T0, service `notifications.inbox`). It opens
+`<dataDir>/notifications.sqlite` on load, registers one close effect and starts no timer, interval
+or ingestion. `start()` loads it with the other T0 plugins and mounts `routes.ts` at
+`/api/notifications`. `inbox.ts` (`NotificationInbox`) is the facade routes and kernel callers
+share; `inbox.ingest` is the NC1-b `NotificationService`, so a quota producer feeds facts through
+the kernel service, never over HTTP. `wire.ts` maps stored rows to `@guanxi/contract`
+(`packages/contract/src/notifications.ts`) and drops the account id, idempotency key and window
+instance key.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/notifications?state=&limit=&before=` | Newest first. `state` is a comma list, `limit` 1..200 (default 50), `before` a `nextCursor`. |
+| `GET /api/notifications/actions` | Per action: `available`, `not_configured` or `not_exposed`. |
+| `GET /api/notifications/:id` | One notification. |
+| `POST /api/notifications/:id/read` | Body `{}`. Idempotent; an acted row stays acted. |
+| `POST /api/notifications/:id/snooze` | `{ untilMs }`, strictly in the future. |
+| `POST /api/notifications/:id/actions` | `{ action, args }` with a required `Idempotency-Key` header. |
+
+Boundary rules, each pinned by a test in `packages/server/test/ms2-*.test.ts`:
+
+- **Content-free arguments.** The executable actions are `open`, `accept_recommendation`,
+  `wake_leads`, `switch_connection`, `pause_runs`, `resume_runs` and `snooze`. Arguments are
+  identifiers (`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`), small enums and integers; unknown keys are
+  refused. `add_prompt`, `choose_action` and `raise_budget` carry prompts, free text or money
+  intent, so they are `not_exposed` on the wire and `inbox.execute` refuses them even when a host
+  port exists.
+- **Honest ports.** `open` and `snooze` are built in: their only effect is the inbox state the
+  store commits. Every other action answers `501 not_configured` before any reservation row is
+  written, so the notification stays actionable and nothing is faked. Kernel-level embedders may
+  pass `ports` to the plugin and those actions then become `available`; `start()` exposes none,
+  so in the shipped node every action except `open` and `snooze` answers 501 until a later slice
+  supplies its port.
+- **`wake_leads` is not wired.** R1 `RunStore.signal(attempt, key, 'quota')` needs a fenced child
+  `Attempt` and wakes that child's parent. The run store keeps no index from a connection to the
+  runs that depend on it, so no exact, safe seam exists for ADR-0033's "wake the leads that depend
+  on this connection". It stays `not_configured` until a run-to-connection dependency exists.
+  `switch_connection`, `pause_runs` and `resume_runs` wait for K3 role rebinding and run policy.
+- **Crash recovery.** Built-in ports have no effect outside the store, so a key left `started` is
+  replayed. Any other action needs the host's `hasCompleted` probe; without one the answer is
+  `409 action_outcome_unknown` and nothing is replayed.
+- **Snooze without a timer.** `list`, `get`, `read` and `actions` first move snoozed rows whose
+  deadline passed back to `unread`. A read takes the write lock only when a row is actually due.
+  Replaying a finished `snooze` key answers `duplicate` even after its time has passed.
+- **Results are flat.** A port result reaches the wire as flat scalars only (strings cut at 200
+  characters); nested values are dropped.
+
+Every failure is `{ "code": ... }` only: `validation_failed` 400, `json_required` 415,
+`origin_denied` and `loopback_only` 403, `body_too_large` 413, `idempotency_key_required` 400,
+`notification_not_found` 404 (also for another account's id), `action_not_offered`,
+`notification_acted`, `action_in_progress`, `idempotency_conflict` and `action_outcome_unknown`
+409, `invalid_snooze_time` 422, `port_failed` 502, `not_configured` 501,
+`notifications_unavailable` 503, `internal_error` 500. No message, id or argument is echoed.
+These routes never emit another body shape; the catch-all for unknown `/api/*` paths in `start()`
+keeps its older `{ code, message, details }` shape. The shared guard (`http/local-guard.ts`) requires a loopback peer, a same-origin or configured dev
+`Origin`, `application/json` on mutations and a 2 MiB body budget.
+
+`accountId` is the fixed local owner (`'local'`) and is passed explicitly to every store call, so
+a U3 `can()` check is one call per handler. U3 is not wired.
+
+Evidence: `ms2-notifications-routes.test.ts` (24 tests), the notification parts of
+`ms2-plugins.test.ts`, `ms2-contract.test.ts` and `ms2-guard.test.ts`.
+
+Still later: the notification center UI, OS and push delivery, quota producers calling `ingest`,
+the `wake_leads`, `switch_connection`, `pause_runs` and `resume_runs` ports, run-policy reactions.

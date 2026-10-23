@@ -1,7 +1,7 @@
 # Project work ledger (WG1-a)
 
-**Status:** implemented internal library core, not wired into plugins, routes, contract or web.
-Project mode is **not** a default (D-173). This package is the project-mode core next to the
+**Status:** implemented library core; plugin, REST routes and contract landed in MS2 (see the
+last section); no web UI. Project mode is **not** a default (D-173). This package is the project-mode core next to the
 relay run-mode ledger; the relay is unchanged.
 
 Sources: [ADR-0032](../../../../docs/decisions/0032-work-ledger-board-and-tracker-sync.md),
@@ -190,3 +190,60 @@ query paging stability and export content.
 Residual work is WG1, not this slice: extract to `packages/work`, share the run-mode relay
 ledger, wire the plugin and `work.query` tool, add routes/contract/board UI, run the WL-series
 A/B, and build WG2 tracker sync. `project` mode stays off until that evidence exists.
+
+## MS2: plugin, REST routes and wire contract
+
+**Status:** implemented, locally validated · **Updated:** 2026-10-23 · **Scope:** MS2 backend wiring
+
+`plugin.ts` provides `guanxi.work` (T0, service `work.ledger`). It opens `<dataDir>/work.sqlite`
+on load, registers one close effect and starts no timer, claim or workspace read. `ledger.ts`
+(`WorkLedger`) joins the store to `deriveStatuses`, `query` and `exportMarkdown`; routes mount at
+`/api/work` and `wire.ts` maps to `packages/contract/src/work.ts`.
+
+| Method and path under `/api/work/projects/:projectId` | Purpose |
+| --- | --- |
+| `GET /revision` | Latest plan revision or `{ revision: null }`. |
+| `POST /revisions` | `{ items }`. The author is always `user`; the node numbers the revision. 201. |
+| `POST /events` | A human event: `accepted`, `rejected` or `human_decision`. 201. |
+| `GET /items?status=&cursor=&limit=` | Derived status, reason and evidence per item, paged over the whole graph. No `limit` returns everything (1..1000 when given). |
+| `GET /mode`, `PUT /mode` | `{ mode, reason }`; the default is `off`. |
+| `GET /export` | `{ projectId, revision, markdown }`, built on demand. Nothing is written to disk. |
+
+Rules pinned by tests:
+
+- **Only human evidence is writable.** The body has no `source`, `at` or `projectId`. The ledger
+  sets `source` to `user:<account>` and stamps `at` from the node clock, so HTTP cannot forge
+  `harness:` acceptance results, judge verdicts or `agent:` claims (ADR-0032, D-172). `ledger`
+  also checks that the item exists in the derived graph and that accept and reject target a
+  pending proposal, so a typo cannot leave unattributable evidence in an append-only table.
+  Harness and agent evidence enter through kernel callers of `ledger.store.appendEvent`.
+- **Codes only.** `WorkError` messages quote item ids, cycle paths and commands; responses carry
+  `duplicate_item`, `missing_dependency`, `dependency_cycle`, `invalid_proposal` (422),
+  `revision_not_found`, `item_not_found` (404), `item_canceled` (409), `invalid_cursor`,
+  `cursor_mismatch`, `validation_failed` (400) and the shared guard codes.
+- **Acceptance text is data.** `acceptance` is stored as text the harness may later run. The
+  harness must apply the project's own execution policy before running it; this slice never runs it.
+- **Writes are not idempotent.** `POST /revisions` always creates revision N+1 and has no base
+  revision, and a repeated `human_decision` appends another row. A stale tab or a double submit
+  therefore supersedes or duplicates. An optional `baseRevision` and an idempotency key are later work.
+- **Read shapes carry no caps.** Request items are capped (title 500, acceptance 4000, ids 200
+  characters, safe relative protected paths); responses are not, so a row a kernel caller wrote
+  can never turn a read route into a 500.
+- **Account isolation is a residual.** The WG1-a store is keyed by project id and has no account
+  column. The fixed local account only attributes evidence; per-project authorization is a U3
+  concern (`project.read` and `project.write`), one call per handler.
+
+Evidence: `ms2-work-routes.test.ts` (16 tests), the work parts of `ms2-plugins.test.ts` and
+`ms2-contract.test.ts`.
+
+Still later: the board UI, the `work.query` tool, sharing the run-mode relay ledger, WL-series
+A/B and WG2 tracker sync.
+
+## Residual: unauthenticated human decisions over loopback
+
+`POST /api/work/projects/:id/events` accepts `human_decision` and records it as `user:local`. Any
+process on the host that can reach the loopback listener without an `Origin` header (including a
+local agent's shell) can therefore mark an item `done` as a human override. Harness evidence
+cannot be forged over HTTP (strict schema, server-fixed `source` and `at`), but the human
+attribution is unauthenticated until a per-session UI token or U3 `can()` guards `events` and
+`revisions`. Treat `human_done` as an override, not as harness evidence.

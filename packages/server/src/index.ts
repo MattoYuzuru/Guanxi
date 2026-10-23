@@ -45,6 +45,15 @@ import { createLeadPlugin, type LeadPluginConfig } from './leads/plugin.ts'
 import { relayStartsChildReporter, relayStartsChildStarter } from './leads/children.ts'
 import type { ChildStarter } from './leads/types.ts'
 import { DURABLE_RUNS_SERVICE, type DurableRunsService } from './runs/plugin.ts'
+import { LOCAL_ACCOUNT_ID } from './http/local-guard.ts'
+import { notificationsPlugin, NOTIFICATIONS_SERVICE } from './notifications/plugin.ts'
+import type { NotificationInbox } from './notifications/inbox.ts'
+import { notificationRoutes } from './notifications/routes.ts'
+import { voicePlugin, VOICE_SERVICE, type VoiceGlossary } from './voice/plugin.ts'
+import { glossaryRoutes } from './voice/routes.ts'
+import { workPlugin, WORK_SERVICE } from './work/plugin.ts'
+import type { WorkLedger } from './work/ledger.ts'
+import { workRoutes } from './work/routes.ts'
 import type { ExternalPolicy } from './external-agents/types.ts'
 
 export { RELEASE_BUILD } from './release.ts'
@@ -234,6 +243,18 @@ export async function start(options: StartOptions = {}) {
         return { projectId: id, roots, source: 'native-project-roots+workspace-store', observedAt: Date.now() }
       },
     } })
+    // MS2: three independent sidecars. Loading opens a database and starts nothing else.
+    // A damaged sidecar disables only its own feature: its service stays unregistered and its routes
+    // answer 503 `*_unavailable`; chat, models and every other route keep working.
+    const sidecar = (name: string) => join(dirname(dbPath), name)
+    const optional = async (name: string, load: () => Promise<unknown>) => {
+      try { await load() } catch (error) {
+        process.stderr.write(`guanxi: ${name} sidecar unavailable (${error instanceof Error ? error.name : 'error'})\n`)
+      }
+    }
+    await optional('notifications', () => kernel.node.plugin(notificationsPlugin, { databasePath: sidecar('notifications.sqlite') }))
+    await optional('voice', () => kernel.node.plugin(voicePlugin, { databasePath: sidecar('voice.sqlite') }))
+    await optional('work', () => kernel.node.plugin(workPlugin, { databasePath: sidecar('work.sqlite') }))
     if (options.externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: options.externalAgents })
     if (options.leads) {
       const { alwaysOn: _assertion, relay: relayPolicy, child, ...lead } = options.leads
@@ -279,6 +300,14 @@ export async function start(options: StartOptions = {}) {
     if (!service) throw new RelayError('relay_closed')
     return service.publicStarts
   }, options.devOrigins ?? devOriginsFromEnv(process.env)))
+
+  const localOrigins = options.devOrigins ?? devOriginsFromEnv(process.env)
+  server.route('/api/notifications', notificationRoutes(
+    () => kernel.node.service<NotificationInbox>(NOTIFICATIONS_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
+  server.route('/api/voice/glossary', glossaryRoutes(
+    () => kernel.node.service<VoiceGlossary>(VOICE_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
+  server.route('/api/work', workRoutes(
+    () => kernel.node.service<WorkLedger>(WORK_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
 
   if (options.federation) server.route('/api/federation', federationRoutes(() => {
     const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
