@@ -203,18 +203,20 @@ export class World {
     return home
   }
   /** Start the home, give it the lead scenario and let it load the lead service. */
-  async boot(opts: { crash?: { label: string; nth: number }; restart?: boolean; brief?: LeadDelegateInput; scenario?: Record<string, unknown> } = {}): Promise<HomeProcess> {
+  async boot(opts: { crash?: { label: string; nth: number }; restart?: boolean; briefs?: (world: World) => LeadDelegateInput[]; scenario?: Record<string, unknown> } = {}): Promise<HomeProcess> {
     const home = await this.startHome(opts)
-    if (!opts.restart) this.writeScenario(opts.brief ?? this.brief(), opts.scenario)
+    // The briefs name the executor connection, which the home creates and reports when it is ready.
+    if (!opts.restart) { const briefs = opts.briefs?.(this) ?? [this.brief()]; this.writeScenario(briefs[0]!, { briefs, ...opts.scenario }) }
     home.send({ cmd: 'go' })
     await home.wait('the lead service to load', () => home.find('loaded'))
     return home
   }
   /** Ask the lead to start. Resolves with its run id once the run exists; `first` settles when its first turn does. */
   async startLead(home: HomeProcess, prompt = 'Make the fixture project green'): Promise<{ runId: string; first: Promise<Message> }> {
+    const seen = home.all('lead-started').length
     home.send({ cmd: 'start-lead', prompt })
-    const started = await home.wait('the lead to start', () => home.find('lead-started'))
-    return { runId: started['runId'], first: home.wait('the lead\'s first turn', () => home.find('lead-first')) }
+    const started = await home.wait('the lead to start', () => home.all('lead-started')[seen])
+    return { runId: started['runId'], first: home.wait('the lead\'s first turn', () => home.all('lead-first')[seen]) }
   }
   private onMessage(home: HomeProcess, message: Message) {
     if (message.event !== 'gap') return

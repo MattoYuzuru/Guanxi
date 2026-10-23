@@ -18,19 +18,20 @@ const sum = (rows: Array<{ input_tokens: number }>) => rows.reduce((n, r) => n +
 
 interface GapCheck {
   cycle: number; relay: string; step: number; leadState: string; mirrorState: string; relayState: string; wakes: number; leadLedgerUnchanged: boolean
-  agents: number; pins: string[]; liveLeadAttempts: number
+  agents: number; pins: string[]; liveLeadAttempts: number; pendingTimers: number
 }
 
 test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at zero cost, and wakes exactly once to a green clean checkout', async t => {
   const began = Date.now()
   const checks: GapCheck[] = []
   let lead = '', snapshot = '', previous = START
-  const w = await createWorld(t, { items: 6, gapMs: 75 * MINUTE, onGap: async (gap: Gap, world: World) => {
+  const w = await createWorld(t, { items: 6, gapMs: 75 * MINUTE, leadDeadlineMs: 8 * HOUR, onGap: async (gap: Gap, world: World) => {
     const mirror = world.rows<{ child_id: string }>('SELECT child_id FROM promises WHERE parent_id=?', lead)[0]!.child_id
     checks.push({ cycle: gap.cycle, relay: gap.run, step: gap.now - previous, leadState: world.state(lead), mirrorState: world.state(mirror), relayState: world.state(gap.run),
       wakes: world.wakes(lead).length, leadLedgerUnchanged: JSON.stringify(world.costs(lead)) === snapshot, agents: (await world.agentProcesses()).length,
       pins: world.target.db.prepare('SELECT id FROM federation_streams').all().map(row => String(row['id'])),
-      liveLeadAttempts: world.count("SELECT COUNT(*) AS n FROM run_attempts WHERE run_id=? AND state IN ('delivered','started')", lead) })
+      liveLeadAttempts: world.count("SELECT COUNT(*) AS n FROM run_attempts WHERE run_id=? AND state IN ('delivered','started')", lead),
+      pendingTimers: world.count("SELECT COUNT(*) AS n FROM timers t JOIN promises p ON p.id=t.promise_id WHERE p.parent_id=? AND t.state='pending'", lead) })
     previous = gap.now
   } })
   const home = await w.boot()
@@ -126,6 +127,7 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
     assert.equal(check.leadLedgerUnchanged, true, `cycle ${check.cycle}: its ledger did not move`)
     assert.equal(check.agents, 0, `cycle ${check.cycle}: no lead process`)
     assert.equal(check.liveLeadAttempts, 0)
+    assert.equal(check.pendingTimers, 1, `cycle ${check.cycle}: the 8 h deadline is still pending, not fired`)
     assert.equal(check.mirrorState, 'working'); assert.equal(check.relayState, 'working')
     assert.deepEqual(check.pins, [`relay:${check.relay}`], 'exactly the relay run is pinned on the executor while it works')
   }
@@ -133,6 +135,7 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   // 6. Exactly one wake, a scrubbed bounded packet, and the lead billed only for its own turns.
   assert.deepEqual(w.wakes(lead).map(wake => [wake.kind, wake.acknowledged_at !== null, wake.suppressed_at]), [['resolution', true, null]])
   assert.equal(w.count('SELECT COUNT(*) AS n FROM lead_wakes WHERE run_id=?', lead), 1)
+  assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE session_id=? AND type='agent.note' AND payload LIKE '%wake_packet%'", lead), 1, 'the packet was built once')
   assert.equal(w.wakePrompts().length, 1, 'the agent was prompted with the wake once')
   assert.equal(w.agentEvents().filter(e => e.event === 'turn_end').length, 2, 'the delegating turn and the resumed turn, nothing else')
   assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE session_id=? AND type='run.lifecycle' AND payload LIKE '%\"action\":\"resolved\"%'", lead), 1)
@@ -141,6 +144,7 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.deepEqual(after.slice(0, 1), JSON.parse(snapshot))
   assert.ok(after.every(row => String(row['entry_key']).startsWith('lead-turn:')), 'no relay or remote tokens reached the lead')
   assert.equal(after.reduce((n, row) => n + Number(row['input_tokens']), 0), 2000)
+  assert.equal(w.one('SELECT outcome FROM promises WHERE parent_id=?', lead)!['outcome'], 'completed', 'resolved by the plan finishing, not by the lead\'s 8 h deadline')
   const packetRow = w.one('SELECT packet FROM lead_wakes WHERE run_id=?', lead)!['packet'] as string
   const packet = JSON.parse(packetRow)
   assert.equal(packet.format, 'guanxi.wake/v1'); assert.equal(packet.kind, 'resolution'); assert.equal(packet.outcome, 'completed')
@@ -149,6 +153,8 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   assert.ok(packet.gates.every((gate: { ok: boolean; head: string }) => gate.ok && ledger.head.startsWith(gate.head.replace(/…$/, ''))), 'every gate is for the final head (the packet shortens it)')
   assert.ok(ledger.head.startsWith(String(packet.head).replace(/…$/, ''))); assert.equal(packet.handoff.ref, `relay:${relay}`)
   assert.ok(Math.ceil(Buffer.byteLength(packetRow) / 3) <= 4000, 'the packet fits its token budget')
+  assert.deepEqual(packet.metrics, { cycles: 6, tokens: relayRows.reduce((n, row) => n + row.input_tokens + (row as unknown as { output_tokens: number }).output_tokens, 0), moneyMicros: 0 }, 'the packet reports the relay run\'s own accounting')
+  assert.deepEqual(packet.child.costs, [], 'the lead\'s promise child is a mirror and holds no tokens')
   for (const forbidden of [w.dir, w.project, 'Bearer ', 'PRIVATE_REASONING_FIXTURE', 'model.gguf', 'sandbox-worker'])
     assert.ok(!packetRow.includes(forbidden), `the packet carries no ${forbidden}`)
   const text = String(w.wakePrompts()[0]!['text'])
@@ -162,6 +168,38 @@ test('MS1 gate shape: a lead delegates six items, sleeps six simulated hours at 
   for (const id of [lead, relay, w.rows<{ child_id: string }>('SELECT child_id FROM promises WHERE parent_id=?', lead)[0]!.child_id]) assert.equal(w.state(id), 'completed', id)
   assert.deepEqual(await w.agentProcesses(), [])
   assert.equal(w.count("SELECT COUNT(*) AS n FROM run_attempts WHERE state IN ('delivered','started')"), 0, 'no attempt anywhere is still live')
+  assert.deepEqual(home.all('notice'), [], 'nothing needed a person')
+  // Everything that was composed closes cleanly.
+  home.send({ cmd: 'shutdown' })
+  assert.equal((await Promise.race([home.exited, new Promise<never>((_, reject) => setTimeout(() => reject(new Error('the home did not shut down')), 30_000).unref())])).code, 0)
+})
+
+// ---- The owner's limits bind the lead inside the composition ------------------------------------------------------------
+
+test('the owner\'s limits and executor allow-list bind the lead in the composed node: a refused brief hibernates nothing and starts no relay', async t => {
+  const w = await createWorld(t, { items: 2 })
+  const cases: Array<[string, (w: World) => ReturnType<World['brief']>, RegExp]> = [
+    ['a larger money cap than the owner allows', w => w.brief({ caps: { ...w.brief().caps, moneyMicros: 5_000_000 } }), /delegation_exceeds_policy: (caps\.)?moneyMicros/],
+    ['no wall cap at all', w => w.brief({ caps: { ...w.brief().caps, wallMs: null } }), /delegation_exceeds_policy: (caps\.)?wallMs/],
+    ['a deadline beyond the owner\'s', w => w.brief({ deadlineMs: 100 * HOUR }), /delegation_exceeds_policy: deadlineMs/],
+    ['detaching from the run', w => w.brief({ onCancel: 'detach' }), /delegation_exceeds_policy: onCancel/],
+    ['an executor the owner never allowed', w => w.brief({ executor: { connectionId: w.executorConnection, model: 'some-other-model' } }), /executor_not_allowed/],
+  ]
+  const home = await w.boot({ briefs: world => cases.map(([, make]) => make(world)) })
+  for (const [index, [what, , expected]] of cases.entries()) {
+    const { runId, first } = await w.startLead(home, `refused delegation ${index}`)
+    // Each lead's first turn ends by itself: the tool answered with an error and nothing was stopped.
+    await until(() => w.state(runId) === 'completed', `lead ${index} to finish`, 60_000)
+    const answer = w.agentEvents().filter(e => e.event === 'tool_answer')[index]!
+    assert.equal(answer['isError'], true, what)
+    assert.match(String(answer['text']), expected, what)
+    assert.equal(w.count('SELECT COUNT(*) AS n FROM promises WHERE parent_id=?', runId), 0, `${what}: nothing was delegated`)
+    void first.catch(() => undefined)
+  }
+  assert.deepEqual(w.relayStarts(), [], 'no relay start')
+  assert.equal(await w.fake.count('/completion'), 0, 'no inference')
+  assert.deepEqual(w.requests, [], 'the executor was never contacted')
+  assert.equal(w.count('SELECT COUNT(*) AS n FROM lead_delegations'), 0)
 })
 
 // ---- The recorded MS1 blocker: the R3 judge cannot observe a remote relay ------------------------------------------------
@@ -295,6 +333,7 @@ for (const crash of crashes) {
     const stored = w.rows('SELECT packet,packet_hash FROM lead_wakes WHERE run_id=?', lead)
     assert.equal(stored.length, 1)
     if (before.wakeRows.length) assert.deepEqual(stored, before.wakeRows, 'a packet stored before the kill is delivered unchanged')
+    assert.equal(w.count("SELECT COUNT(*) AS n FROM session_events WHERE session_id=? AND type='agent.note' AND payload LIKE '%wake_packet%'", lead), 1, 'the packet was built once')
     assert.equal(w.count('SELECT COUNT(*) AS n FROM promises WHERE parent_id=?', lead), 1, 'one delegation')
     assert.equal(w.count('SELECT COUNT(*) AS n FROM durable_runs WHERE parent_id=?', lead), 1, 'one mirror child')
     const prompts = w.wakePrompts().length
