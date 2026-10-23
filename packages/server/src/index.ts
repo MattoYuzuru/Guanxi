@@ -20,6 +20,8 @@ import { accessSync, constants, existsSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
+import { Hono } from 'hono'
+import { hostAllowlist } from './http/host-allowlist.ts'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { PRODUCT_NAME } from '@guanxi/contract'
 import { createApp } from './app.ts'
@@ -230,12 +232,14 @@ export async function start(options: StartOptions = {}) {
   // mix is a boot error, never a node that silently runs without its pairing.
   if (options.ms1Live && (options.federation || options.relay || options.operationalRelay)) throw new Ms1LiveError('option_conflict', 'federation|relay|operationalRelay')
   const live = options.ms1Live ? Ms1LiveNode.create(options.ms1Live) : null
-  if (live?.hasLead && (options.externalAgents || options.leads)) throw new Ms1LiveError('option_conflict', 'externalAgents|leads')
-  const port = options.port ?? apiPortFromEnv(process.env, live?.settings.listen?.port ?? DEFAULT_PORT)
+  const refuseLive = async (code: string, field: string): Promise<never> => { await live?.close(); throw new Ms1LiveError(code, field) }
+  if (live?.hasLead && (options.externalAgents || options.leads)) await refuseLive('option_conflict', 'externalAgents|leads')
+  const port = options.port ?? apiPortFromEnv(process.env, live?.settings.listen.port ?? DEFAULT_PORT)
   let actualPort = port
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   // The pairing's only link is a loopback port forward: the node never listens elsewhere in this mode.
-  if (live && !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) throw new Ms1LiveError('listen_not_loopback', 'host')
+  if (live && !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) await refuseLive('listen_not_loopback', 'host')
+  if (live && port === live.federationPort) await refuseLive('ports_collide', 'listen')
   const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
 
   // The governor, the Ollama adapter (K1), the egress scrubber and the session
@@ -372,7 +376,7 @@ export async function start(options: StartOptions = {}) {
     host, port: () => actualPort,
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
-    layouts: options.federation || live ? () => {
+    layouts: options.federation ? () => {
       const federation = kernel.node.service<Federation>(FEDERATION_SERVICE)
       if (!federation) throw new FederationError('federation_unavailable', 503)
       return federation.layouts
@@ -403,7 +407,7 @@ export async function start(options: StartOptions = {}) {
   server.route('/api/work', workRoutes(
     () => kernel.node.service<WorkLedger>(WORK_SERVICE), LOCAL_ACCOUNT_ID, localOrigins))
 
-  if (options.federation || live) server.route('/api/federation', federationRoutes(() => {
+  if (options.federation) server.route('/api/federation', federationRoutes(() => {
     const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
     if (!service) throw new FederationError('federation_unavailable', 503)
     return service
@@ -416,6 +420,16 @@ export async function start(options: StartOptions = {}) {
 
   mountWeb(server, options.webDir ?? resolve(here, '../../web/dist'))
 
+  const abortStart = async () => {
+    await context.maintenance?.close().catch(() => undefined)
+    await context.chatExecution.shutdown().catch(() => undefined)
+    context.jobService.closeSubscriptions()
+    context.sessionLog?.closeSubscriptions()
+    await kernel.node.dispose().catch(() => undefined)
+    await operationalRelay?.close().catch(() => undefined)
+    await live?.close().catch(() => undefined)
+    context.db.close()
+  }
   let instance!: ReturnType<typeof serve>
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {
@@ -427,15 +441,37 @@ export async function start(options: StartOptions = {}) {
       instance.once('error', onError)
     })
   } catch (error) {
-    await context.maintenance?.close().catch(() => undefined)
-    await context.chatExecution.shutdown().catch(() => undefined)
-    context.jobService.closeSubscriptions()
-    context.sessionLog?.closeSubscriptions()
-    await kernel.node.dispose().catch(() => undefined)
-    await operationalRelay?.close().catch(() => undefined)
-    await live?.close().catch(() => undefined)
-    context.db.close()
+    await abortStart()
     throw error
+  }
+  // MS1 live mode: the signed node-to-node API has its own loopback listener and nothing else. The operator's ssh forward reaches
+  // this port only, so the owner API (workspaces, projects, relay starts, connections) is never reachable through the link.
+  let federationInstance: ReturnType<typeof serve> | undefined
+  if (live) {
+    const federationServer = new Hono()
+    federationServer.use('*', hostAllowlist({ host, port: live.federationPort }))
+    federationServer.route('/api/federation', federationRoutes(() => {
+      const service = kernel.node.service<Federation>(FEDERATION_SERVICE)
+      if (!service) throw new FederationError('federation_unavailable', 503)
+      return service
+    }))
+    federationServer.all('*', c => c.json({ code: 'not_found' }, 404))
+    try {
+      await new Promise<void>((resolveListening, reject) => {
+        const onError = (error: Error) => reject(error)
+        federationInstance = serve({ fetch: federationServer.fetch, port: live.federationPort, hostname: host }, () => {
+          federationInstance!.off('error', onError)
+          resolveListening()
+        })
+        federationInstance.once('error', onError)
+      })
+    } catch (error) {
+      instance.close()
+      await abortStart()
+      throw error
+    }
+    // After both listeners are up: an executor hashes its model now, not inside the first relay's freshness window.
+    if (live.role === 'executor') void live.startWarming()
   }
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   const url = `http://${browserHost}:${actualPort}`
@@ -448,6 +484,10 @@ export async function start(options: StartOptions = {}) {
       // enough to observe their truthful internal-shutdown terminal event.
       const listenerClosed = new Promise<void>((resolveClose) => {
         instance.close(() => resolveClose())
+      })
+      const federationClosed = new Promise<void>((resolveClose) => {
+        if (federationInstance) federationInstance.close(() => resolveClose())
+        else resolveClose()
       })
       let shutdownError: unknown = null
       try {
@@ -465,6 +505,7 @@ export async function start(options: StartOptions = {}) {
         // Inspector streams are open-ended; end them so the listener can close.
         context.sessionLog?.closeSubscriptions()
         await listenerClosed
+        await federationClosed
         // Unload plugins before the database they may use is closed. Each
         // plugin cleanup is bounded by the kernel's step timeout; the HTTP
         // listener close above is not bounded (it waits for open responses).

@@ -9,7 +9,7 @@ export const PEER_FORMAT = 'guanxi.ms1-live.peer/v1'
 /** The minimum an F2-d pairing needs: `attempts` covers offers, dispatch, renewals, events and the relay runtime messages;
  * `replicas` is what the executor's relay-run pin (a replica-stream binding) requires of both identities. */
 export const MS1_SCOPES: NodeIdentity['scopes'] = ['attempts', 'replicas']
-export interface PeerFile { format: typeof PEER_FORMAT; identity: NodeIdentity; /** Informational: the port that node listens on, so the other side can check its forward. */ port?: number }
+export interface PeerFile { format: typeof PEER_FORMAT; identity: NodeIdentity; /** Informational: the federation port that node listens on, so the other side can check its forward. */ federationPort?: number }
 
 /** Private key bytes live in this object only for the life of a call; nothing here prints or serialises them. */
 export interface NodeCredentials { identity: NodeIdentity; privateKey: string }
@@ -36,12 +36,12 @@ export interface InitResult {
 const FILES = { identity: 'identity.json', offer: 'peer-offer.json', key: 'node.key', config: 'ms1-live.json' } as const
 
 /** Writes a fresh node identity. Never replaces an existing key or configuration: re-pairing means a new directory. */
-export function initNode(dir: string, options: { role: 'home' | 'executor'; id?: string; accountId?: string; port?: number; config: (paths: { identityFile: string; privateKeyFile: string }) => unknown }): InitResult {
+export function initNode(dir: string, options: { role: 'home' | 'executor'; id?: string; accountId?: string; federationPort?: number; config: (paths: { identityFile: string; privateKeyFile: string }) => unknown }): InitResult {
   const root = resolve(dir)
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const privateKeyFile = join(root, FILES.key), identityFile = join(root, FILES.identity), peerOffer = join(root, FILES.offer), configFile = join(root, FILES.config)
   const credentials = createNodeCredentials(options)
-  const file: PeerFile = { format: PEER_FORMAT, identity: credentials.identity, ...(options.port ? { port: options.port } : {}) }
+  const file: PeerFile = { format: PEER_FORMAT, identity: credentials.identity, ...(options.federationPort ? { federationPort: options.federationPort } : {}) }
   try {
     // `wx` fails if the key exists: an existing identity is pinned in the peer's database and in this node's.
     writeFileSync(privateKeyFile, credentials.privateKey, { mode: 0o600, flag: 'wx' })
@@ -61,14 +61,14 @@ function readJson(path: string, unreadable: string, invalid: string): unknown {
   try { text = readFileSync(path, 'utf8') } catch { throw new Ms1LiveError(unreadable) }
   try { return JSON.parse(text) } catch { throw new Ms1LiveError(invalid) }
 }
-export function readPeerFileFull(path: string, unreadable = 'peer_unreadable', invalid = 'peer_invalid'): { identity: NodeIdentity; port: number | null } {
+export function readPeerFileFull(path: string, unreadable = 'peer_unreadable', invalid = 'peer_invalid'): { identity: NodeIdentity; federationPort: number | null } {
   const raw = readJson(path, unreadable, invalid) as Partial<PeerFile> | null
   if (!raw || typeof raw !== 'object' || raw.format !== PEER_FORMAT) throw new Ms1LiveError(invalid)
   const parsed = nodeIdentitySchema.safeParse(raw.identity)
   if (!parsed.success) throw new Ms1LiveError(invalid)
-  const port = raw.port
+  const port = raw.federationPort
   if (port !== undefined && !(Number.isInteger(port) && port >= 1 && port <= 65535)) throw new Ms1LiveError(invalid)
-  return { identity: parsed.data, port: port ?? null }
+  return { identity: parsed.data, federationPort: port ?? null }
 }
 export function readPeerFile(path: string, unreadable = 'peer_unreadable', invalid = 'peer_invalid'): NodeIdentity {
   return readPeerFileFull(path, unreadable, invalid).identity
@@ -89,15 +89,19 @@ export function readPrivateKey(path: string, identity: NodeIdentity): string {
   return pem
 }
 
-export interface PairedCredentials { local: NodeCredentials; peer: NodeIdentity; peerPort: number | null }
+/** Exactly `MS1_SCOPES`, in any order, without repeats. */
+export const sameScopes = (scopes: readonly string[]): boolean => scopes.length === MS1_SCOPES.length && MS1_SCOPES.every(scope => scopes.includes(scope)) && new Set(scopes).size === scopes.length
+export interface PairedCredentials { local: NodeCredentials; peer: NodeIdentity; peerFederationPort: number | null }
 /** Everything a node needs to take part: its own pair and the peer's pinned public identity, checked against each other. */
 export function readCredentials(settings: Pick<Ms1LiveSettings, 'node' | 'peer'>): PairedCredentials {
   const identity = readPeerFile(settings.node.identityFile, 'identity_unreadable', 'identity_invalid')
   const privateKey = readPrivateKey(settings.node.privateKeyFile, identity)
-  const { identity: peer, port: peerPort } = readPeerFileFull(settings.peer.identityFile)
+  const { identity: peer, federationPort: peerFederationPort } = readPeerFileFull(settings.peer.identityFile)
   if (peer.id === identity.id || peer.publicKey === identity.publicKey) throw new Ms1LiveError('peer_is_self')
   if (peer.accountId !== identity.accountId) throw new Ms1LiveError('account_mismatch')
   if (peer.trust !== 'owner_device' || identity.trust !== 'owner_device') throw new Ms1LiveError('peer_not_owner_device')
-  if (![peer, identity].every(node => MS1_SCOPES.every(scope => node.scopes.includes(scope)))) throw new Ms1LiveError('peer_scope_missing')
-  return { local: { identity, privateKey }, peer, peerPort }
+  // Exactly the pairing's privileges, on both sides: a peer file that carries more (config sync, commands, telemetry, admin) is
+  // a peer file somebody edited, and it would be pinned with that authority.
+  if (![peer, identity].every(node => !node.admin && sameScopes(node.scopes))) throw new Ms1LiveError('peer_scope_invalid')
+  return { local: { identity, privateKey }, peer, peerFederationPort }
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import { FEDERATION_VERSION } from '@guanxi/contract/federation'
 import { canonical, FederationError, requestProof, signValue } from '../federation/crypto.ts'
 import { RelayError } from '../relay/types.ts'
@@ -31,7 +32,10 @@ export async function step(id: string, body: () => Promise<Check>, explain: (err
 
 /** Maps what can go wrong on the way to a peer onto a cause an operator can act on. Never includes message text or a key. */
 export function explainError(error: unknown): Omit<Check, 'id' | 'status'> & { code: string } {
-  if (error instanceof Ms1LiveError) return { code: error.code, summary: describeConfigError(error) }
+  if (error instanceof Ms1LiveError) {
+    if (error.code === 'peer_not_guanxi') return { code: 'peer_not_guanxi', summary: 'Something answered that is not a Guanxi node.', fix: 'Check which process the forward points at.' }
+    return { code: error.code, summary: describeConfigError(error) }
+  }
   if (error instanceof FederationError) {
     if (error.code === 'peer_refused') {
       switch (error.status) {
@@ -92,20 +96,22 @@ export function describeConfigError(error: Ms1LiveError): string {
     private_key_invalid: 'The private key file is not a valid Ed25519 PKCS8 key.', key_identity_mismatch: 'The private key does not belong to the public identity.',
     peer_unreadable: 'The peer file cannot be read.', peer_invalid: 'The peer file is not a valid peer-offer.json.', peer_is_self: 'The peer file is this node\'s own identity.',
     account_mismatch: 'The two nodes belong to different accounts.', peer_not_owner_device: 'Both nodes must be owner devices.',
-    peer_scope_missing: 'Both identities need the "attempts" and "replicas" scopes.', option_conflict: 'This option cannot be combined with another one that was also given.',
+    peer_scope_invalid: 'Both identities must carry exactly the attempts and replicas scopes and no admin right.',
+    config_path_not_absolute: 'This path must be absolute.', unattended_unavailable: 'The connections policy does not allow unattended access, which the relay\'s connection needs.', option_conflict: 'This option cannot be combined with another one that was also given.',
     listen_not_loopback: 'In this mode the node listens on loopback only.', connection_conflict: 'A connection of that name exists but is not what this mode needs.',
     already_initialized: 'This directory already holds a node identity; an identity is never replaced.', model_invalid: 'The model reference is not usable.',
   }
   return `${text[error.code] ?? `Configuration problem: ${error.code}.`}${where}`
 }
 
-/** What an unauthenticated GET of the federation API says about whatever sits behind a loopback port. */
+/** What an unauthenticated GET of the federation API says about whatever sits behind a loopback port. The `code` comes from the
+ * other end of the link: it is shown only when it is a plain machine code, never as free text. */
 export type Probe = { kind: 'refused' } | { kind: 'timeout' } | { kind: 'status'; status: number; code: string | null }
 export async function probeFederation(base: string, timeoutMs = 5_000, transport: typeof fetch = globalThis.fetch): Promise<Probe> {
   try {
     const response = await transport(`${base}/api/federation/handshake`, { redirect: 'error', signal: AbortSignal.timeout(timeoutMs) })
     const body = await response.json().catch(() => null) as { code?: unknown } | null
-    return { kind: 'status', status: response.status, code: typeof body?.code === 'string' ? body.code : null }
+    return { kind: 'status', status: response.status, code: typeof body?.code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(body.code) ? body.code : null }
   } catch (error) { return error instanceof Error && error.name === 'TimeoutError' ? { kind: 'timeout' } : { kind: 'refused' } }
 }
 /** Interprets a probe: reachable Guanxi federation answers 401 `unauthenticated` to an unsigned request. */
@@ -119,7 +125,9 @@ export function explainProbe(id: string, probe: Probe, what: string): Check {
     'Check which process the forward points at.')
 }
 
-export interface Handshake { version: { major: number; minor: number }; negotiated: { major: number; minor: number }; readOnly: boolean; capabilities?: string[] }
+const handshakeSchema = z.object({ version: z.object({ major: z.number().int(), minor: z.number().int() }).strict(), negotiated: z.object({ major: z.number().int(), minor: z.number().int() }).strict(),
+  readOnly: z.boolean(), capabilities: z.array(z.string().max(100)).max(50).optional() }).strict()
+export type Handshake = z.infer<typeof handshakeSchema>
 /** A signed GET of the peer's handshake: proves our key is accepted and lists what the peer offers. */
 export async function signedHandshake(options: { base: string; nodeId: string; peerId: string; privateKey: string; timeoutMs: number; transport?: typeof fetch }): Promise<Handshake> {
   const route = '/api/federation/handshake'
@@ -127,5 +135,8 @@ export async function signedHandshake(options: { base: string; nodeId: string; p
   auth.signature = signValue(options.privateKey, requestProof('GET', route, null, auth))
   const response = await (options.transport ?? globalThis.fetch)(options.base + route, { headers: { 'X-Guanxi-Node': canonical(auth) }, redirect: 'error', signal: AbortSignal.timeout(options.timeoutMs) })
   if (!response.ok) throw new FederationError('peer_refused', response.status)
-  return await response.json() as Handshake
+  // A 200 that is not a Guanxi handshake is not an answer from a node: it is whatever else listens there.
+  const parsed = handshakeSchema.safeParse(await response.json().catch(() => null))
+  if (!parsed.success) throw new Ms1LiveError('peer_not_guanxi')
+  return parsed.data
 }

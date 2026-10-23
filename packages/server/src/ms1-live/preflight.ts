@@ -104,6 +104,7 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
         }
       }))
     }
+    if (options.completion) checks.push(skip('completion', 'Only an executor runs a generation: use --completion on the executor.'))
     return finish(settings, checks, found, clock)
   }
 

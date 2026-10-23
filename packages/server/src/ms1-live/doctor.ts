@@ -8,7 +8,7 @@ import { LlamaServerClient } from '../runtime/llama-server/client.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { explainProbe, fail, ok, probeFederation, skip, step, warn, type Check } from './checks.ts'
 import { loadMs1LiveConfig, MS1_LIVE_CONFIG_ENV, type Ms1LiveSettings } from './config.ts'
-import { MS1_SCOPES, readPeerFileFull, readPrivateKey } from './identity.ts'
+import { MS1_SCOPES, readPeerFileFull, readPrivateKey, sameScopes } from './identity.ts'
 
 const exec = promisify(execFile)
 export interface DoctorReport { ok: boolean; config: string | null; role: string | null; checks: Check[] }
@@ -39,21 +39,21 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
   const s = settings
   let identityId = '', accountId = '', peerId = '', peerAccount = ''
   let identityKey = '', peerKey = ''
-  let scopes: string[] = [], peerScopes: string[] = [], trust = '', peerTrust = ''
-  let peerPort: number | null = null
+  let scopes: string[] = [], peerScopes: string[] = [], trust = '', peerTrust = '', admin = false, peerAdmin = false
+  let peerFederationPort: number | null = null
 
   checks.push(await step('identity', async () => {
     const { identity } = readPeerFileFull(s.node.identityFile, 'identity_unreadable', 'identity_invalid')
-    identityId = identity.id; accountId = identity.accountId; identityKey = identity.publicKey; scopes = identity.scopes; trust = identity.trust
+    identityId = identity.id; accountId = identity.accountId; identityKey = identity.publicKey; scopes = identity.scopes; trust = identity.trust; admin = identity.admin
     return ok('identity', `This node is ${identity.id} (account ${identity.accountId}).`, { nodeId: identity.id, accountId: identity.accountId })
   }))
   checks.push(!identityId ? skip('private_key', 'Skipped: no usable identity.') : await step('private_key', async () => {
-    readPrivateKey(s.node.privateKeyFile, { id: identityId, accountId, publicKey: identityKey, trust: trust as 'owner_device', admin: false, scopes: scopes as typeof MS1_SCOPES })
+    readPrivateKey(s.node.privateKeyFile, { id: identityId, accountId, publicKey: identityKey, trust: trust as 'owner_device', admin, scopes: scopes as typeof MS1_SCOPES })
     return ok('private_key', 'The private key is a private file and belongs to the identity.')
   }))
   checks.push(await step('peer_file', async () => {
-    const { identity, port } = readPeerFileFull(s.peer.identityFile)
-    peerId = identity.id; peerAccount = identity.accountId; peerKey = identity.publicKey; peerScopes = identity.scopes; peerTrust = identity.trust; peerPort = port
+    const { identity, federationPort: port } = readPeerFileFull(s.peer.identityFile)
+    peerId = identity.id; peerAccount = identity.accountId; peerKey = identity.publicKey; peerScopes = identity.scopes; peerTrust = identity.trust; peerFederationPort = port; peerAdmin = identity.admin
     return ok('peer_file', `The peer is ${identity.id} (account ${identity.accountId}).`, { peerId: identity.id, accountId: identity.accountId })
   }, error => {
     const found = (error as { code?: string }).code
@@ -65,25 +65,25 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
     if (peerId === identityId || peerKey === identityKey) problems.push('the peer file is this node\'s own identity')
     if (peerAccount !== accountId) problems.push(`the accounts differ (${accountId} here, ${peerAccount} there)`)
     if (peerTrust !== 'owner_device' || trust !== 'owner_device') problems.push('both nodes must be owner_device')
-    if (![peerScopes, scopes].every(have => MS1_SCOPES.every(scope => have.includes(scope)))) problems.push('both identities need the attempts and replicas scopes')
+    if (![peerScopes, scopes].every(sameScopes)) problems.push('both identities must carry exactly the attempts and replicas scopes (an edited peer file with more is refused)')
+    if (admin || peerAdmin) problems.push('neither identity may be an admin')
     checks.push(problems.length ? fail('pairing', 'pairing_invalid', `The two identities do not pair: ${problems.join('; ')}.`,
       'Initialise both nodes with the same --account and exchange the peer-offer.json files; do not edit an identity by hand.')
-      : ok('pairing', 'The identities pair (same account, owner devices, attempts and replicas scopes).'))
+      : ok('pairing', 'The identities pair (same account, owner devices, exactly the attempts and replicas scopes, no admin).'))
   } else checks.push(skip('pairing', 'Skipped: an identity is missing.'))
 
-  // Ports: the peer checks the Host header against its own listening port, so a forward must keep the number.
-  const own = options.env ? apiPortFromEnv(options.env, s.listen?.port ?? 4310) : apiPortFromEnv(env, s.listen?.port ?? 4310)
-  const peerUrlPort = Number(new URL(s.peer.url).port)
-  if (!s.listen && !env['GUANXI_API_PORT']) checks.push(warn('listen', 'listen_port_unset', `listen.port is not set: the node would listen on ${own}, and the peer must forward exactly that number.`, 'Set "listen": {"port": N} in the configuration.'))
-  else checks.push(ok('listen', `This node listens on 127.0.0.1:${own}; the peer must reach it through a forward of the same port number.`, { port: own }))
-  if (peerPort !== null && peerPort !== peerUrlPort) {
-    checks.push(fail('forward_port', 'forward_port_mismatch', `peer.url uses port ${peerUrlPort}, but the peer file says that node listens on ${peerPort}.`,
-      `Forward the same number on both ends (ssh -L ${peerPort}:127.0.0.1:${peerPort}) and set peer.url to http://127.0.0.1:${peerPort}.`))
-  } else checks.push(ok('forward_port', `peer.url port ${peerUrlPort}${peerPort === null ? ' (the peer file does not state its port)' : ' matches the peer file'}.`))
-  const ownProbe = await probeFederation(`http://127.0.0.1:${own}`, 2_000, options.transport)
-  checks.push(ownProbe.kind === 'refused' ? ok('own_port', `Port ${own} is free: this node is not running.`)
-    : ownProbe.kind === 'status' && ownProbe.status === 401 ? ok('own_port', `A Guanxi node already listens on port ${own} (this node, if it was started with this configuration).`)
-    : warn('own_port', 'own_port_in_use', `Something other than a Guanxi federation endpoint answers on port ${own}.`, 'Choose another listen.port, or stop that process.'))
+  // Ports. The owner API port is never forwarded; the federation port is, and the peer checks Host against the port it listens on.
+  const api = apiPortFromEnv(env, s.listen.port ?? 4310), fed = s.listen.federationPort, peerUrlPort = Number(new URL(s.peer.url).port)
+  checks.push(api === fed ? fail('listen', 'ports_collide', `The owner API and the federation listener are both configured for port ${api}.`, 'Give listen.federationPort its own number.')
+    : ok('listen', `Owner API on 127.0.0.1:${api} (never forwarded); federation on 127.0.0.1:${fed} (the one the peer's ssh forward must reach, as the same number).`, { apiPort: api, federationPort: fed }))
+  if (peerFederationPort !== null && peerFederationPort !== peerUrlPort) {
+    checks.push(fail('forward_port', 'forward_port_mismatch', `peer.url uses port ${peerUrlPort}, but the peer file says that node's federation listener is on ${peerFederationPort}.`,
+      `Forward the same number on both ends (ssh -L ${peerFederationPort}:127.0.0.1:${peerFederationPort}) and set peer.url to http://127.0.0.1:${peerFederationPort}.`))
+  } else checks.push(ok('forward_port', `peer.url port ${peerUrlPort}${peerFederationPort === null ? ' (the peer file does not state its federation port)' : ' matches the peer file'}.`))
+  const ownProbe = await probeFederation(`http://127.0.0.1:${fed}`, 2_000, options.transport)
+  checks.push(ownProbe.kind === 'refused' ? ok('own_port', `Federation port ${fed} is free: this node is not running.`)
+    : ownProbe.kind === 'status' && ownProbe.status === 401 ? ok('own_port', `A Guanxi federation listener already answers on port ${fed} (this node, if it was started with this configuration).`)
+    : warn('own_port', 'own_port_in_use', `Something other than a Guanxi federation endpoint answers on port ${fed}.`, 'Choose another listen.federationPort, or stop that process.'))
   const peerProbe = explainProbe('peer_reachable', await probeFederation(s.peer.url, 3_000, options.transport), s.peer.url)
   checks.push(peerProbe.status === 'fail' && ['peer_unreachable', 'peer_timeout'].includes(peerProbe.code ?? '')
     ? warn('peer_reachable', peerProbe.code!, `${peerProbe.summary} (fine before the peer and the ssh forward are up)`, peerProbe.fix) : peerProbe)

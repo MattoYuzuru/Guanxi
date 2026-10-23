@@ -33,6 +33,7 @@ export function loopbackBase(value: string, field: string): string {
 
 const positive = z.number().int().positive().safe()
 const path = z.string().min(1)
+const absolutePath = z.string().min(1).refine(value => isAbsolute(value), 'path_not_absolute')
 const loopbackUrl = (field: string) => z.string().min(1).superRefine((value, ctx) => {
   try { loopbackBase(value, field) } catch { ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'url_not_loopback' }) }
 })
@@ -40,8 +41,11 @@ const caps = z.object({ cycles: positive, tokens: positive, moneyMicros: z.numbe
 
 /** Timing of the node-to-node dispatch protocol. Every value is a named policy, not a guess made by the code. */
 const linkSchema = z.object({
-  /** One signed request over the forwarded link. The first observation on an executor hashes the GGUF: allow minutes. */
+  /** Observe and count requests. The first observation on an executor hashes the whole GGUF: allow minutes. */
   requestTimeoutMs: positive.default(15 * 60_000),
+  /** Every other signed message (handshake, offer, dispatch, renewal, result, cancel, pin). A half-open forward must not hold a
+   * renewal for longer than the holder TTL it is meant to keep alive. */
+  messageTimeoutMs: positive.default(15_000),
   /** Dispatch holder TTL: how long an executor may keep computing without a renewal from the home. */
   holderTtlMs: positive.default(30_000),
   /** Subtracted from the holder TTL on the executor. Must be under half of the TTL. */
@@ -70,11 +74,11 @@ const homeSchema = z.object({
   lead: z.object({
     adapter: z.literal('claude-code'),
     /** Absolute path of the operator-installed ACP bridge (`@agentclientprotocol/claude-agent-acp`). */
-    bridge: path,
+    bridge: absolutePath,
     /** Exact version the bridge reports in ACP `agentInfo`. */
     bridgeVersion: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/),
-    /** The owner's unmodified Claude Code CLI. */
-    claudeExecutable: path,
+    /** The owner's unmodified Claude Code CLI (absolute path). */
+    claudeExecutable: absolutePath,
     /** Opaque grouping key for the vendor account (K5). */
     billingAccount: z.string().min(1).default('claude-code-account'),
     /** ACP model the lead role is bound to. */
@@ -110,8 +114,10 @@ export const ms1LiveConfigSchema = z.object({
     /** Where the other node's federation API is reachable from here: this side of the SSH forward. */
     url: loopbackUrl('peer.url'),
   }).strict(),
-  /** This node's own federation/API port on its loopback. `GUANXI_API_PORT` overrides it. The peer's `peer.url` port must be this one. */
-  listen: z.object({ port: z.number().int().min(1).max(65535) }).strict().optional(),
+  /** Where this node listens, on loopback. The **federation port** serves nothing but the signed node-to-node API and is the one
+   * port the operator forwards over ssh: the owner API (`port`, `GUANXI_API_PORT` overrides) is never forwarded. The peer's
+   * `peer.url` port must be this node's federation port (the peer checks Host against the port it listens on). */
+  listen: z.object({ federationPort: z.number().int().min(1).max(65535), port: z.number().int().min(1).max(65535).optional() }).strict(),
   /** The one model reference the executor's llama-server serves (its `--alias`). */
   model: z.string().min(1),
   link: linkSchema,

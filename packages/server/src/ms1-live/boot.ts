@@ -55,7 +55,7 @@ export class Ms1LiveNode {
   private leadConnection = ''
   private warm: Ms1LiveWarmState
   private readonly lifetime = new AbortController()
-  private warming: Promise<void> = Promise.resolve()
+  private warming: Promise<Ms1LiveWarmState> | null = null
   private closed = false
 
   private constructor(settings: Ms1LiveSettings, credentials: PairedCredentials) {
@@ -66,7 +66,7 @@ export class Ms1LiveNode {
     if (!model || /:cloud$/i.test(settings.model)) throw new Ms1LiveError('model_invalid', 'model')
     this.model = model
     this.channel = new FederationChannel({ local: this.identity, privateKey: this.#privateKey, peer: this.peer,
-      transport: loopbackTransport({ base: settings.peer.url, timeoutMs: settings.link.requestTimeoutMs }) })
+      transport: loopbackTransport({ base: settings.peer.url, timeoutMs: settings.link.requestTimeoutMs, messageTimeoutMs: settings.link.messageTimeoutMs }) })
     // Attach mode only: this node owns no llama-server process, signals none and runs none. `create` does no I/O.
     this.llama = settings.role === 'executor'
       ? LlamaServerHost.create({ kind: 'attach', baseUrl: settings.executor!.llamaServer.baseUrl, model: settings.model,
@@ -82,6 +82,8 @@ export class Ms1LiveNode {
   peerChannel(): FederationChannel { return this.channel }
   /** A home asserts that it stays awake: R1 refuses remote attempts and lead hibernation otherwise. */
   get alwaysOn(): boolean { return this.role === 'home' && this.settings.home?.alwaysOn === true }
+  /** The loopback port of this node's federation listener: the only port the operator forwards. */
+  get federationPort(): number { return this.settings.listen.federationPort }
   get hasLead(): boolean { return this.role === 'home' && this.settings.home?.lead !== undefined }
   /** The id of the local-runtime connection a relay start names (home) or the executor serves under (executor). */
   get connectionId(): string { return this.connection }
@@ -102,10 +104,12 @@ export class Ms1LiveNode {
       dispatch: { ttlMs: link.holderTtlMs, safetyMs: link.safetyMs, maxModelAgeMs: link.maxModelAgeMs, channel,
         ...(runtime ? {
           relayRuntime: runtime,
-          // A configuration attestation: this node's operator attached exactly one llama-server serving exactly one model.
+          // A configuration assertion, not an observation: this node's operator attached exactly one llama-server serving exactly one
+          // model, so `observedAt` is the time the assertion is made (now) and cannot go stale. What was actually served is proved
+          // per call by the counted chain (the executor re-observes digest and window and re-counts before `/completion`).
           // Any other model, and every `:cloud` reference, is unknown here.
           localModel: (model: string) => normalizeOllamaModelReference(model) === this.model && !/:cloud$/i.test(model) && this.connection
-            ? { connectionId: this.connection, model, placement: 'installed_local' as const, source: 'ms1-live attach configuration', observedAt: Date.now() }
+            ? { connectionId: this.connection, model, placement: 'installed_local' as const, source: 'ms1-live attach configuration (asserted when asked, not observed)', observedAt: Date.now() }
             : null,
         } : {}) },
     }
@@ -125,8 +129,13 @@ export class Ms1LiveNode {
       }
       return create().id
     }
-    this.connection = ensure(MS1_EXECUTOR_CONNECTION, 'local_runtime', () =>
-      connections.create(owner, { name: MS1_EXECUTOR_CONNECTION, kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true }))
+    this.connection = ensure(MS1_EXECUTOR_CONNECTION, 'local_runtime', () => {
+      try { return connections.create(owner, { name: MS1_EXECUTOR_CONNECTION, kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true }) } catch (error) {
+        // The relay's connection must be unattended; a connections policy that forbids it cannot serve this pairing.
+        if ((error as { code?: string } | null)?.code === 'policy_denied') throw new Ms1LiveError('unattended_unavailable', 'connectionsPolicy')
+        throw error
+      }
+    })
     if (this.hasLead) {
       this.leadConnection = ensure(MS1_LEAD_CONNECTION, 'agent', () =>
         connections.create(owner, { name: MS1_LEAD_CONNECTION, kind: 'agent', provider: 'claude-code' as 'codex', auth: 'cli_login' }))
@@ -165,28 +174,29 @@ export class Ms1LiveNode {
     }
   }
 
-  /** Executor: hash the GGUF and prove the template round trip now, so the first relay start does not pay minutes of
-   * hashing inside its freshness window. The result is reported, never required: a later request re-observes anyway. */
-  startWarming(onSettled?: (state: Ms1LiveWarmState) => void): void {
+  /** Executor: hash the GGUF and prove the template round trip now, so the first relay start does not pay minutes of hashing
+   * inside its freshness window. Reported, never required: a later request re-observes anyway. Idempotent; resolves when settled. */
+  startWarming(): Promise<Ms1LiveWarmState> {
     const runtime = this.llama?.runtime
-    if (!runtime || this.closed) return
-    this.warming = (async () => {
+    if (!runtime || this.closed) return Promise.resolve(this.warm)
+    this.warming ??= (async () => {
       try {
         const seen = await runtime.observe(this.model, this.lifetime.signal)
         this.warm = { state: 'ready', observedAt: seen.observedAt }
       } catch (error) {
-        const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: unknown }).code) : 'runtime_meter_unavailable'
+        const code = error && typeof error === 'object' && 'code' in error && typeof (error as { code: unknown }).code === 'string' ? (error as { code: string }).code : 'runtime_meter_unavailable'
         this.warm = { state: 'unavailable', code }
       }
-      onSettled?.(this.warm)
+      return this.warm
     })()
+    return this.warming
   }
 
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
     this.lifetime.abort()
-    await this.warming.catch(() => undefined)
-    await this.llama?.close()
+    // The runtime's own lifetime is what stops a model-file hash in progress, so it is closed first, not after waiting for the hash.
+    await Promise.allSettled([this.llama?.close(), this.warming])
   }
 }
