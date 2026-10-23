@@ -42,6 +42,10 @@ export interface LocalChatTransport {
   readonly host: string
   /** Receipt source label recorded with the usage observation. */
   readonly usageSource: string
+  /** F2-d: the runtime is on another owned node (`host` is then a `federation://` label). That node's own
+   * governor admits the call through its F2 reservation, so this node neither requires a loopback origin nor
+   * takes a permit of its own hardware. Scrubbing, consent and the usage receipt are unchanged. */
+  readonly remote?: { readonly nodeId: string }
   chat(request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void,
     dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }): Promise<OllamaChatChunk>
 }
@@ -209,17 +213,20 @@ export class Connections {
       this.#vault.assertScrubbingReady(accountId)
       const transport = call.transport
       const host = new URL(transport ? transport.host : normalizeHost(this.localHost()))
-      if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
+      const remote = transport?.remote
+      if (remote) {
+        if (host.protocol !== 'federation:' || host.hostname !== encodeURIComponent(remote.nodeId) || (host.pathname !== '' && host.pathname !== '/') || host.username || host.password || host.search || host.hash) throw new Error('Remote runtime must be a pinned federation node')
+      } else if (!['127.0.0.1', '[::1]', 'localhost'].includes(host.hostname) || !['http:', 'https:'].includes(host.protocol) || host.username || host.password || host.search || host.hash) throw new Error('Local runtime must be on this node')
       const context = request.options?.num_ctx
       if (!context || !Number.isSafeInteger(context) || context <= 0) throw new Error('Explicit runtime context is required')
       const dispatchAbort = new AbortController()
       const signal = AbortSignal.any([this.lifetime, dispatchAbort.signal, ...(call.signal ? [call.signal] : [])])
-      const ticket = this.governor.enqueue({ owner: { kind: 'operation', operationId: call.requestId },
+      const ticket = remote ? undefined : this.governor.enqueue({ owner: { kind: 'operation', operationId: call.requestId },
         // The governor vocabulary is Ollama-only (R2-op residual): a foreign runtime takes the same
         // single permit under a prefixed name, so it is never mistaken for the Ollama model of that name.
         operation: 'chat', model: { provider: 'ollama', name: transport ? `${transport.id}:${request.model}` : request.model }, requestedContext: context,
         priority: 'normal', enqueuedAt: new Date().toISOString() })
-      const lease = await this.governor.acquire(ticket, { signal })
+      const lease = ticket ? await this.governor.acquire(ticket, { signal }) : undefined
       try {
         const current = this.store.get(accountId, id)
         if (call.background && (!current.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
@@ -254,7 +261,7 @@ export class Connections {
         if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed')
       }
-      finally { lease.release() }
+      finally { lease?.release() }
     })
   }
   /** K5's trusted process boundary. Identity is the original prompt author, including delegation.

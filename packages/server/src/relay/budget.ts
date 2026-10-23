@@ -32,20 +32,24 @@ export function bounded(text: string, bytes: number): string {
 export type Measure = ((value: string) => number) & { readonly exact?: boolean }
 export interface RequestParts { head?: readonly string[]; turns?: readonly string[] }
 export interface RequestResult { text: string; dropped: number; cut: number }
-export function request(prompt: string, parts: RequestParts, measure: Measure, limit: number): RequestResult {
-  invariant(measure(prompt) <= limit, 'context_ceiling')
+export type AsyncMeasure = ((value: string) => Promise<number>) & { readonly exact?: boolean; readonly async: true }
+/** One packing algorithm, two drivers. The generator yields every string it needs measured and receives the
+ * measure; `request` answers synchronously (local meters) and `requestAsync` awaits (a remote meter whose exact
+ * answer needs a network round trip). Both therefore make identical decisions for identical measures. */
+function* pack(prompt: string, parts: RequestParts, limit: number, exact: boolean | undefined): Generator<string, RequestResult, number> {
+  invariant((yield prompt) <= limit, 'context_ceiling')
   let fixed = prompt, cut = 0
-  const fit = (value: string, remaining: number): string => {
+  const fit = function* (value: string, remaining: number): Generator<string, string, number> {
     if (remaining <= 16) return ''
-    if (measure(value) <= remaining) return value
-    let bytes = measure.exact ? remaining * 4 : remaining
+    if ((yield value) <= remaining) return value
+    let bytes = exact ? remaining * 4 : remaining
     let result = bounded(value, bytes)
-    while (result && measure(result) > remaining) result = bounded(value, bytes = Math.floor(bytes / 2))
+    while (result && (yield result) > remaining) result = bounded(value, bytes = Math.floor(bytes / 2))
     return result
   }
   for (const part of parts.head ?? []) {
-    const remaining = limit - measure(fixed) - 1
-    const value = fit(part, remaining)
+    const remaining = limit - (yield fixed) - 1
+    const value = yield* fit(part, remaining)
     if (value !== part) cut++
     fixed += '\n' + value
   }
@@ -55,10 +59,10 @@ export function request(prompt: string, parts: RequestParts, measure: Measure, l
   // The newest turns are the most valuable next context; older ones fall off first.
   for (let index = turns.length - 1; index >= 0; index--) {
     const part = turns[index]!, candidate = packed + '\n' + part
-    if (measure(candidate) <= limit) { accepted.push({ index, text: part }); packed = candidate; continue }
+    if ((yield candidate) <= limit) { accepted.push({ index, text: part }); packed = candidate; continue }
     if (index !== turns.length - 1) { dropped++; continue }
-    const remaining = limit - measure(packed) - 1
-    const value = fit(part, remaining)
+    const remaining = limit - (yield packed) - 1
+    const value = yield* fit(part, remaining)
     if (!value) { dropped++; continue }
     accepted.push({ index, text: value }); packed += '\n' + value; cut++
   }
@@ -67,9 +71,21 @@ export function request(prompt: string, parts: RequestParts, measure: Measure, l
   let text = render()
   // Reordering can move token boundaries; drop the oldest accepted turn if the final
   // chronological rendering no longer fits.
-  while (measure(text) > limit && accepted.length) { accepted.shift(); dropped++; text = render() }
-  invariant(measure(text) <= limit, 'context_ceiling')
+  while ((yield text) > limit && accepted.length) { accepted.shift(); dropped++; text = render() }
+  invariant((yield text) <= limit, 'context_ceiling')
   return { text, dropped, cut }
+}
+export function request(prompt: string, parts: RequestParts, measure: Measure, limit: number): RequestResult {
+  const run = pack(prompt, parts, limit, measure.exact)
+  let step = run.next()
+  while (!step.done) step = run.next(measure(step.value))
+  return step.value
+}
+export async function requestAsync(prompt: string, parts: RequestParts, measure: AsyncMeasure, limit: number): Promise<RequestResult> {
+  const run = pack(prompt, parts, limit, measure.exact)
+  let step = run.next()
+  while (!step.done) step = run.next(await measure(step.value))
+  return step.value
 }
 
 /** Recheck the authoritative wall clock instead of treating the JS timer's maximum

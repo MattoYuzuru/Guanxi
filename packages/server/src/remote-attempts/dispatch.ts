@@ -8,7 +8,9 @@ import type { Attempt, HomeFence, Synchronous } from '../runs/types.ts'
 import type { Connections } from '../connections/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import type { AttemptOffers } from './offers.ts'
-import { canonical, hash, signValue, FederationError } from '../federation/crypto.ts'
+import { canonical, hash, signValue, FederationError, FEDERATION_BODY_BYTES } from '../federation/crypto.ts'
+import { sha256Hex, type ExecutorRelayRuntime } from './relay-runtime.ts'
+import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 
 export interface LocalModelAttestation {
   connectionId: string; model: string; placement: 'installed_local'; source: string; observedAt: number
@@ -22,11 +24,19 @@ export interface DispatchPolicy {
   localModel?: (model: string) => LocalModelAttestation | null
   connections?: Connections
   leaseClock?: () => number
+  /** F2-d executor role: this node's operational llama-server, reachable only through signed F2 messages. */
+  relayRuntime?: ExecutorRelayRuntime
+  /** Named executor-side limits for the relay runtime; defaults are 4 concurrent counts and 16 pinned relay runs per peer. */
+  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number }
 }
+export interface CostTotal { currency: string; inputTokens: number; outputTokens: number; costMicrounits: number | null }
+export type TerminalEvent = Extract<DispatchEvent['event'], { kind: 'terminal' }>
 interface HomeRow { id: string; offer: string; job: string; attempt: string; grant: string | null }
-interface Holder { grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
+interface Holder { ttlMs: number; grant: SignedDispatchGrant; controller: AbortController; deadline: number; wallDeadline: number;
   timer?: ReturnType<typeof setTimeout>; renewTimer?: ReturnType<typeof setTimeout>; refresh?: Promise<void> }
 const ZERO = '0'.repeat(64)
+/** Room for the signature, hash and reference around a terminal event's content in one federation body. */
+const RESULT_ENVELOPE_BYTES = 8 * 1024
 
 /** Optional local inference protocol; all methods are host-owned, wire identity is checked by F1. */
 export class AttemptDispatch {
@@ -35,6 +45,7 @@ export class AttemptDispatch {
   private readonly active = new Map<string, Holder>()
   private readonly tasks = new Map<string, Promise<void>>()
   private readonly flushing = new Map<string, Promise<void>>()
+  private readonly waiters = new Map<string, Set<(event: TerminalEvent) => void>>()
   private readonly mono: () => number
   private highWater = 0
   private readonly db: Db
@@ -88,9 +99,10 @@ export class AttemptDispatch {
     return this.runs.asRemoteExecutor(a, offer.executorNodeId, () => body(a))
   }
   /** The fresh token, binding, immutable job and offer intent commit together. */
-  prepare(runId: string, executorNodeId: string, raw: LocalInferenceJob, reservationMs: number): RemoteAttemptOffer {
+  prepare(runId: string, executorNodeId: string, raw: LocalInferenceJob, reservationMs: number, parent?: { runId: string; epoch: number }): RemoteAttemptOffer {
     this.ready()
     const job = localInferenceJobSchema.parse(raw)
+    if (!!job.counted !== !!parent || parent?.runId === runId) throw new FederationError('dispatch_binding')
     if (job.deadline <= this.clock() || !Number.isSafeInteger(reservationMs) || reservationMs <= 0) throw new FederationError('dispatch_deadline')
     return this.runs.startRemote(runId, executorNodeId, (a, db) => {
       if (job.deadline <= this.clock()) throw new FederationError('dispatch_deadline')
@@ -98,7 +110,7 @@ export class AttemptDispatch {
       const offer: RemoteAttemptOffer = { id: randomUUID(), runId, sessionId: run.session_id, homeNodeId: this.node, executorNodeId,
         fence: { attemptId: a.id, epoch: a.epoch, token: a.token }, mode: 'strict',
         expiresAt: Math.min(job.deadline, this.clock() + reservationMs, Number(lease.expires_at)),
-        resource: { kind: 'local_inference', model: job.model, requestedContext: job.context } }
+        resource: { kind: 'local_inference', model: job.model, requestedContext: job.context }, ...(parent ? { parent } : {}) }
       db.prepare('INSERT INTO remote_home_offers VALUES (?,?)').run(offer.id, canonical(offer))
       db.prepare('INSERT INTO remote_dispatch_home VALUES (?,?,?,?,NULL)').run(offer.id, canonical(offer), canonical(job), canonical(a))
       return offer
@@ -113,7 +125,7 @@ export class AttemptDispatch {
         receipt.homeNodeId !== this.node || receipt.executorNodeId !== offer.executorNodeId || receipt.runId !== offer.runId || canonical(receipt.fence) !== canonical(offer.fence)) throw new FederationError('reservation_lost')
       const job = localInferenceJobSchema.parse(JSON.parse(row.job))
       if (job.deadline <= this.clock()) throw new FederationError('dispatch_deadline')
-      const grant = { id, offer, reservationId: receipt.reservation.id, job, jobHash: hash(job), dispatchAuthorized: true as const }
+      const grant = { id, offer, reservationId: receipt.reservation.id, holderTtlMs: this.policy.ttlMs, job, jobHash: hash(job), dispatchAuthorized: true as const }
       const signed = signedDispatchGrantSchema.parse({ grant, signature: signValue(this.#privateKey, grant) })
       if (row.grant && row.grant !== canonical(signed)) throw new FederationError('dispatch_conflict')
       db.prepare('UPDATE remote_dispatch_home SET grant=? WHERE id=?').run(canonical(signed), id)
@@ -162,6 +174,52 @@ export class AttemptDispatch {
         this.runs.complete(a, e.event.outcome, record, cost)
       }
     })
+    if (e.event.kind === 'terminal') for (const notify of [...(this.waiters.get(e.ref.id) ?? [])]) notify(e.event)
+  }
+  /** The only sanctioned cost total of a session. A relay's model calls are recorded twice by design: by the relay run for its
+   * own cap accounting and by each remote child run as the executor's report. Adding the two would double count, so they are
+   * returned apart and `own` never includes a relay child. */
+  sessionCosts(sessionId: string): { own: CostTotal[]; relayChildren: CostTotal[] } {
+    this.ready()
+    const children = "SELECT json_extract(payload,'$.runId') FROM remote_home_offers WHERE json_extract(payload,'$.parent') IS NOT NULL"
+    const total = (negate: string) => this.db.prepare(`SELECT c.currency AS currency, SUM(c.input_tokens) AS inputTokens, SUM(c.output_tokens) AS outputTokens,
+      CASE WHEN COUNT(c.cost_microunits)=COUNT(*) THEN SUM(c.cost_microunits) ELSE NULL END AS costMicrounits
+      FROM run_costs c JOIN durable_runs r ON r.id=c.run_id WHERE r.session_id=? AND c.run_id ${negate} IN (${children}) GROUP BY c.currency ORDER BY c.currency`)
+      .all(sessionId) as unknown as CostTotal[]
+    return { own: total('NOT'), relayChildren: total('') }
+  }
+  /** The terminal event the executor delivered and the home accepted, if any. */
+  terminal(id: string): TerminalEvent | undefined {
+    this.ready()
+    const row = this.db.prepare('SELECT payload FROM remote_dispatch_receipts WHERE id=? ORDER BY seq DESC LIMIT 1').get(id)
+    const event = row ? signedDispatchEventSchema.parse(JSON.parse(String(row.payload))).entry.event : undefined
+    return event?.kind === 'terminal' ? event : undefined
+  }
+  /** Resolves with the accepted terminal event. `poll` runs every `pollMs` and may throw to abandon the wait
+   * (a lost fence, a lost executor); the abort signal does the same. A late event is then ignored by the caller. */
+  awaitTerminal(id: string, signal: AbortSignal, poll: () => void, pollMs = 25): Promise<TerminalEvent> {
+    return new Promise<TerminalEvent>((resolve, reject) => {
+      let timer: ReturnType<typeof setInterval> | undefined
+      const set = this.waiters.get(id) ?? new Set()
+      this.waiters.set(id, set)
+      const finish = (action: () => void): void => {
+        clearInterval(timer); signal.removeEventListener('abort', aborted); set.delete(notify)
+        if (!set.size && this.waiters.get(id) === set) this.waiters.delete(id)
+        action()
+      }
+      const notify = (event: TerminalEvent): void => finish(() => resolve(event))
+      const aborted = (): void => finish(() => reject(signal.reason ?? new FederationError('dispatch_canceled')))
+      set.add(notify)
+      signal.addEventListener('abort', aborted, { once: true })
+      if (signal.aborted) { aborted(); return }
+      try {
+        const known = this.terminal(id)
+        if (known) { finish(() => resolve(known)); return }
+      } catch (error) { finish(() => reject(error)); return }
+      timer = setInterval(() => {
+        try { poll(); const known = this.terminal(id); if (known) finish(() => resolve(known)) } catch (error) { finish(() => reject(error)) }
+      }, pollMs)
+    })
   }
   private ref(grant: SignedDispatchGrant): DispatchRef { return { id: grant.grant.id, homeNodeId: grant.grant.offer.homeNodeId, executorNodeId: this.node } }
   private setStatus(id: string, status: DispatchState['status']): void {
@@ -207,7 +265,7 @@ export class AttemptDispatch {
       const sent = this.time(), wallSent = this.clock()
       const renewed = await this.untilAbort(this.policy.channel(h.grant.grant.offer.homeNodeId).renewDispatch(this.ref(h.grant)), h.controller.signal)
       this.guard(h); validate()
-      if (renewed.id !== h.grant.grant.id || renewed.ttlMs > this.policy.ttlMs) throw new FederationError('dispatch_renewal')
+      if (renewed.id !== h.grant.grant.id || renewed.ttlMs > h.ttlMs) throw new FederationError('dispatch_renewal')
       const deadline = sent + renewed.ttlMs - this.policy.safetyMs, wallDeadline = Math.min(h.grant.grant.job.deadline, wallSent + renewed.ttlMs - this.policy.safetyMs)
       if (this.time() >= deadline || this.clock() >= wallDeadline) throw new FederationError('dispatch_expired')
       h.deadline = deadline; h.wallDeadline = wallDeadline; this.arm(h)
@@ -231,11 +289,19 @@ export class AttemptDispatch {
     if (g.offer.executorNodeId !== this.node || g.id !== g.offer.id || g.jobHash !== hash(g.job) ||
       g.offer.resource.model !== g.job.model || g.offer.resource.requestedContext !== g.job.context || g.job.deadline <= this.clock()) throw new FederationError('dispatch_binding')
     this.attestation(g.job)
+    // A counted job is a relay model call: it needs a pinned parent and the llama-server that counted it.
+    // Its content hash is the first link of the counted chain: the message the home counted is the message in this grant.
+    if (!!g.job.counted !== !!g.offer.parent) throw new FederationError('dispatch_binding')
+    if (g.job.counted && (!this.policy.relayRuntime || normalizeOllamaModelReference(g.job.model) !== this.policy.relayRuntime.model ||
+      g.job.messages.length !== 1 || g.job.messages[0]!.role !== 'user' || g.job.counted.contentSha256 !== sha256Hex(g.job.messages[0]!.content))) throw new FederationError('dispatch_binding')
     if (!this.policy.connections) throw new FederationError('local_executor_unavailable')
     const old = this.db.prepare('SELECT grant FROM remote_dispatch_holders WHERE id=?').get(g.id)
     if (old) { if (old.grant !== canonical(signed)) throw new FederationError('dispatch_conflict'); return this.state(g.id) }
-    const h: Holder = { grant: signed, controller: new AbortController(), deadline: this.time() + this.policy.ttlMs - this.policy.safetyMs,
-      wallDeadline: Math.min(g.job.deadline, this.clock() + this.policy.ttlMs - this.policy.safetyMs) }
+    // The home sized its cancel wait for its own TTL, so this holder never lives longer than the granted one.
+    const ttlMs = Math.min(this.policy.ttlMs, g.holderTtlMs ?? this.policy.ttlMs)
+    if (ttlMs <= this.policy.safetyMs * 2) throw new FederationError('dispatch_policy')
+    const h: Holder = { ttlMs, grant: signed, controller: new AbortController(), deadline: this.time() + ttlMs - this.policy.safetyMs,
+      wallDeadline: Math.min(g.job.deadline, this.clock() + ttlMs - this.policy.safetyMs) }
     // Persist consumption before any await/effect. A crash cannot reuse this reservation.
     this.offers.consume(g.offer.homeNodeId, g.offer.id, g.reservationId, () => {
       validate(); this.db.prepare("INSERT INTO remote_dispatch_holders VALUES (?,?,'accepted')").run(g.id, canonical(signed))
@@ -263,25 +329,43 @@ export class AttemptDispatch {
     void this.flush(h.grant.grant.id).catch(() => undefined)
   }
   private async work(h: Holder, validate: () => void): Promise<void> {
-    const g = h.grant.grant
+    const g = h.grant.grant, counted = g.job.counted
+    const source = counted ? 'llama-server:/completion' as const : 'ollama:/api/chat' as const
+    const expected = counted ? this.policy.relayRuntime!.expectedTransport(counted) : undefined
     try {
       const attested = this.attestation(g.job)
       const result = await this.policy.connections!.localChat(this.accountId, attested.connectionId,
         { model: g.job.model, messages: g.job.messages, think: false, options: { num_ctx: g.job.context, num_predict: g.job.outputTokens } }, {
-          runId: g.offer.runId, requestId: g.id, background: true, signal: h.controller.signal,
+          runId: g.offer.runId, requestId: g.id, background: true, signal: h.controller.signal, ...(expected ? { transport: expected } : {}),
           authorizeDispatch: async () => { this.guard(h); validate(); await this.refresh(h, validate); this.guard(h); validate() },
           onPrepared: () => { this.guard(h); validate(); if (this.attestation(g.job).connectionId !== attested.connectionId) throw new FederationError('local_placement_changed') },
           onStarted: () => { this.guard(h); validate(); this.setStatus(g.id, 'running'); this.emit(h, { kind: 'started' }) },
         })
       this.guard(h); validate()
       if (!result.done || result.message?.role !== 'assistant' || typeof result.message.content !== 'string') throw new FederationError('local_result_invalid')
-      this.emit(h, { kind: 'terminal', outcome: 'completed', content: result.message?.content ?? '', inputTokens: result.prompt_eval_count ?? null,
-        outputTokens: result.eval_count ?? null, source: 'ollama:/api/chat' })
+      // The evaluated rendering and token count must be the counted ones; the transport has already refused otherwise.
+      const evaluated = expected?.evidence()?.renderedSha256
+      if (counted && (evaluated !== counted.renderedSha256 || result.prompt_eval_count !== counted.tokens)) throw new FederationError('truncation_protocol')
+      const content = result.message?.content ?? ''
+      // The signed event is one HTTP body. A result that cannot be delivered would be retried forever while the home
+      // waits out its deadline, so the executor reports a typed refusal (and the usage it spent) instead.
+      if (Buffer.byteLength(JSON.stringify(content)) > FEDERATION_BODY_BYTES - RESULT_ENVELOPE_BYTES) {
+        this.emit(h, { kind: 'terminal', outcome: 'failed', content: '', inputTokens: result.prompt_eval_count ?? null, outputTokens: result.eval_count ?? null, source, reason: 'result_too_large' })
+        this.setStatus(g.id, 'failed')
+        return
+      }
+      this.emit(h, { kind: 'terminal', outcome: 'completed', content, inputTokens: result.prompt_eval_count ?? null,
+        outputTokens: result.eval_count ?? null, source, ...(evaluated ? { renderedSha256: evaluated } : {}),
+        ...(counted && result.done_reason ? { doneReason: result.done_reason === 'length' ? 'length' as const : 'stop' as const } : {}) })
       this.setStatus(g.id, 'completed')
-    } catch {
+    } catch (error) {
       if (!this.closed) {
         const state = this.state(g.id).status
-        this.emit(h, { kind: 'terminal', outcome: h.controller.signal.aborted ? 'canceled' : 'failed', content: '', inputTokens: null, outputTokens: null, source: 'ollama:/api/chat' })
+        // A fixed machine reason, never message text: it names which counted-request invariant refused the call.
+        const code = expected?.evidence()?.failure ?? (error instanceof FederationError ? error.code : undefined)
+        const reason = counted && code && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : undefined
+        this.emit(h, { kind: 'terminal', outcome: h.controller.signal.aborted ? 'canceled' : 'failed', content: '', inputTokens: null, outputTokens: null, source,
+          ...(reason && !h.controller.signal.aborted ? { reason } : {}) })
         if (state !== 'lost' && state !== 'canceled') this.setStatus(g.id, h.controller.signal.aborted ? 'canceled' : 'failed')
       }
     } finally {

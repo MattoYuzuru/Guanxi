@@ -5,8 +5,9 @@ import { FEDERATION_VERSION, federationVersionSchema, replicaEntrySchema, signed
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, dispatchRenewalSchema, dispatchStateSchema, dispatchCancelSchema,
   type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptReceiptSchema,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, signedRelayRuntimeEvidenceSchema, signedRelayRuntimePinAckSchema, type RelayRuntimePinRequest, type RelayRuntimeObserveRequest, type RelayRuntimeCountRequest,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
-import { canonical, FederationError, requestProof, signValue } from './crypto.ts'
+import { canonical, FederationError, requestProof, signValue, validSignature } from './crypto.ts'
 import type { SharedConfig } from './config.ts'
 import type { Federation } from './service.ts'
 
@@ -24,12 +25,15 @@ export interface ChannelOptions {
 export class FederationChannel {
   #options: ChannelOptions
   constructor(options: ChannelOptions) { this.#options = options }
-  private async request(method: string, path: string, body: unknown = null): Promise<unknown> {
+  /** `beforeSend` runs after negotiation and signing and immediately before the transport is invoked, in the same
+   * synchronous stretch: a fence check there cannot be overtaken by anything queued on this event loop. */
+  private async request(method: string, path: string, body: unknown = null, beforeSend?: () => void): Promise<unknown> {
     const options = this.#options
     const route = `/api/federation${path}`
     const auth: FederationAuth = { nodeId: options.local.id, audience: options.peer.id, version: FEDERATION_VERSION,
       issuedAt: (options.clock ?? Date.now)(), nonce: randomUUID(), signature: '' }
     auth.signature = signValue(options.privateKey, requestProof(method, route, body, auth))
+    beforeSend?.()
     const response = await options.transport(new Request(`https://federation.invalid${route}`, {
       method, headers: { 'X-Guanxi-Node': canonical(auth), 'Content-Type': 'application/json' },
       ...(method === 'GET' ? {} : { body: canonical(body) }), redirect: 'error',
@@ -104,10 +108,10 @@ export class FederationChannel {
     const negotiated = await this.negotiate()
     if (negotiated.readOnly || negotiated.minor < ATTEMPT_DISPATCH_MINOR || !negotiated.capabilities.includes(ATTEMPT_DISPATCH_CAPABILITY)) throw new FederationError('contract_feature_unavailable', 426)
   }
-  async dispatch(signed: SignedDispatchGrant) {
+  async dispatch(signed: SignedDispatchGrant, beforeSend?: () => void) {
     const g = signed.grant, ref = { id: g.id, homeNodeId: g.offer.homeNodeId, executorNodeId: g.offer.executorNodeId }
     await this.dispatchReady(ref, false)
-    const state = dispatchStateSchema.parse(await this.request('POST', '/attempts/dispatch', signed))
+    const state = dispatchStateSchema.parse(await this.request('POST', '/attempts/dispatch', signed, beforeSend))
     if (state.id !== ref.id) throw new FederationError('dispatch_binding')
     return state
   }
@@ -137,4 +141,36 @@ export class FederationChannel {
     return state
   }
 
+  /** F2-d: the executor must advertise the relay runtime; an older minor or a missing capability is unavailable. */
+  private async relayRuntimeReady(binding: { homeNodeId: string; executorNodeId: string }): Promise<void> {
+    if (binding.homeNodeId !== this.#options.local.id || binding.executorNodeId !== this.#options.peer.id) throw new FederationError('wrong_executor')
+    const negotiated = await this.negotiate()
+    if (negotiated.readOnly || negotiated.minor < RELAY_RUNTIME_MINOR || !negotiated.capabilities.includes(RELAY_RUNTIME_CAPABILITY)) throw new FederationError('contract_feature_unavailable', 426)
+  }
+  /** The evidence must be signed by the pinned executor key and echo exactly what was asked, including the fresh
+   * challenge, or it is not evidence for this request. */
+  private relayEvidence(raw: unknown, request: RelayRuntimeObserveRequest, kind: 'observe' | 'count') {
+    const signed = signedRelayRuntimeEvidenceSchema.parse(raw), entry = signed.entry
+    if (!validSignature(this.#options.peer.publicKey, entry, signed.signature)) throw new FederationError('invalid_signature', 403)
+    if (entry.kind !== kind || entry.executorNodeId !== this.#options.peer.id || entry.challenge !== request.challenge ||
+      canonical(entry.binding) !== canonical(request.binding)) throw new FederationError('relay_evidence_mismatch')
+    return entry
+  }
+  async relayObserve(request: RelayRuntimeObserveRequest) {
+    await this.relayRuntimeReady(request.binding)
+    return this.relayEvidence(await this.request('POST', '/attempts/runtime/observe', request), request, 'observe')
+  }
+  async relayCount(request: RelayRuntimeCountRequest) {
+    await this.relayRuntimeReady(request.binding)
+    return this.relayEvidence(await this.request('POST', '/attempts/runtime/count', request), request, 'count')
+  }
+  /** Pins (or unpins) the relay run on the executor. The ack is signed by the pinned executor key and echoes the request. */
+  async relayPin(request: RelayRuntimePinRequest) {
+    await this.relayRuntimeReady(request)
+    const signed = signedRelayRuntimePinAckSchema.parse(await this.request('POST', '/attempts/runtime/pin', request)), ack = signed.entry
+    if (!validSignature(this.#options.peer.publicKey, ack, signed.signature)) throw new FederationError('invalid_signature', 403)
+    const { model: _model, ...asked } = request
+    if (canonical(ack) !== canonical(asked)) throw new FederationError('relay_evidence_mismatch')
+    return ack
+  }
 }

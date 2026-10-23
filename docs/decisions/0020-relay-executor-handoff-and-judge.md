@@ -133,3 +133,16 @@ The same option supplies an owned, isolated checkout allocator. See the
 [relay README](../../packages/server/src/relay/README.md) and the
 [R2-op plan](../plans/lanes/R2-op.plan.md). The status stays `proposed`; no real-model or
 real-binary validation has been performed.
+
+## Relay on another node (F2-d, 2026-10-23)
+
+The relay may run on the home node while each model call is executed by another owned node's
+llama-server. The executor renders, tokenizes and serves; it answers only signed F2 messages, each
+bound to the executor identity, the relay run and its fence, with a fresh challenge. The exact
+count is asynchronous (the synchronous bridge would block the loop that renews the fence); the
+synchronous count is a lookup of exact answers already obtained for identical bytes. The counted
+rendering, token count and served model identity are part of the immutable dispatch job and are
+re-verified by the executor and echoed back. There is no local, byte-count or catalog fallback. See
+the [F2-d plan](../plans/lanes/F2-d.plan.md) and the
+[remote attempts README](../../packages/server/src/remote-attempts/README.md). Status `proposed`;
+validated only against a fake llama-server over in-process nodes.

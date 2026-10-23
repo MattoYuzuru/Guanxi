@@ -32,6 +32,15 @@ export class Replicas {
     if (old && old.binding !== canonical(binding)) throw new FederationError('home_conflict')
     this.db.prepare('INSERT OR IGNORE INTO federation_streams VALUES (?,?)').run(binding.streamId, canonical(binding))
   }
+  /** Removes a pin made for the home that asks, and only while nothing was replicated under it. */
+  unbind(streamId: string, homeNodeId: string): boolean {
+    const row = this.db.prepare('SELECT binding FROM federation_streams WHERE id=?').get(streamId)
+    if (!row) return false
+    if (streamBindingSchema.parse(JSON.parse(row.binding as string)).homeNodeId !== homeNodeId) throw new FederationError('home_conflict')
+    if (this.db.prepare('SELECT 1 FROM federation_replicas WHERE stream_id=? LIMIT 1').get(streamId)) throw new FederationError('replica_in_use')
+    this.db.prepare('DELETE FROM federation_streams WHERE id=?').run(streamId)
+    return true
+  }
   binding(id: string): StreamBinding {
     const row = this.db.prepare('SELECT binding FROM federation_streams WHERE id=?').get(id)
     if (!row) throw new FederationError('unknown_stream', 404)
