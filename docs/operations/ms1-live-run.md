@@ -226,15 +226,15 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   `GUANXI_PROVIDER_KEYS_FILE` names the file instead, when set), resolves the one `anthropic` API-key connection that holds a key
   (`home.lead.connection` names it by name or id when there are several) and binds K5's `claude-code` installation to it. At each
   launch the key is injected into the bridge's environment as `ANTHROPIC_API_KEY` and nowhere else: not an argument, not a file, not
-  an event or log, and not the private config directory (which only keeps the saved ACP sessions a resumed lead needs). `claude auth
+  an event or log, and Guanxi never writes it into the private config directory (which keeps the saved ACP sessions a resumed lead needs; what the vendor CLI itself writes there is not inspected, and the CLI's own subprocesses inherit the variable, so K5's refusal of every permission request is the limit on that). `claude auth
   status` must report `authMethod: "api_key"` (CLI 2.1.287 does with only that variable set) or the run refuses
-  `claude_api_key_not_in_effect`. Usage is billed by Anthropic as API usage: the lead's per-turn tokens and cost are recorded on the
-  lead run like any lead turn, and the connection's `billing` fact reads `api_usage`. `start` prints `lead-auth` instead of
+  `claude_api_key_not_in_effect`. Usage is billed by Anthropic as API usage and the connection's `billing` fact reads `api_usage`. The lead run records a turn's
+  tokens and cost when the bridge reports them (prompt result usage, `usage_update` cost); an unreported turn is noted `usage_unobserved`, never guessed. `start` prints `lead-auth` instead of
   `lead-login`. An OAuth or subscription token (`sk-ant-oat…`) is refused as an API key by K3.
 
   `doctor` reads only the file you named and prints no value: `lead_key` is `ok`, or `lead_key_invalid` (wrong token family),
   `lead_key_missing` (no `ANTHROPIC_API_KEY`), `lead_key_import_failed` (another line in the file fails to import, and an API-key lead
-  does not start on a half-imported vault), `lead_key_file_invalid`, `lead_key_file_unreadable`, plus a `lead_key_mode` warning when
+  does not start on a half-imported vault; a named file without the key is `lead_key_missing` and never falls back to an older vault key), `lead_key_file_invalid`, `lead_key_file_unreadable`, plus a `lead_key_mode` warning when
   others can read the file. `start` refuses with `lead_key_missing`, `lead_key_import_failed`, `lead_connection_not_found`,
   `lead_connection_ambiguous`, `lead_connection_invalid` or `lead_vault_locked`, each with its field and a one-line summary.
   Not verified: a real turn on the API key (everything above runs against the fixture agent and the real CLI's `auth status` with a

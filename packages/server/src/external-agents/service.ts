@@ -27,7 +27,9 @@ const installationSchema = z.object({
   executable: z.string().min(1), version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/),
   claudeExecutable: z.string().optional(), claudeBare: z.boolean().optional(),
   claudeEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(), concurrency: z.number().int().positive().optional(),
-}).strict()
+}).strict().superRefine((value, ctx) => {
+  if (value.claudeEffort !== undefined && value.adapter !== 'claude-code') ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['claudeEffort'], message: 'claude_only' })
+})
 
 function combineCleanup(outcomes: readonly ProcessCleanup[]): ProcessCleanup {
   return outcomes.find(outcome => !outcome.confirmed) ?? outcomes[0] ?? { confirmed: true, reason: 'no_child' }
@@ -350,7 +352,7 @@ export class ExternalAgents {
             this.observeEffectiveBare(install)
             this.observe(install, 'bare', install.claudeBare ?? null, 'node_launch_policy', 'high')
             if (install.claudeBare) {
-              this.observe(install, 'billing', null, 'bare_does_not_read_subscription')
+              if (!this.claudeApiKeyMode(install, row)) this.observe(install, 'billing', null, 'bare_does_not_read_subscription')
               throw new ExternalAgentError('bare_subscription_unavailable')
             }
             this.assertActive(dispatchSignal)

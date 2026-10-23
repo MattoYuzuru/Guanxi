@@ -170,7 +170,7 @@ already refuses `sk-ant-oat` tokens as API keys; a connection pinned to another 
 (`claude_api_connection_required`). `auth status` must then report `loggedIn` with `authMethod: "api_key"` (CLI 2.1.287
 reports exactly that when only the variable is set); any other method is `claude_api_key_not_in_effect`, and the
 subscription path still accepts only `claude.ai`. Facts: `api_key_login`, and `billing = api_usage` with its source. The
-persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); it never holds the key.
+persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); Guanxi never writes the key there (what the vendor CLI itself writes is not inspected). The key is also inherited by the CLI's own subprocesses; K5 denies every permission request, which is the limit on that exposure.
 An API-billed Claude Code runs host tools, so another author is refused (`host_tools_owner_only`) and there is no login to
 prepare. `claudeEffort` (`low`..`max`) sets the bridge's `effort` config option after the model switch, refusing with
 `effort_unavailable` when the bridge does not offer that level; the vendor's settings files are never edited.

@@ -12,6 +12,8 @@ const apiFixture = async (t: Parameters<typeof fixture>[0], install = {}) => {
   return f
 }
 const noPrompt = async (f: Fixture) => assert.equal((await f.trace('claude-code').catch(() => [])).filter(frame => frame.method === 'session/prompt').length, 0)
+/** The bridge process itself was never started (the fixture writes `environment.json` as soon as it runs). */
+const neverLaunched = (f: Fixture) => assert.rejects(readFile(join(f.dir, 'claude-code', 'environment.json')), { code: 'ENOENT' })
 /** Every file under the node's data directory, except the fixture's own scenario input (which holds the fake key by design). */
 async function files(dir: string): Promise<string[]> {
   const out: string[] = []
@@ -22,9 +24,9 @@ async function files(dir: string): Promise<string[]> {
   }
   return out
 }
-const withEffort = (f: Fixture, levels: string[] | null) => {
+const withEffort = (f: Fixture, levels: string[] | null, current = 'default') => {
   const tape = structuredClone(f.tapes.get('claude-code')!) as { newSession: { configOptions: unknown[] } }
-  if (levels) tape.newSession.configOptions.push({ id: 'effort', category: 'thought_level', name: 'Effort', type: 'select', currentValue: 'default',
+  if (levels) tape.newSession.configOptions.push({ id: 'effort', category: 'thought_level', name: 'Effort', type: 'select', currentValue: current,
     options: levels.map(value => ({ value, name: value })) })
   return tape
 }
@@ -106,6 +108,7 @@ test('API key mode refusals: wrong provider, missing key, OAuth token, base URL 
     await bind(connectionId)
     await assert.rejects(f.service().run(input), pattern)
     await noPrompt(f)
+    await neverLaunched(f)
   }
   // A key of another provider never pays for Claude Code.
   const other = f.connections.create(owner, { name: 'openai', kind: 'model_api', provider: 'openai', auth: 'api_key' })
@@ -116,7 +119,7 @@ test('API key mode refusals: wrong provider, missing key, OAuth token, base URL 
   await attempt(empty.id, /credential unavailable/)
   // An OAuth token is not an API key, even when mislabelled (K3 refuses it at storage).
   const oauth = f.connections.create(owner, { name: 'anthropic-oauth', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
-  await assert.rejects(async () => f.connections.saveSecret(owner, oauth.id, 'sk-ant-oat01-' + 'a'.repeat(40)))
+  await assert.rejects(async () => f.connections.saveSecret(owner, oauth.id, 'sk-ant-oat01-' + 'a'.repeat(40)), /An API key is required/)
   await attempt(oauth.id, /credential unavailable/)
   // A connection pinned to another API root cannot carry Claude Code's key.
   const rooted = f.connections.store.create(owner, { name: 'anthropic-root', kind: 'model_api', provider: 'anthropic', auth: 'api_key' }, { baseUrl: 'https://api.example.com/v1', allowPrivate: false })
@@ -132,6 +135,7 @@ test('API key mode: another author can never use Claude Code through the key, an
   await assert.rejects(f.service().run({ ...input, actorAccountId: 'friend' }), /host_tools_owner_only/)
   await assert.rejects(f.service().prepareLogin(owner, owner, connectionId), /api_or_local_required/)
   await noPrompt(f)
+  await neverLaunched(f)
   assert.equal(JSON.stringify(f.service().capabilities(owner)).includes(f.anthropicKey), false)
 })
 
@@ -156,4 +160,49 @@ test('without an effort policy no effort option is touched', async t => {
   await f.scenario('claude-code', { tape: withEffort(f, ['low', 'medium']) })
   await f.service().run(input)
   assert.deepEqual((await f.trace('claude-code')).filter(frame => frame.method === 'session/set_config_option').map(frame => frame.params.configId), ['model'])
+})
+
+const effortFrames = async (f: Fixture) => (await f.trace('claude-code')).filter(frame => frame.method === 'session/set_config_option' && frame.params.configId === 'effort')
+const leadTurn = (resume: string | null) => ({ mcpServers: [], resume: resume ? { acpSessionId: resume } : null, hibernateSignal: new AbortController().signal,
+  onSession: () => undefined, onActivity: () => undefined, onUsage: () => undefined })
+
+test('effort levels that exist only after the model switch are read from the switch response, not from session/new', async t => {
+  const f = await apiFixture(t, { claudeEffort: 'medium' })
+  await f.scenario('claude-code', { effortAfterModel: ['low', 'medium', 'high'] })
+  await f.service().run(input)
+  assert.deepEqual((await effortFrames(f)).map(frame => frame.params.value), ['medium'])
+  await f.scenario('claude-code', { effortAfterModel: ['low', 'high'] })
+  await assert.rejects(f.service().run(input), /effort_unavailable/)
+  await noPrompt(f)
+})
+
+test('an effort the agent acknowledges but does not apply refuses before the prompt; one already current is not set again', async t => {
+  const f = await apiFixture(t, { claudeEffort: 'medium' })
+  await f.scenario('claude-code', { tape: withEffort(f, ['low', 'medium']), effortIgnored: true })
+  await assert.rejects(f.service().run(input), /effort_selection_failed/)
+  await noPrompt(f)
+  await f.scenario('claude-code', { tape: withEffort(f, ['low', 'medium'], 'medium') })
+  await f.service().run(input)
+  assert.equal((await effortFrames(f)).length, 0)
+})
+
+test('a resumed (loaded) lead session sets the effort when the agent reports its options and keeps its own when it does not', async t => {
+  const f = await apiFixture(t, { claudeEffort: 'medium' })
+  const lead = { loadSession: true }
+  await f.scenario('claude-code', { lead, tape: withEffort(f, ['low', 'medium', 'high']) })
+  await f.service().run({ ...input, lead: leadTurn('lead-session-1') })
+  const frames = await f.trace('claude-code')
+  assert.equal(frames.filter(frame => frame.method === 'session/load').length, 1)
+  assert.deepEqual((await effortFrames(f)).map(frame => frame.params.value), ['medium'])
+  await f.scenario('claude-code', { lead })
+  await f.service().run({ ...input, lead: leadTurn('lead-session-1') })
+  assert.equal((await f.trace('claude-code')).filter(frame => frame.method === 'session/load').length, 1)
+  assert.equal((await effortFrames(f)).length, 0, 'no option reported: the loaded session keeps the effort it was created with')
+  // A new session in the same position is refused instead: the agent must offer the level.
+  await assert.rejects(f.service().run({ ...input, lead: leadTurn(null) }), /effort_unavailable/)
+})
+
+test('claudeEffort belongs to Claude Code installations only', async t => {
+  const f = await fixture(t, ['copilot'])
+  await assert.rejects(f.reload({ installations: [{ ...f.installations[0]!, claudeEffort: 'medium' }] }), /claude_only|claudeEffort/)
 })

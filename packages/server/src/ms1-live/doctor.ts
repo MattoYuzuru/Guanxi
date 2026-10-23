@@ -29,7 +29,7 @@ const writableDir = (path: string): boolean => { try { accessSync(path, constant
  * uses: `GUANXI_PROVIDER_KEYS_FILE`, then the configuration), whether it parses, and whether `ANTHROPIC_API_KEY` is an API key (an OAuth
  * token of the subscription family is refused). The vault is not opened here, so a connection named by `home.lead.connection` is judged at start. */
 function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['lead']>, env: Readonly<Record<string, string | undefined>>): Check[] {
-  const fromEnv = env['GUANXI_PROVIDER_KEYS_FILE'], file = fromEnv || lead.providerKeysFile
+  const fromEnv = env['GUANXI_PROVIDER_KEYS_FILE'] || undefined, file = fromEnv || lead.providerKeysFile
   if (!file) return [warn('lead_key', 'lead_key_file_not_given', 'No key file is named for the API-key lead: its key must already be in this node\'s vault from an earlier import.',
     'Set home.lead.providerKeysFile to your dotenv file (with ANTHROPIC_API_KEY=), or GUANXI_PROVIDER_KEYS_FILE, or run `guanxi connections import --file` first.')]
   const where = fromEnv ? 'GUANXI_PROVIDER_KEYS_FILE' : 'home.lead.providerKeysFile'
@@ -48,7 +48,7 @@ function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['l
     const verdict = ((): Check => {
     if (names.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', 'ANTHROPIC_API_KEY in the key file is not an Anthropic API key (it must start with sk-ant-api).',
       'An OAuth or subscription token (sk-ant-oat...) is refused as an API key: create an API key in the Anthropic Console.')
-    if (!entries.some(entry => entry.provider === 'anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY.', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
+    if (!entries.some(entry => entry.provider === 'anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY (`start` does not fall back to an older key in the vault when a file is named).', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
     if (names.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${names.join(', ')} in the key file is invalid, and an API-key lead does not start on a half-imported vault.`,
       'Fix or remove those lines.')
     return ok('lead_key', `An Anthropic API key (sk-ant-api...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault.`)

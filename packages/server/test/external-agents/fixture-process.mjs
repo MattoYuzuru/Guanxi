@@ -206,8 +206,12 @@ lines.on('line', line => {
     }
     if (frame.method === 'session/set_config_option') {
       if (frame.params.configId === 'model') model = frame.params.value
-      chosen[frame.params.configId] = frame.params.value
+      // `effortIgnored`: the agent acknowledges but does not apply an effort change.
+      if (!(config.effortIgnored && frame.params.configId === 'effort')) chosen[frame.params.configId] = frame.params.value
       const configOptions = structuredClone(tape.newSession.configOptions)
+      // `effortAfterModel`: the levels a model offers exist only once the model is selected.
+      if (config.effortAfterModel && (chosen.model || frame.params.configId === 'effort')) configOptions.push({ id: 'effort', category: 'thought_level', name: 'Effort', type: 'select',
+        currentValue: 'default', options: config.effortAfterModel.map(value => ({ value, name: value })) })
       for (const option of configOptions) if (option.id in chosen) option.currentValue = chosen[option.id]
       reply(frame, { configOptions }); return
     }

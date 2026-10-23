@@ -9,6 +9,7 @@ import { CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
 import type { Connections } from '../../src/connections/service.ts'
 import { EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../../src/external-agents/plugin.ts'
 import { start } from '../../src/index.ts'
+import { Ms1LiveNode } from '../../src/ms1-live/boot.ts'
 import { loadMs1LiveConfig, Ms1LiveError, parseMs1LiveConfig, type Ms1LiveSettings } from '../../src/ms1-live/config.ts'
 import type { VaultKeychain } from '../../src/vault/keychain.ts'
 import { cli, freePort } from './live-world.ts'
@@ -22,7 +23,9 @@ const home = (leadOverrides: Record<string, unknown> = {}) => ({ version: 1, rol
 const refused = (raw: unknown, code: string, field: string) => assert.throws(() => parseMs1LiveConfig(raw, '/etc/x/ms1-live.json'),
   (error: unknown) => error instanceof Ms1LiveError && error.code === code && error.field === field, `${code} at ${field}`)
 const fakeKey = () => `sk-ant-api03-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
-const keychain = async (): Promise<VaultKeychain> => ({ key: () => Buffer.alloc(32, 9) })
+let keychainReads = 0
+/** The OS keychain stand-in: it counts every wrapping-key read, so a refusal can prove it never reached the vault. */
+const keychain = async (): Promise<VaultKeychain> => ({ key: () => { keychainReads++; return Buffer.alloc(32, 9) } })
 
 test('config: the lead pays by subscription unless told otherwise, and the API-key options belong to api_key only', () => {
   const sub = parseMs1LiveConfig(home(), '/etc/x/ms1-live.json').home!.lead!
@@ -93,6 +96,8 @@ test('doctor judges the key file without printing a value: source, mode, token f
   const other = join(w.root, 'other.env')
   writeKeys(other, `ANTHROPIC_API_KEY=${key}\n`)
   check = await run({ GUANXI_PROVIDER_KEYS_FILE: other }); assert.equal(check('lead_key')?.status, 'ok'); assert.match(check('lead_key')!.summary, /GUANXI_PROVIDER_KEYS_FILE/)
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${key}\n`)
+  check = await run({ GUANXI_PROVIDER_KEYS_FILE: '' }); assert.equal(check('lead_key')?.status, 'ok', 'an empty variable is unset, as in start'); assert.match(check('lead_key')!.summary, /home\.lead\.providerKeysFile/)
   w.settings(config => { delete config.home.lead.providerKeysFile })
   check = await run(); assert.equal(check('lead_key')?.status, 'warn'); assert.equal(check('lead_key')?.code, 'lead_key_file_not_given')
   w.settings(config => { config.home.lead.auth = 'subscription'; delete config.home.lead.providerKeysFile; delete config.home.lead.effort })
@@ -104,6 +109,10 @@ test('start imports the key into the node\'s vault, wires K5 to that connection 
   const key = fakeKey()
   writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${key}\n`)
   const boot = (settings: Ms1LiveSettings) => start({ port: 0, host: '127.0.0.1', dataDir: join(w.root, 'data'), webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
+  // The configured effort reaches K5's installation as policy; an omitted one stays omitted.
+  const installation = (settings: Ms1LiveSettings) => Ms1LiveNode.create(settings).leadWiring()!.externalAgents.installations[0]!
+  assert.equal(installation(w.settings()).claudeEffort, 'medium')
+  assert.equal('claudeEffort' in installation(w.settings(config => { delete config.home.lead.effort })), false)
   const first = await boot(w.settings())
   const connections = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
   const rows = connections.snapshot('local').connections
@@ -138,8 +147,10 @@ test('start refuses, by code and field and without a value, when the lead\'s key
     assert.ok(outcome instanceof Ms1LiveError && outcome.code === code && outcome.field === field, `expected ${code}, got ${outcome instanceof Error ? outcome.message : outcome}`)
     assert.equal(String(outcome.message).includes(key), false)
   }
-  // No file and an empty vault.
+  // No file and an empty vault: refused without reading the keychain at all.
+  keychainReads = 0
   await refuses(w.settings(config => { delete config.home.lead.providerKeysFile }), 'lead_key_missing', 'home.lead.providerKeysFile')
+  assert.equal(keychainReads, 0)
   // A file without the key, an OAuth token, and a file that fails to import as a whole: never a fallback to anything older.
   writeKeys(w.keyFile, `OPENAI_API_KEY=${'o'.repeat(40)}\n`)
   await refuses(w.settings(), 'lead_key_missing', 'home.lead.providerKeysFile')
@@ -165,6 +176,11 @@ test('start refuses, by code and field and without a value, when the lead\'s key
     if (code === null) assert.equal(outcome, expected)
     else assert.ok(outcome instanceof Ms1LiveError && outcome.code === code, `expected ${code}, got ${outcome instanceof Error ? outcome.message : outcome}`)
   }
+  // A named file without the key does not fall back to the key imported earlier.
+  writeKeys(w.keyFile, `OPENAI_API_KEY=${'o'.repeat(40)}\n`)
+  const stale = await run(w.settings()).then(server => server.close().then(() => 'started'), error => error)
+  assert.ok(stale instanceof Ms1LiveError && stale.code === 'lead_key_missing', `expected lead_key_missing, got ${stale instanceof Error ? stale.message : stale}`)
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${key}\n`)
   await attempt(undefined, 'lead_connection_ambiguous')
   await attempt('second-anthropic', null, second.id)
   await attempt(imported.id, null, imported.id)
