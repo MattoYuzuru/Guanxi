@@ -91,6 +91,11 @@ test('a relay run on the home node completes with every model call executed and 
   assert.ok(relayRows.length >= 4); assert.ok(relayRows.every(row => !row.entry_key.startsWith('remote-dispatch:')))
   assert.equal(relayRows.reduce((sum, row) => sum + row.input_tokens, 0), remoteIn, 'the relay and the executor agree on the tokens that were evaluated')
   assert.equal(JSON.stringify([f.home.runs.costs('lead'), f.costs('lead'), f.home.runs.get('lead')]), leadBefore, 'the lead run is unchanged')
+  // The sanctioned session total never mixes the two views of the same tokens: children are reported separately.
+  const totals = f.home.federation.attemptDispatch!.sessionCosts(receipt.sessionId!)
+  assert.equal(totals.own.reduce((n, c) => n + c.inputTokens, 0), remoteIn, 'the relay run\'s own accounting, without its children')
+  assert.equal(totals.relayChildren.reduce((n, c) => n + c.inputTokens, 0), remoteIn, 'the executor\'s reports, kept apart')
+  assert.equal(totals.relayChildren.length, 1); assert.equal(totals.own.length, 1)
   // Nothing ran on the home: its governor was never used and the executor released its own.
   assert.equal(f.hg.snapshot().activeLease, null); assert.equal(f.tg.snapshot().activeLease, null)
   await until(async () => (await f.holdings()).length === 0)
