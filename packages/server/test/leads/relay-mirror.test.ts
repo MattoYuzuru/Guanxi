@@ -56,10 +56,9 @@ test('a lead delegates through the public relay start and is woken once with the
   const child = run.promises(runId)[0]!.child_id
   await step()
   assert.deepEqual(relay.inputs.map(i => i.key), [child], 'the relay start is keyed by the R1 child id')
-  assert.equal(run.attempts(child)[0]!.first_model_at, null, 'preparing is not work')
   relay.state = 'running'
   await step()
-  assert.notEqual(run.attempts(child)[0]!.first_model_at, null, 'the mirror records that work began')
+  assert.equal(run.attempts(child)[0]!.first_model_at, null, 'the relay run owns the work; the mirror never claims a model start')
   assert.equal(run.wakes(runId).length, 0, 'a running relay wakes nobody')
   relay.state = 'completed'
   await step()
@@ -146,30 +145,29 @@ test('canceling the lead stops the relay run once and the mirror ends without a 
   assert.equal(f.runs().get(child).state, 'canceled')
 })
 
-test('after a lost mirror the child is attached to the SAME relay run again, never a second one', async t => {
+test('after a lost mirror the child is attached to the SAME relay run again; a restart-interrupted relay run then fails it at once', async t => {
   const { f, relay, step } = await mirrorFixture(t, { briefs: [brief({ deadlineMs: 72 * HOUR })] })
   const { runId, first } = f.start()
   await first
   const child = f.runs().promises(runId)[0]!.child_id
+  relay.state = 'running'
   await step()
   assert.equal(relay.runs.size, 1)
-  // The node was away longer than the mirror's lease, before the relay run did any work.
+  // The node was away longer than the mirror's lease while the relay run worked.
   f.advance(25 * HOUR)
   f.runs().tick()
   assert.equal(f.runs().get(child).state, 'interrupted')
-  // One poll lets the interval renewal notice the lost lease, the next lets the loop see it and end.
-  await step()
-  await step()
-  f.lead().pump()
-  await f.lead().idle()
-  await step()
+  // The interval renewal notices the lost lease, the loop sees it and ends, and only then may the lead service re-attach.
+  for (let i = 0; i < 40 && relay.inputs.length < 2; i++) { await step(); f.lead().pump(); await f.lead().idle() }
   assert.deepEqual(relay.inputs.map(i => i.key), [child, child], 'started twice with the same key')
   assert.equal(relay.runs.size, 1, 'the relay deduplicated by key: one run')
   assert.equal(f.runs().get(child).state, 'working')
-  relay.state = 'completed'
+  // After a real restart the relay reports its run interrupted and never resumes it: the lead hears promptly.
+  relay.state = 'interrupted'
   await step()
   f.lead().pump()
   await f.lead().idle()
+  assert.equal(f.runs().promises(runId)[0]!.outcome, 'failed')
   assert.equal(f.runs().get(runId).state, 'completed')
   assert.equal(f.runs().wakes(runId).length, 1)
 })
