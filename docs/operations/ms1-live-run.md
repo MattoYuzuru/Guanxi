@@ -114,6 +114,11 @@ $G preflight --config ~/ms1/exec/ms1-live.json
 Both nodes take `--data-dir` (or `GUANXI_DATA_DIR`); without either they use `<config dir>/data`, and **live mode refuses `~/.guanxi`**.
 Pass the same `--data-dir` to `doctor`. The bind address is exactly `127.0.0.1`.
 
+**Fedora with SELinux enforcing** (observed 2026-10-23): sshd may bind a remote forward only on an ephemeral port
+(32768 and up); `-R 4561` fails with `remote port forwarding failed for listen port 4561`. Give the home a federation
+port in that range (the first real run used `--federation-port 34561`, with the executor's `peer.url` and the
+`federationPort` of the home's offer to match) instead of relabelling ports.
+
 Before the first start, check that the forwards are what they should be. On Fedora, `sshd` must keep `GatewayPorts no` (the default,
 `sshd -T | grep -i gatewayports`), and once the forward is up `ss -ltn` must show the home's federation port bound to
 `127.0.0.1` only (`127.0.0.1:4561`, never `0.0.0.0:4561` or `*:4561`); on the Mac the same for `4562`. A wildcard bind would offer the

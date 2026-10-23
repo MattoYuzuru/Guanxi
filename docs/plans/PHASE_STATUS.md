@@ -1,31 +1,26 @@
 # Stage status
 
 **Status:** implemented tracker · **Updated:** 2026-10-23
-**Current stage:** wave 4 — overnight owner-away fan-out (2026-10-22/23), local Mac only, no SSH.
-Local `main` (pushed) now additionally contains, each independently reviewed by a separate Opus
-reviewer with fixes in separate commits: K4 queue-v3 Q0; the U1 integration (workspace states,
-mounted shell, status closure, primitive readiness, glossary; six components moved to unsigned
-`review`); R2-op (operational llama-server relay runtime with an exact counter and owned
-checkouts — the relay no longer refuses every stock start when the opt-in is configured); F2-c
-(remote token usage in the R1 cost ledger via an atomic `complete(…, cost)` seam); B3-a offline
-evidence validator; R3-b judge replay scorer and R3-c ETA calibration scorer; backend cores for
-NC1 (rules, inbox, delivery, producers, OS adapters, delivery wiring), V1 (glossary matcher, store,
-eval metrics, STT adapter), WG1/WG2 (work ledger, tracker sync), U3 (authorization core), P1
-(skills/AGENTS.md, plugin manager, MCP client) and C1 (browser origin policy, site grants); and
-the MS2 wiring (plugins, REST, contract, web client for notifications, voice and work); F2-d
-(relay inference on another node over signed F2 messages); LW (external lead delegate,
-zero-token hibernation, exactly-once wake, K5 boot reconciliation); the U1 session features;
-the notification center and glossary editor UIs; and the MS1 local rehearsal, which composes the
-whole MS1 path on loopback fixtures (one wake, unchanged lead ledger, 6.25 simulated hours, 15
-SIGKILL boundaries) and records the remaining blockers (no judge on a remote relay; stale executor
-pins after a home crash).
-The full gate sequence passed at `5570b9e5` after the X1 indexing timeout was root-caused (macOS
-background QoS starving the worker under the parallel suite) and two test races were fixed. See the
-[2026-10-23 record](evidence/coordination-2026-10-23.md). No stage exit or milestone is
-claimed: MS1 still needs a judge for a remote relay, stale-pin reaping, a ≥ 6-hour
-30B run on the Fedora node and recorded R3/B3 evidence; MS2 needs UI for the new backends, real action
-ports, U2, C1 host, C4, U3 authentication, DS2 owner signing and two weeks of daily use.
-The [2026-10-22 record](evidence/coordination-2026-10-22.md) keeps the earlier Fedora evidence.
+**Current stage:** wave 5 — owner-present Fedora runs (2026-10-23). `ssh fedora` is back (D-196).
+Since wave 4, local `main` (pushed at `536cad90`) additionally contains, each with an independent Opus
+review and fixes in separate commits: **F2-reap** (stale executor relay pins reaped: home pin journal,
+signed epoch-fenced unpin, executor pin leases on the lease clock, tombstones); **R3-remote** (a judge for
+relays started through the public start, local and remote; transport-bound judge model); **R3-journal**
+(D-199 local judge observation journal, replay reader); **K3-chat** (provider models in chat, dotenv key
+import into the K3 vault, owner-set OpenAI-compatible base URL import-only, ADR-0021 light orientation plus
+one reply-language line for chat); **MS1-live** (production `start()` as MS1 home or executor node,
+federation-only listener, `ms1-live` init/doctor/preflight/start, `home.judge`, runbook).
+**Real evidence** ([Fedora record](evidence/fedora-real-runtime-2026-10-23.md)): R2-op classes against the
+real llama-server (exact counts 39 = 39 = 39); the Mac↔Fedora pairing over SSH forwards (signed handshake,
+observe and exact count across the link); four one-item real relay runs on `ledger-lite` I01 that found three
+real-model defects — fenced JSON, a post-call recount that demanded a fresh observation, and unreliable
+action/probe format from the 27B IQ3 model. The first two are fixed on `claude/model-json-fences`
+(not yet on main); the third is lane **R2-json** (llama-server `json_schema` constrained output, file paging).
+The full gate sequence passed at `536cad90` (one load-sensitive indexing case passed on rerun).
+No stage exit or milestone is claimed: MS1 still needs R2-json, a successful multi-item real relay, the
+Claude Code lead (Sonnet 5.5 medium, D-210; the ACP bridge is not installed and its login is owner-only),
+the ≥ 6-hour run and recorded R3/B3 evidence. MS2 adds the UI redesign (D-200–D-207, lane in a second pass).
+Earlier records: [2026-10-23](evidence/coordination-2026-10-23.md), [2026-10-22](evidence/coordination-2026-10-22.md).
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
