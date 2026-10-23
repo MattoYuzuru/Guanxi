@@ -369,3 +369,72 @@ test('a role that is not served by the runtime that counts is refused at admissi
   assert.equal(await model.admit({ accountId: account, role: { ...role, model: ' FIXTURE ' }, signal }), false, 'the same model by another spelling reaches attestation (which declined)')
   assert.equal(attested, 1)
 })
+
+// ---- R3-remote: the judge dispatches through the transport that counts, on real K3 ----------------------------------------
+
+/** A llama-server-shaped meter and transport on loopback: the count and the evaluation are the same runtime's. */
+function runtimeMeter(f: Awaited<ReturnType<typeof setup>>, options: { async?: boolean; evaluated?: (counted: number) => number; counted?: number } = {}) {
+  const calls: string[] = [], known = new Map<string, number>(), requests: Array<Record<string, unknown>> = []
+  const size = (text: string) => options.counted ?? Buffer.byteLength(text)
+  const meter = {
+    countIsExact: true as const, localOnly: true,
+    observe: async () => ({ tokens: 16000, framingTokens: 0, source: 'fixture:loaded-rendered', observedAt: now, confidence: 'high' as const }),
+    authorizeDispatch: async () => { calls.push('authorize') },
+    count: (text: string) => { calls.push('count'); const n = options.async ? known.get(text) : size(text); if (n === undefined) throw new Error('uncounted string'); return n },
+    ...(options.async ? { countAsync: async (text: string) => { calls.push('countAsync'); known.set(text, size(text)); return size(text) } } : {}),
+    transport: { id: 'llama-server', host: 'http://127.0.0.1:8099', usageSource: 'fixture:llama-server',
+      async chat(request: Record<string, unknown>, _signal: AbortSignal, onDispatched: () => void, dispatch: { authorizeDispatch(): Promise<void>; prepare(): Record<string, any> }) {
+        calls.push('chat'); await dispatch.authorizeDispatch()
+        const first = dispatch.prepare(); requests.push(first); onDispatched()
+        const counted = known.get(first.messages[0].content) ?? size(first.messages[0].content)
+        return { model: String(request['model']), created_at: new Date(now).toISOString(), done: true, done_reason: 'stop', message: { role: 'assistant', content: '{"ok":true}' },
+          prompt_eval_count: options.evaluated ? options.evaluated(counted) : counted, eval_count: 7 }
+      } },
+  }
+  return { meter, calls, requests, role: { ...f.role }, binding: { connectionId: f.role.connectionId, model: f.role.model } }
+}
+const never: typeof globalThis.fetch = async () => { throw new Error('the Ollama path must not be used') }
+
+for (const asynchronous of [false, true]) {
+  test(`a ${asynchronous ? 'remote (asynchronously counted)' : 'local llama-server'} meter: count, authorization and dispatch all go through the meter's own runtime, never Ollama`, async t => {
+    const f = await setup(t, never), r = runtimeMeter(f, { async: asynchronous })
+    f.scrubber.register('secret://judge-fixture', 'synthetic-judge-secret')
+    const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+    const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+    assert.equal(await model.admit(input), true)
+    assert.equal(await model.sample({ ...input, runId: 'run', requestId: 'sample-0', prompt: 'quoted synthetic-judge-secret', check: () => {} }), '{"ok":true}')
+    assert.deepEqual(r.calls, asynchronous ? ['countAsync', 'chat', 'authorize', 'count'] : ['chat', 'authorize', 'count'], JSON.stringify(r.calls))
+    const [request] = r.requests
+    assert.equal(request!['think'], false); assert.equal(request!['stream'], false); assert.equal(request!['model'], r.role.model)
+    assert.deepEqual(request!['options'], { num_ctx: 16000, num_predict: 1000, temperature: 0 })
+    assert.equal(JSON.stringify(request).includes('synthetic-judge-secret'), false, 'scrubbed before it reaches the runtime')
+    assert.equal(f.connections.snapshot(account).costs.length, 1, 'K3 recorded the usage with the transport\'s source')
+    assert.equal(f.governor.snapshot().activeLease, null)
+  })
+}
+test('a runtime that evaluates other tokens than were counted gives the judge no result', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true, evaluated: n => n + 1 })
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  await model.admit(input)
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 's', prompt: 'fixture', check: () => {} }), /judge_usage_invalid/)
+})
+test('an input the runtime counts above the judge\'s ceiling is refused before the runtime is asked to evaluate it', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true, counted: 12001 })
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  await model.admit(input)
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 's', prompt: 'fixture', check: () => {} }), /judge_context_ceiling/)
+  assert.deepEqual(r.calls, ['countAsync'], 'counted, then nothing: no authorization and no dispatch')
+})
+test('a transport meter cannot reach a role on another connection or model through K3', async t => {
+  const f = await setup(t, never), r = runtimeMeter(f, { async: true })
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, async () => f.fact, 1000, () => now, r.binding)
+  for (const other of [{ model: 'another-model' }, { connectionId: 'another-connection' }]) {
+    const role = { ...r.role, ...other }
+    await assert.rejects(model.admit({ accountId: account, role, signal: new AbortController().signal }), /judge_config_invalid/)
+    // A role that was never admitted cannot be sampled either.
+    await assert.rejects(model.sample({ accountId: account, role, signal: new AbortController().signal, runId: 'run', requestId: 's', prompt: 'x', check: () => {} }))
+  }
+  assert.deepEqual(r.calls, [])
+})

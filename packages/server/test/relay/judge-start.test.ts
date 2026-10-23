@@ -10,6 +10,7 @@ import type { RelayStartInput } from '@guanxi/contract'
 import type { SignedDispatchGrant } from '@guanxi/contract/federation'
 import { OwnedCheckoutAllocator } from '../../src/relay/checkout.ts'
 import { ledgerJudgeInput, relayJudgeModel, startHostWithJudge, type RelayStartJudgeContext, type RelayStartJudgeSource } from '../../src/relay/judge-start.ts'
+import { evaluateJudgeSignals } from '../../src/relay/judge-signals.ts'
 import { RelayStarts } from '../../src/relay/start.ts'
 import { RelayStore } from '../../src/relay/store.ts'
 import { fakeTokens, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
@@ -234,4 +235,16 @@ test('the plugin-level default is used only when the start host has no judge of 
   assert.equal(startHostWithJudge(host, fallback).judge, fallback)
   assert.equal(startHostWithJudge({ ...host, judge: own }, fallback).judge, own, 'a start host\'s own source wins')
   assert.equal(startHostWithJudge({ ...host, judge: own }, undefined).judge, own)
+})
+
+test('the default collector reports what the ledger holds, leaves the rest unknown, and raises no_progress and deadline from it', async () => {
+  const ledger = { cycle: 4, noProgress: 3, startedAt: 1_000, caps: { wallMs: 5_000 } } as never
+  const input = ledgerJudgeInput(signalPolicy, () => 6_500)
+  const observation = await input.collect({ attempt: { id: 'a', runId: 'r', epoch: 1, token: 1 }, ledger, signal: new AbortController().signal })
+  assert.deepEqual([observation.cycle, observation.noProgressCycles, observation.deadlineAt, observation.observedAt], [4, 3, 6_000, 6_500])
+  assert.deepEqual([observation.heartbeatAt, observation.lease, observation.disk, observation.tokenBudgetForItem], [null, null, null, null], 'unknown, not healthy')
+  assert.deepEqual(evaluateJudgeSignals(observation, signalPolicy).map(signal => signal.code), ['deadline', 'no_progress'])
+  const open = await ledgerJudgeInput(signalPolicy, () => 6_500).collect({ attempt: { id: 'a', runId: 'r', epoch: 1, token: 1 },
+    ledger: { cycle: 1, noProgress: 0, startedAt: 1_000, caps: { wallMs: null } } as never, signal: new AbortController().signal })
+  assert.equal(open.deadlineAt, null); assert.deepEqual(evaluateJudgeSignals(open, signalPolicy), [])
 })
