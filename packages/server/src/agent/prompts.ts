@@ -9,9 +9,6 @@
  * tool-calling, следуют текстовой инструкции — и наш парсер их понимает.
  */
 
-export const CHAT_SYSTEM_PROMPT = `Ты — полезный ассистент. Отвечай по-русски, если пользователь пишет по-русски.
-Отвечай по существу, без вводных фраз и извинений. Код оформляй в блоках с указанием языка.`
-
 export function agentSystemPrompt(input: {
   workspaceRoot: string
   toolNames: readonly string[]

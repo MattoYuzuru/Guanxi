@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { sessionEventSchema } from '../events/session-events.ts'
 import { layoutClockSchema, layoutDocumentSchema } from '../layouts.ts'
 
-export const FEDERATION_VERSION = { major: 1, minor: 4 } as const
+export const FEDERATION_VERSION = { major: 1, minor: 5 } as const
 export const ATTEMPT_RESERVATIONS_MINOR = 2
 export const ATTEMPT_RESERVATIONS_CAPABILITY = 'attempt-reservations-v1'
 export const LAYOUT_CONFIG_MINOR = 1
@@ -149,6 +149,9 @@ export type SignedDispatchEvent = z.infer<typeof signedDispatchEventSchema>
 
 /** F2-d: a relay runtime served by the executor node's llama-server (federation 1.4). */
 export const RELAY_RUNTIME_MINOR = 4
+/** F2-reap (federation 1.5): relay pins are leased by the executor and must be renewed by the home's heartbeat. An older home
+ * never renews, so the executor refuses its pins instead of silently expiring them mid-run. */
+export const RELAY_PIN_LEASE_MINOR = 5
 export const RELAY_RUNTIME_CAPABILITY = 'remote-relay-runtime-v1'
 export const relayRuntimeBindingSchema = z.object({
   homeNodeId: federationId, executorNodeId: federationId, model: z.string().trim().min(1),

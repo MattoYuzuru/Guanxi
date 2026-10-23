@@ -1,3 +1,4 @@
+import { ConnectionError, connectionErrorStatus } from '../connections/errors.ts'
 /**
  * Единый формат ошибок API.
  *
@@ -18,9 +19,11 @@ import { PathOutsideWorkspaceError } from '../tools/jail.ts'
 import { ToolError } from '../tools/types.ts'
 import { ContextCheckpointStoreError } from '../store/threads.ts'
 
-type StatusCode = 400 | 403 | 404 | 409 | 500 | 502 | 503 | 504
+type StatusCode = 400 | 403 | 404 | 409 | 423 | 429 | 500 | 502 | 503 | 504
 
 function classify(error: unknown): { status: StatusCode; body: ApiError } {
+  if (error instanceof ConnectionError) return { status: connectionErrorStatus[error.code],
+    body: { code: error.code, message: 'Connection request failed', details: null } }
   if (error instanceof ContextCheckpointStoreError) {
     if (error.code === 'stale_checkpoint') {
       return {

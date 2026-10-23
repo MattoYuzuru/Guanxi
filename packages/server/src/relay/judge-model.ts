@@ -1,10 +1,12 @@
 import type { Connections } from '../connections/service.ts'
 import type { RuntimeMeter } from './model.ts'
 import type { EgressScrubber } from '../egress/types.ts'
-import { hash } from './handoff.ts'
-import { invariant } from './types.ts'
+import { canonical, hash } from './handoff.ts'
+import type { OllamaChatRequest } from '../ollama/types.ts'
+import { invariant, RelayError } from './types.ts'
 import type { JudgeRole } from './delegation-brief.ts'
 import { observeUntilAbort } from './judge-await.ts'
+import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 
 export interface JudgeModelInput {
   accountId: string
@@ -36,6 +38,15 @@ export interface InstalledJudgeAttestation {
   confidence: 'high'
   unattended: true
 }
+/** Default wall limit of one judge sample (a role may set its own): well below the 30 minutes a remote call may take. */
+export const DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS = 5 * 60_000
+/** The one runtime that counts and serves a transport-carrying meter (R2-op llama-server, F2-d remote node). The judge
+ * dispatches through that meter's own transport, so a role must name the same connection and the same model, or the
+ * count would be made by one runtime and the request run on another. */
+export interface JudgeRuntimeBinding {
+  connectionId: string
+  model: string
+}
 /** Explicit account scope and host inventory are required. Neither a local_runtime kind nor
  * a model-name suffix proves local placement. No cloud/API fallback exists in this adapter. */
 export class ConnectionJudgeModel implements JudgeModel {
@@ -50,6 +61,8 @@ export class ConnectionJudgeModel implements JudgeModel {
   private readonly attest: (input: JudgeModelInput) => Promise<InstalledJudgeAttestation | null>
   private readonly maxAgeMs: number
   private readonly now: () => number
+  private readonly runtime?: JudgeRuntimeBinding
+  private readonly sampleTimeoutMs: number
   constructor(
     connections: Connections,
     ownerAccountId: string,
@@ -57,8 +70,12 @@ export class ConnectionJudgeModel implements JudgeModel {
     scrubber: EgressScrubber,
     attest: (input: JudgeModelInput) => Promise<InstalledJudgeAttestation | null>,
     maxAgeMs: number,
-    now = Date.now
+    now = Date.now,
+    runtime?: JudgeRuntimeBinding,
+    options: { sampleTimeoutMs?: number } = {}
   ) {
+    this.sampleTimeoutMs = options.sampleTimeoutMs ?? DEFAULT_JUDGE_SAMPLE_TIMEOUT_MS
+    invariant(Number.isSafeInteger(this.sampleTimeoutMs) && this.sampleTimeoutMs > 0, 'judge_config_invalid')
     this.connections = connections
     this.ownerAccountId = ownerAccountId
     this.meter = meter
@@ -66,16 +83,27 @@ export class ConnectionJudgeModel implements JudgeModel {
     this.attest = attest
     this.maxAgeMs = maxAgeMs
     this.now = now
+    this.runtime = runtime ? { connectionId: runtime.connectionId, model: runtime.model } : undefined
     invariant(
       meter.countIsExact === true &&
-        // The judge dispatches through K3's Ollama path and cannot carry a runtime transport; a meter that
-        // needs one (llama-server, remote node) would otherwise be counted by one runtime and run on another.
-        !meter.transport && !meter.countAsync &&
+        // A stock Ollama meter is counted and served by the Ollama path K3 uses by default. A meter that names a
+        // runtime transport (llama-server, remote node) is counted and served by that runtime, so the judge
+        // dispatches through the same transport and only for the one connection and model that runtime serves.
+        // An asynchronous counter without its transport would be counted by one runtime and run on another.
+        (meter.transport
+          ? Boolean(this.runtime?.connectionId.trim()) && normalizeOllamaModelReference(this.runtime?.model ?? '') !== null
+          : !meter.countAsync) &&
         ownerAccountId.trim() &&
         Number.isSafeInteger(maxAgeMs) &&
         maxAgeMs >= 0,
       'judge_config_invalid'
     )
+  }
+  /** With a runtime binding, the role must be exactly the connection and model that runtime serves: the string that is sent
+   * is the string the relay itself sends, and the transport's counter is the one that counted it. */
+  private bound(role: JudgeRole): void {
+    if (!this.runtime) return
+    invariant(role.connectionId === this.runtime.connectionId && role.model === this.runtime.model, 'judge_config_invalid')
   }
   private fact(input: JudgeModelInput, fact: InstalledJudgeAttestation): void {
     invariant(
@@ -117,9 +145,30 @@ export class ConnectionJudgeModel implements JudgeModel {
       'judge_window_unknown'
     )
   }
+  /** The attestation and the loaded window were observed at admission, and one admission serves every sample of a request.
+   * A runtime that takes longer than `maxAgeMs` for a few samples (a remote llama-server at a few tokens per second) would
+   * otherwise find its own admission stale at the second sample. Past half the allowed age they are observed again. */
+  private stale(admission: { fact: InstalledJudgeAttestation; window: Awaited<ReturnType<RuntimeMeter['observe']>> }): boolean {
+    return this.now() - Math.min(admission.fact.observedAt, admission.window.observedAt) > this.maxAgeMs / 2
+  }
+  /** A fresh observation of the same runtime: same digest, same loaded window, same source. A different one is not refreshed
+   * but refused, and the new observations are validated exactly like the admission's. */
+  private async refresh(input: JudgeModelInput, admission: { fact: InstalledJudgeAttestation; window: Awaited<ReturnType<RuntimeMeter['observe']>> }): Promise<void> {
+    const fact = await observeUntilAbort(input.signal, () => this.attest(input))
+    invariant(fact, 'judge_local_unavailable')
+    this.fact(input, fact)
+    invariant(fact.digest === admission.fact.digest, 'judge_local_unavailable')
+    const window = await observeUntilAbort(input.signal, () => this.meter.observe(input.signal))
+    this.window(input, window)
+    invariant(window.tokens === admission.window.tokens && window.source === admission.window.source, 'judge_window_unknown')
+    input.signal.throwIfAborted()
+    admission.fact = { ...fact }
+    admission.window = { ...window }
+  }
   async admit(input: JudgeModelInput): Promise<boolean> {
     input.signal.throwIfAborted()
     invariant(input.accountId === this.ownerAccountId, 'judge_account_denied')
+    this.bound(input.role)
     const fact = await observeUntilAbort(input.signal, () => this.attest(input))
     if (!fact) return false
     this.fact(input, fact)
@@ -132,15 +181,52 @@ export class ConnectionJudgeModel implements JudgeModel {
     })
     return true
   }
-  async sample(input: Parameters<JudgeModel['sample']>[0]): Promise<string> {
+  /** One sample is bounded in wall time. The limit aborts the same signal the owner's cancel does, so the runtime is stopped
+   * and acknowledged before this settles (a stuck executor cannot hold a cycle for its whole call deadline); the outcome is
+   * the one fixed code `judge_sample_timeout`, which the cascade records as an unavailable verdict. */
+  async sample(raw: Parameters<JudgeModel['sample']>[0]): Promise<string> {
+    const timeout = AbortSignal.timeout(raw.role.sampleTimeoutMs ?? this.sampleTimeoutMs)
+    try {
+      return await this.run({ ...raw, signal: AbortSignal.any([raw.signal, timeout]) })
+    } catch (error) {
+      if (timeout.aborted && !raw.signal.aborted) throw new RelayError('judge_sample_timeout')
+      throw error
+    }
+  }
+  private async run(input: Parameters<JudgeModel['sample']>[0]): Promise<string> {
     const admission = this.admitted.get(hash({ account: input.accountId, role: input.role }))
     invariant(admission, 'judge_local_unavailable')
+    this.bound(input.role)
     input.signal.throwIfAborted()
     input.check()
+    if (this.stale(admission)) {
+      await this.refresh(input, admission)
+      input.check()
+    }
     this.fact(input, admission.fact)
     this.window(input, admission.window)
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const prompt = this.scrubber.scrub(input.prompt)
+    const transport = this.meter.transport
+    // A relay runtime (a binding, or a local-only exact meter) renders and counts the `think:false` form of the request, as
+    // the relay's own calls do. A judge request without it would be counted in one form and evaluated in another.
+    const pinned = Boolean(transport || this.runtime || this.meter.localOnly)
+    const options = {
+      num_ctx: admission.window.tokens,
+      num_predict: input.role.maxOutputTokens,
+      temperature: input.role.temperature
+    }
+    if (transport && this.meter.countAsync) {
+      // The exact answer needs a round trip to the runtime that will serve the request. It is obtained before the
+      // dispatch path starts, and `meter.count` below is then only a lookup of this answer for the identical string.
+      const known = await observeUntilAbort(input.signal, () => this.meter.countAsync!(prompt, input.signal))
+      invariant(
+        Number.isSafeInteger(known) && known >= 0 && known <= input.role.maxInputTokens,
+        'judge_context_ceiling'
+      )
+      input.signal.throwIfAborted()
+      input.check()
+    }
     let dispatchedInput: number | undefined
     const result = await this.connections.localChat(
       this.ownerAccountId,
@@ -148,12 +234,9 @@ export class ConnectionJudgeModel implements JudgeModel {
       {
         model: input.role.model,
         stream: false,
+        ...(pinned ? { think: false } : {}),
         messages: [{ role: 'user', content: prompt }],
-        options: {
-          num_ctx: admission.window.tokens,
-          num_predict: input.role.maxOutputTokens,
-          temperature: input.role.temperature
-        }
+        options
       },
       {
         runId: input.runId,
@@ -161,6 +244,20 @@ export class ConnectionJudgeModel implements JudgeModel {
         background: true,
         singleAttempt: true,
         signal: input.signal,
+        ...(transport ? { transport } : {}),
+        // The runtime is observed again (identity, window) immediately before it is asked to evaluate, as for a relay call.
+        ...(pinned
+          ? {
+              authorizeDispatch: async () => {
+                await this.meter.authorizeDispatch?.(input.signal)
+                input.signal.throwIfAborted()
+                input.check()
+                // The count of a slow remote string may have used up the admission's age.
+                if (this.stale(admission)) await this.refresh(input, admission)
+                input.check()
+              }
+            }
+          : {}),
         onPrepared: (request) => {
           input.signal.throwIfAborted()
           input.check()
@@ -171,6 +268,18 @@ export class ConnectionJudgeModel implements JudgeModel {
               typeof request.messages[0]!.content === 'string',
             'judge_request_shape'
           )
+          // The relay meter's `validatePrepared` pins the relay turn's output limit, which is not the judge's. The
+          // judge's own request is therefore pinned here, exactly, for the runtime that counts it.
+          if (pinned) {
+            const chat = request as OllamaChatRequest
+            invariant(
+              chat.model === input.role.model &&
+                chat.stream === false &&
+                chat.think === false &&
+                canonical(chat.options) === canonical(options),
+              'judge_request_shape'
+            )
+          }
           const count = this.meter.count(request.messages[0]!.content as string)
           invariant(
             Number.isSafeInteger(count) && count >= 0 && count <= input.role.maxInputTokens,

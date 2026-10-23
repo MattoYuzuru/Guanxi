@@ -1,6 +1,14 @@
 {
   "$comment": "Owner approval public keys (D-138). Only the owner adds a key: run `node packages/ui/catalog/scripts/approval-key.ts init` on the owner's Mac and commit the printed entry on main. A change on any other branch must raise `version` and carry a rotation signed by a key already trusted on main, or gate G12 fails.",
-  "version": 0,
-  "keys": [],
+  "version": 1,
+  "keys": [
+    {
+      "keyId": "p256:4a25e11e0f41cbc59af92aedb0697ac6",
+      "algorithm": "p256",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEVJBxwJ6PhVLrp7daObqVaYDiQZEV9baqskZaMMIx4YcoNp1eV7q/3J1wiYm52CqPUE2+zpWsE7L3VditYtoPJQ==",
+      "addedAt": "2026-10-23T08:14:49.831Z",
+      "note": "owner approval key"
+    }
+  ],
   "rotation": null
 }

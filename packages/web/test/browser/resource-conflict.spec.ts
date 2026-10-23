@@ -1,4 +1,4 @@
-import { SESSION_ROUTES } from '@guanxi/contract'
+import { chatModelSelection, healthSchema, SESSION_ROUTES } from '@guanxi/contract'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { activeRuntimeBrowserSnapshot, browserSettings } from './fixtures/runtime-snapshot.ts'
 import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
@@ -23,6 +23,7 @@ async function installFixture(
   page: Page,
   owner: OwnerMode = 'job',
   cancelFails = false,
+  provider = false,
 ): Promise<FixtureControl> {
   const control: FixtureControl = {
     owner,
@@ -39,7 +40,7 @@ async function installFixture(
     const url = new URL(request.url())
     const method = request.method()
 
-    if (url.pathname === '/api/health') return fulfillJson(route, health())
+    if (url.pathname === '/api/health') return fulfillJson(route, healthSchema.parse(provider ? { ...health(), ollama: { ...health().ollama, running: false, state: 'unavailable' } } : health()))
     if (url.pathname === SESSION_ROUTES.page()) {
       return fulfillJson(route, { sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
     }
@@ -56,6 +57,7 @@ async function installFixture(
         scope: 'projectless',
         chats: [{
           ...thread(control.messageCalls > 0 ? 2 : 0),
+          ...(provider ? { model: chatModelSelection('ad07f428-d220-45a2-89be-6ec819c8592c', 'owner-model') } : {}),
           ownershipVersion: 1,
           projectId: null,
         }],
@@ -63,7 +65,7 @@ async function installFixture(
     }
     if (url.pathname === `/api/threads/${threadId}` && method === 'GET') {
       return fulfillJson(route, {
-        thread: thread(control.messageCalls > 0 ? 2 : 0),
+        thread: { ...thread(control.messageCalls > 0 ? 2 : 0), ...(provider ? { model: chatModelSelection('ad07f428-d220-45a2-89be-6ec819c8592c', 'owner-model') } : {}) },
         messages: control.messageCalls > 0 ? pendingMessages() : [],
         context: context(),
       })
@@ -359,3 +361,16 @@ function queuedJob() {
 function fulfillJson(route: Route, body: unknown, status = 200) {
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 }
+
+
+test('provider composer works with Ollama down and bypasses a held local resource', async ({ page }) => {
+  const control = await installFixture(page, 'job', false, true)
+  await page.goto(`/chat/${threadId}`)
+  const composer = page.getByRole('textbox', { name: 'Сообщение' })
+  await expect(composer).toBeEnabled()
+  await composer.fill('Provider fixture')
+  await composer.press('Enter')
+  await expect.poll(() => control.messageCalls).toBe(1)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(control.cancelCalls).toBe(0)
+})

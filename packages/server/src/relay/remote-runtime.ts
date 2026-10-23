@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { ZodError } from 'zod'
 import { RELAY_RUNTIME_PROBE, type CountedRequest, type LocalInferenceJob, type RelayRuntimeBinding } from '@guanxi/contract/federation'
-import type { Federation } from '../federation/service.ts'
+import { MAX_TIMER_MS, type Federation } from '../federation/service.ts'
 import type { FederationChannel } from '../federation/channel.ts'
 import { FederationError, canonical } from '../federation/crypto.ts'
 import type { LocalChatTransport } from '../connections/service.ts'
@@ -42,6 +42,9 @@ export interface RemoteRelayRuntimeOptions {
   cancelWaitMs?: number
   /** Distinct exact answers remembered per session. Default 512. */
   cacheEntries?: number
+  /** F2-reap: how often a live session renews its pin lease on the executor (a re-sent idempotent signed pin). It must be well
+   * under the executor's `relayLimits.pinTtlMs` (default 10 minutes). Default 60 s. */
+  pinRenewMs?: number
 }
 /** Home-side relay runtime on another node. It is a factory of per-start sessions because every piece of
  * evidence is bound to one relay run and its fence. Used directly it refuses: there is no unbound fallback. */
@@ -56,10 +59,10 @@ export class RemoteRelayRuntime implements RelayRuntimeObserver {
     let holderTtl: number
     try { holderTtl = options.federation.holderTtlMs() } catch { throw new RelayError('runtime_meter_unavailable') }
     const cancelWaitMs = options.cancelWaitMs ?? holderTtl
-    for (const ms of [cancelWaitMs, options.callDeadlineMs ?? 1, options.reservationMs ?? 1, options.pollMs ?? 1, options.cacheEntries ?? 1]) {
+    for (const ms of [cancelWaitMs, options.callDeadlineMs ?? 1, options.reservationMs ?? 1, options.pollMs ?? 1, options.cacheEntries ?? 1, options.pinRenewMs ?? 1]) {
       invariant(Number.isSafeInteger(ms) && ms > 0, 'relay_policy_invalid')
     }
-    invariant(cancelWaitMs >= holderTtl, 'relay_policy_invalid')
+    invariant(cancelWaitMs >= holderTtl && (options.pinRenewMs ?? 1) <= MAX_TIMER_MS, 'relay_policy_invalid')
     this.options = Object.freeze({ ...options, cancelWaitMs }); this.model = model
     this.remote = Object.freeze({ nodeId: options.executorNodeId })
     this.host = `federation://${encodeURIComponent(options.executorNodeId)}`
@@ -90,6 +93,8 @@ class RemoteRelaySession implements RelayRuntimeSession {
   private attempt: Attempt | undefined
   private pending: { runId: string; sessionId: string; epoch: number } | undefined
   private pinSent = false
+  private renewal: ReturnType<typeof setInterval> | undefined
+  private renewing: Promise<void> | undefined
   private closed = false
   private identity = ''
   private proven = ''
@@ -133,25 +138,47 @@ class RemoteRelaySession implements RelayRuntimeSession {
     const active = this.signalFor(signal)
     active.throwIfAborted()
     this.pending = { ...run }
-    this.pinSent = true
+    // F2-reap: the home's own durable record comes first. A crash from here on, even after the executor acknowledged the pin
+    // and before any run row exists, leaves a journal row that the next boot reconciles with a signed, fenced unpin.
     try {
+      this.options.federation.journalRelayPin(this.options.executorNodeId, { ...run, model: this.model })
+      this.pinSent = true
       await abortableRead(this.channel.relayPin(this.pinRequest('pin')), active)
     } catch (error) {
       await this.unpin()
       this.pending = undefined
       return this.refuse(error, active)
     }
+    this.renewal = setInterval(() => { void this.renew() }, this.options.pinRenewMs ?? 60_000)
+    this.renewal.unref()
   }
   private pinRequest(action: 'pin' | 'unpin') {
     const run = this.pending!
     return { action, homeNodeId: this.options.federation.identity.id, executorNodeId: this.options.executorNodeId, model: this.model,
       runId: run.runId, sessionId: run.sessionId, epoch: run.epoch, challenge: randomUUID() }
   }
-  /** Best effort and bounded: a node that cannot be reached keeps a pin that no longer serves any run of this home. */
+  /** Heartbeat: asking again renews the executor's lease on the pin (or restores a lapsed one while the cap allows). A missed
+   * beat is retried at the next one; the executor's lease is sized for several. */
+  private async renew(): Promise<void> {
+    if (this.closed || !this.pinSent || !this.pending || this.renewing) return
+    const beat = abortableRead(this.channel.relayPin(this.pinRequest('pin')), AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(5000)]))
+      .then(() => undefined, () => undefined /* see above */)
+    this.renewing = beat
+    try { await beat } finally { this.renewing = undefined }
+  }
+  /** Best effort and bounded. An unreachable executor keeps the pin, but the home's journal row stays too: it is released by the
+   * home's reconciliation when the executor is back, or by the executor's own lease. */
   private async unpin(): Promise<void> {
     if (!this.pinSent || !this.pending) return
     this.pinSent = false
-    try { await abortableRead(this.channel.relayPin(this.pinRequest('unpin')), AbortSignal.timeout(5000)) } catch { /* see above */ }
+    clearInterval(this.renewal); this.renewal = undefined
+    const { runId } = this.pending
+    // A heartbeat already on the wire must land before the unpin, or it could re-create the pin after its release.
+    await this.renewing
+    try {
+      await abortableRead(this.channel.relayPin(this.pinRequest('unpin')), AbortSignal.timeout(5000))
+      this.options.federation.settleRelayPin(runId)
+    } catch { this.options.federation.retireRelayPin(runId) }
   }
   bind(attempt: Attempt): void {
     invariant(this.pending && !this.attempt, 'runtime_identity_unknown')

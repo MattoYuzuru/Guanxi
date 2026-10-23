@@ -86,6 +86,7 @@ function ConnectionRow({ connection, snapshot, busy, mutate }: {
   const base = useId()
   const costs = snapshot.costs.filter(cost => cost.connectionId === connection.id)
   return <article className="connections-record border-t pt-4" aria-labelledby={`${base}-name`}>
+    {connection.baseUrl && <p className="connections-muted text-12">{translate('connections.endpointHost', { host: new URL(connection.baseUrl).host })}</p>}
     <h3 id={`${base}-name`} className="break-words connections-heading">{connection.name}</h3>
     <p className="connections-muted text-12">{translate('connections.route', { provider: translate(`connections.provider.${connection.provider}`), kind: translate(`connections.kind.${connection.kind}`) })}</p>
     <p className="mt-2">{translate(connection.balance?.scope === 'key_allowance' ? 'connections.allowance' : 'connections.balance')}: <span data-testid="connection-balance">{balanceLabel(connection.balance)}</span></p>

@@ -31,6 +31,7 @@ import {
   DEFAULT_CHAT_NUM_CTX,
   DEFAULT_NUM_CTX,
   DEFAULT_TEMPERATURE,
+  parseChatModelSelection,
 } from '@guanxi/contract'
 import { Markdown } from '../../components/Markdown.tsx'
 import {
@@ -140,6 +141,15 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       ? requestedContext
       : defaultContext
   const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
+  const providerModels = useAsync(signal => api.chatModels(signal), [])
+  useEffect(() => {
+    const timer = setInterval(providerModels.reload, 15_000)
+    const refresh = () => providerModels.reload()
+    window.addEventListener('focus', refresh)
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [providerModels.reload])
+  const providerGroups = mode === 'chat' ? providerModels.data?.groups ?? [] : []
+  const providerSelected = providerGroups.some(group => group.models.some(item => item.selection === model))
   const workspaces = useAsync(
     (signal) => projectId ? Promise.resolve({ workspaces: [] }) : api.listWorkspaces(signal),
     [projectId],
@@ -157,16 +167,23 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
   })
 
   useEffect(() => {
-    if (model || availableModels.length === 0) return
+    const providerInvalid = parseChatModelSelection(model) && (mode === 'agent' || !providerModels.loading && !providerSelected)
+    if (model && !providerInvalid) return
+    if (providerInvalid) setModel('')
+    if (availableModels.length === 0) {
+      const first = providerGroups[0]?.models[0]?.selection
+      if (first) setModel(first)
+      return
+    }
     const preferred = settings.data?.defaultModel
     setModel(
-      (preferred && availableModels.some((item) => item.name === preferred)
+      (preferred && !parseChatModelSelection(preferred) && availableModels.some((item) => item.name === preferred)
         ? preferred
         : availableModels.find((item) => !item.capabilities.includes('embedding'))?.name) ??
         availableModels[0]?.name ??
         '',
     )
-  }, [availableModels, model, settings.data?.defaultModel])
+  }, [availableModels, providerGroups, providerModels.loading, providerSelected, model, mode, settings.data?.defaultModel])
 
   const create = async (event: FormEvent) => {
     event.preventDefault()
@@ -277,7 +294,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
 
           <label className="block">
             <span className="mb-1 block text-xs font-medium">{translate('chat.create.model')}</span>
-            {models.loading ? (
+            {models.loading && providerGroups.length === 0 ? (
               <Skeleton className="h-8 w-full" />
             ) : (
               <Select
@@ -286,14 +303,18 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
                 ariaLabel={translate('chat.create.modelAria')}
                 options={availableModels.map((item) => ({
                   value: item.name,
-                  label: `${item.name}${item.capabilities.includes('tools') ? ' · tools' : ''}`,
+                  label: item.name,
+                  group: translate('chat.models.local'), groupId: 'ollama',
                   disabled: item.capabilities.includes('embedding'),
-                }))}
+                })).concat(providerGroups.flatMap(group => group.models.map(item => ({
+                  value: item.selection, label: item.modelId, group: group.label, groupId: group.id, disabled: false,
+                }))))}
               />
             )}
             {models.error !== null && (
               <p className="mt-1 text-2xs text-danger">{errorMessage(models.error)}</p>
             )}
+            {providerModels.error !== null && availableModels.length === 0 && !providerSelected && <p role="status" className="mt-1 text-12 text-muted">{translate('chat.models.unavailable')}</p>}
             {selectedModel && mode === 'chat' ? (
               <p className="mt-1 text-2xs text-muted" role="status" aria-live="polite">
                 {prewarmLabel(prewarm)}
@@ -452,7 +473,7 @@ function ThreadPage({
     },
     [autoApprove, chat.send],
   )
-  const resourceDecision = useResourceConflictDecision(dispatchChat)
+  const resourceDecision = useResourceConflictDecision(dispatchChat, !parseChatModelSelection(chat.thread?.model ?? ''))
 
   const workspace =
     workspaces.data?.workspaces.find((item) => item.id === chat.thread?.workspaceId) ?? null
@@ -525,7 +546,7 @@ function ThreadPage({
               </Link>
             )}
             <div className="mt-0.5 flex items-center gap-2 text-2xs text-muted">
-              <span className="truncate font-mono">{chat.thread.model}</span>
+              <span className="truncate font-mono">{parseChatModelSelection(chat.thread.model)?.modelId ?? chat.thread.model}</span>
               <ContextChip context={chat.context} />
             </div>
           </div>
@@ -587,7 +608,7 @@ function ThreadPage({
           {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
           <Composer
             inputRef={composerRef}
-            disabled={!health.ollama.running}
+            disabled={!health.ollama.running && !parseChatModelSelection(chat.thread?.model ?? '')}
             decisionOpen={resourceDecision.decision !== null}
             phase={chat.phase}
             isStreaming={chat.isStreaming}
@@ -952,6 +973,9 @@ function turnStatusLabel(status: TurnStatus | null): string {
 
 function turnErrorLabel(code: TurnErrorCode): string {
   switch (code) {
+    case 'connection_not_found': case 'vault_locked': case 'policy_denied': case 'egress_unavailable':
+    case 'validation_failed': case 'quota_exhausted': case 'provider_failed':
+      return translate(`connections.error.${code}`)
     case 'ollama_unavailable':
       return translate('chat.turn.error.ollama_unavailable')
     case 'ollama_connect_timeout':
@@ -1242,7 +1266,7 @@ function ThreadSidebar({
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
               <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-secondary">
-                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : thread.model}</span>
+                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : parseChatModelSelection(thread.model)?.modelId ?? thread.model}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>
             </Link>
