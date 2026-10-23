@@ -108,7 +108,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
       {progress && <Badge tone={progress.status === 'running' ? 'accent' : progress.status === 'completed' ? 'success' : progress.status === 'failed' ? 'danger' : 'neutral'}>
         {t(`native.${progress.status}`)}</Badge>}
       <div className="native-session-actions">
-        {progress && <IconButton label={t('native.trace')} icon={<Icon name="trace" />} nativeButton={false} render={<Link to={paths.inspector(progress.sessionId)} />} />}
+        {progress && <IconButton label={t('native.trace')} icon={<Icon name="trace" />} nativeButton={false} role="link" render={<Link to={paths.inspector(progress.sessionId)} />} />}
         {progress && <Popover>
           <PopoverTrigger render={<IconButton label={t('native.info')} icon={<Icon name="info" />} />} />
           <PopoverContent align="end" className="w-sm">
