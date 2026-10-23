@@ -460,3 +460,40 @@ test('the request K3 hands back is pinned: a scrubber that rewrites the model na
   assert.deepEqual(r.requests, [], 'the runtime was never handed a request')
   assert.deepEqual(r.calls.filter(call => call === 'count'), [], 'and nothing was counted for dispatch')
 })
+
+// ---- R3-remote: one admission serves every sample, and a slow runtime outlasts its age --------------------------------------
+
+/** A runtime whose every evaluation takes `ms` of the model's clock (a remote llama-server at a few tokens per second). */
+function slowRuntime(f: Awaited<ReturnType<typeof setup>>, ms: number) {
+  const clock = { t: now }, observed: number[] = []
+  const r = runtimeMeter(f, { async: true })
+  r.meter.observe = async () => { observed.push(clock.t); return { tokens: 16000, framingTokens: 0, source: 'fixture:loaded-rendered', observedAt: clock.t, confidence: 'high' as const } }
+  const chat = r.meter.transport.chat
+  r.meter.transport.chat = async (...args: Parameters<typeof chat>) => { const out = await chat(...args); clock.t += ms; return out }
+  const attest = async () => ({ ...f.fact, observedAt: clock.t })
+  return { ...r, clock, observed, attest }
+}
+test('samples that outlast maxAgeMs are re-observed, not refused on the age of the admission', async t => {
+  const f = await setup(t, never), r = slowRuntime(f, 1500)
+  const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, r.attest, 1000, () => r.clock.t, r.binding)
+  const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+  assert.equal(await model.admit(input), true)
+  for (let n = 0; n < 3; n++) assert.equal(await model.sample({ ...input, runId: 'run', requestId: `slow-${n}`, prompt: `fixture ${n}`, check: () => {} }), '{"ok":true}')
+  assert.equal(r.requests.length, 3, 'three evaluations on one admission, each 1.5 s long against a 1 s age')
+  assert.deepEqual(r.observed, [now, now + 1500, now + 3000], 'observed at admission and again, once, at each later sample: never more often than needed')
+})
+test('a refresh that finds another loaded window or another model identity is a refusal, not a refresh', async t => {
+  for (const change of ['window', 'identity'] as const) {
+    const f = await setup(t, never), r = slowRuntime(f, 1500)
+    let digest = f.fact.digest
+    const attest = async () => ({ ...f.fact, digest, observedAt: r.clock.t })
+    const observe = r.meter.observe
+    const model = new ConnectionJudgeModel(f.connections, account, r.meter as never, f.scrubber, attest, 1000, () => r.clock.t, r.binding)
+    const input = { accountId: account, role: r.role, signal: new AbortController().signal }
+    await model.admit(input)
+    await model.sample({ ...input, runId: 'run', requestId: 'first', prompt: 'fixture', check: () => {} })
+    if (change === 'window') r.meter.observe = async () => ({ ...(await observe()), tokens: 8000 }); else digest = 'b'.repeat(64)
+    await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 'second', prompt: 'fixture 2', check: () => {} }), change === 'window' ? /judge_window_unknown/ : /judge_local_unavailable/)
+    assert.equal(r.requests.length, 1, 'the second evaluation never started')
+  }
+})

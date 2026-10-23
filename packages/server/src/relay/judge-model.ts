@@ -139,6 +139,26 @@ export class ConnectionJudgeModel implements JudgeModel {
       'judge_window_unknown'
     )
   }
+  /** The attestation and the loaded window were observed at admission, and one admission serves every sample of a request.
+   * A runtime that takes longer than `maxAgeMs` for a few samples (a remote llama-server at a few tokens per second) would
+   * otherwise find its own admission stale at the second sample. Past half the allowed age they are observed again. */
+  private stale(admission: { fact: InstalledJudgeAttestation; window: Awaited<ReturnType<RuntimeMeter['observe']>> }): boolean {
+    return this.now() - Math.min(admission.fact.observedAt, admission.window.observedAt) > this.maxAgeMs / 2
+  }
+  /** A fresh observation of the same runtime: same digest, same loaded window, same source. A different one is not refreshed
+   * but refused, and the new observations are validated exactly like the admission's. */
+  private async refresh(input: JudgeModelInput, admission: { fact: InstalledJudgeAttestation; window: Awaited<ReturnType<RuntimeMeter['observe']>> }): Promise<void> {
+    const fact = await observeUntilAbort(input.signal, () => this.attest(input))
+    invariant(fact, 'judge_local_unavailable')
+    this.fact(input, fact)
+    invariant(fact.digest === admission.fact.digest, 'judge_local_unavailable')
+    const window = await observeUntilAbort(input.signal, () => this.meter.observe(input.signal))
+    this.window(input, window)
+    invariant(window.tokens === admission.window.tokens && window.source === admission.window.source, 'judge_window_unknown')
+    input.signal.throwIfAborted()
+    admission.fact = { ...fact }
+    admission.window = { ...window }
+  }
   async admit(input: JudgeModelInput): Promise<boolean> {
     input.signal.throwIfAborted()
     invariant(input.accountId === this.ownerAccountId, 'judge_account_denied')
@@ -161,6 +181,10 @@ export class ConnectionJudgeModel implements JudgeModel {
     this.bound(input.role)
     input.signal.throwIfAborted()
     input.check()
+    if (this.stale(admission)) {
+      await this.refresh(input, admission)
+      input.check()
+    }
     this.fact(input, admission.fact)
     this.window(input, admission.window)
     invariant(this.scrubber.isReady(), 'egress_not_ready')
@@ -209,6 +233,9 @@ export class ConnectionJudgeModel implements JudgeModel {
               authorizeDispatch: async () => {
                 await this.meter.authorizeDispatch?.(input.signal)
                 input.signal.throwIfAborted()
+                input.check()
+                // The count of a slow remote string may have used up the admission's age.
+                if (this.stale(admission)) await this.refresh(input, admission)
                 input.check()
               }
             }
