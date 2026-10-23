@@ -1,6 +1,7 @@
 import type { RuntimeSnapshot } from '@guanxi/contract'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { replaceEqualDeep } from '../../lib/stable.ts'
+import { QUIET_FAILURES_BEFORE_ERROR } from '../../lib/useAsync.ts'
 
 export const RUNTIME_ACTIVE_POLL_INTERVAL_MS = 2_000
 export const RUNTIME_IDLE_POLL_INTERVAL_MS = 10_000
@@ -32,7 +33,8 @@ export function useRuntimePolling(
   const requestRef = useRef<AbortController | null>(null)
   const pendingRef = useRef<Promise<RuntimeSnapshot> | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const runRef = useRef<() => Promise<RuntimeSnapshot>>(() =>
+  const failuresRef = useRef(0)
+  const runRef = useRef<(quiet?: boolean) => Promise<RuntimeSnapshot>>(() =>
     Promise.reject(new DOMException('Runtime polling is not mounted', 'AbortError')),
   )
 
@@ -55,12 +57,12 @@ export function useRuntimePolling(
         snapshot?.governor.activeLease || snapshot?.governor.queued.length,
       )
       timerRef.current = setTimeout(
-        () => void runRef.current().catch(() => undefined),
+        () => void runRef.current(true).catch(() => undefined),
         active ? RUNTIME_ACTIVE_POLL_INTERVAL_MS : RUNTIME_IDLE_POLL_INTERVAL_MS,
       )
     }
 
-    runRef.current = () => {
+    runRef.current = (quiet = false) => {
       clearTimer()
       if (!mounted) {
         return Promise.reject(
@@ -82,6 +84,7 @@ export function useRuntimePolling(
           if (!mounted || controller.signal.aborted) {
             throw new DOMException('Runtime refresh was aborted', 'AbortError')
           }
+          failuresRef.current = 0
           const stable = dataRef.current === null ? data : replaceEqualDeep(dataRef.current, data)
           dataRef.current = stable
           setState((previous) =>
@@ -92,6 +95,10 @@ export function useRuntimePolling(
         },
         (error: unknown) => {
           if (!mounted || controller.signal.aborted) throw error
+          failuresRef.current += 1
+          // A quiet poll that fails while a sample is shown stays invisible until three consecutive
+          // failures (the useAsync rule, D-203); an explicit refresh or a first read surfaces at once.
+          if (quiet && dataRef.current !== null && failuresRef.current < QUIET_FAILURES_BEFORE_ERROR) throw error
           setState((previous) => ({
             data: previous.data,
             error,
@@ -118,7 +125,7 @@ export function useRuntimePolling(
         clearTimer()
         return
       }
-      void runRef.current().catch(() => undefined)
+      void runRef.current(true).catch(() => undefined)
     }
 
     document.addEventListener('visibilitychange', onVisibilityChange)
