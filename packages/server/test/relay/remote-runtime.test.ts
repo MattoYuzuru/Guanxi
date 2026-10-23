@@ -11,8 +11,11 @@ const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 const rendered = (prompt: string) => fakeRender(prompt, { template: 'chat' }, false)
 const exact = (prompt: string) => fakeTokens(rendered(prompt), true)
 const grants = (sent: Sent[]) => sent.filter(s => s.path === '/attempts/dispatch').map(s => (s.body as SignedDispatchGrant).grant)
-const events = (f: Awaited<ReturnType<typeof remoteFixture>>) => f.target.db.prepare('SELECT payload FROM remote_dispatch_events ORDER BY id,seq').all()
-  .map(row => (JSON.parse(String(row.payload)) as SignedDispatchEvent).entry.event)
+const events = (f: Awaited<ReturnType<typeof remoteFixture>>) => {
+  try {
+    return f.target.db.prepare('SELECT payload FROM remote_dispatch_events ORDER BY id,seq').all().map(row => (JSON.parse(String(row.payload)) as SignedDispatchEvent).entry.event)
+  } catch { return [] }   // the ledger is created at the first dispatch
+}
 const terminals = (f: Awaited<ReturnType<typeof remoteFixture>>) => events(f).flatMap(e => e.kind === 'terminal' ? [e] : [])
 async function code(promise: Promise<unknown>): Promise<string> {
   try { await promise } catch (error) { return String((error as { code?: unknown }).code ?? (error as Error).message) }
@@ -259,6 +262,10 @@ test('a relay fence lost before the call dispatches nothing and creates no child
   await r.model.countAsync!('lost before')
   f.home.runs.cancel('relay')
   const runs = (f.home.db.prepare('SELECT COUNT(*) n FROM durable_runs').get() as { n: number }).n
+  const runtimeRequests = f.seen.filter(p => p.startsWith('/attempts/runtime')).length
+  assert.equal(await code(r.model.countAsync!('counted after the loss')), 'stale_lease', 'evidence is neither requested nor used under a deposed attempt')
+  assert.equal(await code(r.model.observe()), 'stale_lease')
+  assert.equal(f.seen.filter(p => p.startsWith('/attempts/runtime')).length, runtimeRequests, 'no relay request left the home after the loss')
   assert.equal(await code(r.call('lost before', { prime: false })), 'provider_failed')
   assert.equal((f.home.db.prepare('SELECT COUNT(*) n FROM durable_runs').get() as { n: number }).n, runs)
   assert.equal(f.seen.includes('/attempts/offers'), false); assert.equal((await f.completions()).length, 0)
@@ -347,4 +354,68 @@ test('K3 takes no home permit for a remote transport and still requires the pinn
   }
   // A transport that is not remote still needs a loopback origin and a permit.
   await assert.rejects(f.h.connections.localChat('local', f.homeConnection.id, request, { ...call, transport: { ...stub('federation://target'), remote: undefined } }))
+})
+
+test('the executor refuses relay requests from old, read-only, shared, unscoped or foreign peers', async t => {
+  const f = await remoteFixture(t), binding = { homeNodeId: 'home', executorNodeId: 'target', model: 'fixture', run: null }
+  const request = { binding, challenge: 'c' }, ctx = f.homeCtx
+  await assert.rejects(f.target.federation.receiveRelayObserve({ ...ctx, version: { major: 1, minor: 3 } }, request), /contract_feature_unavailable/)
+  await assert.rejects(f.target.federation.receiveRelayObserve({ ...ctx, readOnly: true }, request), /contract_read_only/)
+  await assert.rejects(f.target.federation.receiveRelayObserve({ ...ctx, identity: f.target.keys.identity }, request), /owner_mismatch/, 'a node cannot ask itself on behalf of the home')
+  const { identity: makeIdentity } = await import('../federation/harness.ts')
+  for (const [name, overrides, expected] of [
+    ['shared device', { trust: 'shared_device', admin: false, scopes: ['attempts'] }, /owner_mismatch/],
+    ['no attempts scope', { scopes: ['config'] }, /scope_denied/],
+    ['another account', { accountId: 'stranger', scopes: ['attempts'] }, /owner_mismatch/],
+  ] as Array<[string, Parameters<typeof makeIdentity>[1], RegExp]>) {
+    const peer = makeIdentity('phone-' + name.replace(/ /g, '-'), overrides)
+    f.target.federation.trust(peer.identity)
+    await assert.rejects(f.target.federation.receiveRelayObserve({ ...ctx, identity: peer.identity }, { binding: { ...binding, homeNodeId: peer.identity.id }, challenge: 'c' }), expected, name)
+    await assert.rejects(f.target.federation.receiveRelayCount({ ...ctx, identity: peer.identity }, { binding: { ...binding, homeNodeId: peer.identity.id }, challenge: 'c', content: 'x' }), expected, name)
+  }
+  // Malformed and extended bodies are not parsed leniently.
+  await assert.rejects(f.target.federation.receiveRelayObserve(ctx, { ...request, extra: true }))
+  await assert.rejects(f.target.federation.receiveRelayCount(ctx, { binding, challenge: 'c' }))
+  f.target.federation.close()
+  await assert.rejects(f.target.federation.receiveRelayObserve(ctx, request))
+})
+
+test('count evidence exists only on a count and the wire schemas accept nothing extra', async () => {
+  const { relayRuntimeEvidenceSchema, countedRequestSchema } = await import('@guanxi/contract/federation')
+  const base = { kind: 'observe' as const, binding: { homeNodeId: 'h', executorNodeId: 'e', model: 'm', run: null }, challenge: 'c', executorNodeId: 'e', model: 'm',
+    digest: 'd', contextTokens: 10, runtimeVersion: 'v', source: 's', observedAt: 1, count: null }
+  assert.ok(relayRuntimeEvidenceSchema.safeParse(base).success)
+  const count = { contentSha256: 'a'.repeat(64), renderedSha256: 'b'.repeat(64), tokens: 3 }
+  assert.equal(relayRuntimeEvidenceSchema.safeParse({ ...base, count }).success, false, 'observe carries no count')
+  assert.equal(relayRuntimeEvidenceSchema.safeParse({ ...base, kind: 'count' }).success, false, 'count needs its count')
+  assert.ok(relayRuntimeEvidenceSchema.safeParse({ ...base, kind: 'count', count }).success)
+  assert.equal(relayRuntimeEvidenceSchema.safeParse({ ...base, extra: 1 }).success, false)
+  assert.equal(countedRequestSchema.safeParse({ ...count, digest: 'd', contextTokens: 10, extra: 1 }).success, false)
+  assert.equal(countedRequestSchema.safeParse({ ...count, tokens: 0, digest: 'd', contextTokens: 10 }).success, false)
+})
+
+test('the home refuses a terminal result that does not echo the counted rendering and token count, even from a signed executor', async t => {
+  const f = await remoteFixture(t), r = await f.relay()
+  for (const [name, patch] of [['tokens', { inputTokens: exact('Forged result.') + 1 }], ['rendering', { renderedSha256: sha('another rendering') }], ['source', { source: 'ollama:/api/chat' as const }]] as const) {
+    const prompt = `Forged result. ${name}`.replace('result. ', 'result.')
+    const real = exact(prompt)
+    let hold = true
+    f.rules.length = 0
+    f.rules.push(path => { if (hold && path === '/attempts/events') throw new Error('fixture partition') })   // only the forged events arrive
+    await r.model.countAsync!(prompt)
+    const dispatched = grants(f.sent).length
+    const call = r.call(prompt, { prime: false }).catch((error: unknown) => error)
+    const id = () => grants(f.sent).at(-1)!.id
+    await until(() => grants(f.sent).length === dispatched + 1 && terminals(f).length === dispatched + 1)
+    const rows = f.target.db.prepare('SELECT payload FROM remote_dispatch_events WHERE id=? ORDER BY seq').all(id()).map(row => (JSON.parse(String(row.payload)) as SignedDispatchEvent))
+    const [started, final] = rows
+    const entry = { ...final!.entry, event: { ...(final!.entry.event as object), ...patch, ...(name === 'tokens' ? {} : { inputTokens: real }) } } as SignedDispatchEvent['entry']
+    const forged = { entry, hash: hash(entry), signature: signValue(f.target.keys.privateKey, entry) }
+    const targetCtx = { ...f.homeCtx, identity: f.target.keys.identity }
+    hold = false
+    f.home.federation.receiveDispatchEvent(targetCtx, started!); f.home.federation.receiveDispatchEvent(targetCtx, forged)
+    const outcome = await call
+    assert.ok(outcome instanceof Error, `${name}: the forged terminal must not produce a reply`)
+    assert.equal((outcome as { code?: string }).code, 'provider_failed', name)
+  }
 })
