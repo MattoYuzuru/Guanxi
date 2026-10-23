@@ -131,7 +131,9 @@ digest, counter source and the observation time; it also checks `home.reserves` 
 real one-token generation** and compares the evaluated prompt tokens with the count (the 2026-10-23 evidence closed the field
 names for b11496; this re-checks them from the executor's own process). It **refuses while the node's federation port answers**
 (`completion_while_running`): the slot is single, so never run it during a run. If it fails with `truncation_protocol`, set
-`executor.llamaServer.cachePrompt: false` and report the build.
+`executor.llamaServer.cachePrompt: false` and report the build. The same run then sends the probe, work and judge response schemas with one
+generated token each (check `schemas`): `response_schema_rejected` means the server could not build the grammar (its log says why; Guanxi keeps
+none of its text) and the home needs `home.structuredOutput: false` until that is resolved.
 
 Exit codes of every command: `0` ok, `1` a check or the run failed (a doctor with an invalid configuration included), `2` usage
 or a configuration that cannot be loaded. `--json` makes stdout one JSON document (`start`: one object per line).

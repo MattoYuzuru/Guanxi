@@ -62,7 +62,7 @@ Not validated here (no live server): (1) that b11496 builds a grammar from the `
 `const`, `enum`, `required`, `additionalProperties`, not `anyOf`; the variant list is about 4.4 KB); (2) the optional-argument objects
 (`offset`) and `properties: {}` with `additionalProperties: false` (`project_info`, `attachments`); (3) generation speed under the grammar on the
 RTX 3060; (4) that `tokens_evaluated` equals the count with a schema present (the integrator measured 10 with and without). If the grammar is
-rejected, set `home.structuredOutput: false` and report the server's message; the run then behaves as before this lane.
+rejected, set `home.structuredOutput: false`; the failure is `response_schema_rejected` and the cause is only in the llama-server's own log (no server text is kept by Guanxi); the run then behaves as before this lane.
 
 ## Gates
 
@@ -111,6 +111,32 @@ character returned an empty page; the content budget ignored the schema; the pro
 an old executor; `model_api` ignoring the schema and `GitRelayWorkspace.tools()` had no direct test. **Judged legitimate:** the `context.test.ts`
 fixture resize (the work prompt grew; the test now derives the size of a tool turn from the prompt and asserts its own preconditions).
 Left as is: the 426 for an executor older than 1.6 arrives after the offer (cleaned up by `stop()`; `preflight` is the early signal).
+
+## Fix round after the integrator's Opus review and the first Fedora smoke
+
+Each item is its own commit with a test that fails without it. (The coordinator's real smoke on `4178dff0` showed every action valid JSON and
+`file_read` paging working; the 18-variant schema was accepted by b11496 in 5 s.)
+
+- **`runtime_observation_stale` (found by the smoke).** Confirmed: `RelayExecutor.call()` counted the request before `model.observe()`, and the
+  packing in the work loop, the probe retry and the narrative counted against the observation taken before the previous call, which had taken
+  minutes. Every count site now follows a fresh observe (`fresh()`; window unchanged); dispatch still observes again itself.
+  Tests (`observation-age.test.ts`, a clock where each call takes two minutes; synchronous and asynchronous exact meters; a second probe attempt)
+  fail without it. Scan of the other places: the judge path re-observes past half its age (existing tests); verify and checkpoint are followed by
+  the work-loop `fresh()`; `maxCostMicros` and `validatePrepared` run right after the count. The `fresh()` inside `call()` is defensive
+  (callers observe just before); its removal survives the tests by design.
+- **Rejected schema reported as an identity change (P2).** `llama_server_schema_rejected` (4xx/500 on `/completion` with a schema) ->
+  `response_schema_rejected`; K3 keeps a trusted transport's fixed code as `ConnectionError.reason`, so the `call_failed_reason` note, the signed
+  terminal reason and the run's error carry it, and the run stops there instead of `probe_failed_twice`. No server text is kept anywhere (the
+  earlier hand-off line about reporting the server's message is corrected: the cause is in the llama-server's log). `preflight --completion`
+  sends the probe, work and judge schemas with `n_predict: 1` (check `schemas`).
+- **`file_read` redaction and U+FFFD (P3 1, 2).** The check is per page (a page ends in front of the first redacted region or foreign
+  character), a real U+FFFD is kept when `od` shows the file holds it, and the unbudgeted K4 read of a large file is an artifact again, with a
+  `null` cursor where it cannot be trusted.
+- **Judge fence handling (P3 4)** now has a test that fails if the cascade goes back to `JSON.parse`. **Prompt example path (P3 5)** is the
+  placeholder `PATH`. **Notes (P3 3, 6)** on the order-preserving schema digest and the stock-Ollama judge `format` are in the relay README.
+
+Updated mutation list: the above all caught, plus `redaction check whole window`, `no FFFD byte verification`, `FFFD always trusted`,
+`no-budget cursor kept`, and each observation site except the defensive one in `call()`.
 
 ## Residual risk
 

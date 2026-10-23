@@ -325,9 +325,10 @@ decoded under a JSON Schema, and the schema is a pinned part of the request, not
 - **Tools.** `RelayWorkspace.tools()` lists the model-callable native tools (everything but `plan`, `queue`, `note_add`) with their typebox
   parameters, plus the executor's own `work.query(offset?)` and `notes.search(query, offset?)`. `file_read` takes an optional byte
   `offset` (decimal digits, a position this tool returned) and answers `{more, nextOffset, offset, code, stderr, truncated, stdout}`
-  with the text last. `nextOffset` is a position in the file, so it is issued only while the text is the file's own bytes: a page that
-  needs a cursor is refused (`page_cursor_unavailable`) when redaction changed it or it holds a replacement character, and a page
-  ends in front of the first invalid byte; the whole remainder of a file is always returned. A budget that cannot hold one character is
+  with the text last. `nextOffset` is a position in the file, so it is issued only while the page is the file's own bytes. That is checked
+  per page: a page ends in front of the first redacted region or the first character the file does not hold (an invalid byte decodes to
+  U+FFFD), only a page that would start there is refused (`page_cursor_unavailable`), and a real U+FFFD is kept when `od` shows the file holds
+  EF BF BD. Without a budget the whole remainder is returned as before and an untrustworthy cursor is `null`. A budget that cannot hold one character is
   `page_too_small`, an offset inside a character `invalid_offset`. The executor passes `pageBytes = floor(T_hard / 4)`, the per-turn bound it applies to every tool result, so a
   page is sized to fit it and is never cut by the executor behind a cursor that says it was read; `tool_output_read` honours the same
   budget. Without a budget (the K4 session) the result is the old one plus the cursor fields.
@@ -337,6 +338,18 @@ decoded under a JSON Schema, and the schema is a pinned part of the request, not
   each key; the cause of `nextItem: null` while an item was open was the strip's `next` (another item) beside the probe's `nextItem`,
   which is the strip's `current`. The check itself, its inputs and its expected values are unchanged. The B1 bench does not exist yet:
   these two prompt edits are minimal and factual, and carry no bench result.
+- **A rejected schema.** A `/completion` refused (4xx or 500) while a `json_schema` was sent is `llama_server_schema_rejected`, then
+  `response_schema_rejected` (never `runtime_identity_unknown`). K3 keeps a trusted transport's fixed refusal code as `ConnectionError.reason`
+  (message and `code: provider_failed` are unchanged), so the executor's `call_failed_reason` note, the signed terminal `reason` and the
+  run's error all say `response_schema_rejected`, and the run stops there instead of retrying into `probe_failed_twice`. **No server text is
+  kept anywhere**: the grammar error is in the llama-server's own log. `ms1-live preflight --completion` on the executor sends the probe,
+  work and judge schemas with `n_predict: 1` (check `schemas`).
+- **Observation age.** Every count (packing, probes, narrative, the call itself) now follows a fresh `observe`: an exact count is valid only
+  against an observation at most `maximumAgeMs` old, and the previous call or gate may have taken minutes. Dispatch observes again itself.
+- **Notes.** The schema digest sorts object keys but not arrays, so two schemas that differ only in key order have one digest while a
+  different `required` or `enum` order is a different schema; the key order itself is preserved on the wire for the grammar. A stock Ollama
+  `local_runtime` judge receives the verdict schema as `format` (Ollama defines `format` as a JSON Schema); that path is covered by the
+  K3 judge test and was not run against Ollama.
 - **Not validated here.** No live llama-server was used. The real-server behaviour of an `anyOf` grammar with this many variants, and
   the quality of the model's choices under it, are for the integrator's Fedora run; `structuredOutput: false` is the switch if the grammar
   is rejected. Tests: `test/relay/{json-schema,structured-output,structured-llama,structured-remote}.test.ts`,
