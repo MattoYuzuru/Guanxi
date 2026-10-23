@@ -616,3 +616,17 @@ test('one file imports official OpenAI and a separate compatible endpoint withou
   assert.notEqual(rows[0]!.id, rows[1]!.id)
   assert.deepEqual((await importProviderKeysFile(f.service, 'local', file)).imported.map(item => item.action), ['unchanged', 'unchanged'])
 })
+
+test('boot survives provider import failure and logs only a fixed code with models unavailable', async t => {
+  const { start } = await import('../../src/index.ts')
+  const f = await setup(t), value = canary(), file = join(f.dir, 'boot-invalid.env')
+  await writeFile(file, `UNKNOWN_KEY=${value}`)
+  const warnings: unknown[][] = []
+  t.mock.method(console, 'warn', (...args: unknown[]) => warnings.push(args))
+  const node = await start({ port: 0, dataDir: join(f.dir, 'node'), providerKeysFile: file })
+  try {
+    assert.deepEqual(warnings, [['provider_key_import_failed']])
+    assert.deepEqual(await providerChatGroups(node.context.connections!()), [])
+    assert.ok(!JSON.stringify(warnings).includes(value))
+  } finally { await node.close() }
+})

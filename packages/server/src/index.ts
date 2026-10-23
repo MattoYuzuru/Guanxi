@@ -276,7 +276,15 @@ export async function start(options: StartOptions = {}) {
       policy: options.connectionsPolicy,
     })
     const providerKeysFile = options.providerKeysFile ?? process.env.GUANXI_PROVIDER_KEYS_FILE
-    if (providerKeysFile) await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
+    if (providerKeysFile) {
+      try {
+        const result = await importProviderKeysFile(context.connections!(), 'local', providerKeysFile)
+        if (result.errors?.length) throw new Error('provider_key_import_failed')
+      } catch {
+        context.connections!().lockVault('local')
+        console.warn('provider_key_import_failed')
+      }
+    }
     await recoverChatJobs(context)
     await kernel.node.plugin(projectIndexPlugin, { dataDir: dirname(dbPath), settings: options.indexSettings })
     await kernel.node.plugin(nativeAgentPlugin, { db, host: context, dataDir: dirname(dbPath), nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)] })
