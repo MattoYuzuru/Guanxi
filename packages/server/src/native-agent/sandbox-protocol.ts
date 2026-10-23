@@ -30,21 +30,56 @@ export function commandOutput(code: number | null, out: Buffer[], err: Buffer[],
   return { code, stdout, stderr, truncated }
 }
 
-/** Workload-only seccomp: trusted proxy bridges initialize before installation. */
+/**
+ * Workload-only seccomp (classic BPF, little-endian `seccomp_data`): trusted proxy bridges
+ * initialize before installation. This is the same policy as `container/guard.c`; keep them equal.
+ *
+ * - foreign audit architecture: kill the process; x32 and unknown ABI numbers (>= 0x40000000): EPERM
+ * - bind, listen, ptrace, process_vm_writev, unshare, setns, mount: EPERM
+ * - socket: only AF_INET and AF_INET6 (proxy traffic); AF_UNIX and everything else EPERM
+ * - socketpair: only AF_UNIX with type SOCK_STREAM, flags masked off. Child-process stdio pipes
+ *   (libuv, Python multiprocessing, test runners) need it. An anonymous stream pair is born
+ *   connected, so `connect`/`sendto` on it cannot reach a pathname or abstract-name listener;
+ *   a datagram pair could be re-connected and is therefore denied, with seqpacket and the rest.
+ * - everything else: allowed (the container/bubblewrap layers own the remaining policy)
+ */
 export function linuxBindingFilter(arch: string): Buffer {
   const abi = arch === 'x64'
-    ? { audit: 0xc000003e, blocked: [49, 50, 101, 311, 272, 308, 165, 53], socket: 41 }
-    : arch === 'arm64' ? { audit: 0xc00000b7, blocked: [200, 201, 117, 271, 97, 268, 40, 199], socket: 198 } : null
+    ? { audit: 0xc000003e, blocked: [49, 50, 101, 311, 272, 308, 165], socket: 41, socketpair: 53 }
+    : arch === 'arm64' ? { audit: 0xc00000b7, blocked: [200, 201, 117, 271, 97, 268, 40], socket: 198, socketpair: 199 } : null
   if (!abi) throw new Error('supervision_unavailable')
-  const deny = 0x00050001, allow = 0x7fff0000
-  const instructions = [[0x20, 0, 0, 4], [0x15, 1, 0, abi.audit], [0x06, 0, 0, 0x80000000],
-    [0x20, 0, 0, 0], [0x35, 0, 1, 0x40000000], [0x06, 0, 0, deny],
-    ...abi.blocked.flatMap(nr => [[0x15, 0, 1, nr], [0x06, 0, 0, deny]]),
-    [0x15, 0, 5, abi.socket], [0x20, 0, 0, 16], // seccomp_data.args[0]
-    [0x15, 2, 0, 2], [0x15, 1, 0, 10], [0x06, 0, 0, deny], [0x06, 0, 0, allow], [0x06, 0, 0, allow]]
-  const bytes = Buffer.alloc(instructions.length * 8)
-  instructions.forEach(([code, yes, no, value], index) => {
-    bytes.writeUInt16LE(code!, index * 8); bytes[index * 8 + 2] = yes!; bytes[index * 8 + 3] = no!; bytes.writeUInt32LE(value!, index * 8 + 4)
+  const deny = 0x00050001, allow = 0x7fff0000, kill = 0x80000000
+  const LD = 0x20, AND = 0x54, JEQ = 0x15, JGE = 0x35, RET = 0x06
+  const AF_UNIX = 1, AF_INET = 2, AF_INET6 = 10, SOCK_STREAM = 1, SOCK_TYPE_MASK = 0xf
+  const offset = { nr: 0, arch: 4, arg0: 16, arg1: 24 } // seccomp_data
+  // Forward-only labels: a conditional names the instruction to continue at on true / false.
+  type Step = { label?: string; code: number; yes?: string; no?: string; k: number }
+  const steps: Step[] = [
+    { code: LD, k: offset.arch }, { code: JEQ, k: abi.audit, yes: 'syscall', no: 'kill' },
+    { label: 'syscall', code: LD, k: offset.nr }, { code: JGE, k: 0x40000000, yes: 'deny' },
+    ...abi.blocked.map(nr => ({ code: JEQ, k: nr, yes: 'deny' })),
+    { code: JEQ, k: abi.socketpair, yes: 'pair', no: 'socket' },
+    { label: 'pair', code: LD, k: offset.arg0 }, { code: JEQ, k: AF_UNIX, yes: 'pair-type', no: 'deny' },
+    { label: 'pair-type', code: LD, k: offset.arg1 }, { code: AND, k: SOCK_TYPE_MASK },
+    { code: JEQ, k: SOCK_STREAM, yes: 'allow', no: 'deny' },
+    { label: 'socket', code: JEQ, k: abi.socket, no: 'allow' },
+    { code: LD, k: offset.arg0 }, { code: JEQ, k: AF_INET, yes: 'allow' }, { code: JEQ, k: AF_INET6, yes: 'allow' },
+    { label: 'deny', code: RET, k: deny }, { label: 'allow', code: RET, k: allow }, { label: 'kill', code: RET, k: kill },
+  ]
+  const at = new Map(steps.flatMap((step, index) => step.label ? [[step.label, index] as const] : []))
+  const bytes = Buffer.alloc(steps.length * 8)
+  steps.forEach((step, index) => {
+    // A conditional's omitted branch falls through to the next instruction.
+    const jump = (label?: string) => {
+      const distance = label === undefined ? 0 : at.get(label)! - index - 1
+      if (!(distance >= 0 && distance <= 255)) throw new Error('supervision_unavailable')
+      return distance
+    }
+    const conditional = step.code === JEQ || step.code === JGE
+    bytes.writeUInt16LE(step.code, index * 8)
+    bytes[index * 8 + 2] = conditional ? jump(step.yes) : 0
+    bytes[index * 8 + 3] = conditional ? jump(step.no) : 0
+    bytes.writeUInt32LE(step.k, index * 8 + 4)
   })
   return bytes
 }
