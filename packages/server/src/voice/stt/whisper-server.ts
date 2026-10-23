@@ -17,9 +17,10 @@
  * - the server exposes no model id and no streaming endpoint, so the caller supplies the model
  *   label and the adapter declares those capabilities `unknown`/false/null rather than guessing.
  *
- * The 224-token initial-prompt limit is the documented whisper default. The adapter exposes a
- * conservative character proxy (two characters per token) so Cyrillic and name lists are not
- * over-filled; the value is an adapter limit, never a hidden UI or policy cap.
+ * The 224-token initial-prompt limit is the documented whisper default. The adapter exposes an
+ * unverified two-characters-per-token approximation so Cyrillic and name lists are not
+ * over-filled; the value is an adapter limit, never a hidden UI or policy cap. A real tokenizer
+ * is still an open question in the V1-d hand-off.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -58,8 +59,9 @@ export const WHISPER_SERVER_SOURCE =
 export const WHISPER_SERVER_RESULT_SOURCE = 'whisper.cpp-server:/inference verbose_json'
 export const WHISPER_SERVER_PROMPT_TOKEN_LIMIT = 224
 /**
- * Two characters per token: a conservative proxy for a mixed Russian/Latin name list. The real
- * tokenizer is model-specific and is not exposed by the server; the README states this.
+ * Two characters per token: an unverified approximation for a mixed Russian/Latin name list.
+ * The real tokenizer is model-specific and is not exposed by the server; the README and the
+ * hand-off record a real tokenizer as an open question. The value stays the documented limit.
  */
 export const WHISPER_SERVER_MAX_PROMPT_CHARS = WHISPER_SERVER_PROMPT_TOKEN_LIMIT * 2
 export const WHISPER_SERVER_MAX_JSON_BYTES = 16 * 1024 * 1024

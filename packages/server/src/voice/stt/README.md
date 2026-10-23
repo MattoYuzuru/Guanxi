@@ -33,6 +33,14 @@ the owner's evaluation recordings; the V1 exit gate is still not measurable here
 `TranscribingSttAdapter`, so callers that need the applied biasing and origin type it as that
 interface (or as the concrete class).
 
+## Caller-side audio size
+
+The adapter imposes no audio byte cap and does not enforce an audio-duration limit
+(`maxDurationSec` is `null`). It copies the supplied `Uint8Array` once into the multipart request
+body, so during one call the caller's buffer and the adapter's copy coexist; peak memory is
+roughly twice the audio payload plus multipart and JSON overhead. Callers choose their own
+recording-length or file-size policy and keep the buffer alive for the duration of the call.
+
 ## whisper.cpp server assumptions
 
 The adapter targets the Tier-1 `whisper-server` runtime from ADR-0031 and keeps every wire name
@@ -55,7 +63,8 @@ input needs the server's `--convert` (ffmpeg) option. The adapter passes the byt
 and does not transcode.
 
 `verbose_json` is parsed for `text`, `language` (the server reports a full name such as
-`russian`), `duration` and `segments[].start`/`end` (audio seconds), `text`,
+`russian`; a small fixed vocabulary maps known names to codes and an unknown name becomes
+`null`, never a guessed code), `duration` and `segments[].start`/`end` (audio seconds), `text`,
 `avg_logprob`/`no_speech_prob` when present. The server exposes no model id and no streaming
 endpoint, so the caller supplies the model label (`unknown` by default) and the adapter declares
 those facts `unknown`/false/null rather than guessing. Stereo diarization exists as a server
@@ -94,14 +103,16 @@ boundary.
 | `source` | the whisper.cpp server tree URL | One stable citation point |
 | `observedAt` | the successful health-probe time | Observation time |
 | `confidence` | `documented` | The facts come from the server source; the probe proves availability |
-| `maxPromptChars` | 448 by default | Adapter-owned character proxy |
+| `maxPromptChars` | 448 by default | Adapter-owned character budget (unverified 2 chars/token) |
 
-The whisper default is 224 prompt tokens. The adapter documents that token limit as its own and
-uses two characters per token as a conservative proxy for mixed Russian/Latin name lists, giving
-`WHISPER_SERVER_MAX_PROMPT_CHARS = 448`. The real tokenizer is model-specific and the server
-does not expose it, so this is a character budget, not a claimed token count. `maxPromptChars`
-is a constructor option and is reported by `capabilities()`; there is no hidden constant in the
-planner or UI. It can be lowered for a smaller window, and the adapter never splits a term.
+The whisper default is 224 prompt tokens. The adapter uses **two characters per token as an
+unverified approximation**, not a tokenizer measurement; real tokenization is model-specific and
+the server does not expose it. That gives `WHISPER_SERVER_MAX_PROMPT_CHARS = 448`, which stays the
+adapter's documented limit. Whether 448 characters is safely below 224 tokens for mixed
+Russian/Latin name lists is an **open question** until a real tokenizer exists; the value is a
+character budget, not a claimed token count. `maxPromptChars` is a constructor option and is
+reported by `capabilities()`; there is no hidden constant in the planner or UI. It can be lowered
+for a smaller window, and the adapter never splits a term.
 
 ## Biasing and D-157
 
@@ -163,24 +174,26 @@ numeric confidence when the backend reported neither signal.
 
 ## Errors and privacy
 
-- `stt_audio_invalid`: empty or non-`Uint8Array` audio, or an unsupported MIME type.
+- `stt_audio_invalid`: empty or non-`Uint8Array` audio, an unsupported MIME type, or HTTP 400
+  from `/inference` (whisper-server could not decode the supplied bytes).
 - `stt_protocol`: malformed request glossary/language, malformed or non-JSON verbose_json,
-  missing or invalid fields, an oversized answer, or any unexpected non-200 answer. A server-side
-  audio decode failure also lands here because the adapter does not inspect or transcode bytes.
-- `stt_unavailable`: non-loopback configuration, an unreachable server, or HTTP 503 (model
-  loading). A redirect is rejected by the transport before a response is exposed, so it also
-  lands here and is never followed.
-- `stt_timeout`: the adapter deadline or a caller abort. A pre-aborted call sends nothing.
+  missing or invalid fields, an oversized answer, or any other unexpected non-200 answer.
+- `stt_unavailable`: non-loopback configuration, an unreachable server, HTTP 503 (model
+  loading), or a redirect (never followed).
+- `stt_timeout`: the adapter-owned deadline or a caller abort. The deadline covers response
+  headers and body; a pre-aborted call sends nothing.
 
 Every thrown adapter error is a `SttError` whose message is the code. Glossary compiler errors
 can quote terms, and response bodies can quote transcripts; both are caught and replaced with
 the code. Audio bytes, transcript text, glossary terms and response bodies are never logged,
 never placed in an error and never sent outside the loopback origin unless the caller's own
 `baseUrl` passed loopback admission. The transport follows no redirect, caps one JSON answer
-(`16 MiB` by default, a transport budget) and caps the inference call at ten minutes. Timeout
-options are bounded to Node's signed 32-bit timer range so they cannot escape the typed-error
-contract. Those are operational budgets, not audio-duration limits; `maxDurationSec` remains
-`null`.
+(`16 MiB` by default, a transport budget) and enforces the inference call's
+`transcribeTimeoutMs` (ten minutes by default) itself with a `node:http` request. There is no
+hidden transport cap: the previous global-fetch transport gave up at 300 s while waiting for
+headers and reported `stt_unavailable`, before the ten-minute deadline. Timeout options are
+bounded to Node's signed 32-bit timer range so they cannot escape the typed-error contract. Those
+are operational budgets, not audio-duration limits; `maxDurationSec` remains `null`.
 
 ## Tests and commands
 
@@ -189,11 +202,11 @@ contract. Those are operational budgets, not audio-duration limits; `maxDuration
 - `biasing.test.ts`: 27 tests for D-157, deterministic ordering, canonical-only prompts,
   Cyrillic-speech script preservation, the bounded budget, omitted terms, other mechanisms and
   glossary fingerprints.
-- `whisper-server.test.ts`: 38 tests for loopback admission, capabilities, exact multipart
+- `whisper-server.test.ts`: 44 tests for loopback admission, capabilities, exact multipart
   fields, verbose_json parsing, confidence nulls, replacement/origin mapping, revisions,
   D-157 withholding (the tests assert the `prompt` field is absent), redirects, chunked/truncated
-  answers, retry/logging, protocol,
-  availability, timeout/abort, audio validation and content-free errors.
+  answers, retry/logging, protocol, HTTP 400, language codes and normalization, the exact
+  transport deadline, availability, timeout/abort, audio validation and content-free errors.
 
 ```bash
 nice -n 10 node --test packages/server/test/voice/stt/*.test.ts packages/server/test/voice/*.test.ts
@@ -211,7 +224,8 @@ model's tokenization, or the V1 gate.
 - No REST route, plugin service, contract type, composer control or glossary editor UI.
 - The model label is caller-supplied because `whisper-server` exposes no model id; the default
   is `unknown`, and the voice block can only repeat that.
-- `language` is the server's full name (`english`, `russian`), not normalized to an ISO code.
+- Returned `language` uses a small fixed vocabulary (`english` -> `en`, `russian` -> `ru`); a
+  supported whisper language outside that map returns `null` until the map grows.
 - The prompt is a bounded canonical list, not the natural-sentence style recommended by the
   research; `carry_initial_prompt` is not sent, so prompt coverage follows server semantics.
 - No real model, no owner's eval recordings, no A/B measurement, no on-device latency or memory
