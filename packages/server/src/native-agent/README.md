@@ -254,21 +254,32 @@ routes below and `packages/contract/src/side-chat.ts`. Tests: `test/native-agent
 | `POST /api/agent/:id/side-chat/send` | exactly one queued or started prompt whose id is derived from the `operationId`, idempotent across retries and restarts |
 
 - **Context.** Rendered from the `remote_agent` view of the log (prompts and assistant messages only; never
-  reasoning, tool calls, tool results or notes), up to the log head, declared untrusted data. The caller chooses
-  none, the whole session or the last N turns. Hosted models must satisfy `UTF-8 bytes <= window - maxTokens`
-  (a byte is at least one token, so this proves the fit); a local runtime uses its context setting as the bound.
-  An unprovable context is refused with `context_too_large` and its numbers, never cut.
+  reasoning, tool calls, tool results or notes), up to the log head, declared untrusted data (a closing marker
+  inside session text is escaped; prompts read as excerpts are announced to the model). The caller chooses
+  none, the whole session or the last N turns.
+- **Fit proof.** The total UTF-8 bytes of the instructions, the transcript and the whole draft conversation,
+  plus 16 bytes of framing per message, must be at most `window - maxTokens` for a hosted model (a byte is at
+  least one token). A local runtime has no separate output limit, so its bound is the whole context setting and
+  a `length` stop is returned with `truncated: true`. An unprovable request is refused with `context_too_large`
+  and its numbers before dispatch, never cut. The framing allowance is a conservative constant, not a measured
+  per-template figure.
 - **Writes.** `respond` adds no row to the node database and no file; K3 records its usual usage receipt in the
-  connection store under `runId` `side-chat:<requestId>` (metadata, no content). The test compares every table's
-  row count and the data directory's file list before and after completed, failed and canceled requests.
+  connection store under a fresh `side-chat:<uuid>` run id (metadata, no content; the client's `requestId` only
+  correlates the response, so a retry is never rejected as a conflicting receipt). The test compares every node
+  database table's row count and the data directory's file list before and after completed, failed and canceled
+  requests, and counts the connection-store receipts separately (one per completed request, none otherwise).
 - **Save** goes through the running turn's append FIFO when a turn is active (a failure there is returned, never
   thrown into the FIFO, so it cannot abort the turn) and through the R1 home transaction otherwise. When the
   session has no live writer the log may also record its own `writer.acquired` handover event; the note itself is
   always exactly one event. The native replay ignores `agent.note`, so a saved side chat is never agent context.
 - **Send** reuses the existing FIFO. A caller-chosen queue item id is queued at most once, and a prompt event
   with the derived message id is the durable receipt: a retry after a lost response or a restart reports
-  `already_sent`. Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
-  retryable `session_busy`. Origin is recorded as `queued`.
+  `already_sent`. A pending queue item is reported as `queued` (duplicate) only while a turn is running; with
+  nothing running (the turn stopped, failed or the node restarted) a retry starts a fresh turn with the same
+  prompt id, which also settles the stranded item. Changed text under the same operation id is
+  `operation_conflict`. Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
+  retryable `session_busy`, and a request that lands between turns gets `session_busy`. The pre-checks inside the
+  FIFO return their errors instead of throwing, so they cannot abort the main turn. Origin is recorded as `queued`.
 - **Not covered.** Legacy Chat Jobs have no side-chat route (the web panel is mounted on native sessions only);
   the answer is not streamed; the opened-in-browser transcript is not durable by design.
 

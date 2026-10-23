@@ -14,7 +14,7 @@ import {
   type SessionInputArtifactRef,
   type SessionEventDataV2,
   nativeRunBudgetSchema,
-  sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema, encodeSideChatSavedNote,
+  promptTextOf, sideChatRespondRequestSchema, sideChatSaveRequestSchema, sideChatSendRequestSchema, encodeSideChatSavedNote,
   type SideChatRespondResponse, type SideChatSaveResponse, type SideChatSendResponse,
 } from '@guanxi/contract'
 import { RunStore } from '../runs/store.ts'
@@ -281,12 +281,21 @@ export class NativeAgents {
     // removeQueued() commits, and would silently overwrite its accepted items.
     // A caller-chosen item id (side-chat Send) makes the operation idempotent: an id that is
     // already pending or already consumed as a prompt is never queued a second time.
-    return pending.enqueue(() => {
-      const current = this.progress(id)
-      if (itemId !== undefined && (current.queue.some(item => item.id === itemId) || this.hasPrompt(id, itemId))) return 'duplicate' as const
+    const outcome = await pending.enqueue(() => {
+      // Reads that can fail for reasons unrelated to the turn (scrubber readiness, an unreadable
+      // snapshot) are returned, never thrown: a throw inside the FIFO would abort the main turn.
+      // The append itself stays unprotected on purpose, because a failed trace write must fail the turn.
+      let current: ReturnType<NativeAgents['progress']>, duplicate = false
+      try {
+        current = this.progress(id)
+        duplicate = itemId !== undefined && (current.queue.some(item => item.id === itemId) || this.hasPrompt(id, itemId))
+      } catch (error) { return { error } }
+      if (duplicate) return { status: 'duplicate' as const }
       pending.appendNow({ type: 'agent.queue', data: { items: [...current.queue, { id: itemId ?? randomUUID(), text }] } })
-      return 'queued' as const
+      return { status: 'queued' as const }
     })
+    if ('error' in outcome) throw outcome.error
+    return outcome.status
   }
   private hasPrompt(id: string, messageId: string): boolean {
     return this.log.readAll(id, 'remote_agent').some(event => event.type === 'prompt' && event.data.messageId === messageId)
@@ -320,7 +329,7 @@ export class NativeAgents {
     if (code === 'session_expired') return new SideChatError('session_unavailable')
     if (code === 'egress_unavailable') return new SideChatError('egress_unavailable')
     if (code === 'idempotency_conflict') return new SideChatError('operation_conflict')
-    if (['session_busy', 'writer_busy', 'writer_fenced', 'stale_lease'].includes(code)) return new SideChatError('session_busy')
+    if (['session_busy', 'writer_busy', 'writer_fenced', 'stale_lease', 'session_not_running', 'trace_sealed'].includes(code)) return new SideChatError('session_busy')
     if (code === 'invalid_event') return new SideChatError('validation_failed')
     return new SideChatError('agent_unavailable')
   }
@@ -359,15 +368,34 @@ export class NativeAgents {
     const request = sideChatSendRequestSchema.parse(raw)
     this.sideChatSession(id)
     const messageId = sideChatMessageId(request.operationId)
+    const incoming = this.scrubber.scrub(request.text)
     const answer = (delivery: SideChatSendResponse['delivery'], duplicate: boolean): SideChatSendResponse => ({ operationId: request.operationId, messageId, delivery, duplicate })
+    // The receipt is the durable log, never process memory: a recorded prompt (consumed) or a pending queue item.
+    const receipt = () => {
+      const prompt = this.log.readAll(id, 'remote_agent').find(event => event.type === 'prompt' && event.data.messageId === messageId)
+      if (prompt?.type === 'prompt') return { kind: 'prompt' as const, text: promptTextOf(prompt), excerpt: prompt.version !== SESSION_EVENT_VERSION }
+      const item = this.progress(id).queue.find(entry => entry.id === messageId)
+      return item ? { kind: 'queued' as const, text: item.text, excerpt: false } : null
+    }
+    const sameContent = (found: NonNullable<ReturnType<typeof receipt>>) => found.excerpt ? incoming.startsWith(found.text) : found.text === incoming
     try {
-      if (this.hasPrompt(id, messageId) || this.progress(id).queue.some(item => item.id === messageId)) return answer('already_sent', true)
+      const found = receipt()
+      if (found && !sameContent(found)) throw new SideChatError('operation_conflict')
+      if (found?.kind === 'prompt') return answer('already_sent', true)
+      // A pending item is only a receipt while a turn can still consume it. With nothing running
+      // (the turn was stopped, failed or the node restarted) it falls through to a fresh start, whose
+      // prompt id is the same, so the stale item is filtered as consumed instead of waiting forever.
+      if (found?.kind === 'queued' && this.active.has(id)) return answer('queued', true)
       if (this.active.has(id)) {
         try {
-          return (await this.queue(id, request.text, true, messageId)) === 'duplicate' ? answer('already_sent', true) : answer('queued', false)
+          if ((await this.queue(id, request.text, true, messageId)) === 'queued') return answer('queued', false)
+          return receipt()?.kind === 'prompt' ? answer('already_sent', true) : answer('queued', true)
         } catch (error) {
-          // The turn settled between the check and the enqueue; start a fresh one instead.
-          if (!(error instanceof NativeAgentError && error.code === 'session_not_running')) throw error
+          // The turn is between its final append and its teardown; the caller retries. Starting a new
+          // turn here would race the old one for the writer.
+          const code = error instanceof Error && 'code' in error ? error.code : ''
+          if (code !== 'session_not_running' && code !== 'trace_sealed') throw error
+          if (this.active.has(id)) throw new NativeAgentError('session_busy')
         }
       }
       await this.prompt(id, request.text, messageId)

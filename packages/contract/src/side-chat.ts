@@ -57,6 +57,8 @@ export type SideChatContextFacts = z.infer<typeof sideChatContextFactsSchema>
 export const sideChatRespondResponseSchema = z.object({
   requestId: z.string().uuid(),
   text: z.string(),
+  /** The model stopped at its output limit, so the answer may be cut short. */
+  truncated: z.boolean(),
   context: sideChatContextFactsSchema,
 }).strict()
 export type SideChatRespondResponse = z.infer<typeof sideChatRespondResponseSchema>
@@ -98,6 +100,7 @@ export type SideChatErrorCode = z.infer<typeof sideChatErrorCodeSchema>
 export const sideChatErrorSchema = z.object({
   code: sideChatErrorCodeSchema,
   details: z.object({
+    /** UTF-8 bytes of everything that would be sent: instructions, context and the whole draft conversation. */
     bytes: z.number().int().nonnegative(),
     boundBytes: z.number().int().nonnegative(),
     windowTokens: z.number().int().positive(),
