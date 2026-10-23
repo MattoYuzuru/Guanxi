@@ -78,10 +78,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   /** One page of a text file starting at byte `offset`. The result is the command result with the cursor fields in front; `stdout`
    * stays last, so a reader that cuts the tail of the text still has `more` and `nextOffset`.
    *
-   * `nextOffset` is a position in the FILE, so it is only issued when the text below is exactly the bytes it came from. A page that
-   * needs a cursor (`more`) is refused (`page_cursor_unavailable`) when redaction changed it (a registered secret is replaced by a marker of
-   * another length) or when it holds a replacement character (an invalid byte decodes to three bytes of text); the whole remainder of
-   * a file is always returned, redacted or not. */
+   * `nextOffset` is a position in the FILE, so it is only issued while the page is exactly the bytes it came from. Redaction (a registered
+   * secret is replaced by a marker of another length) and invalid bytes (each decodes to three bytes of text) break that, but only where they
+   * are: a page ends in front of the first redacted region or the first character the file does not hold, and a page that would start there has
+   * no honest cursor (`page_cursor_unavailable`). A real U+FFFD (EF BF BD) is kept: the page's bytes are compared with the file's. Without a
+   * page budget the whole remainder is returned as before, and a cursor that cannot be trusted is `null`. */
   const fileRead = async (requested: string, rawOffset: unknown, signal?: AbortSignal) => {
     // Decimal digits only, as a string or a number: no sign, fraction, exponent, hex or padding.
     if (rawOffset !== undefined && rawOffset !== '' && !/^\d{1,15}$/.test(String(rawOffset))) throw new Error('invalid_offset')
@@ -90,12 +91,21 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     const raw = await execute(policy, offset === 0 ? `/bin/cat -- ${target}` : `/usr/bin/tail -c +${offset + 1} -- ${target}`, signal, 120_000, true, scrubber)
     const result = scrubber.scrub(raw)
     if (result.code !== 0) throw new Error('tool_failed')
+    const dump = async (from: number, count: number) => scrubber.scrub(await execute(policy, `/usr/bin/od -An -v -tx1 -j ${from} -N ${count} -- ${target}`, signal, 120_000, true, scrubber))
+    // `od` pads its columns differently on macOS and Linux: compare the bytes, not the layout.
+    const hex = (out: { code: number | null; stdout: string; truncated: boolean }) => out.code === 0 && !out.truncated ? out.stdout.split(/\s+/).join('') : null
     if (offset > 0 && result.stdout.startsWith('\uFFFD')) {
       // Either the offset is inside a multi-byte character (every continuation byte decodes to a replacement character) or the file really
-      // has U+FFFD (EF BF BD) here, which a cursor this tool returned can point at. The bytes at the offset tell them apart.
-      const bytes = scrubber.scrub(await execute(policy, `/usr/bin/od -An -tx1 -j ${offset} -N 3 -- ${target}`, signal, 120_000, true, scrubber))
-      // `od` pads its columns differently on macOS and Linux.
-      if (bytes.code !== 0 || bytes.stdout.trim().split(/\s+/).join(' ') !== 'ef bf bd') throw new Error('invalid_offset')
+      // has U+FFFD here, which a cursor this tool returned can point at. The bytes at the offset tell them apart.
+      if (hex(await dump(offset, 3)) !== 'efbfbd') throw new Error('invalid_offset')
+    }
+    // The bytes of the scrubbed text that are the file's own: everything before the first change redaction made.
+    let same = Infinity
+    if (result.stdout !== raw.stdout) {
+      let i = 0
+      while (i < raw.stdout.length && i < result.stdout.length && raw.stdout.charCodeAt(i) === result.stdout.charCodeAt(i)) i++
+      if (i > 0 && /[\uD800-\uDBFF]/.test(result.stdout[i - 1]!)) i--
+      same = Buffer.byteLength(result.stdout.slice(0, i))
     }
     const data = Buffer.from(result.stdout), limit = ctx.pageBytes
     for (let page = data.length; ;) {
@@ -103,14 +113,18 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       let used = Buffer.byteLength(text)
       if (used === 0 && data.length > 0) throw new Error('page_too_small')
       const more = used < data.length || result.truncated
-      if (more && result.stdout !== raw.stdout) throw new Error('page_cursor_unavailable')
-      if (more && text.includes('\uFFFD')) {
-        // The page ends in front of the first replacement character, so everything before it is exact; there is no honest cursor across it.
+      let cursor = true
+      if (more && used > same) {
+        if (limit === undefined) cursor = false
+        else { text = new StringDecoder('utf8').write(data.subarray(0, same)); used = Buffer.byteLength(text); if (used === 0) throw new Error('page_cursor_unavailable') }
+      }
+      if (more && cursor && text.includes('\uFFFD') && hex(await dump(offset, used)) !== Buffer.from(text).toString('hex')) {
+        // The file does not hold every character of this page: end it in front of the first one it does not hold.
         text = text.slice(0, text.indexOf('\uFFFD')); used = Buffer.byteLength(text)
         if (used === 0) throw new Error('page_cursor_unavailable')
       }
       // `truncated` keeps its old meaning for a reader that has only seen it: the text below is not the whole of what follows the offset.
-      const body = JSON.stringify({ more, nextOffset: offset + used, offset, code: result.code, stderr: result.stderr, truncated: more, stdout: text })
+      const body = JSON.stringify({ more, nextOffset: cursor ? offset + used : null, offset, code: result.code, stderr: result.stderr, truncated: more, stdout: text })
       if (limit === undefined || Buffer.byteLength(body) <= limit) return body
       if (page === 0) throw new Error('page_too_small')
       page = Math.max(0, Math.min(page - 1, Math.floor(page * limit / Buffer.byteLength(body)) - 1))

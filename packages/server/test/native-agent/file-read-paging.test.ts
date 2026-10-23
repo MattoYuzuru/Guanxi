@@ -119,7 +119,33 @@ test('a cursor is issued only when the text is the file\'s own bytes: redaction 
   // Redaction changes a length, so a position in the redacted text is not a position in the file.
   assert.equal((await whole.read({ path: join(whole.root, 's.txt') })).stdout, secret.replace('TOPSECRETVALUE', '[REDACTED]'))
   assert.equal((await whole.read({ path: join(whole.root, 's.txt') })).more, false)
-  assert.deepEqual(await paged.read({ path: join(paged.root, 's.txt') }), { error: 'page_cursor_unavailable' })
+  // Only the page that reaches the redaction is affected: the page before it is exact, the page that would start in it has no honest cursor.
+  const before = await paged.read({ path: join(paged.root, 's.txt') })
+  assert.equal(before.more, true); assert.equal(before.nextOffset, Buffer.byteLength(before.stdout!)); assert.ok(secret.startsWith(before.stdout!)); assert.ok(before.nextOffset! <= 300)
+  assert.deepEqual(await paged.read({ path: join(paged.root, 's.txt'), offset: '300' }), { error: 'page_cursor_unavailable' })
+  // The K4 session has no budget: a big file with a secret in it is what it always was (an artifact reference), not an error.
+  const k4 = await setup(t, { scrubber: redacting })
+  await writeFile(join(k4.root, 'big.txt'), `${'a'.repeat(100)}TOPSECRETVALUE${'b\n'.repeat(60_000)}`)
+  const reference = JSON.parse((await k4.call('file_read', { path: join(k4.root, 'big.txt') })).text) as { truncated: boolean; artifact?: string }
+  assert.equal(reference.truncated, true); assert.match(reference.artifact ?? '', /^[a-f0-9]{64}$/)
+  // The artifact holds the whole result: its cursor is null because it cannot be trusted past the redaction.
+  let artifactText = ''
+  for (let from = 0; ;) {
+    const page = JSON.parse((await k4.call('tool_output_read', { artifact: reference.artifact, offset: String(from) })).text) as { text: string; nextOffset: number; truncated: boolean }
+    artifactText += page.text; from = page.nextOffset
+    if (!page.truncated) break
+  }
+  assert.equal((JSON.parse(artifactText) as { nextOffset: unknown; more: boolean }).nextOffset, null); assert.equal((JSON.parse(artifactText) as { more: boolean }).more, true)
+  // Small budget: every page before the redaction is exact and ends in front of it.
+  const slim = await setup(t, { scrubber: redacting, pageBytes: 200 })
+  await writeFile(join(slim.root, 's.txt'), secret)
+  let walkedText = '', cursor = 0
+  for (;;) {
+    const page = await slim.read({ path: join(slim.root, 's.txt'), offset: String(cursor) })
+    if (page.error) { assert.equal(page.error, 'page_cursor_unavailable'); break }
+    assert.ok(Buffer.byteLength(JSON.stringify(page)) <= 200); walkedText += page.stdout; cursor = page.nextOffset!
+  }
+  assert.equal(walkedText, 'a'.repeat(300), 'the pages end exactly in front of the redacted region')
   // An invalid byte decodes to three bytes of text: pages before it are exact, the page that holds it has no honest cursor.
   const bytes = Buffer.concat([Buffer.from('a'.repeat(300)), Buffer.from([0xff]), Buffer.from('b'.repeat(300))])
   const bad = await setup(t, { pageBytes: 400 }), plain = await setup(t)
@@ -134,6 +160,12 @@ test('a cursor is issued only when the text is the file\'s own bytes: redaction 
   await writeFile(join(real.root, 'r.txt'), `${'x'.repeat(60)}\uFFFDyyyyy`)
   assert.deepEqual((await real.read({ path: join(real.root, 'r.txt'), offset: '60' })).stdout, '\uFFFDyyyyy')
   assert.deepEqual(await real.read({ path: join(real.root, 'r.txt'), offset: '61' }), { error: 'invalid_offset' })
+  // With a budget, a file that really holds U+FFFD is paged across it (its bytes are compared with the file's), and a file with an invalid
+  // byte is paged up to it.
+  const across = await setup(t, { pageBytes: 300 }), fffd = `${'x'.repeat(50)}\uFFFD${'y'.repeat(600)}\uFFFDz`
+  await writeFile(join(across.root, 'f.txt'), fffd)
+  const walked = await readAll(across.read, join(across.root, 'f.txt'))
+  assert.equal(walked.map(p => p.stdout).join(''), fffd); assert.ok(walked.length >= 3)
   // A budget that cannot hold one character is an error, not an empty page that never advances.
   const tiny = await setup(t, { pageBytes: 90 })
   await writeFile(join(tiny.root, 'k.txt'), '界'.repeat(50))
