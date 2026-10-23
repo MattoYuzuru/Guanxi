@@ -22,11 +22,14 @@ export interface FakeLlamaState {
   /** Add one to every `/tokenize` answer after this many calls (counter instability). */
   tokenizeSkewAfter: number | null
   truncated: boolean
+  /** Answer a `/completion` that carries a `json_schema` with the 400 llama.cpp gives for a grammar it cannot build (its message is hostile text). */
+  rejectSchema: boolean
   stopType: string
   tokenizeDelayMs: number
   completionDelayMs: number
   /** Replies for successive `/completion` calls; the last repeats. A `{ js }` entry is a
-   * self-contained function source `(prompt, call) => string`, evaluated inside the server thread. */
+   * self-contained function source `(prompt, call, body) => string`, evaluated inside the server thread; `body` is the parsed
+   * request body, so a reply can depend on whether a `json_schema` arrived. */
   replies: Array<string | { js: string }>
   /** Respond with this body on `/props` (malformed answer fixtures). */
   propsOverride: unknown
@@ -48,7 +51,7 @@ export interface FakeLlama {
   close(): Promise<void>
 }
 /** Serialise a function as a `replies` entry. It must not capture variables. */
-export const reply = (fn: (prompt: string, call: number) => string): { js: string } => ({ js: fn.toString() })
+export const reply = (fn: (prompt: string, call: number, body: any) => string): { js: string } => ({ js: fn.toString() })
 
 export const BOS = 1
 export function fakeTokens(text: string, addSpecial = true): number {
@@ -61,7 +64,7 @@ export function fakeRender(content: string, state: Pick<FakeLlamaState, 'templat
 
 async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (message: any) => void) {
   const state: FakeLlamaState = { alias: 'fixture', modelPath: '/nonexistent.gguf', nCtx: 16000, buildInfo: 'b0-fixture', loading: false,
-    template: 'chat', evaluatedSkew: 0, tokenizeSkewAfter: null, truncated: false, stopType: 'eos', tokenizeDelayMs: 0, completionDelayMs: 0,
+    template: 'chat', evaluatedSkew: 0, tokenizeSkewAfter: null, truncated: false, rejectSchema: false, stopType: 'eos', tokenizeDelayMs: 0, completionDelayMs: 0,
     replies: ['{}'], propsOverride: undefined, argv: [], env: [], pid: 0, cwd: '', ...initial }
   const requests: FakeLlamaRequest[] = []
   let completions = 0, tokenizes = 0, aborted = 0
@@ -87,10 +90,11 @@ async function serve(initial: Partial<FakeLlamaState>, port: number, control?: (
       return send(response, 200, { tokens: Array.from({ length: fakeTokens(body.content, body.add_special === true) + skew }, (_, i) => i) })
     }
     if (path === '/completion') {
+      if (state.rejectSchema && body.json_schema) return send(response, 400, { error: { code: 400, message: 'Failed to build grammar: SERVER-GRAMMAR-TEXT-secret-path /models/x.gguf', type: 'invalid_request_error' } })
       const n = completions++
       if (state.completionDelayMs) await wait(state.completionDelayMs)
       const entry = state.replies[Math.min(n, state.replies.length - 1)]!
-      const content = typeof entry === 'string' ? entry : (0, eval)(`(${entry.js})`)(body.prompt, n) as string
+      const content = typeof entry === 'string' ? entry : (0, eval)(`(${entry.js})`)(body.prompt, n, body) as string
       return send(response, 200, { content, tokens_evaluated: fakeTokens(body.prompt, true) + state.evaluatedSkew, tokens_predicted: fakeTokens(content, false),
         stop_type: state.stopType, truncated: state.truncated, stopped_limit: false, tokens_cached: 0 })
     }

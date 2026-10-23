@@ -83,6 +83,7 @@ this document runs and the node boots exactly as before.
 | `home.alwaysOn` | must be `true`: your assertion that the Mac stays awake (R1 refuses remote attempts without it) |
 | `home.reserves` | ADR-0020 reserves in tokens of one window; `preflight` checks them against the observed window |
 | `home.checkoutRoot` | optional; default `<data dir>/relay-checkouts` |
+| `home.structuredOutput` | optional, default `true`: every probe, work step and judge verdict is decoded under a JSON Schema (`json_schema` on the executor's `/completion`; federation 1.6, so both nodes must run this commit). `preflight` fails with `peer_protocol_old` if the executor declares an older federation minor. Set `false` only if the executor's llama-server rejects the grammar |
 | `home.lead` | optional: the Claude Code lead (section 7); its binary paths must be absolute |
 | `home.judge` | optional: the R3 judge of every relay this home starts (section 5); absent means no judge |
 | `executor.llamaServer.baseUrl` | the attached llama-server, on the executor's loopback |
@@ -130,7 +131,9 @@ digest, counter source and the observation time; it also checks `home.reserves` 
 real one-token generation** and compares the evaluated prompt tokens with the count (the 2026-10-23 evidence closed the field
 names for b11496; this re-checks them from the executor's own process). It **refuses while the node's federation port answers**
 (`completion_while_running`): the slot is single, so never run it during a run. If it fails with `truncation_protocol`, set
-`executor.llamaServer.cachePrompt: false` and report the build.
+`executor.llamaServer.cachePrompt: false` and report the build. The same run then sends the probe, work and judge response schemas with one
+generated token each (check `schemas`): `response_schema_rejected` means the server could not build the grammar (its log says why; Guanxi keeps
+none of its text) and the home needs `home.structuredOutput: false` until that is resolved.
 
 Exit codes of every command: `0` ok, `1` a check or the run failed (a doctor with an invalid configuration included), `2` usage
 or a configuration that cannot be loaded. `--json` makes stdout one JSON document (`start`: one object per line).

@@ -238,3 +238,5 @@ by default and need their distinct advertised capability. Dispatch adds a fresh 
 R1 attempt, signed grants/renewals, strict holder self-fencing and durable result ingestion; it
 uses K3's local-runtime governor/consent path. It does not implement toolful relay execution,
 detached mode, home handover or OS power assertions, and local fake-adapter tests are not MS1.
+Later minors add the relay runtime (1.4), relay pin leases (1.5) and response schemas for counted
+jobs (1.6); they are described in the [relay README](../relay/README.md#remote-relay-runtime-f2-d).

@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { fixture, reserves, window } from './fixture.ts'
 import { canonical } from '../../src/relay/handoff.ts'
 import { thresholds } from '../../src/relay/budget.ts'
+import { GENERIC_TOOLS, LOCAL_TOOLS, workPrompt } from '../../src/relay/response-schemas.ts'
 
 const tokenCount = (text: string) => Math.ceil(Buffer.byteLength(text) / 4)
 const notes = (f: ReturnType<typeof fixture>) => f.log.readAll(f.run.session_id, 'person')
@@ -78,11 +79,17 @@ test('exact tokenizer packing winds down and no dispatched prompt exceeds H', as
 })
 
 test('a dropped older turn emits context_dropped and becomes the boundary', async () => {
+  // Two turns stay under the soft threshold and the third no longer fits the request ceiling, whatever the work prompt weighs: the size of one
+  // tool turn (the call and its result) is derived from the prompt, so a change of the prompt text cannot silently retarget this test.
+  const head = Buffer.byteLength(workPrompt([...LOCAL_TOOLS, ...GENERIC_TOOLS])) + 140
+  const bounds = thresholds(window, { ...reserves, stepMedian: 100 }), soft = bounds.soft, ceiling = bounds.H
+  const turn = Math.floor(((soft - 200 - head) / 2 + (ceiling + 200 - head) / 3) / 2), output = Math.floor((turn - 54) / 2)
+  assert.ok(head + 2 * turn < soft && head + 3 * turn > ceiling, `${head} ${turn}`)
   let n = 0
   const f = fixture({ count: tokenCount, reserves: { stepMedian: 100 }, actions: () => {
     const call = ++n
     if (call > 3) return canonical({ action: 'handoff' })
-    return canonical({ action: 'tool', name: 'echo', args: { output: 'x'.repeat(2700) } })
+    return canonical({ action: 'tool', name: 'echo', args: { output: 'x'.repeat(output) } })
   } })
   try {
     await f.executor.run(f.attempt)

@@ -13,6 +13,7 @@ import { ProjectIndex } from '../indexing/service.ts'
 import { ResourceGovernor } from '../runtime/resource-governor.ts'
 import { type MapResult } from '../indexing/types.ts'
 import { dirname, relative, sep, join } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { NativeOutputs } from './outputs.ts'
 
 export interface NativeToolContext {
@@ -23,6 +24,8 @@ export interface NativeToolContext {
   scrubber: EgressScrubber
   executeCommand?: typeof sandboxCommand
   guard?(): void
+  /** Largest serialized result of a paged tool (`file_read`, `tool_output_read`) the caller can keep whole. Absent: the tool's own bounds. */
+  pageBytes?: number
   queue(text: string): void | Promise<void>
   /** Enqueue one native trace append through the attempt FIFO. */
   append?<T extends SessionEventType>(input: SessionEventInput<T>, options?: AppendOptions): Promise<AppendResult>
@@ -72,6 +75,61 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
     return JSON.stringify(clean)
   }
+  /** One page of a text file starting at byte `offset`. The result is the command result with the cursor fields in front; `stdout`
+   * stays last, so a reader that cuts the tail of the text still has `more` and `nextOffset`.
+   *
+   * `nextOffset` is a position in the FILE, so it is only issued while the page is exactly the bytes it came from. Redaction (a registered
+   * secret is replaced by a marker of another length) and invalid bytes (each decodes to three bytes of text) break that, but only where they
+   * are: a page ends in front of the first redacted region or the first character the file does not hold, and a page that would start there has
+   * no honest cursor (`page_cursor_unavailable`). A real U+FFFD (EF BF BD) is kept: the page's bytes are compared with the file's. Without a
+   * page budget the whole remainder is returned as before, and a cursor that cannot be trusted is `null`. */
+  const fileRead = async (requested: string, rawOffset: unknown, signal?: AbortSignal) => {
+    // Decimal digits only, as a string or a number: no sign, fraction, exponent, hex or padding.
+    if (rawOffset !== undefined && rawOffset !== '' && !/^\d{1,15}$/.test(String(rawOffset))) throw new Error('invalid_offset')
+    const offset = rawOffset === undefined || rawOffset === '' ? 0 : Number(rawOffset)
+    const target = quote(path(requested)), execute = ctx.executeCommand ?? sandboxCommand
+    const raw = await execute(policy, offset === 0 ? `/bin/cat -- ${target}` : `/usr/bin/tail -c +${offset + 1} -- ${target}`, signal, 120_000, true, scrubber)
+    const result = scrubber.scrub(raw)
+    if (result.code !== 0) throw new Error('tool_failed')
+    const dump = async (from: number, count: number) => scrubber.scrub(await execute(policy, `/usr/bin/od -An -v -tx1 -j ${from} -N ${count} -- ${target}`, signal, 120_000, true, scrubber))
+    // `od` pads its columns differently on macOS and Linux: compare the bytes, not the layout.
+    const hex = (out: { code: number | null; stdout: string; truncated: boolean }) => out.code === 0 && !out.truncated ? out.stdout.split(/\s+/).join('') : null
+    if (offset > 0 && result.stdout.startsWith('\uFFFD')) {
+      // Either the offset is inside a multi-byte character (every continuation byte decodes to a replacement character) or the file really
+      // has U+FFFD here, which a cursor this tool returned can point at. The bytes at the offset tell them apart.
+      if (hex(await dump(offset, 3)) !== 'efbfbd') throw new Error('invalid_offset')
+    }
+    // The bytes of the scrubbed text that are the file's own: everything before the first change redaction made.
+    let same = Infinity
+    if (result.stdout !== raw.stdout) {
+      let i = 0
+      while (i < raw.stdout.length && i < result.stdout.length && raw.stdout.charCodeAt(i) === result.stdout.charCodeAt(i)) i++
+      if (i > 0 && /[\uD800-\uDBFF]/.test(result.stdout[i - 1]!)) i--
+      same = Buffer.byteLength(result.stdout.slice(0, i))
+    }
+    const data = Buffer.from(result.stdout), limit = ctx.pageBytes
+    for (let page = data.length; ;) {
+      let text = new StringDecoder('utf8').write(data.subarray(0, page))
+      let used = Buffer.byteLength(text)
+      if (used === 0 && data.length > 0) throw new Error('page_too_small')
+      const more = used < data.length || result.truncated
+      let cursor = true
+      if (more && used > same) {
+        if (limit === undefined) cursor = false
+        else { text = new StringDecoder('utf8').write(data.subarray(0, same)); used = Buffer.byteLength(text); if (used === 0) throw new Error('page_cursor_unavailable') }
+      }
+      if (more && cursor && text.includes('\uFFFD') && hex(await dump(offset, used)) !== Buffer.from(text).toString('hex')) {
+        // The file does not hold every character of this page: end it in front of the first one it does not hold.
+        text = text.slice(0, text.indexOf('\uFFFD')); used = Buffer.byteLength(text)
+        if (used === 0) throw new Error('page_cursor_unavailable')
+      }
+      // `truncated` keeps its old meaning for a reader that has only seen it: the text below is not the whole of what follows the offset.
+      const body = JSON.stringify({ more, nextOffset: cursor ? offset + used : null, offset, code: result.code, stderr: result.stderr, truncated: more, stdout: text })
+      if (limit === undefined || Buffer.byteLength(body) <= limit) return body
+      if (page === 0) throw new Error('page_too_small')
+      page = Math.max(0, Math.min(page - 1, Math.floor(page * limit / Buffer.byteLength(body)) - 1))
+    }
+  }
   const tool = (name: string, description: string, properties: Record<string, ReturnType<typeof Type.String>>, execute: (args: Record<string, string>, signal?: AbortSignal) => Promise<string>): AgentTool => ({
     name, label: name, description, parameters: Type.Object(properties),
     async execute(_id, raw, signal) {
@@ -84,7 +142,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
         ctx.guard?.()
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
+        const safeCodes = ['invalid_offset', 'page_too_small', 'page_cursor_unavailable', 'cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
         const code = error instanceof Error && (safeCodes.includes(error.message) || /^index_[a-z_]+$/.test(error.message)) ? error.message : 'tool_denied_or_failed'
         if (code === 'input_artifact_storage_failed' || code === 'tool_call_trace_missing') {
           ctx.abortTurn?.()
@@ -95,9 +153,9 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     },
   })
   return [
-    tool('tool_output_read', 'Read a session output artifact by its returned ID and byte offset. Results are paged at 8 KiB; nextOffset resumes without a hidden content cap.', { artifact: Type.String(), offset: Type.String() }, async a => outputs.read(a.artifact!, Number(a.offset))),
+    tool('tool_output_read', 'Read a session output artifact by its returned ID and byte offset. Results are paged at 8 KiB; nextOffset resumes without a hidden content cap.', { artifact: Type.String(), offset: Type.String() }, async a => outputs.read(a.artifact!, Number(a.offset), ctx.pageBytes)),
     tool('project_info', 'Read immutable roots, scratch, network policy, attachments and instruction paths. No token budget is invented.', {}, async () => JSON.stringify({ ...policy, budgets: 'model/runtime limits; no additional cap', instructions: policy.roots.map(root => `${root}/AGENTS.md`) })),
-    tool('file_read', 'Read a UTF-8 file in roots, scratch or attachments. Absolute paths select another root.', { path: Type.String() }, async (a, s) => run(`/bin/cat -- ${quote(path(a.path!))}`, s)),
+    tool('file_read', 'Read a UTF-8 text file in roots, scratch or attachments. Absolute paths select another root. offset is a byte offset (default 0); the result has more and nextOffset, so a large file is read page by page with offset=nextOffset.', { path: Type.String(), offset: Type.Optional(Type.String()) }, async (a, s) => fileRead(a.path!, a.offset, s)),
     tool('file_write', 'Write UTF-8 content. Read-only writes only to scratch. Protected paths are always denied.', { path: Type.String(), content: Type.String() }, async (a, s) => run(`printf %s ${quote(a.content!)} > ${quote(path(a.path!, true))}`, s)),
     tool('shell', 'Run a shell command under the access policy and a PID-namespace execution owner. macOS requires the local container runtime and provisioned execution image; no host-shell fallback. Fixed pwd/ls/cat/head/tail/wc commands also work without that runtime.', { command: Type.String() }, async (a, s) => {
       if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, [0], false)

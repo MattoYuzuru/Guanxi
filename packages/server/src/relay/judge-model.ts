@@ -7,6 +7,7 @@ import { invariant, RelayError } from './types.ts'
 import type { JudgeRole } from './delegation-brief.ts'
 import { observeUntilAbort } from './judge-await.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
+import { plainSchema, type JsonSchema } from './json-schema.ts'
 
 export interface JudgeModelInput {
   accountId: string
@@ -24,6 +25,8 @@ export interface JudgeModel {
       prompt: string
       check(): void
       started?(): void
+      /** Constrain decoding to this JSON Schema (a local runtime). It never changes the prompt or its count. */
+      responseSchema?: JsonSchema
     }
   ): Promise<string>
 }
@@ -228,6 +231,7 @@ export class ConnectionJudgeModel implements JudgeModel {
       input.check()
     }
     let dispatchedInput: number | undefined
+    const format = input.responseSchema ? plainSchema(input.responseSchema) : undefined
     const result = await this.connections.localChat(
       this.ownerAccountId,
       input.role.connectionId,
@@ -235,6 +239,7 @@ export class ConnectionJudgeModel implements JudgeModel {
         model: input.role.model,
         stream: false,
         ...(pinned ? { think: false } : {}),
+        ...(format ? { format } : {}),
         messages: [{ role: 'user', content: prompt }],
         options
       },
@@ -268,6 +273,8 @@ export class ConnectionJudgeModel implements JudgeModel {
               typeof request.messages[0]!.content === 'string',
             'judge_request_shape'
           )
+          // A different schema is a different request.
+          invariant(canonical((request as OllamaChatRequest).format ?? null) === canonical(format ?? null), 'judge_request_shape')
           // The relay meter's `validatePrepared` pins the relay turn's output limit, which is not the judge's. The
           // judge's own request is therefore pinned here, exactly, for the runtime that counts it.
           if (pinned) {

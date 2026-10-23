@@ -148,6 +148,27 @@ test('actual K3 uses explicit owner account, one fresh tool-free request and fin
   assert.equal(f.connections.snapshot('local').connections.length, 0)
   assert.equal(f.connections.snapshot(account).costs.length, 2)
 })
+test('a response schema reaches the runtime as the request format, only when asked, and a schema K3 would rewrite stops the judge before dispatch', async (t) => {
+  const requests: Record<string, unknown>[] = [],
+    f = await setup(t, async (_url, init) => {
+      const body = JSON.parse(String(init!.body))
+      requests.push(body)
+      return Response.json({ message: { role: 'assistant', content: '{"ok":true}' }, done: true, done_reason: 'stop', prompt_eval_count: Buffer.byteLength(body.messages[0].content), eval_count: 5 })
+    })
+  f.scrubber.register('secret://judge-fixture', 'synthetic-judge-secret')
+  const model = new ConnectionJudgeModel(f.connections, account, f.meter, f.scrubber, async () => f.fact, 1000, () => now)
+  const signal = new AbortController().signal, input = { accountId: account, role: f.role, signal }
+  assert.equal(await model.admit(input), true)
+  const schema = { type: 'object', properties: { verdict: { enum: ['consistent', 'flagged'] } }, required: ['verdict'], additionalProperties: false }
+  await model.sample({ ...input, runId: 'run', requestId: 'with', prompt: 'p', check: () => {}, responseSchema: schema })
+  await model.sample({ ...input, runId: 'run', requestId: 'without', prompt: 'p', check: () => {} })
+  assert.equal(requests.length, 2)
+  assert.deepEqual(requests[0]!.format, schema)
+  assert.equal(Object.hasOwn(requests[1]!, 'format'), false, 'no schema, no format')
+  // A schema that carries a registered secret is rewritten by K3's final scrub: the request is no longer the one pinned, and nothing is sent.
+  await assert.rejects(model.sample({ ...input, runId: 'run', requestId: 'rewritten', prompt: 'p', check: () => {}, responseSchema: { enum: ['synthetic-judge-secret'] } }))
+  assert.equal(requests.length, 2, 'the rewritten request was never dispatched')
+})
 test('unknown/stale/future/foreign/cloud placement refuses before any actual K3 post', async (t) => {
   let posts = 0
   const f = await setup(t, async () => {

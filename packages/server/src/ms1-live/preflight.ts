@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_RESERVATIONS_CAPABILITY, RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_PROBE } from '@guanxi/contract/federation'
+import { ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_RESERVATIONS_CAPABILITY, RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_PROBE, RELAY_STRUCTURED_MINOR } from '@guanxi/contract/federation'
 import { FederationChannel } from '../federation/channel.ts'
 import { thresholds } from '../relay/budget.ts'
+import { actionResponseSchema, LOCAL_TOOLS, probeResponseSchema } from '../relay/response-schemas.ts'
+import { judgeResultJsonSchema } from '../relay/judge-cascade.ts'
+import { relayToolSpecs } from '../relay/workspace.ts'
 import { REMOTE_RELAY_COUNTER_SOURCE, REMOTE_RELAY_PROPS_SOURCE } from '../relay/remote-runtime.ts'
-import { LlamaServerClient } from '../runtime/llama-server/client.ts'
+import { LlamaServerClient, LlamaServerError } from '../runtime/llama-server/client.ts'
 import { LlamaServerHost } from '../runtime/llama-server/process.ts'
 import { LLAMA_SERVER_COUNTER_SOURCE } from '../runtime/llama-server/runtime.ts'
 import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
@@ -69,6 +72,10 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
       const missing = [ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_DISPATCH_CAPABILITY, RELAY_RUNTIME_CAPABILITY].filter(name => !(shake.capabilities ?? []).includes(name))
       if (missing.length) return fail('handshake', 'peer_lacks_capability', `The executor does not offer: ${missing.join(', ')}.`,
         'Start the executor in role "executor" (it advertises the relay runtime only with an attached llama-server) on the same Guanxi version.')
+      // Federation 1.6 carries a response schema in a counted job; an older executor would refuse every probe and work call (426).
+      if (settings.home!.structuredOutput && shake.version.minor < RELAY_STRUCTURED_MINOR) return fail('handshake', 'peer_protocol_old',
+        `The executor speaks federation ${shake.version.major}.${shake.version.minor}; decoding under a JSON Schema needs 1.${RELAY_STRUCTURED_MINOR}.`,
+        'Run the same Guanxi commit on both nodes, or set home.structuredOutput to false to run without the grammar.')
       return ok('handshake', 'The executor accepts this node\'s signature and offers the relay runtime.', { protocol: `${shake.negotiated.major}.${shake.negotiated.minor}`, capabilities: shake.capabilities })
     }))
     if (handshake.status !== 'ok') return finish(settings, [...checks, skip('observe', 'Skipped: the handshake failed.')], observed, clock)
@@ -168,6 +175,22 @@ export async function preflight(options: PreflightOptions): Promise<PreflightRep
                 'Every relay call would be refused. Report the llama.cpp build; try cachePrompt:false in executor.llamaServer.')
             }
             return ok('completion', 'One-token completion: evaluated tokens equal the exact count.', { evaluatedTokens: done.promptTokens, stopType: done.stopType, truncated: done.truncated })
+          }))
+          // The three schemas the relay sends (probe, work, judge verdict), each with a one-token generation: the server builds the grammar
+          // before it samples, so a grammar it cannot build is refused here, in one line, instead of as a failed relay.
+          await run(step('schemas', async () => {
+            const client = new LlamaServerClient({ baseUrl: settings.executor!.llamaServer.baseUrl })
+            const tools = relayToolSpecs({ policy: { mode: 'full-access', scratch: '/scratch', roots: ['/root'], attachments: [], protectedPaths: [], domains: [] }, log: {} as never,
+              handle: { sessionId: 'preflight' } as never, scrubber: { scrub: <T>(value: T) => value } as never, queue() {} })
+            const named: Array<[string, Record<string, unknown>]> = [['probe', probeResponseSchema()], ['work', actionResponseSchema([...LOCAL_TOOLS, ...tools])], ['judge', judgeResultJsonSchema]]
+            for (const [name, schema] of named) {
+              try { await client.complete(rendered, 1, AbortSignal.timeout(settings.link.requestTimeoutMs), () => undefined, schema) } catch (error) {
+                if (error instanceof LlamaServerError && error.code === 'llama_server_schema_rejected') return fail('schemas', 'response_schema_rejected', `The llama-server refused the ${name} response schema.`,
+                  'Read its log for the grammar error; set home.structuredOutput to false on the home to run without the grammar, and report the llama.cpp build.')
+                throw error
+              }
+            }
+            return ok('schemas', 'The llama-server accepted the probe, work and judge response schemas.', { schemas: named.map(([name]) => name) })
           }))
         } else checks.push(skip('completion', 'Skipped: the template check failed.'))
       } else checks.push(skip('completion', 'Not requested (--completion runs one real one-token generation).'))

@@ -10,6 +10,8 @@ import { sandboxCommand, quote, type SandboxPolicy } from '../native-agent/sandb
 import { nativeTools, type NativeToolContext } from '../native-agent/tools.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { byteHash } from './handoff.ts'
+import { strictParameters } from './json-schema.ts'
+import type { RelayToolSpec } from './response-schemas.ts'
 const exec = promisify(execFile)
 export const gitEnv = { PATH: '/usr/bin:/bin', HOME: tmpdir(), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' }
 export const gitFlags = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', '-c', 'commit.gpgsign=false']
@@ -88,13 +90,22 @@ const protectedFiles = /(^|\/)(?:package\.json|package-lock\.json|pnpm-lock\.yam
 const protectedTests = /(^|\/)(?:[^/]+_test\.go|test_[^/]+\.py|[^/]+_test\.py|conftest\.py)$/
 /** Planner tests, manifests and CI/runner indirection are harness-owned. */
 export const protectedName = (p: string) => p.split('/').some(s => protectedSegments.has(s)) || /\.(test|spec)\.[^/]+$/.test(p) || protectedFiles.test(p) || protectedTests.test(p)
+/** Native tools that are the session's, not the relay model's. */
+const NOT_RELAY_TOOLS = ['plan', 'queue', 'note_add']
+/** The model-callable tools of a native tool context, with their parameters as strict JSON Schema objects. */
+export function relayToolSpecs(context: NativeToolContext): RelayToolSpec[] {
+  return nativeTools(context).filter(t => !NOT_RELAY_TOOLS.includes(t.name)).map(t => ({ name: t.name, parameters: strictParameters(t.parameters) }))
+}
 export interface WorkspaceObservation { head: string; files: string[]; diffstat: string; nonemptyCommit: boolean }
 export interface RelayWorkspace {
   observe(base: string, baseline: string): Promise<WorkspaceObservation>
   bundle(base: string): Promise<Uint8Array>
   verify(plan: Plan, item: string, signal?: AbortSignal, timeoutMs?: number): Promise<{ item: string; head: string; ok: boolean; output: string }>
   checkpoint(signal?: AbortSignal): Promise<void>
-  tool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string>
+  /** The tools the model may call, with their parameters. Absent in a test double: the executor then assumes the usual names. */
+  tools?(): RelayToolSpec[]
+  /** `pageBytes` is the largest result the caller can keep whole; a paged tool sizes its page to it. */
+  tool(name: string, args: Record<string, unknown>, signal?: AbortSignal, options?: { pageBytes?: number }): Promise<string>
   validate(plan: Plan, head: string, files: string[]): Promise<void>
 }
 /** Trusted git plumbing: no shell interpolation, hooks, global config or credential env.
@@ -254,8 +265,11 @@ export class GitRelayWorkspace implements RelayWorkspace {
       throw error
     } finally { if (cleanup) await rm(temp, { recursive: true, force: true }) }
   }
-  async tool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
-    const tool = nativeTools(this.context).find(t => t.name === name && !['plan', 'queue', 'note_add'].includes(name))
+  tools(): RelayToolSpec[] {
+    return relayToolSpecs(this.context)
+  }
+  async tool(name: string, args: Record<string, unknown>, signal?: AbortSignal, options: { pageBytes?: number } = {}): Promise<string> {
+    const tool = nativeTools({ ...this.context, ...(options.pageBytes === undefined ? {} : { pageBytes: options.pageBytes }) }).find(t => t.name === name && !NOT_RELAY_TOOLS.includes(name))
     invariant(tool, 'tool_denied')
     const result = await tool.execute('relay', args, signal)
     if (result.isError && (result.details as { code?: string } | null)?.code === 'cleanup_unconfirmed') throw new RelayError('cleanup_unconfirmed')

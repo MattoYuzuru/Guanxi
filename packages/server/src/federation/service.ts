@@ -3,7 +3,7 @@ import { federationAuthSchema, FEDERATION_VERSION, nodeIdentitySchema, routedCom
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, signedDispatchGrantSchema, signedDispatchEventSchema, dispatchRefSchema, dispatchCancelSchema,
   type LocalInferenceJob, type RemoteAttemptReceipt, type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptOfferSchema, remoteAttemptCancelSchema,
-  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_PIN_LEASE_MINOR, RELAY_RUNTIME_PROBE, RELAY_PIN_PREFIX, relayRuntimePinSchema, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, RELAY_PIN_LEASE_MINOR, RELAY_STRUCTURED_MINOR, RELAY_RUNTIME_PROBE, RELAY_PIN_PREFIX, relayRuntimePinSchema, relayRuntimeObserveSchema, relayRuntimeCountSchema, type RelayRuntimeBinding,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand, type Telemetry } from '@guanxi/contract/federation'
 import type { Db } from '../store/db.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -491,6 +491,8 @@ export class Federation {
       const peer = this.validateDispatchPeer(context, { id: g.id, homeNodeId: g.offer.homeNodeId, executorNodeId: g.offer.executorNodeId }, true)
       this.validateAttemptOffer(context, g.offer); this.clean(signed)
       if (!validSignature(peer.publicKey, g, signed.signature)) throw new FederationError('invalid_signature', 403)
+      // A home that does not declare 1.6 cannot have meant a response schema; running its job without one would be running another request.
+      if (g.job.responseSchema && context.version.minor < RELAY_STRUCTURED_MINOR) throw new FederationError('contract_feature_unavailable', 426)
     }
     validate()
     return this.dispatches().receive(signed, validate)

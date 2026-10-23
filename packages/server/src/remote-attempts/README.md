@@ -162,6 +162,12 @@ reachable; the model call itself is the existing F2-b dispatch.
   carries `doneReason` and, for a refusal, a fixed `reason` code. A counted job needs
   `offer.parent: {runId, epoch}`, which the executor accepts only from a minor-4 peer and only when it serves the relay runtime;
   it derives the child's pin from the pinned relay run and refuses a child id that is the parent or pinned in its own right.
+- **Response schema (federation 1.6).** A counted job may carry `responseSchema` (a JSON Schema object, at most 64 KiB), which the executor's
+  llama-server decodes under (`json_schema` on `/completion`). It is part of the signed job and of the counted chain
+  (`counted.responseSchemaSha256`, present exactly when the schema is), the executor evaluates under exactly it and its terminal event
+  echoes `responseSchemaSha256`, which the home checks. A schema never changes the counted prompt tokens. A home that declares an older
+  minor cannot send one (executor `426`), and an executor older than 1.6 is refused by the home channel (`426`) rather than ignoring the
+  field. See the [relay README](../relay/README.md#constrained-json-output-r2-json).
 - **Per-call child runs.** Each model call is a fresh child run with one dispatch, so the F2-b
   fence, renewal, event receipt and cancel machinery applies unchanged. F2-c records the remote
   tokens on the child's ledger with its terminal receipt. The relay run keeps its own call

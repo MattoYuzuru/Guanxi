@@ -7,6 +7,7 @@ import { normalizeOllamaModelReference } from '../runtime/observation-key.ts'
 import { invariant } from './types.ts'
 import type { RuntimeMeter } from './model.ts'
 import { canonical } from './handoff.ts'
+import type { JsonSchema } from './json-schema.ts'
 
 /** The server supplies this port only after proving its renderer/tokenizer binding.
  * There is deliberately no stock Ollama, byte-count or catalog fallback. */
@@ -154,7 +155,7 @@ export class RelayRuntimeSource {
       invariant(runtimeHost() === admittedHost, 'runtime_identity_changed')
       this.fresh(current.observedAt); this.fresh(counterTime) }
     validate()
-    const render = (prompt: string): OllamaChatRequest => ({ model, stream: false, think: false,
+    const render = (prompt: string, format?: JsonSchema): OllamaChatRequest => ({ model, stream: false, think: false, ...(format ? { format } : {}),
       messages: [{ role: 'user', content: prompt }], options: { num_ctx: fact.contextTokens, num_predict: turn } })
     const meter: RuntimeMeter = {
       countIsExact: true, localOnly: true, ...(observer ? { transport: observer.transport } : {}),
@@ -169,7 +170,8 @@ export class RelayRuntimeSource {
         await bind(next, activeSignal); activeSignal.throwIfAborted(); validate()
         return { tokens: fact.contextTokens, source: fact.source, observedAt: next.observedAt, confidence: 'high', framingTokens: 0 } },
       authorizeDispatch: async callSignal => { await meter.observe(callSignal); validate() },
-      validatePrepared: request => { validate(); invariant(canonical(request) === canonical(render(request.messages[0]!.content)), 'runtime_request_changed') },
+      // A different schema is a different request, exactly as a different prompt is.
+      validatePrepared: (request, responseSchema) => { validate(); invariant(canonical(request) === canonical(render(request.messages[0]!.content, responseSchema)), 'runtime_request_changed') },
       // Explicit trusted local-compute policy, not an observed provider bill.
       maxCostMicros: () => { validate(); return 0 },
     }

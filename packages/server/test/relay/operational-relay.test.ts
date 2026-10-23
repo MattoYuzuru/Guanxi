@@ -155,14 +155,24 @@ test('a replaced model file refuses the next dispatch; a stale admitted observat
   assert.equal(changed.starts.status(changed.input.key).status, 'input_required')
   // Observed before the call (runtime_identity_changed) or inside K3 authorization (model_failed): both stop before dispatch.
   assert.ok(changed.errors(receipt.sessionId!).some(code => ['runtime_identity_changed', 'model_failed'].includes(code)), JSON.stringify(changed.errors(receipt.sessionId!)))
+  // An observation that aged out during a call is observed again before the next count, and the run goes on: the age rule protects a request
+  // from a runtime nobody has looked at, not a healthy runtime from a slow model.
+  const slow = await fixture(t, { fake: { completionDelayMs: 250 } }), slowReceipt = await slow.starts.start(slow.input)
+  await until(async () => (await slow.fake.count('/completion')) >= 1)
+  const looked = await slow.fake.count('/props')
+  slow.time(RUN_TIME + 20_000)
+  await until(() => slow.starts.status(slow.input.key).status !== 'running')
+  assert.equal(slow.starts.status(slow.input.key).status, 'completed', JSON.stringify(slow.errors(slowReceipt.sessionId!)))
+  assert.ok((await slow.fake.count('/props')) > looked, 'the runtime was observed again after the clock moved')
+  // An aged-out observation that cannot be refreshed (the server no longer answers as the observed model) still stops everything.
   const stale = await fixture(t, { fake: { completionDelayMs: 250 } }), staleReceipt = await stale.starts.start(stale.input)
   await until(async () => (await stale.fake.count('/completion')) >= 1)
   stale.time(RUN_TIME + 20_000)
+  await stale.fake.configure({ alias: 'another-model' })
   await until(() => stale.starts.status(stale.input.key).status !== 'running')
-  assert.equal((await stale.fake.requests('/completion')).length, 1, 'no dispatch on an aged-out observation')
-  // The aged-out count is refused while the first reply is being measured (model_failed) or when the next request is packed.
+  assert.equal((await stale.fake.requests('/completion')).length, 1, 'no dispatch on an aged-out observation that cannot be refreshed')
   assert.equal(stale.starts.status(stale.input.key).status, 'input_required')
-  assert.ok(stale.errors(staleReceipt.sessionId!).some(code => ['runtime_observation_stale', 'model_failed'].includes(code)), JSON.stringify(stale.errors(staleReceipt.sessionId!)))
+  assert.ok(stale.errors(staleReceipt.sessionId!).some(code => ['runtime_identity_unknown', 'runtime_observation_stale', 'model_failed'].includes(code)), JSON.stringify(stale.errors(staleReceipt.sessionId!)))
 })
 
 test('a loading, unreachable or mismatched server refuses admission before any run, session or allocation exists', async t => {

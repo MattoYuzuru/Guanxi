@@ -205,6 +205,38 @@ test('transport dispatches exactly the counted rendered string and reports llama
   }
 })
 
+test('a response schema on the request reaches /completion as json_schema, is pinned like the prompt and is never anything but a bounded JSON object', async t => {
+  const f = await bound(t, { replies: ['{"action": "handoff"}'] }), content = 'decode under a grammar', schema = { type: 'object', properties: { action: { const: 'handoff' } }, required: ['action'], additionalProperties: false }
+  const plain = request(content), constrained = request(content, { format: schema })
+  const n = f.counter.count(plain)
+  const chunk = await f.runtime.transport.chat(constrained, signal(), () => {}, dispatchFor(constrained).dispatch)
+  assert.equal(chunk.prompt_eval_count, n, 'the schema is not part of the counted request')
+  assert.deepEqual((await f.fake.requests('/completion'))[0]!.body, { prompt: fakeRender(content, { template: 'chat' }, false), n_predict: 500, stream: false, cache_prompt: true, json_schema: schema })
+  const before = await f.fake.count('/completion')
+  // The final check must see the same schema as the first: another schema, or none, is another request.
+  for (const [name, later] of [['another schema', request(content, { format: { type: 'object' } })], ['no schema', plain]] as const) {
+    let calls = 0
+    const changed = dispatchFor(() => ++calls === 1 ? constrained : later)
+    await assert.rejects(f.runtime.transport.chat(constrained, signal(), () => {}, changed.dispatch), code('runtime_request_changed'), name)
+  }
+  let late = 0
+  await assert.rejects(f.runtime.transport.chat(plain, signal(), () => {}, dispatchFor(() => ++late === 1 ? plain : constrained).dispatch), code('runtime_request_changed'), 'a schema added at the last check')
+  // Not a schema this runtime will send: a string (Ollama's 'json'), an array, null, a number, an oversized object.
+  for (const bad of ['json', [], null, 5, { enum: ['x'.repeat(70_000)] }]) {
+    const odd = request(content, { format: bad as never })
+    await assert.rejects(f.runtime.transport.chat(odd, signal(), () => {}, dispatchFor(odd).dispatch), code('runtime_request_changed'), JSON.stringify(bad)?.slice(0, 20))
+  }
+  assert.equal(await f.fake.count('/completion'), before, 'every refusal happened before the model was asked')
+})
+
+test('a grammar the server rejects is response_schema_rejected, not an identity or availability problem, and a request without a schema is unaffected', async t => {
+  const f = await bound(t, { rejectSchema: true, replies: ['{"ok":true}'] }), schema = { type: 'object' }
+  const constrained = request('rejected grammar', { format: schema })
+  await assert.rejects(f.runtime.transport.chat(constrained, signal(), () => {}, dispatchFor(constrained).dispatch), code('response_schema_rejected'))
+  const plain = request('rejected grammar')
+  assert.equal((await f.runtime.transport.chat(plain, signal(), () => {}, dispatchFor(plain).dispatch)).message?.content, '{"ok":true}')
+})
+
 test('a count that disagrees with the synchronous measure, a truncated prompt or a window overrun never reaches the model as accepted work', async t => {
   const f = await bound(t, { replies: ['{}'] }), prepared = request('disagree about me')
   f.counter.count(prepared)

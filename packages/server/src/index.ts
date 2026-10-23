@@ -341,6 +341,8 @@ export async function start(options: StartOptions = {}) {
       // The pairing's judge (`home.judge`) is the default; a `relayHost.judge` given by the caller replaces it.
       ...(live?.judgeSource() ? { judge: live.judgeSource() } : {}),
       ...hostExtras,
+      // The pairing's relay limits (`home.structuredOutput`) are the default; a `relayHost.limits` given by the caller overrides them field by field.
+      ...(liveRelay?.limits ? { limits: { ...liveRelay.limits, ...(hostExtras.limits as object | undefined) } } : {}),
       ...(relayOptions ? { reserves: relayOptions.reserves, allocate: relayOptions.allocate,
         // A runtime that binds per start (F2-d) has an observer with `open` instead of a counter. In live mode there is no
         // local fallback at all: the model inventory callback refuses, so a stale remote can never become an Ollama call.

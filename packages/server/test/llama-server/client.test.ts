@@ -43,6 +43,39 @@ test('props, health, render, tokenize and completion parse the documented shapes
   await assert.rejects(client.complete('x', 0, new AbortController().signal), refused)
 })
 
+/** The schema the integrator posted to a real llama.cpp b11496 /completion (const, enum, required, additionalProperties). */
+const INTEGRATOR_SCHEMA = { type: 'object', properties: { action: { const: 'tool' }, name: { enum: ['file_read', 'shell'] },
+  args: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false } }, required: ['action', 'name', 'args'], additionalProperties: false }
+test('a response schema is sent as json_schema on /completion and nothing else changes: same flags, same evaluated tokens', async t => {
+  const fake = await startFakeLlama({ replies: ['{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}'] }); t.after(() => fake.close())
+  const client = new LlamaServerClient({ baseUrl: fake.url, cachePrompt: false }), rendered = fakeRender('hello', { template: 'chat' }, false)
+  const plain = await client.complete(rendered, 60, new AbortController().signal)
+  const constrained = await client.complete(rendered, 60, new AbortController().signal, undefined, INTEGRATOR_SCHEMA)
+  const [first, second] = await fake.requests('/completion')
+  // Exactly the body the real server was shown by the integrator, key for key.
+  assert.deepEqual(second!.body, { prompt: rendered, n_predict: 60, stream: false, cache_prompt: false, json_schema: INTEGRATOR_SCHEMA })
+  assert.deepEqual(Object.keys(second!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt', 'json_schema'])
+  assert.deepEqual(Object.keys(first!.body), ['prompt', 'n_predict', 'stream', 'cache_prompt'], 'no schema, no json_schema key (not even a null)')
+  assert.deepEqual(Object.keys(second!.body.json_schema.properties), ['action', 'name', 'args'], 'the schema keeps the order a grammar will write its keys in')
+  assert.equal(constrained.promptTokens, plain.promptTokens, 'the schema does not change a prompt token')
+  assert.equal(constrained.content, '{"action": "tool", "name": "file_read", "args": {"path": "SPEC.md"}}')
+})
+
+test('a server that refuses the grammar is named as such, only when a schema was sent, and none of its text is returned', async t => {
+  const fake = await startFakeLlama({ rejectSchema: true }); t.after(() => fake.close())
+  const client = new LlamaServerClient({ baseUrl: fake.url })
+  await assert.rejects(client.complete('x', 1, new AbortController().signal, undefined, INTEGRATOR_SCHEMA),
+    (error: unknown) => error instanceof LlamaServerError && error.code === 'llama_server_schema_rejected' && !String(error.message).includes('SERVER-GRAMMAR-TEXT'))
+  assert.equal((await client.complete('x', 1, new AbortController().signal)).content, '{}', 'the same server answers a request without a schema')
+  await fake.configure({ loading: true })
+  // A loading server is still unavailable, schema or not; and an error answer without a schema is not blamed on one.
+  const bare = createServer((_request, response) => { response.writeHead(400, { 'content-type': 'application/json' }); response.end('{"error":{"code":400}}') })
+  await new Promise<void>(resolve => bare.listen(0, '127.0.0.1', resolve)); t.after(() => { bare.closeAllConnections(); bare.close() })
+  const other = new LlamaServerClient({ baseUrl: `http://127.0.0.1:${(bare.address() as AddressInfo).port}` })
+  await assert.rejects(other.complete('x', 1, new AbortController().signal), code('llama_server_protocol'))
+  await assert.rejects(other.complete('x', 1, new AbortController().signal, undefined, INTEGRATOR_SCHEMA), code('llama_server_schema_rejected'))
+})
+
 test('malformed, oversized, non-JSON and redirected answers are protocol or availability failures without leaking text', async t => {
   const fake = await startFakeLlama(); t.after(() => fake.close())
   const client = new LlamaServerClient({ baseUrl: fake.url })

@@ -5,6 +5,7 @@ import { realpath, stat } from 'node:fs/promises'
 import type { LocalChatTransport } from '../../connections/service.ts'
 import type { OllamaChatChunk, OllamaChatRequest } from '../../ollama/types.ts'
 import { canonical } from '../../relay/handoff.ts'
+import { requestSchema, schemaDigest } from '../../relay/json-schema.ts'
 import type { RelayExactCounter, RelayRuntimeObservation, RelayRuntimeObserver } from '../../relay/runtime.ts'
 import { invariant, RelayError } from '../../relay/types.ts'
 import { normalizeOllamaModelReference } from '../observation-key.ts'
@@ -68,6 +69,8 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
   private unavailable(error: unknown, signal?: AbortSignal): never {
     if (signal?.aborted) throw signal.reason ?? error
     if (error instanceof RelayError) throw error
+    // The server understood the request and refused the grammar: not an identity change, not an outage, and retrying cannot help.
+    if (error instanceof LlamaServerError && error.code === 'llama_server_schema_rejected') throw new RelayError('response_schema_rejected')
     if (error instanceof LlamaServerError && error.code === 'llama_server_protocol') throw new RelayError('runtime_identity_unknown')
     throw new RelayError('runtime_meter_unavailable')
   }
@@ -166,8 +169,8 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
   }
   /** F2-d: a one-call transport that additionally pins the rendered prompt and its token count to the evidence
    * the home counted. `evidence()` reports the hash of the prompt that was actually evaluated. */
-  expectedTransport(expected: { renderedSha256: string; tokens: number; digest: string; contextTokens: number }): LocalChatTransport & { evidence(): { renderedSha256?: string; failure?: string } | undefined } {
-    const seen: { renderedSha256?: string; failure?: string } = {}
+  expectedTransport(expected: { renderedSha256: string; tokens: number; digest: string; contextTokens: number; responseSchemaSha256?: string }): LocalChatTransport & { evidence(): { renderedSha256?: string; responseSchemaSha256?: string; failure?: string } | undefined } {
+    const seen: { renderedSha256?: string; responseSchemaSha256?: string; failure?: string } = {}
     const transport = { id: 'llama-server', host: this.host, usageSource: 'llama-server:/completion',
       chat: (request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void, dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }) =>
         this.chat(request, signal, onDispatched, dispatch, expected, seen).catch((error: unknown) => {
@@ -175,18 +178,22 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
           if (error instanceof RelayError) seen.failure = error.code
           throw error
         }),
-      evidence: () => seen.renderedSha256 || seen.failure ? { ...(seen.renderedSha256 ? { renderedSha256: seen.renderedSha256 } : {}), ...(seen.failure ? { failure: seen.failure } : {}) } : undefined }
+      evidence: () => seen.renderedSha256 || seen.failure ? { ...(seen.renderedSha256 ? { renderedSha256: seen.renderedSha256 } : {}),
+        ...(seen.responseSchemaSha256 ? { responseSchemaSha256: seen.responseSchemaSha256 } : {}), ...(seen.failure ? { failure: seen.failure } : {}) } : undefined }
     return Object.freeze(transport)
   }
   private async chat(request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void,
     dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest },
-    expected?: { renderedSha256: string; tokens: number; digest: string; contextTokens: number }, seen?: { renderedSha256?: string }): Promise<OllamaChatChunk> {
+    expected?: { renderedSha256: string; tokens: number; digest: string; contextTokens: number; responseSchemaSha256?: string }, seen?: { renderedSha256?: string; responseSchemaSha256?: string }): Promise<OllamaChatChunk> {
     this.ready?.()
     await dispatch.authorizeDispatch()
     signal.throwIfAborted()
     const first = dispatch.prepare(), content = this.message(first)
     const window = first.options?.num_ctx, limit = first.options?.num_predict
     invariant(Number.isSafeInteger(window) && Number.isSafeInteger(limit) && limit! > 0, 'runtime_request_changed')
+    const schema = requestSchema(first.format)
+    // The home pinned one schema to this counted request; a different one, or none, is another request.
+    if (expected) invariant((schema ? schemaDigest(schema) : undefined) === expected.responseSchemaSha256, 'runtime_request_changed')
     if (expected) {
       // The count was made under one served model and window; this dispatch must run on exactly that one, and the
       // window it claims is the loaded one, whatever the home asked for.
@@ -212,10 +219,14 @@ export class LlamaServerRuntime implements RelayRuntimeObserver {
     // synchronous stretch: nothing can be revoked between them and the request.
     const last = dispatch.prepare()
     invariant(canonical(last) === canonical(first), 'runtime_request_changed')
-    const done = await this.client.complete(rendered, limit!, signal, onDispatched).catch((error: unknown) => this.unavailable(error, signal))
+    const done = await this.client.complete(rendered, limit!, signal, onDispatched, schema).catch((error: unknown) => this.unavailable(error, signal))
     // A truncated prompt is never accepted as the prompt that was counted.
     invariant(!done.truncated, 'truncation_protocol')
-    if (expected) { invariant(done.promptTokens === expected.tokens, 'truncation_protocol'); seen!.renderedSha256 = expected.renderedSha256 }
+    if (expected) {
+      invariant(done.promptTokens === expected.tokens, 'truncation_protocol')
+      seen!.renderedSha256 = expected.renderedSha256
+      if (schema) seen!.responseSchemaSha256 = expected.responseSchemaSha256
+    }
     // Only a finished generation is a reply: `none` (still running) or an unknown stop type is refused.
     invariant(done.stopType === 'limit' || done.stopType === 'eos' || done.stopType === 'word', 'truncation_protocol')
     return { model: request.model, created_at: new Date(this.clock()).toISOString(), done: true, done_reason: done.stopType === 'limit' ? 'length' : 'stop',

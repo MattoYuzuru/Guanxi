@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import type { OllamaChatRequest } from '../../src/ollama/types.ts'
 import { LlamaServerClient } from '../../src/runtime/llama-server/client.ts'
+import { schemaDigest } from '../../src/relay/json-schema.ts'
 import { LlamaServerRuntime } from '../../src/runtime/llama-server/runtime.ts'
 import { fakeRender, fakeTokens, startFakeLlama } from '../fixtures/fake-llama-server.ts'
 
@@ -19,7 +20,7 @@ async function fixture(t: { after(fn: () => unknown): void }, state: Parameters<
   const runtime = new LlamaServerRuntime({ client: new LlamaServerClient({ baseUrl: fake.url }), model: 'fixture', countTimeoutMs: 3000 })
   t.after(async () => { await runtime.close(); await fake.close(); await rm(directory, { recursive: true, force: true }) })
   const seen = await runtime.observe(runtime.model, new AbortController().signal)
-  const expected = { renderedSha256: sha(rendered), tokens: fakeTokens(rendered, true), digest: seen.digest, contextTokens: 16000 }
+  const expected: { renderedSha256: string; tokens: number; digest: string; contextTokens: number; responseSchemaSha256?: string } = { renderedSha256: sha(rendered), tokens: fakeTokens(rendered, true), digest: seen.digest, contextTokens: 16000 }
   const request: OllamaChatRequest = { model: 'fixture', stream: false, think: false, messages: [{ role: 'user', content }], options: { num_ctx: 16000, num_predict: 500 } }
   const run = (override: Partial<typeof expected> = {}, patch: Partial<OllamaChatRequest> = {}) => {
     const transport = runtime.expectedTransport({ ...expected, ...override }), r = { ...request, ...patch }
@@ -56,6 +57,31 @@ test('each executor-side refusal happens before /completion and records its fixe
     assert.equal(transport.evidence()?.failure, expectedCode, name)
   }
   assert.equal((await f.fake.requests('/completion')).length, 0)
+})
+
+test('an executor evaluates under exactly the schema the counted chain names, reports its hash, and refuses any other request', async t => {
+  const f = await fixture(t), schema = { type: 'object', properties: { ok: { const: true } }, required: ['ok'], additionalProperties: false }
+  const hash = schemaDigest(schema)
+  for (const [name, override, patch] of [
+    ['a schema the chain does not name', {}, { format: schema }],
+    ['no schema where the chain names one', { responseSchemaSha256: hash }, {}],
+    ['another schema', { responseSchemaSha256: hash }, { format: { ...schema, required: [] } }],
+    ['a key order that is not a change (control)', { responseSchemaSha256: hash }, { format: { required: ['ok'], additionalProperties: false, properties: { ok: { const: true } }, type: 'object' } }],
+    ['the string json', { responseSchemaSha256: hash }, { format: 'json' as never }],
+  ] as const) {
+    const { transport, result } = f.run(override, patch)
+    if (name.startsWith('a key order')) { await result; assert.equal(transport.evidence()?.responseSchemaSha256, hash, name); continue }
+    await assert.rejects(result, /runtime_request_changed/, name)
+    assert.equal(transport.evidence()?.failure, 'runtime_request_changed', name)
+  }
+  assert.equal((await f.fake.requests('/completion')).length, 1, 'only the control reached the model')
+  const { transport, result } = f.run({ responseSchemaSha256: hash }, { format: schema })
+  await result
+  assert.equal(transport.evidence()?.responseSchemaSha256, hash); assert.equal(transport.evidence()?.renderedSha256, f.expected.renderedSha256)
+  assert.deepEqual((await f.fake.requests('/completion')).at(-1)!.body.json_schema, schema)
+  const plain = f.run(); await plain.result
+  assert.equal(plain.transport.evidence()?.responseSchemaSha256, undefined, 'no schema, no schema echo')
+  assert.equal('json_schema' in (await f.fake.requests('/completion')).at(-1)!.body, false)
 })
 
 test('a reply that evaluated other tokens than were counted is refused after the request', async t => {

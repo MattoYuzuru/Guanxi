@@ -19,6 +19,7 @@ import { RelayStore } from './store.ts'
 import { prepareStartJudge, type RelayStartJudgeSource } from './judge-start.ts'
 import { RelayRuntimeSource, abortableRead, type PreparedRelayRuntime } from './runtime.ts'
 import { canonical, hash } from './handoff.ts'
+import type { JsonSchema } from './json-schema.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Reserves, type RelayLimits } from './types.ts'
 
 export interface RelayProjectObservation { projectId: string; roots: string[]; source: string; observedAt: number }
@@ -176,7 +177,7 @@ export class RelayStarts {
       // fence it checks is read when a call is made, so it can be built before the run exists.
       const meter = { ...runtime.meter,
         async authorizeDispatch(signal?: AbortSignal) { guard(); await runtime.meter.authorizeDispatch?.(signal); guard() },
-        validatePrepared(request: OllamaChatRequest) { runtime.meter.validatePrepared?.(request); guard() },
+        validatePrepared(request: OllamaChatRequest, responseSchema?: JsonSchema) { runtime.meter.validatePrepared?.(request, responseSchema); guard() },
       }
       // R3: the judge is admitted, and the executor (which opens the additive judge ledger) is built, before the signed
       // pin or the run exist, so a judge that cannot be admitted refuses the start with nothing to undo.

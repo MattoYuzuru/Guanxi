@@ -235,3 +235,22 @@ test('package and test-runner indirection cannot reach the clean gate checkout',
     assert.match(seen.test!, /not implemented/)
   } finally { handle.close(); f.close(); await rm(root, { recursive: true, force: true }) }
 })
+
+test('the workspace lists exactly the model-callable native tools with strict parameters, and a paged read is sized to the budget it is given', async () => {
+  const s = await setup()
+  try {
+    const w = await GitRelayWorkspace.create(s.repo, s.p, s.context), tools = w.tools()
+    assert.deepEqual(tools.map(t => t.name), ['tool_output_read', 'project_info', 'file_read', 'file_write', 'shell', 'search', 'repo_map', 'fetch', 'attachments', 'session_log_query'])
+    for (const name of ['plan', 'queue', 'note_add']) assert.equal(tools.some(t => t.name === name), false, name)
+    for (const tool of tools) { assert.equal(tool.parameters.type, 'object', tool.name); assert.equal(tool.parameters.additionalProperties, false, tool.name) }
+    assert.deepEqual(tools.find(t => t.name === 'file_read')!.parameters, { type: 'object', required: ['path'], properties: { path: { type: 'string' }, offset: { type: 'string' } }, additionalProperties: false })
+    // Every listed tool is callable and every unlisted one is not.
+    await assert.rejects(w.tool('plan', { items: '[]' }), /tool_denied/); await assert.rejects(w.tool('note_add', { text: 'x' }), /tool_denied/)
+    const text = Array.from({ length: 400 }, (_, i) => `line ${i} of the fixture\n`).join('')
+    await writeFile(join(s.repo, 'src', 'big.txt'), text)
+    const first = JSON.parse(await w.tool('file_read', { path: 'src/big.txt' }, undefined, { pageBytes: 600 })) as { more: boolean; nextOffset: number; stdout: string }
+    assert.equal(first.more, true); assert.ok(Buffer.byteLength(JSON.stringify(first)) <= 600); assert.equal(first.stdout, text.slice(0, first.nextOffset))
+    const next = JSON.parse(await w.tool('file_read', { path: 'src/big.txt', offset: String(first.nextOffset) }, undefined, { pageBytes: 600 })) as { stdout: string; offset: number }
+    assert.equal(next.offset, first.nextOffset); assert.ok(next.stdout.startsWith(text.slice(first.nextOffset, first.nextOffset + 20)))
+  } finally { await s.close() }
+})

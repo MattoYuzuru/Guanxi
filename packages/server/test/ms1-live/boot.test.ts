@@ -243,6 +243,22 @@ test('the relay host and plugin accept extra trusted fields (the seam for a judg
   assert.ok(host.runtime && host.allocate && host.reserves, 'the pairing\'s runtime, allocator and reserves are still the home\'s own')
 })
 
+test('home.structuredOutput reaches the relay start host (on by default, off when configured) and a relayHost limit overrides it field by field', async t => {
+  const limits = async (structuredOutput?: boolean, relayHost?: object) => {
+    const { root, settings } = await pairing(t)
+    const ms1Live = structuredOutput === undefined ? settings : { ...settings, home: { ...settings.home!, structuredOutput } }
+    const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live, ...(relayHost ? { relayHost } : {}) } as never)
+    t.after(() => server.close())
+    const { RELAY_SERVICE } = await import('../../src/relay/plugin.ts')
+    return (server.kernel.node.service<{ publicStarts: object }>(RELAY_SERVICE)!.publicStarts as unknown as { host: { limits: { structuredOutput: boolean; gateTimeoutMs: number } } }).host.limits
+  }
+  assert.equal((await limits()).structuredOutput, true)
+  const disabled = await limits(false)
+  assert.equal(disabled.structuredOutput, false); assert.equal(disabled.gateTimeoutMs, 120_000, 'the other limits keep their defaults')
+  const merged = await limits(false, { limits: { gateTimeoutMs: 1234 } })
+  assert.deepEqual([merged.structuredOutput, merged.gateTimeoutMs], [false, 1234])
+})
+
 test('device enrollment is not served on the federation listener: an unsigned caller cannot write enrollment rows', async t => {
   const { root, settings } = await pairing(t)
   const server = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], ms1Live: settings })

@@ -414,7 +414,11 @@ export class Connections {
       } catch (error) {
         if (error instanceof ConnectionError) throw error
         if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
-        throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed')
+        // A trusted runtime transport (llama-server, a remote node) refuses with fixed machine codes. They are not provider text, so the code is
+        // kept as the error's `reason`; the message stays generic, and an Ollama or provider error never has one.
+        const fixed = (error as { code?: unknown } | null)?.code
+        const reason = transport && error instanceof Error && ['RelayError', 'LlamaServerError'].includes(error.name) && typeof fixed === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(fixed) ? fixed : undefined
+        throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed', reason)
       }
       finally { lease?.release() }
     })
