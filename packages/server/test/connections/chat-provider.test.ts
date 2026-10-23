@@ -347,3 +347,15 @@ test('real pi-ai compatible wire streams through fake fetch without invented mod
   assert.equal(chunks.join(''), 'fake streamed reply')
   assert.equal(result.stopReason, 'stop')
 })
+
+
+test('secret-bearing API roots are rejected without plaintext metadata, mapping or WAL', async t => {
+  const f = await setup(t), value = canary()
+  await assert.rejects(f.service.importKeys('local', [{ provider: 'openai', value, baseUrl: `https://api.example.invalid/v1/${value}` }]), error => {
+    assert.ok(!String(error).includes(value)); return true
+  })
+  assert.equal(f.service.snapshot('local').connections.length, 0)
+  assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports').get()!.n, 0)
+  assert.equal(f.store.db.prepare('SELECT count(*) AS n FROM vault_secrets').get()!.n, 0)
+  for (const suffix of ['', '-wal']) assert.ok(!(await readFile(join(f.dir, `connections.sqlite${suffix}`))).includes(Buffer.from(value)))
+})

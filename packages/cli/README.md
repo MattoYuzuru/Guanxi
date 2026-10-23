@@ -31,7 +31,6 @@ after the client's explicit five-second wait, status is interrupted/cancellation
 the client does not claim cleanup. This command accepts only loopback HTTP node URLs. It never
 prints plan contents, tool output or reasoning. Relay has no UI in this slice.
 
-
 ## Import provider keys (D-208)
 
 ```bash

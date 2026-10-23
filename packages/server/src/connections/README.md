@@ -145,7 +145,6 @@ this slice does not claim that target boundary is implemented. CLI packaging exp
 declares the native keychain dependency; the browser brand export remains compatible via
 the shared node-safe brand module in `@guanxi/contract`.
 
-
 ## D-208 trusted import and Chat
 
 `StartOptions.providerKeysFile` or `GUANXI_PROVIDER_KEYS_FILE` names an owner-selected dotenv

@@ -125,6 +125,8 @@ export class Connections {
       this.store.db.exec('BEGIN IMMEDIATE')
       try {
         const refs = prepared.map(({ entry, same }) => same ? null : this.#vault.put(accountId, entry.value))
+        if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
+          throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
         for (const [index, { entry, row, same }] of prepared.entries()) {
           const connection = row ?? this.create(accountId, { name: `${entry.provider} (dotenv)`, kind: 'model_api',
             provider: entry.provider, auth: 'api_key', ...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}) })

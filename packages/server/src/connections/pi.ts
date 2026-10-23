@@ -47,7 +47,7 @@ export const piTransport: PiTransport = {
         return consume(piModels(model.provider).includes(model)
           ? wire.streamSimple(model as Model<'openai-completions'>, transcript, options)
           : wire.stream(model as Model<'openai-completions'>, transcript, {
-            ...options, reasoningEffort: options.reasoning === 'off' ? undefined : options.reasoning,
+            ...options, reasoningEffort: options.reasoning,
           }))
       }
       case 'google-generative-ai': return consume((await import('@earendil-works/pi-ai/api/google-generative-ai')).streamSimple(model as Model<'google-generative-ai'>, transcript, options))
