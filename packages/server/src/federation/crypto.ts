@@ -27,3 +27,6 @@ export function requestProof(method: string, path: string, body: unknown, auth: 
   return { domain: 'guanxi.federation.request.v1', method, path, bodyHash: hash(body), nodeId: auth.nodeId, audience: auth.audience,
     version: auth.version, issuedAt: auth.issuedAt, nonce: auth.nonce }
 }
+
+// Transport budget, not a model/context limit. Clients split replication pages on 413.
+export const FEDERATION_BODY_BYTES = 1024 * 1024

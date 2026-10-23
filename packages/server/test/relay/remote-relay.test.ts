@@ -147,7 +147,7 @@ test('an executor that does not serve the relay runtime refuses admission before
 
 test('a relay run the executor has not pinned gets no evidence: it stops before any dispatch', async t => {
   const f = await fixture(t)
-  f.withholdPin()
+  f.forgePinAck()
   const receipt = await f.starts.start(f.input)
   await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
   assert.equal(f.starts.status(f.input.key).status, 'input_required')
@@ -159,7 +159,7 @@ test('a relay run the executor has not pinned gets no evidence: it stops before 
 test('a refused run pin rolls the whole start back, and a start that fails after admission releases its remote session', async t => {
   const refused = await fixture(t)
   refused.refusePin()
-  await assert.rejects(refused.starts.start(refused.input))
+  await assert.rejects(refused.starts.start(refused.input), /runtime_meter_unavailable/)
   for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(refused.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
   assert.equal(refused.seen.includes('/attempts/offers'), false); assert.equal((await refused.completions()).length, 0)
   await until(async () => (await refused.holdings()).length === 0)
@@ -170,4 +170,22 @@ test('a refused run pin rolls the whole start back, and a start that fails after
   assert.equal(sessions.length, 1)
   await assert.rejects(sessions[0]!.observe(failing.remote.model, new AbortController().signal), /relay_stopped/)
   for (const table of ['durable_runs', 'sessions']) assert.equal(failing.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
+})
+
+test('a start whose run creation fails after the pin unpins the executor and creates no run', async t => {
+  const f = await fixture(t), open = f.remote.open.bind(f.remote)
+  f.remote.open = () => { const session = open(); session.bind = () => { throw new Error('bind refused after the pin') }; return session }
+  await assert.rejects(f.starts.start(f.input))
+  const messages = f.sent.filter(s => s.path === '/attempts/runtime/pin').map(s => (s.body as { action: string }).action)
+  assert.deepEqual(messages, ['pin', 'unpin'])
+  assert.deepEqual(f.target.db.prepare('SELECT id FROM federation_streams').all(), [])
+  for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(f.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
+  await until(async () => (await f.holdings()).length === 0)
+})
+
+test('a completed relay run leaves no pin on the executor', async t => {
+  const f = await fixture(t), receipt = await f.starts.start(f.input)
+  await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
+  assert.equal(f.starts.status(f.input.key).status, 'completed')
+  assert.deepEqual(f.target.db.prepare('SELECT id FROM federation_streams').all(), [], receipt.runId!)
 })

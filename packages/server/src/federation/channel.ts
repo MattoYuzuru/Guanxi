@@ -5,7 +5,7 @@ import { FEDERATION_VERSION, federationVersionSchema, replicaEntrySchema, signed
   ATTEMPT_DISPATCH_CAPABILITY, ATTEMPT_DISPATCH_MINOR, dispatchRenewalSchema, dispatchStateSchema, dispatchCancelSchema,
   type SignedDispatchGrant, type SignedDispatchEvent, type DispatchRef, type DispatchCancel,
   ATTEMPT_RESERVATIONS_CAPABILITY, ATTEMPT_RESERVATIONS_MINOR, remoteAttemptReceiptSchema,
-  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, signedRelayRuntimeEvidenceSchema, type RelayRuntimeObserveRequest, type RelayRuntimeCountRequest,
+  RELAY_RUNTIME_CAPABILITY, RELAY_RUNTIME_MINOR, signedRelayRuntimeEvidenceSchema, signedRelayRuntimePinAckSchema, type RelayRuntimePinRequest, type RelayRuntimeObserveRequest, type RelayRuntimeCountRequest,
   type RemoteAttemptOffer, type RemoteAttemptCancel, type FederationAuth, type NodeIdentity, type RoutedCommand } from '@guanxi/contract/federation'
 import { canonical, FederationError, requestProof, signValue, validSignature } from './crypto.ts'
 import type { SharedConfig } from './config.ts'
@@ -163,5 +163,14 @@ export class FederationChannel {
   async relayCount(request: RelayRuntimeCountRequest) {
     await this.relayRuntimeReady(request.binding)
     return this.relayEvidence(await this.request('POST', '/attempts/runtime/count', request), request, 'count')
+  }
+  /** Pins (or unpins) the relay run on the executor. The ack is signed by the pinned executor key and echoes the request. */
+  async relayPin(request: RelayRuntimePinRequest) {
+    await this.relayRuntimeReady(request)
+    const signed = signedRelayRuntimePinAckSchema.parse(await this.request('POST', '/attempts/runtime/pin', request)), ack = signed.entry
+    if (!validSignature(this.#options.peer.publicKey, ack, signed.signature)) throw new FederationError('invalid_signature', 403)
+    const { model: _model, ...asked } = request
+    if (canonical(ack) !== canonical(asked)) throw new FederationError('relay_evidence_mismatch')
+    return ack
   }
 }

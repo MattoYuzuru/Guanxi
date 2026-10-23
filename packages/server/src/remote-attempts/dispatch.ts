@@ -26,6 +26,8 @@ export interface DispatchPolicy {
   leaseClock?: () => number
   /** F2-d executor role: this node's operational llama-server, reachable only through signed F2 messages. */
   relayRuntime?: ExecutorRelayRuntime
+  /** Named executor-side limits for the relay runtime; defaults are 4 concurrent counts and 16 pinned relay runs per peer. */
+  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number }
 }
 export type TerminalEvent = Extract<DispatchEvent['event'], { kind: 'terminal' }>
 interface HomeRow { id: string; offer: string; job: string; attempt: string; grant: string | null }

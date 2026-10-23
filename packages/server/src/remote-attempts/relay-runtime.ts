@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { relayRuntimeEvidenceSchema, signedRelayRuntimeEvidenceSchema, type RelayRuntimeEvidence, type SignedRelayRuntimeEvidence } from '@guanxi/contract/federation'
+import { relayRuntimeEvidenceSchema, relayRuntimePinAckSchema, signedRelayRuntimeEvidenceSchema, signedRelayRuntimePinAckSchema, type RelayRuntimeEvidence, type SignedRelayRuntimeEvidence, type SignedRelayRuntimePinAck } from '@guanxi/contract/federation'
 import type { LocalChatTransport } from '../connections/service.ts'
 import type { RelayRuntimeObservation } from '../relay/runtime.ts'
 import { signValue } from '../federation/crypto.ts'
@@ -20,4 +20,8 @@ export const sha256Hex = (text: string): string => createHash('sha256').update(t
 export function signRuntimeEvidence(privateKey: string, entry: RelayRuntimeEvidence): SignedRelayRuntimeEvidence {
   const checked = relayRuntimeEvidenceSchema.parse(entry)
   return signedRelayRuntimeEvidenceSchema.parse({ entry: checked, signature: signValue(privateKey, checked) })
+}
+export function signRuntimePinAck(privateKey: string, ack: Record<string, unknown>): SignedRelayRuntimePinAck {
+  const checked = relayRuntimePinAckSchema.parse(ack)
+  return signedRelayRuntimePinAckSchema.parse({ entry: checked, signature: signValue(privateKey, checked) })
 }

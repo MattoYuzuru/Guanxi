@@ -48,6 +48,7 @@ export function relayStartCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : error instanceof Error ? error.message : ''
   return codes.has(code) ? code : 'relay_start_failed'
 }
+const FIRST_EXECUTION_EPOCH = 1
 const inside = (parent: string, child: string) => child === parent || child.startsWith(parent + sep)
 function immutable<T>(value: T): T {
   const copy = structuredClone(value)
@@ -168,6 +169,11 @@ export class RelayStarts {
         queue: () => { throw new RelayError('relay_queue_unavailable') } })
       await runtime.meter.observe(signal)
       check(); runtime.validate()
+      // A remote executor needs the relay run pinned by a signed message before it will answer for it. That is a remote
+      // write, so it happens here, awaited and abortable, never inside the creation transaction; the first attempt of a
+      // fresh run key is epoch 1, which the transaction below verifies. A refusal, or any later failure, unpins.
+      await runtime.prepareBind?.({ runId: id, sessionId, epoch: FIRST_EXECUTION_EPOCH }, signal)
+      check()
       this.runs.createStarted({ id, sessionId }, (a, db, emit) => {
         check(); runtime.validate()
         // A remote runtime binds its evidence to this run and fence; a refusal here rolls the whole start back.

@@ -118,6 +118,8 @@ export const localInferenceJobSchema = z.object({
 export type LocalInferenceJob = z.infer<typeof localInferenceJobSchema>
 export const dispatchGrantSchema = z.object({
   id: federationId, offer: remoteAttemptOfferSchema, reservationId: federationId,
+  /** F2-d: the holder TTL the home's cancel wait is sized for. The executor uses the smaller of this and its own. */
+  holderTtlMs: integer.positive().optional(),
   job: localInferenceJobSchema, jobHash: z.string().regex(/^[a-f0-9]{64}$/), dispatchAuthorized: z.literal(true),
 }).strict()
 export type DispatchGrant = z.infer<typeof dispatchGrantSchema>
@@ -170,3 +172,17 @@ export const signedRelayRuntimeEvidenceSchema = z.object({ entry: relayRuntimeEv
 export type SignedRelayRuntimeEvidence = z.infer<typeof signedRelayRuntimeEvidenceSchema>
 /** The only content an executor counts before a relay run exists (admission probe). Anything else needs a run binding. */
 export const RELAY_RUNTIME_PROBE = 'guanxi-relay-admission-probe-v1'
+
+/** F2-d: executor-side pins of relay runs live in their own namespace, so an ordinary pinned run can never serve as a relay parent. */
+export const RELAY_PIN_PREFIX = 'relay:'
+export const relayRuntimePinSchema = z.object({
+  action: z.enum(['pin', 'unpin']), homeNodeId: federationId, executorNodeId: federationId, model: z.string().trim().min(1),
+  runId: federationId, sessionId: federationId, epoch: integer.positive(), challenge: federationId,
+}).strict()
+export type RelayRuntimePinRequest = z.infer<typeof relayRuntimePinSchema>
+export const relayRuntimePinAckSchema = z.object({
+  action: z.enum(['pin', 'unpin']), homeNodeId: federationId, executorNodeId: federationId,
+  runId: federationId, sessionId: federationId, epoch: integer.positive(), challenge: federationId,
+}).strict()
+export const signedRelayRuntimePinAckSchema = z.object({ entry: relayRuntimePinAckSchema, signature: z.string().max(128) }).strict()
+export type SignedRelayRuntimePinAck = z.infer<typeof signedRelayRuntimePinAckSchema>

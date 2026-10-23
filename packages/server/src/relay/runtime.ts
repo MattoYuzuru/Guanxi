@@ -36,7 +36,9 @@ export interface RelayRuntimeObserver {
 }
 export interface RelayRuntimeSession extends RelayRuntimeObserver {
   counter(fact: Readonly<RelayRuntimeFact>, signal: AbortSignal): Promise<RelayExactCounter>
-  /** Called once the relay run and its first attempt exist; later evidence carries that fence. */
+  /** Awaited before the run is created: the executor pins the relay run id by a signed message. A refusal refuses the start. */
+  prepareBind(run: { runId: string; sessionId: string; epoch: number }, signal: AbortSignal): Promise<void>
+  /** Called once the relay run and its first attempt exist, inside their creation transaction; it makes no remote write. */
   bind(attempt: Attempt): void
   close(): Promise<void>
 }
@@ -50,6 +52,7 @@ export interface RelayRuntimePolicy {
 export type RelayRuntimeModels = Pick<ModelService, 'ps' | 'installedArtifacts' | 'runtimeVersion' | 'runtimeHost'>
 export interface PreparedRelayRuntime { fact: RelayRuntimeFact; meterFact: RelayMeterFact; meter: RuntimeMeter; validate(): void
   /** Present for a session-based (remote) runtime. */
+  prepareBind?(run: { runId: string; sessionId: string; epoch: number }, signal: AbortSignal): Promise<void>
   bind?(attempt: Attempt): void
   release?(): Promise<void> }
 
@@ -170,6 +173,6 @@ export class RelayRuntimeSource {
       // Explicit trusted local-compute policy, not an observed provider bill.
       maxCostMicros: () => { validate(); return 0 },
     }
-    return { fact, meterFact, meter, validate, ...(session ? { bind: (attempt: Attempt) => session.bind(attempt), release: () => session.close() } : {}) }
+    return { fact, meterFact, meter, validate, ...(session ? { prepareBind: (run: { runId: string; sessionId: string; epoch: number }, s: AbortSignal) => session.prepareBind(run, s), bind: (attempt: Attempt) => session.bind(attempt), release: () => session.close() } : {}) }
   }
 }

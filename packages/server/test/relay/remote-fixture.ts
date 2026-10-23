@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { RelayRuntimeBinding } from '@guanxi/contract/federation'
 import { FederationChannel } from '../../src/federation/channel.ts'
+import { signValue } from '../../src/federation/crypto.ts'
 import { Connections } from '../../src/connections/service.ts'
 import { ConnectionStore } from '../../src/connections/store.ts'
 import { OllamaClient } from '../../src/ollama/client.ts'
@@ -38,6 +38,9 @@ export interface RemoteOptions {
   ttlMs?: number; safetyMs?: number; cancelWaitMs?: number; maximumAgeMs?: number; callDeadlineMs?: number
   /** The executor serves no relay runtime (an older or differently configured node). */
   noRelayRuntime?: boolean
+  relayLimits?: { maxConcurrentCountsPerPeer?: number; maxPinsPerPeer?: number }
+  /** The executor's own holder TTL, when it differs from the home's. */
+  targetTtlMs?: number
   dir?: string
 }
 type Rule = (path: string, request: Request) => Promise<void> | void
@@ -67,7 +70,7 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
       return response
     } })
   const hp: DispatchPolicy = { ttlMs: o.ttlMs ?? 3000, safetyMs: o.safetyMs ?? 100, maxModelAgeMs: 5000, leaseClock: () => clock.mono, channel: () => channel(home, target) }
-  const tp: DispatchPolicy = { ...hp, channel: () => channel(target, home) }
+  const tp: DispatchPolicy = { ...hp, ...(o.targetTtlMs ? { ttlMs: o.targetTtlMs } : {}), ...(o.relayLimits ? { relayLimits: o.relayLimits } : {}), channel: () => channel(target, home) }
   home = new SimNode(keys('home'), ':memory:', { attempts: { governor: hg, maxReservationMs: 5000, leaseClock: () => clock.mono }, dispatch: hp })
   target = new SimNode(keys('target'), ':memory:', { attempts: { governor: tg, maxReservationMs: 5000, leaseClock: () => clock.mono }, dispatch: tp })
   home.trust(target); target.trust(home)
@@ -87,16 +90,9 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
   tp.connections = tc.connections
   tp.localModel = model => ({ connectionId: targetConnection.id, model, placement: 'installed_local', source: 'fixture installed inventory', observedAt: target.time })
   if (!o.noRelayRuntime) tp.relayRuntime = llama
-  const pins: NonNullable<RelayRuntimeBinding['run']>[] = []
-  let pinning = true, pinEpoch: number | undefined, refusing = false
+  // Nothing here writes a pin on the executor: the relay's own pin arrives only through the signed pin message.
   const remote = new RemoteRelayRuntime({ federation: home.federation, runs: home.runs, executorNodeId: 'target', model: 'fixture', clock: () => home.time,
-    ...(o.cancelWaitMs ? { cancelWaitMs: o.cancelWaitMs } : {}), pollMs: 10, ...(o.callDeadlineMs ? { callDeadlineMs: o.callDeadlineMs } : {}),
-    onBind: run => {
-      if (refusing) throw new Error('fixture refuses the pin')
-      pins.push(run)
-      // The explicit F1 pin the executor needs for the relay run. Tests can withhold it.
-      if (pinning) target.federation.replicas.bind({ streamId: run.runId, kind: 'run', sessionId: run.sessionId, ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: pinEpoch ?? run.fence.epoch })
-    } })
+    ...(o.cancelWaitMs ? { cancelWaitMs: o.cancelWaitMs } : {}), pollMs: 10, ...(o.callDeadlineMs ? { callDeadlineMs: o.callDeadlineMs } : {}) })
   const source = new RelayRuntimeSource(h.connections, () => { throw new Error('Ollama models must not be consulted') },
     { maximumAgeMs: o.maximumAgeMs ?? 10_000, observer: remote }, () => home.time)
   const homeCtx = { identity: home.keys.identity, readOnly: false, version: { major: 1, minor: 4 } }
@@ -112,6 +108,7 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
     const run = home.runs.create({ id, sessionId: `${id}-session` }), attempt = home.runs.start(run.id)
     const controller = new AbortController()
     const prepared = await source.prepare(homeConnection.id, 'fixture', 1000, controller.signal)
+    await prepared.prepareBind!({ runId: run.id, sessionId: run.session_id, epoch: attempt.epoch }, controller.signal)
     prepared.bind!(attempt)
     const model = new ConnectionRelayModel(h.connections, homeConnection.id, 'fixture', prepared.meter)
     const window = await model.observe(controller.signal)
@@ -125,7 +122,14 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
   }
   const completions = () => fake.requests('/completion')
   const costs = (runId: string) => home.db.prepare('SELECT * FROM run_costs WHERE run_id=?').all(runId) as Array<{ run_id: string; entry_key: string; input_tokens: number; output_tokens: number }>
-  return { home, target, hg, tg, clock, fake, llama, remote, source, h, tc, homeConnection, targetConnection, pins, relay, completions, costs, homeCtx,
+  /** The executor acknowledges every pin (with a genuine signature) without making one: the home believes it is pinned, the executor knows nothing. */
+  const forgePinAck = () => overrides.push(async (path, request) => {
+    if (path !== '/attempts/runtime/pin') return undefined
+    const { model: _model, ...entry } = await request.clone().json() as Record<string, unknown>
+    return Response.json({ entry, signature: signValue(target.keys.privateKey, entry) })
+  })
+  const pinKey = (runId: string) => `relay:${runId}`
+  return { home, target, hg, tg, clock, fake, llama, remote, source, h, tc, homeConnection, targetConnection, forgePinAck, pinKey, relay, completions, costs, homeCtx,
     seen, sent, rules, probes, overrides, afters, channel: (from: 'home' | 'target') => from === 'home' ? channel(home, target) : channel(target, home), dir, modelPath,
-    withholdPin() { pinning = false }, refusePin() { refusing = true }, pinWithEpoch(epoch: number) { pinEpoch = epoch } }
+    refusePin() { rules.push(path => { if (path === '/attempts/runtime/pin') throw new Error('fixture refuses the pin') }) } }
 }

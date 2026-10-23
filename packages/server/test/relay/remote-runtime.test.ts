@@ -52,9 +52,12 @@ test('a relay model call executes on the executor, is counted by its llama-serve
   const notes = f.home.log.readAll('relay-session', 'person').filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
   assert.ok(notes.some(text => text.includes('remote_call') && text.includes(child) && text.includes(grant!.offer.id)), JSON.stringify(notes))
   assert.equal((Reflect.get(f.home.federation.attemptDispatch!, 'waiters') as Map<string, unknown>).size, 0, 'no waiter outlives its call')
-  // Only the relay run was ever pinned; the child's pin is derived from it, never separately.
-  assert.equal(f.pins.length, 1); assert.equal(f.pins[0]!.runId, 'relay')
+  // Only the relay run was ever pinned, and only by the signed pin message; the child's pin is derived from it.
+  const pinMessages = f.sent.filter(s => s.path === '/attempts/runtime/pin')
+  assert.equal(pinMessages.length, 1); assert.equal((pinMessages[0]!.body as { action: string; runId: string }).action, 'pin')
+  assert.equal(f.target.federation.replicas.binding(f.pinKey('relay')).homeNodeId, 'home')
   assert.throws(() => f.target.federation.replicas.binding(child), /unknown_stream/)
+  assert.throws(() => f.target.federation.replicas.binding('relay'), /unknown_stream/, 'the pin lives in the relay namespace, not among ordinary run pins')
   // The home counted and rendered nothing itself: it has no llama-server and only the executor's fake saw a request.
   assert.ok((await f.fake.count('/tokenize')) >= 2)
   assert.equal(f.tg.snapshot().activeLease, null); assert.equal(f.hg.snapshot().activeLease, null)
@@ -195,13 +198,10 @@ test('an executor without the relay runtime capability, a revoked peer or an unr
   assert.equal((await none.completions()).length + (await down.completions()).length + (await revoked.completions()).length, 0)
 })
 
-test('the executor refuses unpinned runs, a wrong epoch, other models and real content before a run exists', async t => {
+test('the executor refuses unpinned runs, other models and real content before a run exists', async t => {
   const unpinned = await remoteFixture(t)
-  unpinned.withholdPin()
+  unpinned.forgePinAck()                      // the home is told it is pinned; the executor made no pin
   assert.equal(await code(unpinned.relay()), 'runtime_identity_unknown')
-  const epoch = await remoteFixture(t)
-  epoch.pinWithEpoch(7)
-  assert.equal(await code(epoch.relay()), 'runtime_identity_unknown')
   const f = await remoteFixture(t), channel = f.channel('home')
   const binding = { homeNodeId: 'home', executorNodeId: 'target', model: 'fixture', run: null }
   assert.equal(await code(channel.relayCount({ binding, challenge: 'c1', content: 'real prompt text' })), 'peer_refused')
@@ -654,4 +654,47 @@ test('the session guards its own fence: a caller whose start observation is a no
   g.home.runs.cancel('relay')
   assert.match(String(await call), /stale_lease/)
   assert.equal(g.target.federation.attemptDispatch!.state(grants(g.sent)[0]!.id).status, 'canceled')
+})
+
+test('the relay pin is made only by the signed pin message, is bound to the asking home, and goes away on release', async t => {
+  const f = await remoteFixture(t), r = await f.relay(), key = f.pinKey('relay')
+  const streams = () => (f.target.db.prepare('SELECT id FROM federation_streams').all() as Array<{ id: string }>).map(row => row.id)
+  assert.deepEqual(streams(), [key])
+  const binding = f.target.federation.replicas.binding(key)
+  assert.deepEqual({ kind: binding.kind, home: binding.homeNodeId, owner: binding.ownerAccountId, session: binding.sessionId, epoch: binding.homeEpoch },
+    { kind: 'run', home: 'home', owner: 'owner', session: 'relay-session', epoch: r.attempt.epoch })
+  // The ack is the executor's: the home refuses an unsigned or re-addressed one.
+  const channel = f.channel('home'), ask = { action: 'pin' as const, homeNodeId: 'home', executorNodeId: 'target', model: 'fixture', runId: 'relay', sessionId: 'relay-session', epoch: r.attempt.epoch, challenge: 'c-pin' }
+  assert.equal((await channel.relayPin(ask)).runId, 'relay')                       // idempotent for the same home
+  await assert.rejects(channel.relayPin({ ...ask, sessionId: 'another-session', challenge: 'c2' }), /peer_refused/, 'a pin cannot be changed by asking again')
+  const { model: _model, ...entry } = ask, wrong = { ...entry, challenge: 'other' }
+  f.overrides.push(async path => path === '/attempts/runtime/pin' ? Response.json({ entry: wrong, signature: signValue(f.target.keys.privateKey, wrong) }) : undefined)
+  await assert.rejects(channel.relayPin({ ...ask, challenge: 'c3' }), /relay_evidence_mismatch/)
+  f.overrides.length = 0
+  // Releasing the session unpins it; a second release is harmless.
+  await r.prepared.release!(); await r.prepared.release!()
+  assert.deepEqual(streams(), [])
+  assert.equal(f.sent.filter(s => s.path === '/attempts/runtime/pin' && (s.body as { action: string }).action === 'unpin').length >= 1, true)
+  await assert.rejects(f.target.federation.receiveRelayObserve(f.homeCtx, { binding: { homeNodeId: 'home', executorNodeId: 'target', model: 'fixture',
+    run: { runId: 'relay', sessionId: 'relay-session', fence: { attemptId: r.attempt.id, epoch: 1, token: r.attempt.token } } }, challenge: 'late' }), /unknown_stream/)
+})
+
+test('an ordinary pinned run is never a relay parent, and the pin message obeys the executor policy', async t => {
+  const f = await remoteFixture(t, { relayLimits: { maxPinsPerPeer: 1 } }), channel = f.channel('home')
+  f.target.federation.replicas.bind({ streamId: 'ordinary', kind: 'run', sessionId: 's-ordinary', ownerAccountId: 'owner', homeNodeId: 'home', homeEpoch: 1 })
+  const run = { runId: 'ordinary', sessionId: 's-ordinary', fence: { attemptId: 'a', epoch: 1, token: 1 } }
+  await assert.rejects(channel.relayObserve({ binding: { homeNodeId: 'home', executorNodeId: 'target', model: 'fixture', run }, challenge: 'x' }), /peer_refused/)
+  const ask = (runId: string) => ({ action: 'pin' as const, homeNodeId: 'home', executorNodeId: 'target', model: 'fixture', runId, sessionId: `s-${runId}`, epoch: 1, challenge: `c-${runId}` })
+  await channel.relayPin(ask('one'))
+  await assert.rejects(channel.relayPin(ask('two')), /peer_refused/, 'the per-peer pin cap is a named policy')
+  await assert.rejects(channel.relayPin({ ...ask('three'), model: 'other-model' }), /peer_refused/)
+  await assert.rejects(channel.relayPin({ ...ask('four'), homeNodeId: 'target' }), /wrong_executor/)
+})
+
+test('a pin for one epoch does not serve another: bind refuses a different attempt epoch', async t => {
+  const f = await remoteFixture(t), run = f.home.runs.create({ id: 'epoch-run', sessionId: 'epoch-session' }), attempt = f.home.runs.start(run.id)
+  const controller = new AbortController(), prepared = await f.source.prepare(f.homeConnection.id, 'fixture', 1000, controller.signal)
+  assert.throws(() => prepared.bind!(attempt), /runtime_identity_unknown/, 'bind needs the pin first')
+  await prepared.prepareBind!({ runId: run.id, sessionId: run.session_id, epoch: attempt.epoch + 6 }, controller.signal)
+  assert.throws(() => prepared.bind!(attempt), /runtime_identity_changed/)
 })

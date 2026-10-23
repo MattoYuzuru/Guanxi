@@ -42,9 +42,6 @@ export interface RemoteRelayRuntimeOptions {
   cancelWaitMs?: number
   /** Distinct exact answers remembered per session. Default 512. */
   cacheEntries?: number
-  /** Host seam called synchronously when the relay run exists, inside its creation transaction. The executor
-   * needs the run pinned (F1 explicit pin) before the first bound request; a throw refuses the whole start. */
-  onBind?: (run: NonNullable<RelayRuntimeBinding['run']>) => void
 }
 /** Home-side relay runtime on another node. It is a factory of per-start sessions because every piece of
  * evidence is bound to one relay run and its fence. Used directly it refuses: there is no unbound fallback. */
@@ -91,6 +88,9 @@ class RemoteRelaySession implements RelayRuntimeSession {
   private readonly clock: () => number
   private readonly cache = new Map<string, Counted>()
   private attempt: Attempt | undefined
+  private pending: { runId: string; sessionId: string; epoch: number } | undefined
+  private pinSent = false
+  private closed = false
   private identity = ''
   private proven = ''
   private fact: RelayRuntimeObservation | undefined
@@ -126,13 +126,45 @@ class RemoteRelaySession implements RelayRuntimeSession {
     if (this.lifetime.signal.aborted) throw new RelayError('relay_stopped')
     if (this.attempt) this.options.runs.mutate(this.attempt, () => undefined)
   }
+  /** The signed pin message. The executor pins the relay run in its own relay namespace for this home only; nothing else
+   * creates that pin. A request that may have landed is undone on any failure. */
+  async prepareBind(run: { runId: string; sessionId: string; epoch: number }, signal: AbortSignal): Promise<void> {
+    invariant(!this.pending && !this.attempt, 'relay_policy_invalid')
+    const active = this.signalFor(signal)
+    active.throwIfAborted()
+    this.pending = { ...run }
+    this.pinSent = true
+    try {
+      await abortableRead(this.channel.relayPin(this.pinRequest('pin')), active)
+    } catch (error) {
+      await this.unpin()
+      this.pending = undefined
+      return this.refuse(error, active)
+    }
+  }
+  private pinRequest(action: 'pin' | 'unpin') {
+    const run = this.pending!
+    return { action, homeNodeId: this.options.federation.identity.id, executorNodeId: this.options.executorNodeId, model: this.model,
+      runId: run.runId, sessionId: run.sessionId, epoch: run.epoch, challenge: randomUUID() }
+  }
+  /** Best effort and bounded: a node that cannot be reached keeps a pin that no longer serves any run of this home. */
+  private async unpin(): Promise<void> {
+    if (!this.pinSent || !this.pending) return
+    this.pinSent = false
+    try { await abortableRead(this.channel.relayPin(this.pinRequest('unpin')), AbortSignal.timeout(5000)) } catch { /* see above */ }
+  }
   bind(attempt: Attempt): void {
-    invariant(!this.attempt, 'relay_policy_invalid')
-    const run = { runId: attempt.run_id, sessionId: this.options.runs.get(attempt.run_id).session_id, fence: { attemptId: attempt.id, epoch: attempt.epoch, token: attempt.token } }
-    this.options.onBind?.(run)
+    invariant(this.pending && !this.attempt, 'runtime_identity_unknown')
+    invariant(attempt.run_id === this.pending.runId && attempt.epoch === this.pending.epoch &&
+      this.options.runs.get(attempt.run_id).session_id === this.pending.sessionId, 'runtime_identity_changed')
     this.attempt = attempt
   }
-  async close(): Promise<void> { this.lifetime.abort(new RelayError('relay_stopped')); this.cache.clear() }
+  async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true
+    await this.unpin()
+    this.lifetime.abort(new RelayError('relay_stopped')); this.cache.clear()
+  }
   private signalFor(signal: AbortSignal): AbortSignal { return AbortSignal.any([this.lifetime.signal, signal]) }
 
   async observe(reference: string, signal: AbortSignal): Promise<RelayRuntimeObservation> {

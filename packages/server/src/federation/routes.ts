@@ -2,11 +2,10 @@ import { Hono } from 'hono'
 import { z, ZodError } from 'zod'
 import { devicePollSchema, deviceRequestSchema, FEDERATION_VERSION, LAYOUT_CONFIG_MINOR, ATTEMPT_RESERVATIONS_MINOR, replicaEntrySchema,
   signedConfigOperationSchema, federationAuthSchema } from '@guanxi/contract/federation'
-import { FederationError } from './crypto.ts'
+import { FEDERATION_BODY_BYTES, FederationError } from './crypto.ts'
 import type { Federation, PeerContext } from './service.ts'
 
-// Transport budget, not a model/context limit. Clients split replication pages on 413.
-export const FEDERATION_BODY_BYTES = 1024 * 1024
+export { FEDERATION_BODY_BYTES }
 async function jsonBody(request: Request): Promise<unknown> {
   if (!request.body) return null
   const reader = request.body.getReader()
@@ -91,6 +90,7 @@ export function federationRoutes(resolve: () => Federation) {
   app.post('/attempts/state', c => c.json(c.get('federation').dispatchState(c.get('peer'), c.get('body') as never)))
   app.post('/attempts/dispatch-cancel', c => c.json(c.get('federation').cancelDispatch(c.get('peer'), c.get('body') as never)))
   app.post('/attempts/runtime/observe', async c => c.json(await c.get('federation').receiveRelayObserve(c.get('peer'), c.get('body'))))
+  app.post('/attempts/runtime/pin', c => c.json(c.get('federation').receiveRelayPin(c.get('peer'), c.get('body'))))
   app.post('/attempts/runtime/count', async c => c.json(await c.get('federation').receiveRelayCount(c.get('peer'), c.get('body'))))
   app.post('/telemetry', (c) => { c.get('federation').receiveTelemetry(c.get('peer'), c.get('body') as never); return c.json({ applied: true }) })
   app.get('/telemetry', (c) => {
