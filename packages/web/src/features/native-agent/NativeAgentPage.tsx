@@ -25,21 +25,32 @@ const PLAN_ICON = { verification_requested: 'check', active: 'play', pending: 'u
  */
 export function NativeProgress({ progress, remove }: { progress: AgentProgress; remove: (id: string) => void }) {
   const active = progress.plan.find(item => item.status === 'active')
+  const planId = useId(), queueId = useId()
   return <section aria-label={t('native.progress')} className="native-progress">
     {progress.error && <p role="alert" className="native-progress-alert">{t(progress.error === 'cleanup_unconfirmed' ? 'native.cleanup_unconfirmed' : progress.error === 'process_restarted' ? 'native.process_restarted' : 'native.sessionError')}</p>}
     {progress.shellUnavailable && <p role="alert" className="native-progress-alert">{t(`native.${progress.shellUnavailable}`)}</p>}
     <p role="status" aria-live="polite" className="native-progress-state" data-status={progress.status}>
       {progress.status === 'running' ? <><Icon name="runtime" size={14} aria-hidden="true" /><span>{active ? active.text : t('native.running')}</span></> : t(`native.${progress.status}`)}
     </p>
-    <section className="native-section" aria-labelledby={`${progress.sessionId}-plan`}>
-      <h2 id={`${progress.sessionId}-plan`} className="native-section-title">{t('native.plan')}</h2>
+    <section className="native-section" aria-labelledby={planId}>
+      {/* One word for the heading; that the agent reports the plan sits behind an info control (D-202). */}
+      <div className="native-section-head">
+        <h2 id={planId} className="native-section-title">{t('native.plan')}</h2>
+        <Popover>
+          <PopoverTrigger render={<IconButton size="sm" label={t('native.plan.about')} icon={<Icon name="info" />} />} />
+          <PopoverContent align="start">
+            <PopoverTitle>{t('native.plan.about')}</PopoverTitle>
+            <p className="gx-popover-description">{t('native.plan.reported')}</p>
+          </PopoverContent>
+        </Popover>
+      </div>
       {progress.plan.length === 0 ? <p className="native-muted">{t('native.noPlan')}</p>
         : <ol className="native-list native-plan">{progress.plan.map((item, index) => <li key={index} data-status={item.status}>
           <Icon name={PLAN_ICON[item.status]} size={14} aria-hidden="true" />
           <span>{item.text}</span><span className="sr-only">{t(`native.${item.status}`)}</span></li>)}</ol>}
     </section>
-    {progress.queue.length > 0 && <section className="native-section" aria-labelledby={`${progress.sessionId}-queue`}>
-      <h2 id={`${progress.sessionId}-queue`} className="native-section-title">{t('native.queue')}</h2>
+    {progress.queue.length > 0 && <section className="native-section" aria-labelledby={queueId}>
+      <h2 id={queueId} className="native-section-title">{t('native.queue')}</h2>
       <ul className="native-list">{progress.queue.map(item => <li key={item.id}><span>{item.text}</span>
         <IconButton size="sm" label={t('native.remove')} icon={<Icon name="close" />} onClick={() => remove(item.id)} /></li>)}</ul>
     </section>}

@@ -255,6 +255,20 @@ function stubTimeline(overrides: { status?: AgentProgress['status']; events?: un
   return requests
 }
 
+it('the plan heading is one word with its caveat behind an info control, and an empty queue has no heading (visual pass)', async () => {
+  setActiveLocale('en')
+  const view = render(<NativeProgress progress={{ ...progress, queue: [] }} remove={() => {}} />)
+  expect(screen.getAllByRole('heading', { name: 'Plan' })).toHaveLength(1)
+  expect(screen.queryAllByText(/verification required/u)).toHaveLength(0)
+  expect(screen.queryAllByRole('heading', { name: 'Prompt queue' })).toHaveLength(0)
+  const about = screen.getByRole('button', { name: 'About the plan' })
+  fireEvent.click(about)
+  const dialog = await screen.findByRole('dialog', { name: 'About the plan' })
+  expect(dialog.textContent).toContain('The agent reports this plan; verify its steps before relying on them.')
+  view.unmount()
+  render(<NativeProgress progress={progress} remove={() => {}} />)
+  expect(screen.getAllByRole('heading', { name: 'Prompt queue' })).toHaveLength(1)
+})
 it('the session header is the title with its project as a breadcrumb, not "Session progress"', async () => {
   setActiveLocale('en')
   stubTimeline({ title: 'Fix the nightly build', events: [logEvent(1, 'prompt', 'Why does it fail?')] })
