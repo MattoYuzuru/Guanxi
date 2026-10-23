@@ -46,7 +46,7 @@ New / envelope: 11 new unit tests + 1 flipped rehearsal assertion block / `npm r
 | Gate | Result | Receipt |
 | --- | --- | --- |
 | `npm run typecheck`, `lint:md`, `check:licenses` | pass (direct runs) | none |
-| pin-reaping (21 tests) + rehearsal (19 tests), heavy lock | 40/40 pass | `check-ylwdk7sm` |
+| pin-reaping (20 tests) + rehearsal (20 tests), heavy lock | 40/40 pass | `check-ylwdk7sm` |
 | `npm run test`, heavy lock | pass, 0 fail | `check-5o7a9lda` |
 | `npm run build`, heavy lock | pass | `check-xeov88d4` |
 
