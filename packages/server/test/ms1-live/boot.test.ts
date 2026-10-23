@@ -312,3 +312,18 @@ test('closing an executor with a signed observe in flight during a model hash do
   assert.ok(Date.now() - began < 2500, `closing took ${Date.now() - began} ms: it waited for the hash and the open request`)
   assert.equal(await observing, 'refused', 'the in-flight request was ended, not answered from a closed node')
 })
+
+test('live mode never falls back to ~/.guanxi: without a data directory it uses <config dir>/data, and the default home directory is refused', async t => {
+  const { existsSync } = await import('node:fs')
+  const { root, settings } = await pairing(t)
+  const saved = { HOME: process.env['HOME'], dir: process.env['GUANXI_DATA_DIR'] }
+  const fakeHome = join(root, 'fake-home')
+  process.env['HOME'] = fakeHome; delete process.env['GUANXI_DATA_DIR']
+  t.after(() => { process.env['HOME'] = saved.HOME; if (saved.dir === undefined) delete process.env['GUANXI_DATA_DIR']; else process.env['GUANXI_DATA_DIR'] = saved.dir })
+  await mustRefuse(start({ port: await freePort(), host: '127.0.0.1', webDir: root, devOrigins: [], ms1Live: settings, dataDir: join(fakeHome, '.guanxi') }), 'data_dir_default')
+  assert.equal(existsSync(join(fakeHome, '.guanxi')), false, 'nothing was created there')
+  const server = await start({ port: await freePort(), host: '127.0.0.1', webDir: root, devOrigins: [], ms1Live: settings })
+  t.after(() => server.close())
+  assert.equal(existsSync(join(root, 'home', 'data', 'guanxi.db')), true, 'the node lives beside its configuration')
+  assert.equal(existsSync(join(fakeHome, '.guanxi')), false, 'and not in the default home directory')
+})

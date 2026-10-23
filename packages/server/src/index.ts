@@ -20,6 +20,7 @@ import { createFederationPlugin, FEDERATION_SERVICE, type FederationHostOptions 
 import type { Federation } from './federation/service.ts'
 import { FederationError } from './federation/crypto.ts'
 import { accessSync, constants, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
@@ -249,7 +250,10 @@ export async function start(options: StartOptions = {}) {
   // The pairing's only link is a loopback port forward: the node never listens elsewhere in this mode.
   if (live && !['127.0.0.1', 'localhost', '::1', '[::1]'].includes(host)) await refuseLive('listen_not_loopback', 'host')
   if (live && port === live.federationPort) await refuseLive('ports_collide', 'listen')
-  const dataDir = options.dataDir ?? dataDirFromEnv(process.env)
+  // A live node holds keys, pins and relay ledgers: it lives beside its configuration unless told otherwise, and never in the owner's
+  // default data directory, which a lane or a rehearsal could otherwise share with a real node by accident.
+  const dataDir = options.dataDir ?? (live && !process.env['GUANXI_DATA_DIR'] ? join(dirname(live.settings.file), 'data') : dataDirFromEnv(process.env))
+  if (live && [join(process.env['HOME'] ?? homedir(), '.guanxi'), join(homedir(), '.guanxi')].includes(resolve(dataDir))) await refuseLive('data_dir_default', 'dataDir')
 
   // The governor, the Ollama adapter (K1), the egress scrubber and the session
   // log (K2) run as kernel plugins; the legacy context consumes their services.

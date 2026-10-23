@@ -99,7 +99,7 @@ export function describeConfigError(error: Ms1LiveError): string {
     peer_scope_invalid: 'Both identities must carry exactly the attempts and replicas scopes and no admin right.',
     config_path_not_absolute: 'This path must be absolute.', unattended_unavailable: 'The connections policy does not allow unattended access, which the relay\'s connection needs.', option_conflict: 'This option cannot be combined with another one that was also given.',
     listen_not_loopback: 'In this mode the node listens on loopback only.', connection_conflict: 'A connection of that name exists but is not what this mode needs.',
-    already_initialized: 'This directory already holds a node identity; an identity is never replaced.', model_invalid: 'The model reference is not usable.',
+    data_dir_default: 'Live mode does not use the default ~/.guanxi data directory; name another with --data-dir.', already_initialized: 'This directory already holds a node identity; an identity is never replaced.', model_invalid: 'The model reference is not usable.',
   }
   return `${text[error.code] ?? `Configuration problem: ${error.code}.`}${where}`
 }
