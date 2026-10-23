@@ -111,7 +111,11 @@ export function relayStartsChildStarter(starts: Pick<RelayStarts, 'start' | 'sta
 }
 
 const reportOf = (ledger: ReturnType<RelayService['read']>, runId: string, relayStatus: string): ChildReport => {
-  const current = ledger.evidence.filter(evidence => evidence.head === ledger.head)
+  // The ledger's evidence is an append-only log of gate runs, and the relay re-proves every done item when the plan
+  // closes. The lead is told each item's gate once: the newest result at the current head, in plan order.
+  const latest = new Map<string, (typeof ledger.evidence)[number]>()
+  for (const evidence of ledger.evidence) if (evidence.head === ledger.head) latest.set(evidence.item, evidence)
+  const current = ledger.plan.items.flatMap(item => latest.get(item.id) ?? [])
   return {
     items: ledger.plan.items.map(item => ({ id: item.id, title: item.title, status: ledger.items[item.id] ?? 'open' })),
     gates: current.map(evidence => ({ item: evidence.item, ok: evidence.ok, head: evidence.head, output: evidence.output })),
