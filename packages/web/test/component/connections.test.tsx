@@ -302,8 +302,8 @@ it('keeps the Russian removal copy on redacting old logs, not editing them', asy
   render(<ConnectionsView snapshot={snapshot([connection()])} mutate={run} />)
   fireEvent.click(screen.getByRole('button', { name: 'Удалить DeepSeek' }))
   const dialog = await screen.findByRole('dialog')
-  expect(within(dialog).getByText(/только чтобы скрывать ключ в старых журналах/u)).toBeTruthy()
-  expect(within(dialog).queryByText(/редактирования старых журналов/u)).toBeNull()
+  expect(within(dialog).getByText(/только для того, чтобы скрывать его в старых журналах/u)).toBeTruthy()
+  expect(within(dialog).queryByText(/только чтобы скрывать ключ/u)).toBeNull()
 })
 
 it.each([
