@@ -218,11 +218,18 @@ test('a key file that was imported pays for the lead: a named older connection, 
   const imported = first.ms1Live!.leadConnectionId
   const older = connections.create('local', { name: 'older-anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   await connections.saveSecret('local', older.id, fakeKey())
+  // A manual row with the configured catalog name must not make the imported row ambiguous.
+  const duplicate = connections.create('local', { name: 'Anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
+  await connections.saveSecret('local', duplicate.id, fakeKey())
   await first.close()
   const outcome = async (connection?: string) => run(w.settings(config => { if (connection) config.home.lead.connection = connection })).then(async server => { const id = server.ms1Live!.leadConnectionId; await server.close(); return id }, error => error)
+  // With no file this boot, the stored imported row still wins over a manual row of the same name.
+  const stored = async (connection: string) => run(w.settings(config => { delete config.home.lead.providerKeysFile; config.home.lead.connection = connection }))
+    .then(async server => { const id = server.ms1Live!.leadConnectionId; await server.close(); return id }, error => error)
   // Two connections hold keys, but the file just imported belongs to one of them: it pays, without naming it.
   assert.equal(await outcome(), imported)
   assert.equal(await outcome('Anthropic'), imported)
+  assert.equal(await stored('Anthropic'), imported)
   // Naming another connection while a file was imported would pay with a key this boot did not import.
   const refused = await outcome('older-anthropic')
   assert.ok(refused instanceof Ms1LiveError && refused.code === 'lead_connection_not_imported' && refused.field === 'home.lead.connection', `got ${refused instanceof Error ? refused.message : refused}`)
