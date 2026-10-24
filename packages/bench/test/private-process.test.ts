@@ -192,6 +192,21 @@ test('actual OS fixture uses fds 3/4 for two sequential public completions with 
   } finally { cleanup(x.root) }
 })
 
+test('natural request EOF settles the real client exit before killing the remaining group', { timeout: 20_000 }, async () => {
+  for (const [mode, code] of [['eof-exit-zero', 0], ['eof-exit-seven', 7]] as const) {
+    const x = setup(mode), h = hostFixture()
+    try {
+      const outcome = await runPrivateTrial({ binding: x.binding, host: h.host, policy: x.policy })
+      assert.equal(outcome.childExitCode, code)
+      assert.equal(outcome.reason, code === 0 ? 'channel_input_ended' : 'child_exit_failed')
+      assert.equal(outcome.cleanupConfirmed, true)
+      assert.equal(h.calls(), 0)
+      assert.equal(readJson(x.report).finalizationFinished, true)
+      assert.equal(existsSync(privateProcessRecordPath(x.binding, x.policy)), false)
+    } finally { cleanup(x.root) }
+  }
+})
+
 test('natural client exit waits for final fixture work before closing its request capability', { timeout: 20_000 }, async () => {
   const x = setup('two-finalization')
   const h = hostFixture()

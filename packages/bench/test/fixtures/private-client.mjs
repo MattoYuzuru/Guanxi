@@ -6,7 +6,7 @@
  * test temp directory; it never contains a credential or private completion.
  */
 import { spawn } from 'node:child_process'
-import { fstatSync, readSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, fstatSync, readSync, writeFileSync, writeSync } from 'node:fs'
 import { PrivateFrameDecoder, encodePrivateFrame } from '../../src/private-channel.ts'
 
 const reportPath = process.env.BENCH_FIXTURE_REPORT
@@ -67,6 +67,13 @@ try { writeSync(1, 'fixture ignored stdout\n'); report.wroteStdout = true } catc
 try { writeSync(2, 'fixture ignored stderr\n'); report.wroteStderr = true } catch { /* ignored */ }
 
 try {
+  if (mode === 'eof-exit-zero' || mode === 'eof-exit-seven') {
+    closeSync(4)
+    sleep(75)
+    report.finalizationFinished = true
+    writeReport()
+    process.exit(mode === 'eof-exit-seven' ? 7 : 0)
+  }
   if (mode === 'bad') throw new Error('fixture bad client')
   if (mode === 'malformed') {
     const header = Buffer.alloc(4); header.writeUInt32BE(3)
