@@ -44,9 +44,10 @@
   endpoint (D-208); custom roots remain a key-file import.
 - **E1 New session picker (web).** Connections are grouped by catalog category; choosing one
   lists `GET /:id/models` with search, arrow keys, Home/End, Enter and Escape; the current model
-  is marked. Enter in an empty search commits nothing until the user moves to an option, and one
-  option stays tabbable when a custom ID is set. "Other model ID…" is the only typed fallback.
-  The trigger uses two spans, never a middle-dot string. The last explicit choice is stored under
+  is marked. Enter in the search commits nothing until the user moves the highlight to an option
+  with ArrowDown/Home/End, for any query; Enter then commits that option, never the first filtered
+  match. One option stays tabbable when a custom ID is set. "Other model ID…" is the only typed
+  fallback. The trigger uses two spans, never a middle-dot string. The last explicit choice is stored under
   `<PRODUCT_FILE_PREFIX>.newSession.modelChoice.v1`; a local runtime still requires context.
   `(dotenv)` names are never rendered.
 

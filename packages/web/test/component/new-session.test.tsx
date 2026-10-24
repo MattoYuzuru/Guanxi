@@ -574,6 +574,25 @@ describe('catalog model picker', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Model: Fixture model, fixture' })).toBeTruthy())
   })
 
+  it('does not commit a filtered model on Enter in the search until the highlight moves', async () => {
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
+    const search = await screen.findByLabelText('Search models')
+    fireEvent.change(search, { target: { value: 'large' } })
+    search.focus()
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(screen.getByRole('group', { name: 'Connection' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Model connection: Fixture model' })).toBeTruthy()
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    const large = screen.getByRole('option', { name: 'fixture-large' })
+    expect(document.activeElement).toBe(large)
+    await act(async () => { fireEvent.keyDown(large, { key: 'Enter' }) })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Model: Fixture model, fixture-large' })).toBeTruthy())
+  })
+
   it('keeps exactly one model option tabbable when a custom ID is set', async () => {
     install()
     render(<NewSessionScreen />)

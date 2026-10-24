@@ -173,7 +173,7 @@ export function ModelPicker({ connections, connectionId, onConnection, model, on
             {({ id, describedBy }) => <Input ref={searchRef} id={id} aria-describedby={describedBy} type="search"
               autoComplete="off" value={search} onChange={event => setSearch(event.target.value)}
               onKeyDown={event => {
-                // Enter belongs to the option the user moved to; an empty search commits nothing.
+                // Enter belongs to the option the user moved to; a search-only Enter commits nothing, whatever the query.
                 if (event.key === 'ArrowDown') {
                   event.preventDefault()
                   listRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus()
