@@ -1,9 +1,15 @@
 import { expect, test } from '@playwright/test'
 import { installChatApiFixture } from './fixtures/chat-api.ts'
+import { browserSettings } from './fixtures/runtime-snapshot.ts'
 
 /** The connections centre reads the K3 lane contract; only the fabricated key reaches the secret route. */
 test('Connections centre switches categories, adds a fabricated key and removes after confirmation', async ({ page }) => {
   await installChatApiFixture(page, 'completed')
+  // The gate asserts localized copy: pin the locale instead of inheriting the machine's settings.
+  await page.route('**/api/settings', async route => {
+    if (route.request().method() !== 'GET') { await route.fallback(); return }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(browserSettings()) })
+  })
   const createdId = '22222222-2222-4222-8222-222222222222'
   const key = 'sk-browser-fixture-not-a-real-key'
 
