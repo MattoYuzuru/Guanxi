@@ -1,6 +1,6 @@
 # Model access (K3)
 
-**Status:** implemented; K2 scrubber integrated, locally validated with fake credentials · **Updated:** 2026-10-23
+**Status:** implemented; K2 scrubber integrated, locally validated with fake credentials · **Updated:** 2026-10-24
 
 `guanxi.connections` is a T0 kernel plugin requiring `egress.scrubber`, `ollama` and
 `governor`. It provides `connections.registry` (`Connections`) and
@@ -9,6 +9,22 @@
 local Chat retains the existing Ollama path. Plaintext legacy search settings are unchanged.
 K4 consumes the model boundary and K5 executes the registered subscription CLIs.
 Search and STT are service connection roles.
+
+## Catalog and local runtime
+
+The contract exports a frozen `providerCatalog` (one entry per provider) with its
+category, connection route, key hint, documentation link, API-root policy and model
+source. `providerCategoryOrder` is the display order. Product labels are literal
+names; UI chrome around them stays in locale keys.
+
+At every plugin apply the registry ensures one `local_runtime`/`ollama` connection
+named `Ollama` for account `local`. The check and insert share one immediate
+transaction, so a restart or a concurrent apply cannot add a second one. It has no
+secret, never opens the vault and never contacts Ollama. An existing local Ollama
+connection is returned unchanged. `GET /api/connections/:id/models` resolves a
+local runtime through the existing Ollama adapter (`/api/tags`), bounded to five
+seconds and 1,024 IDs; an unreachable runtime is the typed `provider_failed` error,
+not an internal error.
 
 ## Boundaries
 
@@ -49,8 +65,10 @@ Search and STT are service connection roles.
   endpoint; omitting the opt-in resets it to denied. HTTP cannot grant or revoke that consent.
   HTTP is limited to loopback or an opted-in private LAN; public endpoints require HTTPS;
   credentials, query strings and fragments are refused. Only that root's `/models` and
-  `/chat/completions` paths receive its key; redirects are refused. Changing an imported root
-  creates a separate connection, preserving the endpoint of existing Chats.
+  `/chat/completions` paths receive its key; redirects are refused. An imported root with a different secret
+  creates a separate connection. Reimporting the same secret with another root
+  reuses its connection and updates that root, preserving the endpoint identity of
+  existing Chats.
   Anthropic OAuth tokens are rejected globally, including under another provider's name.
   Anthropic's own connection additionally requires its API-key token family.
 - Google uses pi-ai's native SDK transport because that adapter rejects custom fetch. Its
@@ -92,7 +110,7 @@ stages. Every server route, including the legacy API and SPA, passes an exact Ho
 allowlist before CORS. It accepts loopback authorities, the configured listening authority
 and configured Vite authorities, and ignores forwarded headers. Mutations require JSON and same-origin or explicitly configured development origins.
 Responses use `Cache-Control: no-store`. Routes list/create connections, change unattended,
-unlock/lock, save a key without readback, list model facts and request a balance probe.
+unlock/lock, save a key without readback, list model facts (installed models for a local Ollama runtime) and request a balance probe.
 The settings UI loads only when Connections is opened; failure does not disable other settings.
 A balance without an observation timestamp renders unknown, even when its numeric value exists.
 Failures have distinct contract codes for missing connections (404), locked vaults (423),
@@ -160,9 +178,14 @@ HTTP listener, model request or file-reading HTTP API. The Node dotenv parser tr
 as data, including literal variable/shell substitutions. Supported names: `OPENAI_API_KEY`,
 optional `OPENAI_API_URL` (API root including `/v1` when required), `DEEPSEEK_API_KEY`,
 `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GOOGLE_API_KEY`. Unknown and empty keys are ignored, but a file without a supported nonempty key fails.
-`OPENAI_COMPAT_API_KEY` plus required `OPENAI_COMPAT_API_URL` imports a second OpenAI-compatible
+`OPENAI_COMPAT_API_KEY` plus required `OPENAI_COMPAT_API_URL` imports an OpenAI-compatible
 connection alongside official OpenAI. Legacy `OPENAI_API_URL` still redirects only the
 `OPENAI_API_KEY` connection. Each root is an API root, including `/v1` where required.
+New connections take their name from `providerCatalog` (`OpenAI`, `DeepSeek`,
+`Anthropic`, `Claude Code`, ...); an OpenAI import with a root is
+`OpenAI-compatible (<host>)`. The origin is recorded as the `origin` fact
+(`provider_key_import`), never appended to the name. A later import replaces an old
+`<provider> (dotenv)` name.
 A leading BOM and CRLF are accepted. A raw line scan refuses duplicate names, unterminated
 single-line quotes and unquoted `#` truncation before parsing; quote values containing `#`.
 Multiline key values are unsupported. Validation failures identify only supported key names
@@ -172,7 +195,7 @@ No dotenv values enter `process.env` or act as ambient credential fallbacks.
 
 **D-212 token mode.** Asked for by the MS1 lead (`home.lead.auth: "oauth_token"`), the import also reads `CLAUDE_CODE_OAUTH_TOKEN`, or an
 `sk-ant-oat` value under `ANTHROPIC_API_KEY` when the first name is absent, and stores it on a `claude-code` *agent* connection
-(`claude-code (dotenv)`). `dispatchAgent` hands it to K5 for the official CLI's environment and to nothing else; `complete()`, chat and
+(`Claude Code`). `dispatchAgent` hands it to K5 for the official CLI's environment and to nothing else; `complete()`, chat and
 `saveSecret` refuse it, and `assertApiKey` still refuses the `sk-ant-oat` family as an API key. Without that option the token names are ignored.
 
 Import unlocks this process's interactive vault. Standalone CLI disposal locks it again;
@@ -180,9 +203,12 @@ successful boot import leaves it unlocked for Chat. Boot import failure (includi
 failure) logs only `provider_key_import_failed`, locks provider access and continues booting;
 valid keys from a partial import remain stored and can be explicitly unlocked later. No unattended permission is granted. Migration 3 adds
 `dotenv_imports`, a dedicated identity per account/provider/root. Repeated identical input
-returns `unchanged`; new values rotate, preserving retired-key scrubbing. Values are registered
-before any imported connection metadata is persisted. CLI results expose connection IDs,
-provider names and created/rotated/unchanged facts only. Import errors use fixed summaries.
+returns `unchanged`; a new value rotates the mapped connection, preserving retired-key
+scrubbing. When the same secret arrives under another root, the registry reuses the imported
+connection that already holds it and updates its root (and network consent) instead of adding
+a second row; a different secret keeps a separate connection. Values are registered before
+any imported connection metadata is persisted. CLI results expose connection IDs, provider
+names and created/rotated/unchanged facts only. Import errors use fixed summaries.
 Imports are serialized within one registry; simultaneous standalone processes may require a
 repeat after a SQLite/identity conflict. Restart the running node after a standalone import so
 its long-lived scrubber registers the new and retired keys before provider dispatch. Local
