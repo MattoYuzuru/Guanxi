@@ -13,7 +13,7 @@ import { RelayStarts } from '../../src/relay/start.ts'
 import { RelayStore } from '../../src/relay/store.ts'
 import { fakeRender, fakeTokens, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
 import { caps, reserves } from './fixture.ts'
-import { relayScript, remoteFixture, until, type RemoteOptions } from './remote-fixture.ts'
+import { networkFailure, relayScript, remoteFixture, until, type RemoteOptions } from './remote-fixture.ts'
 
 const exec = promisify(execFile), sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
@@ -134,7 +134,7 @@ test('an executor that evaluates another token count fails the whole run closed 
 test('an executor that stops answering leaves the relay interrupted for the owner, never completed', async t => {
   const f = await fixture(t, { fake: { completionDelayMs: 400 }, ttlMs: 300, safetyMs: 50, transientRetryMs: [1, 1] }), receipt = await f.starts.start(f.input)
   await until(async () => (await f.fake.count('/completion')) === 1)
-  f.rules.push(() => { throw new Error('fixture partition') })
+  f.rules.push(() => { throw networkFailure() })
   f.home.time += 5_000                       // the child's holder lease lapses; the relay's own lease is still valid
   await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
   assert.equal(f.starts.status(f.input.key).status, 'input_required')
@@ -149,7 +149,7 @@ test('an executor that stops answering leaves the relay interrupted for the owne
 test('a dropped link during the first offer is retried and the run completes', async t => {
   const f = await fixture(t, { transientRetryMs: [1, 1, 1] })
   let offers = 0
-  f.rules.push(path => { if (path === '/attempts/offers' && ++offers === 1) throw new Error('fixture partition') })
+  f.rules.push(path => { if (path === '/attempts/offers' && ++offers === 1) throw networkFailure() })
   const receipt = await f.starts.start(f.input)
   await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
   const status = f.starts.status(f.input.key)
@@ -160,9 +160,27 @@ test('a dropped link during the first offer is retried and the run completes', a
   assert.ok(retries.some(text => text.includes('"reason":"runtime_meter_unavailable"')), JSON.stringify(retries))
 })
 
+test('a permanent 401 refusal at the first offer is not retried and keeps its own code', async t => {
+  const f = await fixture(t, { transientRetryMs: [1, 1] })
+  f.overrides.push(async path => path === '/attempts/offers' ? Response.json({ code: 'unauthenticated' }, { status: 401 }) : undefined)
+  const receipt = await f.starts.start(f.input)
+  await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
+  assert.equal(f.starts.status(f.input.key).status, 'input_required')
+  assert.equal(f.seen.filter(path => path === '/attempts/offers').length, 1, 'a permanent refusal is not re-sent')
+  const events = f.home.log.readAll(receipt.sessionId!, 'person')
+  const notes = events.filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+  assert.equal(notes.filter(text => text.includes('"call_retry"')).length, 0)
+  const failed = notes.find(text => text.includes('"relay":"call_failed_reason"'))
+  assert.ok(failed, JSON.stringify(notes))
+  assert.equal(JSON.parse(failed!).reason, 'peer_refused')
+  assert.notEqual(JSON.parse(failed!).reason, 'runtime_meter_unavailable')
+  assert.deepEqual(f.errors(receipt.sessionId!), ['model_failed'])
+  assert.equal((await f.completions()).length, 0)
+})
+
 test('an executor that does not serve the relay runtime refuses admission before any run, session or allocation exists', async t => {
   const f = await fixture(t, { noRelayRuntime: true })
-  await assert.rejects(f.starts.start(f.input), /runtime_meter_unavailable/)
+  await assert.rejects(f.starts.start(f.input), /contract_feature_unavailable/, 'a capability mismatch keeps its own code')
   assert.equal(f.allocations(), 0); assert.equal((await f.completions()).length, 0)
   for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(f.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
 })

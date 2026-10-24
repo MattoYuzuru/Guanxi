@@ -7,7 +7,7 @@ import { ConnectionJudgeModel } from '../../src/relay/judge-model.ts'
 import { fakeRender, fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { RemoteRelayRuntime } from '../../src/relay/remote-runtime.ts'
 import { requestAsync } from '../../src/relay/budget.ts'
-import { remoteFixture, until, type Sent } from './remote-fixture.ts'
+import { networkFailure, remoteFixture, until, type Sent } from './remote-fixture.ts'
 
 const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 const rendered = (prompt: string) => fakeRender(prompt, { template: 'chat' }, false)
@@ -187,14 +187,14 @@ test('replayed, forged, re-signed and re-attributed evidence is not evidence for
 
 test('an executor without the relay runtime capability, a revoked peer or an unreachable node yields no facts', async t => {
   const none = await remoteFixture(t, { noRelayRuntime: true })
-  assert.equal(await code(none.relay()), 'runtime_meter_unavailable')
+  assert.equal(await code(none.relay()), 'contract_feature_unavailable', 'a missing capability is a fixed refusal, not a transient failure')
   assert.equal(none.seen.some(p => p.startsWith('/attempts/runtime')), false, 'capability absent: no relay request was even sent')
   const down = await remoteFixture(t)
-  down.rules.push(path => { if (path.startsWith('/attempts/runtime')) throw new Error('fixture partition') })
+  down.rules.push(path => { if (path.startsWith('/attempts/runtime')) throw networkFailure() })
   assert.equal(await code(down.relay()), 'runtime_meter_unavailable')
   const revoked = await remoteFixture(t)
   revoked.target.federation.revokePeer('home')
-  assert.equal(await code(revoked.relay()), 'runtime_meter_unavailable')
+  assert.equal(await code(revoked.relay()), 'peer_refused', 'an authentication refusal is fixed, not retried')
   assert.equal((await none.completions()).length + (await down.completions()).length + (await revoked.completions()).length, 0)
 })
 
@@ -630,7 +630,7 @@ test('the home accepts only an owner-device executor with the attempts scope, an
   const sessions: Array<{ observe(reference: string, signal: AbortSignal): Promise<unknown> }> = []
   const open = f.remote.open.bind(f.remote)
   f.remote.open = () => { const session = open(); sessions.push(session); return session }
-  f.rules.push(path => { if (path.startsWith('/attempts/runtime')) throw new Error('fixture partition') })
+  f.rules.push(path => { if (path.startsWith('/attempts/runtime')) throw networkFailure() })
   assert.equal(await code(f.relay()), 'runtime_meter_unavailable')
   assert.equal(sessions.length, 1)
   assert.equal(await code(sessions[0]!.observe(f.remote.model, new AbortController().signal)), 'relay_stopped', 'the failed preparation released its session')
