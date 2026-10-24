@@ -33,7 +33,7 @@ const minimumKeyLength = connectionSecretInputSchema.shape.value.minLength ?? 1
  * it is cleared before the first await and never rendered back. A failed create is rolled back
  * with DELETE so no half-connected provider is left behind.
  */
-export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpenChange }: {
+export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpenChange, onSaved }: {
   entry: ProviderCatalogEntry
   /** Present for a rotation; absent when adding a new connection. */
   connection?: Connection
@@ -41,6 +41,8 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
   busy: boolean
   run: ConnectionMutate
   onOpenChange: (open: boolean) => void
+  /** Runs after a successful save so focus can move to stable content. */
+  onSaved?: () => void
 }) {
   const [name, setName] = useState('')
   const [key, setKey] = useState('')
@@ -84,7 +86,7 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
         throw error
       }
     })
-    if (result.ok) onOpenChange(false)
+    if (result.ok) { onOpenChange(false); onSaved?.() }
     else setFailure(result.code)
   }
 

@@ -86,7 +86,7 @@ function ConnectionRow({ connection, busy, vaultUnlocked, modelCount, onRotate, 
   </li>
 }
 
-function ProviderCard({ entry, connections, modelCounts, busy, vaultUnlocked, onAdd, onRotate, onRemove, onModels, run }: {
+function ProviderCard({ entry, connections, modelCounts, busy, vaultUnlocked, onAdd, onRotate, onRemove, onModels, run, headingRef }: {
   entry: ProviderCatalogEntry
   connections: Connection[]
   modelCounts: Record<string, number>
@@ -97,13 +97,14 @@ function ProviderCard({ entry, connections, modelCounts, busy, vaultUnlocked, on
   onRemove: (connection: Connection) => void
   onModels: (connection: Connection, count: number) => void
   run: ConnectionMutate
+  headingRef: (node: HTMLHeadingElement | null) => void
 }) {
   const connected = connections.length > 0
   return <article className="connections-card" aria-labelledby={`provider-${entry.provider}`} data-provider={entry.provider}>
     <div className="connections-card-head">
       <span className="connections-monogram" aria-hidden="true">{connectionMonogram(entry.label)}</span>
       <div className="connections-card-title">
-        <h3 id={`provider-${entry.provider}`}>{entry.label}</h3>
+        <h3 ref={headingRef} id={`provider-${entry.provider}`} tabIndex={-1} className="focus-visible:outline-focus">{entry.label}</h3>
         <p data-state={connected ? 'connected' : 'not_connected'}>
           {connected ? translate('connections.provider.connected', { count: connections.length }) : translate('connections.provider.notConnected')}
         </p>
@@ -141,6 +142,8 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
   const [removeOpen, setRemoveOpen] = useState(false)
   const [removeFailure, setRemoveFailure] = useState<ConnectionErrorCode>()
   const [modelCounts, setModelCounts] = useState<Record<string, number>>({})
+  const [focusProvider, setFocusProvider] = useState<ProviderCatalogEntry['provider'] | null>(null)
+  const headingRefs = useRef<Record<string, HTMLHeadingElement | null>>({})
   const connections = snapshot?.connections ?? []
   const connectedProviders = new Set(connections.map(connection => connection.provider))
   const categories = providerCategoryOrder.map(value => ({
@@ -153,10 +156,18 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
   const vaultUnlocked = snapshot?.vault.unlocked ?? false
   const vaultLabel = translate(vaultUnlocked ? 'connections.vault.lock' : 'connections.vault.unlock')
 
+  // A successful add or remove destroys the button that opened the dialog. Focus the
+  // provider card heading instead of letting the browser fall back to <body>.
+  useEffect(() => {
+    if (!focusProvider) return
+    headingRefs.current[focusProvider]?.focus()
+    setFocusProvider(null)
+  }, [focusProvider])
+
   const remove = async (connection: Connection) => {
     setRemoveFailure(undefined)
     const result = await mutate(() => connectionApi.remove(connection.id))
-    if (result.ok) setRemoveOpen(false)
+    if (result.ok) { setRemoveOpen(false); setFocusProvider(connection.provider) }
     else setRemoveFailure(result.code)
   }
 
@@ -212,7 +223,7 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
               onRemove={connection => { setRemoveFailure(undefined); setRemoving(connection); setRemoveOpen(true) }}
               onModels={(connection, count) => setModelCounts(previous => previous[connection.id] === count
                 ? previous : { ...previous, [connection.id]: count })}
-              run={mutate} />)}
+              run={mutate} headingRef={node => { headingRefs.current[entry.provider] = node }} />)}
           </div>}
       </div>
     </div>}
@@ -221,7 +232,7 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
     <p role="status" aria-live="polite" className="connections-note">{saved ? translate('connections.saved') : ''}</p>
 
     {dialog && <ConnectionKeyDialog open={dialogOpen} entry={dialog.entry} connection={dialog.connection} busy={busy} run={mutate}
-      onOpenChange={setDialogOpen} />}
+      onOpenChange={setDialogOpen} onSaved={() => setFocusProvider(dialog.entry.provider)} />}
 
     {removing && <Dialog open={removeOpen} onOpenChange={open => { setRemoveOpen(open); if (!open) setRemoveFailure(undefined) }}>
       <DialogContent>

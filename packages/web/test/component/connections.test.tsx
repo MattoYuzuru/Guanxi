@@ -95,6 +95,7 @@ it('adds a key with create + secret, closes the dialog and never renders the key
   expect(field.type).toBe('text')
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Add key' })))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'DeepSeek' })))
   expect(calls.map(call => [call.method, call.url, call.body])).toEqual([
     ['POST', '/api/connections', { name: 'DeepSeek', kind: 'model_api', provider: 'deepseek', auth: 'api_key' }],
     ['PUT', `/api/connections/${DEEPSEEK}/secret`, { value: key }],
@@ -172,6 +173,7 @@ it('asks for confirmation in a dialog before DELETE and never uses window.confir
   expect(calls).toEqual([])
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Remove connection' })))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'DeepSeek' })))
   expect(calls).toEqual([`DELETE /api/connections/${DEEPSEEK}`])
   expect(confirm).not.toHaveBeenCalled()
 })
