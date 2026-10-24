@@ -206,11 +206,14 @@ Import unlocks this process's interactive vault. Standalone CLI disposal locks i
 successful boot import leaves it unlocked for Chat. Boot import failure (including partial
 failure) logs only `provider_key_import_failed`, locks provider access and continues booting;
 valid keys from a partial import remain stored and can be explicitly unlocked later. No unattended permission is granted. Migration 3 adds
-`dotenv_imports`, a dedicated identity per account/provider/root. Repeated identical input
-returns `unchanged`; a new value rotates the mapped connection, preserving retired-key
-scrubbing. When the same secret arrives under another root, the registry reuses the imported
-connection that already holds it and updates its root (and network consent) instead of adding
-a second row; a different secret keeps a separate connection. Values are registered before
+`dotenv_imports`, a dedicated identity per account/provider/root; append-only migration 4 adds
+the dotenv name family to that identity, so `OPENAI_API_KEY` and `OPENAI_COMPAT_API_KEY` never
+share a row. Rows written before migration 4 are the `OPENAI_API_KEY` family. Repeated
+identical input returns `unchanged`; a new value rotates the mapped connection, preserving
+retired-key scrubbing. When the same secret arrives under another root in the same family,
+the registry reuses the imported connection that already holds it and updates its root (and
+network consent) instead of adding a second row; a different secret, or the other OpenAI
+name, keeps a separate connection. Values are registered before
 any imported connection metadata is persisted. CLI results expose connection IDs, provider
 names and created/rotated/unchanged facts only. Import errors use fixed summaries.
 Imports are serialized within one registry; simultaneous standalone processes may require a
