@@ -42,7 +42,7 @@ const entry = (value: ProviderCatalogEntry): Readonly<ProviderCatalogEntry> => O
 export const providerCatalog: readonly Readonly<ProviderCatalogEntry>[] = Object.freeze([
   entry({
     provider: 'claude-code', category: 'agent_subscription', kind: 'agent', auth: 'cli_login',
-    label: 'Claude Code', keyHint: null, docsUrl: null, baseUrl: 'none', models: 'none',
+    label: 'Claude Code', keyHint: 'starts with sk-ant-oat', docsUrl: null, baseUrl: 'none', models: 'none',
   }),
   entry({
     provider: 'codex', category: 'agent_subscription', kind: 'agent', auth: 'cli_login',
@@ -52,6 +52,8 @@ export const providerCatalog: readonly Readonly<ProviderCatalogEntry>[] = Object
     provider: 'copilot', category: 'agent_subscription', kind: 'agent', auth: 'cli_login',
     label: 'GitHub Copilot', keyHint: null, docsUrl: null, baseUrl: 'none', models: 'none',
   }),
+  // This hint names the `sk-ant-usr` family. `assertApiKey` accepts it only with the
+  // `lead/k5-usr-key-family` change, which the lead integrates alongside this branch.
   entry({
     provider: 'anthropic', category: 'llm_api', kind: 'model_api', auth: 'api_key',
     label: 'Anthropic', keyHint: 'starts with sk-ant-api or sk-ant-usr',

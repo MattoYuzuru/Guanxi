@@ -29,6 +29,12 @@ test('provider categories have one stable display order', () => {
   assert.equal(new Set(providerCategoryOrder).size, categories.length)
 })
 
+test('catalog key hints name the credential families the stored modes accept', () => {
+  const hint = (provider: string) => providerCatalog.find(item => item.provider === provider)!.keyHint
+  assert.equal(hint('anthropic'), 'starts with sk-ant-api or sk-ant-usr')
+  assert.equal(hint('claude-code'), 'starts with sk-ant-oat')
+})
+
 test('catalog key hints describe formats without containing key material', () => {
   for (const item of providerCatalog) {
     if (item.keyHint === null) continue
