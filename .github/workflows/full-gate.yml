@@ -23,7 +23,7 @@ env:
 
 jobs:
   plan:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       full: ${{ steps.plan.outputs.full }}
@@ -47,7 +47,8 @@ jobs:
           node -e 'const fs=require("node:fs"); fs.writeFileSync(".ci-results/candidate.json", JSON.stringify({head:process.env.HEAD_SHA,base:process.env.BASE_SHA,tested:process.env.TESTED_SHA}))'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: candidate-${{ github.run_attempt }}
+          name: candidate
+          overwrite: true
           path: .ci-results/candidate.json
           retention-days: 7
 
@@ -126,7 +127,7 @@ jobs:
     name: Full gate
     needs: [plan, checks]
     if: ${{ always() && github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Require the entire planned matrix
         env:

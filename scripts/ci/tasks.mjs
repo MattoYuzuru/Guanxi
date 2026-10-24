@@ -34,6 +34,7 @@ export function inventory(projectRoot = root) {
 }
 export function validateInventory(packages = inventory()) {
   const errors = []
+  if (JSON.stringify(packages[0].workspaces) !== JSON.stringify(['packages/*'])) errors.push('Workspace layout changed: extend CI discovery and classify every new workspace')
   for (const pkg of packages) {
     if (!(pkg.name in coverage)) errors.push(`Unclassified workspace ${pkg.name}: add its checks/builds to scripts/ci/tasks.mjs`)
     for (const name of Object.keys(pkg.scripts ?? {})) {
@@ -62,5 +63,5 @@ export function coreArguments(script, shard, report) {
 }
 
 export function matrix(full) {
-  return { include: tasks.filter(t => full || t.id === 'quality').map(t => ({ id: t.id, os: t.os ?? 'ubuntu-24.04', native: !!t.native, browser: !!t.browser, catalog: !!t.catalog })) }
+  return { include: tasks.filter(t => full || t.id === 'quality').map(t => ({ id: t.id, os: t.os ?? 'ubuntu-26.04', native: !!t.native, browser: !!t.browser, catalog: !!t.catalog })) }
 }

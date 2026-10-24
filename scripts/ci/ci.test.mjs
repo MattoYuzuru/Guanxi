@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { affected } from './affected.mjs'
-import { completion } from './finish.mjs'
+import { candidateArtifact, completion } from './finish.mjs'
 import { coreArguments, inventory, matrix, tasks, validateInventory } from './tasks.mjs'
 
 test('current root composition and workspace build/test entrypoints are classified', () => validateInventory())
@@ -17,6 +17,8 @@ test('new workspaces, build/test entrypoints and root composition cannot silentl
   }
   const packages = structuredClone(inventory()); packages[0].scripts.test += ' && npm run test:future'
   assert.throws(() => validateInventory(packages), /Root npm test changed/)
+  const layout = structuredClone(inventory()); layout[0].workspaces.push('plugins/*')
+  assert.throws(() => validateInventory(layout), /Workspace layout changed/)
 })
 test('draft matrix is quick; ready matrix contains every unique declared task', () => {
   assert.deepEqual(matrix(false).include.map(x => x.id), ['quality'])
@@ -65,9 +67,31 @@ test('completion accepts only current reviewed candidate with every job actually
     x => { x.jobs[1].conclusion = 'skipped' }, x => { x.jobs[1].conclusion = 'failure' },
   ]) { const value = green(); change(value); assert.equal(completion(value).ok, false) }
 })
+test('rerun of failed jobs reuses the successful plan artifact from the same workflow run', () => {
+  const value = green(); value.run.run_attempt = 2
+  assert.equal(completion(value).ok, true)
+  const workflow = readFileSync(new URL('../../.github/workflows/full-gate.yml', import.meta.url), 'utf8')
+  assert.match(workflow, new RegExp(`name: ${candidateArtifact}\\n`))
+  assert.equal(candidateArtifact, 'candidate')
+})
 test('affected guidance widens unknown/contract scope and does not execute checks', () => {
   assert.deepEqual(affected(['docs/example.md']).areas, ['docs'])
   assert.deepEqual(affected(['packages/contract/src/index.ts']).areas, ['shared'])
   assert.deepEqual(affected(['packages/web/src/App.tsx', 'packages/ui/tokens/base.tokens.json']).areas, ['ui', 'web'])
   assert.deepEqual(affected(['packages/future/src/new.ts']).areas, ['shared'])
+  assert.match(affected(['packages/cli/src/bin.ts']).guidance[0].commands.join(' '), /typecheck --workspace guanxi/)
+  assert.match(affected(['packages/ui/src/index.ts']).guidance[0].commands.join(' '), /typecheck --workspace @guanxi\/ui/)
+})
+test('catalog config uses the explicit retained artifact directory in host/container runs', async () => {
+  const original = process.env.GUANXI_GATE_ARTIFACTS
+  try {
+    process.env.GUANXI_GATE_ARTIFACTS = '/work/.ci-results/catalog/G13-fixture'
+    const { default: config } = await import('../../packages/ui/gates/catalog/browser/playwright.config.ts')
+    assert.equal(config.outputDir, process.env.GUANXI_GATE_ARTIFACTS)
+    const source = readFileSync(new URL('../../packages/ui/gates/catalog/browser/gates.ts', import.meta.url), 'utf8')
+    assert.match(source, /GUANXI_GATE_ARTIFACTS: join\(docker \? '\/work'/)
+  } finally {
+    if (original === undefined) delete process.env.GUANXI_GATE_ARTIFACTS
+    else process.env.GUANXI_GATE_ARTIFACTS = original
+  }
 })

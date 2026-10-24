@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { tasks } from './tasks.mjs'
 
+export const candidateArtifact = 'candidate'
+
 export function completion({ pr, run, jobs, candidate, head }) {
   const reasons = []
   if (pr.draft || pr.state !== 'open') reasons.push('PR must be open and ready')
@@ -38,7 +40,7 @@ export async function finish(number, wait = false) {
       const directory = mkdtempSync(join(tmpdir(), 'guanxi-ci-'))
       let candidate
       try {
-        execFileSync('gh', ['run', 'download', String(run.id), '--repo', repo, '--name', `candidate-${run.run_attempt}`, '--dir', directory], { stdio: ['ignore', 'ignore', 'pipe'] })
+        execFileSync('gh', ['run', 'download', String(run.id), '--repo', repo, '--name', candidateArtifact, '--dir', directory], { stdio: ['ignore', 'ignore', 'pipe'] })
         candidate = JSON.parse(readFileSync(join(directory, 'candidate.json'), 'utf8'))
       } finally { rmSync(directory, { recursive: true, force: true }) }
       // Re-read after downloading: neither another actor's push nor local edits may slip through.

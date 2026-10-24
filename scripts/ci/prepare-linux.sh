@@ -10,4 +10,5 @@ if test -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns; then
   sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 fi
 sudo ln -sf "$(command -v node)" /usr/local/bin/node
+setpriv --help | grep -q -- --seccomp-filter
 bwrap --ro-bind / / --unshare-user --unshare-pid --proc /proc -- /usr/local/bin/node --version

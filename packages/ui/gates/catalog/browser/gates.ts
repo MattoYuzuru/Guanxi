@@ -5,7 +5,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { basename, join, relative } from 'node:path'
 import { readInventory, readStories } from '../../../catalog/tooling/inventory.ts'
 import { result, type CatalogGate, type GateContext, type GateFinding, type GateResult } from '../types.ts'
 import type { GateStory } from './stories.ts'
@@ -107,6 +107,10 @@ function runSpec(
     GUANXI_GATE_FIXTURES: context.fixtures ? '1' : '0',
     GUANXI_GATE_SEED: context.seed ?? '',
     GUANXI_GATE_REPORT: docker ? `/work/packages/ui/${relative(context.uiRoot, reportFile)}` : reportFile,
+    // CI uploads this mounted directory after --rm removes the G13 container.
+    ...(process.env['GITHUB_ACTIONS'] === 'true' ? {
+      GUANXI_GATE_ARTIFACTS: join(docker ? '/work' : join(context.uiRoot, '..', '..'), '.ci-results', 'catalog', `${gate.id}-${basename(reportDir)}`),
+    } : {}),
   }
   const playwrightArgs = ['playwright', 'test', '--config', 'gates/catalog/browser/playwright.config.ts', `gates/catalog/browser/${spec}`]
   if (context.updateSnapshots) playwrightArgs.push('--update-snapshots')

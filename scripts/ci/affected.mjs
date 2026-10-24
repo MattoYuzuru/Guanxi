@@ -4,7 +4,8 @@ export function affected(files) {
   const areas = new Set()
   for (const file of files) {
     if (/^(docs\/|.*\.md$)/.test(file)) areas.add('docs')
-    else if (/^packages\/(server|cli)\//.test(file)) areas.add('server')
+    else if (/^packages\/server\//.test(file)) areas.add('server')
+    else if (/^packages\/cli\//.test(file)) areas.add('cli')
     else if (/^packages\/web\//.test(file)) areas.add('web')
     else if (/^packages\/ui\//.test(file)) areas.add('ui')
     else if (/^packages\/kernel\//.test(file)) areas.add('kernel')
@@ -16,8 +17,9 @@ export function affected(files) {
     guidance: [...areas].sort().map(area => ({ area, commands: {
       docs: ['npm run lint:md'],
       server: ['node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test <changed-and-dependent-test-files>', 'npm run typecheck --workspace @guanxi/server'],
+      cli: ['node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test <changed-and-dependent-test-files>', 'npm run typecheck --workspace guanxi'],
       web: ['npm exec --workspace @guanxi/web -- vitest run <related-test-files>', 'npm run typecheck --workspace @guanxi/web', 'npm run test:browser --workspace @guanxi/web -- <related-specs>'],
-      ui: ['npm run ui:check', 'npm exec --workspace @guanxi/ui -- vitest run <related-test-files>', 'browser checks for changed stories under the shared lock'],
+      ui: ['npm run ui:check', 'npm exec --workspace @guanxi/ui -- vitest run <related-test-files>', 'npm run typecheck --workspace @guanxi/ui', 'browser checks for changed stories under the shared lock'],
       kernel: ['node --test <related-kernel-test-files>', 'npm run typecheck --workspace @guanxi/kernel'],
       bench: ['node --test <related-bench-test-files>', 'npm run typecheck --workspace @guanxi/bench'],
       shared: ['Inspect transitive consumers; contract/config/dependencies/unknown paths widen scope. Final full CI is mandatory.'],
