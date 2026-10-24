@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const connectionKindSchema = z.enum(['agent', 'model_api', 'local_runtime', 'service'])
+export const connectionAuthSchema = z.enum(['api_key', 'cli_login', 'none'])
 export const connectionProviderSchema = z.enum([
   'claude-code', 'codex', 'copilot', 'anthropic', 'openai', 'google',
   'openrouter', 'deepseek', 'ollama', 'brave', 'tavily', 'openai-stt',
@@ -33,7 +34,7 @@ export const createConnectionSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: connectionKindSchema,
   provider: connectionProviderSchema,
-  auth: z.enum(['api_key', 'cli_login', 'none']),
+  auth: connectionAuthSchema,
   unattended: z.boolean().default(false),
 }).strict().superRefine((value, ctx) => {
   const agents = ['claude-code', 'codex', 'copilot']
@@ -50,7 +51,7 @@ export const createConnectionSchema = z.object({
 export const connectionSchema = z.object({
   id: z.string().uuid(), accountId: z.string().min(1), name: z.string(),
   kind: connectionKindSchema, provider: connectionProviderSchema,
-  auth: z.enum(['api_key', 'cli_login', 'none']), unattended: z.boolean(),
+  auth: connectionAuthSchema, unattended: z.boolean(),
   baseUrl: connectionBaseUrlSchema.optional(),
   allowPrivate: z.boolean().optional(),
   secretRef: secretReferenceSchema.nullable(),
@@ -106,3 +107,6 @@ export const chatModelsResponse = z.object({ groups: z.array(z.object({
   }).strict()).max(MAX_DISCOVERED_MODELS),
 }).strict()) }).strict()
 export type ChatModelsResponse = z.infer<typeof chatModelsResponse>
+
+// Provider catalog lives in a leaf module; the runtime enums above are re-exported with this index.
+export * from './catalog.ts'
