@@ -346,6 +346,9 @@ decoded under a JSON Schema, and the schema is a pinned part of the request, not
   work and judge schemas with `n_predict: 1` (check `schemas`).
 - **Observation age.** Every count (packing, probes, narrative, the call itself) now follows a fresh `observe`: an exact count is valid only
   against an observation at most `maximumAgeMs` old, and the previous call or gate may have taken minutes. Dispatch observes again itself.
+  A transient transport failure during that observation waits and re-observes with the same `transientRetryMs` as a failed call (no
+  reservation is held yet), and a dropped link during offer or dispatch is reported as `runtime_meter_unavailable`, so the reserved call
+  is re-sent instead of stopping the run.
 - **Notes.** The schema digest sorts object keys but not arrays, so two schemas that differ only in key order have one digest while a
   different `required` or `enum` order is a different schema; the key order itself is preserved on the wire for the grammar. A stock Ollama
   `local_runtime` judge receives the verdict schema as `format` (Ollama defines `format` as a JSON Schema); that path is covered by the

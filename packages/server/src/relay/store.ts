@@ -58,8 +58,10 @@ export class RelayStore {
     if (canonical(clean) !== canonical(value)) return { ...clean, withheld: true }
     return value
   }
-  private event(emit: (e: SessionEventInput) => void, action: string, data: unknown): void {
-    emit({ type: 'agent.note', data: { text: canonical({ relay: action, data }) } })
+  /** Relay events carry their run id in the session envelope's `jobId`, so a reader sharing the session with the
+   * `rc-*` child runs can tell the relay run's own trace from theirs. */
+  private event(emit: (e: SessionEventInput) => void, runId: string, action: string, data: unknown): void {
+    emit({ type: 'agent.note', jobId: runId, data: { text: canonical({ relay: action, data }) } })
   }
   change<T>(a: Attempt, action: string, apply: (l: Ledger) => T): T {
     return this.runs.mutate(a, (db, emit) => {
@@ -67,11 +69,11 @@ export class RelayStore {
       const value = apply(l)
       invariant(canonical(this.scrubber.scrub(l)) === canonical(l), 'unscrubbed_ledger')
       db.prepare('UPDATE relay_runs SET snapshot=? WHERE run_id=?').run(canonical(l), a.run_id)
-      this.event(emit, action, { cycle: l.cycle, state: l.state, hash: hash(l) })
+      this.event(emit, a.run_id, action, { cycle: l.cycle, state: l.state, hash: hash(l) })
       return value
     })
   }
-  emit(a: Attempt, event: SessionEventInput): void { this.runs.mutate(a, (_db, emit) => emit(event)) }
+  emit(a: Attempt, event: SessionEventInput): void { this.runs.mutate(a, (_db, emit) => emit({ ...event, jobId: a.run_id })) }
   init(a: Attempt, rawPlan: Plan, rawCaps: Caps): void {
     const plan = planSchema.parse(this.scrubber.scrub(rawPlan)), caps = capsSchema.parse(rawCaps)
     this.runs.mutate(a, (db, emit) => this.initWithin(a, plan, caps, db, emit))
@@ -83,7 +85,7 @@ export class RelayStore {
         head: plan.base, files: [], diffstat: '', evidence: [], noProgress: 0, tokens: 0, moneyMicros: 0, unknownCosts: 0,
         errors: 0, proposals: [], eta: null, baseline: { statuses: '', gates: '', head: plan.base }, pendingCall: null }
       db.prepare('INSERT INTO relay_runs VALUES (?,?)').run(a.run_id, canonical(l))
-      this.event(emit, 'initialized', { revision: plan.revision, hash: hash(l) })
+      this.event(emit, a.run_id, 'initialized', { revision: plan.revision, hash: hash(l) })
   }
   transition(a: Attempt, state: CycleState): void {
     this.change(a, 'transition', l => {
@@ -125,7 +127,7 @@ export class RelayStore {
       invariant(items.every(i => i in l.items), 'invalid_item')
       const payload = canonical(this.scrubber.scrub({ kind, text, items, expiresAt }))
       db.prepare('INSERT INTO relay_notes(run_id,payload) VALUES (?,?)').run(a.run_id, payload)
-      this.event(emit, 'note', { kind, items })
+      this.event(emit, a.run_id, 'note', { kind, items })
     })
   }
   propose(a: Attempt, text: string): void { this.change(a, 'amendment_proposed', l => { l.proposals.push(this.scrubber.scrub(text)) }) }
@@ -173,7 +175,7 @@ export class RelayStore {
       this.fault?.('seal_uploaded')
       db.prepare('UPDATE relay_runs SET snapshot=? WHERE run_id=?').run(canonical(l), a.run_id)
       this.fault?.('seal_pointer')
-      this.event(emit, 'sealed', { cycle: l.cycle, ledgerHash: h.ledgerHash, bundleHash: byteHash(bundle) })
+      this.event(emit, a.run_id, 'sealed', { cycle: l.cycle, ledgerHash: h.ledgerHash, bundleHash: byteHash(bundle) })
       this.fault?.('seal_trace')
     })
     this.fault?.('seal_committed')

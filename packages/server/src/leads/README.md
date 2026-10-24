@@ -80,8 +80,10 @@ clipping and the finished packet is scrubbed and parsed again. `relayStartsChild
 ledger of the relay run started for a child through `RelayService.read` only. When the relay run stopped, the
 narrative also carries its last fixed failure code and the last `call_failed_reason` note's fixed
 `purpose`/`reason` (for example `relay run status: input_required; stopped: model_failed (work call:
-runtime_meter_unavailable)`), read only from its session-log events; messages, paths and other free text are
-never copied.
+runtime_meter_unavailable)`), read only from the relay run's own session-log events: relay events carry its run id
+and `run.lifecycle` carries `data.runId`, so an `rc-*` child event that shares the session is never taken for the
+relay's. `wrapping_up` is a working state, not a stop, and carries no stop facts. Messages, paths and other free
+text are never copied.
 
 ## Relay adapter
 

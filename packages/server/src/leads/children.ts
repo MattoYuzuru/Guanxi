@@ -2,7 +2,7 @@ import type { RelayService } from '../relay/plugin.ts'
 import type { RelayStarts } from '../relay/start.ts'
 import type { RunStore } from '../runs/store.ts'
 import type { SessionLog } from '../session-log/log.ts'
-import type { RelayStartStatus } from '@guanxi/contract'
+import type { RelayStartStatus, SessionEvent } from '@guanxi/contract'
 import { TERMINAL_RUN_STATES } from '../runs/types.ts'
 import { LeadError, type ChildHandle, type ChildLaunch, type ChildReport, type ChildReporter, type ChildStarter } from './types.ts'
 
@@ -115,22 +115,30 @@ export function relayStartsChildStarter(starts: Pick<RelayStarts, 'start' | 'sta
  * `call_failed_reason` note's `purpose`/`reason`. Messages, paths and any other free text stay there. */
 const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
 export interface RelayStopFacts { error: string | null; call: { purpose: string; reason: string } | null }
-const STOPPED_STATUSES = new Set(['canceled', 'failed', 'interrupted', 'wrapping_up', 'input_required'])
+// `wrapping_up` is a working state (the relay may still report), not a stop: it carries no stop facts.
+const STOPPED_STATUSES = new Set(['canceled', 'failed', 'interrupted', 'input_required'])
 const stopSuffix = (facts: RelayStopFacts | null): string => {
   if (!facts || (facts.error === null && facts.call === null)) return ''
   return `; stopped: ${[facts.error, facts.call === null ? null : `(${facts.call.purpose} call: ${facts.call.reason})`].filter(Boolean).join(' ')}`
 }
-const stopFactsOf = (log: Pick<SessionLog, 'readAll'>, sessionId: string): RelayStopFacts | null => {
+const stopFactsOf = (log: Pick<SessionLog, 'readAll'>, sessionId: string, relayRunId: string): RelayStopFacts | null => {
   try {
     let error: string | null = null
     let call: RelayStopFacts['call'] = null
+    // The `rc-*` child runs share the relay run's session. Their lifecycle and error events are not the relay's stop:
+    // only events stamped with the relay run id (relay events carry it as `jobId`; run lifecycle carries `data.runId`)
+    // contribute. A note may also repeat the id in its payload for readers of older envelopes.
+    const own = (event: SessionEvent): boolean => event.jobId === relayRunId || event.type === 'run.lifecycle' && event.data.runId === relayRunId
     for (const event of log.readAll(sessionId, 'person')) {
+      if (!own(event)) continue
       if (event.type === 'error') error = fixed(event.data.code) ? event.data.code : null
       else if (event.type === 'agent.note') {
         let note: unknown
         try { note = JSON.parse(event.data.text) } catch { continue }
-        if (note === null || typeof note !== 'object' || (note as { relay?: unknown }).relay !== 'call_failed_reason') continue
-        const { purpose, reason } = note as { purpose?: unknown; reason?: unknown }
+        if (note === null || typeof note !== 'object') continue
+        const value = note as { relay?: unknown; runId?: unknown; purpose?: unknown; reason?: unknown }
+        if (value.relay !== 'call_failed_reason' || (value.runId !== undefined && value.runId !== relayRunId)) continue
+        const { purpose, reason } = value
         call = fixed(purpose) && fixed(reason) ? { purpose, reason } : null
       }
     }
@@ -161,7 +169,7 @@ export function relayStartsChildReporter(starts: Pick<RelayStarts, 'status'>, re
       try {
         const status = starts.status(childRunId)
         if (!status.runId) return null
-        const stopped = log && status.sessionId && STOPPED_STATUSES.has(status.status) ? stopFactsOf(log, status.sessionId) : null
+        const stopped = log && status.sessionId && STOPPED_STATUSES.has(status.status) ? stopFactsOf(log, status.sessionId, status.runId) : null
         return reportOf(relay.read(status.runId), status.runId, status.status, stopped)
       } catch { return null }
     },

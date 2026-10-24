@@ -29,8 +29,8 @@ class FakeRelayStarts {
 }
 const ledger = { plan: { items: [{ id: 't1', title: 'Fix it' }] }, items: { t1: 'done' }, head: 'abc123', evidence: [{ item: 't1', head: 'abc123', ok: true, output: 'npm test green' }],
   diffstat: '1 file changed', proposals: [], cycle: 2, tokens: 500, moneyMicros: 0, unknownCosts: 0 }
-const relayEvents = [{ type: 'error', data: { code: 'model_failed', message: 'Relay execution stopped; ledger retained.' } },
-  { type: 'agent.note', data: { text: JSON.stringify({ relay: 'call_failed_reason', purpose: 'work', reason: 'runtime_meter_unavailable' }) } }]
+const relayEvents = [{ type: 'error', jobId: 'relay-run-1', data: { code: 'model_failed', message: 'Relay execution stopped; ledger retained.' } },
+  { type: 'agent.note', jobId: 'relay-run-1', data: { text: JSON.stringify({ relay: 'call_failed_reason', runId: 'relay-run-1', purpose: 'work', reason: 'runtime_meter_unavailable' }) } }]
 
 async function mirrorFixture(t: Parameters<typeof leadFixture>[0], lead: Record<string, unknown> = {}) {
   const relay = new FakeRelayStarts()
@@ -91,7 +91,9 @@ test('a relay run that stops at a cap or needs input settles for good: the lead 
     const run = f.runs()
     assert.equal(run.promises(runId)[0]!.outcome, 'failed', state)
     assert.equal(run.wakes(runId).length, 1, state)
-    assert.match(String((await resumed(f))[0]!.text), new RegExp(`narrative: relay run status: ${state}; stopped: model_failed \\(work call: runtime_meter_unavailable\\)`))
+    const narrative = String((await resumed(f))[0]!.text).split('\n').find(line => line.startsWith('narrative: '))
+    assert.equal(narrative, state === 'wrapping_up' ? 'narrative: relay run status: wrapping_up'
+      : 'narrative: relay run status: input_required; stopped: model_failed (work call: runtime_meter_unavailable)', state)
     assert.equal(run.get(runId).state, 'completed')
   }
 })

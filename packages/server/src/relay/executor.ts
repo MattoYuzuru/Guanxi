@@ -236,7 +236,7 @@ export class RelayExecutor {
         if (!signal.aborted && this.caps(this.store.read(a.run_id)) !== 'wall') { this.checkExecution(a); continue }
       }
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
-      this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', purpose, reason }) } })
+      this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', runId: a.run_id, purpose, reason }) } })
       // A grammar the server rejects is rejected for every later call too: say so, instead of letting the probe retry and fail as something else.
       throw new RelayError(reason === 'response_schema_rejected' ? reason : 'model_failed')
     }
