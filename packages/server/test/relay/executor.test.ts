@@ -90,6 +90,36 @@ test('normative cycle/token/money/wall caps wrap up before another model call', 
     } finally { f.close() }
   }
 })
+test('a transient transport failure re-sends the same reserved call after a wait; exhausting the waits fails it as before', async () => {
+  let failures = 2, work = 0
+  const f = fixture({ limits: { transientRetryMs: [1, 1, 1] }, actions: () => {
+    if (failures-- > 0) throw new RelayError('runtime_meter_unavailable')
+    return canonical(work++ === 0 ? { action: 'verify', item: 'one' } : { action: 'handoff' })
+  } })
+  try {
+    const before = f.relay.read(f.run.id).tokens
+    await f.executor.run(f.attempt)
+    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"'))
+    assert.equal(notes.length, 2)
+    assert.equal(f.relay.read(f.run.id).errors, 0, 'a retried call is not an error')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    assert.ok(f.relay.read(f.run.id).tokens > before)
+  } finally { f.close() }
+  const g = fixture({ limits: { transientRetryMs: [1, 1] }, actions: () => { throw new RelayError('runtime_meter_unavailable') } })
+  try {
+    await g.executor.run(g.attempt)
+    assert.equal(g.log.readAll(g.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 2)
+    assert.equal(g.store.get(g.run.id).state, 'input_required')
+    assert.equal(g.relay.read(g.run.id).pendingCall, null)
+  } finally { g.close() }
+  // A failure that says something about the request is never retried.
+  const h = fixture({ limits: { transientRetryMs: [1, 1] }, actions: () => { throw new RelayError('context_ceiling') } })
+  try {
+    await h.executor.run(h.attempt)
+    assert.equal(h.log.readAll(h.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 0)
+  } finally { h.close() }
+})
 test('a zero money cap stops on an unknown cost before any call', async () => {
   const g = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
   try {

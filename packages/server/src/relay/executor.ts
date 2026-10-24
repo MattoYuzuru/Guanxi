@@ -1,11 +1,12 @@
 import { RelayJudgeCascade, type RelayCascadeInput } from './judge-cascade.ts'
 import { randomUUID } from 'node:crypto'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { Attempt } from '../runs/types.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { RelayStore } from './store.ts'
 import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
-import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
+import { DEFAULT_RELAY_LIMITS, invariant, RelayError, TRANSIENT_CALL_REASONS, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, requestAsync, thresholds, upperTokens, wallDeadline, type AsyncMeasure, type Measure, type RequestParts, type RequestResult } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 import { parseModelJson } from './model-json.ts'
@@ -196,7 +197,9 @@ export class RelayExecutor {
       if (quote !== null) state.moneyMicros += quote
     })
     this.store.emit(a, { type: 'assistant.started', data: { messageId: id, model: 'relay:' + purpose, step: l.cycle } })
-    let reply: Reply
+    let reply: Reply | undefined
+    const waits = this.limits.transientRetryMs ?? []
+    for (let retry = 0; reply === undefined; retry++) {
     try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, maxInput: t.H, window: w, signal, onStarted: () => this.store.runs.modelStarted(a),
       ...(responseSchema ? { responseSchema } : {}) })) }
     catch (error) {
@@ -205,10 +208,18 @@ export class RelayExecutor {
       // K3 keeps a trusted transport's fixed refusal code as `reason`; its own code is the generic provider_failed.
       const reason = error instanceof RelayError ? error.code : fixed((error as { reason?: unknown })?.reason) ? (error as { reason: string }).reason
         : fixed((error as { code?: unknown })?.code) ? (error as { code: string }).code : 'unknown'
+      // A transient transport failure re-sends the same reserved call after a wait: the reservation, request id and prompt are unchanged,
+      // nothing was observed, and dispatch re-observes the runtime. A stop, a lost fence or the wall cap end the waiting.
+      if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
+        this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_retry', purpose, reason, retry: retry + 1, waitMs: waits[retry] }) } })
+        try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
+        if (!signal.aborted && this.caps(this.store.read(a.run_id)) !== 'wall') continue
+      }
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
       this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', purpose, reason }) } })
       // A grammar the server rejects is rejected for every later call too: say so, instead of letting the probe retry and fail as something else.
       throw new RelayError(reason === 'response_schema_rejected' ? reason : 'model_failed')
+    }
     }
     invariant([reply.inputTokens, reply.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) &&
       (reply.moneyMicros === null || Number.isSafeInteger(reply.moneyMicros) && reply.moneyMicros >= 0), 'usage_invalid')

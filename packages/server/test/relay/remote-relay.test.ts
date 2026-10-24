@@ -18,7 +18,7 @@ import { relayScript, remoteFixture, until, type RemoteOptions } from './remote-
 const exec = promisify(execFile), sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /** The R2-op end-to-end shape, with the relay on the home node and every model call on the executor node. */
-async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState>; projectFails?: boolean } = {}) {
+async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState>; projectFails?: boolean; transientRetryMs?: number[] } = {}) {
   // Match the K4 fixtures: Colima shares the checkout, not macOS tmpdir().
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const parent = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'remote-relay-')))
@@ -31,7 +31,8 @@ async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOpt
   const relayStore = new RelayStore(f.home.db, f.home.runs, f.home.scrubber, () => f.home.time)
   let allocations = 0
   const allocator = new OwnedCheckoutAllocator({ root: checkouts })
-  const host = { runtime: f.source, reserves, clock: () => f.home.time, nodePorts: () => [4417, 5217],
+  // Transient-call retries wait in real time; these fixtures retry only when a test asks for it.
+  const host = { runtime: f.source, reserves, clock: () => f.home.time, nodePorts: () => [4417, 5217], limits: { transientRetryMs: options.transientRetryMs ?? [] },
     project: async (id: string) => options.projectFails ? Promise.reject(new Error('project unavailable')) : ({ projectId: id, roots: [source], source: 'fixture project/workspace store', observedAt: f.home.time }),
     allocate: (async (policy, signal) => { allocations++; return allocator.allocate(policy, signal) }) as NonNullable<ConstructorParameters<typeof RelayStarts>[6]['allocate']> }
   const starts = new RelayStarts(f.home.db, f.home.runs, f.home.log, f.h.connections, f.home.scrubber, relayStore, host)
@@ -131,7 +132,7 @@ test('an executor that evaluates another token count fails the whole run closed 
 })
 
 test('an executor that stops answering leaves the relay interrupted for the owner, never completed', async t => {
-  const f = await fixture(t, { fake: { completionDelayMs: 400 }, ttlMs: 300, safetyMs: 50 }), receipt = await f.starts.start(f.input)
+  const f = await fixture(t, { fake: { completionDelayMs: 400 }, ttlMs: 300, safetyMs: 50, transientRetryMs: [1, 1] }), receipt = await f.starts.start(f.input)
   await until(async () => (await f.fake.count('/completion')) === 1)
   f.rules.push(() => { throw new Error('fixture partition') })
   f.home.time += 5_000                       // the child's holder lease lapses; the relay's own lease is still valid
@@ -141,6 +142,8 @@ test('an executor that stops answering leaves the relay interrupted for the owne
   const [grant] = grantsOf(f)
   assert.equal(f.home.runs.get(grant!.offer.runId).state, 'interrupted'); assert.equal(f.costs(grant!.offer.runId).length, 0)
   assert.equal((await f.completions()).length, 1)
+  // A partition that outlasts every retry wait still ends the relay: each retry was announced and none reached the executor.
+  assert.equal(f.home.log.readAll(receipt.sessionId!, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 2)
 })
 
 test('an executor that does not serve the relay runtime refuses admission before any run, session or allocation exists', async t => {
