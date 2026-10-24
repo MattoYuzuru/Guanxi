@@ -1,7 +1,7 @@
 # External leads: delegation, hibernation and wake (LW)
 
 **Status:** implemented as a trusted opt-in kernel service; fixture-validated, no real vendor CLI,
-account, network or model · **Updated:** 2026-10-23 · Plan: [LW plan](../../../../docs/plans/lanes/LW.plan.md)
+account, network or model · **Updated:** 2026-10-24 · Plan: [LW plan](../../../../docs/plans/lanes/LW.plan.md)
 
 `guanxi.external-leads` provides `lead.external`. A lead is an ACP v1 agent run by K5
 ([external agents](../external-agents/README.md)) that decides to delegate through one tool,
@@ -60,7 +60,10 @@ protocol) before any update, the wake and packet are kept, the attempt yields, a
 emitted and a back-off applies. The run policy's named `fallback` binding, if any, is tried first, with a
 seeded session; there is no automatic fallback otherwise. A failure after the acknowledgement moves the run
 to `input_required` and is never replayed; `resume(runId, prompt)` is the explicit continuation, also for a
-lead `interrupted` by a restart.
+lead `interrupted` by a restart. A wake after an accepted delegation of this lead starts with one fixed English
+sentence saying the delegate call was accepted, the work ran while the lead hibernated, and the interrupted
+tool call was hibernation, not a refusal; the packet follows it. A lead that never delegated is not given that
+sentence, and `guanxi.wake/v1` is unchanged.
 
 ## Wake packet
 
@@ -70,7 +73,11 @@ and never a trace. The reporter hands over one gate result per item, the newest 
 order: the relay ledger's evidence is a log of gate runs and the relay re-proves every item when its plan closes. The budget is 4000 tokens counted as `ceil(utf8 bytes / 3)`, a conservative bound, not a
 model tokenizer. Reductions run in a fixed order and each is listed in `truncated`. Text is scrubbed before
 clipping and the finished packet is scrubbed and parsed again. `relayStartsChildReporter` reads the relay
-ledger of the relay run started for a child through `RelayService.read` only.
+ledger of the relay run started for a child through `RelayService.read` only. When the relay run stopped, the
+narrative also carries its last fixed failure code and the last `call_failed_reason` note's fixed
+`purpose`/`reason` (for example `relay run status: input_required; stopped: model_failed (work call:
+runtime_meter_unavailable)`), read only from its session-log events; messages, paths and other free text are
+never copied.
 
 ## Relay adapter
 

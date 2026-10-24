@@ -68,6 +68,15 @@ interface Live { cancel: AbortController; hibernate: AbortController; userCancel
 interface Observed { text: string; usage: LeadUsage | null; acp: LeadSessionInfo | null; activity: boolean }
 
 const ACP_BACKENDS = new Set(adapterIdSchema.options.filter(id => id !== 'codex'))
+/** A held `guanxi_delegate` call looks like a refusal to the model when `session/load` replays it.
+ * The wake prompt says what happened before the packet: the delegation was accepted and the
+ * interrupted call was hibernation. Never a packet field; `guanxi.wake/v1` is unchanged. */
+export const WAKE_ACCEPTED = 'Your guanxi_delegate call was accepted and the work ran while you were hibernated; the interrupted tool call you may see above was the hibernation, not a refusal. Result:'
+/** Wake prompts after an accepted delegation of this lead carry the fixed sentence; a lead that
+ * never delegated keeps the packet alone. */
+export function wakePrompt(packet: string, accepted: boolean): string {
+  return accepted ? `${WAKE_ACCEPTED}\n${packet}` : packet
+}
 /** Only a request defect is independent of the connection; every other failure before the first
  * update may be answered by the run policy's named fallback. */
 const NO_FALLBACK = new Set(['empty_prompt'])
@@ -568,7 +577,7 @@ export class LeadService {
       return this.deferWake(attempt, code(error))
     }
     this.fault('wake:packet_built')
-    const text = renderWakePacket(JSON.parse(row!.packet) as LeadWakePacket)
+    const text = wakePrompt(renderWakePacket(JSON.parse(row!.packet) as LeadWakePacket), this.runs.promises(runId).length > 0)
     const resume = this.loadable(session)
     return this.runTurn({ attempt, kind: 'wake', wakeSeq, prompt: text, resume, seededPrompt: `${this.seedPrefix(session)}\n\n${text}` })
   }

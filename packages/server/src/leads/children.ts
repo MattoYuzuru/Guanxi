@@ -1,6 +1,7 @@
 import type { RelayService } from '../relay/plugin.ts'
 import type { RelayStarts } from '../relay/start.ts'
 import type { RunStore } from '../runs/store.ts'
+import type { SessionLog } from '../session-log/log.ts'
 import type { RelayStartStatus } from '@guanxi/contract'
 import { TERMINAL_RUN_STATES } from '../runs/types.ts'
 import { LeadError, type ChildHandle, type ChildLaunch, type ChildReport, type ChildReporter, type ChildStarter } from './types.ts'
@@ -110,7 +111,34 @@ export function relayStartsChildStarter(starts: Pick<RelayStarts, 'start' | 'sta
   }
 }
 
-const reportOf = (ledger: ReturnType<RelayService['read']>, runId: string, relayStatus: string): ChildReport => {
+/** Only the fixed vocabulary the relay records is taken from its session log: an error `code` and a
+ * `call_failed_reason` note's `purpose`/`reason`. Messages, paths and any other free text stay there. */
+const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
+export interface RelayStopFacts { error: string | null; call: { purpose: string; reason: string } | null }
+const STOPPED_STATUSES = new Set(['canceled', 'failed', 'interrupted', 'wrapping_up', 'input_required'])
+const stopSuffix = (facts: RelayStopFacts | null): string => {
+  if (!facts || (facts.error === null && facts.call === null)) return ''
+  return `; stopped: ${[facts.error, facts.call === null ? null : `(${facts.call.purpose} call: ${facts.call.reason})`].filter(Boolean).join(' ')}`
+}
+const stopFactsOf = (log: Pick<SessionLog, 'readAll'>, sessionId: string): RelayStopFacts | null => {
+  try {
+    let error: string | null = null
+    let call: RelayStopFacts['call'] = null
+    for (const event of log.readAll(sessionId, 'person')) {
+      if (event.type === 'error') error = fixed(event.data.code) ? event.data.code : null
+      else if (event.type === 'agent.note') {
+        let note: unknown
+        try { note = JSON.parse(event.data.text) } catch { continue }
+        if (note === null || typeof note !== 'object' || (note as { relay?: unknown }).relay !== 'call_failed_reason') continue
+        const { purpose, reason } = note as { purpose?: unknown; reason?: unknown }
+        call = fixed(purpose) && fixed(reason) ? { purpose, reason } : null
+      }
+    }
+    return error === null && call === null ? null : { error, call }
+  } catch { return null }
+}
+
+const reportOf = (ledger: ReturnType<RelayService['read']>, runId: string, relayStatus: string, stopped: RelayStopFacts | null = null): ChildReport => {
   // The ledger's evidence is an append-only log of gate runs, and the relay re-proves every done item when the plan
   // closes. The lead is told each item's gate once: the newest result at the current head, in plan order.
   const latest = new Map<string, (typeof ledger.evidence)[number]>()
@@ -120,18 +148,21 @@ const reportOf = (ledger: ReturnType<RelayService['read']>, runId: string, relay
     items: ledger.plan.items.map(item => ({ id: item.id, title: item.title, status: ledger.items[item.id] ?? 'open' })),
     gates: current.map(evidence => ({ item: evidence.item, ok: evidence.ok, head: evidence.head, output: evidence.output })),
     head: ledger.head, diffstat: ledger.diffstat, handoff: { ref: `relay:${runId}`, cycle: ledger.cycle },
-    narrative: `relay run status: ${relayStatus}`, openQuestions: ledger.proposals,
+    narrative: `relay run status: ${relayStatus}${stopSuffix(stopped)}`, openQuestions: ledger.proposals,
     metrics: { cycles: ledger.cycle, tokens: ledger.tokens, moneyMicros: ledger.unknownCosts > 0 ? null : ledger.moneyMicros },
   }
 }
 
 /** Reads the relay ledger (a durable, scrubbed fact store) of the relay run started for a child, and nothing else. */
-export function relayStartsChildReporter(starts: Pick<RelayStarts, 'status'>, relay: Pick<RelayService, 'read'>): ChildReporter {
+export function relayStartsChildReporter(starts: Pick<RelayStarts, 'status'>, relay: Pick<RelayService, 'read'>,
+  log?: Pick<SessionLog, 'readAll'>): ChildReporter {
   return {
     report(childRunId: string): ChildReport | null {
       try {
         const status = starts.status(childRunId)
-        return status.runId ? reportOf(relay.read(status.runId), status.runId, status.status) : null
+        if (!status.runId) return null
+        const stopped = log && status.sessionId && STOPPED_STATUSES.has(status.status) ? stopFactsOf(log, status.sessionId) : null
+        return reportOf(relay.read(status.runId), status.runId, status.status, stopped)
       } catch { return null }
     },
   }

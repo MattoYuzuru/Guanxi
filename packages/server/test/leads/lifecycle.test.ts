@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { WAKE_ACCEPTED, wakePrompt } from '../../src/leads/service.ts'
 import { HOUR, brief, leadFixture } from './helpers.ts'
 
 type Fixture = Awaited<ReturnType<typeof leadFixture>>
@@ -7,6 +8,17 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch
 const lifecycle = (f: Fixture, runId: string) => f.kernel.sessionLog!.readAll(runId, 'person').filter(e => e.type === 'run.lifecycle').map(e => e.data as { runId: string; action: string; state: string; wakeSeq: number | null })
 const ledger = (f: Fixture, runId: string) => ({ totals: f.runs().costs(runId), rows: Number(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs WHERE run_id=?').get(runId)!.n) })
 const resumedPrompts = async (f: Fixture) => (await f.events()).filter(e => e.event === 'prompt' && String(e.text).includes('guanxi.wake/v1'))
+
+test('a lead that never delegated is not told its delegation was accepted', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [] } })
+  const { first } = f.start()
+  assert.equal((await first).outcome, 'completed')
+  const prompts = (await f.events()).filter(e => e.event === 'prompt')
+  assert.equal(prompts.length, 1)
+  assert.equal(String(prompts[0]!.text).includes(WAKE_ACCEPTED), false)
+  const packet = 'guanxi.wake/v1 wake=1 kind=resolution run=lead-1'
+  assert.equal(wakePrompt(packet, false), packet, 'no accepted delegation means no fixed sentence')
+})
 
 test('delegate, hibernate and wake: one wake, one resumed turn by session/load, ledger unchanged while asleep', async t => {
   const f = await leadFixture(t)
@@ -59,6 +71,8 @@ test('delegate, hibernate and wake: one wake, one resumed turn by session/load, 
   assert.equal(events.filter(e => e.event === 'session_new').length, 1)
   assert.equal(events.filter(e => e.event === 'session_load').length, 1)
   assert.equal((await resumedPrompts(f)).length, 1)
+  const loadedPrompt = String((await resumedPrompts(f))[0]!.text)
+  assert.ok(loadedPrompt.startsWith(`${WAKE_ACCEPTED}\nguanxi.wake/v1`), 'the loaded turn is told the delegation was accepted before the packet')
   assert.equal(events.filter(e => e.event === 'turn_end' && e.stopReason === 'end_turn').length, 1)
   const actions = lifecycle(f, runId).filter(a => a.runId === runId).map(a => a.action)
   assert.equal(actions.filter(a => a === 'delegated').length, 1)
@@ -97,6 +111,8 @@ test('an agent without loadSession gets a new session seeded with the lead hando
   assert.equal(events.filter(e => e.event === 'session_load').length, 0)
   const resumed = await resumedPrompts(f)
   assert.equal(resumed.length, 1)
+  const seededText = String(resumed[0]!.text)
+  assert.ok(seededText.indexOf(`${WAKE_ACCEPTED}\nguanxi.wake/v1`) > seededText.indexOf('Lead handoff:'), 'the seeded turn is told the delegation was accepted before the packet')
   assert.match(String(resumed[0]!.text), /Lead handoff:\nTask: Fix the failing tests carefully/)
   assert.match(String(resumed[0]!.text), /Delegated objective: Make the fixture tests pass/)
   assert.match(String(resumed[0]!.text), /Your last words before hibernating:\nplanning delegation/)

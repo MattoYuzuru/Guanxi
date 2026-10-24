@@ -412,7 +412,7 @@ export async function start(options: StartOptions = {}) {
       if (relayPolicy && (!relayService || !runs)) throw new Error('leads.relay requires the relay service')
       await kernel.node.plugin(createLeadPlugin({ ...lead, db,
         child: child ?? relayStartsChildStarter(relayService!.publicStarts, { ...relayPolicy!, runs: runs!.store }),
-        ...(lead.reporter || !relayPolicy ? {} : { reporter: relayStartsChildReporter(relayService!.publicStarts, relayService!) }) }))
+        ...(lead.reporter || !relayPolicy ? {} : { reporter: relayStartsChildReporter(relayService!.publicStarts, relayService!, kernel.sessionLog ?? undefined) }) }))
     }
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
