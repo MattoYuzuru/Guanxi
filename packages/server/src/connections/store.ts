@@ -47,12 +47,25 @@ export class ConnectionStore {
           INSERT INTO k3_migrations VALUES(3);`)
       }
       if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=4').get()) {
+        // Append the dotenv name family to the identity. Legacy rows had one openai
+        // identity for both names; treat them as the official OPENAI_API_KEY family.
+        this.db.exec(`
+          CREATE TABLE dotenv_imports_v4(account_id TEXT NOT NULL, provider TEXT NOT NULL, family TEXT NOT NULL, endpoint TEXT NOT NULL,
+            connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,family,endpoint));
+          INSERT INTO dotenv_imports_v4(account_id,provider,family,endpoint,connection_id)
+            SELECT account_id, provider, CASE WHEN provider='openai' THEN 'OPENAI_API_KEY' ELSE provider END, endpoint, connection_id
+            FROM dotenv_imports;
+          DROP TABLE dotenv_imports;
+          ALTER TABLE dotenv_imports_v4 RENAME TO dotenv_imports;
+          INSERT INTO k3_migrations VALUES(4);`)
+      }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=5').get()) {
         // A separate table keeps the connection row (and the append-only cost ledger) intact while
         // hiding the connection from every snapshot and picker. The vault record stays for redaction.
         this.db.exec(`CREATE TABLE IF NOT EXISTS removed_connections(connection_id TEXT PRIMARY KEY REFERENCES connections(id),
           account_id TEXT NOT NULL, removed_at TEXT NOT NULL);
           CREATE INDEX IF NOT EXISTS removed_connections_account ON removed_connections(account_id);
-          INSERT INTO k3_migrations VALUES(4);`)
+          INSERT INTO k3_migrations VALUES(5);`)
       }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }

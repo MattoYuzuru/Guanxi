@@ -202,13 +202,16 @@ export class Ms1LiveNode {
       : c.kind === 'model_api' && c.provider === 'anthropic' && c.auth === 'api_key'
     // Resolve first: a node with no key refuses without ever touching the OS keychain.
     const { connections: all, vault } = connections.snapshot(OWNER)
+    // Imported rows are named from the catalog now; accept the old `<provider> (dotenv)` label as their alias.
+    const matchesLeadName = (c: (typeof all)[number]) => c.id === lead.connection || c.name === lead.connection ||
+      (c.facts.origin?.value === 'provider_key_import' && lead.connection === `${c.provider} (dotenv)`)
     // A key file imported by this boot is the key the owner just handed over: it pays, and no other connection may take its place.
     if (imported !== undefined) {
-      const wanted = lead.connection === undefined ? undefined : all.find(c => c.id === lead.connection || c.name === lead.connection)
+      const wanted = lead.connection === undefined ? undefined : all.find(matchesLeadName)
       if (lead.connection !== undefined && !wanted) throw new Ms1LiveError('lead_connection_not_found', 'home.lead.connection')
       if (wanted && wanted.id !== imported) throw new Ms1LiveError('lead_connection_not_imported', 'home.lead.connection')
     }
-    const named = imported !== undefined ? all.filter(c => c.id === imported) : lead.connection === undefined ? undefined : all.filter(c => c.id === lead.connection || c.name === lead.connection)
+    const named = imported !== undefined ? all.filter(c => c.id === imported) : lead.connection === undefined ? undefined : all.filter(matchesLeadName)
     if (named && named.length === 0) throw new Ms1LiveError('lead_connection_not_found', 'home.lead.connection')
     if (named && named.length > 1) throw new Ms1LiveError('lead_connection_ambiguous', 'home.lead.connection')
     const candidates = named ?? all.filter(c => pays(c) && c.secretRef)

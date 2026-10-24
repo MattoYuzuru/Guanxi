@@ -33,23 +33,31 @@ const fakeKey = () => `test_${randomBytes(32).toString('hex')}`
 async function setup(t: { after(fn: () => unknown): void }, options: { transport?: typeof fetch; pi?: PiTransport; unattended?: boolean; ownerDevice?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k3-'))
   const keys = new Map<string, Buffer>()
+  let keychainReads = 0, transportReads = 0
+  const counts = { keychain: () => keychainReads, transport: () => transportReads,
+    reset: () => { keychainReads = 0; transportReads = 0 } }
   const keychain: VaultKeychain = { key(accountId, create, purpose) {
+    keychainReads++
     const id = JSON.stringify([purpose, accountId])
     if (!keys.has(id) && create) keys.set(id, randomBytes(32))
     if (!keys.has(id)) throw new Error('No wrapping key')
     return Buffer.from(keys.get(id)!)
   } }
+  const transport: typeof fetch = async (input, init) => {
+    transportReads++
+    return (options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }))(input, init)
+  }
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin)
-  await kernel.plugin(ollamaAdapterPlugin, { fetch: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }) })
+  await kernel.plugin(ollamaAdapterPlugin, { fetch: transport })
   let egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
   const config = { databasePath: join(dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
     policy: { ownerDevice: options.ownerDevice ?? true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
-    transport: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }), pi: options.pi }
+    transport, pi: options.pi }
   let handle = await kernel.plugin(connectionsPlugin, config)
   const service = () => kernel.service<Connections>(CONNECTIONS_SERVICE)!
   t.after(async () => { await kernel.dispose(); for (const key of keys.values()) key.fill(0); await rm(dir, { recursive: true, force: true }) })
-  return { dir, kernel, service, config, async restart(freshEgress = false) {
+  return { dir, kernel, service, config, counts, async restart(freshEgress = false) {
     await handle.dispose()
     if (freshEgress) { await egress.dispose(); egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] }) }
     handle = await kernel.plugin(connectionsPlugin, config)
@@ -74,6 +82,27 @@ test('plugin apply ensures exactly one Ollama connection and leaves existing con
   assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama').length, 1)
   assert.deepEqual(after.find(row => row.name === 'Ollama'), before.find(row => row.name === 'Ollama'))
   assert.deepEqual(after.find(row => row.id === manual.id), before.find(row => row.id === manual.id))
+})
+
+test('an existing unattended executor runtime does not stand in for the local Ollama connection', async t => {
+  const f = await setup(t, { unattended: true })
+  const s = f.service()
+  // An upgraded MS1 home: its relay connection exists, but no apply has created Ollama yet.
+  s.store.db.exec('DELETE FROM connections')
+  s.store.create('local', { name: 'ms1-executor', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true })
+  f.counts.reset()
+  await f.restart()
+  const first = f.service().snapshot('local').connections
+  assert.deepEqual(first.map(row => [row.name, row.unattended]).sort(), [['Ollama', false], ['ms1-executor', true]])
+  const auto = first.find(row => row.name === 'Ollama')!
+  assert.equal(auto.facts.origin?.value, 'local_runtime_auto')
+  await f.restart()
+  const after = f.service().snapshot('local').connections
+  assert.equal(after.filter(row => row.name === 'Ollama').length, 1)
+  assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama' && row.name === 'Ollama').length, 1)
+  assert.deepEqual(after.find(row => row.name === 'Ollama'), auto)
+  assert.equal(f.counts.keychain(), 0, 'ensureLocalOllama never reads the keychain')
+  assert.equal(f.counts.transport(), 0, 'ensureLocalOllama never calls Ollama or the network')
 })
 
 test('the Ollama connection lists installed models and returns a typed error when the runtime is down', async t => {
@@ -866,7 +895,7 @@ test('review: pending node-key injection rejects revocation and rotation after a
   unavailable.close(); assert.equal(used, 0)
 })
 
-test('review: migrations 2, 3 and 4 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
+test('review: migrations 2 to 5 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput); const secret = fakeKey()
   await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const before = {
@@ -878,14 +907,23 @@ test('review: migrations 2, 3 and 4 upgrade a version-1 vault without rewriting 
   s.store.db.exec('DROP TABLE dotenv_imports; DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version>=2;')
   await f.restart()
   const next = f.service()
-  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3, 4])
+  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3, 4, 5])
   assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports').get()!.n, 0)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_keys').all(), before.keys)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_secrets').all(), before.secrets)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM connections').all(), before.connections)
+  // A version-3 mapping has no family; append-only migration 4 makes it the official OpenAI family.
+  const legacy = next.store.create(account, { name: 'openai (dotenv)', kind: 'model_api', provider: 'openai', auth: 'api_key' })
+  next.store.db.exec(`DROP TABLE dotenv_imports;
+    CREATE TABLE dotenv_imports(account_id TEXT NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL,
+      connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
+    DELETE FROM k3_migrations WHERE version=4;`)
+  next.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)').run(account, 'openai', '', legacy.id)
+  await f.restart()
+  assert.deepEqual(f.service().store.db.prepare('SELECT family FROM dotenv_imports').all().map(row => row.family), ['OPENAI_API_KEY'])
   assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, true)
-  await next.unlockVault(account)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(next.store.get(account, row.id).secretRef as SecretRef))
+  await f.service().unlockVault(account)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(f.service().store.get(account, row.id).secretRef as SecretRef))
 })
 
 test('review: registry grants and rotates only the current unattended credential, then revokes it atomically', async t => {
