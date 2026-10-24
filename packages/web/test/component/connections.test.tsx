@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { Connection, ConnectionSnapshot } from '@guanxi/contract'
+import { connectionSecretInputSchema, type Connection, type ConnectionSnapshot } from '@guanxi/contract'
 import { ConnectionRequestError } from '../../src/features/connections/api.ts'
 import { ConnectionsPage, ConnectionsView } from '../../src/features/connections/ConnectionsPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
@@ -94,6 +94,31 @@ it('clears the key after a failed save and rolls the half-created connection bac
   expect(secretAttempts).toBe(1)
   expect(methods).toContain(`DELETE /api/connections/${DEEPSEEK}`)
   expect(document.body.textContent).not.toContain(key)
+})
+
+it('keeps an existing connection when a rotation fails and enforces the contract key minimum', async () => {
+  setActiveLocale('en')
+  const calls: string[] = []
+  const minimumKey = 'k'.repeat(connectionSecretInputSchema.shape.value.minLength ?? 1)
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    calls.push(`${init.method} ${url}`)
+    if (url.endsWith('/secret') && init.method === 'PUT') return Response.json({ code: 'vault_locked' }, { status: 423 })
+    throw new Error(`Unexpected request ${url}`)
+  }))
+  render(<ConnectionsView snapshot={snapshot([connection()])} mutate={run} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Replace the key for DeepSeek' }))
+  const dialog = await screen.findByRole('dialog')
+  const field = within(dialog).getByLabelText('API key') as HTMLInputElement
+  const submit = within(dialog).getByRole('button', { name: 'Replace key' }) as HTMLButtonElement
+  fireEvent.change(field, { target: { value: minimumKey.slice(0, -1) } })
+  expect(submit.disabled).toBe(true)
+  fireEvent.change(field, { target: { value: minimumKey } })
+  expect(submit.disabled).toBe(false)
+  await act(async () => fireEvent.click(submit))
+  await waitFor(() => expect(within(dialog).getByRole('alert').textContent).toContain('locked'))
+  expect(calls).toEqual([`PUT /api/connections/${DEEPSEEK}/secret`])
+  expect(field.value).toBe('')
+  expect(screen.getByTestId(`connection-${DEEPSEEK}`)).toBeTruthy()
 })
 
 it('asks for confirmation in a dialog before DELETE and never uses window.confirm', async () => {

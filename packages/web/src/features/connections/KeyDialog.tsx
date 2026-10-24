@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
-import type { Connection, ConnectionErrorCode, ProviderCatalogEntry } from '@guanxi/contract'
+import { connectionSecretInputSchema, type Connection, type ConnectionErrorCode, type ProviderCatalogEntry } from '@guanxi/contract'
 import {
   Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, Icon, IconButton, Input,
 } from '@guanxi/ui'
@@ -25,6 +25,9 @@ function errorCopy(code: ConnectionErrorCode | undefined): string {
   return code ? t(`connections.error.${code}`) : t('connections.error')
 }
 
+/** The wire schema owns the minimum; the dialog must never accept a key the server will reject. */
+const minimumKeyLength = connectionSecretInputSchema.shape.value.minLength ?? 1
+
 /**
  * Add or replace one credential. The key lives in local state only until the request starts:
  * it is cleared before the first await and never rendered back. A failed create is rolled back
@@ -47,7 +50,7 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
   const needsKey = entry.auth === 'api_key'
   const baseUrl = connection?.baseUrl ?? ''
   const defaultName = connection ? connectionLabel(connection) : entry.label
-  const canSubmit = !busy && (!needsKey || key.length > 0)
+  const canSubmit = !busy && (!needsKey || key.length >= minimumKeyLength)
 
   useEffect(() => {
     if (!open) return
@@ -70,7 +73,9 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
           provider: entry.provider,
           auth: entry.auth,
         })
-        createdId = target.id
+        // Only a row created here may be rolled back. A rotation targets an existing,
+        // already-good connection and a failed PUT must never delete it.
+        if (!connection) createdId = target.id
         if (needsKey && value) await connectionApi.secret(target.id, value)
       } catch (error) {
         // A created row with no stored secret would look connected but never work.
