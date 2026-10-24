@@ -24,8 +24,10 @@ auto-created row carries the `origin: local_runtime_auto` fact. An existing row 
 reused only when it has that marker, or when it is named `Ollama` with
 `unattended: false` (rows created before the marker). An unattended local runtime
 such as MS1's `ms1-executor` is not the user-visible Ollama row, so an upgraded MS1
-home still receives one. The row has no secret, never opens the vault and never
-contacts Ollama. `GET /api/connections/:id/models` resolves a local runtime through
+home still receives one. If the owner removes that marked row, a later apply does
+not recreate it: the owner re-adds Ollama from the catalog through the ordinary
+create route. The row has no secret, never opens the vault and never contacts
+Ollama. `GET /api/connections/:id/models` resolves a local runtime through
 the existing Ollama adapter (`/api/tags`), bounded to five seconds and 1,024 IDs; an
 unreachable runtime is the typed `provider_failed` error, not an internal error.
 

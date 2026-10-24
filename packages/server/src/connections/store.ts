@@ -82,6 +82,19 @@ export class ConnectionStore {
     if (!row) throw new ConnectionError('connection_not_found', 'Connection not found')
     return connectionSchema.parse(JSON.parse(String(row.data)))
   }
+  /** The marked auto row including its removal state; `list()` alone cannot tell a removed row from no row. */
+  findAutoLocalOllama(accountId: string): { connection: Connection; removed: boolean } | undefined {
+    const rows = this.db.prepare(`SELECT connections.data,
+        CASE WHEN removed_connections.connection_id IS NULL THEN 0 ELSE 1 END AS removed
+      FROM connections LEFT JOIN removed_connections
+        ON removed_connections.connection_id=connections.id AND removed_connections.account_id=connections.account_id
+      WHERE connections.account_id=? ORDER BY connections.rowid`).all(accountId)
+    for (const row of rows) {
+      const connection = connectionSchema.parse(JSON.parse(String(row.data)))
+      if (connection.kind === 'local_runtime' && connection.provider === 'ollama' &&
+        connection.facts.origin?.value === 'local_runtime_auto') return { connection, removed: Number(row.removed) === 1 }
+    }
+  }
   /** Soft removal: the row and its cost ledger survive, but the connection leaves every list and picker.
    * The dotenv mapping is dropped so a later import creates a new connection; vault records remain so the
    * scrubber still redacts historical output. */

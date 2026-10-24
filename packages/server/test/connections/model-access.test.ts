@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createKernel } from '@guanxi/kernel'
 import { Hono } from 'hono'
-import { createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
+import { connectionSchema, createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
 import type { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
@@ -103,6 +103,30 @@ test('an existing unattended executor runtime does not stand in for the local Ol
   assert.deepEqual(after.find(row => row.name === 'Ollama'), auto)
   assert.equal(f.counts.keychain(), 0, 'ensureLocalOllama never reads the keychain')
   assert.equal(f.counts.transport(), 0, 'ensureLocalOllama never calls Ollama or the network')
+})
+
+test('a removed auto Ollama row stays removed across restarts until the owner re-adds it', async t => {
+  const f = await setup(t)
+  const auto = f.service().snapshot('local').connections.find(row => row.name === 'Ollama')!
+  assert.equal(auto.facts.origin?.value, 'local_runtime_auto')
+  const removed = await connectionRoutes(f.service, 'local').request(`http://localhost/${auto.id}`, { method: 'DELETE' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(f.service().snapshot('local').connections, [])
+  const marked = f.service().store.findAutoLocalOllama('local')
+  assert.equal(marked?.removed, true)
+  assert.equal(marked?.connection.id, auto.id)
+  await f.restart()
+  assert.deepEqual(f.service().snapshot('local').connections, [], 'the apply must not recreate a removed auto row')
+
+  const created = await connectionRoutes(f.service, 'local').request('http://localhost/', { method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none' }) })
+  assert.equal(created.status, 201)
+  const readded = connectionSchema.parse(await created.json())
+  assert.equal(readded.facts.origin?.value, undefined, 'the catalog create route makes an ordinary row')
+  await f.restart()
+  assert.deepEqual(f.service().snapshot('local').connections.map(row => row.id), [readded.id],
+    'a restart reuses the owner re-added row instead of creating another')
 })
 
 test('the Ollama connection lists installed models and returns a typed error when the runtime is down', async t => {

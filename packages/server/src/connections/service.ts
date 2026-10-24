@@ -134,13 +134,19 @@ export class Connections {
     if (this.inUse.has(id)) throw new ConnectionError('connection_in_use', 'Connection is in use by a running call')
     return this.store.remove(accountId, id)
   }
-  /** One user-visible local Ollama connection per account. No secret, vault or Ollama request is involved. */
-  ensureLocalOllama(accountId: string): Connection {
+  /** One user-visible local Ollama connection per account. No secret, vault or Ollama request is involved.
+   * A removed marked row suppresses recreation across restarts; the owner re-adds it from the catalog. */
+  ensureLocalOllama(accountId: string): Connection | undefined {
     this.assertOpen()
     this.store.db.exec('BEGIN IMMEDIATE')
     try {
+      const auto = this.store.findAutoLocalOllama(accountId)
+      if (auto) {
+        this.store.db.exec('COMMIT')
+        return auto.removed ? undefined : auto.connection
+      }
       const existing = this.store.list(accountId).find(row => row.kind === 'local_runtime' && row.provider === 'ollama' &&
-        (row.facts.origin?.value === 'local_runtime_auto' || (row.name === 'Ollama' && !row.unattended)))
+        row.name === 'Ollama' && !row.unattended)
       if (existing) {
         this.store.db.exec('COMMIT')
         return existing

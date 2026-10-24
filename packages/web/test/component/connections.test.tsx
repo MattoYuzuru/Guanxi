@@ -38,6 +38,40 @@ it('switches catalog categories and counts connected providers, not rows', () =>
   expect(screen.getByText('Connected (1)')).toBeTruthy()
 })
 
+it('says the auto Ollama row stays removed until it is connected from the catalog', async () => {
+  setActiveLocale('en')
+  const auto = connection({ id: LOCAL, name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', secretRef: null,
+    facts: { origin: { value: 'local_runtime_auto', source: 'connection_apply', observedAt: '2026-10-20T00:00:00.000Z', confidence: 'high' } } })
+  render(<ConnectionsView snapshot={snapshot([auto])} mutate={run} />)
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Provider categories' })).getByRole('button', { name: /Local runtimes/u }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Ollama' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(/stays removed, even after a restart/u)).toBeTruthy()
+  expect(within(dialog).getByText(/Sessions, roles and leads bound to this connection will fail/u)).toBeTruthy()
+})
+
+it('re-creates Ollama from the catalog when it has no live row', async () => {
+  setActiveLocale('en')
+  const calls: { method: string; url: string; body: unknown }[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    calls.push({ method: init.method ?? 'GET', url, body: init.body ? JSON.parse(String(init.body)) : undefined })
+    if (url === '/api/connections' && init.method === 'POST') return Response.json(connection({
+      id: LOCAL, name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', secretRef: null, facts: {},
+    }), { status: 201 })
+    throw new Error(`Unexpected request ${url}`)
+  }))
+  render(<ConnectionsView snapshot={empty} mutate={run} />)
+  const rail = screen.getByRole('navigation', { name: 'Provider categories' })
+  fireEvent.click(within(rail).getByRole('button', { name: /Local runtimes/u }))
+  fireEvent.click(within(screen.getByRole('article', { name: 'Ollama' })).getByRole('button', { name: 'Connect' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).queryByLabelText('API key')).toBeNull()
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Connect' })))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(calls).toEqual([{ method: 'POST', url: '/api/connections',
+    body: { name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none' } }])
+})
+
 it('adds a key with create + secret, closes the dialog and never renders the key back', async () => {
   setActiveLocale('en')
   const key = 'sk-test-fixture-key'

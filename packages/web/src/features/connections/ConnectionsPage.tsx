@@ -47,6 +47,9 @@ function originLabel(connection: Connection): string {
 }
 
 const PROBE_PROVIDERS = new Set<Connection['provider']>(['openrouter', 'deepseek'])
+/** The apply-created Ollama row: its removal is durable until the owner connects it from the catalog. */
+const isAutoLocalOllama = (connection: Connection) => connection.kind === 'local_runtime' &&
+  connection.provider === 'ollama' && connection.facts.origin?.value === 'local_runtime_auto'
 
 function ConnectionRow({ connection, busy, vaultUnlocked, modelCount, onRotate, onRemove, onModels, run }: {
   connection: Connection
@@ -223,7 +226,7 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
     {removing && <Dialog open={removeOpen} onOpenChange={open => { setRemoveOpen(open); if (!open) setRemoveFailure(undefined) }}>
       <DialogContent>
         <DialogTitle>{translate('connections.remove.title', { name: connectionLabel(removing) })}</DialogTitle>
-        <DialogDescription>{translate('connections.remove.description')}</DialogDescription>
+        <DialogDescription>{translate(isAutoLocalOllama(removing) ? 'connections.remove.autoDescription' : 'connections.remove.description')}</DialogDescription>
         {removeFailure && <p role="alert" className="text-12 text-danger">{translate(`connections.error.${removeFailure}`)}</p>}
         <DialogFooter>
           <DialogClose render={<Button variant="secondary" type="button" />}>{translate('connections.remove.cancel')}</DialogClose>
