@@ -18,6 +18,8 @@ const git = async (root: string, args: string[]) => (await new Promise<string>((
  * A relay command must therefore name the checkout itself (the acceptance gate does), or `node --test
  * test/…` would be resolved in the empty scratch directory. */
 const sandbox: typeof sandboxCommand = (policy, command, _signal, _timeout, fixed) => new Promise(resolve => {
+  // A command the owner killed (signal, no exit code) is marked by this token in the fixture.
+  if (command.includes('__killed__')) return resolve(commandOutput(null, [], [], false))
   execFile('/bin/sh', ['-c', command], { cwd: policy.scratch, env: { ...process.env, HOME: policy.scratch, TMPDIR: policy.scratch }, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
     (error, stdout, stderr) => resolve(commandOutput(error ? Number((error as { code?: unknown }).code ?? 1) : 0, [stdout], [stderr], false)))
 })
@@ -52,5 +54,7 @@ test('a relay shell runs in its checkout, so node --test and fixed reads resolve
     const failed = JSON.parse(await w.tool('shell', { command: 'echo boom >&2; exit 3' })) as { code: number; stderr: string }
     assert.equal(failed.code, 3)
     assert.match(failed.stderr, /boom/)
+    // A command without an exit code (killed by a signal) is still a failed tool, never a result.
+    await assert.rejects(w.tool('shell', { command: 'sleep 1 # __killed__' }), /tool_failed/)
   } finally { handle.close(); f.close(); await rm(parent, { recursive: true, force: true }) }
 })

@@ -338,8 +338,11 @@ decoded under a JSON Schema, and the schema is a pinned part of the request, not
   copied `{action:tool,name,args}` with unquoted keys) spaced after the colon so they cannot be mistaken for the relay's own compact
   turns, and it says once that arguments are strings and that `more:true` continues at `offset=nextOffset`. The probe prompt names only
   what the handoff shows: `nextItem` is the strip's `current` and `nextStatus` is the strip's `currentStatus` (both null when there is no
-  current item), so the probe no longer invents an `open` list beside the handoff. The check itself, its inputs and its expected values
-  are unchanged. The B1 bench does not exist yet: these prompt edits are minimal and factual, and carry no bench result.
+  current item), so the probe no longer invents an `open` list beside the handoff. The strip's following item is named `queued`, not
+  `next` (a 27B model asked for `nextItem` copied `next`). The expected values are unchanged; the strip's inputs gained `currentStatus`
+  and the renamed key, so a run sealed before these changes resumes once through the degraded path (its sealed strip no longer equals
+  the recomputed one): one forced probe retry, no data loss. The B1 bench does not exist yet: these prompt edits are minimal and
+  factual, and carry no bench result.
 - **A rejected schema.** A `/completion` refused (4xx or 500) while a `json_schema` was sent is `llama_server_schema_rejected`, then
   `response_schema_rejected` (never `runtime_identity_unknown`). K3 keeps a trusted transport's fixed refusal code as `ConnectionError.reason`
   (message and `code: provider_failed` are unchanged), so the executor's `call_failed_reason` note, the signed terminal `reason` and the
