@@ -69,9 +69,10 @@ unreachable runtime is the typed `provider_failed` error, not an internal error.
   HTTP is limited to loopback or an opted-in private LAN; public endpoints require HTTPS;
   credentials, query strings and fragments are refused. Only that root's `/models` and
   `/chat/completions` paths receive its key; redirects are refused. An imported root with a different secret
-  creates a separate connection. Reimporting the same secret with another root
-  reuses its connection and updates that root, preserving the endpoint identity of
-  existing Chats.
+  creates a separate connection. Reimporting the same `OPENAI_API_KEY` with another
+  `OPENAI_API_URL` moves that connection — and therefore every Chat bound to its id —
+  to the new root, because the owner's file now names it. The discovered-models cache
+  entry is discarded with the old root.
   Anthropic OAuth tokens are rejected globally, including under another provider's name.
   Anthropic's own connection additionally requires its API-key token family.
 - Google uses pi-ai's native SDK transport because that adapter rejects custom fetch. Its

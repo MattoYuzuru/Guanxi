@@ -183,6 +183,21 @@ test('custom connection discovers models with explicit credentials, refuses redi
   assert.equal(f.service.snapshot('local').connections[0]!.baseUrl, 'https://api.example.invalid')
 })
 
+test('a re-import that moves the root invalidates the discovered models cache', async t => {
+  const calls: string[] = [], key = canary()
+  const f = await setup(t, undefined, async url => {
+    calls.push(String(url))
+    return Response.json({ data: [{ id: new URL(String(url)).hostname === 'one.example.invalid' ? 'one-model' : 'two-model' }] })
+  })
+  const id = await imported(f.service, key, 'https://one.example.invalid/v1')
+  assert.deepEqual((await f.service.chatModels('local', id)).models, ['one-model'])
+  assert.equal(calls.length, 1)
+  const moved = await f.service.importKeys('local', [{ provider: 'openai', family: 'OPENAI_API_KEY', value: key, baseUrl: 'https://two.example.invalid/v1' }])
+  assert.equal(moved.imported[0]!.connectionId, id)
+  assert.deepEqual((await f.service.chatModels('local', id)).models, ['two-model'])
+  assert.deepEqual(calls, ['https://one.example.invalid/v1/models', 'https://two.example.invalid/v1/models'])
+})
+
 test('custom discovery failure is explicitly unknown and locked/service/keyless connections are absent from picker', async t => {
   let requests = 0
   const { service } = await setup(t, undefined, async () => { requests++; throw new Error('offline') })

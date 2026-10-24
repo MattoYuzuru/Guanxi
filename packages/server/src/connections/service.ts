@@ -229,9 +229,11 @@ export class Connections {
                 entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : {}, name)
             // The mapping follows the connection's current root. A stale alias must not let a
             // later import with a different secret rotate this connection instead of creating one.
-            if (endpointChanged)
+            if (endpointChanged) {
+              this.discovered.delete(connection.id)
               this.store.db.prepare('DELETE FROM dotenv_imports WHERE account_id=? AND provider=? AND connection_id=?')
                 .run(accountId, entry.provider, connection.id)
+            }
           }
           if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
           this.store.db.prepare('INSERT OR REPLACE INTO dotenv_imports(account_id,provider,family,endpoint,connection_id) VALUES(?,?,?,?,?)')
