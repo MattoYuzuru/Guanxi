@@ -445,10 +445,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 14,
+        "count": 16,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/connections/ConnectionsPage.tsx",
+          "packages/web/src/features/connections/KeyDialog.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
@@ -967,8 +969,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 4,
         "files": [
+          "packages/web/src/features/connections/ConnectionsPage.tsx",
+          "packages/web/src/features/connections/KeyDialog.tsx",
           "packages/web/src/features/session/SessionPanelsMenu.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx"
         ]
@@ -1264,13 +1268,16 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 20,
+        "count": 23,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/agent/WorkspacePicker.tsx",
           "packages/web/src/features/catalog/DeveloperSettings.tsx",
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/connections/ConnectionsPage.tsx",
+          "packages/web/src/features/connections/KeyDialog.tsx",
+          "packages/web/src/features/connections/ModelsPopover.tsx",
           "packages/web/src/features/context/ContextPanel.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/models/CatalogVariantInstall.tsx",
@@ -1463,10 +1470,13 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 14,
+        "count": 17,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/connections/ConnectionsPage.tsx",
+          "packages/web/src/features/connections/KeyDialog.tsx",
+          "packages/web/src/features/connections/ModelsPopover.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/models/Facts.tsx",
           "packages/web/src/features/models/ModelCard.tsx",
@@ -1589,8 +1599,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 6,
+        "count": 8,
         "files": [
+          "packages/web/src/features/connections/KeyDialog.tsx",
+          "packages/web/src/features/connections/ModelsPopover.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/session/SessionPanelsMenu.tsx",
@@ -2107,9 +2119,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 8,
+        "count": 9,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/connections/ModelsPopover.tsx",
           "packages/web/src/features/models/Facts.tsx",
           "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
@@ -2343,8 +2356,9 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 3,
+        "count": 4,
         "files": [
+          "packages/web/src/features/connections/ConnectionsPage.tsx",
           "packages/web/src/features/session/SessionPanelsAside.tsx",
           "packages/web/src/features/shell/ShellCustomise.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx"
