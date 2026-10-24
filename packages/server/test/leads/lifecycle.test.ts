@@ -165,7 +165,9 @@ test('an escalation wakes the lead without resolving the promise, and the comple
   assert.equal(run.promises(runId)[0]!.outcome, null, 'an escalation never resolves the promise')
   assert.equal(run.get(runId).state, 'waiting_children', 'the lead yields again because its child is still pending')
   assert.equal((await resumedPrompts(f)).length, 1)
-  assert.match(String((await resumedPrompts(f))[0]!.text), /kind=escalation[\s\S]*outcome: pending/)
+  const escalationPrompt = String((await resumedPrompts(f))[0]!.text)
+  assert.match(escalationPrompt, /kind=escalation[\s\S]*outcome: pending/)
+  assert.equal(escalationPrompt.includes(WAKE_ACCEPTED), false, 'an escalation is not a resolution of work that ran')
   f.children.complete()
   f.lead().pump()
   await f.lead().idle()
@@ -175,6 +177,35 @@ test('an escalation wakes the lead without resolving the promise, and the comple
   assert.equal(run.promises(runId).filter(p => p.outcome === 'completed').length, 1)
   assert.equal((await resumedPrompts(f)).length, 2)
   assert.equal(lifecycle(f, runId).filter(a => a.runId === runId && a.action === 'resolved').length, 1)
+})
+
+test('a resolution wake for a child that never started does not say the work ran', async t => {
+  const f = await leadFixture(t)
+  // Stop the first child start before R1 records its attempt: the lead still promised the child, and its resolution
+  // is a real wake whose packet says zero attempts. (A normal child always has one by the time it can resolve.)
+  const runs = f.runs(), realStart = runs.start.bind(runs)
+  let unstarted = false
+  runs.start = ((runId: string) => {
+    if (!unstarted && runId !== 'lead-1') {
+      unstarted = true
+      return { ...runs.attempts('lead-1')[0]!, run_id: runId, id: 'unstarted-child-attempt' }
+    }
+    return realStart(runId)
+  }) as typeof runs.start
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'hibernated')
+  runs.start = realStart
+  const child = runs.promises(runId)[0]!.child_id
+  assert.equal(f.children.launches.length, 1, 'the child starter ran, but no attempt was durably started')
+  assert.equal(runs.attempts(child).length, 0)
+  runs.cancel(child)
+  f.lead().pump()
+  await f.lead().idle()
+  assert.deepEqual(runs.wakes(runId).map(w => w.kind), ['resolution'])
+  const prompts = await resumedPrompts(f)
+  assert.equal(prompts.length, 1)
+  assert.match(String(prompts[0]!.text), /kind=resolution/)
+  assert.equal(String(prompts[0]!.text).includes(WAKE_ACCEPTED), false, 'a child cancelled before its start never ran')
 })
 
 test('a deadline wakes the lead although the child never finishes, with the wrap-up report requested', async t => {

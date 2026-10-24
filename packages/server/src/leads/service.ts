@@ -589,7 +589,10 @@ export class LeadService {
       return this.deferWake(attempt, code(error))
     }
     this.fault('wake:packet_built')
-    const text = wakePrompt(renderWakePacket(JSON.parse(row!.packet) as LeadWakePacket), this.runs.promises(runId).length > 0)
+    const packet = JSON.parse(row!.packet) as LeadWakePacket
+    // The fixed sentence says the work ran while the lead slept. Only a resolution of a child that had an attempt can
+    // say that: an escalation or quota wake leaves the child pending, and a child cancelled before its start never ran.
+    const text = wakePrompt(renderWakePacket(packet), packet.kind === 'resolution' && packet.child.attempts > 0)
     const resume = this.loadable(session)
     return this.runTurn({ attempt, kind: 'wake', wakeSeq, prompt: text, resume, seededPrompt: `${this.seedPrefix(session)}\n\n${text}` })
   }

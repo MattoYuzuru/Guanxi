@@ -63,10 +63,11 @@ protocol) before any update, the wake and packet are kept, the attempt yields, a
 emitted and a back-off applies. The run policy's named `fallback` binding, if any, is tried first, with a
 seeded session; there is no automatic fallback otherwise. A failure after the acknowledgement moves the run
 to `input_required` and is never replayed; `resume(runId, prompt)` is the explicit continuation, also for a
-lead `interrupted` by a restart. A wake after an accepted delegation of this lead starts with one fixed English
-sentence saying the delegate call was accepted, the work ran while the lead hibernated, and the interrupted
-tool call was hibernation, not a refusal; the packet follows it. A lead that never delegated is not given that
-sentence, and `guanxi.wake/v1` is unchanged.
+lead `interrupted` by a restart. A resolution wake for an accepted delegation of this lead whose child actually started (the packet records an
+attempt) begins with one fixed English sentence saying the delegate call was accepted, the work ran while the lead
+hibernated, and the interrupted tool call was hibernation, not a refusal; the packet follows it. Escalation and
+quota wakes, a child cancelled before its start, and a lead that never delegated are not given that sentence, and
+`guanxi.wake/v1` is unchanged.
 
 ## Wake packet
 
