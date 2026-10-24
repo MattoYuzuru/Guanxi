@@ -18,6 +18,7 @@ import { ChatPage } from './features/chat/ChatPage.tsx'
 import { SettingsPage } from './features/settings/SettingsPage.tsx'
 import { DeveloperCatalogPage } from './features/catalog/DeveloperCatalogPage.tsx'
 import { ProjectsPage } from './features/projects/ProjectsPage.tsx'
+import { ConnectionsPage } from './features/connections/ConnectionsPage.tsx'
 import { QuickRunsPage } from './features/quick-runs/QuickRunsPage.tsx'
 import { RecipesPage } from './features/recipes/RecipesPage.tsx'
 import { AttachmentsPage } from './features/attachments/AttachmentsPage.tsx'
@@ -82,6 +83,7 @@ export function App() {
         {route.name === 'quickRuns' && <QuickRunsPage />}
         {route.name === 'recipes' && <RecipesPage />}
         {route.name === 'attachments' && <AttachmentsPage />}
+        {route.name === 'connections' && <ConnectionsPage />}
         {route.name === 'settings' && <SettingsPage />}
         {route.name === 'developerComponents' && <DeveloperCatalogPage />}
         {route.name === 'voiceGlossary' && <GlossaryPage />}

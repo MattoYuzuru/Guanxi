@@ -142,6 +142,8 @@ function breadcrumb(route: Route): string {
       return t('recipes.navigation')
     case 'attachments':
       return t('attachments.navigation')
+    case 'connections':
+      return t('shell.connections')
     case 'settings':
       return t('app.navigation.settings')
     case 'developerComponents':
