@@ -30,6 +30,7 @@ it('new session defaults to Read-only, exposes zero-root scratch state and submi
     if (String(url) === '/api/connections') return Response.json({ connections: [{ id: '11111111-1111-4111-8111-111111111111', accountId: 'local', name: 'Fixture', kind: 'model_api',
       provider: 'deepseek', auth: 'api_key', unattended: false, secretRef: null, facts: {}, createdAt: '2026-10-21T00:00:00.000Z', balance: null }], costs: [], vault: { unlocked: false, unattendedAvailable: false } })
     if (String(url) === '/api/agent') { requests.push(JSON.parse(String(init.body))); return Response.json({ sessionId: 'session' }) }
+    if (String(url) === '/api/connections/11111111-1111-4111-8111-111111111111/models') return Response.json({ models: [] })
     throw new Error('Unexpected request')
   }))
   render(<NativeAgentPage sessionId={null} />)
@@ -48,7 +49,9 @@ it('new session defaults to Read-only, exposes zero-root scratch state and submi
   fireEvent.click(screen.getByRole('button', { name: 'Access: Full access' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Read-only' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Access: Read-only' })).toBeTruthy())
-  fireEvent.click(screen.getByRole('button', { name: 'Choose a model' }))
+  // The only connection is preselected; the catalog picker lists its models and keeps a typed ID as the fallback.
+  fireEvent.click(screen.getByRole('button', { name: /^Model connection: / }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Other model ID…' }))
   fireEvent.change(await screen.findByLabelText('Model ID'), { target: { value: 'fixture' } })
   fireEvent.change(screen.getByLabelText('What should the agent do?'), { target: { value: 'Inspect' } })
   fireEvent.click(screen.getByRole('button', { name: 'Start session' }))
@@ -135,7 +138,9 @@ it.each(['en', 'ru'] as const)('delete uses the contract once, describes discard
   render(<NativeAgentPage sessionId="session" />)
   fireEvent.click(await screen.findByRole('button', { name: locale === 'en' ? 'Session info' : 'О сессии' }))
   const button = await screen.findByRole('button', { name: locale === 'en' ? 'Delete session' : 'Удалить сессию' })
-  expect(button.getAttribute('aria-describedby')).toBe('native-delete-description')
+  // The description is referenced by a generated id (useId), so assert the relation.
+  expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent)
+    .toMatch(locale === 'en' ? /Permanently removes this session/ : /Безвозвратно удаляет сессию/)
   expect(screen.getByText(locale === 'en' ? /Permanently removes this session/ : /Безвозвратно удаляет сессию/)).toBeTruthy()
   fireEvent.click(button)
   await screen.findByRole('alert')
@@ -253,6 +258,20 @@ function stubTimeline(overrides: { status?: AgentProgress['status']; events?: un
   return requests
 }
 
+it('the plan heading is one word with its caveat behind an info control, and an empty queue has no heading (visual pass)', async () => {
+  setActiveLocale('en')
+  const view = render(<NativeProgress progress={{ ...progress, queue: [] }} remove={() => {}} />)
+  expect(screen.getAllByRole('heading', { name: 'Plan' })).toHaveLength(1)
+  expect(screen.queryAllByText(/verification required/u)).toHaveLength(0)
+  expect(screen.queryAllByRole('heading', { name: 'Prompt queue' })).toHaveLength(0)
+  const about = screen.getByRole('button', { name: 'About the plan' })
+  fireEvent.click(about)
+  const dialog = await screen.findByRole('dialog', { name: 'About the plan' })
+  expect(dialog.textContent).toContain('The agent reports this plan; verify its steps before relying on them.')
+  view.unmount()
+  render(<NativeProgress progress={progress} remove={() => {}} />)
+  expect(screen.getAllByRole('heading', { name: 'Prompt queue' })).toHaveLength(1)
+})
 it('the session header is the title with its project as a breadcrumb, not "Session progress"', async () => {
   setActiveLocale('en')
   stubTimeline({ title: 'Fix the nightly build', events: [logEvent(1, 'prompt', 'Why does it fail?')] })
@@ -310,7 +329,8 @@ it('each message has a named icon rail: trace link, one details popover and copy
     expect(within(rail).getAllByRole('link').map(link => link.getAttribute('aria-label') ?? link.textContent)).toEqual(['Show in trace'])
     expect(within(rail).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Message details', 'Copy message'])
   }
-  expect(within(rails[1]!).getByRole('link').getAttribute('href')).toBe('/inspector/session')
+  // Each turn's trace link opens the trace at that turn's own event (P3).
+  expect(rails.map(rail => within(rail).getByRole('link').getAttribute('href'))).toEqual(['/inspector/session?event=1', '/inspector/session?event=7'])
   fireEvent.click(within(rails[1]!).getByRole('button', { name: 'Message details' }))
   const dialog = await screen.findByRole('dialog', { name: 'Message details' })
   expect(screen.getAllByRole('dialog')).toHaveLength(1)

@@ -53,3 +53,9 @@ The popover uses the shared pop transition; under reduced motion it only fades.
 
 - Do render unknown as unknown, with the source that would answer it.
 - Don't add a Refresh button to a popover; the data stays current by itself (D-203).
+
+## In a labelled list
+
+Inside a phone overflow sheet (the app shell's narrow overflow) a StatusItem shows its label as
+text between the icon and the value, and it has no hover tooltip; an unknown item says Unknown.
+The accessible name is the same as in the strip.

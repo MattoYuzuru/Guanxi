@@ -6,12 +6,11 @@ import { translate as t } from '../../lib/locale.ts'
 import { useRoute, type Route } from '../../lib/router.tsx'
 import { NotificationBell } from '../notifications/NotificationBell.tsx'
 import { NotificationsProvider } from '../notifications/NotificationsProvider.tsx'
-import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
 import { MaxGraphics } from './MaxGraphics.tsx'
 import { ShellCustomise, ShellThemeToggle } from './ShellCustomise.tsx'
 import { ShellPalette } from './ShellPalette.tsx'
 import { ShellSidebar } from './ShellSidebar.tsx'
-import { ShellBreadcrumb, ShellStatusItems } from './ShellStatus.tsx'
+import { ShellBreadcrumb, ShellRuntimeStatusItems } from './ShellStatus.tsx'
 import { useShellController } from './useShellController.ts'
 
 /** The platform's palette shortcut keys; machine values, not translated. */
@@ -44,7 +43,6 @@ function Shell({
 }) {
   const shell = useShellController()
   const route = useRoute()
-  const runtime = useRuntimeProjection()
   const labels: AppShellLabels = {
     show: t('shell.sidebar.show'),
     collapse: t('shell.sidebar.rail'),
@@ -87,9 +85,8 @@ function Shell({
         status={<ShellBreadcrumb page={breadcrumb(route)} />}
         actions={
           <>
-            <ShellStatusItems
-              runtime={runtime.data}
-              stale={runtime.error !== null && runtime.data !== null}
+            {/* Only the status items read the runtime sample, so a poll re-renders them alone (P2). */}
+            <ShellRuntimeStatusItems
               health={health}
               healthStale={healthStale}
               inbox={<NotificationBell />}
@@ -142,6 +139,8 @@ function breadcrumb(route: Route): string {
       return t('recipes.navigation')
     case 'attachments':
       return t('attachments.navigation')
+    case 'connections':
+      return t('shell.connections')
     case 'settings':
       return t('app.navigation.settings')
     case 'developerComponents':

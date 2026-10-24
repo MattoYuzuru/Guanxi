@@ -1,7 +1,7 @@
 # External leads: delegation, hibernation and wake (LW)
 
 **Status:** implemented as a trusted opt-in kernel service; fixture-validated, no real vendor CLI,
-account, network or model · **Updated:** 2026-10-23 · Plan: [LW plan](../../../../docs/plans/lanes/LW.plan.md)
+account, network or model · **Updated:** 2026-10-24 · Plan: [LW plan](../../../../docs/plans/lanes/LW.plan.md)
 
 `guanxi.external-leads` provides `lead.external`. A lead is an ACP v1 agent run by K5
 ([external agents](../external-agents/README.md)) that decides to delegate through one tool,
@@ -48,7 +48,10 @@ refused. One delegation per turn. The agent must advertise `mcpCapabilities.http
 (`mcp_http_unsupported` otherwise). ACP's unstable `acp` MCP transport is a possible later carrier.
 The input is `leadDelegateInputSchema` in `packages/contract`: objective, definition of done, relay plan with
 acceptance commands, caps, executor connection/model, relative `deadlineMs`, `onDeadline`, `onCancel`.
-Identity, roots, network, judges and wake policy are node-owned and refused if sent.
+Identity, roots, network, judges and wake policy are node-owned and refused if sent. When the host configures
+`executors`, `tools/list` appends `Allowed executors on this node: connectionId=<id> model=<model>` for each entry,
+so the lead no longer guesses; MS1 passes the single executor its `validateExecutor` allows. The validation itself
+is unchanged.
 
 ## Resume (ADR-0019 decision 9)
 
@@ -60,7 +63,11 @@ protocol) before any update, the wake and packet are kept, the attempt yields, a
 emitted and a back-off applies. The run policy's named `fallback` binding, if any, is tried first, with a
 seeded session; there is no automatic fallback otherwise. A failure after the acknowledgement moves the run
 to `input_required` and is never replayed; `resume(runId, prompt)` is the explicit continuation, also for a
-lead `interrupted` by a restart.
+lead `interrupted` by a restart. A resolution wake for an accepted delegation of this lead whose child actually started (the packet records an
+attempt) begins with one fixed English sentence saying the delegate call was accepted, the work ran while the lead
+hibernated, and the interrupted tool call was hibernation, not a refusal; the packet follows it. Escalation and
+quota wakes, a child cancelled before its start, and a lead that never delegated are not given that sentence, and
+`guanxi.wake/v1` is unchanged.
 
 ## Wake packet
 
@@ -70,7 +77,13 @@ and never a trace. The reporter hands over one gate result per item, the newest 
 order: the relay ledger's evidence is a log of gate runs and the relay re-proves every item when its plan closes. The budget is 4000 tokens counted as `ceil(utf8 bytes / 3)`, a conservative bound, not a
 model tokenizer. Reductions run in a fixed order and each is listed in `truncated`. Text is scrubbed before
 clipping and the finished packet is scrubbed and parsed again. `relayStartsChildReporter` reads the relay
-ledger of the relay run started for a child through `RelayService.read` only.
+ledger of the relay run started for a child through `RelayService.read` only. When the relay run stopped, the
+narrative also carries its last fixed failure code and the last `call_failed_reason` note's fixed
+`purpose`/`reason` (for example `relay run status: input_required; stopped: model_failed (work call:
+runtime_meter_unavailable)`), read only from the relay run's own session-log events: relay events carry its run id
+and `run.lifecycle` carries `data.runId`, so an `rc-*` child event that shares the session is never taken for the
+relay's. `wrapping_up` is a working state, not a stop, and carries no stop facts. Messages, paths and other free
+text are never copied.
 
 ## Relay adapter
 

@@ -9,7 +9,7 @@
  * Nothing mounts, hovers, focuses, navigates, reloads or exports its way into a
  * mutation. Every change needs an explicit action plus an explicit confirmation.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useId, useEffect, useRef, useState } from 'react'
 import type {
   ModelCapability,
   ModelCapabilityOverride,
@@ -78,6 +78,9 @@ export function CapabilityOverrides({
   /** A drift conflict from before the re-read, still shown so the user knows nothing changed. */
   carriedOutcome?: ModelCapabilityOverrideOutcome | null
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { capabilityOverrideDraft: `${idBase}-capability-override-draft`, capabilityOverrideConfirmation: `${idBase}-capability-override-confirmation` }
   const [overrides, setOverrides] = useState<ModelCapabilityOverride[]>(
     model.descriptor.overrides,
   )
@@ -331,14 +334,14 @@ export function CapabilityOverrides({
       <div className="flex min-w-0 flex-wrap items-end gap-2">
         <div className="min-w-0">
           <label
-            htmlFor="capability-override-draft"
+            htmlFor={ids.capabilityOverrideDraft}
             className="block text-2xs font-medium"
           >
             {translate('models.override.capability.label')}
           </label>
           <div className="mt-1">
             <Select
-              id="capability-override-draft"
+              id={ids.capabilityOverrideDraft}
               value={draft}
               onChange={(next) => setDraft(modelCapabilitySchema.parse(next))}
               disabled={identity === null || pending || addable.length === 0}
@@ -399,7 +402,7 @@ export function CapabilityOverrides({
             ? 'models.override.confirm.removeTitle'
             : 'models.override.confirm.addTitle',
         )}
-        describedBy="capability-override-confirmation"
+        describedBy={ids.capabilityOverrideConfirmation}
         initialFocusRef={confirmRef}
         returnFocusRef={returnFocusRef}
         closeLabel={translate('models.override.confirm.close')}
@@ -425,7 +428,7 @@ export function CapabilityOverrides({
         }
       >
         <div
-          id="capability-override-confirmation"
+          id={ids.capabilityOverrideConfirmation}
           className="space-y-2 text-xs text-secondary"
         >
           <p>

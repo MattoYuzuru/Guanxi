@@ -144,8 +144,11 @@ test('installed evidence stays truthful, localized, keyboard and constrained-lay
   })
 
   await page.goto('/')
+  // The card keeps one caution badge; the evidence facts sit in its details popover (visual pass 3).
   await expect(page.getByText('Неполные данные')).toBeVisible()
-  await expect(page.getByText('Ollama /api/tags + Ollama /api/show')).toBeVisible()
+  await page.getByRole('button', { name: 'Подробности о модели' }).click()
+  await expect(page.getByRole('dialog', { name: 'Подробности о модели' }).getByText('Ollama /api/tags + Ollama /api/show')).toBeVisible()
+  await page.keyboard.press('Escape')
   const installedModels = page.getByRole('group', { name: 'Установленные модели' })
   await expect(installedModels.getByText('completion')).toHaveCount(0)
   const profile = page.getByRole('link', { name: 'fixture:latest' }).first()

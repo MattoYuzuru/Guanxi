@@ -4,7 +4,7 @@
  * Preset slider uses the bounded server projection. A custom value performs one
  * explicit on-demand request, so suggestions never become a hidden whitelist.
  */
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import type { FitVerdict, Health, ModelCapabilityOverrideOutcome, ModelDetail, RunningModel } from '@guanxi/contract'
 import { DEFAULT_CHAT_NUM_CTX } from '@guanxi/contract'
 import { api, errorMessage } from '../../lib/api.ts'
@@ -100,6 +100,9 @@ function ModelProfile({
   carriedOutcome: ModelCapabilityOverrideOutcome | null
   requestedContext?: number
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { modelCustomContext: `${idBase}-model-custom-context`, modelCustomContextHint: `${idBase}-model-custom-context-hint` }
   /* Слайдер ходит по тем окнам, для которых сервер прислал вердикт. */
   const contextValues = useMemo(() => {
     const values = model.fitByContext.map((verdict) => verdict.contextLength).sort((a, b) => a - b)
@@ -283,19 +286,19 @@ function ModelProfile({
             />
 
             <div className="mt-2">
-              <label htmlFor="model-custom-context" className="text-2xs font-medium">
+              <label htmlFor={ids.modelCustomContext} className="text-2xs font-medium">
                 {translate('context.custom.label')}
               </label>
               <div className="mt-1 flex min-w-0 gap-1.5">
                 <Input
-                  id="model-custom-context"
+                  id={ids.modelCustomContext}
                   type="number"
                   min={1}
                   step={1}
                   inputMode="numeric"
                   value={contextDraft}
                   aria-invalid={contextError !== null}
-                  aria-describedby="model-custom-context-hint"
+                  aria-describedby={ids.modelCustomContextHint}
                   onChange={(event) => setContextDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter') return
@@ -307,7 +310,7 @@ function ModelProfile({
                   {translate('context.custom.apply')}
                 </Button>
               </div>
-              <p id="model-custom-context-hint" className="mt-1 text-2xs text-muted">
+              <p id={ids.modelCustomContextHint} className="mt-1 text-2xs text-muted">
                 {translate('context.custom.hint')}
               </p>
               {contextError ? (

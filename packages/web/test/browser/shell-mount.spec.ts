@@ -157,7 +157,7 @@ test('mounts one shell and one slot around actual chat, workspace and non-chat r
   expect(await page.getByRole('link', { name: 'Chat', exact: true }).count()).toBe(0)
   expect(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link').evaluateAll(
     links => links.map(link => link.getAttribute('href')),
-  )).toEqual(['/agent', '/projects', '/', '/settings'])
+  )).toEqual(['/agent', '/projects', '/', '/connections', '/settings'])
   // D-202/D-204: icon status items, no mode chips, no runtime bar. Items with no source on the node
   // (quota, keep-awake, power) are not shown rather than as permanent Unknown icons (P3).
   await expect(page.getByRole('button', { name: /: Unknown$/u })).toHaveCount(0)
@@ -367,10 +367,10 @@ for (const locale of ['en', 'ru'] as const) {
     await openNavigation(page)
     await expect(navigation).toBeVisible()
     await expectEmptySessionList(page, locale)
-    expect(await navigation.getByRole('link').count()).toBe(4)
+    expect(await navigation.getByRole('link').count()).toBe(5)
     const names = locale === 'en'
-      ? ['New', 'Projects', 'Models', 'Settings']
-      : ['Новая сессия', 'Проекты', 'Модели', 'Настройки']
+      ? ['New', 'Projects', 'Models', 'Connections', 'Settings']
+      : ['Новая сессия', 'Проекты', 'Модели', 'Подключения', 'Настройки']
     for (const name of names) await expect(navigation.getByRole('link', { name, exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: locale === 'en' ? 'Command palette' : 'Палитра команд' })).toBeVisible()
 

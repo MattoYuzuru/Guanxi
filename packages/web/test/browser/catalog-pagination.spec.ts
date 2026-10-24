@@ -100,8 +100,9 @@ test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page
   await page.goto('/')
   const pager = page.getByRole('navigation', { name: 'Страницы каталога' })
   await expect(pager.getByText('Страница 1 из 84, на странице 12, всего найдено 1000')).toBeVisible()
-  await expect(page.locator('[aria-label="Каталог моделей"] .embla-slide')).toHaveCount(12)
-  await expect(page.locator('[role="tab"][aria-label^="Модель "]')).toHaveCount(12)
+  await expect(page.locator('[aria-label="Каталог моделей"] .model-grid-item')).toHaveCount(12)
+  // Round 4: a grid, not a carousel — no position dots.
+  await expect(page.locator('[role="tab"][aria-label^="Модель "]')).toHaveCount(0)
   await expect(pager.getByRole('button')).toHaveCount(2)
   await expect(pager.getByRole('button', { name: 'Предыдущая страница' })).toBeDisabled()
 
@@ -126,7 +127,7 @@ test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page
     animationDurations: [...document.querySelectorAll<HTMLElement>('*')]
       .map((element) => Number.parseFloat(getComputedStyle(element).animationDuration || '0'))
       .filter(Number.isFinite),
-    catalogSlides: document.querySelectorAll('[aria-label="Каталог моделей"] .embla-slide').length,
+    catalogSlides: document.querySelectorAll('[aria-label="Каталог моделей"] .model-grid-item').length,
     catalogDots: document.querySelectorAll('[role="tab"][aria-label^="Модель "]').length,
     pagerButtons: document.querySelectorAll('[aria-label="Страницы каталога"] button').length,
   }))
@@ -134,7 +135,7 @@ test('Marketplace pages hundreds of logical rows with bounded DOM and cross-page
   expect(layout.reducedMotion).toBe(true)
   expect(Math.max(0, ...layout.animationDurations)).toBeLessThanOrEqual(0.00001)
   expect(layout.catalogSlides).toBe(12)
-  expect(layout.catalogDots).toBe(12)
+  expect(layout.catalogDots).toBe(0)
   expect(layout.pagerButtons).toBe(2)
   expect(pageErrors).toEqual([])
 

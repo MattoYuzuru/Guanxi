@@ -92,14 +92,18 @@ describe('ephemeral labelling and storage', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Last turns' }))
     fireEvent.change(screen.getByLabelText('Number of last turns'), { target: { value: '0' } })
     fireEvent.change(prompt(), { target: { value: 'q' } })
-    expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(true)
+    // The composer keeps a blocked Ask focusable and marks it aria-disabled (D-207).
+    expect(screen.getByRole('button', { name: 'Ask' }).getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByLabelText('Number of last turns').getAttribute('aria-invalid')).toBe('true')
-    expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(true)
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Ask' }))
     expect(calls).toHaveLength(0)
   })
   it('Enter asks once, Shift+Enter and composition do not, and an empty draft cannot ask', async () => {
     render(<SideChatPanel sessionId="s1" />)
-    expect(fireEvent.keyDown(prompt(), { key: 'Enter' })).toBe(true)
+    // An empty draft cannot ask: Enter sends nothing.
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    expect(calls).toHaveLength(0)
     fireEvent.change(prompt(), { target: { value: 'q' } })
     expect(fireEvent.keyDown(prompt(), { key: 'Enter', shiftKey: true })).toBe(true)
     expect(fireEvent.keyDown(prompt(), { key: 'Enter', isComposing: true })).toBe(true)
@@ -158,6 +162,31 @@ describe('failures and cancellation write nothing and keep the conversation', ()
     expect(screen.queryAllByRole('button', { name: /retry|try again|ask again/iu })).toHaveLength(0)
     expect(turns()).toHaveLength(2)
     expect(screen.getByTestId('side-chat-unsaved').textContent).toBe('Unsaved messages: 2')
+  })
+  it('asks through the shared Composer: one composer, Enter asks once, Shift+Enter and IME do not, Cancel is its stop action (visual pass 2)', async () => {
+    let release: (() => void) | undefined
+    install(call => call.action === 'respond' ? new Promise<Response>(resolve => { release = () => resolve(answer('Side answer')) }) : answer('x'))
+    const view = render(<SideChatPanel sessionId="s1" />)
+    const panel = screen.getByTestId('side-chat-panel')
+    expect(panel.querySelectorAll('[data-slot="composer"]')).toHaveLength(1)
+    expect(panel.querySelectorAll('textarea')).toHaveLength(1)
+    expect(prompt().closest('[data-slot="composer"]')).not.toBeNull()
+    const action = () => panel.querySelector<HTMLButtonElement>('[data-slot="composer-action"]')!
+    expect(action().getAttribute('aria-label')).toBe('Ask')
+    fireEvent.change(prompt(), { target: { value: 'First?' } })
+    fireEvent.keyDown(prompt(), { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(prompt(), { key: 'Enter', isComposing: true })
+    expect(calls).toHaveLength(0)
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(action().getAttribute('aria-label')).toBe('Cancel')
+    expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(1)
+    expect(screen.queryAllByRole('button', { name: 'Ask' })).toHaveLength(0)
+    release?.()
+    await waitFor(() => expect(turns()).toHaveLength(2))
+    expect(action().getAttribute('aria-label')).toBe('Ask')
+    expect(screen.getByTestId('side-chat-ephemeral').textContent).toBe('Ephemeral')
+    view.unmount()
   })
   it('Cancel aborts the owned request, keeps the question and reports that nothing was written', async () => {
     let seen: AbortSignal | null | undefined
@@ -321,7 +350,8 @@ describe('discarding and reload warning', () => {
     expect(blocked()).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Save to session log' }))
     await screen.findByText(/Saved to the session log as event 13/)
-    expect(blocked()).toBe(false)
+    // The guard is re-registered by an effect after the saved state commits; the status text can render first.
+    await waitFor(() => expect(blocked()).toBe(false))
   })
 })
 

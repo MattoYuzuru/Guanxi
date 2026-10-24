@@ -109,18 +109,46 @@ class RemoteRelaySession implements RelayRuntimeSession {
       chat: (request: OllamaChatRequest, signal: AbortSignal, onDispatched: () => void,
         dispatch: { authorizeDispatch: () => Promise<void>; prepare: () => OllamaChatRequest }) => this.chat(request, signal, onDispatched, dispatch) })
   }
+  /** A real transport failure is the only failure the executor may retry: a dropped link, a timeout, or a peer that says
+   * it is temporarily unavailable. Everything else keeps its fixed, diagnosable code and fails the call at once. */
+  private transportFailure(error: unknown): boolean {
+    if (error instanceof FederationError) return error.code === 'peer_refused' && error.status >= 500
+    const seen = new Set<object>()
+    const networkCodes = new Set(['ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH'])
+    const inspect = (value: unknown): boolean => {
+      if (!value || typeof value !== 'object' || seen.has(value)) return false
+      seen.add(value)
+      const item = value as { name?: unknown; code?: unknown; message?: unknown; cause?: unknown; errors?: unknown }
+      if (item.name === 'TimeoutError' || item.name === 'AbortError') return true
+      if (typeof item.code === 'string' && (networkCodes.has(item.code) || item.code.startsWith('UND_ERR_'))) return true
+      if (value instanceof TypeError && item.message === 'fetch failed') return true
+      if (inspect(item.cause)) return true
+      return Array.isArray(item.errors) && item.errors.some(inspect)
+    }
+    return inspect(error)
+  }
   /** A refusal that is not a cancellation: no unreachable, unsigned or unintelligible executor yields facts. */
   private refuse(error: unknown, signal?: AbortSignal): never {
     if (signal?.aborted) throw signal.reason ?? error
     if (this.lifetime.signal.aborted) throw new RelayError('relay_stopped')
     if (error instanceof RelayError) throw error
     if (error instanceof ZodError) throw new RelayError('runtime_identity_unknown')
+    if (this.transportFailure(error)) throw new RelayError('runtime_meter_unavailable')
     if (error instanceof FederationError) {
       if (['invalid_signature', 'relay_evidence_mismatch', 'not_home'].includes(error.code)) throw new RelayError('runtime_identity_unknown')
       if (error.code === 'peer_refused' && [403, 404, 409].includes(error.status)) throw new RelayError('runtime_identity_unknown')
     }
     if (error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 'stale_lease') throw error
+    // Admission, observation and counts keep their typed contract: anything else means the runtime is not usable now.
     throw new RelayError('runtime_meter_unavailable')
+  }
+  /** A model call's failure: a refusal that is not a transport failure fails the call at once with its fixed code (no retry),
+   * so a revoked key or a refused grant is diagnosable; everything else goes through `refuse`. */
+  private refuseCall(error: unknown, signal?: AbortSignal): never {
+    if (!signal?.aborted && !this.lifetime.signal.aborted && error instanceof FederationError && !this.transportFailure(error) &&
+      !['invalid_signature', 'relay_evidence_mismatch', 'not_home'].includes(error.code) && !(error.code === 'peer_refused' && [403, 404, 409].includes(error.status)))
+      throw new RelayError(/^[a-z0-9_]{1,64}$/.test(error.code) ? error.code : 'peer_refused')
+    return this.refuse(error, signal)
   }
   private binding(): RelayRuntimeBinding {
     const a = this.attempt
@@ -335,7 +363,10 @@ class RemoteRelaySession implements RelayRuntimeSession {
     } catch (error) {
       // The call settles only after the executor acknowledged the cancel (or its holder has provably expired).
       await this.stop(childId, offerId ? ref() : undefined, dispatched, inFlight)
-      throw error
+      // A dropped link, a timeout or a refused offer is a transport failure like any other: report it as the meter being
+      // briefly unavailable so the executor's bounded retry can re-send the same reserved call. Cancellation, a lost
+      // fence and stale_lease keep their own behaviour in `refuse`.
+      this.refuseCall(error, active)
     }
   }
   /** Cancel at the home first, so renewals and late results are refused, then ask the executor directly and wait for its

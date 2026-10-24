@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { nativeAgentInputSchema, type AccessMode, type Project } from '@guanxi/contract'
 import { Badge, Composer, EmptyState, ErrorState, Icon } from '@guanxi/ui'
-import { api } from '../../lib/api.ts'
 import { formatTime } from '../../lib/format.ts'
-import { useAsync } from '../../lib/useAsync.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { Link, navigate, paths, useLocation } from '../../lib/router.tsx'
 import { projectFromLocation } from '../../lib/current-project.ts'
 import { agentRequest, AgentRequestError, nativeApi } from '../native-agent/api.ts'
 import { BrandMark } from './BrandMark.tsx'
-import { ModelPicker, PermissionMenu, ProjectPicker, RunOptions, type ModelSuggestion } from './SessionPickers.tsx'
+import { ModelPicker, PermissionMenu, ProjectPicker, RunOptions } from './SessionPickers.tsx'
 import './new-session.css'
 import { readRecentProjects, rememberProject } from './recent.ts'
+import { readLastModelChoice, rememberModelChoice } from './model-choice.ts'
 import { useSessionChoices } from './useSessionChoices.ts'
 
 const START_ERRORS = ['project_not_found', 'root_busy', 'root_unavailable', 'root_overlaps_node_data', 'protected_path_invalid', 'egress_unavailable', 'validation_failed', 'unreachable'] as const
@@ -61,8 +60,17 @@ export function NewSessionScreen() {
       ?? recent.find(exists) ?? (data.projects.length === 1 ? data.projects[0]!.id : '')
     if (current) setProjectId(current)
   }, [data, projectId, recent, routedProject])
-  // One connection needs no choice.
-  useEffect(() => { if (data && !connectionId && data.connections.length === 1) setConnectionId(data.connections[0]!.id) }, [data, connectionId])
+  // Reopen with the last explicit connection and model when they still exist; one connection
+  // needs no choice at all.
+  useEffect(() => {
+    if (!data || connectionId) return
+    const last = readLastModelChoice()
+    if (last && data.connections.some(item => item.id === last.connectionId)) {
+      setConnectionId(last.connectionId); setModel(last.model)
+      return
+    }
+    if (data.connections.length === 1) setConnectionId(data.connections[0]!.id)
+  }, [data, connectionId])
   const project: Project | undefined = data?.projects.find(item => item.id === projectId)
   const connection = data?.connections.find(item => item.id === connectionId)
   const savedRoots = useMemo(() => project?.filesystemBindings.map(binding => binding.workspaceId) ?? [], [project])
@@ -73,9 +81,6 @@ export function NewSessionScreen() {
   useEffect(() => { if (startFailure) failureRef.current?.focus() }, [startFailure])
 
   const contextRequired = connection?.kind === 'local_runtime'
-  // Installed models are suggestions for a local runtime; any connection still accepts a typed ID.
-  const installed = useAsync(signal => contextRequired ? api.listModels(undefined, signal) : Promise.resolve({ models: [] }), [contextRequired])
-  const suggestions: ModelSuggestion[] = (installed.data?.models ?? []).map(item => ({ id: item.name, label: item.name }))
 
   const domainList = splitList(domains, /,/), protectedList = splitList(protectedPaths, /\n/), attachmentList = splitList(attachments, /,/)
   const contextValue = Number(context)
@@ -117,6 +122,7 @@ export function NewSessionScreen() {
       const created = await nativeApi.create({ projectId, connectionId, model: model.trim(), mode, prompt, retention: 'ttl',
         domains: domainList, attachmentIds: attachmentList, protectedPaths: protectedList, ...(context.trim() ? { contextTokens: contextValue } : {}) })
       if (typeof created?.sessionId !== 'string' || !created.sessionId) throw new AgentRequestError(502, 'agent_unavailable')
+      rememberModelChoice(connectionId, model.trim())
       setRecent(rememberProject(projectId))
       // The user may have navigated elsewhere while the node worked; the session exists either way.
       if (mounted.current) navigate(paths.agent(created.sessionId))
@@ -173,7 +179,7 @@ export function NewSessionScreen() {
               attachments={attachments} onAttachments={setAttachments} protectedPaths={protectedPaths} onProtectedPaths={setProtectedPaths} />}
           </>}
           trailing={data ? <ModelPicker connections={data.connections} connectionId={connectionId} onConnection={setConnectionId}
-            model={model} onModel={setModel} suggestions={suggestions} contextRequired={contextRequired}
+            model={model} onModel={setModel} onChoice={rememberModelChoice} contextRequired={contextRequired}
             context={context} onContext={setContext} contextInvalid={contextInvalid} /> : undefined} />
         <p id="new-session-needs" role="status" className="new-session-hint">{hint}</p>
         {mode === 'full-access' && <p className="new-session-hint">{t('native.shellLimited')}</p>}

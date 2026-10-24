@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useId, useEffect, useRef, useState } from 'react'
 import type { CompletionProbeEvidence, ModelDetail } from '@guanxi/contract'
 import { Badge, Button, Modal } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
@@ -20,6 +20,9 @@ export function CompletionProbe({
   model: ModelDetail
   contextLength: number
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { completionProbeConfirmation: `${idBase}-completion-probe-confirmation` }
   const runtime = useOptionalRuntimeProjection()
   const [confirming, setConfirming] = useState<'reuse' | 'force' | null>(null)
   const [local, setLocal] = useState<LocalState>({ state: 'idle' })
@@ -172,7 +175,7 @@ export function CompletionProbe({
             ? 'models.probe.confirm.forceTitle'
             : 'models.probe.confirm.title',
         )}
-        describedBy="completion-probe-confirmation"
+        describedBy={ids.completionProbeConfirmation}
         initialFocusRef={confirmRef}
         returnFocusRef={confirming === 'force' ? forceRef : launchRef}
         closeLabel={translate('models.probe.confirm.close')}
@@ -195,7 +198,7 @@ export function CompletionProbe({
           </>
         }
       >
-        <div id="completion-probe-confirmation" className="space-y-2 text-xs text-secondary">
+        <div id={ids.completionProbeConfirmation} className="space-y-2 text-xs text-secondary">
           <p>{translate('models.probe.confirm.description')}</p>
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
             <dt>{translate('models.probe.confirm.model')}</dt>

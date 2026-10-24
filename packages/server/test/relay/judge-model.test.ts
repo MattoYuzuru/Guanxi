@@ -145,7 +145,7 @@ test('actual K3 uses explicit owner account, one fresh tool-free request and fin
     assert.equal((request.messages as unknown[]).length, 1)
     assert.equal(JSON.stringify(request).includes('synthetic-judge-secret'), false)
   }
-  assert.equal(f.connections.snapshot('local').connections.length, 0)
+  assert.deepEqual(f.connections.snapshot('local').connections.map(row => [row.name, row.kind]), [['Ollama', 'local_runtime']])
   assert.equal(f.connections.snapshot(account).costs.length, 2)
 })
 test('a response schema reaches the runtime as the request format, only when asked, and a schema K3 would rewrite stops the judge before dispatch', async (t) => {

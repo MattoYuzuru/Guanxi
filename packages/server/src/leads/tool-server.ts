@@ -3,6 +3,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { LEAD_DELEGATE_TOOL } from '@guanxi/contract'
 
+export interface LeadExecutor { connectionId: string; model: string }
+export interface LeadToolServerOptions { maxBodyBytes?: number; port?: number; executors?: readonly LeadExecutor[] }
 export interface ToolGrantContext { runId: string; attemptId: string; wakeSeq: number | null }
 /** `hold` keeps the HTTP request open and unanswered: the caller is about to be stopped, so it
  * never receives a result and consumes no further tokens. Revocation closes the socket. */
@@ -28,7 +30,7 @@ export const LEAD_DELEGATE_JSON_SCHEMA = {
     plan: { type: 'object', additionalProperties: false, required: ['revision', 'base', 'goal', 'items', 'protectedPaths'], properties: {
       revision: idString, base: { type: 'string', pattern: '^[a-f0-9]{40,64}$' }, goal: text, protectedPaths: { type: 'array', items: relativePath },
       items: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'dependsOn', 'acceptance', 'protectedPaths'], properties: {
-        id: idString, title: text, dependsOn: { type: 'array', items: idString }, acceptance: { type: 'array', minItems: 1, items: text },
+        id: idString, title: text, dependsOn: { type: 'array', items: idString }, acceptance: { type: 'array', minItems: 1, items: text, description: 'The acceptance command as an argv array, one element per argument, run in the project checkout: ["node", "--test", "test/01-money.test.mjs"]. Not one string with spaces, not JSON text.' },
         protectedPaths: { type: 'array', items: relativePath } } } } } },
     estimatesMs: { type: 'object', additionalProperties: count },
     caps: { type: 'object', additionalProperties: false, required: ['cycles', 'tokens', 'moneyMicros', 'wallMs'],
@@ -59,7 +61,17 @@ export class LeadToolServer {
   private readonly grants = new Map<string, Grant>()
   private readonly maxBodyBytes: number
   private readonly wantedPort: number
-  constructor(options: { maxBodyBytes?: number; port?: number } = {}) { this.maxBodyBytes = options.maxBodyBytes ?? 1_048_576; this.wantedPort = options.port ?? 0 }
+  private executors: readonly LeadExecutor[]
+  constructor(options: LeadToolServerOptions = {}) {
+    this.maxBodyBytes = options.maxBodyBytes ?? 1_048_576; this.wantedPort = options.port ?? 0; this.executors = options.executors ?? []
+  }
+  /** The owner's allow-list is data for the description only; `validateExecutor` still refuses a brief. */
+  setExecutors(executors: readonly LeadExecutor[] = []): void { this.executors = executors }
+  private tool() {
+    if (!this.executors.length) return TOOL
+    return { ...TOOL, description: `${TOOL.description} Allowed executors on this node: ${
+      this.executors.map(executor => `connectionId=${executor.connectionId} model=${executor.model}`).join('; ')}` }
+  }
 
   /** Starts listening on first use and returns the endpoint URL. */
   url(): Promise<string> {
@@ -152,7 +164,7 @@ export class LeadToolServer {
             capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'guanxi-lead', version: '0.1.0' } } })
         }
         case 'ping': return this.reply(response, 200, { jsonrpc: '2.0', id: body.id, result: {} })
-        case 'tools/list': return this.reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { tools: [TOOL] } })
+        case 'tools/list': return this.reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { tools: [this.tool()] } })
         case 'tools/call': {
           if (params.name !== LEAD_DELEGATE_TOOL) return this.rpcError(response, body.id, -32602, 'unknown_tool')
           let outcome: ToolResult

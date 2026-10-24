@@ -4,10 +4,11 @@ import { readdir, stat } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { join, relative } from 'node:path'
 import {
-  INPUT_EXCERPT_BYTES, SIDE_CHAT_SAVE_MAX_BYTES, encodeSideChatSavedNote, parseSideChatSavedNote, promptTextOf, sideChatRespondResponseSchema, sideChatSaveResponseSchema, sideChatSendResponseSchema,
+  INPUT_EXCERPT_BYTES, SIDE_CHAT_SAVE_MAX_BYTES, encodeSideChatSavedNote, nativeAgentInputSchema, parseSideChatSavedNote, promptTextOf, sideChatRespondResponseSchema, sideChatSaveResponseSchema, sideChatSendResponseSchema,
 } from '@guanxi/contract'
 import { fixture } from './fixture.ts'
 import { nativeAgentRoutes } from '../../src/native-agent/routes.ts'
+import { piModels } from '../../src/connections/pi.ts'
 import { MESSAGE_FRAMING_BYTES, SIDE_CHAT_CONCURRENCY_ENV, SideChatError, assertWithinBudget, renderSessionContext, runSideChat, sideChatConcurrencyFromEnv, sideChatMessageId } from '../../src/native-agent/side-chat.ts'
 
 type Fixture = Awaited<ReturnType<typeof fixture>>
@@ -347,8 +348,10 @@ test('the fit proof counts the whole request: an oversize draft or conversation 
 
 function fakeConnections(kind: 'model_api' | 'local_runtime', reply: { text: string; stop: 'stop' | 'length' }, seen: { request?: unknown; signal?: AbortSignal; meter?: string[]; costs?: unknown[] } = {}) {
   const connection = { id: 'c', accountId: 'local', name: 'c', kind, provider: kind === 'model_api' ? 'deepseek' : 'ollama', auth: 'none', unattended: false, secretRef: null, facts: {}, balance: null, createdAt: '2026-10-23T00:00:00.000Z' }
+  const costs = () => seen.costs ?? []
   return {
-    snapshot: () => ({ connections: [connection], costs: seen.costs ?? [] }),
+    snapshot: () => ({ connections: [connection], costs: costs() }),
+    store: { receipts: () => costs() },
     async complete(_account: string, _id: string, context: unknown, call: { requestId: string; runId: string; signal?: AbortSignal }) {
       seen.request = context; seen.signal = call.signal; seen.meter = [call.requestId, call.runId]
       return { role: 'assistant', content: [{ type: 'text', text: reply.text }], stopReason: reply.stop, usage: {}, api: 'x', provider: 'x', model: 'x', timestamp: 0 }
@@ -495,6 +498,28 @@ test('budget: a session\'s side-chat spend is attributed to it and refused befor
   // Only this session's side-chat receipts count: other sessions, ordinary runs and look-alike prefixes do not.
   const others = [...mine(9).map(cost => ({ ...cost, runId: `side-chat:other:${meterId()}` })), receipt(`run-${meterId()}`, 999, 9), receipt(`side-chat:${SID}x:${meterId()}`, 999, 9), receipt(`side-chat:${SID}:not-a-uuid`, 999, 9)]
   assertWithinBudget({ maxModelCalls: 1, maxTokens: 1, maxCostMicrounits: 1, reportMaxCalls: 1, reportMaxDurationMs: 1 }, others, SID)
+})
+
+test('budget: a removed connection still contributes its side-chat receipts when the session continues elsewhere', { timeout: 30000 }, async t => {
+  const f = await fixture(t)
+  const budget = { maxModelCalls: 1, reportMaxCalls: 1, reportMaxDurationMs: 10_000 }
+  const { sessionId } = await f.agents().create({ ...f.input, budget })
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
+  assert.equal((await respond(f, sessionId, [{ role: 'user', text: 'counted' }])).status, 200)
+  const spentOn = f.input.connectionId
+  assert.equal(f.connections.store.receipts('local').filter(cost => cost.runId.startsWith(`side-chat:${sessionId}:`)).length, 1)
+  f.connections.remove('local', spentOn)
+  const next = f.connections.create('local', { name: 'Second', kind: 'model_api', provider: 'deepseek', auth: 'api_key' })
+  assert.deepEqual(f.connections.snapshot('local').costs, [], 'the removed connection leaves the public cost projection')
+  assert.equal(f.connections.store.receipts('local').filter(cost => cost.runId.startsWith(`side-chat:${sessionId}:`)).length, 1,
+    'the append-only receipt survives the removal')
+
+  const before = f.requests.length
+  await assert.rejects(runSideChat({ sessionId, budget, connections: f.connections, scrubber: f.scrubber, model: piModels('deepseek')[0]!,
+    input: nativeAgentInputSchema.parse({ ...f.input, connectionId: next.id }), events: [],
+    request: { requestId: uuid(), messages: [{ role: 'user', text: 'still counted' }], context: { include: 'none' } } }),
+    error => error instanceof SideChatError && error.code === 'budget_exhausted')
+  assert.equal(f.requests.length, before, 'the refusal happens before the provider call')
 })
 
 test('budget: the node refuses with budget_exhausted before the provider is called, counting prior side-chat spend', { timeout: 30000 }, async t => {

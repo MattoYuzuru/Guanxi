@@ -29,6 +29,17 @@ export function InstalledEvidenceSummary({
   )
 }
 
+/**
+ * The card's one evidence signal (visual pass 3): a warning badge only when the capability
+ * evidence or its freshness needs care; the full evidence is in the card's details popover.
+ */
+export function InstalledEvidenceCaution({ descriptor }: { descriptor: InstalledModelDescriptor }) {
+  const evidence = descriptor.capabilities
+  const freshness = evidenceFreshness(descriptor)
+  const text = evidenceTone(evidence) === 'yellow' ? evidenceState(evidence) : freshnessTone(freshness) === 'yellow' ? freshnessState(freshness) : null
+  return text === null ? null : <Badge tone="yellow">{text}</Badge>
+}
+
 export function InstalledEvidenceDetails({
   descriptor,
 }: {

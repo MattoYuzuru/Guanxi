@@ -1,0 +1,42 @@
+/* Compact context readout (round 4): icon, one emphasised value, a cache dot. Tokens only. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+.context-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-4);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.context-chip-value {
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-heading);
+}
+
+.context-chip[data-tone='warning'] .context-chip-value {
+  color: var(--color-text-warning);
+}
+
+.context-chip[data-tone='danger'] .context-chip-value {
+  color: var(--color-text-danger);
+}
+
+.context-chip-cache {
+  width: var(--spacing-6);
+  height: var(--spacing-6);
+  @apply rounded-full;
+  background-color: var(--color-text-warning);
+}
+
+.context-chip-cache[data-hit] {
+  background-color: var(--color-text-success);
+}
+
+@media (forced-colors: active) {
+  .context-chip-cache {
+    background-color: CanvasText;
+  }
+}

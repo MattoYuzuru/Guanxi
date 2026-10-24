@@ -7,7 +7,7 @@ export function brief(overrides: Partial<LeadDelegateInput> = {}): LeadDelegateI
   return {
     objective: 'Make the fixture tests pass', definitionOfDone: ['npm test is green'],
     plan: { revision: 'r1', base: 'a'.repeat(40), goal: 'Fix the fixture', protectedPaths: [],
-      items: [{ id: 't1', title: 'Fix it', dependsOn: [], acceptance: ['npm test'], protectedPaths: [] }] },
+      items: [{ id: 't1', title: 'Fix it', dependsOn: [], acceptance: ['npm', 'test'], protectedPaths: [] }] },
     caps: { cycles: null, tokens: null, moneyMicros: null, wallMs: null },
     executor: { connectionId: 'local-executor', model: 'qwen-fixture' }, deadlineMs: 8 * HOUR, onDeadline: 'wrap_up', onCancel: 'cancel',
     ...overrides,

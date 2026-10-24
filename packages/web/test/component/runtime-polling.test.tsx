@@ -7,6 +7,7 @@ import {
   useRuntimePolling,
 } from '../../src/features/health/useRuntimePolling.ts'
 import { runtimeSnapshotFixture } from '../fixtures/runtime.ts'
+import { QUIET_FAILURES_BEFORE_ERROR } from '../../src/lib/useAsync.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -122,6 +123,31 @@ describe('Runtime Bar adaptive polling', () => {
     act(() => setVisibility('visible'))
     expect(loader).toHaveBeenCalledTimes(2)
     await act(async () => Promise.resolve())
+  })
+
+  it('a quiet poll failure while a sample is shown is not stale until three consecutive failures (P3)', async () => {
+    let fail = false
+    const idle = () => runtimeSnapshotFixture((snapshot) => { snapshot.governor.activeLease = null; snapshot.governor.queued = [] })
+    const loader = vi.fn(async () => { if (fail) throw new Error('blip'); return idle() })
+    render(<PollHarness loader={loader} />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByTestId('state').textContent).toBe('idle')
+    fail = true
+    for (let failure = 1; failure < QUIET_FAILURES_BEFORE_ERROR; failure++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(RUNTIME_IDLE_POLL_INTERVAL_MS) })
+      expect(loader).toHaveBeenCalledTimes(1 + failure)
+      expect(screen.getByTestId('state').textContent).toBe('idle')
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(RUNTIME_IDLE_POLL_INTERVAL_MS) })
+    expect(screen.getByTestId('state').textContent).toBe('error')
+    expect(screen.getByTestId('sample').textContent).not.toBe('none')
+    // A success clears the count: one more blip is quiet again.
+    fail = false
+    await act(async () => { await vi.advanceTimersByTimeAsync(RUNTIME_IDLE_POLL_INTERVAL_MS) })
+    expect(screen.getByTestId('state').textContent).toBe('idle')
+    fail = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(RUNTIME_IDLE_POLL_INTERVAL_MS) })
+    expect(screen.getByTestId('state').textContent).toBe('idle')
   })
 
   it('bounds manual retry, preserves a confirmed sample on failure, and cleans up its own wait', async () => {

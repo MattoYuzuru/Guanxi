@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { ZodError } from 'zod'
 import { resolve } from 'node:path'
-import { start, type StartOptions } from '../index.ts'
+import { MS1_LIVE_STOP_BOUND_MS, start, type StartOptions } from '../index.ts'
 import { EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../external-agents/plugin.ts'
 import { LOCAL_ACCOUNT_ID } from '../http/local-guard.ts'
 import { LEAD_SERVICE, type LeadHostService } from '../leads/plugin.ts'
@@ -157,7 +157,13 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   const dataDir = text(parsed, 'data-dir'), listen = port(parsed, 'port')
   let server: Awaited<ReturnType<typeof start>>
   // `providerKeysFile` is always given (empty: none), so `doctor` and `start` read the one source, the command's environment.
-  try { server = await start({ ms1Live: settings, providerKeysFile: env['GUANXI_PROVIDER_KEYS_FILE'] ?? '', ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}), ...startExtra }) } catch (error) {
+  // The forced stop is an executor contract: one JSON line on stdout even without `--json`. A home closes unbounded so its
+  // relay, pins and detached Claude Code process groups can finish.
+  const shutdown = settings.role === 'executor'
+    ? { boundMs: MS1_LIVE_STOP_BOUND_MS, forced: (event: { event: 'stop'; forced: true }) => io.out(JSON.stringify(event)) }
+    : undefined
+  try { server = await start({ ms1Live: settings, providerKeysFile: env['GUANXI_PROVIDER_KEYS_FILE'] ?? '', ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}),
+    ...(shutdown ? { shutdown } : {}), ...startExtra }) } catch (error) {
     if (error instanceof Ms1LiveError) { emit({ event: 'failed', code: error.code, field: error.field, summary: describeConfigError(error) }); return 2 }
     const code = (error as NodeJS.ErrnoException | null)?.code
     emit({ event: 'failed', code: code === 'EADDRINUSE' ? 'port_in_use' : 'start_failed' })
@@ -202,7 +208,11 @@ export async function setUpLead(server: Awaited<ReturnType<typeof start>>, setti
   if (prompt && project) {
     external.setProjectRoles(LOCAL_ACCOUNT_ID, LOCAL_ACCOUNT_ID, project, { lead: { backend: 'claude-code', connectionId: live.leadConnectionId, model: settings.home!.lead!.model, params: {} } })
     const leads = server.kernel.node.service<LeadHostService>(LEAD_SERVICE)!
-    if (leads.sessions().length) emit({ event: 'lead-exists', hint: 'a lead already exists on this node; it was not started again' })
+    // A restart asked for the same task never starts a second lead, nor does any lead that is still live (input_required waits for an explicit
+    // resume). A lead whose run finished (completed, failed, canceled) does not block a new task.
+    const finished = new Set(['completed', 'failed', 'canceled'])
+    const task = leads.normalizeTask(prompt)
+    if (leads.sessions().some(lead => lead.task === task || !finished.has(lead.state ?? ''))) emit({ event: 'lead-exists', hint: 'a live lead or a lead with the same task exists on this node; it was not started again' })
     else {
       const started = leads.startLead({ ownerAccountId: LOCAL_ACCOUNT_ID, actorAccountId: LOCAL_ACCOUNT_ID, projectId: project, prompt })
       emit({ event: 'lead-started', runId: started.runId })

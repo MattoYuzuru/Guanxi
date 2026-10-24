@@ -35,7 +35,7 @@ import {
   DEFAULT_TEMPERATURE,
   parseChatModelSelection,
 } from '@guanxi/contract'
-import { Composer as PromptComposer, Icon, IconButton, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Switch } from '@guanxi/ui'
+import { Button as UiButton, Composer as PromptComposer, Icon, IconButton, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Switch, Tooltip, TooltipContent, TooltipTrigger } from '@guanxi/ui'
 import { Markdown } from '../../components/Markdown.tsx'
 import {
   Badge,
@@ -60,7 +60,14 @@ import { useAutoRecover } from '../../lib/recover.ts'
 import { ApprovalPrompt } from '../agent/ApprovalPrompt.tsx'
 import { ToolCallCard } from '../agent/ToolCallCard.tsx'
 import { WorkspaceChip, WorkspacePicker } from '../agent/WorkspacePicker.tsx'
-import { ContextChip, ContextPanel } from '../context/ContextPanel.tsx'
+import { ContextChip, ContextPanel, contextDescription } from '../context/ContextPanel.tsx'
+import { useWorkspaceControls } from '../workspace/controls.ts'
+import { gateStoredPanels, panelBlockId, useSessionPanels } from '../session/panels.ts'
+import { clearSessionContext, publishSessionContext } from '../session/session-context.ts'
+import { SessionPanelsMenu } from '../session/SessionPanelsMenu.tsx'
+import { SessionPanelEmpty, SessionPanelsAside, useNarrowSession } from '../session/SessionPanelsAside.tsx'
+import '../native-agent/native-session.css'
+import '../session/session.css'
 import type { StreamBuffer } from './streamBuffer.ts'
 import { useChat, type ChatSendOptions, type TurnPhase } from './useChat.ts'
 import { useModelPrewarm, type ModelPrewarmState } from './useModelPrewarm.ts'
@@ -91,6 +98,7 @@ export function ChatPage({
 
 function NewThreadPage({ projectId }: { projectId: string | null }) {
   const inWorkspace = useContext(WorkspaceChatContext)
+  const layoutControls = useWorkspaceControls()
   const navigate = useNavigate()
   const query = useMemo(() => new URLSearchParams(window.location.search), [])
   const settings = useAsync((signal) => api.getSettings(signal), [])
@@ -245,15 +253,19 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       {!inWorkspace && <ThreadSidebar currentId={null} projectId={projectId} />}
 
       <section className="surface min-w-0 rounded-xl p-4">
+        <div className="flex items-start justify-between gap-2">
         <h1
           ref={project ? projectHeadingRef : undefined}
           tabIndex={project ? -1 : undefined}
-          className="break-words text-base font-semibold outline-none"
+          className="min-w-0 break-words text-base font-semibold outline-none"
         >
           {project
             ? translate('projects.chats.newFor', { name: project.name })
             : translate('chat.create.title')}
         </h1>
+        {/* In the free arrangement the layout actions live in this one menu (round 4). */}
+        {layoutControls && <SessionPanelsMenu layout={layoutControls} />}
+        </div>
         <p className="mt-0.5 mb-4 text-xs text-secondary">
           {projectId
             ? translate('projects.chats.newDescription')
@@ -271,7 +283,6 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           </div>
         )}
 
-        {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
         <form onSubmit={create} className="w-full min-w-0 max-w-xl space-y-4">
           {!projectId && <fieldset>
             <legend className="mb-1.5 text-xs font-medium">{translate('chat.create.mode')}</legend>
@@ -458,6 +469,23 @@ function ThreadPage({
   )
   const [pickerOpen, setPickerOpen] = useState(false)
   const [autoApprove, setAutoApprove] = useLocalStorage('guanxi.autoApproveTurn', false)
+  // Round 4: side panels open beside the timeline; in the free arrangement they are dock blocks.
+  const layoutControls = useWorkspaceControls()
+  const storedPanels = useSessionPanels()
+  const [narrowSession, sessionRef] = useNarrowSession()
+  // In a narrow session stored panels wait for a user action instead of reopening as a sheet (review 4).
+  const [sheetByUser, setSheetByUser] = useState(false)
+  useEffect(() => { setSheetByUser(false) }, [narrowSession])
+  const panels = useMemo(() => gateStoredPanels(storedPanels, narrowSession && !sheetByUser, narrowSession ? () => setSheetByUser(true) : undefined),
+    [storedPanels, narrowSession, sheetByUser])
+  const modalSheet = narrowSession && panels.active !== null && !layoutControls
+  const headingId = useId()
+  const [contextWriter] = useState(() => Symbol('session-context'))
+  useEffect(() => {
+    if (!inWorkspace) return
+    publishSessionContext(contextWriter, { context: chat.context, usage: chat.usage, compacting: chat.compacting, onCompact: chat.compact, disabled: chat.isStreaming })
+  }, [inWorkspace, contextWriter, chat.context, chat.usage, chat.compacting, chat.compact, chat.isStreaming])
+  useEffect(() => () => clearSessionContext(contextWriter), [contextWriter])
   const dispatchChat = useCallback(
     (
       intent: ChatSendIntent,
@@ -497,12 +525,13 @@ function ThreadPage({
 
   if (chat.loading) {
     return (
-      <div className={inWorkspace ? 'workspace-chat-content' : 'grid h-full md:grid-cols-[240px_minmax(0,1fr)]'}>
-        {!inWorkspace && <ThreadSidebar currentId={threadId} projectId={projectId} />}
-        <div className="space-y-3 p-5">
-          <Skeleton className="h-8 w-72" />
-          <Skeleton className="h-24 w-3/4" />
-          <Skeleton className="ml-auto h-20 w-2/3" />
+      <div className="native-session session-view" aria-busy="true">
+        <div className="native-session-main">
+          <div className="space-y-3 p-5">
+            <Skeleton className="h-8 w-72" />
+            <Skeleton className="h-24 w-3/4" />
+            <Skeleton className="ml-auto h-20 w-2/3" />
+          </div>
         </div>
       </div>
     )
@@ -525,34 +554,55 @@ function ThreadPage({
     )
   }
 
+  const contextShown = layoutControls
+    ? layoutControls.blocks.some(block => block.id === panelBlockId('context') && !block.hidden)
+    : panels.active === 'context'
+  const toggleContext = () => {
+    if (layoutControls) {
+      // A saved layout may lack the Context block: add it rather than show a missing block.
+      if (layoutControls.blocks.some(block => block.id === panelBlockId('context'))) layoutControls.setVisible(panelBlockId('context'), !contextShown)
+      else layoutControls.add(panelBlockId('context'))
+    }
+    else panels.toggle('context', !contextShown)
+  }
+  const model = displayModelSelection(chat.thread.model)
+  // In a narrow session the Context panel is a modal sheet over the app: a confirmed checkpoint closes
+  // it, so the new checkpoint marker in the timeline can take focus and be seen.
+  const compactFromPanel = async () => {
+    const result = await chat.compact()
+    if (modalSheet) panels.toggle('context', false)
+    return result
+  }
+
   return (
-    <div className={inWorkspace ? 'workspace-chat-content' : 'grid h-full min-h-0 md:grid-cols-[220px_minmax(0,1fr)] xl:grid-cols-[220px_minmax(0,1fr)_300px]'}>
-      {!inWorkspace && <ThreadSidebar currentId={threadId} projectId={projectId} />}
-
-      <section className="flex min-h-0 min-w-0 flex-col border-l border-divider">
-        <header className="flex min-h-11 items-center justify-between gap-3 border-b border-divider px-3 py-1.5">
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <h1 className="truncate text-xs font-semibold">{chat.thread.title}</h1>
-              <Badge tone={chat.thread.mode === 'agent' ? 'accent' : 'neutral'}>
-                {chat.thread.mode === 'agent' ? translate('chat.mode.agent') : translate('chat.mode.chat')}
-              </Badge>
-            </div>
-            {chat.project && (
-              <Link
-                to={paths.projects()}
-                className="mt-0.5 block max-w-full truncate text-2xs text-accent underline underline-offset-2"
-              >
-                {translate('projects.chats.context', { name: chat.project.name })}
-              </Link>
-            )}
-            <div className="mt-0.5 flex items-center gap-2 text-2xs text-muted">
-              <span className="truncate font-mono">{displayModelSelection(chat.thread.model)}</span>
-              <ContextChip context={chat.context} />
-            </div>
+    <section ref={sessionRef} className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
+        {/* Round 4: title and context never overlap — the title truncates, the context is an icon and
+            a value; actions are icons. The model is shown once, in the composer footer (D-207). */}
+        <header className="native-session-header session-header" data-testid="session-header">
+          <div className="native-session-heading session-heading">
+            {chat.project && <>
+              <nav aria-label={translate('native.breadcrumb')} className="native-session-crumbs">
+                <Link to={paths.projects()} className="native-session-crumb">{chat.project.name}</Link>
+              </nav>
+              <Icon name="chevron-right" size={14} aria-hidden="true" className="native-session-crumb-separator" />
+            </>}
+            <h1 id={headingId} className="native-session-title" data-testid="session-title">{chat.thread.title}</h1>
           </div>
-
-          <div className="flex shrink-0 items-center gap-1.5">
+          {chat.thread.mode === 'agent' && <Badge tone="accent">{translate('chat.mode.agent')}</Badge>}
+          {/* The model lives once, in the composer footer (D-207); the header keeps the context gauge
+              (round 4 review: no duplicated model/context). */}
+          {chat.context && <Tooltip>
+            <TooltipTrigger render={<UiButton variant="ghost" size="sm" className="session-context" data-testid="session-context"
+              aria-pressed={contextShown} onClick={toggleContext}
+              aria-label={translate('session.context.open', { value: contextDescription(chat.context) })} />}>
+              <ContextChip context={chat.context} />
+            </TooltipTrigger>
+            <TooltipContent>{contextDescription(chat.context)}</TooltipContent>
+          </Tooltip>}
+          <div className="native-session-actions">
+            <SessionPanelsMenu panels={panels} layout={layoutControls}
+              arrangePath={paths.workspace(chat.thread.id, projectId)}
+              timelinePath={layoutControls ? (projectId ? paths.projectChat(projectId, chat.thread.id) : paths.chat(chat.thread.id)) : undefined} />
             {chat.thread.mode === 'chat' && (
               <ChatRetentionInfo
                 chatId={chat.thread.id}
@@ -570,6 +620,9 @@ function ThreadPage({
           </div>
         </header>
 
+        {/* The panels sit beside the timeline under the header, so the header stays reachable. */}
+        <div className="native-session-layout">
+        <div className="native-session-main">
         <MessageTimeline
           messages={chat.messages}
           contextCheckpoints={chat.contextCheckpoints}
@@ -580,25 +633,7 @@ function ThreadPage({
           streamError={chat.streamError?.message ?? null}
         />
 
-        <div className="border-t border-divider bg-canvas p-2.5">
-          <div className="mb-2 xl:hidden">
-            <details className="rounded-md border border-divider">
-              <summary className="cursor-pointer px-2 py-1 text-2xs font-medium text-secondary">
-                {translate('chat.contextAndSpeed')}
-              </summary>
-              <div className="h-80 max-h-[45vh] overflow-hidden border-t border-divider">
-                <ContextPanel
-                  context={chat.context}
-                  usage={chat.usage}
-                  compacting={chat.compacting}
-                  onCompact={chat.compact}
-                  disabled={chat.isStreaming}
-                />
-              </div>
-            </details>
-          </div>
-
-          {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
+        <div className="native-session-dock">
           <ChatComposer
             inputRef={composerRef}
             disabled={!health.ollama.running && !parseChatModelSelection(chat.thread?.model ?? '')}
@@ -610,21 +645,17 @@ function ThreadPage({
             onAutoApprove={setAutoApprove}
             onSend={resourceDecision.request}
             onStop={chat.stop}
-            model={displayModelSelection(chat.thread.model)}
+            model={model}
             context={<ContextChip context={chat.context} />}
           />
         </div>
-      </section>
+        </div>
 
-      {!inWorkspace && <aside className="hidden min-h-0 border-l border-divider xl:block">
-        <ContextPanel
-          context={chat.context}
-          usage={chat.usage}
-          compacting={chat.compacting}
-          onCompact={chat.compact}
-          disabled={chat.isStreaming}
-        />
-      </aside>}
+      {!layoutControls && <SessionPanelsAside panels={panels} modal={narrowSession} onClosed={() => composerRef.current?.focus()}
+        render={panel => panel === 'context'
+          ? <ContextPanel context={chat.context} usage={chat.usage} compacting={chat.compacting} onCompact={compactFromPanel} disabled={chat.isStreaming} />
+          : <SessionPanelEmpty panel={panel} />} />}
+      </div>
 
       {chat.thread.mode === 'agent' && (
         <WorkspacePicker
@@ -653,7 +684,7 @@ function ThreadPage({
           returnFocusRef={composerRef}
         />
       )}
-    </div>
+    </section>
   )
 }
 
@@ -821,13 +852,14 @@ export function MessageView({ message }: { message: Message }) {
         <div className="mb-1 flex items-center gap-2 text-2xs text-secondary">
           <span>{user ? translate('chat.role.you') : message.role === 'assistant' ? PRODUCT_NAME : translate('chat.role.tool')}</span>
           <span>{formatTime(message.createdAt)}</span>
-          {message.usage?.cacheHit && <Badge tone="green">{translate('chat.cache.badge')}</Badge>}
-          {message.role === 'assistant' && (
+          {/* Round 4 text diet: a completed turn carries no status badge or cache caption; both sit in
+              the details popover. Unfinished, failed and cancelled turns keep their badge. */}
+          {message.role === 'assistant' && message.turnStatus !== 'completed' && (
             <Badge tone={turnStatusTone(message.turnStatus)}>
               {turnStatusLabel(message.turnStatus)}
             </Badge>
           )}
-          {message.role === 'assistant' && message.usage && <MessageUsage usage={message.usage} />}
+          {message.role === 'assistant' && message.usage && <MessageUsage usage={message.usage} message={message} />}
         </div>
 
         {message.thinking && (
@@ -858,12 +890,15 @@ export function MessageView({ message }: { message: Message }) {
 }
 
 /** Per-message facts behind an icon with an anchored popover (D-207), not a row of captions. */
-function MessageUsage({ usage }: { usage: NonNullable<Message['usage']> }) {
+function MessageUsage({ usage, message }: { usage: NonNullable<Message['usage']>; message: Message }) {
   return <Popover>
     <PopoverTrigger render={<IconButton size="sm" label={translate('chat.message.details')} icon={<Icon name="info" />} />} />
     <PopoverContent align="start">
       <PopoverTitle>{translate('chat.message.details')}</PopoverTitle>
       <dl className="gx-popover-facts">
+        <dt>{translate('chat.message.status')}</dt><dd>{turnStatusLabel(message.turnStatus)}</dd>
+        {message.stopReason && <><dt>{translate('chat.turn.reason')}</dt><dd>{turnStopReasonLabel(message.stopReason)}</dd></>}
+        <dt>{translate('chat.cache.badge')}</dt><dd>{translate(usage.cacheHit ? 'context.cache.hitTitle' : 'context.cache.missTitle')}</dd>
         <dt>{translate('chat.message.promptTokens')}</dt><dd>{formatInteger(usage.promptTokens)}</dd>
         <dt>{translate('chat.message.outputTokens')}</dt><dd>{formatInteger(usage.evalTokens)}</dd>
         <dt>{translate('chat.message.speed')}</dt><dd>{translate('format.tokensPerSecond', { value: usage.tokensPerSecond.toFixed(1) })}</dd>
@@ -894,8 +929,9 @@ function TurnOutcomeView({ message }: { message: Message }) {
       )
     }
 
+    // Announced, not printed: the visible message is the answer itself (round 4 text diet).
     return (
-      <p className="mt-1.5 text-2xs text-muted" role="status">
+      <p className="sr-only" role="status" data-testid="turn-completed">
         {translate('chat.turn.status.completed')}
         {reason ? `, ${translate('chat.turn.reason')}: ${reason}` : ''}
       </p>
@@ -985,7 +1021,7 @@ function turnStatusLabel(status: TurnStatus | null): string {
 
 function turnErrorLabel(code: TurnErrorCode): string {
   switch (code) {
-    case 'connection_not_found': case 'vault_locked': case 'policy_denied': case 'egress_unavailable':
+    case 'connection_not_found': case 'connection_in_use': case 'vault_locked': case 'policy_denied': case 'egress_unavailable':
     case 'validation_failed': case 'quota_exhausted': case 'provider_failed':
       return translate(`connections.error.${code}`)
     case 'ollama_unavailable':
@@ -1199,7 +1235,10 @@ function ChatComposer({
           </span>
         ) : undefined}
         trailing={<>
-          <span className="max-w-3xs truncate font-mono text-12 text-secondary" title={model}>{model}</span>
+          <span className="max-w-3xs truncate font-mono text-12 text-secondary" data-testid="composer-model">
+            <span className="sr-only">{translate('session.model', { model })}</span>
+            <span aria-hidden="true">{model}</span>
+          </span>
           {context}
         </>}
       />

@@ -13,7 +13,8 @@ import {
   PanelRight, Paperclip, Pause, Pin, PinOff, Play, Plug, Plus, Power, Rows2, Rows3, ScrollText, Search,
   Server, Settings2, Shield, ShieldAlert, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square,
   SquarePen, Sun, Terminal, Thermometer, Timer, Trash2, TriangleAlert, Unlock, User, Wand2, WifiOff,
-  Workflow, X, Zap, type LucideIcon,
+  Workflow, X, Zap, Shapes, ListTree, ListChecks, Container, FileDiff, PanelRightOpen, Move, Save,
+  RotateCcw, ChartPie, CopyPlus, type LucideIcon,
 } from 'lucide-react'
 import type { ComponentProps, ReactElement, SVGProps } from 'react'
 import { cx } from '../../lib/cx.ts'
@@ -142,6 +143,18 @@ const registry = {
   settings: Settings2,
   history: History,
   layout: LayoutGrid,
+  // Session side panels and layout actions (round 4)
+  panels: PanelRightOpen,
+  artifacts: Shapes,
+  plan: ListChecks,
+  processes: ListTree,
+  environment: Container,
+  changes: FileDiff,
+  context: ChartPie,
+  move: Move,
+  save: Save,
+  'save-as': CopyPlus,
+  reset: RotateCcw,
   // Session and composer
   send: ArrowUp,
   stop: Square,

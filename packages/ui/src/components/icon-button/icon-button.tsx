@@ -5,6 +5,7 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import type { ComponentProps, ReactNode } from 'react'
 import { cx } from '../../lib/cx.ts'
+import { useVisibleLabels } from '../../lib/visible-labels.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../tooltip/tooltip.tsx'
 import '../button/button.css'
 import './icon-button.css'
@@ -42,6 +43,32 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const showBadge = badge === true || (typeof badge === 'number' && badge > 0)
+  const labelled = useVisibleLabels()
+  const badgeNode = showBadge ? (
+    <span className="gx-icon-button-badge" data-tone={badgeTone === 'accent' ? undefined : badgeTone} aria-hidden="true">
+      {typeof badge === 'number' ? (badge > 99 ? '99+' : String(badge)) : ''}
+    </span>
+  ) : null
+  if (labelled) {
+    // In a labelled list (a phone overflow sheet) the label is text beside the icon; no tooltip.
+    return (
+      <ButtonPrimitive
+        data-slot="icon-button"
+        data-variant={variant}
+        data-size={size}
+        data-labelled=""
+        aria-label={label}
+        aria-pressed={pressed}
+        className={cx('gx-button gx-icon-button gx-focusable', className)}
+        {...props}
+        role={props.nativeButton === false ? (props.role ?? 'link') : props.role}
+      >
+        <span className="gx-icon-button-glyph" aria-hidden="true">{icon}</span>
+        <span className="gx-icon-button-label" aria-hidden="true">{label}</span>
+        {badgeNode}
+      </ButtonPrimitive>
+    )
+  }
   return (
     <Tooltip open={tooltipOpen}>
       <TooltipTrigger
@@ -62,11 +89,7 @@ export function IconButton({
         <span className="gx-icon-button-glyph" aria-hidden="true">
           {icon}
         </span>
-        {showBadge ? (
-          <span className="gx-icon-button-badge" data-tone={badgeTone === 'accent' ? undefined : badgeTone} aria-hidden="true">
-            {typeof badge === 'number' ? (badge > 99 ? '99+' : String(badge)) : ''}
-          </span>
-        ) : null}
+        {badgeNode}
       </TooltipTrigger>
       <TooltipContent side={tooltipSide}>{label}</TooltipContent>
     </Tooltip>

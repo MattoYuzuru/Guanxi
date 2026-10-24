@@ -19,10 +19,16 @@ const form = (page: Page, name = 'New session') => page.getByRole('region', { na
 const start = (page: Page) => page.getByRole('button', { name: 'Start session' })
 const prompt = (page: Page) => page.getByRole('textbox', { name: 'What should the agent do?' })
 const retryButtons = (page: Page) => page.getByRole('button', { name: /Retry|Refresh|Try again/u })
-/** Opens the model popover at the composer's lower right and types a model ID. */
+/** The model popover, scoped so its connection buttons and options never collide with the trigger. */
+const modelPicker = (page: Page) => page.locator('[data-slot="popover-content"]')
+  .filter({ has: page.getByRole('group', { name: 'Connection', exact: true }) })
+const modelTrigger = (page: Page) => page.getByRole('button', { name: /^(Choose a model|Model connection: |Model: )/u })
+/** Opens the model popover at the composer's lower right and chooses a listed model by exact ID. */
 async function chooseModel(page: Page, model: string) {
-  await page.getByRole('button', { name: /^(Choose a model|Model: )/u }).click()
-  await page.getByLabel('Model ID').fill(model)
+  const picker = modelPicker(page)
+  if (await picker.count() === 0) await modelTrigger(page).click()
+  await picker.getByRole('listbox', { name: 'Models', exact: true })
+    .getByRole('option', { name: model, exact: true }).click()
 }
 async function chooseProject(page: Page, name: string) {
   await page.getByRole('button', { name: /^(Choose a project|Project: )/u }).click()
@@ -61,14 +67,6 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
       || (target !== element && style.borderTopColor === accent)
     return { label: (label ?? '').trim(), ring }
   })
-  const tabTo = async (label: string, key = 'Tab') => {
-    for (let step = 0; step < 6; step++) {
-      await page.keyboard.press(key)
-      if ((await focused())?.label === label) return
-    }
-    throw new Error(`keyboard never reached ${label}`)
-  }
-
   // Shift+Tab reaches the project picker above the composer; Enter opens it, Enter picks the first project.
   await page.keyboard.press('Shift+Tab')
   expect(await focused()).toEqual({ label: 'Choose a project', ring: true })
@@ -78,21 +76,22 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
   await expect(page.getByRole('button', { name: 'Project: Alpha' })).toBeFocused()
 
   const order: string[] = []
-  for (const expected of ['What should the agent do?', 'Access: Read-only', 'Run options', 'Choose a model']) {
+  for (const expected of ['What should the agent do?', 'Access: Read-only', 'Run options', 'Model connection: Fixture model']) {
     await page.keyboard.press('Tab')
     const state = await focused()
     expect(state?.ring, `focus ring on ${state?.label}`).toBe(true)
     order.push(state?.label ?? '')
     if (expected === 'What should the agent do?') await page.keyboard.type('Inspect the repository')
   }
-  expect(order).toEqual(['What should the agent do?', 'Access: Read-only', 'Run options', 'Choose a model'])
+  expect(order).toEqual(['What should the agent do?', 'Access: Read-only', 'Run options', 'Model connection: Fixture model'])
   // The model popover opens from the keyboard; the only connection is already chosen.
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: 'Fixture model' })).toHaveAttribute('aria-pressed', 'true')
-  await tabTo('Model ID')
+  await expect(modelPicker(page).getByRole('button', { name: 'Fixture model', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByLabel('Search models')).toBeFocused()
   await page.keyboard.type('fixture')
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: 'Model: fixture' })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Model: Fixture model, fixture' })).toBeFocused()
   await page.keyboard.press('Tab')
   expect(await focused()).toEqual({ label: 'Start session', ring: true })
   await expect(start(page)).not.toHaveAttribute('aria-disabled', 'true')
@@ -120,7 +119,7 @@ test('screen-reader structure: names, the one-line need description and one live
   await expect(region.getByRole('textbox', { name: 'What should the agent do?' })).toHaveCount(1)
   await expect(region.getByRole('button', { name: 'Access: Read-only' })).toHaveCount(1)
   await expect(region.getByRole('button', { name: 'Run options' })).toHaveCount(1)
-  await expect(region.getByRole('button', { name: 'Choose a model' })).toHaveCount(1)
+  await expect(region.getByRole('button', { name: 'Model connection: Fixture model' })).toHaveCount(1)
   await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
   // The hint names only the first missing need, and Send is described by it.
   await expect(page.locator('#new-session-needs')).toHaveText('Choose a project.')
@@ -138,6 +137,8 @@ test('screen-reader structure: names, the one-line need description and one live
   expect(unnamed).toBe(0)
   await page.keyboard.press('Escape')
   await chooseModel(page, 'fixture')
+  await page.getByRole('button', { name: /^(Model: |Model connection: )/u }).click()
+  await page.getByRole('button', { name: 'Other model ID…', exact: true }).click()
   await expect(page.getByLabel('Model ID')).toHaveAccessibleDescription(/exact model ID/u)
 })
 
@@ -183,7 +184,7 @@ test('loading, empty, error, offline and start-failure states are single, access
   await expect(page.getByRole('alert')).toContainText('Another full-access session already uses one of these folders')
   expect(await page.evaluate(() => document.activeElement?.contains(document.querySelector('[role="alert"]')))).toBe(true)
   await expect(prompt(page)).toHaveValue('Inspect')
-  await expect(page.getByRole('button', { name: 'Model: fixture' })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Model: Fixture model, fixture' })).toHaveCount(1)
   expect(page.url()).toMatch(/\/agent$/u)
   expect(fixture.requests.create).toHaveLength(1)
   await expect(retryButtons(page)).toHaveCount(0)
@@ -253,7 +254,7 @@ test('local runtimes require a context size in the model picker and starting wai
   await chooseProject(page, 'Beta')
   await prompt(page).fill('Inspect')
   await chooseModel(page, 'llama')
-  await expect(page.getByRole('button', { name: 'Local Ollama' })).toHaveAttribute('aria-pressed', 'true') // the only connection is preselected
+  await expect(modelPicker(page).getByRole('button', { name: 'Local Ollama', exact: true })).toHaveAttribute('aria-pressed', 'true') // the only connection is preselected
   await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
   await expect(page.locator('#new-session-needs')).toHaveText('Set the context window in the model picker.')
   await page.getByLabel('Context window, tokens').fill('0')

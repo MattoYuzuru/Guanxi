@@ -29,7 +29,9 @@ UI kit, a live catalog with an approval loop inside the product, and determinist
    MIT), patterns and blocks' cards and panes. Features and plugins import only from it.
 5. **One story source, two catalogs:** portable CSF 3 stories, docs and review records per
    component feed both Storybook (MIT; developer, test and agent harness, including its MCP
-   addon) and an in-product catalog under Settings → Developer, visible with Developer mode on.
+   addon) and an in-product catalog under Settings → Developer, visible with Developer mode on
+   (the Developer-mode gate is superseded by owner feedback 2026-10-23: the catalog is under
+   Settings → Design system with no mode switch).
 6. **Lifecycle** `draft → review → approved → deprecated`, with `stale` derived from source and
    snapshot hashes. Approvals are recorded by the app in `review.json` and signed with an owner
    key held in the OS keychain (public key in the repository); agents cannot forge them.

@@ -13,12 +13,12 @@ import { RelayStarts } from '../../src/relay/start.ts'
 import { RelayStore } from '../../src/relay/store.ts'
 import { fakeRender, fakeTokens, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
 import { caps, reserves } from './fixture.ts'
-import { relayScript, remoteFixture, until, type RemoteOptions } from './remote-fixture.ts'
+import { networkFailure, relayScript, remoteFixture, until, type RemoteOptions } from './remote-fixture.ts'
 
 const exec = promisify(execFile), sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /** The R2-op end-to-end shape, with the relay on the home node and every model call on the executor node. */
-async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState>; projectFails?: boolean } = {}) {
+async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOptions & { fake?: Partial<FakeLlamaState>; projectFails?: boolean; transientRetryMs?: number[] } = {}) {
   // Match the K4 fixtures: Colima shares the checkout, not macOS tmpdir().
   await mkdir(join(process.cwd(), '.lane-data'), { recursive: true })
   const parent = await realpath(await mkdtemp(join(process.cwd(), '.lane-data', 'remote-relay-')))
@@ -31,7 +31,8 @@ async function fixture(t: { after(fn: () => unknown): void }, options: RemoteOpt
   const relayStore = new RelayStore(f.home.db, f.home.runs, f.home.scrubber, () => f.home.time)
   let allocations = 0
   const allocator = new OwnedCheckoutAllocator({ root: checkouts })
-  const host = { runtime: f.source, reserves, clock: () => f.home.time, nodePorts: () => [4417, 5217],
+  // Transient-call retries wait in real time; these fixtures retry only when a test asks for it.
+  const host = { runtime: f.source, reserves, clock: () => f.home.time, nodePorts: () => [4417, 5217], limits: { transientRetryMs: options.transientRetryMs ?? [] },
     project: async (id: string) => options.projectFails ? Promise.reject(new Error('project unavailable')) : ({ projectId: id, roots: [source], source: 'fixture project/workspace store', observedAt: f.home.time }),
     allocate: (async (policy, signal) => { allocations++; return allocator.allocate(policy, signal) }) as NonNullable<ConstructorParameters<typeof RelayStarts>[6]['allocate']> }
   const starts = new RelayStarts(f.home.db, f.home.runs, f.home.log, f.h.connections, f.home.scrubber, relayStore, host)
@@ -131,9 +132,9 @@ test('an executor that evaluates another token count fails the whole run closed 
 })
 
 test('an executor that stops answering leaves the relay interrupted for the owner, never completed', async t => {
-  const f = await fixture(t, { fake: { completionDelayMs: 400 }, ttlMs: 300, safetyMs: 50 }), receipt = await f.starts.start(f.input)
+  const f = await fixture(t, { fake: { completionDelayMs: 400 }, ttlMs: 300, safetyMs: 50, transientRetryMs: [1, 1] }), receipt = await f.starts.start(f.input)
   await until(async () => (await f.fake.count('/completion')) === 1)
-  f.rules.push(() => { throw new Error('fixture partition') })
+  f.rules.push(() => { throw networkFailure() })
   f.home.time += 5_000                       // the child's holder lease lapses; the relay's own lease is still valid
   await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
   assert.equal(f.starts.status(f.input.key).status, 'input_required')
@@ -141,6 +142,40 @@ test('an executor that stops answering leaves the relay interrupted for the owne
   const [grant] = grantsOf(f)
   assert.equal(f.home.runs.get(grant!.offer.runId).state, 'interrupted'); assert.equal(f.costs(grant!.offer.runId).length, 0)
   assert.equal((await f.completions()).length, 1)
+  // A partition that outlasts every retry wait still ends the relay: each retry was announced and none reached the executor.
+  assert.equal(f.home.log.readAll(receipt.sessionId!, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 2)
+})
+
+test('a dropped link during the first offer is retried and the run completes', async t => {
+  const f = await fixture(t, { transientRetryMs: [1, 1, 1] })
+  let offers = 0
+  f.rules.push(path => { if (path === '/attempts/offers' && ++offers === 1) throw networkFailure() })
+  const receipt = await f.starts.start(f.input)
+  await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
+  const status = f.starts.status(f.input.key)
+  assert.equal(status.status, 'completed', JSON.stringify({ errors: f.errors(receipt.sessionId!), error: status.error }))
+  assert.ok(offers >= 2, 'the transport failure was retried')
+  const notes = f.home.log.readAll(receipt.sessionId!, 'person').filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+  const retries = notes.filter(text => text.includes('"call_retry"'))
+  assert.ok(retries.some(text => text.includes('"reason":"runtime_meter_unavailable"')), JSON.stringify(retries))
+})
+
+test('a permanent 401 refusal at the first offer is not retried and keeps its own code', async t => {
+  const f = await fixture(t, { transientRetryMs: [1, 1] })
+  f.overrides.push(async path => path === '/attempts/offers' ? Response.json({ code: 'unauthenticated' }, { status: 401 }) : undefined)
+  const receipt = await f.starts.start(f.input)
+  await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
+  assert.equal(f.starts.status(f.input.key).status, 'input_required')
+  assert.equal(f.seen.filter(path => path === '/attempts/offers').length, 1, 'a permanent refusal is not re-sent')
+  const events = f.home.log.readAll(receipt.sessionId!, 'person')
+  const notes = events.filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+  assert.equal(notes.filter(text => text.includes('"call_retry"')).length, 0)
+  const failed = notes.find(text => text.includes('"relay":"call_failed_reason"'))
+  assert.ok(failed, JSON.stringify(notes))
+  assert.equal(JSON.parse(failed!).reason, 'peer_refused')
+  assert.notEqual(JSON.parse(failed!).reason, 'runtime_meter_unavailable')
+  assert.deepEqual(f.errors(receipt.sessionId!), ['model_failed'])
+  assert.equal((await f.completions()).length, 0)
 })
 
 test('an executor that does not serve the relay runtime refuses admission before any run, session or allocation exists', async t => {

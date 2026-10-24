@@ -1,26 +1,20 @@
 # Stage status
 
 **Status:** implemented tracker · **Updated:** 2026-10-24
-**Current stage:** wave 5 — owner-present Fedora runs (2026-10-23). `ssh fedora` is back (D-196).
-Since wave 4, local `main` (pushed at `536cad90`) additionally contains, each with an independent Opus
-review and fixes in separate commits: **F2-reap** (stale executor relay pins reaped: home pin journal,
-signed epoch-fenced unpin, executor pin leases on the lease clock, tombstones); **R3-remote** (a judge for
-relays started through the public start, local and remote; transport-bound judge model); **R3-journal**
-(D-199 local judge observation journal, replay reader); **K3-chat** (provider models in chat, dotenv key
-import into the K3 vault, owner-set OpenAI-compatible base URL import-only, ADR-0021 light orientation plus
-one reply-language line for chat); **MS1-live** (production `start()` as MS1 home or executor node,
-federation-only listener, `ms1-live` init/doctor/preflight/start, `home.judge`, runbook).
-**Real evidence** ([Fedora record](evidence/fedora-real-runtime-2026-10-23.md)): R2-op classes against the
-real llama-server (exact counts 39 = 39 = 39); the Mac↔Fedora pairing over SSH forwards (signed handshake,
-observe and exact count across the link); four one-item real relay runs on `ledger-lite` I01 that found three
-real-model defects — fenced JSON, a post-call recount that demanded a fresh observation, and unreliable
-action/probe format from the 27B IQ3 model. The first two are fixed on `claude/model-json-fences`
-(not yet on main); the third is lane **R2-json** (llama-server `json_schema` constrained output, file paging).
-The full gate sequence passed at `536cad90` (one load-sensitive indexing case passed on rerun).
-No stage exit or milestone is claimed: MS1 still needs R2-json, a successful multi-item real relay, the
-Claude Code lead (Sonnet 5.5 medium, D-210; the ACP bridge is not installed and its login is owner-only),
-the ≥ 6-hour run and recorded R3/B3 evidence. MS2 adds the UI redesign (D-200–D-207, lane in a second pass).
-Earlier records: [2026-10-23](evidence/coordination-2026-10-23.md), [2026-10-22](evidence/coordination-2026-10-22.md).
+**Current stage:** wave 6 — MS1 fault runs with the real Claude Code lead (2026-10-24, D-214–D-218).
+Branch `lead/ms1-close` (integration candidate) adds, each independently reviewed by Opus 5.5 with fixes in separate
+commits: **MS1 lead/relay hardening** from ten defects found on real runs (user API key family `sk-ant-usr`, the lead's own
+MCP tool pre-allowed, finished-lead restart, zero money cap, bounded transient call retries for link drops and restarts,
+bounded executor stop, wake prompt and stop reasons in the packet, allowed executors and argv acceptance in the delegate
+tool, relay shell in its checkout with visible output, probes answering from the handoff strip); **K3 catalog**
+(provider catalog by category, auto local Ollama connection with installed models, catalog-named imports without
+duplicates, connection removal, the `/connections` centre and a catalog model picker, D-218); **UI round 4** (one timeline
+session view, layout and panels behind one icon menu, Developer/Visual split withdrawn per D-217, Models grid, quieter text,
+round-3 fixes). **Real evidence** ([MS1 fault runs](evidence/ms1-fault-runs-2026-10-24.md)): E1 link drop, E2 executor
+restart, E3 runtime restart survived on the Fedora executor; E4 home restart ends with one honest wake; zero lead tokens
+while asleep; exactly one wake in every run; best run before the last fixes closed 5 of 10 items with green gates,
+independently reproduced in a clean checkout. MS1 is **not closed**: all plan items green in one run (run A6 in progress
+at hand-off) and the B3 benchmark gate remain. Earlier wave: [Fedora record](evidence/fedora-real-runtime-2026-10-23.md).
 
 ## Validation protocol migration (2026-10-24)
 

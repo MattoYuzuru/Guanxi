@@ -1,14 +1,12 @@
 /**
- * Route for Settings → Developer → Components. The catalog is code-split: its chunk (every
- * story, docs file and review record) is requested only after Developer mode is on and this
- * route renders.
+ * Route for Settings → Design system → Components. The catalog is code-split: its chunk (every
+ * story, docs file and review record) is requested only when this route renders. No Developer
+ * mode gates it (owner feedback 2026-10-23 supersedes D-137's switch: one interface).
  */
 import { Component, lazy, Suspense, type ReactNode } from 'react'
 import { Button, EmptyState, Skeleton } from '../../components/ui.tsx'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
-import { Link, paths } from '../../lib/router.tsx'
-import { useDeveloperMode } from './developer-mode.ts'
 
 const CatalogRoute = lazy(() => import('./CatalogRoute.tsx'))
 
@@ -39,20 +37,6 @@ class CatalogBoundary extends Component<{ children: ReactNode }, { failed: boole
 
 export function DeveloperCatalogPage() {
   useLocale()
-  const [developerMode] = useDeveloperMode()
-  if (!developerMode) {
-    return (
-      <EmptyState
-        title={translate('developer.catalog.off.title')}
-        description={translate('developer.catalog.off.description')}
-        action={
-          <Link to={paths.settings()} className="text-12 text-accent underline underline-offset-2">
-            {translate('developer.catalog.off.action')}
-          </Link>
-        }
-      />
-    )
-  }
   return (
     <CatalogBoundary>
       <Suspense

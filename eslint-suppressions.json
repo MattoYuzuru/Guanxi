@@ -63,7 +63,7 @@
       "count": 1
     },
     "guanxi/semantic-classes": {
-      "count": 9
+      "count": 5
     }
   },
   "packages/web/src/features/chat/ChatRetentionInfo.tsx": {
@@ -81,7 +81,7 @@
   },
   "packages/web/src/features/context/ContextPanel.tsx": {
     "guanxi/no-inline-colours": {
-      "count": 11
+      "count": 9
     },
     "guanxi/semantic-classes": {
       "count": 7
@@ -99,7 +99,7 @@
   },
   "packages/web/src/features/launcher/LauncherPage.tsx": {
     "guanxi/semantic-classes": {
-      "count": 4
+      "count": 1
     }
   },
   "packages/web/src/features/models/CapabilityOverrides.tsx": {
@@ -142,15 +142,7 @@
   },
   "packages/web/src/features/models/ModelCard.tsx": {
     "guanxi/semantic-classes": {
-      "count": 3
-    }
-  },
-  "packages/web/src/features/models/ModelCarousel.tsx": {
-    "guanxi/reuse-primitives": {
-      "count": 1
-    },
-    "guanxi/semantic-classes": {
-      "count": 1
+      "count": 2
     }
   },
   "packages/web/src/features/models/ModelPage.tsx": {
@@ -202,7 +194,7 @@
   },
   "packages/web/src/index.css": {
     "guanxi/no-literal-css": {
-      "count": 62
+      "count": 61
     }
   }
 }

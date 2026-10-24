@@ -15,10 +15,16 @@ const catalogs: Record<string, readonly Model<Api>[]> = {
   deepseek: Object.values(DEEPSEEK_MODELS), openrouter: Object.values(OPENROUTER_MODELS),
 }
 export function piModels(provider: string): readonly Model<Api>[] { return catalogs[provider] ?? [] }
+/** The Anthropic API key families the API accepts as `x-api-key`: console keys (`sk-ant-api...`) and user-account keys (`sk-ant-usr...`). */
+export const ANTHROPIC_API_KEY_PREFIXES = ['sk-ant-api', 'sk-ant-usr'] as const
+/** Whether a value belongs to an Anthropic API key family. Length is enforced separately by `assertApiKey`. */
+export function isAnthropicApiKey(value: string): boolean {
+  return ANTHROPIC_API_KEY_PREFIXES.some(prefix => value.startsWith(prefix))
+}
 export function assertApiKey(provider: string, key: string) {
   // pi-ai automatically switches to OAuth bearer auth for this token family.
   // Reject it even if a caller mislabels it as an API key.
-  if (key.length < MIN_SECRET_LENGTH || key.includes('sk-ant-oat') || (provider === 'anthropic' && !key.startsWith('sk-ant-api'))) {
+  if (key.length < MIN_SECRET_LENGTH || key.includes('sk-ant-oat') || (provider === 'anthropic' && !isAnthropicApiKey(key))) {
     throw new ConnectionError('validation_failed', 'An API key is required; subscription access uses the official CLI')
   }
 }

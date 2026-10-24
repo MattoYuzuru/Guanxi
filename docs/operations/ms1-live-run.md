@@ -2,7 +2,7 @@
 
 **Status:** implemented and fixture-validated on one machine (two real processes over a loopback forward emulator); not yet run
 over a real SSH link, with a real Claude Code, or end to end on the Fedora node (its llama-server and R2-op classes were validated
-alone: [evidence](../plans/evidence/fedora-real-runtime-2026-10-23.md)). **Updated:** 2026-10-23 ·
+alone: [evidence](../plans/evidence/fedora-real-runtime-2026-10-23.md)). **Updated:** 2026-10-24 ·
 **Decisions:** D-196 (Fedora real runs), D-197 and D-210 (Claude Code lead, now Sonnet 5.5 at medium effort), D-198 (target
 repository), D-199 (journal stays local).
 
@@ -179,6 +179,13 @@ The relay run keeps its own cap accounting; never add the two.
    flight ends `interrupted`, its ledger is kept, the lead must re-delegate.
 3. Stop the ssh forward, then the executor (`Ctrl-C`), then llama-server (your service manager).
 
+The **executor** stop is bounded at 10 seconds (`MS1_LIVE_STOP_BOUND_MS`): an in-flight remote dispatch is aborted with it, its
+listeners are force-dropped after the drain grace, and a close that has not finished at the bound exits non-zero with
+`{"event":"stop","forced":true}`. The **home** stop has no such bound: it first aborts the relay and lets an in-flight call end as
+the stop, waits for the acknowledged unpin so the journal row is settled, and only then disposes the plugins; that ordering is what
+also stops the detached Claude Code process groups. A home close is therefore allowed to outlast 10 seconds, and a broken one still
+has to be stopped by the service manager.
+
 Pins are now reaped (F2-reap): the home journals each pin before it is sent, re-sends a signed `unpin` for every journal row at start
 and every 60 s, and the executor leases each pin (10 minutes, renewed by the live run's 60-second heartbeat). A long run therefore
 shows repeated signed `pin` messages, and a crashed run's pin disappears by itself within a lease. Inspect with
@@ -219,7 +226,7 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   `bare_subscription_unavailable` if `claudeBare` is set. On macOS the login keychain may not be separable by these variables.
 - **Without a CLI sign-in: the `claude setup-token` token or an API key (D-211, D-212).** `home.lead.auth` is `"subscription"` (default: the
   sign-in above), `"oauth_token"` (the long-lived subscription token of `claude setup-token`, `sk-ant-oat…`; billed to your Claude
-  subscription) or `"api_key"` (a real Anthropic API key, `sk-ant-api…`; billed as API usage). The two vault modes need no sign-in:
+  subscription) or `"api_key"` (a real Anthropic API key, `sk-ant-api…` or `sk-ant-usr…`; billed as API usage). The two vault modes need no sign-in:
 
   ```json
   "lead": { "auth": "oauth_token", "providerKeysFile": "/Users/<you>/…/your-dotenv-file", "effort": "medium", "model": "<bridge model value>",
@@ -229,17 +236,18 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   At boot the home imports the credential from that dotenv file into its own K3 vault (the import of D-208; `GUANXI_PROVIDER_KEYS_FILE`
   in the command's environment names the file instead, when set), resolves the one connection that holds it (`home.lead.connection`
   names it by name or id when there are several; a connection that was not imported from the file just read cannot pay) and binds K5's
-  `claude-code` installation to it. A file that is named but holds no credential of the mode, or fails to import in any line, refuses the
+  `claude-code` installation to it. A config that still names the legacy `anthropic (dotenv)` or `claude-code (dotenv)` label resolves
+  to the same imported connection. A file that is named but holds no credential of the mode, or fails to import in any line, refuses the
   start; an older credential in the vault is used only when no file is named.
 
   - **`oauth_token`.** The token is read from `CLAUDE_CODE_OAUTH_TOKEN`, or from an `sk-ant-oat` value under `ANTHROPIC_API_KEY` (only in
-    this mode, and only when the first name is absent). It is stored as a `claude-code` *agent* connection (`claude-code (dotenv)`), never
+    this mode, and only when the first name is absent). It is stored as a `claude-code` *agent* connection (`Claude Code`), never
     as an Anthropic API connection: K3's `complete()`, chat and every other adapter refuse it, and K3 still refuses `sk-ant-oat` as an API
     key everywhere. K5 injects it as `CLAUDE_CODE_OAUTH_TOKEN` into the bridge and `claude auth status` environments only, and
     `auth status` must report `authMethod: "oauth_token"` (CLI 2.1.287 does with only that variable set; it prints no token source) or the
-    run refuses `claude_token_not_in_effect`. An `sk-ant-api` value is refused in this mode (`lead_key_wrong_family` in `doctor`). The
+    run refuses `claude_token_not_in_effect`. An `sk-ant-api` or `sk-ant-usr` value is refused in this mode (`lead_key_wrong_family` in `doctor`). The
     connection's `billing` fact reads `subscription`.
-  - **`api_key`.** `ANTHROPIC_API_KEY` is imported as the `anthropic (dotenv)` model-API connection and injected as `ANTHROPIC_API_KEY`;
+  - **`api_key`.** `ANTHROPIC_API_KEY` is imported as the `Anthropic` model-API connection and injected as `ANTHROPIC_API_KEY`;
     `auth status` must report `authMethod: "api_key"` with `apiKeySource: "ANTHROPIC_API_KEY"` or the run refuses
     `claude_api_key_not_in_effect`. A subscription token is refused as an API key. The `billing` fact reads `api_usage`.
   - **Both modes.** The credential is in the CLI's environment only: not an argument, a file, an event or a log. K5 sets

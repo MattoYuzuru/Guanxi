@@ -1,6 +1,6 @@
 /**
- * DS1-b exit gate in the real app: Settings → Developer → Components is hidden and not loaded
- * without Developer mode, renders every declared state of every component in every regime,
+ * DS1-b exit gate in the real app: Settings → Design system → Components is not loaded until its
+ * route opens (no Developer mode since owner feedback 2026-10-23), renders every declared state of every component in every regime,
  * recolours a T2 iframe plugin through MCP Apps variables, and drives the review API.
  */
 import { readFileSync } from 'node:fs'
@@ -103,14 +103,10 @@ async function mockApi(page: Page, review: Partial<ReviewMock> = {}): Promise<Re
   return state
 }
 
-async function enableDeveloperMode(page: Page): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('guanxi.developerMode', 'on'))
-}
-
-// Product primitives load independently of Developer mode; catalog payloads remain lazy.
+// Product primitives load on every screen; catalog payloads remain lazy.
 const catalogModule = /CatalogRoute\.tsx|\/packages\/ui\/catalog\/|\/packages\/ui\/src\/story-kit\/|\/packages\/ui\/src\/components\/[^/]+\/[^/]+\.(?:stories\.tsx|docs\.md|review\.json)/
 
-test('the catalog is hidden and never requested until Developer mode is on', async ({ page }) => {
+test('the catalog is never requested until its route opens; no Developer mode gates it (owner feedback 2026-10-23)', async ({ page }) => {
   for (const path of [
     '/src/features/catalog/CatalogRoute.tsx', '/packages/ui/catalog/index.ts',
     '/packages/ui/src/story-kit/index.tsx', '/packages/ui/src/components/button/button.stories.tsx',
@@ -124,28 +120,17 @@ test('the catalog is hidden and never requested until Developer mode is on', asy
   const requested: string[] = []
   page.on('request', (request) => requested.push(request.url()))
 
-  await page.goto('/settings/developer/components')
-  await expect(page.getByText('Developer mode is off')).toBeVisible()
-  await expect(page.locator('[data-story]')).toHaveCount(0)
   await page.goto('/settings')
-  const toggle = page.getByRole('switch', { name: 'Developer mode' })
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await expect(page.getByRole('link', { name: 'Open the component catalog' })).toHaveCount(0)
+  // One interface: Settings has no Developer mode switch; the catalog link is always there.
+  await expect(page.getByRole('switch', { name: /Developer mode|Режим разработчика/u })).toHaveCount(0)
+  const link = page.getByRole('link', { name: 'Open the component catalog' })
+  await expect(link).toBeVisible()
   expect(requested.filter((url) => catalogModule.test(url))).toEqual([])
 
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  expect(requested.filter((url) => catalogModule.test(url))).toEqual([])
-  await page.getByRole('link', { name: 'Open the component catalog' }).click()
+  await link.click()
   await expect(page).toHaveURL(/\/settings\/developer\/components$/)
   await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)
   expect(requested.some((url) => /CatalogRoute\.tsx/.test(url))).toBe(true)
-
-  // Turning it off again hides the catalog on the next visit.
-  await page.goto('/settings')
-  await page.getByRole('switch', { name: 'Developer mode' }).click()
-  await page.goto('/settings/developer/components')
-  await expect(page.getByText('Developer mode is off')).toBeVisible()
 })
 
 // Each theme's canvas and secondary text as DS1-a generates them (FOUNDATIONS §1.1, §1.4).
@@ -188,7 +173,6 @@ const fillOf = (opacity: string) => new RegExp(`calc\\(\\s*${opacity.replace('.'
 test('every component shows every declared state in all 24 theme, density and glass regimes', async ({ page }) => {
   test.setTimeout(240_000)
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await enableDeveloperMode(page)
   await mockApi(page)
   for (const theme of Object.keys(THEMES) as Array<keyof typeof THEMES>) {
     for (const density of Object.keys(DENSITIES) as Array<keyof typeof DENSITIES>) {
@@ -260,7 +244,6 @@ test('every component shows every declared state in all 24 theme, density and gl
 
 test('the toolbar switches theme, density and material for every story without a reload', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await enableDeveloperMode(page)
   await mockApi(page)
   await page.goto('/settings/developer/components')
   await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)
@@ -280,7 +263,6 @@ test('the toolbar switches theme, density and material for every story without a
 
 test('switching the theme recolours a sandboxed T2 plugin through MCP Apps variables only', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await enableDeveloperMode(page)
   await mockApi(page)
   await page.goto('/settings/developer/components?view=t2')
   const iframe = page.locator('iframe.gx-catalog-t2-frame')
@@ -341,7 +323,6 @@ test('switching the theme recolours a sandboxed T2 plugin through MCP Apps varia
 
 test('approving sends the hashes the node showed; a read-only node offers no review actions', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await enableDeveloperMode(page)
   const review = await mockApi(page, { capability: { writable: true, reason: null, keyId: 'p256:test', observedAt } })
   await page.goto('/settings/developer/components?component=button')
   await page.getByRole('tab', { name: 'Review' }).click()
@@ -369,7 +350,6 @@ test('approving sends the hashes the node showed; a read-only node offers no rev
 })
 
 test('motion, transparency and language apply to every story; motion follows the OS by default', async ({ page }) => {
-  await enableDeveloperMode(page)
   await mockApi(page)
   await page.goto('/settings/developer/components')
   await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)
@@ -402,7 +382,6 @@ test('motion, transparency and language apply to every story; motion follows the
 
 test('the catalog can be driven from the keyboard', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await enableDeveloperMode(page)
   await mockApi(page)
   await page.goto('/settings/developer/components')
   await expect(page.locator('[data-story]')).toHaveCount(expectedKeys.length)

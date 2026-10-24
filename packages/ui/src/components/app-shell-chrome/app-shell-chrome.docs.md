@@ -50,7 +50,8 @@ content when `visibility` is `rail`.
 - `right` — the same expanded shell with the sidebar after main in the DOM and visually.
 - `phone` — at the 639 px workspace breakpoint, measured on the shell itself, the strip is one
   row: a navigation toggle, the breadcrumb, one overflow control (`labels.more`) that holds the
-  status actions, and the search icon without keycaps. The navigation is a drawer: closed by
+  status actions as one labelled column (each item shows its label as text and has no hover tooltip), and
+  the search icon without keycaps. The navigation is a drawer: closed by
   default, opened over a scrim with the page inert, closed by Escape, the scrim or a followed link,
   with focus returned to the toggle. A drawer is never a rail: a function `sidebar` receives
   `{ rail: false }`. Keycaps are also hidden on any coarse pointer. Host content remains

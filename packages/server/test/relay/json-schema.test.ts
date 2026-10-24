@@ -137,6 +137,8 @@ test('the work prompt lists exactly the tools it is given, with valid JSON examp
 test('the probe prompt defines every key it asks for and keeps the prefix the executor and its fixtures recognise', () => {
   assert.ok(PROBE_PROMPT.startsWith('Answer these five critical ledger probes as JSON.'))
   for (const key of ['ledgerHash', 'head', 'revision', 'nextItem', 'nextStatus']) assert.ok(PROBE_PROMPT.includes(key), key)
-  assert.ok(PROBE_PROMPT.includes('the strip current item'), 'nextItem is the strip\'s current item, not the strip\'s next')
+  assert.ok(PROBE_PROMPT.includes('"current"') && PROBE_PROMPT.includes('"currentStatus"'), 'the probe names the strip fields the handoff renders')
+  assert.equal(PROBE_PROMPT.includes('dependsOn'), false, 'the handoff has no dependency list for the probe to read')
+  assert.equal(PROBE_PROMPT.includes('"open"'), false, 'the handoff has no open list; the strip current item is the answer')
   assert.ok(PROBE_PROMPT.includes('All fields are required'))
 })

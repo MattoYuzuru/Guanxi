@@ -11,7 +11,7 @@
  * P2-L adds an explicit connection-owned exact-file download after P2-K confirmation.
  * It still offers no Install/Pull/Create action and never projects success as runtime-ready.
  */
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useId, useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   FitLevel,
   HuggingFaceGgufFile,
@@ -123,6 +123,9 @@ export function HuggingFaceDiscovery({
   contextLength: number
   onInstalled?: () => void
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { hfDiscoveryHeading: `${idBase}-hf-discovery-heading`, hfSearchInput: `${idBase}-hf-search-input`, hfSearchHint: `${idBase}-hf-search-hint` }
   const [query, setQuery] = useState('')
   const [state, setState] = useState<State>({ kind: 'idle' })
   const controllerRef = useRef<AbortController | null>(null)
@@ -265,10 +268,10 @@ export function HuggingFaceDiscovery({
       : null
 
   return (
-    <section aria-labelledby="hf-discovery-heading" className="mt-6">
+    <section aria-labelledby={ids.hfDiscoveryHeading} className="mt-6">
       <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
         <div className="min-w-0">
-          <h2 id="hf-discovery-heading" className="text-sm font-semibold">
+          <h2 id={ids.hfDiscoveryHeading} className="text-sm font-semibold">
             {translate('hf.section.title')}
           </h2>
           <p className="mt-0.5 text-2xs text-secondary">
@@ -284,15 +287,15 @@ export function HuggingFaceDiscovery({
 
       <form className="mt-3 flex min-w-0 flex-wrap items-end gap-2" onSubmit={submit}>
         <div className="min-w-0 flex-1 basis-48">
-          <label className="block text-xs font-medium" htmlFor="hf-search-input">
+          <label className="block text-xs font-medium" htmlFor={ids.hfSearchInput}>
             {translate('hf.search.label')}
           </label>
           <Input
-            id="hf-search-input"
+            id={ids.hfSearchInput}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={translate('hf.search.placeholder')}
-            aria-describedby="hf-search-hint"
+            aria-describedby={ids.hfSearchHint}
             className="mt-1 min-h-11 w-full min-w-0 sm:min-h-0"
             type="search"
             autoComplete="off"
@@ -311,7 +314,7 @@ export function HuggingFaceDiscovery({
             : translate('hf.search.submit')}
         </Button>
       </form>
-      <p id="hf-search-hint" className="mt-1 text-2xs text-muted">
+      <p id={ids.hfSearchHint} className="mt-1 text-2xs text-muted">
         {translate('hf.search.hint')}
       </p>
 

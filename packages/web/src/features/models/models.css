@@ -23,7 +23,9 @@
   min-width: 0;
   margin: 0;
   color: var(--color-text-primary);
-  font-weight: var(--font-weight-label);
+  font-size: var(--font-size-13);
+  /* Values carry the weight (D-202, round 4): heavier and tabular; labels stay quiet. */
+  font-weight: var(--font-weight-heading);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -39,4 +41,102 @@
 .model-fact dd[data-tone='muted'] {
   color: var(--color-text-secondary);
   font-weight: var(--font-weight-regular);
+}
+
+/* Model card (visual pass 3): a few key facts, the verdict, one compact action; the rest of the
+   facts sit in an anchored details popover. */
+.model-card-head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
+.model-card-caution:empty {
+  display: none;
+}
+
+.model-card-caution {
+  margin-bottom: var(--spacing-8);
+}
+
+.model-card-fit {
+  flex: 1 1 auto;
+  margin-bottom: var(--spacing-12);
+}
+
+.model-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.model-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  min-height: var(--target-minimum);
+  padding-inline: var(--spacing-12);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-accent);
+  color: var(--color-text-on-accent);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.model-card-action:hover {
+  background-color: var(--color-background-accent-hover);
+}
+
+.model-card-action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.model-details-popover {
+  width: var(--layout-container-xs);
+  gap: var(--spacing-8);
+}
+
+.model-details-capabilities {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-details-capabilities li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-8);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.model-fact-about {
+  margin-left: var(--spacing-2);
+  vertical-align: middle;
+}
+
+/* Model grid (round 4): equal, opaque, unscaled cards that wrap; no carousel. */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--layout-container-3xs)), 1fr));
+  gap: var(--spacing-12);
+  align-items: stretch;
+}
+
+.model-grid-item {
+  display: flex;
+  min-width: 0;
+}
+
+.model-grid-item > * {
+  flex: 1 1 auto;
+}
+
+.model-grid-skeleton {
+  height: var(--layout-container-3xs);
 }

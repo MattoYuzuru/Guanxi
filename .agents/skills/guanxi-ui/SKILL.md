@@ -26,7 +26,7 @@ lands, the commands below are mandatory.
 
 ## Decision ladder
 
-1. **Find** an existing component in the catalog (Settings → Developer → Components, Storybook,
+1. **Find** an existing component in the catalog (Settings → Design system → Components, Storybook,
    or `packages/ui/catalog/manifest.json`) before writing anything:
    `node .agents/skills/guanxi-ui/scripts/find-component.mjs "<need>"`.
 2. **Reuse** an approved component as is.

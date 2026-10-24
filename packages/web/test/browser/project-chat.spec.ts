@@ -212,7 +212,8 @@ test('Project Chat grouping, create retry, automatic recovery and sourced hard r
     options: { numCtx: 8192, temperature: 0.7, think: 'off' },
   })
   await expect(page).toHaveURL(`/projects/${first.id}/chats/${created.id}`)
-  await expect(page.getByText(`Проект: ${first.name}`)).toHaveCount(1)
+  // Round 4: the session header's breadcrumb names the project.
+  await expect(page.getByRole('navigation', { name: 'Расположение сессии' }).getByRole('link', { name: first.name, exact: true })).toHaveCount(1)
   await expect(page.getByText(second.name)).toHaveCount(0)
 
   const layout = await page.evaluate(() => ({
@@ -227,7 +228,7 @@ test('Project Chat grouping, create retry, automatic recovery and sourced hard r
 
   await page.reload()
   await expect(page).toHaveURL(`/projects/${first.id}/chats/${created.id}`)
-  await expect(page.getByText(`Проект: ${first.name}`)).toHaveCount(1)
+  await expect(page.getByRole('navigation', { name: 'Расположение сессии' }).getByRole('link', { name: first.name, exact: true })).toHaveCount(1)
   mismatch = 'malformed'
   await page.reload()
   const safeState = page.getByRole('heading', { name: 'Не удалось безопасно открыть чат проекта' })

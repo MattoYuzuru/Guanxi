@@ -1,32 +1,26 @@
-/** Settings → Developer: the Developer mode switch and the entry to the component catalog. */
-import { Toggle } from '../../components/ui.tsx'
+/**
+ * Settings → Design system: the entry to the live component catalog. One interface (owner
+ * feedback 2026-10-23 supersedes D-137's Developer-mode gate): no mode switch hides it.
+ */
+import { Icon } from '@guanxi/ui'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { Link, paths } from '../../lib/router.tsx'
-import { useDeveloperMode } from './developer-mode.ts'
 
 export function DeveloperSettings() {
   useLocale()
-  const [developerMode, setDeveloperMode] = useDeveloperMode()
   return (
-    <section className="rounded-panel border border-divider bg-surface p-3" aria-labelledby="settings-developer-title">
-      <h2 id="settings-developer-title" className="mb-1.5 font-heading text-12">
-        {translate('settings.section.developer')}
+    <section className="rounded-panel border border-divider bg-surface p-3" aria-labelledby="settings-design-title">
+      <h2 id="settings-design-title" className="mb-1.5 font-heading text-12">
+        {translate('settings.section.design')}
       </h2>
-      <Toggle
-        checked={developerMode}
-        onChange={setDeveloperMode}
-        label={translate('settings.developer.mode')}
-        hint={translate('settings.developer.modeHint')}
-      />
-      {developerMode ? (
-        <Link
-          to={paths.developerComponents()}
-          className="mt-1 inline-block text-12 text-accent underline underline-offset-2"
-        >
-          {translate('settings.developer.components')}
-        </Link>
-      ) : null}
+      <Link
+        to={paths.developerComponents()}
+        className="inline-flex items-center gap-1.5 text-12 text-accent underline underline-offset-2"
+      >
+        <Icon name="layers" size={14} />
+        {translate('settings.developer.components')}
+      </Link>
     </section>
   )
 }
