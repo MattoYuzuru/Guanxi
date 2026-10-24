@@ -27,7 +27,7 @@ test('the strip shows the current item and status the probe asks for, within 300
     }
     // A finished plan still renders valid strip JSON with explicit nulls, never `undefined`.
     l.items.one = 'done'
-    assert.deepEqual(JSON.parse(strip(l)), { blocked: [], current: null, currentStatus: null, next: null, query: 'work.query' })
+    assert.deepEqual(JSON.parse(strip(l)), { blocked: [], current: null, currentStatus: null, query: 'work.query', queued: null })
     assert.deepEqual(probes(l), { ledgerHash: hash(l), head: l.head, revision: l.plan.revision, nextItem: null, nextStatus: null })
     // A long title/acceptance cannot push the probe fields out of the bounded strip.
     l.items.one = 'open'; l.plan.items[0]!.title = 'long title '.repeat(80); l.plan.items[0]!.acceptance = ['x'.repeat(400)]

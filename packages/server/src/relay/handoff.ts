@@ -19,7 +19,8 @@ export function strip(l: Ledger): string {
   const item = l.plan.items.find(i => i.id === nextItem(l)), current = item?.id ?? null
   // The probe asks for this status by name; the item's own status is not otherwise in the handoff.
   const currentStatus = item ? l.items[item.id] ?? null : null
-  const core = { current, currentStatus, next: l.plan.items.find(i => i.id !== item?.id && l.items[i.id] !== 'done')?.id ?? null,
+  // The item after the current one is `queued`, never `next`: a small model asked for `nextItem` copied a `next` field instead of `current`.
+  const core = { current, currentStatus, queued: l.plan.items.find(i => i.id !== item?.id && l.items[i.id] !== 'done')?.id ?? null,
     blocked: l.plan.items.filter(i => l.items[i.id] !== 'done' && i.dependsOn.some(d => l.items[d] !== 'done')).map(i => i.id), query: 'work.query' }
   // `current` and `currentStatus` are what the probe reads. A long title/acceptance or blocked list
   // sheds the descriptive fields first, deterministically, instead of letting `bounded` cut the probe
