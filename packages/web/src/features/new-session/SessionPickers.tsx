@@ -105,6 +105,7 @@ export function ModelPicker({ connections, connectionId, onConnection, model, on
   const query = search.trim().toLocaleLowerCase()
   const catalog = models.data?.connectionId === connectionId ? models.data.models : null
   const filtered = (catalog ?? []).filter(item => item.id.toLocaleLowerCase().includes(query))
+  const selectedIndex = filtered.findIndex(item => item.id === model.trim())
   const errorCode = models.error instanceof ConnectionRequestError ? models.error.code : null
 
   useEffect(() => { setSearch(''); setCustom(false) }, [connectionId])
@@ -172,10 +173,11 @@ export function ModelPicker({ connections, connectionId, onConnection, model, on
             {({ id, describedBy }) => <Input ref={searchRef} id={id} aria-describedby={describedBy} type="search"
               autoComplete="off" value={search} onChange={event => setSearch(event.target.value)}
               onKeyDown={event => {
+                // Enter belongs to the option the user moved to; an empty search commits nothing.
                 if (event.key === 'ArrowDown') {
                   event.preventDefault()
                   listRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus()
-                } else if (event.key === 'Enter' && filtered[0]) { event.preventDefault(); chooseModel(filtered[0].id) }
+                }
               }} />}
           </FormField>
           {catalog === null && models.error === null && <p role="status" className="m-0 text-12 text-secondary">{t('newSession.model.loading')}</p>}
@@ -192,7 +194,7 @@ export function ModelPicker({ connections, connectionId, onConnection, model, on
               return <li key={item.id} role="none">
                 <Button type="button" variant={selected ? 'secondary' : 'ghost'} size="sm" role="option"
                   aria-selected={selected} data-model={item.id}
-                  tabIndex={selected || (!model.trim() && index === 0) ? 0 : -1}
+                  tabIndex={index === (selectedIndex >= 0 ? selectedIndex : 0) ? 0 : -1}
                   className="w-full justify-start text-left" onClick={() => chooseModel(item.id)}>
                   <span className="min-w-0 flex-1 break-all font-mono">{item.id}</span>
                   {selected ? <Icon name="check" /> : null}

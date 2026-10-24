@@ -18,8 +18,12 @@ import { catalogEntry, connectionCategory, connectionLabel, connectionMonogram }
 import './connections.css'
 
 export type ConnectionMutationResult = { ok: true } | { ok: false; code?: ConnectionErrorCode }
+export type ConnectionMutationOptions = {
+  /** The caller renders the failure beside its own control, so no page-level alert is added. */
+  inline?: boolean
+}
 /** Runs one server action, refreshes the snapshot and keeps a typed failure for inline copy. */
-export type ConnectionMutate = (action: () => Promise<unknown>) => Promise<ConnectionMutationResult>
+export type ConnectionMutate = (action: () => Promise<unknown>, options?: ConnectionMutationOptions) => Promise<ConnectionMutationResult>
 
 const PHONE_QUERY = '(max-width: 640px)'
 function usePhoneLayout(): boolean {
@@ -166,7 +170,7 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
 
   const remove = async (connection: Connection) => {
     setRemoveFailure(undefined)
-    const result = await mutate(() => connectionApi.remove(connection.id))
+    const result = await mutate(() => connectionApi.remove(connection.id), { inline: true })
     if (result.ok) { setRemoveOpen(false); setFocusProvider(connection.provider) }
     else setRemoveFailure(result.code)
   }
@@ -285,7 +289,7 @@ export function ConnectionsPage() {
     return () => controller.abort()
   }, [revision])
   useAutoRecover(loadFailure, () => setRevision(value => value + 1))
-  const mutate: ConnectionMutate = async action => {
+  const mutate: ConnectionMutate = async (action, options) => {
     setBusy(true); setError(false); setErrorCode(undefined); setSaved(false)
     try {
       await action()
@@ -294,7 +298,7 @@ export function ConnectionsPage() {
       return { ok: true }
     } catch (error) {
       const code = error instanceof ConnectionRequestError ? error.code : undefined
-      setError(true); setErrorCode(code)
+      if (!options?.inline) { setError(true); setErrorCode(code) }
       // A create may have changed the snapshot even when the follow-up secret save failed.
       try { setSnapshot(await connectionApi.list()) } catch { /* Keep the last good snapshot. */ }
       return { ok: false, code }

@@ -178,6 +178,24 @@ it('asks for confirmation in a dialog before DELETE and never uses window.confir
   expect(confirm).not.toHaveBeenCalled()
 })
 
+it('shows a failed removal once, inside its dialog instead of the page', async () => {
+  setActiveLocale('en')
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    if (url === '/api/connections' && (init.method ?? 'GET') === 'GET') return Response.json(snapshot([connection()]))
+    if (url === `/api/connections/${DEEPSEEK}` && init.method === 'DELETE') return Response.json({ code: 'connection_in_use' }, { status: 409 })
+    throw new Error(`Unexpected request ${url}`)
+  }))
+  render(<ConnectionsPage />)
+  const row = await screen.findByTestId(`connection-${DEEPSEEK}`)
+  fireEvent.click(within(row).getByRole('button', { name: 'Remove DeepSeek' }))
+  const dialog = await screen.findByRole('dialog')
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Remove connection' })))
+  const alert = await within(dialog).findByRole('alert')
+  expect(alert.textContent).toContain('running right now')
+  expect(screen.getAllByRole('alert')).toHaveLength(1)
+  expect(screen.getByRole('alert')).toBe(alert)
+})
+
 it('lists models with search and marks a local runtime error inline without a Retry button', async () => {
   setActiveLocale('en')
   vi.stubGlobal('fetch', vi.fn(async () => Response.json([{ id: 'alpha:latest', facts: {} }, { id: 'beta:latest', facts: {} }])))
