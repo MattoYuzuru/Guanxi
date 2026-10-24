@@ -12,7 +12,7 @@ export function SessionPanelsAside({ panels, render, onClosed }: {
   panels: SessionPanels
   /** The panel's content; panels without a service say so in one sentence. */
   render: (panel: SessionPanel) => ReactNode
-  /** Called after the last open panel closes, so the caller can return focus. */
+  /** Called after the last open panel closed (after the commit), so the caller can return focus. */
   onClosed?: () => void
 }) {
   const aside = useRef<HTMLElement>(null)
@@ -23,12 +23,19 @@ export function SessionPanelsAside({ panels, render, onClosed }: {
   // On a phone the panel is a full-screen sheet over an inert page: focus moves into it when the
   // sheet opens, not when the shown panel changes (arrow keys in the switcher keep their focus).
   useEffect(() => { if (sheet && isOpen) closeButton.current?.focus() }, [sheet, isOpen])
+  // Closing the last panel returns focus after the commit, once the page behind a sheet is no
+  // longer inert; a synchronous focus landed on <body> (review 1).
+  const returnFocus = useRef(false)
+  useEffect(() => {
+    if (isOpen || !returnFocus.current) return
+    returnFocus.current = false
+    onClosed?.()
+  }, [isOpen, onClosed])
   if (!active) return null
   const title = (panel: SessionPanel) => t(`workspaceLayout.block.${panel}`)
   const close = () => {
-    const last = panels.open.length === 1
+    returnFocus.current = panels.open.length === 1
     panels.toggle(active, false)
-    if (last) onClosed?.()
   }
   return <aside ref={aside} className="native-session-aside session-panels" aria-label={t('session.panels.region')} data-testid="session-panels"
     onKeyDown={event => {

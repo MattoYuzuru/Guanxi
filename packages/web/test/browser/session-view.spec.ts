@@ -195,6 +195,18 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
 
 // Round 4 review (coordinator, 2026-10-24): the narrow-session panel is a modal sheet.
 
+test('closing the last panel of a phone sheet returns focus to the composer, not the page body (review 1)', async ({ page }) => {
+  await setup(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/chat/${THREAD}`)
+  await page.getByTestId('session-context').click()
+  const sheet = page.getByTestId('session-panels')
+  await sheet.getByRole('button', { name: 'Close Context', exact: true }).click()
+  await expect(page.getByTestId('session-panels')).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Message' })).toBeFocused()
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
+})
+
 test('arrow keys in the sheet panel switcher keep focus on the switcher (review 2)', async ({ page }) => {
   await setup(page, LONG_TITLE, { open: ['context', 'terminal'], active: 'context' })
   await page.setViewportSize({ width: 390, height: 844 })
