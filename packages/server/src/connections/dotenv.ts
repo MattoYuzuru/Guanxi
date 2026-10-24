@@ -2,7 +2,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { parseEnv } from 'node:util'
 import { connectionBaseUrlSchema, type Connection } from '@guanxi/contract'
-import { assertApiKey, assertOAuthToken } from './pi.ts'
+import { ANTHROPIC_API_KEY_PREFIXES, assertApiKey, assertOAuthToken } from './pi.ts'
 import { ConnectionError } from './errors.ts'
 import type { Connections } from './service.ts'
 
@@ -70,8 +70,10 @@ export async function importProviderKeysFile(connections: Connections, accountId
 }
 
 /** Which family a credential belongs to, as a label only: the known prefixes and never a character beyond them. */
-export function keyFamily(value: string): 'sk-ant-api' | 'sk-ant-oat' | 'sk-ant-<other>' | 'not sk-ant' {
-  return value.startsWith('sk-ant-api') ? 'sk-ant-api' : value.startsWith('sk-ant-oat') ? 'sk-ant-oat' : value.startsWith('sk-ant-') ? 'sk-ant-<other>' : 'not sk-ant'
+export function keyFamily(value: string): 'sk-ant-api' | 'sk-ant-usr' | 'sk-ant-oat' | 'sk-ant-<other>' | 'not sk-ant' {
+  const api = ANTHROPIC_API_KEY_PREFIXES.find(prefix => value.startsWith(prefix))
+  if (api) return api
+  return value.startsWith('sk-ant-oat') ? 'sk-ant-oat' : value.startsWith('sk-ant-') ? 'sk-ant-<other>' : 'not sk-ant'
 }
 /** Diagnostics for an owner-designated key file (the MS1 doctor): which providers it would import and which supported names are invalid,
  * plus its file mode. Never a value, and nothing is imported. */

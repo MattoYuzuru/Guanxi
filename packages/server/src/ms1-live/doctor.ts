@@ -26,8 +26,9 @@ const executable = (path: string): boolean => { try { accessSync(path, constants
 const writableDir = (path: string): boolean => { try { accessSync(path, constants.W_OK); return statSync(path).isDirectory() } catch { return false } }
 
 /** The key file the lead's API-key mode imports at boot, judged without printing a value: where it comes from (the same order `start`
- * uses: `GUANXI_PROVIDER_KEYS_FILE`, then the configuration), whether it parses, and whether `ANTHROPIC_API_KEY` is an API key (an OAuth
- * token of the subscription family is refused). The vault is not opened here, so a connection named by `home.lead.connection` is judged at start. */
+ * uses: `GUANXI_PROVIDER_KEYS_FILE`, then the configuration), whether it parses, and whether `ANTHROPIC_API_KEY` is an Anthropic API key
+ * (either accepted API key family; an OAuth token of the subscription family is refused). The vault is not opened here, so a connection
+ * named by `home.lead.connection` is judged at start. */
 function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['lead']>, env: Readonly<Record<string, string | undefined>>): Check[] {
   const fromEnv = env['GUANXI_PROVIDER_KEYS_FILE'] || undefined, file = fromEnv || lead.providerKeysFile
   if (lead.auth === 'oauth_token' && !file) return [warn('lead_key', 'lead_key_file_not_given', 'No key file is named for the token lead: its token must already be in this node\'s vault from an earlier `start` with a file.',
@@ -49,20 +50,20 @@ function leadKeyChecks(lead: NonNullable<NonNullable<Ms1LiveSettings['home']>['l
         'ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN both hold a subscription token; the import refuses the duplicate.', 'Remove the ANTHROPIC_API_KEY line (or the CLAUDE_CODE_OAUTH_TOKEN line) from the key file.')
       const bad = found.invalid.filter(name => ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'].includes(name))
       if (bad.length) return fail('lead_key', 'lead_key_invalid', `${bad.map(name => `${name} starts with ${found.families[name]}`).join('; ')}: a Claude Code subscription token starts with sk-ant-oat.`,
-        'Run `claude setup-token` and put its token in CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY); an API key (sk-ant-api...) is not accepted in oauth_token mode.')
+        'Run `claude setup-token` and put its token in CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY); an API key (sk-ant-api... or sk-ant-usr...) is not accepted in oauth_token mode.')
       if (!found.providers.includes('claude-code')) return found.providers.includes('anthropic')
-        ? fail('lead_key', 'lead_key_wrong_family', `ANTHROPIC_API_KEY starts with ${found.families['ANTHROPIC_API_KEY'] ?? 'sk-ant-api'} (an Anthropic API key), but home.lead.auth is "oauth_token".`, 'Set home.lead.auth to "api_key" for that key, or put the `claude setup-token` token in the file.')
+        ? fail('lead_key', 'lead_key_wrong_family', `ANTHROPIC_API_KEY starts with ${found.families['ANTHROPIC_API_KEY']!} (an Anthropic API key), but home.lead.auth is "oauth_token".`, 'Set home.lead.auth to "api_key" for that key, or put the `claude setup-token` token in the file.')
         : fail('lead_key', 'lead_key_missing', 'The key file has no CLAUDE_CODE_OAUTH_TOKEN (or sk-ant-oat value under ANTHROPIC_API_KEY); `start` does not fall back to an older credential in the vault when a file is named.', 'Run `claude setup-token` and add the token to the file (quote a value that contains #).')
       if (found.invalid.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${found.invalid.join(', ')} in the key file is invalid, and the lead does not start on a half-imported vault.`, 'Fix or remove those lines.')
       return ok('lead_key', `A Claude Code subscription token (sk-ant-oat...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault for the official CLI only (billed to your subscription).`)
     }
-    if (found.invalid.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', `ANTHROPIC_API_KEY starts with ${found.families['ANTHROPIC_API_KEY']}, not sk-ant-api: it is not an Anthropic API key.`,
+    if (found.invalid.includes('ANTHROPIC_API_KEY')) return fail('lead_key', 'lead_key_invalid', `ANTHROPIC_API_KEY starts with ${found.families['ANTHROPIC_API_KEY']}, not an Anthropic API key (sk-ant-api... or sk-ant-usr...).`,
       found.families['ANTHROPIC_API_KEY'] === 'sk-ant-oat' ? 'That is a subscription token: set home.lead.auth to "oauth_token" to use it, or create an API key in the Anthropic Console.'
-        : 'Create an API key in the Anthropic Console (it starts with sk-ant-api), or run `claude setup-token` and use home.lead.auth "oauth_token".')
+        : 'Create an API key in the Anthropic Console (it starts with sk-ant-api... or sk-ant-usr...), or run `claude setup-token` and use home.lead.auth "oauth_token".')
     if (!found.providers.includes('anthropic')) return fail('lead_key', 'lead_key_missing', 'The key file has no ANTHROPIC_API_KEY (`start` does not fall back to an older key in the vault when a file is named).', 'Add ANTHROPIC_API_KEY=... to the file (quote a value that contains #).')
     if (found.invalid.length) return fail('lead_key', 'lead_key_import_failed', `The boot import would fail as a whole: ${found.invalid.join(', ')} in the key file is invalid, and an API-key lead does not start on a half-imported vault.`,
       'Fix or remove those lines.')
-    return ok('lead_key', `An Anthropic API key (sk-ant-api...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault.`)
+    return ok('lead_key', `An Anthropic API key (sk-ant-api... or sk-ant-usr...) is present in the key file named by ${where}; its value is not shown, and \`start\` imports it into this node's vault.`)
   })()
   return [...checks, verdict]
 }

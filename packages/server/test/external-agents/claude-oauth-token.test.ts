@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { AdapterId } from '../../src/external-agents/types.ts'
-import { parseProviderKeyFile } from '../../src/connections/dotenv.ts'
+import { keyFamily, parseProviderKeyFile } from '../../src/connections/dotenv.ts'
 import { fixture, owner } from './helpers.ts'
 
 type Fixture = Awaited<ReturnType<typeof fixture>>
@@ -114,6 +114,14 @@ test('token families are never exchanged: an API key is not a Claude Code token,
   const f = await fixture(t, ['claude-code'], {}, {}, { claudeApi: true })
   const row = f.connections.create(owner, { name: 'a', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   await assert.rejects(async () => f.connections.saveSecret(owner, row.id, token), /An API key is required/)
+})
+
+test('dotenv family labels name the user API key family and never a character beyond the prefix', () => {
+  assert.equal(keyFamily(`sk-ant-usr01-${'x'.repeat(90)}`), 'sk-ant-usr')
+  assert.equal(keyFamily(`sk-ant-api03-${'a'.repeat(40)}`), 'sk-ant-api')
+  assert.equal(keyFamily(`sk-ant-oat01-${'b'.repeat(40)}`), 'sk-ant-oat')
+  assert.equal(keyFamily(`sk-ant-admin01-${'c'.repeat(40)}`), 'sk-ant-<other>')
+  assert.equal(keyFamily('plain-value'), 'not sk-ant')
 })
 
 test('the token connection pays for Claude Code alone: a Codex, OpenCode or Goose installation bound to it is refused before any process starts', async t => {
