@@ -1,0 +1,80 @@
+/** SIGTERM while a remote dispatch is generating: the executor must abort the llama-server request, close within the named
+ * stop bound, and a restarted executor must serve the home's retry. Two real `ms1-live start` processes on loopback; the
+ * fixture model call is the only work in flight (no acceptance gate, no container). */
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { MS1_LIVE_STOP_BOUND_MS } from '../../src/index.ts'
+import { runBoundedStop } from '../../src/ms1-live/stop.ts'
+import { createLiveWorld, until } from './live-world.ts'
+
+const MARGIN_MS = 3_000
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+test('SIGTERM aborts an in-flight dispatch, exits within the bound and a restarted executor serves the retry', { timeout: 240_000 }, async t => {
+  const w = await createLiveWorld(t, { fake: { completionDelayMs: 60_000 } })
+  await w.registerProject()
+  const started = await w.startRelay('live-shutdown', 2)
+  assert.equal(started.status, 202, JSON.stringify(started.body))
+  await until(async () => (await w.fake.count('/completion')) >= 1, 'the delayed completion to reach the fake llama-server', 60_000)
+  const interrupted = (await w.fake.requests('/completion'))[0]!
+  assert.equal(await w.fake.aborted(), 0, 'nothing has been aborted before the signal')
+
+  const signalAt = Date.now()
+  assert.equal(w.executor.child.kill('SIGTERM'), true)
+  const deadline = signalAt + MS1_LIVE_STOP_BOUND_MS + MARGIN_MS
+  while (w.executor.alive && Date.now() < deadline) await sleep(25)
+  const elapsed = Date.now() - signalAt
+  assert.equal(w.executor.alive, false,
+    `executor did not exit within ${MS1_LIVE_STOP_BOUND_MS + MARGIN_MS} ms; events: ${w.executor.events.map(event => JSON.stringify(event)).join(' ')}\n${w.executor.stderr.join('').slice(-2000)}`)
+  assert.ok(elapsed <= MS1_LIVE_STOP_BOUND_MS + MARGIN_MS, `executor took ${elapsed} ms`)
+  const exit = await w.executor.exit
+  assert.equal(exit.code, 0, `clean stop exits 0 (signal ${exit.signal})\n${w.executor.stderr.join('').slice(-2000)}`)
+  assert.equal(w.executor.events.some(event => event.event === 'stop'), false, 'a clean close emits no forced stop line')
+
+  // The outbound fetch to the attached llama-server was aborted, and the durable holder is what a crash leaves (no terminal
+  // protocol message, no invented cancel): the home's holder lease is what ends it.
+  await until(async () => (await w.fake.aborted()) >= 1, 'the fake llama-server to observe the client disconnect', 10_000)
+  const holders = w.executor.rows<{ status: string }>('SELECT status FROM remote_dispatch_holders')
+  assert.ok(holders.length >= 1, 'the dispatch holder was durably recorded before the model call')
+  assert.ok(holders.every(holder => holder.status !== 'completed' && holder.status !== 'canceled'), JSON.stringify(holders))
+  assert.equal((await w.fake.count('/completion')), 1, 'the aborted call was not retried on the dead executor')
+
+  // A restart (the operator's `systemctl --user restart`) is reachable again; the home's transient-call retry re-sends the
+  // interrupted prompt to it. Asserting the retry and one further call proves the relay continues; the acceptance gates that
+  // would turn that into a completed run need the K4 container image, which this sandbox does not provide.
+  await w.fake.configure({ completionDelayMs: 0 })
+  w.executor.spawn()
+  await w.executor.wait('started')
+  await until(async () => (await w.fake.requests('/completion')).some(request => request.body.prompt === interrupted.body.prompt),
+    'the home retry to reach the restarted executor', 90_000)
+  const retriedAt = await w.fake.count('/completion')
+  await until(async () => (await w.fake.count('/completion')) > retriedAt, 'the relay to continue after the retry', 60_000)
+  assert.equal(await w.fake.aborted(), 1, 'the restarted executor completed the retry instead of aborting it')
+  const status = await w.relayStatus('live-shutdown')
+  assert.notEqual(status.status, 'failed', JSON.stringify(status))
+  assert.notEqual(status.status, 'canceled', JSON.stringify(status))
+})
+
+test('a close past the stop bound emits exactly one forced JSON line and exits non-zero', async () => {
+  let finish!: () => void
+  const closing = new Promise<void>(resolve => { finish = resolve })
+  const lines: string[] = [], exits: number[] = []
+  const startedAt = Date.now()
+  runBoundedStop(() => closing, { boundMs: 20, flushMs: 5, exit: code => exits.push(code),
+    forced: () => lines.push(JSON.stringify({ event: 'stop', forced: true })) })
+  await until(() => exits.length > 0, 'the forced exit', 2_000)
+  assert.ok(Date.now() - startedAt >= 20, 'the forced path waits for the bound')
+  assert.deepEqual(lines, ['{"event":"stop","forced":true}'])
+  assert.deepEqual(exits, [1])
+  finish()
+  await sleep(20)
+  assert.deepEqual(exits, [1], 'a close that settles after the bound never turns the forced stop into a clean exit')
+})
+
+test('a close inside the stop bound exits zero without a forced line', async () => {
+  const lines: string[] = [], exits: number[] = []
+  runBoundedStop(async () => undefined, { boundMs: 500, flushMs: 5, exit: code => exits.push(code), forced: () => lines.push('unexpected') })
+  await until(() => exits.length > 0, 'the clean exit', 2_000)
+  assert.deepEqual(exits, [0])
+  assert.deepEqual(lines, [])
+})

@@ -423,7 +423,9 @@ export class AttemptDispatch {
   }
   close(): void {
     if (this.closed) return
-    for (const h of this.active.values()) { try { this.lose(h) } catch { h.controller.abort() } }
+    // Mark the generation closed before aborting, so each holder's catch observes a crash-like stop and emits no terminal
+    // protocol event: the home's holder lease, not an invented shutdown message, ends the attempt.
     this.closed = true
+    for (const h of this.active.values()) { try { this.lose(h) } catch { h.controller.abort() } }
   }
 }

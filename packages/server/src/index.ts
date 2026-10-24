@@ -65,6 +65,7 @@ import type { ExternalPolicy } from './external-agents/types.ts'
 import { Ms1LiveNode, type Ms1LiveHomeRelay } from './ms1-live/boot.ts'
 import { federationListener } from './ms1-live/listener.ts'
 import { Ms1LiveError, type Ms1LiveSettings } from './ms1-live/config.ts'
+import { runBoundedStop } from './ms1-live/stop.ts'
 
 export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
@@ -150,6 +151,10 @@ export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
 
+/** Bound of one `ms1-live` stop: the process either closes cleanly inside it or exits non-zero with
+ * `{"event":"stop","forced":true}`. Named policy, not a per-run guess. */
+export const MS1_LIVE_STOP_BOUND_MS = 10_000
+
 export interface StartOptions {
   port?: number
   host?: string
@@ -190,6 +195,9 @@ export interface StartOptions {
    * node itself, so it excludes `federation`, `relay`, `operationalRelay`, and, when it carries a `lead` section,
    * `externalAgents` and `leads`. Without it nothing in this block runs. */
   ms1Live?: Ms1LiveSettings
+  /** Bounded stop: after `boundMs` a still-running close emits one `forced` line and exits non-zero. `ms1-live` defaults to
+   * `MS1_LIVE_STOP_BOUND_MS`; the default forced writer is the JSON line on stdout, never prompt or key material. */
+  shutdown?: { boundMs?: number; forced?: (event: { event: 'stop'; forced: true }) => void }
   /**
    * Explicit opt-in to OS notification delivery. Off by default: without it ingestion writes
    * notification rows only. `runner`, `platform` and `resolveBinary` are host/test seams; the
@@ -229,6 +237,20 @@ function defaultNotificationDeliverySettings(): DeliverySettings {
     criticalBypassesQuietHours: false,
     mutedKinds: [],
   }
+}
+
+/** Grace an open response gets to finish after `server.close()`, before its connection is dropped. The stop bound is
+ * larger: this is the polite part of closing one listener, not the whole shutdown. */
+const LISTENER_DRAIN_GRACE_MS = 1_500
+
+/** `server.close()` stops accepting, then drops idle connections at once and whatever is still active after the grace. */
+function drainListener(server: ReturnType<typeof serve> | undefined): Promise<void> {
+  if (!server) return Promise.resolve()
+  const closed = new Promise<void>(resolveClose => { server.close(() => resolveClose()) })
+  const connections = server as unknown as { closeIdleConnections?: () => void; closeAllConnections?: () => void }
+  connections.closeIdleConnections?.()
+  const force = setTimeout(() => connections.closeAllConnections?.(), LISTENER_DRAIN_GRACE_MS)
+  return closed.finally(() => clearTimeout(force))
 }
 
 export async function start(options: StartOptions = {}) {
@@ -522,23 +544,20 @@ export async function start(options: StartOptions = {}) {
   const url = `http://${browserHost}:${actualPort}`
 
   let closing: Promise<void> | null = null
+  const federation = kernel.node.service<Federation>(FEDERATION_SERVICE)
   const close = (): Promise<void> => {
     if (closing) return closing
     closing = (async () => {
-      // Stop accepting commands first; existing Chat streams stay alive long
-      // enough to observe their truthful internal-shutdown terminal event.
-      const listenerClosed = new Promise<void>((resolveClose) => {
-        instance.close(() => resolveClose())
-      })
-      const federationClosed = new Promise<void>((resolveClose) => {
-        if (federationInstance) federationInstance.close(() => resolveClose())
-        else resolveClose()
-      })
+      // Abort in-flight dispatch holders before waiting for a listener. Their model calls are outbound and are not
+      // connections of either listener; aborting here means the llama-server `/completion` fetch dies with the node
+      // instead of holding the close open for the model's own deadline.
+      federation?.close()
+      // Stop accepting commands first; existing Chat streams get the drain grace to observe their truthful
+      // internal-shutdown terminal event, then `closeAllConnections()` drops whatever is left.
+      const listenersClosed = Promise.all([drainListener(instance), drainListener(federationInstance)])
       // MS1 live: an inbound observe or count may be waiting on a model-file hash. Stopping the runtime ends that work (the request
-      // is answered with a refusal), and whatever is still open after a short grace is dropped: a close must not last as long as the
-      // slowest request the peer happened to send.
+      // is answered with a refusal).
       const liveClosing = live?.close().catch(() => undefined)
-      if (federationInstance) setTimeout(() => (federationInstance as unknown as { closeAllConnections?: () => void } | undefined)?.closeAllConnections?.(), 1500).unref()
       let shutdownError: unknown = null
       try {
         await context.maintenance?.close()
@@ -554,12 +573,10 @@ export async function start(options: StartOptions = {}) {
         context.jobService.closeSubscriptions()
         // Inspector streams are open-ended; end them so the listener can close.
         context.sessionLog?.closeSubscriptions()
-        await listenerClosed
-        await federationClosed
+        await listenersClosed
         await liveClosing
         // Unload plugins before the database they may use is closed. Each
-        // plugin cleanup is bounded by the kernel's step timeout; the HTTP
-        // listener close above is not bounded (it waits for open responses).
+        // plugin cleanup is bounded by the kernel's step timeout.
         try {
           await kernel.node.dispose()
         } catch (error) {
@@ -577,11 +594,16 @@ export async function start(options: StartOptions = {}) {
     return closing
   }
 
+  // A live node is a service: a stop that cannot finish inside the bound ends as a forced exit, never as a systemd
+  // SIGKILL minutes later. A plain `start()` keeps the old unbounded behaviour unless the caller asks for a bound.
+  const stopBoundMs = options.shutdown?.boundMs ?? (live ? MS1_LIVE_STOP_BOUND_MS : undefined)
+  const forcedStop = options.shutdown?.forced ?? ((event: { event: 'stop'; forced: true }) => { process.stdout.write(JSON.stringify(event) + '\n') })
   const shutdown = () => {
-    void close().then(
-      () => process.exit(0),
-      () => process.exit(1),
-    )
+    if (stopBoundMs === undefined) {
+      void close().then(() => process.exit(0), () => process.exit(1))
+      return
+    }
+    runBoundedStop(close, { boundMs: stopBoundMs, forced: () => forcedStop({ event: 'stop', forced: true }), exit: code => process.exit(code) })
   }
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)

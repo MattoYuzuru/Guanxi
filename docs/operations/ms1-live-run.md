@@ -2,7 +2,7 @@
 
 **Status:** implemented and fixture-validated on one machine (two real processes over a loopback forward emulator); not yet run
 over a real SSH link, with a real Claude Code, or end to end on the Fedora node (its llama-server and R2-op classes were validated
-alone: [evidence](../plans/evidence/fedora-real-runtime-2026-10-23.md)). **Updated:** 2026-10-23 ·
+alone: [evidence](../plans/evidence/fedora-real-runtime-2026-10-23.md)). **Updated:** 2026-10-24 ·
 **Decisions:** D-196 (Fedora real runs), D-197 and D-210 (Claude Code lead, now Sonnet 5.5 at medium effort), D-198 (target
 repository), D-199 (journal stays local).
 
@@ -178,6 +178,9 @@ The relay run keeps its own cap accounting; never add the two.
 2. Stop the home (`Ctrl-C` / `SIGTERM`): it closes cleanly. **A relay run does not survive its node** (ADR-0020): anything in
    flight ends `interrupted`, its ledger is kept, the lead must re-delegate.
 3. Stop the ssh forward, then the executor (`Ctrl-C`), then llama-server (your service manager).
+
+The stop is bounded at 10 seconds (`MS1_LIVE_STOP_BOUND_MS`): an in-flight remote dispatch is aborted with the executor, both roles
+close their listeners, and a close that has not finished at the bound exits non-zero with `{"event":"stop","forced":true}`.
 
 Pins are now reaped (F2-reap): the home journals each pin before it is sent, re-sends a signed `unpin` for every journal row at start
 and every 60 s, and the executor leases each pin (10 minutes, renewed by the live run's 60-second heartbeat). A long run therefore

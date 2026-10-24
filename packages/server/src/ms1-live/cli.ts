@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { ZodError } from 'zod'
 import { resolve } from 'node:path'
-import { start, type StartOptions } from '../index.ts'
+import { MS1_LIVE_STOP_BOUND_MS, start, type StartOptions } from '../index.ts'
 import { EXTERNAL_AGENT_SERVICE, type ExternalAgentService } from '../external-agents/plugin.ts'
 import { LOCAL_ACCOUNT_ID } from '../http/local-guard.ts'
 import { LEAD_SERVICE, type LeadHostService } from '../leads/plugin.ts'
@@ -157,7 +157,9 @@ async function startCommand(parsed: Parsed, io: Io, env: Readonly<Record<string,
   const dataDir = text(parsed, 'data-dir'), listen = port(parsed, 'port')
   let server: Awaited<ReturnType<typeof start>>
   // `providerKeysFile` is always given (empty: none), so `doctor` and `start` read the one source, the command's environment.
-  try { server = await start({ ms1Live: settings, providerKeysFile: env['GUANXI_PROVIDER_KEYS_FILE'] ?? '', ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}), ...startExtra }) } catch (error) {
+  // The stop bound is part of this command's contract: a forced stop is one JSON line on stdout even without `--json`.
+  try { server = await start({ ms1Live: settings, providerKeysFile: env['GUANXI_PROVIDER_KEYS_FILE'] ?? '', ...(listen ? { port: listen } : {}), ...(dataDir ? { dataDir: resolve(dataDir) } : {}),
+    shutdown: { boundMs: MS1_LIVE_STOP_BOUND_MS, forced: event => io.out(JSON.stringify(event)) }, ...startExtra }) } catch (error) {
     if (error instanceof Ms1LiveError) { emit({ event: 'failed', code: error.code, field: error.field, summary: describeConfigError(error) }); return 2 }
     const code = (error as NodeJS.ErrnoException | null)?.code
     emit({ event: 'failed', code: code === 'EADDRINUSE' ? 'port_in_use' : 'start_failed' })
