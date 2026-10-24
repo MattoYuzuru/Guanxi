@@ -132,6 +132,21 @@ test('a transient observation failure before admission waits, re-observes and th
     assert.equal(f.relay.read(f.run.id).items.one, 'done')
   } finally { f.close() }
 })
+test('a zero money cap refuses the pre-call reservation when a cost is possible or unknown', async () => {
+  for (const [label, maxCost] of [['quoted', () => 10], ['unknown', () => null], ['absent', undefined]] as const) {
+    const f = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
+    try {
+      if (maxCost) f.model.maxCostMicros = maxCost
+      else delete f.model.maxCostMicros
+      await f.executor.run(f.attempt)
+      assert.equal(f.prompts.filter(p => p.startsWith('Execute')).length, 0, `${label}: no work call was reserved`)
+      const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+      assert.ok(notes.some(text => text.includes('"relay":"cap"') && text.includes('"reason":"call_reserve"')), `${label}: ${JSON.stringify(notes)}`)
+      assert.equal(f.relay.read(f.run.id).pendingCall, null, `${label}: no reservation is held`)
+      assert.equal(f.store.get(f.run.id).state, 'wrapping_up', label)
+    } finally { f.close() }
+  }
+})
 test('a zero money cap stops on an unknown cost before any call', async () => {
   const g = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
   try {
