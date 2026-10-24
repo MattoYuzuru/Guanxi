@@ -151,8 +151,8 @@ export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** Bound of one `ms1-live` stop: the process either closes cleanly inside it or exits non-zero with
- * `{"event":"stop","forced":true}`. Named policy, not a per-run guess. */
+/** Bound of one `ms1-live` executor stop: the process either closes cleanly inside it or exits non-zero with
+ * `{"event":"stop","forced":true}`. Named policy, not a per-run guess; the home role is unbounded. */
 export const MS1_LIVE_STOP_BOUND_MS = 10_000
 
 /** The forced bound is an executor policy. A home must abort its relay, settle pins and reap detached Claude Code
@@ -203,8 +203,9 @@ export interface StartOptions {
    * node itself, so it excludes `federation`, `relay`, `operationalRelay`, and, when it carries a `lead` section,
    * `externalAgents` and `leads`. Without it nothing in this block runs. */
   ms1Live?: Ms1LiveSettings
-  /** Bounded stop: after `boundMs` a still-running close emits one `forced` line and exits non-zero. `ms1-live` defaults to
-   * `MS1_LIVE_STOP_BOUND_MS`; the default forced writer is the JSON line on stdout, never prompt or key material. */
+  /** Bounded stop: after `boundMs` a still-running close emits one `forced` line and exits non-zero. An `ms1-live`
+   * executor defaults to `MS1_LIVE_STOP_BOUND_MS`; a home role ignores the bound. The default forced writer is the JSON
+   * line on stdout, never prompt or key material. */
   shutdown?: { boundMs?: number; forced?: (event: { event: 'stop'; forced: true }) => void }
   /**
    * Explicit opt-in to OS notification delivery. Off by default: without it ingestion writes
