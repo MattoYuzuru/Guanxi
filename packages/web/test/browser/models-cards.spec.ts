@@ -105,6 +105,13 @@ for (const width of [1440, 600, 390]) test(`cards are a grid of equal, opaque, u
     expect(box.x).toBeGreaterThanOrEqual(0)
     expect(box.x + box.width).toBeLessThanOrEqual(width)
   }
+  // A wide screen fits several cards per row, and cards in a row share one height.
+  if (width === 1440) {
+    const firstRow = boxes.filter(box => Math.abs(box.y - boxes[0]!.y) < 1)
+    expect(firstRow.length).toBeGreaterThanOrEqual(2)
+    expect(boxes.some(box => box.y > boxes[0]!.y + 1)).toBe(true)
+    for (const box of firstRow) expect(Math.abs(box.height - firstRow[0]!.height)).toBeLessThanOrEqual(1)
+  }
   // Values carry the weight: a fact's value is heavier than its label.
   const weights = await installed.locator('article').first().locator('.model-fact').first().evaluate(row => [
     Number(getComputedStyle(row.querySelector('dt')!).fontWeight), Number(getComputedStyle(row.querySelector('dd')!).fontWeight)])

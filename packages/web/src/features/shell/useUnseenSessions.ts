@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionPageItem } from '@guanxi/contract'
 import { SEEN_SESSIONS_KEY, isFinishedUnseen, markSeen, pruneSeen, readSeenSessions, writeSeenSessions } from './seen.ts'
-import { sessionNavigationPath } from './sessionNavigation.ts'
+import { sessionViewPaths } from './sessionNavigation.ts'
 
 const pathOf = (location: string) => location.split('?')[0] ?? '/'
-/** A session is open when the location is its navigation target or its inspector page. */
+/** A session is open when the location is one of its views (round 4: a chat's timeline or its free arrangement) or its inspector page. */
 export function sessionIsOpen(session: SessionPageItem, location: string): boolean {
-  const target = sessionNavigationPath(session.navigation)
-  return target === location || (!target.includes('?') && pathOf(target) === pathOf(location))
+  return sessionViewPaths(session.navigation).some(target => target === location || (!target.includes('?') && pathOf(target) === pathOf(location)))
     || pathOf(location) === `/inspector/${encodeURIComponent(session.sessionId)}`
 }
 

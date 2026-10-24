@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { Icon, IconButton, SegmentedControl } from '@guanxi/ui'
 import { translate as t } from '../../lib/locale.ts'
 import { sessionPanelIcon, type SessionPanel, type SessionPanels } from './panels.ts'
@@ -16,7 +16,11 @@ export function SessionPanelsAside({ panels, render, onClosed }: {
   onClosed?: () => void
 }) {
   const aside = useRef<HTMLElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
   const active = panels.active
+  const sheet = usePhoneSheet()
+  // On a phone the panel is a full-screen sheet over an inert page: focus moves into it (review P2).
+  useEffect(() => { if (sheet && active) closeButton.current?.focus() }, [sheet, active])
   if (!active) return null
   const title = (panel: SessionPanel) => t(`workspaceLayout.block.${panel}`)
   const close = () => {
@@ -36,10 +40,21 @@ export function SessionPanelsAside({ panels, render, onClosed }: {
           options={panels.open.map(panel => ({ value: panel, label: title(panel), icon: sessionPanelIcon[panel] }))} />
         : <Icon name={sessionPanelIcon[active]} size={16} className="session-panels-icon" />}
       <h2 className="session-panels-title">{title(active)}</h2>
-      <IconButton size="sm" label={t('session.panels.close', { panel: title(active) })} icon={<Icon name="close" />} onClick={close} />
+      <IconButton ref={closeButton} size="sm" label={t('session.panels.close', { panel: title(active) })} icon={<Icon name="close" />} onClick={close} />
     </header>
     <div className="session-panels-body" data-panel={active}>{render(active)}</div>
   </aside>
+}
+
+const PHONE = '(max-width: 639px)'
+function subscribePhone(listener: () => void) {
+  const query = window.matchMedia(PHONE)
+  query.addEventListener('change', listener)
+  return () => query.removeEventListener('change', listener)
+}
+/** True on a phone-width screen, where an open panel is a full-screen sheet. */
+export function usePhoneSheet(): boolean {
+  return useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE).matches, () => false)
 }
 
 /** The one-sentence state of a panel whose service is not attached yet. */

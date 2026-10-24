@@ -254,11 +254,13 @@ export function LauncherPage({ health }: { health: Health }) {
                   cores: hardware.cpuCores,
                   deviceNote: translate('hardware.deviceCountUnknown'),
                 })}</p>
+                <p className="gx-popover-description">{translate('launcher.fitBasis')}</p>
               </StatusItem>
               <StatusItem icon={hardware.unifiedMemory ? 'memory-unified' : 'memory-ram'} label={translate('launcher.memory.available')} value={formatBytes(hardware.usableMemoryBytes)}>
                 <p className="gx-popover-description">{hardware.unifiedMemory
                   ? translate('launcher.memory.unified', { total: formatBytes(hardware.totalMemoryBytes) })
                   : translate('launcher.memory.system', { total: formatBytes(hardware.totalMemoryBytes) })}</p>
+                <p className="gx-popover-description">{translate('launcher.fitBasis')}</p>
               </StatusItem>
               {hardware.freeDiskBytes !== null && (
                 <StatusItem icon="storage" label={translate('launcher.disk.free')} value={formatBytes(hardware.freeDiskBytes)}>

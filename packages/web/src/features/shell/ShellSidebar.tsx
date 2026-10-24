@@ -4,7 +4,7 @@ import { SidebarSlot } from '../../kernel/SidebarSlot.tsx'
 import { formatTime } from '../../lib/format.ts'
 import { translate as t } from '../../lib/locale.ts'
 import { Link, paths } from '../../lib/router.tsx'
-import { sessionNavigationPath } from './sessionNavigation.ts'
+import { sessionNavigationPath, sessionViewPaths } from './sessionNavigation.ts'
 import { sessionDateGroup, sessionStatus } from './sessionPresentation.ts'
 import './shell.css'
 
@@ -88,7 +88,7 @@ export function ShellSidebar(props: ShellSidebarProps) {
               const target = sessionNavigationPath(session.navigation)
               const isPinned = pinned.has(session.sessionId)
               return <li key={session.sessionId} className="shell-session-row" data-pinned={isPinned || undefined}>
-                <Link to={target} aria-current={props.location === target ? 'page' : undefined} className="shell-session-link"
+                <Link to={target} aria-current={sessionViewPaths(session.navigation).includes(props.location) ? 'page' : undefined} className="shell-session-link"
                   aria-describedby={`shell-session-${session.sessionId}`}>
                   <span className="shell-status-dot" data-status={status} aria-hidden="true" />
                   <span className="shell-session-title">{title}</span>

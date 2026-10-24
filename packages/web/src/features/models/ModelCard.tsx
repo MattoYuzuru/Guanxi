@@ -33,7 +33,6 @@ const HIGHLIGHT_CAPABILITIES: ModelCapability[] = ['tools', 'vision', 'thinking'
 
 export const ModelCard = memo(function ModelCard({
   data,
-  onFocusCard,
   onInstalled,
   selectedContextLength,
   compareTargets,
@@ -41,7 +40,6 @@ export const ModelCard = memo(function ModelCard({
   onPullActiveChange,
 }: {
   data: ModelCardData
-  onFocusCard?: () => void
   onInstalled?: (name: string) => void
   selectedContextLength?: number
   compareTargets?: readonly string[]
@@ -98,7 +96,6 @@ export const ModelCard = memo(function ModelCard({
         <div className="flex items-start justify-between gap-2">
           <Link
             to={paths.model(model.name)}
-            onFocus={onFocusCard}
             className="min-w-0 truncate font-mono text-[13px] font-semibold hover:text-accent focus-visible:text-accent"
             title={model.name}
           >
@@ -159,7 +156,6 @@ export const ModelCard = memo(function ModelCard({
           <footer className="model-card-footer">
             <Link
               to={`${paths.chat()}?model=${encodeURIComponent(model.name)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
-              onFocus={onFocusCard}
               className="model-card-action"
             >
               <UiIcon name="chat" size={14} aria-hidden="true" />

@@ -65,7 +65,7 @@ import { useWorkspaceControls } from '../workspace/controls.ts'
 import { panelBlockId, useSessionPanels } from '../session/panels.ts'
 import { clearSessionContext, publishSessionContext } from '../session/session-context.ts'
 import { SessionPanelsMenu } from '../session/SessionPanelsMenu.tsx'
-import { SessionPanelEmpty, SessionPanelsAside } from '../session/SessionPanelsAside.tsx'
+import { SessionPanelEmpty, SessionPanelsAside, usePhoneSheet } from '../session/SessionPanelsAside.tsx'
 import '../native-agent/native-session.css'
 import '../session/session.css'
 import type { StreamBuffer } from './streamBuffer.ts'
@@ -472,6 +472,7 @@ function ThreadPage({
   // Round 4: side panels open beside the timeline; in the free arrangement they are dock blocks.
   const layoutControls = useWorkspaceControls()
   const panels = useSessionPanels()
+  const phoneSheet = usePhoneSheet() && panels.active !== null && !layoutControls
   const headingId = useId()
   const [contextWriter] = useState(() => Symbol('session-context'))
   useEffect(() => {
@@ -551,7 +552,11 @@ function ThreadPage({
     ? layoutControls.blocks.some(block => block.id === panelBlockId('context') && !block.hidden)
     : panels.active === 'context'
   const toggleContext = () => {
-    if (layoutControls) layoutControls.setVisible(panelBlockId('context'), !contextShown)
+    if (layoutControls) {
+      // A saved layout may lack the Context block: add it rather than show a missing block.
+      if (layoutControls.blocks.some(block => block.id === panelBlockId('context'))) layoutControls.setVisible(panelBlockId('context'), !contextShown)
+      else layoutControls.add(panelBlockId('context'))
+    }
     else panels.toggle('context', !contextShown)
   }
   const model = displayModelSelection(chat.thread.model)
@@ -560,7 +565,7 @@ function ThreadPage({
     <section className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
         {/* Round 4: title, model and context never overlap — the title truncates, the model is a
             chip that drops its name first, the context is an icon and a value; actions are icons. */}
-        <header className="native-session-header session-header" data-testid="session-header">
+        <header className="native-session-header session-header" data-testid="session-header" inert={phoneSheet || undefined}>
           <div className="native-session-heading session-heading">
             {chat.project && <>
               <nav aria-label={translate('native.breadcrumb')} className="native-session-crumbs">
@@ -605,7 +610,7 @@ function ThreadPage({
 
         {/* The panels sit beside the timeline under the header, so the header stays reachable. */}
         <div className="native-session-layout">
-        <div className="native-session-main">
+        <div className="native-session-main" inert={phoneSheet || undefined}>
         <MessageTimeline
           messages={chat.messages}
           contextCheckpoints={chat.contextCheckpoints}

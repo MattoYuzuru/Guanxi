@@ -11,3 +11,9 @@ export function sessionNavigationPath(navigation: SessionPageNavigation): string
   if (navigation.kind === 'chat') return navigation.projectId ? paths.projectChat(navigation.projectId, navigation.threadId) : paths.chat(navigation.threadId)
   return paths.inspector(navigation.sessionId)
 }
+
+/** Every view that shows the session: its navigation target and, for a chat, the free arrangement. */
+export function sessionViewPaths(navigation: SessionPageNavigation): string[] {
+  const target = sessionNavigationPath(navigation)
+  return navigation.kind === 'chat' ? [target, paths.workspace(navigation.threadId, navigation.projectId), paths.workspace(navigation.threadId)] : [target]
+}

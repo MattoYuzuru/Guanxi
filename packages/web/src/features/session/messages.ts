@@ -17,7 +17,6 @@ export const sessionEnglish = {
   'session.layout.saveAsConfirm': 'Save',
   'session.model': 'Model: {model}',
   'session.context.open': 'Context window: {value}. Show the context panel',
-  'session.context.unknown': 'unknown',
 } as const
 
 export const sessionRussian: Record<keyof typeof sessionEnglish, string> = {
@@ -38,5 +37,4 @@ export const sessionRussian: Record<keyof typeof sessionEnglish, string> = {
   'session.layout.saveAsConfirm': 'Сохранить',
   'session.model': 'Модель: {model}',
   'session.context.open': 'Окно контекста: {value}. Показать панель контекста',
-  'session.context.unknown': 'неизвестно',
 }

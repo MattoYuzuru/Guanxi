@@ -249,6 +249,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
         if (won) {
           // Preserve edits made while the request was in flight, while advancing their base clock.
           setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, scope: result.document.scope, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
+          setName(result.document.name)
           geometryCache.current.set(`${scopeKey}#${result.document.id}`, local)
         }
         attempt.applied = true
@@ -426,12 +427,17 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? children : null}</BuiltInPane>
   }
   const busy = loading || saving || switching
+  // The session header carries the menu only while the session block is on screen: not hidden, not
+  // behind another phone tab. Otherwise the workspace's own bar shows it (review P1).
+  const isSession = (id: string) => doc.blocks[id]?.contribution === 'guanxi.core/chat'
+  const sessionOnScreen = coreChatReady && (phone ? isSession(selectedId) : visible.some(isSession))
   const layoutLabel = (row: LayoutDocument) => row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName')
     : row.id.startsWith('default-') && (row.name === 'developer' || row.name === 'visual') ? translate('workspaceLayout.defaultName') : row.name
   // The session header's panels menu replaces the toolbar row (round 4, owner feedback 2026-10-23).
   const controls: WorkspaceLayoutControls = {
     busy, phone,
-    blocks: Object.keys(doc.blocks).filter(id => doc.blocks[id]!.contribution !== 'guanxi.core/chat')
+    // The session block is a row too: hidden from its dock tab, it comes back from this menu (review P1).
+    blocks: Object.keys(doc.blocks)
       .sort((a, b) => doc.blocks[a]!.priority - doc.blocks[b]!.priority || a.localeCompare(b))
       .map(id => ({ id, label: title(id), hidden: doc.hidden.includes(id) })),
     addable: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')
@@ -452,7 +458,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     },
     name: layoutLabel(doc),
     save: () => { void save() },
-    saveAs: next => { setName(next); void save(true, undefined, next) },
+    // The new name becomes the layout's name only once the node confirms the save (review P2).
+    saveAs: next => { void save(true, undefined, next) },
     reset,
     move: () => openMove(),
     registerMenu,
@@ -463,7 +470,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
     {/* The session header carries the panels menu; when no session block shows, the menu stays reachable here. */}
-    {menuHosts === 0 && <div className="workspace-bar"><SessionPanelsMenu layout={controls} fallback /></div>}
+    {(menuHosts === 0 || !sessionOnScreen) && <div className="workspace-bar"><SessionPanelsMenu layout={controls} fallback /></div>}
     {loadError && loadErrorState(loadError)}
     {saveError && actionErrorState(saveError, () => retryOperation.current(), saving || switching)}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>

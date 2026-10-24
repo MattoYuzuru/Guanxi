@@ -73,8 +73,9 @@
   }
 }
 
-/* Side panels: one rounded pane floating beside the timeline. */
-.session-panels {
+/* Side panels: one rounded pane floating beside the timeline. Scoped to the session view so the
+   overrides of the native side-chat geometry never depend on stylesheet order. */
+.session-view .session-panels {
   margin: var(--spacing-8) var(--spacing-8) var(--spacing-8) 0;
   overflow: hidden;
   border: var(--border-width-regular) solid var(--color-border-secondary);
@@ -129,14 +130,14 @@
 /* A medium session keeps the panel beside the timeline, narrower; only a narrow one shows it over
    the timeline (below the header), and a phone as a full-screen sheet. */
 @container (max-width: 1023px) {
-  .session-panels {
+  .session-view .session-panels {
     position: static;
     width: var(--layout-container-xs);
   }
 }
 
 @container (max-width: 719px) {
-  .session-panels {
+  .session-view .session-panels {
     position: absolute;
     inset: 0;
     width: auto;
@@ -147,7 +148,7 @@
 }
 
 @media (max-width: 639px) {
-  .session-panels {
+  .session-view .session-panels {
     position: fixed;
     z-index: var(--layer-dialog);
     inset: 0;

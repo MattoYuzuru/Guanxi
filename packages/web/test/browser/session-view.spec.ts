@@ -171,6 +171,17 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
   // The context value in the header toggles the same panel.
   await page.getByTestId('session-context').click()
   await expect(panels.getByRole('heading', { name: 'Context', exact: true })).toBeVisible()
+  // On a phone the panel is a sheet over an inert page with focus inside it; Escape closes it.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByTestId('session-panels').getByRole('button', { name: 'Close Context', exact: true }).click()
+  await expect(panels).toHaveCount(0)
+  await page.getByTestId('session-context').click()
+  await expect(panels.getByRole('button', { name: 'Close Context', exact: true })).toBeFocused()
+  await expect(page.getByTestId('session-header')).toHaveAttribute('inert', '')
+  await page.keyboard.press('Escape')
+  await expect(panels).toHaveCount(0)
+  await expect(page.getByTestId('session-header')).not.toHaveAttribute('inert', /.*/u)
+  await page.getByTestId('session-context').click()
   // At every width the open panel leaves the header (and its menu) reachable.
   for (const width of [1024, 800, 390]) {
     await page.setViewportSize({ width, height: 800 })

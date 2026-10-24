@@ -24,7 +24,7 @@ function withBuiltInBlocks() {
 }
 vi.mock('../../src/lib/api.ts', async importOriginal => {
   const actual = await importOriginal<typeof import('../../src/lib/api.ts')>()
-  return { ...actual, api: { ...actual.api, layoutContext: vi.fn(), layouts: vi.fn(), layoutGeometry: vi.fn(), saveLayout: vi.fn() } }
+  return { ...actual, api: { ...actual.api, layoutContext: vi.fn(), layouts: vi.fn(), layoutGeometry: vi.fn(), saveLayout: vi.fn(), saveLayoutGeometry: vi.fn() } }
 })
 vi.mock('../../src/features/workspace/WorkspaceLayout/index.tsx', () => ({
   WorkspaceLayout: ({ handleRef, document }: { handleRef: React.Ref<WorkspaceLayoutHandle>; document: LayoutDocument }) => {
@@ -76,8 +76,27 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
       expect(screen.queryAllByRole('button', { name })).toHaveLength(0)
     expect(screen.queryAllByRole('textbox', { name: 'Named layout' })).toHaveLength(0)
     expect(controls).not.toBeNull()
-    expect(controls!.blocks.map(block => block.id)).not.toContain('guanxi.core/chat')
+    // The session block is a row too, so a block hidden from its dock tab comes back from the menu.
+    expect(controls!.blocks.map(block => block.id)).toContain('guanxi.core/chat')
     expect(controls!.name).toBe('Default layout')
+  })
+
+  it('keeps the layout name when a Save as fails, so a later Save never renames the original (review P2)', async () => {
+    let controls: WorkspaceLayoutControls | null = null
+    function Capture() { controls = useWorkspaceControls(); return null }
+    withBuiltInBlocks()
+    vi.mocked(api.saveLayout).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(api.saveLayoutGeometry).mockResolvedValue({ geometry: {} })
+    render(<Workspace><Capture /></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    act(() => controls!.saveAs('Renamed copy'))
+    await screen.findByRole('alert')
+    vi.mocked(api.saveLayout).mockImplementation(async document => ({ document, recovered: [] }))
+    await act(async () => controls!.save())
+    await waitFor(() => expect(api.saveLayout).toHaveBeenCalledTimes(2))
+    const saved = vi.mocked(api.saveLayout).mock.calls[1]![0]
+    expect(saved.name).toBe('developer')
+    expect(saved.id).toBe('default-developer')
   })
 
   it('one interface (D-204): reads layouts for the one pinned mode once and never switches mode (P2)', async () => {

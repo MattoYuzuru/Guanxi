@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import {
   Button, Dialog, DialogContent, DialogFooter, DialogTitle, Icon, IconButton, Input, Menu, MenuCheckboxItem, MenuContent,
   MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, PortalContainerProvider, type IconName,
@@ -10,7 +10,7 @@ import { blockPanel, sessionPanelIcon, sessionPanelNames, type SessionPanel } fr
 
 function panelIconOf(id: string): IconName {
   const panel = blockPanel(id)
-  return panel ? sessionPanelIcon[panel] : 'layers'
+  return panel ? sessionPanelIcon[panel] : id.endsWith('/chat') ? 'chat' : 'layers'
 }
 
 export interface SessionPanelsMenuProps {
@@ -36,9 +36,12 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
   const [naming, setNaming] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const [triggerDocument, setTriggerDocument] = useState<Document | null>(null)
-  // A pane host sits inside the docking engine's stacking contexts: in the main window the menu
-  // mounts on the document body, above every docked pane; a popout window keeps its own document.
-  const portal = layout && triggerDocument === document ? document.body : null
+  // A stable ref callback: it runs on mount and unmount only, not on every render (review P3).
+  const triggerRef = useCallback((node: HTMLButtonElement | null) => { trigger.current = node; if (node) setTriggerDocument(node.ownerDocument) }, [])
+  // A pane host sits inside the docking engine's stacking contexts: the menu mounts on the body of
+  // the trigger's own document (the main window, or a popout), above every docked pane. The
+  // document is read again on open, since a pane can move between windows without remounting.
+  const portal = triggerDocument?.body ?? null
   const busy = layout?.busy ?? false
   const rows = layout
     ? layout.blocks.map(block => ({ id: block.id, label: block.label, icon: panelIconOf(block.id), checked: !block.hidden,
@@ -46,8 +49,8 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
     : sessionPanelNames.map(panel => ({ id: panel, label: t(`workspaceLayout.block.${panel}`), icon: sessionPanelIcon[panel], checked: panels?.open.includes(panel) ?? false,
       onChange: (next: boolean) => panels?.toggle(panel, next) }))
   const menu = <>
-    <Menu modal={false}>
-      <MenuTrigger ref={(node: HTMLButtonElement | null) => { trigger.current = node; setTriggerDocument(node?.ownerDocument ?? null) }} render={<IconButton label={t('session.panels.menu')} icon={<Icon name="panels" />} />} />
+    <Menu modal={false} onOpenChange={() => setTriggerDocument(trigger.current?.ownerDocument ?? null)}>
+      <MenuTrigger ref={triggerRef} render={<IconButton label={t('session.panels.menu')} icon={<Icon name="panels" />} />} />
       <MenuContent align="end" data-testid="session-panels-menu">
         <MenuGroup>
           <MenuGroupLabel>{t('session.panels.group')}</MenuGroupLabel>
@@ -90,7 +93,8 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
     {layout && <SaveAsDialog key={naming ? 'naming' : 'idle'} open={naming} initial={layout.name} onClose={() => { setNaming(false); requestAnimationFrame(() => trigger.current?.focus()) }}
       onSave={name => { setNaming(false); layout.saveAs(name); requestAnimationFrame(() => trigger.current?.focus()) }} />}
   </>
-  return portal ? <PortalContainerProvider container={portal}>{menu}</PortalContainerProvider> : menu
+  // The wrapper is always present in the free arrangement, so the tree (and an open menu) never remounts.
+  return layout ? <PortalContainerProvider container={portal}>{menu}</PortalContainerProvider> : menu
 }
 
 function SaveAsDialog({ open, initial, onClose, onSave }: { open: boolean; initial: string; onClose: () => void; onSave: (name: string) => void }) {

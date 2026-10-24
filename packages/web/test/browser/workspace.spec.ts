@@ -809,6 +809,24 @@ test('popout-native shortcuts follow its current tab after a merge and the origi
   await popup.keyboard.press('Escape')
 })
 
+test('a session block hidden from its dock tab leaves the panels menu reachable and comes back from it (review P1)', async ({ page }) => {
+  await open(page)
+  const menuButtons = page.getByRole('button', { name: 'Panels and layout', exact: true })
+  await expect(menuButtons).toHaveCount(1)
+  await page.locator('.dv-tab').filter({ hasText: /^Chat$/ }).locator('.dv-default-tab-action').click()
+  await expect.poll(async () => (await state(page)).hidden).toContain('guanxi.core/chat')
+  // The workspace's own bar carries the menu now; exactly one menu button, still labelled.
+  await expect(menuButtons).toHaveCount(1)
+  await expect(page.locator('.workspace-bar').getByRole('button', { name: 'Panels and layout', exact: true })).toBeVisible()
+  const menu = await openLayoutMenu(page)
+  const chat = menu.getByRole('menuitemcheckbox', { name: 'Chat', exact: true })
+  await expect(chat).toHaveAttribute('aria-checked', 'false')
+  await chat.click()
+  await expect(page.locator('[data-block="guanxi.core/chat"]')).toBeVisible()
+  await expect(page.locator('.workspace-bar')).toHaveCount(0)
+  await expect(menuButtons).toHaveCount(1)
+})
+
 test('choice menus preserve focus when tabbing away or clicking outside them', async ({ page }) => {
   await open(page)
   await move(page, 'Terminal', 'Right')

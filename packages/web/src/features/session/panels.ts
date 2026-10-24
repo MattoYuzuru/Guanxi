@@ -34,6 +34,8 @@ export const SESSION_PANELS_KEY = `${PRODUCT_FILE_PREFIX}.session-panels`
 const CHANGE_EVENT = `${PRODUCT_FILE_PREFIX}:session-panels`
 const closed: SessionPanelState = Object.freeze({ open: [], active: null }) as SessionPanelState
 let pageState: SessionPanelState = closed
+/** Set when a write failed: reads then follow this page's state instead of a stale stored value. */
+let storageFailed = false
 let cachedRaw: string | null | undefined
 let cached: SessionPanelState = closed
 
@@ -48,6 +50,7 @@ function parse(raw: string | null): SessionPanelState {
 }
 
 export function readSessionPanels(): SessionPanelState {
+  if (storageFailed) return pageState
   let raw: string | null
   try { raw = localStorage.getItem(SESSION_PANELS_KEY) } catch { return pageState }
   if (raw !== cachedRaw) { cachedRaw = raw; cached = parse(raw) }
@@ -60,7 +63,8 @@ function write(next: SessionPanelState) {
     if (next.open.length) localStorage.setItem(SESSION_PANELS_KEY, JSON.stringify(next))
     else localStorage.removeItem(SESSION_PANELS_KEY)
   } catch {
-    // Storage is unavailable: the panels last for this page only.
+    // Storage is unavailable or full: the panels last for this page only.
+    storageFailed = true
   }
   window.dispatchEvent(new Event(CHANGE_EVENT))
 }
