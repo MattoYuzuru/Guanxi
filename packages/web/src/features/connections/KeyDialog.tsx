@@ -53,7 +53,8 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
   const canSubmit = !busy && (!needsKey || key.length >= minimumKeyLength)
 
   useEffect(() => {
-    if (!open) return
+    // Clear the typed key as soon as the dialog closes, not only when it is opened again.
+    if (!open) { setKey(''); setVisible(false); setFailure(undefined); return }
     setName(defaultName)
     setKey(''); setVisible(false); setFailure(undefined)
   }, [open, defaultName])
