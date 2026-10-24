@@ -47,5 +47,7 @@ test('a relay shell runs in its checkout, so node --test and fixed reads resolve
     assert.equal(read.code, 0)
     assert.match(read.stdout, /import test from 'node:test'/)
     assert.deepEqual(issued.map(issue => issue.fixed), [false, true], 'node --test is arbitrary execution; cat keeps the fixed-command path')
+    // A failed command is a failed tool, not a successful result whose text says "denied".
+    await assert.rejects(w.tool('shell', { command: 'false' }), /tool_failed/)
   } finally { handle.close(); f.close(); await rm(parent, { recursive: true, force: true }) }
 })

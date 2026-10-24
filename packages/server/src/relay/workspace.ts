@@ -275,7 +275,13 @@ export class GitRelayWorkspace implements RelayWorkspace {
     const tool = nativeTools({ ...this.context, ...(options.pageBytes === undefined ? {} : { pageBytes: options.pageBytes }) }).find(t => t.name === name && !NOT_RELAY_TOOLS.includes(name))
     invariant(tool, 'tool_denied')
     const result = await tool.execute('relay', args, signal)
-    if (result.isError && (result.details as { code?: string } | null)?.code === 'cleanup_unconfirmed') throw new RelayError('cleanup_unconfirmed')
+    if (result.isError) {
+      // The native wrapper already reduced the failure to a fixed code (or the generic one). Throw it
+      // so the executor records `status: "error"` with that code instead of a successful tool result
+      // whose text happens to be a failure. cleanup_unconfirmed keeps its fatal meaning.
+      const code = (result.details as { code?: string } | null)?.code
+      throw new RelayError(code && /^[a-z0-9_]{1,64}$/.test(code) ? code : 'tool_failed')
+    }
     return result.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
   }
 }
