@@ -7,8 +7,11 @@
 
 - **Server removal.** `DELETE /api/connections/:id` returns `{ id }`, hides the connection from
   snapshots, model/connection pickers and the cost projection, and keeps the append-only cost
-  ledger row. Migration 4 adds only `removed_connections`; versions 1–3 are unchanged. The
-  dotenv mapping is deleted, so a later trusted import creates a new identity. The vault record
+  ledger row. Migration 4 appends the dotenv name family; migration 5 adds only
+  `removed_connections`; versions 1–3 are unchanged. A lane data directory created by the
+  pre-merge lane build, where version 4 meant `removed_connections`, is lane-only and never
+  shipped: discard such lane data dirs; there is no repair code. The dotenv mapping is deleted,
+  so a later trusted import creates a new identity. The vault record
   is retained and the node-key copy is deleted; a fresh activation still registers the retired
   value with the egress scrubber. The route refuses with `connection_in_use` (409) while this
   registry has an active `complete()`, `localChat()` or `dispatchAgent()` call. It does not inspect

@@ -37,9 +37,10 @@ unreachable runtime is the typed `provider_failed` error, not an internal error.
   references, usage receipts and settings responses. Clients only receive references.
 - The registry, ledger and vault use `connections.sqlite` next to the node database. K3's
   migration version table is independent of legacy `user_version`. Version 1 creates new
-  tables; version 4 adds only `removed_connections` and leaves the migration history append-only.
-  Never rewrite a migration after distribution. Removing the plugin leaves this database
-  and OS wrapping keys intact. Back up both; losing the wrapping key loses the vault.
+  tables; version 4 appends the dotenv name family; version 5 adds only `removed_connections`.
+  The migration history is append-only: never rewrite a migration after distribution.
+  Removing the plugin leaves this database and OS wrapping keys intact. Back up both;
+  losing the wrapping key loses the vault.
 - Each account has an AES-256-GCM data key wrapped with an OS-keychain key through
   `@napi-rs/keyring` 2.1.2. Account/ref additional authenticated data prevents moving
   ciphertext between identities. At plugin apply, all historical secrets are decrypted only
@@ -118,7 +119,7 @@ allowlist before CORS. It accepts loopback authorities, the configured listening
 and configured Vite authorities, and ignores forwarded headers. Mutations require JSON and same-origin or explicitly configured development origins.
 Responses use `Cache-Control: no-store`. Routes list/create connections, change unattended,
 unlock/lock, save a key without readback, list model facts (pi-ai catalog, discovered endpoint IDs or installed models for a local Ollama runtime), request a balance probe and remove a connection.
-`DELETE /api/connections/:id` soft-removes the row through the append-only migration 4 table
+`DELETE /api/connections/:id` soft-removes the row through the append-only migration 5 table
 `removed_connections`: it disappears from the snapshot, every model/connection picker and the
 cost projection, while its cost ledger rows stay for append-only accounting. The dotenv import
 mapping is dropped, so a later trusted import creates a new connection; its vault records and
