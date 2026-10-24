@@ -132,6 +132,24 @@ test('a transient observation failure before admission waits, re-observes and th
     assert.equal(f.relay.read(f.run.id).items.one, 'done')
   } finally { f.close() }
 })
+test('a retry rechecks the execution fence after its wait and does not re-send a canceled call', async () => {
+  let calls = 0
+  const f = fixture({ limits: { transientRetryMs: [100] } })
+  try {
+    const call = f.model.call.bind(f.model)
+    f.model.call = async (prompt, options) => {
+      calls++
+      if (calls === 1) {
+        setTimeout(() => f.store.cancel(f.run.id), 5)
+        throw new RelayError('runtime_meter_unavailable')
+      }
+      return call(prompt, options)
+    }
+    await f.executor.run(f.attempt)
+    assert.equal(calls, 1, 'the canceled call was not re-sent after the wait')
+    assert.equal(f.store.get(f.run.id).state, 'canceled')
+  } finally { f.close() }
+})
 test('a zero money cap refuses the pre-call reservation when a cost is possible or unknown', async () => {
   for (const [label, maxCost] of [['quoted', () => 10], ['unknown', () => null], ['absent', undefined]] as const) {
     const f = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })

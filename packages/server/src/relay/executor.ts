@@ -233,7 +233,7 @@ export class RelayExecutor {
       if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
         this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_retry', purpose, reason, retry: retry + 1, waitMs: waits[retry] }) } })
         try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
-        if (!signal.aborted && this.caps(this.store.read(a.run_id)) !== 'wall') continue
+        if (!signal.aborted && this.caps(this.store.read(a.run_id)) !== 'wall') { this.checkExecution(a); continue }
       }
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
       this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', purpose, reason }) } })
