@@ -925,8 +925,10 @@ describe('runtime reconciliation composition inventory', () => {
     const webApi = readFileSync(`${webRoot}/lib/api.ts`, 'utf8')
     const webRuntime = readFileSync(`${webRoot}/features/health/RuntimeStatus.tsx`, 'utf8')
     const webRuntimeContext = readFileSync(`${webRoot}/features/health/RuntimeContext.tsx`, 'utf8')
-    // UI redesign (D-202): the shell reads the projection once and the runtime popover renders it.
-    const webShell = readFileSync(`${webRoot}/features/shell/MountedShell.tsx`, 'utf8')
+    // UI redesign (D-202, P2): only the shell's status items read the projection (so a poll does not
+    // re-render the whole shell), and the runtime popover renders it.
+    const webShell = readFileSync(`${webRoot}/features/shell/ShellStatus.tsx`, 'utf8')
+    const webShellHost = readFileSync(`${webRoot}/features/shell/MountedShell.tsx`, 'utf8')
     const webPolling = readFileSync(`${webRoot}/features/health/useRuntimePolling.ts`, 'utf8')
     const webConflict = readFileSync(`${webRoot}/features/chat/ResourceConflictDecision.tsx`, 'utf8')
     const webChat = readFileSync(`${webRoot}/features/chat/ChatPage.tsx`, 'utf8')
@@ -955,6 +957,7 @@ describe('runtime reconciliation composition inventory', () => {
     assert.match(webRuntimeContext, /useRuntimePolling\(loader\)/u)
     assert.match(webRuntimeContext, /loader = api\.runtimeSnapshot/u)
     assert.match(webShell, /useRuntimeProjection\(\)/u)
+    assert.doesNotMatch(webShellHost, /useRuntimeProjection|useRuntimeSelector/u)
     assert.doesNotMatch(webRuntime, /\bapi\.|useRuntimePolling|\bfetch\(/u)
     assert.doesNotMatch(webShell, /api\.runtimeSnapshot|\bfetch\(|listRunning|modelsRunning|\/api\/ps/u)
     assert.match(webConflict, /useRuntimeProjection\(\)/u)

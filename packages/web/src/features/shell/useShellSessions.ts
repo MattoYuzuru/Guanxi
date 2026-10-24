@@ -35,6 +35,14 @@ export function useShellSessions(location: string) {
   const reschedule = useRef<() => void>(() => undefined)
   const sessionsRef = useRef<SessionPageItem[]>([])
   sessionsRef.current = sessions
+  // A quiet read that changes nothing sets no state, so the shell does not re-render for it (P2).
+  // The read counter still moves for the first read after a navigation: leaving a session settles
+  // it at the head that read returns (useUnseenSessions).
+  const locationRef = useRef(location)
+  locationRef.current = location
+  const readLocation = useRef<string | null>(null)
+  const cursorRef = useRef<string | null>(null), omittedRef = useRef(false), errorRef = useRef(false)
+  cursorRef.current = cursor; omittedRef.current = omitted; errorRef.current = error
   const cancelSearch = useCallback(() => {
     if (!scanning.current) return
     pending.current?.abort(); epoch.current++; scanning.current = false; busy.current = false
@@ -56,7 +64,7 @@ export function useShellSessions(location: string) {
       setPaginationReady(true)
       consumedCursors.current.clear()
       setOmitted(page.omitted.withheld || page.omitted.catchingUp)
-      setObservedAt(new Date().toISOString()); setReads(value => value + 1)
+      setObservedAt(new Date().toISOString()); setReads(value => value + 1); readLocation.current = location
     }).catch(() => { if (current === epoch.current && !abort.signal.aborted) { setError(true); failures.current += 1; reschedule.current() } })
       .finally(() => { if (current === epoch.current && !abort.signal.aborted) { busy.current = false; setLoading(false) } })
     return () => { abort.abort(); pending.current?.abort(); epoch.current++; busy.current = false }
@@ -71,14 +79,21 @@ export function useShellSessions(location: string) {
       const page = await inspectorApi.page(undefined, abort.signal)
       if (current !== epoch.current || abort.signal.aborted || busy.current) return
       failures.current = 0
-      setSessions(previous => {
-        const ids = new Set(page.sessions.map(session => session.sessionId))
-        const tail = tailLoaded.current ? previous.filter(session => !ids.has(session.sessionId)) : []
-        return replaceEqualDeep(previous, [...page.sessions, ...tail])
-      })
-      if (!tailLoaded.current) { nextCursor.current = page.nextCursor; setCursor(page.nextCursor) }
-      setOmitted(previous => (tailLoaded.current && previous) || page.omitted.withheld || page.omitted.catchingUp)
-      setError(false); setObservedAt(new Date().toISOString()); setReads(value => value + 1)
+      const previous = sessionsRef.current
+      const ids = new Set(page.sessions.map(session => session.sessionId))
+      const tail = tailLoaded.current ? previous.filter(session => !ids.has(session.sessionId)) : []
+      const next = replaceEqualDeep(previous, [...page.sessions, ...tail])
+      const changed = next !== previous
+      if (changed) { sessionsRef.current = next; setSessions(next) }
+      if (!tailLoaded.current) {
+        nextCursor.current = page.nextCursor
+        if (cursorRef.current !== page.nextCursor) setCursor(page.nextCursor)
+      }
+      const omittedNext = (tailLoaded.current && omittedRef.current) || page.omitted.withheld || page.omitted.catchingUp
+      if (omittedNext !== omittedRef.current) setOmitted(omittedNext)
+      if (errorRef.current) setError(false)
+      if (changed) setObservedAt(new Date().toISOString())
+      if (changed || readLocation.current !== locationRef.current) { readLocation.current = locationRef.current; setReads(value => value + 1) }
     } catch {
       if (current === epoch.current && !abort.signal.aborted) { failures.current += 1; setError(true) }
     }
