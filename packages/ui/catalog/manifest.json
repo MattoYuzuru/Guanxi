@@ -1264,7 +1264,7 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 19,
+        "count": 20,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/agent/WorkspacePicker.tsx",
@@ -1274,6 +1274,7 @@
           "packages/web/src/features/context/ContextPanel.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/models/CatalogVariantInstall.tsx",
+          "packages/web/src/features/models/Facts.tsx",
           "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
@@ -1462,11 +1463,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 13,
+        "count": 14,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
+          "packages/web/src/features/models/Facts.tsx",
           "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
@@ -2105,9 +2107,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 7,
+        "count": 8,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/models/Facts.tsx",
           "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",

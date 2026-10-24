@@ -3,6 +3,7 @@
  * node's reason code; the node's own Russian `summary` is never rendered (D-202, D-208 prep).
  */
 export const modelsEnglish = {
+  'models.facts.about': 'About {fact}',
   'fit.reason.cloud': 'Runs in the Ollama cloud; no local memory is used',
   'fit.reason.loaded_partial_gpu': 'Only {gpuPercent}% is on the accelerator; the CPU runs the rest, so it is slow',
   'fit.reason.loaded_on_accelerator': 'Loaded fully on the accelerator, using {size}',
@@ -57,6 +58,7 @@ export const modelsEnglish = {
 } as const
 
 export const modelsRussian: Record<keyof typeof modelsEnglish, string> = {
+  'models.facts.about': 'Что значит: {fact}',
   'fit.reason.cloud': 'Считается в облаке Ollama, локальная память не расходуется',
   'fit.reason.loaded_partial_gpu': 'На ускорителе только {gpuPercent}%, остальное считает CPU — будет медленно',
   'fit.reason.loaded_on_accelerator': 'Загружена целиком на ускоритель, занимает {size}',

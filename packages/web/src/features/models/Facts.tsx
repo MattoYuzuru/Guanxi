@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
+import { Icon, IconButton, Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@guanxi/ui'
 import { cx } from '../../components/ui.tsx'
+import { translate } from '../../lib/locale.ts'
 import './models.css'
 
 export interface Fact {
@@ -8,7 +10,7 @@ export interface Fact {
   /** Identifiers (digests, references) read better in the mono face. */
   mono?: boolean
   tone?: 'muted' | 'warning'
-  /** A longer explanation, shown as the value's tooltip. */
+  /** A longer explanation, behind a named info icon with a popover (keyboard and touch reach it). */
   title?: string
 }
 
@@ -33,7 +35,17 @@ export function FactList({
       {shown.map((fact) => (
         <div key={fact.label} className="model-fact">
           <dt>{fact.label}</dt>
-          <dd data-mono={fact.mono || undefined} data-tone={fact.tone} title={fact.title}>{fact.value}</dd>
+          <dd data-mono={fact.mono || undefined} data-tone={fact.tone}>
+            {fact.value}
+            {/* No native title (review 7): the explanation is a design popover. */}
+            {fact.title ? <Popover>
+              <PopoverTrigger render={<IconButton size="sm" className="model-fact-about" label={translate('models.facts.about', { fact: fact.label })} icon={<Icon name="info" />} />} />
+              <PopoverContent align="start">
+                <PopoverTitle>{fact.label}</PopoverTitle>
+                <p className="gx-popover-description">{fact.title}</p>
+              </PopoverContent>
+            </Popover> : null}
+          </dd>
         </div>
       ))}
     </dl>

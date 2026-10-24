@@ -97,30 +97,36 @@ export const ModelCard = memo(function ModelCard({
           <Link
             to={paths.model(model.name)}
             className="min-w-0 truncate font-mono text-[13px] font-semibold hover:text-accent focus-visible:text-accent"
-            title={model.name}
           >
             {model.name}
           </Link>
           <div className="model-card-head-actions">
+            {/* Cloud is an icon whose explanation opens on tap or keyboard, not a native title (review 7). */}
             {model.isCloud && (
-              <Badge tone="accent" title={translate('model.cloud.memory')}>
-                {translate('model.cloud')}
-              </Badge>
+              <Popover>
+                <PopoverTrigger render={<IconButton size="sm" label={translate('model.cloud.memory')} icon={<UiIcon name="cloud" />} />} />
+                <PopoverContent align="end">
+                  <PopoverTitle>{translate('model.cloud')}</PopoverTitle>
+                  <p className="gx-popover-description">{translate('model.cloud.memory')}</p>
+                </PopoverContent>
+              </Popover>
             )}
             <Popover>
               <PopoverTrigger render={<IconButton size="sm" label={translate('models.details')} icon={<UiIcon name="info" />} />} />
               <PopoverContent align="end" className="model-details-popover">
                 <PopoverTitle>{translate('models.details')}</PopoverTitle>
+                {catalog?.description ? <p className="gx-popover-description">{catalog.description}</p> : null}
                 <FactList label={translate('models.facts.label')} facts={allFacts} />
                 {local ? <InstalledEvidenceSummary descriptor={local.descriptor} /> : null}
                 {capabilities.length > 0 && (
-                  <div className="model-details-capabilities" aria-label={translate('models.details.capabilities')} role="group">
+                  <ul className="model-details-capabilities" aria-label={translate('models.details.capabilities')}>
                     {capabilities.map((capability) => (
-                      <Badge key={capability} tone={primary.includes(capability) ? 'outline' : 'neutral'} title={translate(CAPABILITY_LABEL[capability].hint)}>
-                        {translate(CAPABILITY_LABEL[capability].short)}
-                      </Badge>
+                      <li key={capability}>
+                        <Badge tone={primary.includes(capability) ? 'outline' : 'neutral'}>{translate(CAPABILITY_LABEL[capability].short)}</Badge>
+                        <span>{translate(CAPABILITY_LABEL[capability].hint)}</span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 )}
                 {local ? <FitIndicator fit={model.fit} compact /> : null}
               </PopoverContent>
@@ -128,7 +134,7 @@ export const ModelCard = memo(function ModelCard({
           </div>
         </div>
         {catalog?.description ? (
-          <p className="mt-1 line-clamp-2 text-2xs leading-4 text-muted" title={catalog.description}>
+          <p className="mt-1 line-clamp-2 text-2xs leading-4 text-muted">
             {catalog.description}
           </p>
         ) : null}

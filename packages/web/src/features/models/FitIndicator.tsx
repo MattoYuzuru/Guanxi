@@ -118,9 +118,10 @@ export function FitIndicator({
         <span
           className="shrink-0 font-mono text-2xs tabular-nums"
           style={{ color }}
-          title={translate('fit.memoryUsage', { context: formatContextLength(fit.contextLength) })}
         >
           {formatUtilization(fit.utilization)}
+          {/* Read with the value; the breakdown is in the model details (no native title, review 7). */}
+          <span className="sr-only"> {translate('fit.memoryUsage', { context: formatContextLength(fit.contextLength) })}</span>
         </span>
       </div>
 

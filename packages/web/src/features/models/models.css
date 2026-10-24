@@ -100,8 +100,24 @@
 
 .model-details-capabilities {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-4);
+  flex-direction: column;
+  gap: var(--spacing-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-details-capabilities li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-8);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.model-fact-about {
+  margin-left: var(--spacing-2);
+  vertical-align: middle;
 }
 
 /* Model grid (round 4): equal, opaque, unscaled cards that wrap; no carousel. */
