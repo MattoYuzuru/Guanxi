@@ -32,12 +32,16 @@ D-213 changes validation cadence, not product scope or safety requirements.
    separate commits. Collect ready lane branches and batch compatible changes into one
    integration candidate; do not merge unchecked code directly into main. Preserve build
    ordering, migrations, contracts and all existing owner decisions.
-6. Commit final code/docs, publish/update a single PR and mark it ready. Drafts receive quick
+6. Finalize tracked handoff/status/next-prompt edits, commit final code/docs, publish/update
+   a single PR and mark it ready. Drafts receive quick
    checks; ready PRs run full parallel CI. Run `npm run ci:finish -- <PR-number> --wait` from
    that clean candidate. Read failed-job logs/artifacts, fix every required failure without
    weakening checks, then publish the corrected candidate. Missing/pending/cancelled/stale CI
    is unfinished. Record the run URL and tested revision. Refresh and revalidate if main moved.
-7. Update status and the next prompt with precise evidence and remaining work. Do not rerun
+7. Put the exact run URL/revision in the PR description and final response; the workflow keeps
+   its candidate receipt. Tracked status/next-prompt edits belong before ready, not after a
+   green result. Do not create a docs-only commit merely to record success and then rerun
+   the full suite. Do not rerun
    full local gates around the same merge. Live models, paid requests, owner Touch ID and the
    six-hour MS1 exit retain their explicit integration envelopes; offline Actions cannot prove
    them. Never print credentials, stored thinking, private logs or provider-key file contents.

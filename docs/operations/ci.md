@@ -16,7 +16,8 @@ remain applicable. [Research and implementation evidence](../research/2026-10-24
    <base-ref>` suggests areas; it is not an automatic dependency oracle or test runner.
 3. Obtain independent read-only review. Fix findings in a separate commit. Commit coherent
    working checkpoints, including the final handoff; no commit-per-edit or push-per-commit rule.
-4. The lead collects local branches without recloning. Push a draft PR at review/handoff;
+4. Finalize tracked status, handoff and next-prompt edits before the final ready candidate.
+   The lead collects local branches without recloning. Push a draft PR at review/handoff;
    repeated local commits require no push. Draft PRs run quick checks only. Mark the reviewed
    candidate ready once implementation, docs and review fixes are included: ready PRs run full CI.
 5. Run `npm run ci:finish -- <PR-number> --wait` from the clean candidate checkout. It waits
@@ -25,7 +26,11 @@ remain applicable. [Research and implementation evidence](../research/2026-10-24
    1 means failure/stale evidence and 2 means pending/missing evidence. Diagnose failed jobs,
    reproduce with focused tests, fix, then publish a corrected candidate. Never rerun until
    green without diagnosis, weaken an assertion or mark pending CI complete.
-6. Record the run URL, tested revision, scope and residual platform limits in the handoff.
+6. Record the run URL and tested revision in the same-run artifact, PR description and final
+   response. The tracked handoff already states scope, residuals and the PR/checks link.
+   Do not edit tracked files after a successful finish merely to write the result back: that
+   would create a new candidate and an avoidable validation loop. A necessary documentation
+   correction is a separate scoped follow-up with its own declared evidence.
    A code/base change invalidates the candidate. Integrate that tested candidate, preserving
    independent review. Do not automatically run all gates again locally or on main after it.
 

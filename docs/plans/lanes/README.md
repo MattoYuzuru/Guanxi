@@ -150,10 +150,11 @@ they no longer reinstall dependencies or start full local runs automatically.
 - [ ] Compose the lane on a private integration branch, regenerate `package-lock.json` with
       `npm install` if dependencies/workspace manifests changed. Do not stage unchecked code
       directly on main.
+- [ ] Finalize the hand-off in `docs/plans/evidence/<lane>.md`, status and next prompt before
+      publishing the final ready candidate. Link its PR/checks; record exact final run identity
+      in the workflow receipt, PR description and final response without another tree edit.
 - [ ] Publish the reviewed integration candidate as a ready PR; require its parallel full CI
       and successful `ci:finish`. Refresh and revalidate if `main` changed. Do not repeat the
       full local gate on the same candidate before/after merging.
-- [ ] Move the hand-off to `docs/plans/evidence/<lane>.md`, summarise it in `PHASE_STATUS.md`
-      and update `NEXT_AGENT_PROMPT.md`.
 - [ ] Integrate the tested candidate through the authorized merge method; tell lanes which
       base changed. Reuse their checkouts and preserve dirty work when incorporating main.
