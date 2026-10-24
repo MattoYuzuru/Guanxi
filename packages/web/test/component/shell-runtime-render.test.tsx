@@ -14,7 +14,7 @@ import { App } from '../../src/App.tsx'
 import { RUNTIME_IDLE_POLL_INTERVAL_MS } from '../../src/features/health/useRuntimePolling.ts'
 import { browserSettings, runtimeBrowserSnapshot } from '../browser/fixtures/runtime-snapshot.ts'
 
-const counts = vi.hoisted(() => ({ sidebar: 0, route: 0 }))
+const counts = vi.hoisted(() => ({ sidebar: 0, route: 0, thread: 0 }))
 vi.mock('../../src/features/shell/ShellSidebar.tsx', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/features/shell/ShellSidebar.tsx')>()
   return { ...actual, ShellSidebar: (props: Parameters<typeof actual.ShellSidebar>[0]) => { counts.sidebar += 1; return actual.ShellSidebar(props) } }
@@ -22,6 +22,11 @@ vi.mock('../../src/features/shell/ShellSidebar.tsx', async (importOriginal) => {
 vi.mock('../../src/features/chat/useModelPrewarm.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/features/chat/useModelPrewarm.ts')>()
   return { ...actual, useModelPrewarm: (options: Parameters<typeof actual.useModelPrewarm>[0]) => { counts.route += 1; return actual.useModelPrewarm(options) } }
+})
+
+vi.mock('../../src/features/chat/useChat.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/features/chat/useChat.ts')>()
+  return { ...actual, useChat: (...args: Parameters<typeof actual.useChat>) => { counts.thread += 1; return actual.useChat(...args) } }
 })
 
 const observedAt = '2026-10-23T12:00:00.000Z'
@@ -57,7 +62,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 beforeEach(() => {
   setActiveLocale('en')
   poll = 0
-  counts.sidebar = 0; counts.route = 0
+  counts.sidebar = 0; counts.route = 0; counts.thread = 0
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
@@ -72,6 +77,9 @@ beforeEach(() => {
     if (path === '/api/threads') return json({ ownershipVersion: 1, scope: 'projectless', chats: [] })
     if (path === SESSION_ROUTES.page()) return json({ sessions: [], nextCursor: null, omitted: { withheld: false, catchingUp: false } })
     if (path === '/api/projects') return json({ projects: [] })
+    if (path === '/api/threads/thread-r') return json({ thread: { id: 'thread-r', title: 'Render count', mode: 'chat', model: 'fixture:latest', workspaceId: null,
+      options: { numCtx: 8192, temperature: 0.7, think: 'off' }, createdAt: observedAt, updatedAt: observedAt, messageCount: 0 },
+    messages: [], contextCheckpoints: [], context: { usedTokens: 0, allocatedTokens: 8192, percent: 0, cacheHit: false, cachedTokens: 0, compactable: false, estimatedRepefillMs: 0 } })
     return json({ code: 'internal_error', message: path, details: null }, 500)
   }))
   window.history.replaceState(null, '', '/chat')
@@ -95,5 +103,20 @@ describe('runtime poll rendering (P2)', () => {
     // … and nothing else rendered for it.
     expect(counts.sidebar).toBe(before.sidebar)
     expect(counts.route).toBe(before.route)
+  })
+
+  it('an open chat session (/chat/<id>) renders nothing for such a poll (round 4 review)', async () => {
+    window.history.replaceState(null, '', '/chat/thread-r')
+    Element.prototype.scrollIntoView = () => {}
+    render(<ThemeProvider><App /></ThemeProvider>)
+    for (let tick = 0; tick < 12; tick++) await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByTestId('session-title').textContent).toBe('Render count')
+    expect(counts.thread).toBeGreaterThan(0)
+    const before = { thread: counts.thread, polls: poll }
+    for (let round = 0; round < 3; round++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(RUNTIME_IDLE_POLL_INTERVAL_MS) })
+    }
+    expect(poll).toBeGreaterThanOrEqual(before.polls + 3)
+    expect(counts.thread).toBe(before.thread)
   })
 })

@@ -65,6 +65,16 @@ export function useRuntimeSelector<T>(
   return useStoreSelector(store, select, isEqual)
 }
 
+/**
+ * Reads the current runtime state without subscribing: for callbacks (a send's admission check)
+ * that need the latest sample when they run, not a re-render on every poll.
+ */
+export function useRuntimeReader(): () => RuntimePollingState {
+  const store = useContext(RuntimeContext)
+  if (!store) throw new Error('RuntimeProvider is missing')
+  return store.getState
+}
+
 /** The whole runtime state: for views that show the sample itself (the status items, details). */
 export function useRuntimeProjection(): RuntimePollingState {
   return useRuntimeSelector(identity)
