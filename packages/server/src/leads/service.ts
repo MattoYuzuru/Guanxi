@@ -301,6 +301,10 @@ export class LeadService {
     const brief = parsed.data
     if (canonical(this.scrubber.scrub(brief)) !== canonical(brief)) return refuse('content_withheld')
     if (!this.runs.alwaysOnHome) return refuse('no_always_on_home')
+    // The relay runs `acceptance` as argv. A program name with spaces or a JSON array text in one element never runs (`sh: not found`),
+    // so the lead is told now, while it can still correct its brief in this turn.
+    const argv = brief.plan.items.find(item => /\s/.test(item.acceptance[0]!) || /^[[{"]/.test(item.acceptance[0]!))
+    if (argv) return refuse(`invalid_brief: plan.items.${argv.id}.acceptance must be an argv array, one element per argument, e.g. ["node", "--test", "test/a.test.mjs"]`)
     const over = this.limitViolation(brief)
     if (over) return refuse(`delegation_exceeds_policy: ${over}`)
     try { this.o.validateExecutor?.(brief.executor, session.owner_account_id, brief) } catch (error) { return refuse(code(error)) }

@@ -230,6 +230,19 @@ test('an invalid brief is answered as a tool error and the lead keeps working wi
   assert.match(String(answer.text), /^invalid_brief: /)
 })
 
+test('an acceptance command that is not argv (one spaced string, or JSON text) is refused before anything hibernates', async t => {
+  for (const acceptance of [['node --test test/a.test.mjs'], ['["node","--test","test/a.test.mjs"]']]) {
+    const plan = { ...brief().plan, items: [{ ...brief().plan.items[0]!, acceptance }] }
+    const f = await leadFixture(t, { lead: { briefs: [brief({ plan })] } })
+    const { runId, first } = f.start()
+    assert.equal((await first).outcome, 'completed')
+    assert.equal(f.runs().promises(runId).length, 0)
+    const answer = (await f.events()).find(e => e.event === 'tool_answer')!
+    assert.equal(answer.isError, true)
+    assert.match(String(answer.text), /^invalid_brief: plan\.items\.t1\.acceptance must be an argv array/)
+  }
+})
+
 test('canceling a hibernating lead cancels the child chain once and stops its executor once', async t => {
   const f = await leadFixture(t)
   const { runId, first } = f.start()

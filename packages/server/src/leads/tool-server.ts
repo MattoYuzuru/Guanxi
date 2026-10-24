@@ -30,7 +30,7 @@ export const LEAD_DELEGATE_JSON_SCHEMA = {
     plan: { type: 'object', additionalProperties: false, required: ['revision', 'base', 'goal', 'items', 'protectedPaths'], properties: {
       revision: idString, base: { type: 'string', pattern: '^[a-f0-9]{40,64}$' }, goal: text, protectedPaths: { type: 'array', items: relativePath },
       items: { type: 'array', minItems: 1, items: { type: 'object', additionalProperties: false, required: ['id', 'title', 'dependsOn', 'acceptance', 'protectedPaths'], properties: {
-        id: idString, title: text, dependsOn: { type: 'array', items: idString }, acceptance: { type: 'array', minItems: 1, items: text },
+        id: idString, title: text, dependsOn: { type: 'array', items: idString }, acceptance: { type: 'array', minItems: 1, items: text, description: 'The acceptance command as an argv array, one element per argument, run in the project checkout: ["node", "--test", "test/01-money.test.mjs"]. Not one string with spaces, not JSON text.' },
         protectedPaths: { type: 'array', items: relativePath } } } } } },
     estimatesMs: { type: 'object', additionalProperties: count },
     caps: { type: 'object', additionalProperties: false, required: ['cycles', 'tokens', 'moneyMicros', 'wallMs'],
