@@ -36,8 +36,10 @@ i18n, Motion, Do / Don't.
 
 ## 3. Catalog
 
-- **In the product** (D-137): Settings → Developer → Components, visible only with Developer
-  mode on, lazy-loaded. It renders the same stories with a small interpreter, inside the real
+- **In the product** (D-137): Settings → Design system → Components, lazy-loaded. D-137's
+  "visible only with Developer mode on" is **superseded by owner feedback 2026-10-23** (one
+  interface, no Developer/Visual distinction): there is no Developer mode switch; the catalog
+  chunk is still requested only when its route opens. It renders the same stories with a small interpreter, inside the real
   runtime (fonts, theme plugins, Electron, locale, density), and shows live examples, every
   declared state, usage notes, code, the tokens used, the usage count and the approval status.
   It can switch light, dark, high-contrast, reduced transparency, reduced motion and both
@@ -202,8 +204,8 @@ lane hand-off for evidence.
   are currently consumed by the legacy web compatibility classes, not by these catalog
   components; reusing them in a component requires verifying keyframe ownership and
   reduced-motion loop removal first. Catalog behavior and statuses are unchanged.
-- The in-app catalog is at Settings → Developer → Components (`/settings/developer/components`),
-  code-split and shown only with Developer mode on. Links keep the component and regime in the
+- The in-app catalog is at Settings → Design system → Components (`/settings/developer/components`,
+  a kept public route), code-split and requested only when the route opens. Links keep the component and regime in the
   query (`?component=button&theme=dark-hc&density=comfortable&glass=solid`).
 - Approvals (§4) go through the node, not a Vite middleware: `GET/POST
   /api/ui-catalog/components/<id>/review` writes `<id>.review.json` only from a source checkout and

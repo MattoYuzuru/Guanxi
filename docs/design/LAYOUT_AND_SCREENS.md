@@ -1,7 +1,8 @@
 # Layout and screens
 
 **Status:** accepted direction (D-131–D-137, D-139; shell, modes and composer revised by
-D-202–D-207); built in stages U1, NC1, C1 and the UI-redesign lane · **Updated:** 2026-10-23
+D-202–D-207; session view and Developer mode revised by owner feedback 2026-10-23); built in
+stages U1, NC1, C1, the UI-redesign lane and UI round 4 · **Updated:** 2026-10-24
 
 Evidence: [01 harness UI patterns](../research/2026-10-20-design/01-harness-ui-patterns.md) §5,
 [04 agent browser and layout](../research/2026-10-20-design/04-agent-browser-and-layout.md) §§6–8.
@@ -58,9 +59,19 @@ The window is the chrome tone; the main surface is a white pane floating on it (
 - **Blocks** are plugin contributions (built-in blocks are core plugins). Each block has a
   compact **card** for rails and a full **pane**; it declares the modes it belongs to, its
   default zone, whether several instances may exist and whether it keeps running while hidden.
-- **The user owns the layout:** drag, or use "Move block to…" from the block menu, the command
-  palette or the keyboard (F6 cycles zones); float, pop out, hide, add, reset. Moves are announced
-  to screen readers.
+- **One session view (round 4, owner feedback 2026-10-23):** a chat opened from the sidebar is the
+  full-width timeline (`/chat/<id>`, or `/projects/<p>/chats/<id>`), never the docking layout.
+  Side panels (Context, Plan, Artifacts, Browser, Sub-agents, Terminal, Processes, Environment,
+  Changes, Files) open from one borderless **Panels and layout** icon menu in the session header
+  (checkable rows with icons) as one rounded pane beside the timeline — over it below the header
+  in a narrow session, a sheet on a phone. The header's context value toggles the Context panel.
+  The menu links to the free arrangement (`/workspace/<id>`), a kept public route.
+- **The user owns the free arrangement:** drag, or use "Move a panel…" from the panels menu, a
+  pane's move icon, the command palette or the keyboard (Alt+Shift+M; F6 cycles zones); float, pop
+  out, hide, add, reset. Moves are announced to screen readers. There is no toolbar row: panel
+  visibility, add block, compact density (a switch), save scope and named layouts (radio rows),
+  save, save as (a name dialog), move and reset live in the same header menu; a pane header is its
+  title and two icon actions (move, hide).
 - **Layouts** are saved documents: an account default per mode, optional per-project overrides,
   several named layouts, window geometry kept per device (D-131).
 - **Density** presets change spacing and type, never block positions.
@@ -75,8 +86,9 @@ in the customisation popover.
 
 ## 5. Blocks
 
-Visible by default (D-133): Context, Changes, Plan, Processes, Environment, Files, Terminal,
-Artifacts, Browser, Sub-agents. One click away: Quota and cost, Connectors, Board, Notifications,
+In the free arrangement's built-in layout (D-133): Context, Changes, Plan, Processes, Environment,
+Files, Terminal, Artifacts, Browser, Sub-agents. The default session view shows none of them until
+the user checks one in the panels menu (round 4). One click away: Quota and cost, Connectors, Board, Notifications,
 Status, Activity.
 
 | Block | Card | Pane | Notable states |
@@ -115,7 +127,7 @@ limit agents, not the user's own actions.
 | M2 | Model workbench | Every parameter with recommended values; media preview and editor. |
 | C1 | Connections | Keys, subscription agents and services with health, balances, windows and limits; secrets shown only as references; the **Browser** page lists site grants with source, last use and live-sync indicator (ADR-0035). |
 | T1 | Settings | General, Appearance (theme, density, transparency, motion, fonts per role), Voice and glossary, Notifications (channels, quiet hours), Machines, Accounts, Plugins, Developer. |
-| T2 | Developer area | Visible only with the developer-area switch on (D-137; not a product mode): live component catalog with every state, theme, density, contrast and transparency regime; approvals; token inspector; slot map; plugin inspector; event-log tail; feature flags. |
+| T2 | Design system area | Settings → Design system, always available (D-137's developer-area switch superseded by owner feedback 2026-10-23): live component catalog with every state, theme, density, contrast and transparency regime; approvals; token inspector; slot map; plugin inspector; event-log tail; feature flags. |
 
 ## 7. Implementation status (U1 session features, 2026-10-23)
 
