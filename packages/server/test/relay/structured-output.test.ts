@@ -102,11 +102,12 @@ test('the probe prompt and its excerpt carry every fact the answers need, and th
     await f.executor.run(f.attempt)
     assert.ok(seen.length >= 1)
     const sealed = (cycle: number) => f.db.prepare('SELECT ledger FROM relay_seals WHERE run_id=? AND cycle=?').get(f.run.id, cycle) as { ledger: string } | undefined
-    // The reader applies only what the prompt text defines to what the prompt text contains.
+    // The reader applies only what the prompt text defines to what the prompt text contains: the
+    // raw strip line is the handoff's work strip, so it copies `current` and `currentStatus` directly.
     const read = (prompt: string) => {
-      const lines = prompt.split('\n'), handoff = JSON.parse(lines.find(l => l.startsWith('{"attemptId"'))!), open = (JSON.parse(lines.find(l => l.startsWith('{"open"'))!) as { open: Array<{ id: string; status: string; dependsOn: string[] }> }).open
-      const openIds = new Set(open.map(o => o.id)), next = open.find(o => o.dependsOn.every(d => !openIds.has(d)))
-      return { ledgerHash: handoff.ledgerHash, head: handoff.ledger.head, revision: handoff.ledger.revision, nextItem: next?.id ?? null, nextStatus: next?.status ?? null }
+      const lines = prompt.split('\n'), handoff = JSON.parse(lines.find(l => l.startsWith('{"attemptId"'))!)
+      const strip = JSON.parse(lines.find(l => l.startsWith('{') && l.includes('"currentStatus"'))!) as { current: string | null; currentStatus: string | null }
+      return { ledgerHash: handoff.ledgerHash, head: handoff.ledger.head, revision: handoff.ledger.revision, nextItem: strip.current, nextStatus: strip.currentStatus }
     }
     const [first] = seen, cycle = JSON.parse(first!.split('\n').find(l => l.startsWith('{"attemptId"'))!).cycle as number
     const expected = probes(JSON.parse(sealed(cycle)!.ledger))
@@ -114,6 +115,8 @@ test('the probe prompt and its excerpt carry every fact the answers need, and th
     assert.equal(expected.nextItem, 'b', 'a is done, c (listed first) waits for b: the next item is the first one whose dependencies are done')
     assert.equal(expected.nextStatus, 'open')
     assert.equal(first!.includes('"strip"'), true)
+    for (const field of ['"ledgerHash"', '"head"', '"revision"', '"current"', '"currentStatus"']) assert.ok(first!.includes(field), `the probe prompt shows ${field}`)
+    assert.equal(first!.split('\n').some(line => line.includes('"dependsOn"')), false, 'no separate open list is invented beside the handoff')
   } finally { f.close() }
   // The bar is unchanged: the answers that failed the real runs still fail it.
   const wrong = fixture({ plan: twoItems, actions: script() }), original2 = wrong.model.call.bind(wrong.model)

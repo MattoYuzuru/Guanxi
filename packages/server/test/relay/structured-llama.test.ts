@@ -37,9 +37,8 @@ const script = reply((prompt, _call, body) => {
   if (prompt.startsWith('<|user|>\nWrite a fresh')) return 'Completed fixture acceptance.'
   if (prompt.startsWith('<|user|>\nAnswer these five')) {
     const hash = /"ledgerHash":"([0-9a-f]{64})"/.exec(prompt)![1], head = /"head":"([0-9a-f]{40,64})"/.exec(prompt)![1], revision = /"revision":"([^"]+)"/.exec(prompt)![1]
-    const open = [...prompt.matchAll(/\{"dependsOn":\[([^\]]*)\],"id":"([^"]+)","status":"([^"]+)"\}/g)].map(m => ({ deps: m[1] ? m[1].split(',').map(s => s.replace(/"/g, '')) : [], id: m[2]!, status: m[3]! }))
-    const ids = new Set(open.map(o => o.id)), next = open.find(o => o.deps.every(d => !ids.has(d)))
-    return body.json_schema ? JSON.stringify({ ledgerHash: hash, head, revision, nextItem: next ? next.id : null, nextStatus: next ? next.status : null })
+    const strip = JSON.parse(prompt.split('\n').find(line => line.startsWith('{') && line.includes('"currentStatus"'))!) as { current: string | null; currentStatus: string | null }
+    return body.json_schema ? JSON.stringify({ ledgerHash: hash, head, revision, nextItem: strip.current, nextStatus: strip.currentStatus })
       : '```json\n' + JSON.stringify({ ledgerHash: hash, head, revision, nextItem: null, nextStatus: 'completed' }) + '\n```'
   }
   state.work = (state.work ?? 0) + 1

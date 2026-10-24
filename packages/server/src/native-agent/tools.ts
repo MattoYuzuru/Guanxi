@@ -23,6 +23,10 @@ export interface NativeToolContext {
   handle: SessionHandle
   scrubber: EgressScrubber
   executeCommand?: typeof sandboxCommand
+  /** Directory `shell` commands start in. Absent: `policy.scratch`, which is also the sandbox's HOME/TMPDIR.
+   * A native session deliberately starts in scratch; the relay sets this to its checkout so relative plan paths
+   * resolve the way its acceptance gates do. */
+  cwd?: string
   guard?(): void
   /** Largest serialized result of a paged tool (`file_read`, `tool_output_read`) the caller can keep whole. Absent: the tool's own bounds. */
   pageBytes?: number
@@ -69,8 +73,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       : await fallback.map(root, budget, scopedPath, signal)) }
     finally { await fallback.close(); await governor.close() }
   }
-  const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true) => {
-    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, command, signal, 120_000, fixed, scrubber)
+  const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true, cwd?: string) => {
+    // The sandbox starts every command in HOME/TMPDIR=scratch. A caller with one unit of work (the relay
+    // checkout) names it here, exactly as the gate command names its own clean checkout.
+    const line = cwd ? `cd ${quote(cwd)} && ${command}` : command
+    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, line, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
     if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
     return JSON.stringify(clean)
@@ -142,8 +149,9 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
         ctx.guard?.()
         return { content: [{ type: 'text', text: await outputs.bound(content) }], details: null }
       } catch (error) {
-        const safeCodes = ['invalid_offset', 'page_too_small', 'page_cursor_unavailable', 'cleanup_unconfirmed', 'supervision_unavailable', 'container_runtime_unavailable', 'container_path_unsupported', 'container_home_root_denied', 'container_runtime_protected', 'hardlinked_writable_file', 'path_denied', 'command_denied', 'method_denied', 'url_denied', 'runtime_overlaps_roots', 'input_artifact_storage_failed', 'tool_call_trace_missing']
-        const code = error instanceof Error && (safeCodes.includes(error.message) || /^index_[a-z_]+$/.test(error.message)) ? error.message : 'tool_denied_or_failed'
+        // A fixed code is safe to return: it carries no free text. Everything else (an OS message, a
+        // path, a provider's words) stays behind the generic code and never reaches the model or trace.
+        const code = error instanceof Error && /^[a-z0-9_]{1,64}$/.test(error.message) ? error.message : 'tool_denied_or_failed'
         if (code === 'input_artifact_storage_failed' || code === 'tool_call_trace_missing') {
           ctx.abortTurn?.()
           return { content: [{ type: 'text', text: 'input_artifact_storage_failed' }], details: { code: 'input_artifact_storage_failed' }, isError: true }
@@ -158,10 +166,10 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     tool('file_read', 'Read a UTF-8 text file in roots, scratch or attachments. Absolute paths select another root. offset is a byte offset (default 0); the result has more and nextOffset, so a large file is read page by page with offset=nextOffset.', { path: Type.String(), offset: Type.Optional(Type.String()) }, async (a, s) => fileRead(a.path!, a.offset, s)),
     tool('file_write', 'Write UTF-8 content. Read-only writes only to scratch. Protected paths are always denied.', { path: Type.String(), content: Type.String() }, async (a, s) => run(`printf %s ${quote(a.content!)} > ${quote(path(a.path!, true))}`, s)),
     tool('shell', 'Run a shell command under the access policy and a PID-namespace execution owner. macOS requires the local container runtime and provisioned execution image; no host-shell fallback. Fixed pwd/ls/cat/head/tail/wc commands also work without that runtime.', { command: Type.String() }, async (a, s) => {
-      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, [0], false)
+      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, [0], false, ctx.cwd)
       const [program, ...args] = a.command!.split(/ +/)
       const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
-      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s)
+      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s, [0], true, ctx.cwd)
     }),
     tool('search', 'Search literal text with FTS5 and Node grep fallback. Result includes checked-out commit, index age, coverage and explicit truncation. Ignored, .env and registered-secret files are excluded.', { path: Type.String(), text: Type.String() }, async (a, s) => indexed('search', a.path!, a.text, undefined, s)),
     tool('repo_map', 'repo.map: repository files and cached tree-sitter symbols. budget is a positive token upper bound measured as UTF-8 bytes for the complete JSON result, including provenance. Small budgets may be refused. Wire alias repo_map.', { path: Type.String(), budget: Type.String() }, async (a, s) => indexed('map', a.path!, undefined, Number(a.budget), s)),
