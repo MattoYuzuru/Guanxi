@@ -9,6 +9,17 @@ import {
 } from '@guanxi/contract'
 import type { EgressScrubber } from '../egress/types.ts'
 
+/** A pre-merge lane build used version 4 for `removed_connections`; that data directory is never repaired. */
+export const LANE_DATA_DIR_INCOMPATIBLE = 'lane_data_dir_incompatible'
+export class LaneDataDirError extends Error {
+  readonly code = LANE_DATA_DIR_INCOMPATIBLE
+  constructor(path: string) {
+    super(`The data directory ${dirname(path)} was written by a pre-merge K3 lane build: k3_migrations has version 4 ` +
+      'but dotenv_imports has no family column. Discard this lane-only data directory; there is no repair.')
+    this.name = 'LaneDataDirError'
+  }
+}
+
 /** A separate database keeps K3 migrations independent of K2 and legacy user_version. */
 export class ConnectionStore {
   readonly db: DatabaseSync
@@ -58,6 +69,12 @@ export class ConnectionStore {
           DROP TABLE dotenv_imports;
           ALTER TABLE dotenv_imports_v4 RENAME TO dotenv_imports;
           INSERT INTO k3_migrations VALUES(4);`)
+      }
+      // A lane build recorded version 4 for its own table. Migrations are append-only, so version 4
+      // cannot run again and the missing column would fail every later import: refuse instead of repairing.
+      if (this.db.prepare('SELECT version FROM k3_migrations WHERE version=4').get()) {
+        const columns = this.db.prepare('PRAGMA table_info(dotenv_imports)').all() as { name?: unknown }[]
+        if (!columns.some(column => column.name === 'family')) throw new LaneDataDirError(path)
       }
       if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=5').get()) {
         // A separate table keeps the connection row (and the append-only cost ledger) intact while
