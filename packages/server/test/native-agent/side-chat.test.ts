@@ -4,7 +4,7 @@ import { readdir, stat } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { join, relative } from 'node:path'
 import {
-  INPUT_EXCERPT_BYTES, SIDE_CHAT_SAVE_MAX_BYTES, encodeSideChatSavedNote, parseSideChatSavedNote, promptTextOf, sideChatRespondResponseSchema, sideChatSaveResponseSchema, sideChatSendResponseSchema,
+  INPUT_EXCERPT_BYTES, SIDE_CHAT_SAVE_MAX_BYTES, encodeSideChatSavedNote, nativeAgentInputSchema, parseSideChatSavedNote, promptTextOf, sideChatRespondResponseSchema, sideChatSaveResponseSchema, sideChatSendResponseSchema,
 } from '@guanxi/contract'
 import { fixture } from './fixture.ts'
 import { nativeAgentRoutes } from '../../src/native-agent/routes.ts'
@@ -516,7 +516,7 @@ test('budget: a removed connection still contributes its side-chat receipts when
 
   const before = f.requests.length
   await assert.rejects(runSideChat({ sessionId, budget, connections: f.connections, scrubber: f.scrubber, model: piModels('deepseek')[0]!,
-    input: { ...f.input, connectionId: next.id }, events: [],
+    input: nativeAgentInputSchema.parse({ ...f.input, connectionId: next.id }), events: [],
     request: { requestId: uuid(), messages: [{ role: 'user', text: 'still counted' }], context: { include: 'none' } } }),
     error => error instanceof SideChatError && error.code === 'budget_exhausted')
   assert.equal(f.requests.length, before, 'the refusal happens before the provider call')
