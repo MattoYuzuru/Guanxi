@@ -79,6 +79,8 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     // The session block is a row too, so a block hidden from its dock tab comes back from the menu.
     expect(controls!.blocks.map(block => block.id)).toContain('guanxi.core/chat')
     expect(controls!.name).toBe('Default layout')
+    // A second instance never repeats a panel row's name.
+    expect(controls!.addable.map(entry => entry.label)).toEqual(['Another Terminal', 'Another Browser'])
   })
 
   it('keeps the layout name when a Save as fails, so a later Save never renames the original (review P2)', async () => {

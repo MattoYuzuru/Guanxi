@@ -442,7 +442,11 @@ export function Workspace({ children, account, project, safeMode = false }: Work
       .map(id => ({ id, label: title(id), hidden: doc.hidden.includes(id) })),
     addable: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')
       && entry.key !== 'guanxi.core/chat' && (entry.value.multiInstance || !Object.values(doc.blocks).some(block => block.contribution === entry.key)))
-      .map(entry => ({ id: entry.key, label: translate(entry.value.title as LocaleKey) })),
+      // A second instance of a block already shown reads "Another Terminal", not a duplicate row name.
+      .map(entry => {
+        const label = translate(entry.value.title as LocaleKey)
+        return { id: entry.key, label: Object.values(doc.blocks).some(block => block.contribution === entry.key) ? translate('session.layout.addAnother', { block: label }) : label }
+      }),
     setVisible: (id, next) => { if (next) show(id); else hide(id) },
     add: addBlock,
     density: doc.density,
