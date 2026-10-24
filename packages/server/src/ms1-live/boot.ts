@@ -282,7 +282,7 @@ export class Ms1LiveNode {
         installations: [{ adapter: 'claude-code', connectionId: this.leadConnection, ownerAccountId: OWNER, nodeId: this.identity.id,
           billingAccount: lead.billingAccount, executable: lead.bridge, version: lead.bridgeVersion, claudeExecutable: lead.claudeExecutable,
           ...(lead.effort ? { claudeEffort: lead.effort } : {}) }] },
-      leads: { alwaysOn: true,
+      leads: { alwaysOn: true, executors: [{ connectionId: allowed, model }],
         relay: { consent: 'full-access', domains: lead.domains, ...(lead.pollMs ? { pollMs: lead.pollMs } : {}) },
         // The only executor a lead may name is the one this pairing serves: one connection, one model.
         validateExecutor: executor => {

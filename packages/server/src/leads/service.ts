@@ -23,6 +23,8 @@ export interface LeadServiceOptions {
   reporter?: ChildReporter
   /** Host policy for the executor a lead may name; throw a stable code to refuse before hibernation. */
   validateExecutor?: (executor: LeadDelegateInput['executor'], ownerAccountId: string, brief: Readonly<LeadDelegateInput>) => void
+  /** Executors the host allows, named to the lead in the tool description. Validation remains `validateExecutor`. */
+  executors?: readonly { connectionId: string; model: string }[]
   /** Owner ceilings on caps, deadline and detach; without them the lead's brief is taken as given. */
   limits?: LeadLimits
   /** D-142: the lead connection's billing fact, shown as data with its source and age. */
@@ -112,6 +114,7 @@ export class LeadService {
         Object.keys(caps).length === names.length && names.every(name => typeof caps[name] === 'number' && Number.isSafeInteger(caps[name]) && (caps[name] as number) >= 0), 'invalid_input')
     }
     this.tools = options.tools ?? new LeadToolServer()
+    this.tools.setExecutors(options.executors)
     this.ownsTools = options.tools === undefined
   }
   private now(): number { return (this.o.clock ?? Date.now)() }

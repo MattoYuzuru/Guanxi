@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { leadDelegateInputSchema } from '@guanxi/contract'
 import { LEAD_DELEGATE_JSON_SCHEMA, LeadToolServer, type ToolResult } from '../../src/leads/tool-server.ts'
 import { brief } from './brief.ts'
+import { leadFixture } from './helpers.ts'
 
 async function start(t: { after(fn: () => unknown): void }, handler: (input: unknown) => Promise<ToolResult> = async () => ({ kind: 'result', text: 'ok' }), maxBodyBytes?: number) {
   const server = new LeadToolServer(maxBodyBytes ? { maxBodyBytes } : {})
@@ -65,6 +66,37 @@ test('JSON-RPC handling: negotiation, tool listing, notifications, batches, bad 
   assert.equal((await (await post({ jsonrpc: '2.0', id: 3, method: 'resources/list' })).json() as any).error.code, -32601)
   assert.equal((await (await post({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'other' } })).json() as any).error.code, -32602)
   assert.equal((await post({ jsonrpc: '2.0', id: 5, method: 'ping', params: { pad: 'x'.repeat(3_000) } })).status, 413)
+})
+
+test('tools/list names the executors the host allows and is unchanged when none are configured', async t => {
+  const description = async (server: LeadToolServer) => {
+    const url = await server.url()
+    const grant = server.grant({ runId: 'r', attemptId: 'a', wakeSeq: null }, async () => ({ kind: 'result', text: 'ok' }))
+    const response = await fetch(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      headers: { 'content-type': 'application/json', [grant.header.name]: grant.header.value } })
+    grant.revoke()
+    return ((await response.json()) as any).result.tools[0].description as string
+  }
+  const plain = new LeadToolServer()
+  const one = new LeadToolServer({ executors: [{ connectionId: 'fedora', model: 'local' }] })
+  const two = new LeadToolServer({ executors: [{ connectionId: 'a', model: 'x' }, { connectionId: 'b', model: 'y' }] })
+  for (const server of [plain, one, two]) t.after(() => server.close())
+  const base = await description(plain)
+  assert.equal(base.includes('Allowed executors'), false)
+  assert.equal(await description(one), `${base} Allowed executors on this node: connectionId=fedora model=local`)
+  assert.equal(await description(two), `${base} Allowed executors on this node: connectionId=a model=x; connectionId=b model=y`)
+})
+
+test('the lead service passes its configured executors to tools/list', async t => {
+  const f = await leadFixture(t, { plugin: { executors: [{ connectionId: 'fedora', model: 'local' }] } })
+  const url = await f.tools.url()
+  const grant = f.tools.grant({ runId: 'r', attemptId: 'a', wakeSeq: null }, async () => ({ kind: 'result', text: 'ok' }))
+  try {
+    const response = await fetch(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      headers: { 'content-type': 'application/json', [grant.header.name]: grant.header.value } })
+    const tool = ((await response.json()) as any).result.tools[0]
+    assert.equal(tool.description.endsWith(' Allowed executors on this node: connectionId=fedora model=local'), true)
+  } finally { grant.revoke() }
 })
 
 test('the tool schema matches the contract schema field by field', () => {

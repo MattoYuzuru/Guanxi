@@ -48,7 +48,10 @@ refused. One delegation per turn. The agent must advertise `mcpCapabilities.http
 (`mcp_http_unsupported` otherwise). ACP's unstable `acp` MCP transport is a possible later carrier.
 The input is `leadDelegateInputSchema` in `packages/contract`: objective, definition of done, relay plan with
 acceptance commands, caps, executor connection/model, relative `deadlineMs`, `onDeadline`, `onCancel`.
-Identity, roots, network, judges and wake policy are node-owned and refused if sent.
+Identity, roots, network, judges and wake policy are node-owned and refused if sent. When the host configures
+`executors`, `tools/list` appends `Allowed executors on this node: connectionId=<id> model=<model>` for each entry,
+so the lead no longer guesses; MS1 passes the single executor its `validateExecutor` allows. The validation itself
+is unchanged.
 
 ## Resume (ADR-0019 decision 9)
 
