@@ -19,12 +19,15 @@ names; UI chrome around them stays in locale keys.
 
 At every plugin apply the registry ensures one `local_runtime`/`ollama` connection
 named `Ollama` for account `local`. The check and insert share one immediate
-transaction, so a restart or a concurrent apply cannot add a second one. It has no
-secret, never opens the vault and never contacts Ollama. An existing local Ollama
-connection is returned unchanged. `GET /api/connections/:id/models` resolves a
-local runtime through the existing Ollama adapter (`/api/tags`), bounded to five
-seconds and 1,024 IDs; an unreachable runtime is the typed `provider_failed` error,
-not an internal error.
+transaction, so a restart or a concurrent apply cannot add a second one. The
+auto-created row carries the `origin: local_runtime_auto` fact. An existing row is
+reused only when it has that marker, or when it is named `Ollama` with
+`unattended: false` (rows created before the marker). An unattended local runtime
+such as MS1's `ms1-executor` is not the user-visible Ollama row, so an upgraded MS1
+home still receives one. The row has no secret, never opens the vault and never
+contacts Ollama. `GET /api/connections/:id/models` resolves a local runtime through
+the existing Ollama adapter (`/api/tags`), bounded to five seconds and 1,024 IDs; an
+unreachable runtime is the typed `provider_failed` error, not an internal error.
 
 ## Boundaries
 

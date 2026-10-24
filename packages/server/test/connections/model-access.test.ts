@@ -33,23 +33,31 @@ const fakeKey = () => `test_${randomBytes(32).toString('hex')}`
 async function setup(t: { after(fn: () => unknown): void }, options: { transport?: typeof fetch; pi?: PiTransport; unattended?: boolean; ownerDevice?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k3-'))
   const keys = new Map<string, Buffer>()
+  let keychainReads = 0, transportReads = 0
+  const counts = { keychain: () => keychainReads, transport: () => transportReads,
+    reset: () => { keychainReads = 0; transportReads = 0 } }
   const keychain: VaultKeychain = { key(accountId, create, purpose) {
+    keychainReads++
     const id = JSON.stringify([purpose, accountId])
     if (!keys.has(id) && create) keys.set(id, randomBytes(32))
     if (!keys.has(id)) throw new Error('No wrapping key')
     return Buffer.from(keys.get(id)!)
   } }
+  const transport: typeof fetch = async (input, init) => {
+    transportReads++
+    return (options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }))(input, init)
+  }
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin)
-  await kernel.plugin(ollamaAdapterPlugin, { fetch: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }) })
+  await kernel.plugin(ollamaAdapterPlugin, { fetch: transport })
   let egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
   const config = { databasePath: join(dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
     policy: { ownerDevice: options.ownerDevice ?? true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
-    transport: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }), pi: options.pi }
+    transport, pi: options.pi }
   let handle = await kernel.plugin(connectionsPlugin, config)
   const service = () => kernel.service<Connections>(CONNECTIONS_SERVICE)!
   t.after(async () => { await kernel.dispose(); for (const key of keys.values()) key.fill(0); await rm(dir, { recursive: true, force: true }) })
-  return { dir, kernel, service, config, async restart(freshEgress = false) {
+  return { dir, kernel, service, config, counts, async restart(freshEgress = false) {
     await handle.dispose()
     if (freshEgress) { await egress.dispose(); egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] }) }
     handle = await kernel.plugin(connectionsPlugin, config)
@@ -74,6 +82,27 @@ test('plugin apply ensures exactly one Ollama connection and leaves existing con
   assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama').length, 1)
   assert.deepEqual(after.find(row => row.name === 'Ollama'), before.find(row => row.name === 'Ollama'))
   assert.deepEqual(after.find(row => row.id === manual.id), before.find(row => row.id === manual.id))
+})
+
+test('an existing unattended executor runtime does not stand in for the local Ollama connection', async t => {
+  const f = await setup(t, { unattended: true })
+  const s = f.service()
+  // An upgraded MS1 home: its relay connection exists, but no apply has created Ollama yet.
+  s.store.db.exec('DELETE FROM connections')
+  s.store.create('local', { name: 'ms1-executor', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true })
+  f.counts.reset()
+  await f.restart()
+  const first = f.service().snapshot('local').connections
+  assert.deepEqual(first.map(row => [row.name, row.unattended]).sort(), [['Ollama', false], ['ms1-executor', true]])
+  const auto = first.find(row => row.name === 'Ollama')!
+  assert.equal(auto.facts.origin?.value, 'local_runtime_auto')
+  await f.restart()
+  const after = f.service().snapshot('local').connections
+  assert.equal(after.filter(row => row.name === 'Ollama').length, 1)
+  assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama' && row.name === 'Ollama').length, 1)
+  assert.deepEqual(after.find(row => row.name === 'Ollama'), auto)
+  assert.equal(f.counts.keychain(), 0, 'ensureLocalOllama never reads the keychain')
+  assert.equal(f.counts.transport(), 0, 'ensureLocalOllama never calls Ollama or the network')
 })
 
 test('the Ollama connection lists installed models and returns a typed error when the runtime is down', async t => {

@@ -119,13 +119,17 @@ export class Connections {
     this.assertOpen()
     this.store.db.exec('BEGIN IMMEDIATE')
     try {
-      const existing = this.store.list(accountId).find(row => row.kind === 'local_runtime' && row.provider === 'ollama')
+      const existing = this.store.list(accountId).find(row => row.kind === 'local_runtime' && row.provider === 'ollama' &&
+        (row.facts.origin?.value === 'local_runtime_auto' || (row.name === 'Ollama' && !row.unattended)))
       if (existing) {
         this.store.db.exec('COMMIT')
         return existing
       }
-      const connection = this.store.create(accountId,
+      const created = this.store.create(accountId,
         { name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: false })
+      const connection = this.store.observe(accountId, created.id, {
+        origin: { value: 'local_runtime_auto', source: 'connection_apply', observedAt: new Date().toISOString(), confidence: 'high' },
+      })
       this.store.db.exec('COMMIT')
       return connection
     } catch (error) {
