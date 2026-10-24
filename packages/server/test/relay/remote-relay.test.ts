@@ -180,7 +180,7 @@ test('a permanent 401 refusal at the first offer is not retried and keeps its ow
 
 test('an executor that does not serve the relay runtime refuses admission before any run, session or allocation exists', async t => {
   const f = await fixture(t, { noRelayRuntime: true })
-  await assert.rejects(f.starts.start(f.input), /contract_feature_unavailable/, 'a capability mismatch keeps its own code')
+  await assert.rejects(f.starts.start(f.input), /runtime_meter_unavailable/)
   assert.equal(f.allocations(), 0); assert.equal((await f.completions()).length, 0)
   for (const table of ['durable_runs', 'run_attempts', 'sessions']) assert.equal(f.home.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n, 0, table)
 })

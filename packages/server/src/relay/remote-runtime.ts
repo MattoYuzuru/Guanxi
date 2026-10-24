@@ -139,9 +139,16 @@ class RemoteRelaySession implements RelayRuntimeSession {
       if (error.code === 'peer_refused' && [403, 404, 409].includes(error.status)) throw new RelayError('runtime_identity_unknown')
     }
     if (error && typeof error === 'object' && 'code' in error && (error as { code: unknown }).code === 'stale_lease') throw error
-    const code = (error as { code?: unknown } | null)?.code
-    if (typeof code === 'string' && /^[a-z0-9_]{1,64}$/.test(code)) throw new RelayError(code)
-    throw new RelayError('relay_failed')
+    // Admission, observation and counts keep their typed contract: anything else means the runtime is not usable now.
+    throw new RelayError('runtime_meter_unavailable')
+  }
+  /** A model call's failure: a refusal that is not a transport failure fails the call at once with its fixed code (no retry),
+   * so a revoked key or a refused grant is diagnosable; everything else goes through `refuse`. */
+  private refuseCall(error: unknown, signal?: AbortSignal): never {
+    if (!signal?.aborted && !this.lifetime.signal.aborted && error instanceof FederationError && !this.transportFailure(error) &&
+      !['invalid_signature', 'relay_evidence_mismatch', 'not_home'].includes(error.code) && !(error.code === 'peer_refused' && [403, 404, 409].includes(error.status)))
+      throw new RelayError(/^[a-z0-9_]{1,64}$/.test(error.code) ? error.code : 'peer_refused')
+    return this.refuse(error, signal)
   }
   private binding(): RelayRuntimeBinding {
     const a = this.attempt
@@ -359,7 +366,7 @@ class RemoteRelaySession implements RelayRuntimeSession {
       // A dropped link, a timeout or a refused offer is a transport failure like any other: report it as the meter being
       // briefly unavailable so the executor's bounded retry can re-send the same reserved call. Cancellation, a lost
       // fence and stale_lease keep their own behaviour in `refuse`.
-      this.refuse(error, active)
+      this.refuseCall(error, active)
     }
   }
   /** Cancel at the home first, so renewals and late results are refused, then ask the executor directly and wait for its

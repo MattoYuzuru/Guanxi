@@ -187,14 +187,14 @@ test('replayed, forged, re-signed and re-attributed evidence is not evidence for
 
 test('an executor without the relay runtime capability, a revoked peer or an unreachable node yields no facts', async t => {
   const none = await remoteFixture(t, { noRelayRuntime: true })
-  assert.equal(await code(none.relay()), 'contract_feature_unavailable', 'a missing capability is a fixed refusal, not a transient failure')
+  assert.equal(await code(none.relay()), 'runtime_meter_unavailable')
   assert.equal(none.seen.some(p => p.startsWith('/attempts/runtime')), false, 'capability absent: no relay request was even sent')
   const down = await remoteFixture(t)
   down.rules.push(path => { if (path.startsWith('/attempts/runtime')) throw networkFailure() })
   assert.equal(await code(down.relay()), 'runtime_meter_unavailable')
   const revoked = await remoteFixture(t)
   revoked.target.federation.revokePeer('home')
-  assert.equal(await code(revoked.relay()), 'peer_refused', 'an authentication refusal is fixed, not retried')
+  assert.equal(await code(revoked.relay()), 'runtime_meter_unavailable')
   assert.equal((await none.completions()).length + (await down.completions()).length + (await revoked.completions()).length, 0)
 })
 
