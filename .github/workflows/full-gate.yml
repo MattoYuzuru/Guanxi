@@ -75,6 +75,12 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+      - name: Restore pinned native test tool
+        if: matrix.native
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .ci-tools/setpriv
+          key: ci-tools-ubuntu24-${{ runner.arch }}-${{ hashFiles('scripts/ci/prepare-linux.sh') }}
       - name: Prepare Linux sandbox prerequisites
         if: matrix.native
         run: bash scripts/ci/prepare-linux.sh
@@ -99,6 +105,9 @@ jobs:
       - name: Require native image (no unavailable-runtime pass)
         if: matrix.native
         run: docker run --rm --network none guanxi-native-execution:k4-v3 node --version
+      - name: Require the actual native sandbox, not only installed tools
+        if: matrix.native
+        run: node scripts/ci/sandbox-probe.mjs
       - name: Install Chromium and system dependencies
         if: matrix.browser
         working-directory: packages/web

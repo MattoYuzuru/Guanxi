@@ -23,6 +23,7 @@ output/
 .claude/worktrees/
 .lane-data/
 .ci-results/
+.ci-tools/
 
 # Native approval signer build output
 native/approval-signer/.build/

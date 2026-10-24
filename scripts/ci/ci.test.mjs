@@ -25,6 +25,7 @@ test('draft matrix is quick; ready matrix contains every unique declared task', 
   assert.deepEqual(matrix(true).include.map(x => x.id), tasks.map(x => x.id))
   assert.equal(new Set(tasks.map(x => x.id)).size, tasks.length)
   assert.equal(matrix(true).include.filter(x => x.native).length, 3)
+  assert.equal(matrix(true).include.find(x => x.catalog).os, 'ubuntu-24.04-arm', 'exact G13 baselines use the observed ARM raster platform')
 })
 test('Node shards execute disjoint files and preserve import guards (flags precede paths)', () => {
   const directory = mkdtempSync(join(tmpdir(), 'guanxi-ci-shards-'))

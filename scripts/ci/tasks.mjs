@@ -10,7 +10,7 @@ export const tasks = [
   ...[1, 2, 3].map(shard => ({ id: `core-${shard}`, native: true, coreShard: `${shard}/3` })),
   { id: 'units', commands: [npm('test:kernel'), npm('test:bench'), npm('test:web'), npm('test:ui')] },
   ...[1, 2].map(shard => ({ id: `web-browser-${shard}`, browser: true, commands: [['npm', 'run', 'test:browser', '--workspace', '@guanxi/web', '--', `--shard=${shard}/2`]] })),
-  { id: 'catalog-browser', browser: true, catalog: true, commands: [npm('ui:check:browser')] },
+  { id: 'catalog-browser', os: 'ubuntu-24.04-arm', browser: true, catalog: true, commands: [npm('ui:check:browser')] },
   // The CLI bundles the web output. Keep the canonical root build's dependency order.
   { id: 'build', commands: [npm('build')] },
   { id: 'storybook', commands: [npm('build-storybook', '@guanxi/ui')] },
@@ -63,5 +63,5 @@ export function coreArguments(script, shard, report) {
 }
 
 export function matrix(full) {
-  return { include: tasks.filter(t => full || t.id === 'quality').map(t => ({ id: t.id, os: t.os ?? 'ubuntu-26.04', native: !!t.native, browser: !!t.browser, catalog: !!t.catalog })) }
+  return { include: tasks.filter(t => full || t.id === 'quality').map(t => ({ id: t.id, os: t.os ?? 'ubuntu-24.04', native: !!t.native, browser: !!t.browser, catalog: !!t.catalog })) }
 }

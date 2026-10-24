@@ -86,7 +86,8 @@ dependency order, platform setup, cache inputs and completeness tests together. 
 classification must identify an actual job or an explicit opt-in exclusion with rationale.
 Bench mutation campaigns remain opt-in; ordinary offline bench tests run in CI. Generated
 tokens are checked by G2, not restored over committed source. The catalog browser builds its
-harness; the production root build and Storybook run separately.
+harness; the production root build and Storybook run separately. G13 uses the observed ARM raster
+platform, not a different CPU architecture with silently regenerated snapshots.
 
 `Full gate` is the aggregate check; matrix jobs may not be skipped to manufacture success.
 Keep it required before merging when branch protection is configured. A draft's absent full
@@ -98,6 +99,7 @@ cancelled and outdated jobs even if a broad workflow status appears green.
 | Input/output | Policy | Invalidation |
 | --- | --- | --- |
 | npm package downloads | `setup-node` cache; `npm ci` every job | OS/architecture/lock; ordinary source/docs edits keep it useful |
+| Pinned standalone setpriv | Exact OS/architecture/preparation-script cache; install and preflight every job | Version, verified source digest and build flags in the preparation script |
 | Native Docker layers | BuildKit GHA cache; isolated native profile scope | Dockerfile, pinned base, guard content determine layer reuse |
 | `node_modules` | Never persisted/shared | Native packages and workspace symlinks must match this install |
 | Browser binaries | Install Chromium dependencies; no cross-run browser cache | Playwright recommends installation rather than browser caching |
@@ -122,7 +124,8 @@ inputs; none can grant a passing check. Retain task logs/receipts, JUnit core re
 failure screenshots/traces for seven days; never upload `.env`, home/config directories,
 provider credentials, reasoning or private runtime logs.
 
-Linux core jobs explicitly prepare bubblewrap/user namespaces and the pinned native image;
+Linux core jobs explicitly prepare bubblewrap/user namespaces, a checksummed standalone
+setpriv build and the pinned native image, then execute a real synthetic sandbox preflight;
 an unavailable image is a failing setup step. macOS signer tests compile the real helper;
 platform-specific skips remain visible in logs. Hosted macOS does not provide this owner's
 Colima setup, Secure Enclave identity or Touch ID. macOS container/sandbox behavior, owner

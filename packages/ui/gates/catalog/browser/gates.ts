@@ -4,7 +4,7 @@
  * failed tests into findings. G13 runs only inside the pinned Playwright image.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { readInventory, readStories } from '../../../catalog/tooling/inventory.ts'
 import { result, type CatalogGate, type GateContext, type GateFinding, type GateResult } from '../types.ts'
@@ -102,6 +102,8 @@ function runSpec(
   }
   const reportDir = mkdtempSync(join(context.uiRoot, 'catalog', 'harness', 'dist', '.report-'))
   const reportFile = join(reportDir, 'report.json')
+  // Create the shared parent as the host user before G13's root container can create it.
+  if (process.env['GITHUB_ACTIONS'] === 'true') mkdirSync(join(context.uiRoot, '..', '..', '.ci-results', 'catalog'), { recursive: true })
   const env: Record<string, string> = {
     GUANXI_GATE_STORIES: JSON.stringify(stories),
     GUANXI_GATE_FIXTURES: context.fixtures ? '1' : '0',

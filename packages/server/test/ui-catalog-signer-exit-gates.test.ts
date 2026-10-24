@@ -77,6 +77,8 @@ interface Result {
   stdout: Buffer
   stderr: Buffer
   json: Record<string, any> | null
+  signal: NodeJS.Signals | null
+  error?: string
 }
 
 function run(request: unknown, env: NodeJS.ProcessEnv): Result {
@@ -88,7 +90,8 @@ function run(request: unknown, env: NodeJS.ProcessEnv): Result {
       return null
     }
   })()
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr, json: parsed }
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr, json: parsed,
+    signal: result.signal, error: result.error?.message }
 }
 
 function authLines(path: string): string[] {
@@ -219,7 +222,7 @@ describe('approval signer exit gates', { skip: swiftSkip }, () => {
     const payload = canonicalJson(approval(fx.key.trusted.keyId))
     const reason = `approve the "button" component, source sha256:${'a'.repeat(64)}`
     const probe = run({ op: 'test-policy', service: SERVICE, account: ACCOUNT, payload }, fx.env)
-    assert.equal(probe.status, 0, probe.stderr.toString())
+    assert.equal(probe.status, 0, JSON.stringify({ signal: probe.signal, error: probe.error, stderr: probe.stderr.toString() }))
     assert.equal(probe.json?.['signature'], undefined, 'the policy probe must not sign')
     assert.deepEqual(probe.json, {
       ok: true,
