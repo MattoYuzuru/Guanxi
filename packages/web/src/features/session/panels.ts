@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import type { IconName } from '@guanxi/ui'
 import { PRODUCT_FILE_PREFIX } from '../../lib/brand.ts'
 
@@ -83,6 +83,16 @@ export interface SessionPanels extends SessionPanelState {
   show: (panel: SessionPanel) => void
 }
 
+/**
+ * Stored panels are a desktop convenience: in a narrow session they would reopen as a modal sheet
+ * that takes focus on arrival. There a sheet opens only by a user action (review 4): until one,
+ * the panels read as closed; the first toggle reports itself through `onUserToggle`.
+ */
+export function gateStoredPanels(stored: SessionPanels, suppressed: boolean, onUserToggle?: () => void): SessionPanels {
+  const toggle = (panel: SessionPanel, open: boolean) => { onUserToggle?.(); stored.toggle(panel, open) }
+  return suppressed ? { open: [], active: null, toggle, show: stored.show } : { ...stored, toggle }
+}
+
 export function useSessionPanels(): SessionPanels {
   const state = useSyncExternalStore(subscribe, readSessionPanels, () => closed)
   const toggle = useCallback((panel: SessionPanel, open: boolean) => {
@@ -95,5 +105,5 @@ export function useSessionPanels(): SessionPanels {
     const current = readSessionPanels()
     if (current.open.includes(panel)) write({ ...current, active: panel })
   }, [])
-  return { ...state, toggle, show }
+  return useMemo(() => ({ ...state, toggle, show }), [state, toggle, show])
 }

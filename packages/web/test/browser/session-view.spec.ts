@@ -173,8 +173,8 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
   await page.getByTestId('session-context').click()
   await expect(panels.getByRole('heading', { name: 'Context', exact: true })).toBeVisible()
   // On a phone the panel is a modal sheet: the app behind it is inert, focus is inside; Escape closes it.
+  // Narrowing the window does not turn open side panels into a sheet that grabs focus (review 4).
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByTestId('session-panels').getByRole('button', { name: 'Close Context', exact: true }).click()
   await expect(panels).toHaveCount(0)
   await page.getByTestId('session-context').click()
   await expect(panels.getByRole('button', { name: 'Close Context', exact: true })).toBeFocused()
@@ -237,4 +237,18 @@ for (const width of [390, 680]) test(`a narrow session's panel is a modal sheet 
   await page.keyboard.press('Escape')
   await expect(sheet).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Message' })).toBeFocused()
+})
+
+test('stored panels never reopen as a sheet on a phone, but do beside the timeline on a wide screen (review 4)', async ({ page }) => {
+  await setup(page, LONG_TITLE, { open: ['context'], active: 'context' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/chat/${THREAD}`)
+  await expect(page.getByTestId('session-title')).toBeVisible()
+  await expect(page.getByTestId('session-panels')).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Message' })).not.toBeFocused()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/chat/${THREAD}`)
+  await expect(page.getByTestId('session-panels')).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
 })

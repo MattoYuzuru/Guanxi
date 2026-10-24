@@ -62,7 +62,7 @@ import { ToolCallCard } from '../agent/ToolCallCard.tsx'
 import { WorkspaceChip, WorkspacePicker } from '../agent/WorkspacePicker.tsx'
 import { ContextChip, ContextPanel, contextDescription } from '../context/ContextPanel.tsx'
 import { useWorkspaceControls } from '../workspace/controls.ts'
-import { panelBlockId, useSessionPanels } from '../session/panels.ts'
+import { gateStoredPanels, panelBlockId, useSessionPanels } from '../session/panels.ts'
 import { clearSessionContext, publishSessionContext } from '../session/session-context.ts'
 import { SessionPanelsMenu } from '../session/SessionPanelsMenu.tsx'
 import { SessionPanelEmpty, SessionPanelsAside, useNarrowSession } from '../session/SessionPanelsAside.tsx'
@@ -471,8 +471,13 @@ function ThreadPage({
   const [autoApprove, setAutoApprove] = useLocalStorage('guanxi.autoApproveTurn', false)
   // Round 4: side panels open beside the timeline; in the free arrangement they are dock blocks.
   const layoutControls = useWorkspaceControls()
-  const panels = useSessionPanels()
+  const storedPanels = useSessionPanels()
   const [narrowSession, sessionRef] = useNarrowSession()
+  // In a narrow session stored panels wait for a user action instead of reopening as a sheet (review 4).
+  const [sheetByUser, setSheetByUser] = useState(false)
+  useEffect(() => { setSheetByUser(false) }, [narrowSession])
+  const panels = useMemo(() => gateStoredPanels(storedPanels, narrowSession && !sheetByUser, narrowSession ? () => setSheetByUser(true) : undefined),
+    [storedPanels, narrowSession, sheetByUser])
   const modalSheet = narrowSession && panels.active !== null && !layoutControls
   const headingId = useId()
   const [contextWriter] = useState(() => Symbol('session-context'))
