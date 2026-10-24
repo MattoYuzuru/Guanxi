@@ -34,6 +34,8 @@ export default defineConfig({
       '@base-ui/react/input',
       '@base-ui/react/menu',
       '@base-ui/react/popover',
+      '@base-ui/react/radio',
+      '@base-ui/react/radio-group',
       '@base-ui/react/select',
       '@base-ui/react/switch',
       '@base-ui/react/tabs',

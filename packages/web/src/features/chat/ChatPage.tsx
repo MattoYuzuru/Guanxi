@@ -14,7 +14,9 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
   type RefObject,
+  useId,
 } from 'react'
 import type {
   ContextCheckpoint,
@@ -33,6 +35,7 @@ import {
   DEFAULT_TEMPERATURE,
   parseChatModelSelection,
 } from '@guanxi/contract'
+import { Composer as PromptComposer, Icon, IconButton, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Switch } from '@guanxi/ui'
 import { Markdown } from '../../components/Markdown.tsx'
 import {
   Badge,
@@ -41,12 +44,10 @@ import {
   EmptyState,
   Select,
   Skeleton,
-  Textarea,
-  Toggle,
   cx,
 } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
-import { formatInteger, formatRelativeTime, formatTime } from '../../lib/format.ts'
+import { displayModelSelection, formatInteger, formatRelativeTime, formatTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
 import { PRODUCT_NAME } from '../../lib/brand.ts'
 import {
@@ -55,6 +56,7 @@ import {
 } from '../../lib/contextLength.ts'
 import { Link, paths, useNavigate } from '../../lib/router.tsx'
 import { useAsync, useLocalStorage } from '../../lib/useAsync.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { ApprovalPrompt } from '../agent/ApprovalPrompt.tsx'
 import { ToolCallCard } from '../agent/ToolCallCard.tsx'
 import { WorkspaceChip, WorkspacePicker } from '../agent/WorkspacePicker.tsx'
@@ -127,7 +129,9 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       if (!initialFocusSuppressedRef.current) target.current?.focus()
     })
     return () => cancelAnimationFrame(frame)
-  }, [projectId, projectContext.data, projectContext.error])
+    // Keyed on whether an error exists, not on the error object: a quiet automatic retry that
+    // fails again must not pull focus back (D-203).
+  }, [projectId, projectContext.data, Boolean(projectContext.error)])
 
   const requestedContextText = query.get('numCtx')
   const requestedContext = parsePositiveSafeInteger(requestedContextText)
@@ -141,13 +145,8 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
       ? requestedContext
       : defaultContext
   const models = useAsync((signal) => api.listModels(numCtx, signal), [numCtx])
-  const providerModels = useAsync(signal => api.chatModels(signal), [])
-  useEffect(() => {
-    const timer = setInterval(providerModels.reload, 15_000)
-    const refresh = () => providerModels.reload()
-    window.addEventListener('focus', refresh)
-    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [providerModels.reload])
+  // Provider models stay current by quiet revalidation (D-203): an equal re-read commits nothing.
+  const providerModels = useAsync(signal => api.chatModels(signal), [], { revalidate: { onFocus: true, intervalMs: 15_000 } })
   const providerGroups = mode === 'chat' ? providerModels.data?.groups ?? [] : []
   const providerSelected = providerGroups.some(group => group.models.some(item => item.selection === model))
   const workspaces = useAsync(
@@ -234,7 +233,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
         <p className="mt-2 break-words text-xs text-secondary">
           {errorMessage(projectContext.error)}
         </p>
-        <Button className="mt-3" onClick={projectContext.reload}>{translate('projects.retry')}</Button>
+        <p className="mt-3 text-12 text-secondary">{translate('common.recovering')}</p>
       </div>
     )
   }
@@ -325,7 +324,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
           {contextBlocked && selectedModel?.contextLimit.state === 'declared' ? (
             <Callout tone="danger" title={translate('context.limit.exceeded')}>
               {translate('context.limit.declared')}: {' '}
-              {formatInteger(selectedModel.contextLimit.value)} · {' '}
+              {formatInteger(selectedModel.contextLimit.value)},{' '}
               {selectedModel.contextLimit.source === 'ollama_api_tags'
                 ? translate('context.limit.source.tags')
                 : translate('context.limit.source.show')}
@@ -350,7 +349,7 @@ function NewThreadPage({ projectId }: { projectId: string | null }) {
                   ...(workspaces.data?.workspaces ?? []).map((workspace) => ({
                     value: workspace.id,
                     label: workspace.exists
-                      ? `${workspace.name} · ${workspace.rootPath}`
+                      ? `${workspace.name}, ${workspace.rootPath}`
                       : translate('chat.create.workspaceMissing', { name: workspace.name }),
                     disabled: !workspace.exists,
                   })),
@@ -450,6 +449,7 @@ function ThreadPage({
 }) {
   const inWorkspace = useContext(WorkspaceChatContext)
   const chat = useChat(threadId, projectId)
+  useAutoRecover(chat.loadError, chat.reload)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const loadErrorHeadingRef = useRef<HTMLHeadingElement>(null)
   const workspaces = useAsync(
@@ -480,7 +480,8 @@ function ThreadPage({
 
   useEffect(() => {
     if (chat.loadError) loadErrorHeadingRef.current?.focus()
-  }, [chat.loadError])
+    // Only when the error first appears; repeated automatic retries keep the user's focus.
+  }, [Boolean(chat.loadError)])
 
   const pickWorkspace = async (next: Workspace | null) => {
     setPickerOpen(false)
@@ -517,7 +518,7 @@ function ThreadPage({
           {errorMessage(chat.loadError)}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button size="sm" onClick={chat.reload}>{translate('projects.retry')}</Button>
+          <p className="m-0 text-12 text-secondary">{translate('common.recovering')}</p>
           {projectId && <Link to={paths.projects()} className="text-xs text-accent underline">{translate('projects.chats.back')}</Link>}
         </div>
       </div>
@@ -546,7 +547,7 @@ function ThreadPage({
               </Link>
             )}
             <div className="mt-0.5 flex items-center gap-2 text-2xs text-muted">
-              <span className="truncate font-mono">{parseChatModelSelection(chat.thread.model)?.modelId ?? chat.thread.model}</span>
+              <span className="truncate font-mono">{displayModelSelection(chat.thread.model)}</span>
               <ContextChip context={chat.context} />
             </div>
           </div>
@@ -562,18 +563,10 @@ function ThreadPage({
             {chat.thread.mode === 'agent' && (
               <WorkspaceChip workspace={workspace} onClick={() => setPickerOpen(true)} />
             )}
-            <Link
-              to={paths.inspector(chat.thread.id)}
-              className="flex h-6 items-center rounded-control border border-divider px-2 text-12 font-label text-secondary hover:bg-inset hover:text-foreground"
-            >
-              {translate('inspector.openTrace')}
-            </Link>
-            <Link
-              to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()}
-              className="flex h-6 items-center rounded-[5px] border border-control px-2 text-2xs font-medium hover:bg-inset"
-            >
-              {translate('chat.new')}
-            </Link>
+            <IconButton label={translate('inspector.openTrace')} icon={<Icon name="trace" />}
+              nativeButton={false} role="link" render={<Link to={paths.inspector(chat.thread.id)} />} />
+            <IconButton label={translate('chat.new')} icon={<Icon name="new" />} nativeButton={false} role="link"
+              render={<Link to={inWorkspace ? paths.workspace(null, projectId) : projectId ? paths.projectChat(projectId) : paths.chat()} />} />
           </div>
         </header>
 
@@ -606,7 +599,7 @@ function ThreadPage({
           </div>
 
           {inWorkspace && <aside className="workspace-dock-lanes" aria-label={translate('workspaceLayout.dockLanes')}>{translate('workspaceLayout.lanesEmpty')}</aside>}
-          <Composer
+          <ChatComposer
             inputRef={composerRef}
             disabled={!health.ollama.running && !parseChatModelSelection(chat.thread?.model ?? '')}
             decisionOpen={resourceDecision.decision !== null}
@@ -617,6 +610,8 @@ function ThreadPage({
             onAutoApprove={setAutoApprove}
             onSend={resourceDecision.request}
             onStop={chat.stop}
+            model={displayModelSelection(chat.thread.model)}
+            context={<ContextChip context={chat.context} />}
           />
         </div>
       </section>
@@ -832,6 +827,7 @@ export function MessageView({ message }: { message: Message }) {
               {turnStatusLabel(message.turnStatus)}
             </Badge>
           )}
+          {message.role === 'assistant' && message.usage && <MessageUsage usage={message.usage} />}
         </div>
 
         {message.thinking && (
@@ -861,6 +857,22 @@ export function MessageView({ message }: { message: Message }) {
   )
 }
 
+/** Per-message facts behind an icon with an anchored popover (D-207), not a row of captions. */
+function MessageUsage({ usage }: { usage: NonNullable<Message['usage']> }) {
+  return <Popover>
+    <PopoverTrigger render={<IconButton size="sm" label={translate('chat.message.details')} icon={<Icon name="info" />} />} />
+    <PopoverContent align="start">
+      <PopoverTitle>{translate('chat.message.details')}</PopoverTitle>
+      <dl className="gx-popover-facts">
+        <dt>{translate('chat.message.promptTokens')}</dt><dd>{formatInteger(usage.promptTokens)}</dd>
+        <dt>{translate('chat.message.outputTokens')}</dt><dd>{formatInteger(usage.evalTokens)}</dd>
+        <dt>{translate('chat.message.speed')}</dt><dd>{translate('format.tokensPerSecond', { value: usage.tokensPerSecond.toFixed(1) })}</dd>
+        <dt>{translate('chat.message.cached')}</dt><dd>{formatInteger(usage.cachedTokens)}</dd>
+      </dl>
+    </PopoverContent>
+  </Popover>
+}
+
 function TurnOutcomeView({ message }: { message: Message }) {
   const hasVisibleOutput =
     message.content.length > 0 || Boolean(message.thinking) || message.toolCalls.length > 0
@@ -885,7 +897,7 @@ function TurnOutcomeView({ message }: { message: Message }) {
     return (
       <p className="mt-1.5 text-2xs text-muted" role="status">
         {translate('chat.turn.status.completed')}
-        {reason ? ` · ${translate('chat.turn.reason')}: ${reason}` : ''}
+        {reason ? `, ${translate('chat.turn.reason')}: ${reason}` : ''}
       </p>
     )
   }
@@ -1092,7 +1104,11 @@ export function StreamingMessage({
 
 /* ───────────────────────────── Композер ───────────────────────────────── */
 
-function Composer({
+/**
+ * The thread composer (D-207): the shared docked Composer with the auto-approve switch at its
+ * lower left and the model and context at its lower right; Send becomes Stop while streaming.
+ */
+function ChatComposer({
   inputRef,
   disabled,
   decisionOpen,
@@ -1103,6 +1119,8 @@ function Composer({
   onAutoApprove,
   onSend,
   onStop,
+  model,
+  context,
 }: {
   inputRef: RefObject<HTMLTextAreaElement | null>
   disabled: boolean
@@ -1116,9 +1134,12 @@ function Composer({
     intent: ChatSendIntent,
   ) => Promise<'conflict' | 'dispatched' | 'ignored'>
   onStop: () => Promise<void>
+  model: string
+  context: ReactNode
 }) {
   const [content, setContent] = useState('')
   const [sending, setSending] = useState(false)
+  const autoApproveHintId = useId()
 
   const submit = async () => {
     const trimmed = content.trim()
@@ -1146,11 +1167,16 @@ function Composer({
 
   return (
     <div className="mx-auto max-w-3xl">
-      <Textarea
-        ref={inputRef}
+      <PromptComposer
+        textareaRef={inputRef as RefObject<HTMLTextAreaElement>}
         value={content}
-        rows={3}
-        disabled={disabled || isStreaming || decisionOpen}
+        onValueChange={setContent}
+        onSend={() => void submit()}
+        onStop={() => void onStop()}
+        running={isStreaming}
+        disabled={disabled || decisionOpen}
+        sendDisabled={sending}
+        label={translate('chat.composer.message')}
         placeholder={
           disabled
             ? translate('chat.composer.ollamaRequired')
@@ -1158,50 +1184,25 @@ function Composer({
               ? translate('chat.composer.agentPlaceholder')
               : translate('chat.composer.placeholder')
         }
-        aria-label={translate('chat.composer.message')}
-        onChange={(event) => setContent(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault()
-            void submit()
-          }
-        }}
-        className="min-h-20"
-      />
-
-      <div className="mt-1.5 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          {agentMode && (
-            <Toggle
+        sendLabel={translate('chat.composer.send')}
+        stopLabel={translate('chat.composer.stop', { phase: phaseLabel(phase) })}
+        leading={agentMode ? (
+          <span title={translate('chat.composer.autoApproveHint')} className="inline-flex">
+            <Switch
               checked={autoApprove}
-              onChange={onAutoApprove}
+              onCheckedChange={onAutoApprove}
               disabled={isStreaming}
-              label={translate('chat.composer.autoApprove')}
-              hint={translate('chat.composer.autoApproveHint')}
+              aria-describedby={autoApproveHintId}
+              label={<span className="text-12">{translate('chat.composer.autoApprove')}</span>}
             />
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden text-2xs text-muted sm:inline">
-            {translate('chat.composer.shortcut')}
+            <span id={autoApproveHintId} className="sr-only">{translate('chat.composer.autoApproveHint')}</span>
           </span>
-          {isStreaming ? (
-            <Button variant="danger" onClick={() => void onStop()}>
-              {translate('chat.composer.stop', { phase: phaseLabel(phase) })}
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              onClick={() => void submit()}
-              loading={sending}
-              disabled={disabled || decisionOpen || !content.trim()}
-            >
-              {translate('chat.composer.send')}
-            </Button>
-          )}
-        </div>
-      </div>
+        ) : undefined}
+        trailing={<>
+          <span className="max-w-3xs truncate font-mono text-12 text-secondary" title={model}>{model}</span>
+          {context}
+        </>}
+      />
     </div>
   )
 }
@@ -1266,7 +1267,7 @@ function ThreadSidebar({
             >
               <span className="block truncate text-xs font-medium">{thread.title}</span>
               <span className="mt-0.5 flex items-center justify-between gap-2 text-2xs text-secondary">
-                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : parseChatModelSelection(thread.model)?.modelId ?? thread.model}</span>
+                <span className="truncate">{thread.mode === 'agent' ? translate('chat.mode.agent') : displayModelSelection(thread.model)}</span>
                 <span className="shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
               </span>
             </Link>

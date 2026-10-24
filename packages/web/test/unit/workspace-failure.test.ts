@@ -39,10 +39,10 @@ describe('workspace observed failures', () => {
 
   it('attributes concurrent failures independently rather than using a shared phase variable', async () => {
     const results = await Promise.allSettled([
-      workspaceStep('load-developer-layouts', async () => { throw new TypeError('private-sentinel') }),
-      workspaceStep('load-visual-layouts', async () => { throw new Error('private-sentinel') }),
+      workspaceStep('load-layouts', async () => { throw new TypeError('private-sentinel') }),
+      workspaceStep('load-layout-geometry', async () => { throw new Error('private-sentinel') }),
     ])
     expect(results.map(result => result.status === 'rejected' && workspaceFailure(result.reason, 'load-workspace').operation))
-      .toEqual(['load-developer-layouts', 'load-visual-layouts'])
+      .toEqual(['load-layouts', 'load-layout-geometry'])
   })
 })

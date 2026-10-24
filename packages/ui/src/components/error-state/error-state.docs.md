@@ -1,7 +1,7 @@
 ---
 id: error-state
 level: pattern
-states: [default, with-details, retrying]
+states: [default, with-details, acting]
 tokens: []
 since: 0.1.0
 ---
@@ -28,7 +28,8 @@ disclosure with a copy button, and the next action.
 
 ## States
 
-default, with-details and retrying (the action is loading).
+default, with-details and acting (the action is loading). The action tells the user what to do
+(D-203): it is never a bare Retry, since transient failures recover by themselves.
 
 ## Accessibility
 

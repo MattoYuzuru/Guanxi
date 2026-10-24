@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { ThemeProvider } from './lib/theme.tsx'
+import { AppearanceProvider } from './lib/appearance.tsx'
 import { LocaleProvider } from './lib/locale-context.tsx'
 import { PRODUCT_NAME } from './lib/brand.ts'
 import './index.css'
@@ -16,7 +17,9 @@ createRoot(container).render(
     <LocaleProvider>
       <ErrorBoundary scope="root">
         <ThemeProvider>
-          <App />
+          <AppearanceProvider>
+            <App />
+          </AppearanceProvider>
         </ThemeProvider>
       </ErrorBoundary>
     </LocaleProvider>

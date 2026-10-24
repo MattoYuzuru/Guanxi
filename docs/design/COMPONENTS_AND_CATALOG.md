@@ -1,6 +1,7 @@
 # Components and catalog
 
-**Status:** accepted direction (D-137, D-138); built in stage DS1 · **Updated:** 2026-10-20
+**Status:** accepted direction (D-137, D-138); built in stage DS1; restyled in the UI-redesign lane
+(D-200) · **Updated:** 2026-10-23
 
 Decision record: [ADR-0034](../decisions/0034-design-system-tokens-catalog-and-gates.md).
 Evidence: [02 design-system tooling](../research/2026-10-20-design/02-design-system-tooling.md).
@@ -13,7 +14,7 @@ they never import its internals, `@base-ui/react`, `lucide-react` or `motion` di
 | Level | What | Examples |
 | --- | --- | --- |
 | primitive | accessible building blocks, copied in once from shadcn/ui on Base UI and owned by Guanxi | Button, IconButton, Input, Textarea, Select, Combobox, Checkbox, Switch, Radio, Slider, Tabs, Tooltip, Popover, Menu, Dialog, Sheet, Toast, Badge, Chip, Kbd, Progress, Skeleton, Separator, ScrollArea, Table, Tree |
-| pattern | compositions with Guanxi meaning | Composer, ControlRow, ContextRing, StatusPill, ProvenanceLabel ("source · age"), EmptyState, ErrorState, OfflineState, ToolRow, DiffView, CodeBlock, TerminalView, TraceRow, BlockCard, PaneFrame, NotificationRow, ActionToast, CommandPalette, ModelPicker, AccessModePicker, ProjectPicker, VoiceButton, AttachmentChip, Sparkline, Meter, ProcessTree, LeaseBadge, NodeCard, BoardCard |
+| pattern | compositions with Guanxi meaning | Composer, ControlRow, ContextRing, StatusPill, ProvenanceLabel (source and age), EmptyState, ErrorState, OfflineState, ToolRow, DiffView, CodeBlock, TerminalView, TraceRow, BlockCard, PaneFrame, NotificationRow, ActionToast, CommandPalette, ModelPicker, AccessModePicker, ProjectPicker, VoiceButton, AttachmentChip, Sparkline, Meter, ProcessTree, LeaseBadge, NodeCard, BoardCard |
 | feature | screen parts owned by one feature | session header, new-session screen, settings pages |
 | block | layout contributions with card and pane (LAYOUT_AND_SCREENS §5) | Context, Changes, Plan, Processes, … |
 
@@ -226,3 +227,20 @@ lane hand-off for evidence.
   (`packages/ui/gates/catalog/run.ts`) stays for targeted work: `npm run ui:catalog:selftest`
   runs every seed of every catalog gate (G17 runs one per gate), and `npm run ui:snapshots`
   rewrites G13 baselines.
+
+## 9. Redesign (UI-redesign lane, 2026-10-23)
+
+- Every primitive was restyled for D-200 (white controls on hairlines, one-pixel shadow and inner
+  highlight, concentric 6/8/12/14 px radii, tinted status fills); visual baselines changed and
+  must be re-reviewed. No component was approved by the lane.
+- New `review` components used by the product: **Icon** (one semantic registry over Lucide plus
+  Guanxi-drawn domain glyphs), **Kbd**, **SegmentedControl** (Base UI radio group),
+  **StatusItem** (icon, emphasised value, tooltip, anchored popover; unknown is never 0) and
+  **Composer** (D-207: centred or docked; permission slot at the lower left, model, effort and
+  context at the lower right; Send or Stop). Popover, Switch and Badge moved from `draft` to
+  `review` because product code now uses them. **PalettePreview** stays `draft` (catalog only).
+- AppShellChrome has an `actions` slot and a palette shortcut; the sidebar menu sits in the strip,
+  and the main surface is a floating pane.
+- Pixel assertions: `packages/web/test/browser/controls-geometry.spec.ts` measures that the switch
+  knob is centred in both states and that icons sit on the exact centre of icon controls, in both
+  themes and densities.

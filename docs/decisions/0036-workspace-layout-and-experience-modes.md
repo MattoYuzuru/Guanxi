@@ -1,6 +1,8 @@
 # ADR-0036: Workspace layout, blocks and experience modes
 
-**Status:** accepted direction (owner decisions D-131–D-133); proposed design · **Date:** 2026-10-20
+**Status:** accepted direction (owner decisions D-131–D-133); proposed design; the two experience
+modes are superseded by D-204 (2026-10-23: one interface; the stored per-mode documents remain
+readable, the product uses one) · **Date:** 2026-10-20
 **Extends:** [ADR-0022](0022-plugin-trust-tiers-ui-slots-and-design-tokens.md) (slots),
 [ADR-0026](0026-clients-desktop-web-mobile.md) (clients).
 

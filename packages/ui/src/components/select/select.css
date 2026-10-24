@@ -1,16 +1,19 @@
 @reference '../../styles/tailwind-reference.css';
 
+/* Dropdown trigger: a white control with a chevron; the list is a glass popover. */
 .gx-select-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-8);
+  box-sizing: border-box;
   min-width: var(--layout-container-3xs);
   min-height: var(--control-height);
-  padding-inline: var(--spacing-8);
+  padding-inline: var(--spacing-8) var(--spacing-6);
   border: var(--border-width-regular) solid var(--color-border-control);
   border-radius: var(--border-radius-control);
   background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-control-shadow);
   color: var(--color-text-primary);
   font-family: inherit;
   font-size: var(--font-text-size);
@@ -23,8 +26,11 @@
 
 .gx-select-trigger:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-select-trigger:not([data-disabled]) {
-  /* The canvas keeps the muted placeholder at 4.5:1; the hover fill would not. */
-  background-color: var(--color-background-primary);
+  border-color: var(--color-text-tertiary);
+}
+
+.gx-select-trigger[data-popup-open] {
+  border-color: var(--color-border-accent);
 }
 
 .gx-select-trigger[data-invalid] {
@@ -32,8 +38,9 @@
 }
 
 .gx-select-trigger[data-disabled] {
-  border-color: var(--color-border-primary);
+  border-color: var(--color-border-secondary);
   background-color: var(--color-background-disabled);
+  box-shadow: none;
   color: var(--color-text-disabled);
   cursor: not-allowed;
 }
@@ -49,8 +56,16 @@
 }
 
 .gx-select-icon {
-  display: inline-flex;
+  display: grid;
+  place-items: center;
   color: var(--color-text-tertiary);
+  @apply transition-transform;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-easing-standard);
+}
+
+.gx-select-trigger[data-popup-open] .gx-select-icon {
+  @apply rotate-180;
 }
 
 .gx-select-icon svg,
@@ -66,12 +81,13 @@
   z-index: var(--layer-popover);
 }
 
+/* Concentric radii: 12 px list, 4 px padding, 8 px items. */
 .gx-select-content {
   min-width: var(--anchor-width);
   max-height: var(--available-height);
   padding: var(--spacing-4);
   overflow-y: auto;
-  border-radius: var(--border-radius-control);
+  border-radius: var(--border-radius-panel);
   outline: none;
 }
 
@@ -82,7 +98,7 @@
   gap: var(--spacing-8);
   min-height: var(--row-height);
   padding-inline: var(--spacing-8);
-  border-radius: var(--border-radius-inline);
+  border-radius: var(--border-radius-control);
   color: var(--color-text-primary);
   font-size: var(--font-text-size);
   cursor: default;
@@ -94,17 +110,22 @@
   background-color: var(--color-background-hover);
 }
 
+.gx-select-item[data-selected] {
+  font-weight: var(--font-weight-label);
+}
+
 .gx-select-item[data-disabled] {
   color: var(--color-text-disabled);
 }
 
 .gx-select-item-indicator {
-  display: inline-flex;
+  display: grid;
+  place-items: center;
   color: var(--color-text-accent);
 }
 
 .gx-select-group-label {
-  padding: var(--spacing-4) var(--spacing-8);
+  padding: var(--spacing-6) var(--spacing-8) var(--spacing-2);
   color: var(--color-text-tertiary);
   font-size: var(--font-size-12);
   font-weight: var(--font-weight-label);

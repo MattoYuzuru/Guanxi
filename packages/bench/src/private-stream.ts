@@ -25,7 +25,7 @@ function protocolReason(error: unknown): PrivateStreamReason {
  * upstream stream's allocation/high-water mark; oversized delivered chunks are refused. */
 export async function servePrivateTrialStreams(input: Readable, output: Writable, host: PrivateChannelHost,
   policy: PrivateStreamPolicy, signal: AbortSignal,
-  hooks: { onTerminal?(): void } = {}): Promise<PrivateStreamResult> {
+  hooks: { onTerminal?(reason: PrivateStreamReason): void } = {}): Promise<PrivateStreamResult> {
   if (!Number.isSafeInteger(policy.maximumInputChunkBytes) || policy.maximumInputChunkBytes <= 0 ||
     policy.maximumInputChunkBytes > 0x7fffffff || !Number.isSafeInteger(policy.outputTimeoutMs) ||
     policy.outputTimeoutMs <= 0 || policy.outputTimeoutMs > 0x7fffffff)
@@ -41,7 +41,7 @@ export async function servePrivateTrialStreams(input: Readable, output: Writable
   function stop(reason: PrivateStreamReason): void {
     if (result) return
     result = { reason, responsesDelivered }
-    try { hooks.onTerminal?.() } catch { /* a host hook never changes the protocol reason */ }
+    try { hooks.onTerminal?.(reason) } catch { /* a host hook never changes the protocol reason */ }
     channel.close()
     cancelWrite?.()
     input.destroy(); output.destroy()

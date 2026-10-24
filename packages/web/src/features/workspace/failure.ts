@@ -4,8 +4,7 @@ import { ApiRequestError, ApiShapeError } from '../../lib/api.ts'
 const sources = {
   'kernel-ready': 'kernel-ready',
   'layout-context': `layout-context: GET ${ROUTES.layoutContext()}`,
-  'load-developer-layouts': `load-developer-layouts: GET ${ROUTES.layouts()}`,
-  'load-visual-layouts': `load-visual-layouts: GET ${ROUTES.layouts()}`,
+  'load-layouts': `load-layouts: GET ${ROUTES.layouts()}`,
   'resolve-layout': 'resolve-layout',
   'load-layout-geometry': `load-layout-geometry: GET ${ROUTES.layoutGeometry()}`,
   'snapshot-layout': 'snapshot-layout',

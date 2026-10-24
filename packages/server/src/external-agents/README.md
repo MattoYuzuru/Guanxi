@@ -162,6 +162,32 @@ unchanged. An agent without `mcpCapabilities.http` fails `mcp_http_unsupported` 
 `lead_adapter_unsupported`. Set `runDeadlineMs` above the longest expected lead turn. A node killed
 mid-turn leaves the holder occupied and may leave an orphan agent group (see the admission section).
 
+**Claude Code on a vault credential (D-211, D-212).** The payment connection decides the mode. A K3 `agent`/`cli_login` connection
+without a secret is the subscription *login* path above. Two vault modes need no sign-in:
+
+- **API key (D-211).** A K3 `model_api`/`anthropic`/`api_key` connection (for example the dotenv import's). The vault key is injected as
+  `ANTHROPIC_API_KEY`; K3 refuses `sk-ant-oat` tokens as API keys; a connection pinned to another API root, or of another provider, is
+  `claude_api_connection_required`. `auth status` must report `loggedIn`, `authMethod: "api_key"` and `apiKeySource: "ANTHROPIC_API_KEY"`
+  (else `claude_api_key_not_in_effect`). Facts: `api_key_login`, `billing = api_usage`.
+- **Subscription token (D-212).** A K3 `agent`/`cli_login` connection that holds the owner's `claude setup-token` token (`sk-ant-oat…`),
+  imported from a dotenv file (`CLAUDE_CODE_OAUTH_TOKEN`, or an `sk-ant-oat` value under `ANTHROPIC_API_KEY` when the importer is asked
+  for token mode). K3 hands it only to K5 (`dispatchAgent`), never to `complete()`, chat or another adapter. It is injected as
+  `CLAUDE_CODE_OAUTH_TOKEN`; `auth status` must report `authMethod: "oauth_token"` (else `claude_token_not_in_effect`). Facts:
+  `token_login`, `billing = subscription`.
+
+In both: the environment is built from nothing, so no ambient key or token passes; the credential is in no argument, file, event or log;
+`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` keeps `ANTHROPIC_API_KEY` out of the CLI's MCP stdio subprocesses (observed offline with CLI 2.1.287). For
+`CLAUDE_CODE_OAUTH_TOKEN` the same observation showed the CLI does not pass it to an MCP stdio server with or without the variable. Bash tool
+and hooks were not observed in either mode, so that is an open risk; a vendor settings file in the config directory or in `work/.claude` refuses the launch
+(`claude_settings_present`, existence only) and the endpoint and permission mode are pinned in the bridge's programmatic settings tier.
+Residual limits of the guard and pin: managed (system) settings sit above the pin and are not checked; the `auth status` probe runs before
+the pin applies; the settings check is not atomic with the launch. `configDirectory()` returns the directory to clean when `claude_settings_present`
+refuses a launch. The persistent per-installation config directory is kept (a lead resumes its saved ACP session from it); Guanxi never writes the
+credential there, and switching mode switches directory. Another author is refused (`host_tools_owner_only` for the API key, K3's `cannot
+pay` for the token) and there is no login to prepare (`api_or_local_required`). `claudeEffort` (`low`..`max`) sets the bridge's `effort`
+config option after the model switch, refusing `effort_unavailable` when the bridge does not offer that level, with an `effort` fact (its
+source says whether it was applied, already current, or kept by a loaded session that reported no options). Vendor settings files are never edited.
+
 Claude `auth status` is invoked on the configured unmodified binary, with the isolated
 environment; only login/auth-method facts are retained. Explicit `claudeBare: true` refuses a
 subscription launch and records why. The existing `bare` fact is launch-policy metadata only:

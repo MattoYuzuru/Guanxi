@@ -5,6 +5,7 @@ import type {
 import { Badge } from '../../components/ui.tsx'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { FactList } from './Facts.tsx'
 
 export function InstalledEvidenceSummary({
   descriptor,
@@ -13,17 +14,18 @@ export function InstalledEvidenceSummary({
 }) {
   const evidence = descriptor.capabilities
   const freshness = evidenceFreshness(descriptor)
+  // Facts instead of three badges: a caution reads as a warning value, not as another chip.
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1" aria-label={translate('models.evidence.label')}>
-      <Badge tone={evidenceTone(evidence)}>{evidenceState(evidence)}</Badge>
-      <Badge tone={freshnessTone(freshness)}>
-        {freshnessState(freshness)}
-      </Badge>
-      <Badge tone="outline">{evidenceSources(evidence)}</Badge>
-      <span className="text-2xs text-muted">
-        {translate('models.evidence.observed')} {formatDateTime(evidence.observedAt)}
-      </span>
-    </div>
+    <FactList
+      className="mb-2"
+      label={translate('models.evidence.label')}
+      facts={[
+        { label: translate('models.facts.capabilities'), value: evidenceState(evidence), tone: evidenceTone(evidence) === 'yellow' ? 'warning' : undefined },
+        { label: translate('models.facts.freshness'), value: freshnessState(freshness), tone: freshnessTone(freshness) === 'yellow' ? 'warning' : undefined },
+        { label: translate('models.facts.sources'), value: evidenceSources(evidence) },
+        { label: translate('models.facts.observed'), value: formatDateTime(evidence.observedAt) },
+      ]}
+    />
   )
 }
 
@@ -51,11 +53,18 @@ export function InstalledEvidenceDetails({
         </dd>
         <dt className="text-muted">{translate('models.evidence.installation')}</dt>
         <dd>
-          {descriptor.installation.state === 'installed'
-            ? translate('models.evidence.installed')
-            : translate('models.evidence.unknown')}{' '}
-          · {evidenceSourceLabel(descriptor.installation.source)} ·{' '}
-          {formatDateTime(descriptor.installation.observedAt)}
+          <FactList
+            facts={[
+              {
+                label: translate('models.facts.state'),
+                value: descriptor.installation.state === 'installed'
+                  ? translate('models.evidence.installed')
+                  : translate('models.evidence.unknown'),
+              },
+              { label: translate('models.facts.source'), value: evidenceSourceLabel(descriptor.installation.source) },
+              { label: translate('models.facts.observed'), value: formatDateTime(descriptor.installation.observedAt) },
+            ]}
+          />
         </dd>
         <dt className="text-muted">{translate('models.evidence.capabilities')}</dt>
         <dd className="space-y-1.5">
@@ -72,11 +81,13 @@ export function InstalledEvidenceDetails({
                   key={`${declaration.source}:${declaration.observedAt}`}
                   className="rounded-md border border-divider bg-inset p-2"
                 >
-                  <span className="font-medium">
-                    {evidenceSourceLabel(declaration.source)}
-                  </span>{' '}
-                  · {translate('models.evidence.declaredConfidence')} ·{' '}
-                  {formatDateTime(declaration.observedAt)}
+                  <FactList
+                    facts={[
+                      { label: translate('models.facts.source'), value: evidenceSourceLabel(declaration.source) },
+                      { label: translate('models.facts.confidence'), value: translate('models.evidence.declaredConfidence') },
+                      { label: translate('models.facts.observed'), value: formatDateTime(declaration.observedAt) },
+                    ]}
+                  />
                   <div className="mt-1 flex flex-wrap gap-1">
                     {declaration.capabilities.length === 0 ? (
                       <span>{translate('models.evidence.emptyDeclaration')}</span>
@@ -84,14 +95,24 @@ export function InstalledEvidenceDetails({
                       <Badge key={capability} tone="accent">{capability}</Badge>
                     ))}
                   </div>
-                  <p className="mt-1 break-all text-secondary">
-                    {declaration.basis.artifact.state === 'exact_digest'
-                      ? declaration.basis.artifact.digest
-                      : translate('models.evidence.identityUnknown')}{' '}
-                    · {declaration.basis.runtime.state === 'sourced'
-                      ? `Ollama ${declaration.basis.runtime.version}`
-                      : translate('models.evidence.runtimeUnknown')}
-                  </p>
+                  <FactList
+                    className="mt-1"
+                    facts={[
+                      {
+                        label: translate('models.facts.artifact'),
+                        value: declaration.basis.artifact.state === 'exact_digest'
+                          ? declaration.basis.artifact.digest
+                          : translate('models.evidence.identityUnknown'),
+                        mono: declaration.basis.artifact.state === 'exact_digest',
+                      },
+                      {
+                        label: translate('models.facts.runtime'),
+                        value: declaration.basis.runtime.state === 'sourced'
+                          ? `Ollama ${declaration.basis.runtime.version}`
+                          : translate('models.evidence.runtimeUnknown'),
+                      },
+                    ]}
+                  />
                 </li>
               ))}
             </ul>
@@ -107,12 +128,12 @@ export function InstalledEvidenceDetails({
           </div>
           <p>{freshnessExplanation(freshness)}</p>
           {freshness.observedAt ? (
-            <p className="text-muted">
-              {translate('models.evidence.observed')} {formatDateTime(freshness.observedAt)}
-              {'validatedAt' in freshness
-                ? ` · ${translate('models.evidence.validated')} ${formatDateTime(freshness.validatedAt)}`
-                : ''}
-            </p>
+            <FactList
+              facts={[
+                { label: translate('models.facts.observed'), value: formatDateTime(freshness.observedAt) },
+                'validatedAt' in freshness && { label: translate('models.facts.validated'), value: formatDateTime(freshness.validatedAt) },
+              ]}
+            />
           ) : null}
         </dd>
       </dl>

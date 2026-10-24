@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { SideChatContextFacts, SideChatRespondRequest } from '@guanxi/contract'
-import { Button, ErrorState, Textarea, Input } from '@guanxi/ui'
-import { Select } from '../../components/ui.tsx'
+import { Badge, Button, ErrorState, Icon, IconButton, Input, Popover, PopoverContent, PopoverTitle, PopoverTrigger, SegmentedControl, Textarea } from '@guanxi/ui'
+import { Markdown } from '../../components/Markdown.tsx'
+import './side-chat.css'
 import { formatTime } from '../../lib/format.ts'
 import { translate as t, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
@@ -35,7 +36,13 @@ function failureText(failure: Failure): string {
   return t((ERROR_KEYS as readonly string[]).includes(failure.code) ? `sideChat.error.${failure.code as (typeof ERROR_KEYS)[number]}` : 'sideChat.error.agent_unavailable')
 }
 
-export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Called after the node accepted a Send to main, so the host can refresh the session's status. */ onSent?: () => void }) {
+export function SideChatPanel({ sessionId, onSent, onClose }: {
+  sessionId: string
+  /** Called after the node accepted a Send to main, so the host can refresh the session's status. */
+  onSent?: () => void
+  /** Shown as a close button when the host renders the panel as a toggled side panel. */
+  onClose?: () => void
+}) {
   useLocale()
   const [turns, setTurns] = useState<Turn[]>([]), [draft, setDraft] = useState('')
   const [mode, setMode] = useState<ContextMode>('session'), [lastTurns, setLastTurns] = useState('3')
@@ -137,12 +144,9 @@ export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Ca
       failWith('send', error, turn.id)
     }
   }
-  const retry = () => {
-    if (!failure) return
-    if (failure.action === 'respond') void perform(turns)
-    else if (failure.action === 'save') void save()
-    else { const turn = turns.find(item => item.id === failure.turnId); if (turn) void sendToMain(turn) }
-  }
+  // A failed answer can be asked again with the same messages; a failed save or send keeps its
+  // own Save and Send buttons enabled (same operation id), so there is no separate Retry (D-203).
+  const askAgain = () => { if (failure?.action === 'respond') void perform(turns) }
   const discard = () => {
     abort.current?.abort(); abort.current = null
     setTurns([]); setDraft(''); setSaved(null); setSends({}); setFailure(null); setAnnouncement(null); setConfirming(false)
@@ -152,81 +156,91 @@ export function SideChatPanel({ sessionId, onSent }: { sessionId: string; /** Ca
   const lastFacts = (turn: Turn) => turn.facts
   const receipt = saved && saved.digest === digestOf(turns.slice(0, saved.count)) ? saved : null
 
-  return <section aria-labelledby={`${id}-title`} data-testid="side-chat-panel" className="flex min-w-0 flex-col gap-3 rounded-panel border border-divider bg-surface p-4">
-    <div className="flex flex-wrap items-center gap-2">
-      <h2 id={`${id}-title`} className="text-15 font-heading">{t('sideChat.title')}</h2>
-      <span data-testid="side-chat-ephemeral" className="rounded-control border border-divider bg-inset px-2 py-1 text-12 font-heading">{t('sideChat.ephemeral')}</span>
-    </div>
-    <p data-testid="side-chat-notice" className="text-12 text-secondary">{t('sideChat.ephemeral.notice')}</p>
-    <p className="text-12 text-secondary">{t('sideChat.reads')}</p>
-
-    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-      <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={`${id}-context`} className="text-14 font-heading">{t('sideChat.context')}</label>
-        <Select id={`${id}-context`} describedBy={`${id}-context-hint`} value={mode} disabled={asking} onChange={value => setMode(value as ContextMode)}
-          options={[{ value: 'session', label: t('sideChat.context.session') }, { value: 'last', label: t('sideChat.context.last') }, { value: 'none', label: t('sideChat.context.none') }]} />
+  return <section aria-labelledby={`${id}-title`} data-testid="side-chat-panel" className="side-chat">
+    <header className="side-chat-header">
+      <h2 id={`${id}-title`} className="side-chat-title">{t('sideChat.title')}</h2>
+      <Badge data-testid="side-chat-ephemeral">{t('sideChat.ephemeral')}</Badge>
+      <div className="side-chat-header-actions">
+        <Popover>
+          <PopoverTrigger render={<IconButton size="sm" label={t('sideChat.about')} icon={<Icon name="info" />} />} />
+          <PopoverContent align="end" className="w-sm">
+            <PopoverTitle>{t('sideChat.title')}</PopoverTitle>
+            <div className="side-chat-about">
+              <p>{t('sideChat.ephemeral.notice')}</p>
+              <p>{t('sideChat.reads')}</p>
+              <p>{t('sideChat.context.hint')}</p>
+              <p>{t('sideChat.save.hint')}</p>
+            </div>
+          </PopoverContent>
+        </Popover>
+        {onClose && <IconButton size="sm" label={t('sideChat.close')} icon={<Icon name="close" />} onClick={onClose} />}
       </div>
-      {mode === 'last' && <div className="flex min-w-0 flex-col gap-1">
-        <label htmlFor={`${id}-turns`} className="text-14 font-heading">{t('sideChat.context.turns')}</label>
-        <Input id={`${id}-turns`} inputMode="numeric" invalid={turnsInvalid} aria-describedby={turnsInvalid ? `${id}-turns-error` : undefined} value={lastTurns} disabled={asking}
-          onChange={event => setLastTurns(event.target.value)} />
-        {turnsInvalid && <p id={`${id}-turns-error`} className="text-12 text-danger">{t('sideChat.context.turnsInvalid')}</p>}
-      </div>}
-    </div>
-    <p id={`${id}-context-hint`} className="text-12 text-secondary">{t('sideChat.context.hint')}</p>
+    </header>
 
-    <div role="log" aria-label={t('sideChat.messages')}><ol className="flex min-w-0 flex-col gap-3">
-      {turns.length === 0 && <li className="text-14 text-secondary">{t('sideChat.empty')}</li>}
-      {turns.map((turn, index) => {
-        const send = sends[turn.id]
-        const facts = lastFacts(turn)
-        return <li key={turn.id} data-testid="side-chat-turn" data-role={turn.role} className="flex min-w-0 flex-col gap-1 rounded-control border border-divider p-3">
-          <p className="text-12 font-heading">{t(turn.role === 'user' ? 'sideChat.role.user' : 'sideChat.role.assistant')}</p>
-          <p className="whitespace-pre-wrap break-words text-14">{turn.text}</p>
-          {facts && <p className="text-12 text-secondary">{facts.include === 'none'
-            ? t('sideChat.provenance.none', { time: formatTime(facts.observedAt) })
-            : t('sideChat.provenance', { seq: facts.upToSeq, turns: facts.turns, bytes: facts.bytes, time: formatTime(facts.observedAt) })}
-            {facts.excerpted > 0 ? ` · ${t('sideChat.provenance.excerpts', { count: facts.excerpted })}` : ''}</p>}
-          {turn.truncated && <p className="text-12">{t('sideChat.truncated')}</p>}
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" aria-label={t('sideChat.send.named', { n: index + 1 })} disabled={send !== undefined || saving} loading={send?.status === 'sending'}
-              onClick={() => void sendToMain(turn)}>{t('sideChat.send')}</Button>
-            {send?.status === 'sent' && <span data-testid="side-chat-sent" className="text-12 font-heading">{t('sideChat.sent.mark')}</span>}
-          </div>
-        </li>
-      })}
-    </ol></div>
+    <div className="side-chat-body">
+      <p data-testid="side-chat-notice" className="side-chat-description">{t('sideChat.description')}</p>
+      <div className="side-chat-context">
+        <SegmentedControl label={t('sideChat.context')} aria-describedby={`${id}-context-hint`} value={mode} disabled={asking}
+          onValueChange={setMode} options={[{ value: 'session', label: t('sideChat.context.session') }, { value: 'last', label: t('sideChat.context.last') },
+            { value: 'none', label: t('sideChat.context.none') }]} />
+        <span id={`${id}-context-hint`} className="sr-only">{t('sideChat.context.hint')}</span>
+        {mode === 'last' && <div className="side-chat-turns-field">
+          <label htmlFor={`${id}-turns`} className="side-chat-field-label">{t('sideChat.context.turns')}</label>
+          <Input id={`${id}-turns`} inputMode="numeric" invalid={turnsInvalid} aria-describedby={turnsInvalid ? `${id}-turns-error` : undefined} value={lastTurns} disabled={asking}
+            onChange={event => setLastTurns(event.target.value)} className="side-chat-turns-input" />
+          {turnsInvalid && <p id={`${id}-turns-error`} className="side-chat-error-text">{t('sideChat.context.turnsInvalid')}</p>}
+        </div>}
+      </div>
 
-    {failure && <div className="flex min-w-0 flex-col gap-2">
-      <ErrorState title={`${t('sideChat.error.title')}. ${failureText(failure)}`} source={t(SOURCE_KEYS[failure.action])} occurredAt={failure.at} timeMeaning="observed" details={failure.code}
-        action={failure.code === 'context_too_large' || failure.code === 'validation_failed' || failure.code === 'too_large' ? undefined : <Button onClick={retry}>{t('sideChat.retry')}</Button>} />
-    </div>}
-    <p ref={statusRef} role="status" tabIndex={-1} data-testid="side-chat-status" className="min-h-6 text-14 focus-visible:outline-focus">{announcement ? t(announcement.key, announcement.values) : ''}</p>
+      <div role="log" aria-label={t('sideChat.messages')}><ol className="side-chat-log">
+        {turns.length === 0 && <li className="side-chat-empty">{t('sideChat.empty')}</li>}
+        {turns.map((turn, index) => {
+          const send = sends[turn.id]
+          const facts = lastFacts(turn)
+          return <li key={turn.id} data-testid="side-chat-turn" data-role={turn.role} className="side-chat-turn">
+            <p className="side-chat-role">{t(turn.role === 'user' ? 'sideChat.role.user' : 'sideChat.role.assistant')}</p>
+            {turn.role === 'assistant' ? <Markdown source={turn.text} className="side-chat-text" /> : <p className="side-chat-text side-chat-prompt">{turn.text}</p>}
+            {facts && <p className="side-chat-facts">{facts.include === 'none'
+              ? t('sideChat.provenance.none', { time: formatTime(facts.observedAt) })
+              : t('sideChat.provenance', { seq: facts.upToSeq, turns: facts.turns, bytes: facts.bytes, time: formatTime(facts.observedAt) })}
+              {facts.excerpted > 0 ? `, ${t('sideChat.provenance.excerpts', { count: facts.excerpted })}` : ''}</p>}
+            {turn.truncated && <p className="side-chat-facts">{t('sideChat.truncated')}</p>}
+            <div className="side-chat-turn-actions">
+              <Button size="sm" variant="ghost" aria-label={t('sideChat.send.named', { n: index + 1 })} disabled={send !== undefined || saving} loading={send?.status === 'sending'}
+                onClick={() => void sendToMain(turn)}><Icon name="send" size={14} aria-hidden="true" />{t('sideChat.send')}</Button>
+              {send?.status === 'sent' && <span data-testid="side-chat-sent" className="side-chat-sent"><Icon name="check" size={14} aria-hidden="true" />{t('sideChat.sent.mark')}</span>}
+            </div>
+          </li>
+        })}
+      </ol></div>
 
-    <div className="flex min-w-0 flex-col gap-1">
-      <label htmlFor={`${id}-prompt`} className="text-14 font-heading">{t('sideChat.prompt')}</label>
-      <Textarea ref={promptRef} id={`${id}-prompt`} aria-describedby={`${id}-prompt-hint`} rows={3} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={promptKey} />
-      <p id={`${id}-prompt-hint`} className="text-12 text-secondary">{t('sideChat.prompt.hint')}</p>
-    </div>
-    <div className="flex flex-wrap items-center gap-2">
-      <Button variant="primary" disabled={!canAsk} onClick={ask}>{t('sideChat.ask')}</Button>
-      {asking && <Button onClick={() => abort.current?.abort()}>{t('sideChat.cancel')}</Button>}
+      {failure && <ErrorState title={`${t('sideChat.error.title')}. ${failureText(failure)}`} source={t(SOURCE_KEYS[failure.action])} occurredAt={failure.at} timeMeaning="observed" details={failure.code}
+        action={failure.action !== 'respond' || failure.code === 'context_too_large' || failure.code === 'validation_failed' || failure.code === 'too_large' ? undefined : <Button onClick={askAgain}>{t('sideChat.askAgain')}</Button>} />}
+      <p ref={statusRef} role="status" tabIndex={-1} data-testid="side-chat-status" className="side-chat-status">{announcement ? t(announcement.key, announcement.values) : ''}</p>
     </div>
 
-    <div className="flex min-w-0 flex-col gap-2 border-t border-divider pt-3">
-      <p data-testid="side-chat-unsaved" className="text-12 text-secondary">{turns.length === 0 ? '' : unsaved > 0 ? t('sideChat.unsaved', { count: unsaved }) : t('sideChat.allSaved')}</p>
-      <p id={`${id}-save-hint`} className="text-12 text-secondary">{t('sideChat.save.hint')}</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button aria-describedby={`${id}-save-hint`} disabled={turns.length === 0 || asking || saving || (unsaved === 0 && receipt !== null)} loading={saving} loadingLabel={t('sideChat.saving')}
+    <div className="side-chat-ask">
+      <label htmlFor={`${id}-prompt`} className="sr-only">{t('sideChat.prompt')}</label>
+      <Textarea ref={promptRef} id={`${id}-prompt`} aria-describedby={`${id}-prompt-hint`} rows={2} placeholder={t('sideChat.prompt')} value={draft}
+        onChange={event => setDraft(event.target.value)} onKeyDown={promptKey} />
+      <span id={`${id}-prompt-hint`} className="sr-only">{t('sideChat.prompt.hint')}</span>
+      <div className="side-chat-row">
+        <p data-testid="side-chat-unsaved" className="side-chat-unsaved">{turns.length === 0 ? '' : unsaved > 0 ? t('sideChat.unsaved', { count: unsaved }) : t('sideChat.allSaved')}</p>
+        {asking && <Button size="sm" onClick={() => abort.current?.abort()}>{t('sideChat.cancel')}</Button>}
+        <Button size="sm" variant="primary" disabled={!canAsk} onClick={ask}>{t('sideChat.ask')}</Button>
+      </div>
+      <div className="side-chat-row side-chat-footer">
+        <span id={`${id}-save-hint`} className="sr-only">{t('sideChat.save.hint')}</span>
+        <Button size="sm" aria-describedby={`${id}-save-hint`} disabled={turns.length === 0 || asking || saving || (unsaved === 0 && receipt !== null)} loading={saving} loadingLabel={t('sideChat.saving')}
           onClick={() => void save()}>{t('sideChat.save')}</Button>
-        <Button ref={discardRef} variant="danger" disabled={turns.length === 0 || saving} onClick={() => (unsaved > 0 ? setConfirming(true) : discard())}>{t('sideChat.discard')}</Button>
+        <Button ref={discardRef} size="sm" variant="ghost" disabled={turns.length === 0 || saving} onClick={() => (unsaved > 0 ? setConfirming(true) : discard())}>{t('sideChat.discard')}</Button>
       </div>
-      {confirming && <div role="group" aria-label={t('sideChat.discard')} aria-describedby={`${id}-confirm`} className="flex flex-col gap-2 rounded-control border border-danger p-3"
-        onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setConfirming(false); requestAnimationFrame(() => discardRef.current?.focus()) } }}>
+      {confirming && <div role="group" aria-label={t('sideChat.discard')} aria-describedby={`${id}-confirm`} className="side-chat-confirm"
+        onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setConfirming(false); requestAnimationFrame(() => discardRef.current?.focus()) } }}>
         <p id={`${id}-confirm`}>{t('sideChat.discard.confirm', { count: unsaved })}</p>
-        <div className="flex flex-wrap gap-2">
-          <Button ref={keepRef} onClick={() => { setConfirming(false); requestAnimationFrame(() => discardRef.current?.focus()) }}>{t('sideChat.discard.no')}</Button>
-          <Button variant="danger" onClick={discard}>{t('sideChat.discard.yes')}</Button>
+        <div className="side-chat-row">
+          <Button ref={keepRef} size="sm" onClick={() => { setConfirming(false); requestAnimationFrame(() => discardRef.current?.focus()) }}>{t('sideChat.discard.no')}</Button>
+          <Button size="sm" variant="danger" onClick={discard}>{t('sideChat.discard.yes')}</Button>
         </div>
       </div>}
     </div>

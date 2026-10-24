@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TestContext } from 'node:test'
 import { connectionsPlugin, CONNECTIONS_SERVICE } from '../../src/connections/plugin.ts'
+import { importProviderKeysFile } from '../../src/connections/dotenv.ts'
 import type { Connections } from '../../src/connections/service.ts'
 import { bootServerKernel, type ServerKernelOptions } from '../../src/runtime/kernel.ts'
 import { openDb } from '../../src/store/db.ts'
@@ -16,7 +17,15 @@ import type { VaultKeychain } from '../../src/vault/keychain.ts'
 export const owner = 'fixture-owner'
 export const nodeId = 'fixture-node'
 export const versions = { 'claude-code': '0.94.0', copilot: '1.0.101', 'gemini-cli': '0.65.0', opencode: '1.19.3', goose: '1.55.0', codex: '0.163.0' } as const
-export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'], policy: Partial<ExternalPolicy> = {}, kernelOptions: Pick<ServerKernelOptions, 'runs'> = {}) {
+export interface FixtureExtras {
+  /** Pays the `claude-code` installation with a K3 Anthropic API-key connection (a fake key) instead of the subscription connection. */
+  claudeApi?: boolean
+  /** Pays the `claude-code` installation with a fake Claude Code subscription token imported from a dotenv file into an `agent` connection (D-212). */
+  claudeToken?: boolean
+  /** Extra installation fields, for example `claudeEffort`. */
+  install?: Partial<AgentInstallation>
+}
+export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'], policy: Partial<ExternalPolicy> = {}, kernelOptions: Pick<ServerKernelOptions, 'runs'> = {}, extras: FixtureExtras = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k5-'))
   const db = openDb(join(dir, 'node.sqlite'))
   const kernel = await bootServerKernel(undefined, { db, ...kernelOptions })
@@ -25,6 +34,9 @@ export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'],
     localHost: () => 'http://127.0.0.1:11434', transport: async () => { throw new Error('Network forbidden') } })
   const connections = kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
   const secret = `fixture_${randomBytes(24).toString('hex')}`
+  // A fake key of the shape K3 accepts for Anthropic; registered with the scrubber when the vault injects it.
+  const anthropicKey = `sk-ant-api03-FIXTURE${randomBytes(24).toString('hex')}`
+  const oauthToken = `sk-ant-oat01-FIXTURE${randomBytes(24).toString('hex')}`
   kernel.scrubber.register('secret://fixture/registered', secret)
   const installations: AgentInstallation[] = []
   const bindings: RoleBinding[] = []
@@ -37,25 +49,35 @@ export async function fixture(t: TestContext, adapters: AdapterId[] = ['codex'],
     await chmod(executable, 0o700)
     const tape = JSON.parse(await readFile(new URL(`./fixtures/${adapter}-${versions[adapter]}.json`, import.meta.url), 'utf8'))
     tapes.set(adapter, tape)
-    const subscription = ADAPTERS[adapter].payment === 'subscription'
-    const row = connections.create(owner, subscription ? { name: adapter, kind: 'agent', provider: adapter as 'codex', auth: 'cli_login' }
-      : { name: adapter, kind: 'model_api', provider: adapter === 'gemini-cli' ? 'google' : 'openai', auth: 'api_key' })
-    if (!subscription) { await connections.unlockVault(owner); connections.saveSecret(owner, row.id, secret) }
+    const claudeApi = adapter === 'claude-code' && extras.claudeApi === true
+    const claudeToken = adapter === 'claude-code' && extras.claudeToken === true
+    const subscription = ADAPTERS[adapter].payment === 'subscription' && !claudeApi
+    let imported: string | undefined
+    if (claudeToken) {
+      // The way the owner's token arrives: a dotenv file, imported into the vault as an `agent` connection.
+      await connections.unlockVault(owner)
+      const file = join(dir, 'token.env')
+      await writeFile(file, `CLAUDE_CODE_OAUTH_TOKEN=${oauthToken}\n`)
+      imported = (await importProviderKeysFile(connections, owner, file, { oauthToken: true })).imported[0]!.connectionId
+    }
+    const row = imported ? connections.store.get(owner, imported) : connections.create(owner, subscription ? { name: adapter, kind: 'agent', provider: adapter as 'codex', auth: 'cli_login' }
+      : { name: adapter, kind: 'model_api', provider: claudeApi ? 'anthropic' : adapter === 'gemini-cli' ? 'google' : 'openai', auth: 'api_key' })
+    if (!subscription && !claudeToken) { await connections.unlockVault(owner); connections.saveSecret(owner, row.id, claudeApi ? anthropicKey : secret) }
     const install: AgentInstallation = { adapter, connectionId: row.id, ownerAccountId: owner, nodeId, billingAccount: `${adapter}-account`,
-      executable, version: versions[adapter], ...(adapter === 'claude-code' ? { claudeExecutable: executable } : {}) }
+      executable, version: versions[adapter], ...(adapter === 'claude-code' ? { claudeExecutable: executable } : {}), ...(adapter === 'claude-code' ? extras.install : {}) }
     installations.push(install)
     bindings.push({ backend: adapter, connectionId: row.id, model: adapter === 'opencode' ? 'openai/model-fixture' : 'model-fixture', params: {} })
-    await writeFile(join(binaryDir, 'scenario.json'), JSON.stringify({ tape, secret }))
+    await writeFile(join(binaryDir, 'scenario.json'), JSON.stringify({ tape, secret, anthropicKey, oauthToken }))
   }
   let plugin = await kernel.node.plugin(externalAgentPlugin, { dataDir: dir, policy: { nodeId, installations, ...policy } })
   let closed = false
   const close = async () => { if (closed) return; closed = true; await kernel.node.dispose(); db.close(); await rm(dir, { recursive: true, force: true }) }
   t.after(close)
-  return { dir, db, kernel, connections, installations, bindings, secret, tapes, close,
+  return { dir, db, kernel, connections, installations, bindings, secret, anthropicKey, oauthToken, tapes, close,
     service: () => kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!,
     async scenario(adapter: AdapterId, extra: Record<string, unknown>) {
       await rm(join(dir, adapter, 'trace.json'), { force: true })
-      await writeFile(join(dir, adapter, 'scenario.json'), JSON.stringify({ tape: tapes.get(adapter), secret, ...extra }))
+      await writeFile(join(dir, adapter, 'scenario.json'), JSON.stringify({ tape: tapes.get(adapter), secret, anthropicKey, oauthToken, ...extra }))
     },
     async trace(adapter: AdapterId) { return JSON.parse(await readFile(join(dir, adapter, 'trace.json'), 'utf8')) as Record<string, any>[] },
     async reload(changes: Partial<ExternalPolicy> = {}) {

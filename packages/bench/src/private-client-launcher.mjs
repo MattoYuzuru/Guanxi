@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-/** Trusted boundary launcher: close lifetime/control fds before the fixture client imports. */
-import { closeSync } from 'node:fs'
+/** Trusted boundary launcher: the supervisor maps lifetime/control stdio to ignore at spawn. */
 import { pathToFileURL } from 'node:url'
 
-for (const fd of [5, 6]) {
-  try { closeSync(fd) } catch { /* not inherited */ }
-}
+// Node may reuse fd 5/6 for its own event loop before JS runs (notably on Linux).
+// Closing those numbers here corrupts the runtime; no parent capability was inherited.
 await import(pathToFileURL(process.argv[2]).href)

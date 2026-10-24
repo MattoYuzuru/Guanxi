@@ -29,10 +29,6 @@ const LETTER = /\p{L}/u
 // copy. Counts make every exception stale-checked instead of silently broad.
 const TECHNICAL_EXCEPTIONS = [
   { file: 'features/agent/ToolCallCard.tsx', value: 'mcp', count: 1, reason: 'protocol acronym badge' },
-  { file: 'features/models/CompletionProbe.tsx', value: ':  · :  · : Ollama  · :  · : v', count: 1, reason: 'provider and evidence-version identifiers' },
-  { file: 'features/models/HuggingFaceDiscovery.tsx', value: 'v', count: 1, reason: 'API version prefix' },
-  { file: 'features/models/ModelCard.tsx', value: 'vram ~', count: 1, reason: 'hardware identifier' },
-  { file: 'features/models/ModelCard.tsx', value: 'pro', count: 1, reason: 'provider plan identifier' },
   { file: 'features/recipes/RecipesPage.tsx', value: 'sha256:', count: 2, reason: 'digest algorithm identifier' },
   { file: 'features/recipes/RecipesPage.tsx', value: 'B', count: 1, reason: 'byte unit' },
   { file: 'features/settings/SettingsPage.tsx', value: 'Ollama Web Search', count: 1, reason: 'provider product name' },

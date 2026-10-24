@@ -1,6 +1,6 @@
 # Documentation map
 
-**Status:** implemented · **Updated:** 2026-10-22
+**Status:** implemented · **Updated:** 2026-10-24
 **Purpose:** canonical index; content lives in the linked documents.
 
 ## Quick routes
@@ -12,6 +12,8 @@
 | Understand the target design | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) → relevant ADR |
 | Build or review UI | [design system](design/README.md) → [`guanxi-ui` skill](../.agents/skills/guanxi-ui/SKILL.md) |
 | Know why a library was chosen | [research synthesis](research/README.md) → raw lane report |
+| Validate a change / finish CI | [CI protocol](operations/ci.md) → [CI research/evidence](research/2026-10-24-ci.md) |
+| Restart the paused agent team | [lead restart prompt](plans/CLAUDE_LEAD_RESTART.md) |
 | Continue implementation | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md) |
 | Hand off to the next agent | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) |
 | Run or join a parallel lane | [lanes](plans/lanes/README.md) |

@@ -15,6 +15,18 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { FitLevel } from '@guanxi/contract'
+import {
+  Button as UiButton,
+  Icon,
+  Select as UiSelect,
+  SelectContent,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+} from '@guanxi/ui'
 import { translate, type LocaleKey } from '../lib/locale.ts'
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -26,22 +38,6 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type ButtonSize = 'sm' | 'md'
 
-const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary:
-    'bg-accent text-accent-foreground hover:brightness-110 active:brightness-95 border border-transparent',
-  secondary:
-    'bg-surface text-foreground border border-control hover:bg-inset',
-  ghost:
-    'bg-transparent text-secondary border border-transparent hover:bg-inset hover:text-foreground',
-  danger:
-    'bg-transparent text-danger border border-danger/40 hover:bg-danger/10',
-}
-
-const BUTTON_SIZES: Record<ButtonSize, string> = {
-  sm: 'h-6 px-2 text-2xs gap-1 rounded-[5px]',
-  md: 'h-8 px-3 text-xs gap-1.5 rounded-md',
-}
-
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant
   size?: ButtonSize
@@ -49,6 +45,12 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: ReactNode
 }
 
+/**
+ * Legacy entry point kept for existing features. It draws the design-system button look
+ * (D-200) through `.legacy-button`, which lives in the components layer of index.css, so the
+ * sizing and spacing utilities legacy callers pass (min-h-11 for phone targets, w-full…) still
+ * win, as they did before the redesign.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
     variant = 'secondary',
@@ -58,6 +60,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     className,
     children,
     disabled,
+    type = 'button',
     ...rest
   },
   ref,
@@ -65,16 +68,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   return (
     <button
       ref={ref}
-      type="button"
+      type={type}
       disabled={disabled || loading}
-      className={cx(
-        'inline-flex items-center justify-center font-medium whitespace-nowrap select-none',
-        'transition-[filter,background-color,color,border-color] duration-100',
-        'disabled:opacity-45 disabled:pointer-events-none',
-        BUTTON_VARIANTS[variant],
-        BUTTON_SIZES[size],
-        className,
-      )}
+      aria-busy={loading || undefined}
+      data-variant={variant}
+      data-size={size}
+      className={cx('legacy-button', className)}
       {...rest}
     >
       {loading ? <Spinner size={size === 'sm' ? 10 : 12} /> : icon}
@@ -111,25 +110,8 @@ export function Badge({
   title?: string
   className?: string
 }) {
-  const tones: Record<string, string> = {
-    neutral: 'bg-inset text-secondary border-divider',
-    accent: 'bg-accent/10 text-secondary border-accent/30',
-    green: 'bg-[var(--color-fit-green)]/12 text-[var(--color-fit-green)] border-[var(--color-fit-green)]/30',
-    yellow:
-      'bg-[var(--color-fit-yellow)]/12 text-[var(--color-fit-yellow)] border-[var(--color-fit-yellow)]/30',
-    red: 'bg-[var(--color-fit-red)]/12 text-[var(--color-fit-red)] border-[var(--color-fit-red)]/30',
-    outline: 'bg-transparent text-muted border-divider',
-  }
-
   return (
-    <span
-      title={title}
-      className={cx(
-        'inline-flex items-center gap-1 rounded border px-1.5 py-px text-2xs leading-4 font-medium',
-        tones[tone],
-        className,
-      )}
-    >
+    <span title={title} data-tone={tone} className={cx('legacy-badge', className)}>
       {children}
     </span>
   )
@@ -220,36 +202,12 @@ export function Toggle({
   label: string
   hint?: string
 }) {
-  const id = useId()
-
+  const hintId = useId()
   return (
     <div className="flex items-start justify-between gap-4 py-1.5">
-      <div className="min-w-0">
-        <label htmlFor={id} className="block cursor-pointer text-xs font-medium">
-          {label}
-        </label>
-        {hint && <p className="mt-0.5 text-2xs text-muted">{hint}</p>}
-      </div>
-      <button
-        id={id}
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={cx(
-          'relative mt-0.5 h-4 w-7 shrink-0 rounded-full border transition-colors duration-150',
-          'disabled:opacity-45 disabled:pointer-events-none',
-          checked
-            ? 'border-transparent bg-accent'
-            : 'border-control bg-inset',
-        )}
-      >
-        <span
-          className={cx('absolute top-0.5 h-3 w-3 rounded-full shadow-sm transition-[left] duration-150', checked ? 'bg-accent-foreground' : 'bg-foreground')}
-          style={{ left: checked ? 14 : 2 }}
-        />
-      </button>
+      <Switch label={<span className="text-13 font-label">{label}</span>} checked={checked}
+        onCheckedChange={onChange} disabled={disabled} aria-describedby={hint ? hintId : undefined} />
+      {hint && <p id={hintId} className="m-0 max-w-xs text-12 text-muted">{hint}</p>}
     </div>
   )
 }
@@ -278,10 +236,7 @@ export function Field({
   )
 }
 
-const INPUT_CLASS =
-  'min-w-0 max-w-full w-full rounded-md border border-control bg-inset px-2 py-1.5 text-xs ' +
-  'placeholder:text-secondary focus:border-accent ' +
-  'disabled:opacity-50'
+const INPUT_CLASS = 'legacy-input'
 
 export const Input = forwardRef<
   HTMLInputElement,
@@ -297,6 +252,13 @@ export const Textarea = forwardRef<
   return <textarea ref={ref} className={cx(INPUT_CLASS, 'resize-none', className)} {...rest} />
 })
 
+type SelectOption = { value: string; label: string; disabled?: boolean; group?: string; groupId?: string }
+
+/**
+ * The legacy choice field, drawn by the design-system Select (D-206): a combobox trigger with the
+ * chosen label and a themed popup list, never the operating system's native menu. Options sharing
+ * a `groupId` (or `group` label) render as one labelled group in first-appearance order.
+ */
 export function Select({
   value,
   onChange,
@@ -310,7 +272,7 @@ export function Select({
 }: {
   value: string
   onChange: (next: string) => void
-  options: Array<{ value: string; label: string; disabled?: boolean; group?: string; groupId?: string }>
+  options: SelectOption[]
   className?: string
   disabled?: boolean
   ariaLabel?: string
@@ -318,31 +280,35 @@ export function Select({
   /** Ids of the hint and error text that describe this control. */
   describedBy?: string
 }) {
+  const sections: Array<{ key: string; label?: string; options: SelectOption[] }> = []
+  for (const option of options) {
+    const key = option.groupId ?? option.group ?? ''
+    const section = sections.find(candidate => candidate.key === key)
+    if (section) section.options.push(option)
+    else sections.push({ key, label: option.group, options: [option] })
+  }
+  const item = (option: SelectOption) => (
+    <SelectItem key={option.value} value={option.value} disabled={option.disabled} data-value={option.value}>{option.label}</SelectItem>
+  )
   return (
-    <select
-      id={id}
-      aria-describedby={describedBy}
+    <UiSelect
+      items={options.map(option => ({ value: option.value, label: option.label }))}
       value={value}
       disabled={disabled}
-      aria-label={ariaLabel}
-      onChange={(event) => onChange(event.target.value)}
-      className={cx(INPUT_CLASS, 'cursor-pointer appearance-none pr-6', className)}
-      style={{
-        backgroundImage:
-          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%23888' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")",
-        backgroundRepeat: 'no-repeat',
-        backgroundPosition: 'right 4px center',
-        backgroundSize: '12px',
-      }}
+      onValueChange={(next) => { if (typeof next === 'string' && next !== value) onChange(next) }}
     >
-      {[...new Set(options.map(option => option.groupId ?? option.group))].map(groupId => options.find(option => (option.groupId ?? option.group) === groupId)?.group ? (
-        <optgroup key={groupId} label={options.find(option => (option.groupId ?? option.group) === groupId)!.group!}>
-          {options.filter(option => (option.groupId ?? option.group) === groupId).map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
-        </optgroup>
-      ) : options.filter(option => !option.group).map(option => (
-        <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>
-      )))}
-    </select>
+      <SelectTrigger id={id} aria-label={ariaLabel} aria-describedby={describedBy} data-value={value} className={cx('legacy-select', className)}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {sections.map(section => section.label ? (
+          <SelectGroup key={section.key}>
+            <SelectGroupLabel>{section.label}</SelectGroupLabel>
+            {section.options.map(item)}
+          </SelectGroup>
+        ) : section.options.map(item))}
+      </SelectContent>
+    </UiSelect>
   )
 }
 
@@ -521,12 +487,12 @@ export function Modal({
         aria-labelledby={labelledBy ?? (title ? headingId : undefined)}
         aria-describedby={describedBy}
         tabIndex={-1}
-        className="anim-fade-up surface flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden rounded-xl shadow-[var(--shadow-card)] outline-none sm:max-h-[calc(100dvh-2rem)]"
+        className="anim-fade-up legacy-modal flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden outline-none sm:max-h-[calc(100dvh-2rem)]"
         style={{ maxWidth: width }}
       >
         {title && (
-          <div className="flex items-center justify-between gap-3 border-b border-divider px-4 py-2.5">
-            <h2 id={headingId} className="text-sm font-semibold">
+          <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-2.5">
+            <h2 id={headingId} className="text-15 font-heading">
               {title}
             </h2>
             {dismissable && (
@@ -536,15 +502,14 @@ export function Modal({
                 onClick={onClose}
                 aria-label={closeLabel}
                 className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0"
-              >
-                ✕
-              </Button>
+                icon={<Icon name="close" />}
+              />
             )}
           </div>
         )}
         <div className="min-h-0 min-w-0 overflow-y-auto px-4 py-3">{children}</div>
         {footer && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-divider px-4 py-2.5">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-hairline px-4 py-2.5">
             {footer}
           </div>
         )}
@@ -582,8 +547,9 @@ export function Disclosure({
 
   return (
     <div className={className}>
-      <button
-        type="button"
+      <UiButton
+        variant="ghost"
+        size="sm"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         className="flex w-full items-center gap-1.5 text-left text-2xs font-medium text-secondary hover:text-foreground"
@@ -591,7 +557,7 @@ export function Disclosure({
       >
         <Chevron open={open} />
         {summary}
-      </button>
+      </UiButton>
       {open && <div className="mt-1.5">{children}</div>}
     </div>
   )
@@ -657,19 +623,12 @@ export function Callout({
   children?: ReactNode
   action?: ReactNode
 }) {
-  const tones: Record<string, string> = {
-    neutral: 'border-divider bg-inset',
-    info: 'border-accent/30 bg-accent/5',
-    warning: 'border-[var(--color-fit-yellow)]/40 bg-[var(--color-fit-yellow)]/8',
-    danger: 'border-danger/40 bg-danger/8',
-  }
-
   return (
-    <div className={cx('rounded-lg border px-3 py-2', tones[tone])}>
+    <div data-tone={tone} className="legacy-callout">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {title && <div className="text-xs font-semibold">{title}</div>}
-          {children && <div className="mt-0.5 text-2xs text-secondary">{children}</div>}
+          {title && <div className="text-13 font-heading">{title}</div>}
+          {children && <div className="mt-0.5 text-12 text-secondary">{children}</div>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
       </div>
@@ -687,10 +646,10 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
-      <p className="text-sm font-medium">{title}</p>
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+      <p className="m-0 text-14 font-label">{title}</p>
       {description && (
-        <p className="max-w-md text-xs text-muted">{description}</p>
+        <p className="m-0 max-w-md text-13 text-muted">{description}</p>
       )}
       {action && <div className="mt-1.5">{action}</div>}
     </div>
@@ -700,7 +659,7 @@ export function EmptyState({
 export function Skeleton({ className }: { className?: string }) {
   return (
     <div
-      className={cx('anim-pulse-soft rounded-md bg-inset', className)}
+      className={cx('rounded-control bg-inset', className)}
       aria-hidden
     />
   )

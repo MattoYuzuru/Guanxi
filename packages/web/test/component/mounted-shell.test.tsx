@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { SESSION_ROUTES } from '@guanxi/contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActiveLocale } from '../../src/lib/locale.ts'
@@ -160,21 +160,30 @@ describe('mounted product shell', () => {
     expect(container.querySelectorAll('[data-slot="sidebar-slot"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-slot="app-shell-sidebar"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-slot="app-shell-chrome"]')).toHaveLength(1)
-    expect(screen.getAllByRole('region', { name: 'Runtime and resources' })).toHaveLength(1)
+    // D-202/D-203: no runtime bar and no Developer/Visual chips; one row of icon status items.
+    expect(screen.queryAllByRole('region', { name: 'Runtime and resources' })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^(Developer|Visual)$/u })).toHaveLength(0)
+    expect(screen.getAllByTestId('shell-status-items')).toHaveLength(1)
     expect(screen.queryByRole('banner')).toBeNull()
 
     await waitFor(() => expect(container.querySelectorAll('li[data-plugin-entry]')).toHaveLength(1))
     expect(container.querySelectorAll('li[data-plugin-entry]')).toHaveLength(1)
 
-    await screen.findByText('darwin · arm64')
-    expect(screen.getAllByText('No current data')).toHaveLength(4)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'This device' })).toBeTruthy())
+    expect(screen.queryAllByRole('button', { name: /: Unknown$/u })).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: /^(Quota|Keep awake|Power)\b/u })).toHaveLength(0)
     await waitFor(() => expect(runtimeCalls(fetchMock)).toHaveLength(1))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Theme: System' }))
-    expect(window.document.documentElement.classList.contains('dark')).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'Theme: Dark' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Theme: Light' }))
-    expect(screen.getByRole('button', { name: 'Theme: System' })).toBeTruthy()
+    // D-205: the toggle swaps light and dark only; the stored default stays "system" until used.
+    const toggle = () => screen.getByTestId('shell-theme-toggle')
+    const darkAtStart = window.document.documentElement.classList.contains('dark')
+    expect(toggle().getAttribute('aria-label')).toBe(darkAtStart ? 'Switch to the light theme' : 'Switch to the dark theme')
+    fireEvent.click(toggle())
+    expect(window.document.documentElement.classList.contains('dark')).toBe(!darkAtStart)
+    fireEvent.click(toggle())
+    expect(window.document.documentElement.classList.contains('dark')).toBe(darkAtStart)
+    expect(window.localStorage.getItem('guanxi.theme')).toBe(darkAtStart ? 'dark' : 'light')
+    expect(toggle().textContent).toBe('')
   })
 
   it('preserves actual route content through move, rail, hide and show without duplicating navigation', async () => {
@@ -208,8 +217,9 @@ describe('mounted product shell', () => {
     fireEvent.click(show)
     expect(screen.getByRole('complementary', { name: 'Navigation sidebar' }).getAttribute('data-visibility'))
       .toBe('expanded')
+    // Showing the sidebar moves focus into it (its menu now lives in the strip).
     await waitFor(() => expect(document.activeElement)
-      .toBe(screen.getByRole('button', { name: 'Navigation sidebar' })))
+      .toBe(screen.getByRole('complementary', { name: 'Navigation sidebar' })))
     expect(screen.getByRole('heading', { name: 'New conversation' })).toBe(heading)
     expect(document.querySelectorAll('main')).toHaveLength(1)
     await waitFor(() => expect(document.querySelectorAll('li[data-plugin-entry]')).toHaveLength(1))
@@ -289,7 +299,7 @@ describe('mounted product shell', () => {
     expect(document.querySelectorAll('[data-slot="sidebar-slot"]')).toHaveLength(1)
   })
 
-  it('keeps health failure and Retry usable before the shell mounts', async () => {
+  it('shows the unreachable server before the shell mounts and recovers by itself, with no Retry (D-203)', async () => {
     let healthState: 'fail' | 'ok' = 'fail'
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = pathOf(input)
@@ -311,8 +321,11 @@ describe('mounted product shell', () => {
     expect(await screen.findByRole('heading', { name: 'The Guanxi server is not responding' }))
       .toBeTruthy()
     expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull()
+    expect(screen.queryAllByRole('button', { name: /check again|retry/iu })).toHaveLength(0)
+    expect(screen.getByRole('status').textContent).toBe('Guanxi reconnects by itself as soon as the server answers.')
     healthState = 'ok'
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    // The read recovers on focus (or on its backoff timer) without any button.
+    act(() => { window.dispatchEvent(new Event('focus')) })
     await shell()
     expect(fetchMock.mock.calls.filter(([input]) => pathOf(input) === '/api/health').length)
       .toBeGreaterThanOrEqual(2)

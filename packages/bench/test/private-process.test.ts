@@ -169,8 +169,7 @@ test('actual OS fixture uses fds 3/4 for two sequential public completions with 
     assert.equal(outcome.cleanupConfirmed, true)
     assert.equal(h.calls(), 2); assert.equal(h.retained(), 2)
     const report = readJson(x.report)
-    assert.equal(report.fd5Pipe, false)
-    assert.equal(report.fd6Pipe, false)
+    assert.deepEqual(report.inheritedControlCapabilities, [], 'the actual parent control capabilities must not be inherited')
     assert.equal(report.fd3Socket, true)
     assert.equal(report.fd4Socket, true)
     assert.equal(report.protocolError, null)
@@ -190,6 +189,21 @@ test('actual OS fixture uses fds 3/4 for two sequential public completions with 
     assert.equal(observable.includes(x.binding.nonce), false)
     assert.equal(existsSync(privateProcessRecordPath(x.binding, x.policy)), false)
   } finally { cleanup(x.root) }
+})
+
+test('natural request EOF settles the real client exit before killing the remaining group', { timeout: 20_000 }, async () => {
+  for (const [mode, code] of [['eof-exit-zero', 0], ['eof-exit-seven', 7]] as const) {
+    const x = setup(mode), h = hostFixture()
+    try {
+      const outcome = await runPrivateTrial({ binding: x.binding, host: h.host, policy: x.policy })
+      assert.equal(outcome.childExitCode, code)
+      assert.equal(outcome.reason, code === 0 ? 'channel_input_ended' : 'child_exit_failed')
+      assert.equal(outcome.cleanupConfirmed, true)
+      assert.equal(h.calls(), 0)
+      assert.equal(readJson(x.report).finalizationFinished, true)
+      assert.equal(existsSync(privateProcessRecordPath(x.binding, x.policy)), false)
+    } finally { cleanup(x.root) }
+  }
 })
 
 test('natural client exit waits for final fixture work before closing its request capability', { timeout: 20_000 }, async () => {

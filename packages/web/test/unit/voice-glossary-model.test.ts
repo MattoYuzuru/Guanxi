@@ -162,7 +162,8 @@ describe('failures', () => {
   })
 
   it('never makes an error message mention the user\'s terms: no message carries a placeholder', () => {
-    for (const code of codes) for (const intent of ['read', 'write'] as const) expect(localeCatalogs.en[failureMessage(code, intent)]).not.toMatch(/\{/u)
+    // The only placeholder allowed is the brand name, filled from the brand module by translate().
+    for (const code of codes) for (const intent of ['read', 'write'] as const) expect(localeCatalogs.en[failureMessage(code, intent)].replaceAll('{product}', '')).not.toMatch(/\{/u)
   })
 
   it('tells an unknown write outcome apart from a read failure', () => {

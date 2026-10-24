@@ -175,10 +175,50 @@ export class Ms1LiveNode {
     connections.localChat = (accountId, id, request, call) => id === guarded && !call.transport
       ? Promise.reject(new ConnectionError('policy_denied', 'This connection serves relay calls on the executor only'))
       : localChat(accountId, id, request, call)
-    if (this.hasLead) {
+    // An API-key lead is paid by an existing K3 connection that `prepareLeadKey` resolves; it never creates the subscription one.
+    if (this.hasLead && !this.leadUsesVaultKey) {
       this.leadConnection = ensure(MS1_LEAD_CONNECTION, 'agent', () =>
         connections.create(owner, { name: MS1_LEAD_CONNECTION, kind: 'agent', provider: 'claude-code' as 'codex', auth: 'cli_login' }))
     }
+  }
+
+  /** The lead is paid by an Anthropic API key (D-211) or the owner's subscription token (D-212), both from the K3 vault, instead of a CLI sign-in. */
+  get leadUsesVaultKey(): boolean { return this.hasLead && this.settings.home!.lead!.auth !== 'subscription' }
+  /** D-212: the credential is the `claude setup-token` subscription token, not an API key. */
+  get leadUsesToken(): boolean { return this.hasLead && this.settings.home!.lead!.auth === 'oauth_token' }
+  /** The provider of the connection the boot import must have produced for the lead. */
+  get leadKeyProvider(): 'anthropic' | 'claude-code' { return this.leadUsesToken ? 'claude-code' : 'anthropic' }
+  /** The dotenv file the configuration names for the lead's key, when it does (the explicit option and `GUANXI_PROVIDER_KEYS_FILE` come first). */
+  get providerKeysFile(): string | undefined { return this.leadUsesVaultKey ? this.settings.home!.lead!.providerKeysFile : undefined }
+
+  /** Vault-key lead (API key or subscription token): unlock this node's vault and resolve the one K3 connection that pays. Called after the boot import and `prepare`.
+   * Throws `Ms1LiveError` with a code that names the fix and never a value; the key itself is not read here (K5 takes it from the vault
+   * at launch). */
+  async prepareLeadKey(connections: Connections, imported?: string): Promise<void> {
+    if (!this.leadUsesVaultKey) return
+    const lead = this.settings.home!.lead!
+    const pays = (c: { kind: string; provider: string; auth: string }) => this.leadUsesToken
+      ? c.kind === 'agent' && c.provider === 'claude-code' && c.auth === 'cli_login'
+      : c.kind === 'model_api' && c.provider === 'anthropic' && c.auth === 'api_key'
+    // Resolve first: a node with no key refuses without ever touching the OS keychain.
+    const { connections: all, vault } = connections.snapshot(OWNER)
+    // A key file imported by this boot is the key the owner just handed over: it pays, and no other connection may take its place.
+    if (imported !== undefined) {
+      const wanted = lead.connection === undefined ? undefined : all.find(c => c.id === lead.connection || c.name === lead.connection)
+      if (lead.connection !== undefined && !wanted) throw new Ms1LiveError('lead_connection_not_found', 'home.lead.connection')
+      if (wanted && wanted.id !== imported) throw new Ms1LiveError('lead_connection_not_imported', 'home.lead.connection')
+    }
+    const named = imported !== undefined ? all.filter(c => c.id === imported) : lead.connection === undefined ? undefined : all.filter(c => c.id === lead.connection || c.name === lead.connection)
+    if (named && named.length === 0) throw new Ms1LiveError('lead_connection_not_found', 'home.lead.connection')
+    if (named && named.length > 1) throw new Ms1LiveError('lead_connection_ambiguous', 'home.lead.connection')
+    const candidates = named ?? all.filter(c => pays(c) && c.secretRef)
+    if (candidates.length === 0) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
+    if (candidates.length > 1) throw new Ms1LiveError('lead_connection_ambiguous', 'home.lead.connection')
+    const chosen = candidates[0]!
+    if (!pays(chosen) || chosen.baseUrl) throw new Ms1LiveError('lead_connection_invalid', 'home.lead.connection')
+    if (!chosen.secretRef) throw new Ms1LiveError('lead_key_missing', 'home.lead.providerKeysFile')
+    if (!vault.unlocked) { try { await connections.unlockVault(OWNER) } catch { throw new Ms1LiveError('lead_vault_locked', 'home.lead.auth') } }
+    this.leadConnection = chosen.id
   }
 
   /** Home: relay inference on the executor, through the existing relay plugin host. */
@@ -240,7 +280,8 @@ export class Ms1LiveNode {
     return {
       externalAgents: { nodeId: this.identity.id, ...(lead.runDeadlineMs ? { runDeadlineMs: lead.runDeadlineMs } : {}),
         installations: [{ adapter: 'claude-code', connectionId: this.leadConnection, ownerAccountId: OWNER, nodeId: this.identity.id,
-          billingAccount: lead.billingAccount, executable: lead.bridge, version: lead.bridgeVersion, claudeExecutable: lead.claudeExecutable }] },
+          billingAccount: lead.billingAccount, executable: lead.bridge, version: lead.bridgeVersion, claudeExecutable: lead.claudeExecutable,
+          ...(lead.effort ? { claudeEffort: lead.effort } : {}) }] },
       leads: { alwaysOn: true,
         relay: { consent: 'full-access', domains: lead.domains, ...(lead.pollMs ? { pollMs: lead.pollMs } : {}) },
         // The only executor a lead may name is the one this pairing serves: one connection, one model.

@@ -212,19 +212,18 @@ test('Marketplace discovers Hugging Face repositories read-only without resource
   await expect(disclosure).toBeFocused()
   await expect(section.getByText('llama-2-7b.Q4_K_M.gguf')).toBeVisible()
 
-  // A rate-limited answer is distinguishable and retryable.
+  // A rate-limited answer is distinguishable and repeatable from Search itself (D-203: no Retry).
   await search.fill('rate-limited')
   await search.press('Enter')
   const alert = section.getByRole('alert')
   await expect(alert).toContainText(/ограничивает частоту запросов/u)
-  const retry = section.getByRole('button', { name: 'Повторить' })
-  await expect(retry).toBeVisible()
-  await retry.press('Enter')
+  await expect(section.getByRole('button', { name: /Повторить/u })).toHaveCount(0)
+  await search.press('Enter')
   await expect(alert).toContainText(/ограничивает частоту запросов/u)
 
   // Primary touch targets in this section meet the documented 44 px minimum.
   const targets = await section.evaluate((root) => {
-    const names = ['Искать', 'Повторить', 'Загрузить следующую страницу', 'Выбрать']
+    const names = ['Искать', 'Загрузить следующую страницу', 'Выбрать']
     const found: Array<{ label: string; height: number }> = []
     for (const element of root.querySelectorAll('button')) {
       const label = (element.textContent ?? '').trim()
@@ -664,7 +663,8 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
         let secondTimer = 0
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            const send = (event: (typeof downloadEvents)[number]) => controller.enqueue(encoder.encode(
+            // Any server event, including the failure this test injects outside downloadEvents.
+            const send = (event: { type: string; seq: number; data: object }) => controller.enqueue(encoder.encode(
               `id: ${String(event.seq)}\ndata: ${JSON.stringify(event)}\n\n`,
             ))
             send(downloadEvents[0]!)
@@ -837,8 +837,8 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   expect(requests.filter((request) => request.path === '/api/models/catalog')).toHaveLength(
     catalogCallsBeforeDownload,
   )
-  const retry = section.getByRole('button', { name: 'Повторить скачивание' })
-  await retry.press('Enter')
+  const downloadAgain = section.getByRole('button', { name: 'Скачать точный GGUF' })
+  await downloadAgain.press('Enter')
   const completed = section.getByText('Staging artifact скачан и проверен')
   await expect(completed).toBeVisible()
   await expect(section.getByText(new RegExp(digest, 'u'))).toBeVisible()
@@ -889,7 +889,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(failedImport).toBeFocused()
   expect(await modelCalls()).toBe(modelsBeforeImport)
 
-  await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await expect(target).toBeFocused()
   await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')
@@ -906,7 +906,7 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(section.getByText('Установлено и проверено runtime')).toHaveCount(0)
   expect(await modelCalls()).toBe(modelsBeforeImport)
 
-  await section.getByRole('button', { name: 'Повторить импорт' }).press('Enter')
+  await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await expect(target).toBeFocused()
   await section.getByRole('button', { name: 'Проверить локальный импорт' }).press('Enter')
   await page.getByRole('dialog').getByRole('button', { name: 'Создать и проверить' }).press('Enter')
@@ -914,7 +914,9 @@ test('Marketplace explicitly downloads and verifies staging provenance without i
   await expect(installed).toHaveCount(1)
   await expect(section.getByText(/новом локальном sample \/api\/tags/u)).toHaveCount(1)
   await expect(section.getByText(/completion probe получил свежий/u)).toHaveCount(1)
-  await expect(section.getByText(/owner\/model:latest · manifest-digest/u)).toHaveCount(1)
+  // Reference and digest are separate facts now (D-202): each appears exactly once.
+  await expect(section.locator('dl.model-facts .model-fact').filter({ hasText: 'owner/model:latest' })).toHaveCount(1)
+  await expect(section.locator('dl.model-facts dd', { hasText: /^manifest-digest$/u })).toHaveCount(1)
   await expect.poll(modelCalls)
     .toBe(modelsBeforeImport + 1)
   const installedRegion = page.getByRole('heading', { name: 'Установленные' })

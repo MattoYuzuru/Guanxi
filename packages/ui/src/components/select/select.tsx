@@ -5,7 +5,7 @@
  * icons, semantic-token CSS; scroll arrows dropped (the list scrolls natively).
  */
 import { Select as SelectPrimitive } from '@base-ui/react/select'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { cx } from '../../lib/cx.ts'
 import { usePortalContainer } from '../../lib/portal.tsx'
@@ -42,7 +42,7 @@ export function SelectTrigger({ invalid, className, children, ...props }: Select
     >
       {children}
       <SelectPrimitive.Icon className="gx-select-icon">
-        <ChevronsUpDown aria-hidden="true" />
+        <ChevronDown aria-hidden="true" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )

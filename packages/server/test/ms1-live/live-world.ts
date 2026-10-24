@@ -3,7 +3,7 @@
  * cut like a dropped `ssh -L`). Both nodes are real child processes running `ms1-live start`, the executor in front of the
  * fake llama-server in attach mode. Nothing is injected into either node: no clock, no transport, no relay class. */
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import { copyFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { connect as netConnect, createServer as createNetServer, type Server as NetServer, type Socket } from 'node:net'
 import { join } from 'node:path'
@@ -25,6 +25,20 @@ const SCRIPT = fileURLToPath(new URL('../../scripts/ms1-live/ms1-live.ts', impor
 const FIXTURES = new URL('../external-agents/', import.meta.url)
 
 export const freePort = () => new Promise<number>(resolve => { const s = createNetServer(); s.listen(0, '127.0.0.1', () => { const { port } = s.address() as { port: number }; s.close(() => resolve(port)) }) })
+/** Reserve the whole group simultaneously so one world's four numbers cannot repeat. They
+ * are not reservations after return: child startup still handles an external bind race. */
+export async function freeWorldPorts(): Promise<[number, number, number, number]> {
+  const servers = Array.from({ length: 4 }, () => createNetServer())
+  try {
+    for (const server of servers) await new Promise<void>((resolve, reject) => {
+      server.once('error', reject); server.listen(0, '127.0.0.1', resolve)
+    })
+    return servers.map(server => (server.address() as { port: number }).port) as [number, number, number, number]
+  } finally {
+    await Promise.all(servers.map(server => new Promise<void>(resolve => server.listening ? server.close(() => resolve()) : resolve())))
+  }
+}
+export class StartupPortCollision extends Error {}
 export async function until(predicate: () => boolean | Promise<boolean>, what: string, ms = 60_000) {
   for (const end = Date.now() + ms; Date.now() < end;) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 25)) }
   throw new Error(`timed out waiting for ${what}`)
@@ -142,7 +156,11 @@ export class LiveNode {
   async wait(event: string, ms = 60_000): Promise<Event> {
     await until(() => this.find(event) !== undefined || !this.alive, `${this.name} ${event}`, ms)
     const found = this.find(event)
-    if (!found) throw new Error(`${this.name} exited before ${event}\n${this.events.map(e => JSON.stringify(e)).join('\n')}\n${this.stderr.join('').slice(-3000)}`)
+    if (!found) {
+      const message = `${this.name} exited before ${event}\n${this.events.map(e => JSON.stringify(e)).join('\n')}\n${this.stderr.join('').slice(-3000)}`
+      if (event === 'started' && this.find('failed')?.['code'] === 'port_in_use') throw new StartupPortCollision(message)
+      throw new Error(message)
+    }
     return found
   }
   get url() { return `http://127.0.0.1:${this.port}` }
@@ -186,15 +204,25 @@ function containerRuntime(): Promise<void> {
     .then(() => undefined, error => { throw new Error(`The MS1 live tests need the local container runtime (Colima) for their acceptance gates: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`) })
 }
 
-export async function createLiveWorld(t: { after(fn: () => unknown): void }, options: LiveOptions = {}) {
+export async function createLiveWorld(t: { after(fn: () => unknown): void; diagnostic?(message: string): void }, options: LiveOptions = {}) {
   await containerRuntime()
   mkdirSync(join(process.cwd(), '.lane-data'), { recursive: true })
   // Colima shares the working directory, not the system temp directory: the gate sandbox must see the checkouts.
-  const dir = realpathSync(mkdtempSync(join(process.cwd(), '.lane-data', 'ms1live-')))
-  const world = new LiveWorld(dir, options)
-  t.after(async () => { await world.close() })
-  try { await world.init() } catch (error) { await world.close(); throw error }
-  return world
+  for (let attempt = 1; ; attempt++) {
+    const dir = realpathSync(mkdtempSync(join(process.cwd(), '.lane-data', 'ms1live-')))
+    const world = new LiveWorld(dir, options)
+    t.after(async () => { await world.close() })
+    try {
+      await world.init()
+      return world
+    } catch (error) {
+      // Only fixture allocation before started can be retried, after confirmed teardown.
+      // Never replay a scenario, a model call, an assertion or an arbitrary boot failure.
+      await world.close(true)
+      if (!(error instanceof StartupPortCollision) || attempt === 3) throw error
+      t.diagnostic?.(`MS1 fixture startup port collision (${attempt}/3); old world removed before reallocating`)
+    }
+  }
 }
 
 export class LiveWorld {
@@ -236,7 +264,7 @@ export class LiveWorld {
     this.fake = await startFakeLlama({ alias: 'fixture', modelPath, nCtx: 16000, replies: [this.options.judge ? ms1AndJudgeScript : ms1Script], ...this.options.fake })
     this.closers.push(() => this.fake.close())
     await this.tripwire.listen(); this.closers.push(() => this.tripwire.close())
-    const [homeApi, homeFed, execApi, execFed] = [await freePort(), await freePort(), await freePort(), await freePort()]
+    const [homeApi, homeFed, execApi, execFed] = await freeWorldPorts()
     // One forward per direction, each carrying the federation port only, with the same number on both ends.
     this.toExecutor = new Forward(execFed); this.toHome = new Forward(homeFed)
     await this.toExecutor.listen(); await this.toHome.listen()
@@ -282,7 +310,7 @@ export class LiveWorld {
     })
     const env = (): NodeJS.ProcessEnv => {
       const base = { ...process.env, OLLAMA_HOST: `http://127.0.0.1:${this.tripwire.port}`, GUANXI_WEB_PORT: '5999' }
-      for (const key of ['GUANXI_API_PORT', 'GUANXI_DATA_DIR', 'PORT', 'HOST', 'GUANXI_MS1_LIVE_CONFIG']) delete (base as Record<string, unknown>)[key]
+      for (const key of ['GUANXI_API_PORT', 'GUANXI_DATA_DIR', 'PORT', 'HOST', 'GUANXI_MS1_LIVE_CONFIG', 'GUANXI_PROVIDER_KEYS_FILE']) delete (base as Record<string, unknown>)[key]
       return base
     }
     this.executor = new LiveNode('executor', this.execConfig, join(this.execDir, 'data'), execApi, execFed, env())
@@ -352,9 +380,17 @@ export class LiveWorld {
       .filter(note => typeof note['relay'] === 'string')
   }
   ledger(runId: string): any { return JSON.parse(String(this.home.one('SELECT snapshot FROM relay_runs WHERE run_id=?', runId)?.['snapshot'])) }
-  async close() {
-    for (const close of [...this.closers].reverse()) { try { await Promise.race([close(), new Promise(resolve => setTimeout(resolve, 15_000).unref())]) } catch { /* best effort */ } }
+  async close(strict = false) {
+    let confirmed = true
+    for (const close of [...this.closers].reverse()) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try { await Promise.race([close(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('fixture cleanup timed out')), 15_000).unref() })]) }
+      catch { confirmed = false }
+      finally { clearTimeout(timer) }
+    }
+    if (strict && (!confirmed || this.home?.alive || this.executor?.alive)) throw new Error('fixture_cleanup_unconfirmed')
     // A quarantined sandbox keeps its directory; `.lane-data` is ignored by git.
-    try { rmSync(this.dir, { recursive: true, force: true }) } catch { /* leave it for the next cleanup */ }
+    try { rmSync(this.dir, { recursive: true, force: true }) } catch { confirmed = false }
+    if (strict && (!confirmed || existsSync(this.dir))) throw new Error('fixture_cleanup_unconfirmed')
   }
 }

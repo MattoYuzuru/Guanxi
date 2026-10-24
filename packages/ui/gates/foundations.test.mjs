@@ -381,9 +381,13 @@ test('M4 web base surfaces, borders, focus and scrollbars use the semantic palet
     css.walkRules(selector, rule => rule.walkDecls(d => { values[d.prop] = d.value }))
     for (const [prop, value] of Object.entries(props)) assert.equal(values[prop], value, `${selector} ${prop}`)
   }
+  // UI redesign (D-200): legacy fields and badges draw through .legacy-input / .legacy-badge.
   const ui = await ctx.read('packages/web/src/components/ui.tsx')
-  assert.ok(ui.includes('focus:border-accent'), 'input focus must use semantic accent')
-  assert.ok(ui.includes("accent: 'bg-accent/10 text-secondary border-accent/30'"), 'badge must use one accent palette')
+  assert.ok(ui.includes("const INPUT_CLASS = 'legacy-input'"), 'legacy fields use the shared field class')
+  const legacyRule = (selector) => { const values = {}; css.walkRules(selector, rule => rule.walkDecls(d => { values[d.prop] = d.value })); return values }
+  assert.equal(legacyRule('.legacy-input:focus-visible')['border-color'], 'var(--color-border-accent)', 'input focus must use semantic accent')
+  const accentBadge = legacyRule(".legacy-badge[data-tone='accent']")
+  assert.deepEqual([accentBadge['background-color'], accentBadge.color], ['var(--color-background-accent-subtle)', 'var(--color-text-accent)'], 'badge must use one accent palette')
   const tool = await ctx.read('packages/web/src/features/agent/ToolCallCard.tsx')
   assert.match(tool, /bg-inset[^"\n]+hover:bg-surface/, 'tool hover must differ from its inset rest state')
 })
@@ -426,7 +430,10 @@ test('self-review: legacy modal scrims and switch thumb use semantic colour role
     assert.doesNotMatch(text, /bg-(?:black|white)(?:\b|\/)/)
     assert.ok(text.includes('legacy-scrim'), 'both modal shells must use the ink scrim')
   }
-  assert.ok(ui.includes("checked ? 'bg-accent-foreground' : 'bg-foreground'"), 'thumb must contrast with the active track role')
+  // The legacy Toggle renders the design-system Switch, whose on-state knob uses text-on-accent.
+  assert.match(ui, /<Switch\b/, 'the legacy toggle renders the shared Switch')
+  const switchCss = await ctx.read('packages/ui/src/components/switch/switch.css')
+  assert.match(switchCss, /\.gx-switch\[data-checked\] \.gx-switch-thumb \{\s*background-color: var\(--color-text-on-accent\)/, 'thumb must contrast with the active track role')
   const backgrounds = []
   postcss.parse(await ctx.read('packages/web/src/index.css')).walkRules('.legacy-scrim::before', rule => rule.walkDecls('background-color', d => backgrounds.push(d.value)))
   assert.deepEqual(backgrounds, ['var(--scrim-color)'])

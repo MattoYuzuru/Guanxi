@@ -1,0 +1,347 @@
+/* W1 native session (D-207): header, message timeline, flat plan and queue, docked composer and
+   an optional side-chat panel. Tokens only. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.native-session {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  @apply h-full;
+  container-type: inline-size;
+}
+
+.native-session-layout {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.native-session-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.native-session-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-width: 0;
+  padding: var(--spacing-8) var(--spacing-12) var(--spacing-8) var(--spacing-16);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.native-session-heading {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-width: 0;
+}
+
+.native-session-crumbs {
+  display: flex;
+  flex: none;
+  min-width: 0;
+}
+
+.native-session-crumb {
+  border-radius: var(--border-radius-inline);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-14);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.native-session-crumb:hover {
+  color: var(--color-text-primary);
+}
+
+.native-session-crumb:focus-visible {
+  outline: var(--focus-ring-width) solid var(--color-ring-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.native-session-crumb-separator {
+  flex: none;
+  color: var(--color-text-tertiary);
+}
+
+.native-session-title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-heading);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.native-session-connection {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--spacing-6);
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.native-session-connection span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.native-session-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
+.native-session-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.native-session-column,
+.native-session-dock > * {
+  box-sizing: border-box;
+  @apply w-full;
+  max-width: var(--layout-container-3xl);
+  margin-inline: auto;
+}
+
+.native-session-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-24);
+  padding: var(--spacing-24) var(--spacing-16);
+}
+
+.native-session-dock {
+  flex: none;
+  padding: var(--spacing-8) var(--spacing-16) var(--spacing-16);
+}
+
+.native-session-note {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+/* The composer's own Stop shape (round, neutral) with a filled square: a media stop, never a checkbox. */
+.native-stop {
+  @apply rounded-full;
+}
+
+.native-stop svg {
+  fill: currentColor;
+}
+
+/* Timeline. */
+.native-timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.native-message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  min-width: 0;
+}
+
+.native-message-author {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.native-message-body {
+  min-width: 0;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.native-message[data-role='user'] .native-message-body {
+  align-self: flex-start;
+  @apply max-w-full;
+  padding: var(--spacing-8) var(--spacing-12);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-primary);
+}
+
+/* The rail keeps its height so revealing it moves nothing; pointer users see it on hover, keyboard
+   users on focus, touch users always. */
+.native-message-rail {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-tertiary);
+  opacity: 0;
+}
+
+.native-message:hover .native-message-rail,
+.native-message:focus-within .native-message-rail,
+.native-message:last-child .native-message-rail {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .native-message-rail {
+    opacity: 1;
+  }
+}
+
+/* Agent status: the running step, then flat lists separated by hairlines. */
+.native-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+
+.native-progress-state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-label);
+}
+
+.native-progress-state[data-status='running'] {
+  color: var(--color-text-accent);
+}
+
+.native-progress-alert {
+  margin: 0;
+  padding: var(--spacing-8) var(--spacing-12);
+  border-left: var(--spacing-2) solid var(--color-border-danger);
+  border-radius: var(--border-radius-control);
+  background-color: var(--color-background-danger-subtle);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-13);
+}
+
+.native-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+}
+
+.native-section-title {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-label);
+}
+
+.native-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.native-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--spacing-32);
+  padding-block: var(--spacing-4);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-13);
+}
+
+.native-list li + li {
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.native-list li > span:not(.sr-only) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.native-plan li[data-status='active'] {
+  color: var(--color-text-accent);
+  font-weight: var(--font-weight-label);
+}
+
+.native-plan li[data-status='verification_requested'] {
+  color: var(--color-text-secondary);
+}
+
+.native-progress-source,
+.native-muted {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-12);
+}
+
+/* Side chat panel: a column beside the session, or a sheet over it in a narrow pane. */
+.native-session-aside {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--layout-container-sm);
+  min-height: 0;
+  border-left: var(--border-width-regular) solid var(--color-border-secondary);
+  background-color: var(--color-background-secondary);
+}
+
+.native-session-aside[hidden] {
+  display: none;
+}
+
+@container (max-width: 1023px) {
+  .native-session-aside {
+    position: absolute;
+    z-index: var(--layer-docked);
+    inset: 0;
+    @apply w-full;
+    border-left: 0;
+  }
+}
+
+/* Phone: the shell scrolls as a page, so the panel is a full-screen sheet with its header in view. */
+@media (max-width: 639px) {
+  .native-session-aside {
+    position: fixed;
+    z-index: var(--layer-dialog);
+    inset: 0;
+  }
+}
+
+@media (forced-colors: active) {
+  .native-message[data-role='user'] .native-message-body {
+    border: var(--border-width-regular) solid CanvasText;
+  }
+}

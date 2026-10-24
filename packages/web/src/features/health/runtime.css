@@ -1,0 +1,148 @@
+/*
+ * The runtime popover (D-202): flat sections separated by hairlines, facts as label and value
+ * pairs with the value emphasised and its provenance as quiet meta, rows as divider lists.
+ */
+.runtime-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--font-size-12);
+  line-height: var(--font-line-height-ui);
+}
+
+.runtime-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  min-width: 0;
+  padding-block: var(--spacing-12);
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.runtime-section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.runtime-section-title {
+  margin: 0;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-heading);
+}
+
+.runtime-subtitle {
+  margin: 0 0 var(--spacing-4);
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-heading);
+}
+
+.runtime-count {
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.runtime-note {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.runtime-strong {
+  margin: 0;
+  font-weight: var(--font-weight-heading);
+}
+
+.runtime-strong[data-tone='danger'] {
+  color: var(--color-text-danger);
+}
+
+.runtime-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--spacing-4) var(--spacing-12);
+  margin: 0;
+}
+
+.runtime-fact {
+  display: contents;
+}
+
+.runtime-fact dt {
+  color: var(--color-text-secondary);
+}
+
+.runtime-fact dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2) var(--spacing-8);
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.runtime-fact-value {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.runtime-fact-value[data-mono],
+.runtime-row-title[data-mono] {
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-regular);
+}
+
+.runtime-fact-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-8);
+  color: var(--color-text-tertiary);
+}
+
+.runtime-rows {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runtime-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  min-width: 0;
+  padding-block: var(--spacing-8);
+  border-top: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.runtime-row:first-child {
+  border-top: 0;
+  padding-top: var(--spacing-2);
+}
+
+.runtime-row-title {
+  margin: 0;
+  font-weight: var(--font-weight-heading);
+  overflow-wrap: anywhere;
+}
+
+.runtime-row-kind {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+
+.runtime-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  min-width: 0;
+}
+
+/* Every returned device is listed; a long list scrolls inside its own region. */
+.runtime-scroll {
+  max-height: var(--layout-container-3xs);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

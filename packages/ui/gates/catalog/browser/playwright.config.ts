@@ -14,8 +14,8 @@ const report = process.env['GUANXI_GATE_REPORT']
 export default defineConfig({
   testDir: '.',
   testMatch: /g1[3-6]-.*\.spec\.ts$/,
-  // Failure artifacts (traces, error-context.md) stay out of the checkout and out of lint:md.
-  outputDir: join(tmpdir(), 'guanxi-ui-gate-artifacts'),
+  // CI retains a mounted, ignored directory; ordinary local runs stay outside the checkout.
+  outputDir: process.env['GUANXI_GATE_ARTIFACTS'] || join(tmpdir(), 'guanxi-ui-gate-artifacts'),
   fullyParallel: true,
   workers: Number(process.env['GUANXI_GATE_WORKERS'] || 2),
   retries: 0,

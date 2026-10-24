@@ -166,12 +166,12 @@ describe('inspector page', () => {
     const timeline = await screen.findByRole('list', { name: 'Session events in order' })
     await waitFor(() => expect(within(timeline).getAllByRole('listitem')).toHaveLength(events.length))
     expect(within(timeline).getAllByText('Durable run')).toHaveLength(1)
-    expect(within(timeline).getAllByText('lead-r1 · waiting_children · delegated')).toHaveLength(1)
+    expect(within(timeline).getAllByText('lead-r1, waiting_children, delegated')).toHaveLength(1)
     view.unmount()
     render(<InspectorPage sessionId={SESSION_ID} />)
     const replay = await screen.findByRole('list', { name: 'Session events in order' })
     await waitFor(() => expect(within(replay).getAllByRole('listitem')).toHaveLength(events.length))
-    expect(within(replay).getAllByText('lead-r1 · waiting_children · delegated')).toHaveLength(1)
+    expect(within(replay).getAllByText('lead-r1, waiting_children, delegated')).toHaveLength(1)
   })
 
   it('keeps the live region to the state: streamed events change the timeline, not the announcement', async () => {
@@ -232,7 +232,7 @@ describe('inspector page', () => {
     expect(screen.queryByText('0 → 0')).toBeNull()
   })
 
-  it('explains a session without a trace and a failed load as an alert with time, details and a retry that returns focus', async () => {
+  it('explains a session without a trace and a failed load as an alert with time and details, then recovers by itself and returns focus', async () => {
     setActiveLocale('en')
     mockApi({ summaryStatus: 404 })
     const { unmount } = render(<InspectorPage sessionId={SESSION_ID} />)
@@ -245,10 +245,11 @@ describe('inspector page', () => {
     expect(alert.textContent).toContain('The trace could not be loaded')
     expect(alert.textContent).toMatch(/Failed at .* while reading \/api\/sessions\//)
     expect(within(alert).getByRole('button', { name: 'Copy details' })).toBeTruthy()
+    // D-203: no Retry button; the failed read recovers by itself (focus or the backoff timer).
+    expect(screen.queryAllByRole('button', { name: /retry|refresh/iu })).toHaveLength(0)
+    expect(alert.textContent).toContain('Guanxi tries again by itself')
     mockApi()
-    await act(async () => {
-      fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }))
-    })
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findByRole('list', { name: 'Session events in order' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement?.id).toBe('inspector-title'))
   })

@@ -70,7 +70,7 @@ export function ShellPalette({ open, onOpenChange, commands, sessionSearch }: {
         {sessionSearch.searching
           ? <Button variant="ghost" onClick={() => { sessionSearch.cancel(); input.current?.focus() }}>{t('shell.search.cancel')}</Button>
           : (sessionSearch.hasMore || sessionSearch.error) && <Button variant="ghost" disabled={sessionSearch.loading}
-            onClick={() => { sessionSearch.search(); input.current?.focus() }}>{t(sessionSearch.refreshFailed ? 'shell.search.retryRefresh' : sessionSearch.error ? 'shell.search.retry' : 'shell.search.all')}</Button>}
+            onClick={() => { sessionSearch.search(); input.current?.focus() }}>{t('shell.search.all')}</Button>}
       </div>}
       <p className="sr-only" role="status" aria-live="polite">{t('shell.palette.results', { count: filtered.length })}</p>
       <div id={`${id}-results`} role="listbox" aria-label={t('shell.palette')} className="flex max-h-64 flex-col gap-1 overflow-y-auto">

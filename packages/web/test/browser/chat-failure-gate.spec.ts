@@ -6,6 +6,7 @@ import {
   readChatFixture,
   type ChatFixtureScenario,
 } from './fixtures/chat-api.ts'
+import { closeStatusOverflow, openNavigation } from './fixtures/shell-navigation.ts'
 
 test.use({ viewport: { width: 360, height: 720 } })
 
@@ -95,6 +96,10 @@ test('navigation detaches while durable Job continues and reload reattaches term
   await advanceChatFixture(page, 'releaseNext')
   await advanceChatFixture(page, 'releaseNext')
   await expect(page.getByText('Live partial before navigation', { exact: true })).toBeVisible()
+
+  await closeStatusOverflow(page)
+
+  await openNavigation(page)
 
   await page.getByRole('link', { name: 'Настройки' }).click()
   await expect(page).toHaveURL(/\/settings$/)

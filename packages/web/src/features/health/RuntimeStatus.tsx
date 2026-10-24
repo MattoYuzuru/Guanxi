@@ -8,220 +8,90 @@ import type {
   RuntimeAdmissionPriority,
   RuntimeSnapshot,
 } from '@guanxi/contract'
-import { Button, Spinner } from '../../components/ui.tsx'
 import {
   formatBytes,
   formatContextLength,
   formatDateTime,
   formatDuration,
 } from '../../lib/format.ts'
+import type { ReactNode } from 'react'
 import { translate } from '../../lib/locale.ts'
-import { useRuntimeProjection } from './RuntimeContext.tsx'
+import './runtime.css'
 
-export interface RuntimeStatusViewProps {
-  data: RuntimeSnapshot | null
-  error: unknown
-  loading: boolean
-  refreshing: boolean
-  onRetry: () => void
-}
-
-export function RuntimeStatus() {
-  const runtime = useRuntimeProjection()
-
-  return (
-    <RuntimeStatusView
-      data={runtime.data}
-      error={runtime.error}
-      loading={runtime.loading}
-      refreshing={runtime.refreshing}
-      onRetry={runtime.retry}
-    />
-  )
-}
-
-export function RuntimeStatusView({
-  data,
-  error,
-  loading,
-  refreshing,
-  onRetry,
-}: RuntimeStatusViewProps) {
-  return (
-    <section
-      aria-labelledby="runtime-status-title"
-      className="runtime-bar z-20 shrink-0 border-b border-divider bg-inset px-3 py-2 max-sm:order-last max-sm:border-t max-sm:border-b-0 max-sm:shadow-[0_-8px_24px_oklch(0_0_0/0.18)]"
-    >
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h2 id="runtime-status-title" className="text-2xs font-semibold">
-            {translate('runtime.bar.title')}
-          </h2>
-          {data ? <CompactSummary snapshot={data} /> : null}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRetry}
-          loading={refreshing}
-          aria-label={translate('runtime.retry')}
-          className="min-h-11 shrink-0 sm:min-h-0"
-        >
-          {translate('runtime.retry.short')}
-        </Button>
-      </div>
-
-      {loading ? (
-        <div
-          className="mt-1 flex items-center gap-1.5 text-2xs text-secondary"
-          role="status"
-          aria-live="polite"
-        >
-          <Spinner size={12} />
-          {translate('runtime.checking')}
-        </div>
-      ) : null}
-
-      {refreshing && data ? (
-        <p className="mt-1 text-2xs text-secondary" role="status" aria-live="polite">
-          {translate('runtime.refreshing')}
-        </p>
-      ) : null}
-
-      {error ? (
-        <div className="mt-1 text-2xs text-danger" role="alert">
-          <p className="font-medium">
-            {data
-              ? translate('runtime.refresh.error.title')
-              : translate('runtime.error.title')}
-          </p>
-          <p className="text-secondary">
-            {data
-              ? translate('runtime.refresh.error.summary')
-              : translate('runtime.error.summary')}
-          </p>
-        </div>
-      ) : null}
-
-      {data ? (
-        <details className="runtime-bar-details mt-1 max-sm:max-h-[min(70dvh,36rem)] max-sm:overflow-y-auto">
-          <summary className="min-h-11 cursor-pointer py-2 text-2xs font-medium text-secondary sm:min-h-0 sm:py-0.5">
-            {translate('runtime.details')}
-          </summary>
-          <div className="mt-2 grid min-w-0 gap-2 pb-1 lg:grid-cols-3">
-            <AdmissionProjection snapshot={data} />
-            <ModelsProjection snapshot={data} />
-            <HostProjection host={data.host} />
-          </div>
-          <p className="mt-1 text-2xs text-secondary">
-            {translate('runtime.sampled')} · {formatDateTime(data.observedAt)}
-          </p>
-        </details>
-      ) : null}
-    </section>
-  )
-}
-
-function CompactSummary({ snapshot }: { snapshot: RuntimeSnapshot }) {
-  const active = snapshot.governor.activeLease
-  const modelState =
-    snapshot.models === null
-      ? sourceStateLabel(snapshot.source.state)
-      : snapshot.models.length === 0
-        ? translate('runtime.models.empty.short')
-        : translate('runtime.models.count').replace('{count}', String(snapshot.models.length))
-
-  return (
-    <p className="truncate text-2xs text-secondary">
-      {active
-        ? `${operationLabel(active.operation)} · ${active.model.name}`
-        : translate('runtime.admission.idle')}
-      {' · '}
-      {translate('runtime.queue.count').replace(
-        '{count}',
-        String(snapshot.governor.queued.length),
-      )}
-      {' · '}
-      {modelState}
-      {' · '}
-      {hostStateLabel(snapshot.host)}
+/**
+ * Runtime detail for the status strip's runtime popover (D-202, D-203): admission, observed models
+ * and host telemetry from the one shared quiet sample. No Retry and no "refreshing" caption: the
+ * sample updates in place, and a failed read keeps the last sample with one sentence that says so.
+ * Facts are label and value pairs with the value emphasised and its provenance as quiet meta,
+ * never joined with punctuation; sections are separated by hairlines, not nested boxes.
+ */
+export function RuntimeDetails({ snapshot, stale }: { snapshot: RuntimeSnapshot | null; stale: boolean }) {
+  if (!snapshot) {
+    return <p className="text-12 text-secondary" role="status">
+      {translate(stale ? 'runtime.error.summary' : 'runtime.checking')}
     </p>
+  }
+  return (
+    <section aria-label={translate('runtime.bar.title')} className="runtime-details">
+      <AdmissionProjection snapshot={snapshot} />
+      <ModelsProjection snapshot={snapshot} />
+      <HostProjection host={snapshot.host} />
+    </section>
   )
 }
 
 function AdmissionProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
   const { governor } = snapshot
   return (
-    <section
-      aria-labelledby="runtime-admission-title"
-      className="min-w-0 rounded-md border border-divider bg-canvas p-2 text-2xs"
-    >
-      <h3 id="runtime-admission-title" className="font-semibold">
+    <section aria-labelledby="runtime-admission-title" className="runtime-section">
+      <h3 id="runtime-admission-title" className="runtime-section-title">
         {translate('runtime.admission.title')}
       </h3>
-      <p className="mt-0.5 text-muted">
-        {translate('runtime.admission.scope')}
-      </p>
-      <p className="mt-0.5 text-muted">
-        {translate('runtime.admission.permitPolicy')}
-      </p>
-      <p className="mt-1 font-medium">
+      <p className="runtime-note">{translate('runtime.admission.scope')}</p>
+      <p className="runtime-note">{translate('runtime.admission.permitPolicy')}</p>
+      <p className="runtime-strong">
         {governor.accepting
           ? translate('runtime.admission.open')
           : translate('runtime.admission.closed')}
       </p>
-
       {governor.activeLease ? (
-        <div className="mt-2">
-          <h4 className="font-medium">{translate('runtime.active.title')}</h4>
-          <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
-            <Fact label={translate('runtime.operation')} value={operationLabel(governor.activeLease.operation)} />
-            <Fact label={translate('runtime.priority')} value={priorityLabel(governor.activeLease.priority)} />
-            <Fact label={translate('runtime.model')} value={governor.activeLease.model.name} mono />
-            <Fact label={translate('runtime.owner')} value={ownerLabel(governor.activeLease.owner)} />
-            <Fact
-              label={translate('runtime.context')}
-              value={formatContextLength(governor.activeLease.requestedContext)}
-            />
-            <Fact
-              label={translate('runtime.acquired')}
-              value={formatDateTime(governor.activeLease.acquiredAt)}
-            />
-            <Fact
-              label={translate('runtime.elapsed')}
-              value={formatElapsed(governor.activeLease.acquiredAt)}
-            />
-          </dl>
+        <div>
+          <h4 className="runtime-subtitle">{translate('runtime.active.title')}</h4>
+          <RuntimeFacts>
+            <RuntimeFact label={translate('runtime.operation')} value={operationLabel(governor.activeLease.operation)} />
+            <RuntimeFact label={translate('runtime.priority')} value={priorityLabel(governor.activeLease.priority)} />
+            <RuntimeFact label={translate('runtime.model')} value={governor.activeLease.model.name} mono />
+            <RuntimeFact label={translate('runtime.owner')} value={ownerLabel(governor.activeLease.owner)} />
+            <RuntimeFact label={translate('runtime.context')} value={formatContextLength(governor.activeLease.requestedContext)} />
+            <RuntimeFact label={translate('runtime.acquired')} value={formatDateTime(governor.activeLease.acquiredAt)} />
+            <RuntimeFact label={translate('runtime.elapsed')} value={formatElapsed(governor.activeLease.acquiredAt)} />
+          </RuntimeFacts>
         </div>
       ) : (
-        <p className="mt-2 text-secondary">{translate('runtime.active.none')}</p>
+        <p className="runtime-note">{translate('runtime.active.none')}</p>
       )}
 
-      <div className="mt-2">
-        <h4 className="font-medium">
-          {translate('runtime.queue.title')} ({governor.queued.length})
+      <div>
+        <h4 className="runtime-subtitle">
+          {translate('runtime.queue.title')} <span className="runtime-count">{governor.queued.length}</span>
         </h4>
         {governor.queued.length === 0 ? (
-          <p className="mt-1 text-secondary">{translate('runtime.queue.empty')}</p>
+          <p className="runtime-note">{translate('runtime.queue.empty')}</p>
         ) : (
-          <ol className="mt-1 space-y-1">
+          <ol className="runtime-rows" aria-label={translate('runtime.queue.title')}>
             {governor.queued.map((waiter, index) => (
-              <li
-                key={waiter.ticketId}
-                className="min-w-0 border-l-2 border-control pl-2"
-              >
-                <p className="font-medium">
+              <li key={waiter.ticketId} className="runtime-row">
+                <p className="runtime-row-title">
                   {translate('runtime.queue.position').replace('{position}', String(index + 1))}{' '}
-                  · {operationLabel(waiter.operation)}
+                  <span className="runtime-row-kind">{operationLabel(waiter.operation)}</span>
                 </p>
-                <p className="break-words font-mono text-secondary">
-                  {waiter.model.name}
-                </p>
-                <p className="text-secondary">
-                  {ownerLabel(waiter.owner)} · {priorityLabel(waiter.priority)} · {translate('runtime.context')}:{' '}
-                  {formatContextLength(waiter.requestedContext)} · {translate('runtime.wait')}:{' '}
-                  {formatElapsed(waiter.enqueuedAt)}
-                </p>
+                <RuntimeFacts>
+                  <RuntimeFact label={translate('runtime.model')} value={waiter.model.name} mono />
+                  <RuntimeFact label={translate('runtime.owner')} value={ownerLabel(waiter.owner)} />
+                  <RuntimeFact label={translate('runtime.priority')} value={priorityLabel(waiter.priority)} />
+                  <RuntimeFact label={translate('runtime.context')} value={formatContextLength(waiter.requestedContext)} />
+                  <RuntimeFact label={translate('runtime.wait')} value={formatElapsed(waiter.enqueuedAt)} />
+                </RuntimeFacts>
               </li>
             ))}
           </ol>
@@ -237,30 +107,27 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
   )
 
   return (
-    <section
-      aria-labelledby="runtime-models-title"
-      className="min-w-0 rounded-md border border-divider bg-canvas p-2 text-2xs"
-    >
-      <h3 id="runtime-models-title" className="font-semibold">
+    <section aria-labelledby="runtime-models-title" className="runtime-section">
+      <h3 id="runtime-models-title" className="runtime-section-title">
         {translate('runtime.models.title')}
       </h3>
-      <p className="mt-0.5 text-muted">
-        {sourceStateLabel(snapshot.source.state)} · {translate('runtime.source.ollama')}
-      </p>
+      <RuntimeFacts>
+        <RuntimeFact label={translate('runtime.models.source')} value={translate('runtime.source.ollama')} meta={[sourceStateLabel(snapshot.source.state)]} />
+      </RuntimeFacts>
 
       {snapshot.models === null ? (
-        <p className="mt-2 font-medium text-danger">
+        <p className="runtime-strong" data-tone="danger">
           {snapshot.source.state === 'incompatible'
             ? translate('runtime.models.incompatible')
             : translate('runtime.models.unavailable')}
         </p>
       ) : snapshot.models.length === 0 ? (
-        <div className="mt-2">
-          <p className="font-medium">{translate('runtime.empty.title')}</p>
-          <p className="text-secondary">{translate('runtime.empty.summary')}</p>
+        <div>
+          <p className="runtime-strong">{translate('runtime.empty.title')}</p>
+          <p className="runtime-note">{translate('runtime.empty.summary')}</p>
         </div>
       ) : (
-        <ul className="mt-2 space-y-2" aria-label={translate('runtime.models.title')}>
+        <ul className="runtime-rows" aria-label={translate('runtime.models.title')}>
           {snapshot.models.map((model) => (
             <RuntimeModelRow key={`${model.normalizedName}:${model.digest ?? ''}`} model={model} />
           ))}
@@ -268,7 +135,7 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
       )}
 
       {activeNotObserved ? (
-        <p className="mt-2 font-medium text-danger">
+        <p className="runtime-strong" data-tone="danger">
           {translate('runtime.active.notObserved')}
         </p>
       ) : null}
@@ -279,26 +146,24 @@ function ModelsProjection({ snapshot }: { snapshot: RuntimeSnapshot }) {
 function RuntimeModelRow({ model }: { model: RuntimeModelObservation }) {
   const fit = model.currentFit
   return (
-    <li className="min-w-0 border-l-2 border-control pl-2">
-      <p className="break-words font-mono font-medium">{model.name}</p>
-      <p className="text-secondary">
+    <li className="runtime-row">
+      <p className="runtime-row-title" data-mono="">{model.name}</p>
+      <p className="runtime-note">
         {model.ownerState === 'unknown'
           ? translate('runtime.owner.unknown.warning')
           : translate('runtime.owner.active.exact')}
       </p>
-      <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
-        <Fact label={translate('runtime.digest')} value={model.digest ?? translate('runtime.unknown')} mono />
-        <Fact label={translate('runtime.context.observed')} value={model.contextLength === null ? translate('runtime.unknown') : formatContextLength(model.contextLength)} />
-        <Fact label={translate('runtime.allocation.runtime')} value={allocationLabel(fit.runtimeAllocationBytes)} />
-        <Fact label={translate('runtime.allocation.accelerator')} value={allocationLabel(fit.runtimeAcceleratorAllocationBytes)} />
-        <Fact label={translate('runtime.fit.state')} value={fit.state === 'observed' ? translate('runtime.fit.observed') : translate('runtime.fit.unknown')} />
-        <Fact label={translate('runtime.fit.basis')} value={fit.state === 'observed' ? translate('runtime.fit.currentResidency') : fitReasonLabel(fit.reason)} />
-        <Fact label={translate('runtime.fit.requestedContext')} value={fit.requestedContext === null ? translate('runtime.unknown') : formatContextLength(fit.requestedContext)} />
-        <Fact label={translate('runtime.fit.pressure')} value={pressureLabel(fit.pressureLevel)} />
-      </dl>
-      <p className="mt-1 text-muted">
-        {translate('runtime.fit.noFutureGuarantee')}
-      </p>
+      <RuntimeFacts>
+        <RuntimeFact label={translate('runtime.digest')} value={model.digest ?? translate('runtime.unknown')} mono />
+        <RuntimeFact label={translate('runtime.context.observed')} value={model.contextLength === null ? translate('runtime.unknown') : formatContextLength(model.contextLength)} />
+        <AllocationFact label={translate('runtime.allocation.runtime')} bytes={fit.runtimeAllocationBytes} />
+        <AllocationFact label={translate('runtime.allocation.accelerator')} bytes={fit.runtimeAcceleratorAllocationBytes} />
+        <RuntimeFact label={translate('runtime.fit.state')} value={fit.state === 'observed' ? translate('runtime.fit.observed') : translate('runtime.fit.unknown')} />
+        <RuntimeFact label={translate('runtime.fit.basis')} value={fit.state === 'observed' ? translate('runtime.fit.currentResidency') : fitReasonLabel(fit.reason)} />
+        <RuntimeFact label={translate('runtime.fit.requestedContext')} value={fit.requestedContext === null ? translate('runtime.unknown') : formatContextLength(fit.requestedContext)} />
+        <RuntimeFact label={translate('runtime.fit.pressure')} value={pressureLabel(fit.pressureLevel)} />
+      </RuntimeFacts>
+      <p className="runtime-note">{translate('runtime.fit.noFutureGuarantee')}</p>
     </li>
   )
 }
@@ -306,72 +171,62 @@ function RuntimeModelRow({ model }: { model: RuntimeModelObservation }) {
 function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
   const nvidia = host.nvidia
   return (
-    <section
-      aria-labelledby="runtime-host-title"
-      className="min-w-0 rounded-md border border-divider bg-canvas p-2 text-2xs"
-    >
-      <h3 id="runtime-host-title" className="font-semibold">
+    <section aria-labelledby="runtime-host-title" className="runtime-section">
+      <h3 id="runtime-host-title" className="runtime-section-title">
         {translate('runtime.host.title')}
       </h3>
-      <p className="mt-0.5 font-medium">{hostStateLabel(host)}</p>
-      <p className="text-muted">
-        {host.profile.platform}/{host.profile.arch} · {host.profile.accelerator}
-      </p>
-      {nvidia.state === 'unknown' || nvidia.state === 'unsupported' ? (
-        <p className="text-muted">
-          {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)} ·{' '}
-          {translate('runtime.host.devicesUnknown')}
-        </p>
-      ) : null}
-      <dl className="mt-2 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
+      <p className="runtime-strong">{hostStateLabel(host)}</p>
+      <RuntimeFacts>
+        <RuntimeFact label={translate('runtime.host.platform')} value={`${host.profile.platform} ${host.profile.arch}`} mono />
+        <RuntimeFact label={translate('runtime.host.accelerator')} value={host.profile.accelerator} />
+        {nvidia.state === 'unknown' || nvidia.state === 'unsupported' ? (
+          <RuntimeFact label={translate('runtime.nvidia.devices')} value={nvidiaStateLabel(nvidia.state)} meta={[nvidiaReasonLabel(nvidia.reason)]} />
+        ) : null}
         <MemoryFact label={translate('runtime.host.total')} fact={host.profile.totalMemoryBytes} />
         <MemoryFact label={translate('runtime.host.free')} fact={host.sample.freeMemoryBytes} />
         <MemoryFact label={translate('runtime.host.legacyEstimate')} fact={host.profile.legacyUsableMemoryBytes} />
         <MemoryFact label={translate('runtime.host.availableMemory')} fact={host.sample.availableMemoryBytes} />
-        <Fact label={translate('runtime.host.pressure')} value={pressureLabel(host.sample.pressure.level)} />
+        <RuntimeFact label={translate('runtime.host.pressure')} value={pressureLabel(host.sample.pressure.level)} />
         <MemoryFact label={translate('runtime.host.discreteVram')} fact={host.profile.discreteVramBytes} />
         <MemoryFact label={translate('runtime.host.gpuFree')} fact={host.sample.gpuFreeMemoryBytes} />
-      </dl>
+      </RuntimeFacts>
+      {nvidia.state === 'unknown' || nvidia.state === 'unsupported' ? (
+        <p className="runtime-note">{translate('runtime.host.devicesUnknown')}</p>
+      ) : null}
       {nvidia.state === 'available' || nvidia.state === 'partial' ? (
-        <section className="mt-3 min-w-0" aria-labelledby="runtime-nvidia-devices-title">
-          <h4 id="runtime-nvidia-devices-title" className="font-semibold">
+        <section className="runtime-subsection" aria-labelledby="runtime-nvidia-devices-title">
+          <h4 id="runtime-nvidia-devices-title" className="runtime-subtitle">
             {translate('runtime.nvidia.devices')}
           </h4>
-          <p className="text-muted">
-            {nvidiaStateLabel(nvidia.state)}
-            {nvidia.reason === null ? '' : ` · ${nvidiaReasonLabel(nvidia.reason)}`} ·{' '}
-            {translate('runtime.nvidia.freeWarning')}
-          </p>
-          <ul
-            className="mt-1 max-h-48 min-w-0 space-y-2 overflow-y-auto overscroll-contain pr-1"
-            aria-label={translate('runtime.nvidia.devices')}
-          >
+          <RuntimeFacts>
+            <RuntimeFact label={translate('runtime.nvidia.state')} value={nvidiaStateLabel(nvidia.state)} meta={nvidia.reason === null ? [] : [nvidiaReasonLabel(nvidia.reason)]} />
+          </RuntimeFacts>
+          <p className="runtime-note">{translate('runtime.nvidia.freeWarning')}</p>
+          <ul className="runtime-rows runtime-scroll" aria-label={translate('runtime.nvidia.devices')}>
             {nvidia.devices.map((device) => (
-              <li
-                key={`${device.providerIndex}:${device.uuid ?? device.displayName}`}
-                className="min-w-0 border-l-2 border-control pl-2"
-              >
-                <p className="break-words font-mono font-medium">{device.displayName}</p>
-                <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 text-secondary">
-                  <Fact label={translate('runtime.nvidia.index')} value={String(device.providerIndex)} mono />
-                  <Fact label={translate('runtime.nvidia.uuid')} value={redactNvidiaUuid(device.uuid)} mono />
+              <li key={`${device.providerIndex}:${device.uuid ?? device.displayName}`} className="runtime-row">
+                <p className="runtime-row-title" data-mono="">{device.displayName}</p>
+                <RuntimeFacts>
+                  <RuntimeFact label={translate('runtime.nvidia.index')} value={String(device.providerIndex)} mono />
+                  <RuntimeFact label={translate('runtime.nvidia.uuid')} value={redactNvidiaUuid(device.uuid)} mono />
                   <MemoryFact label={translate('runtime.nvidia.totalVram')} fact={device.totalVramBytes} />
                   <MemoryFact label={translate('runtime.nvidia.freeVram')} fact={device.freeVramBytes} />
-                  <Fact label={translate('runtime.nvidia.source')} value={translate('runtime.nvidia.source.smi')} />
-                  <Fact label={translate('runtime.nvidia.observedAt')} value={formatDateTime(device.observedAt)} />
-                  <Fact label={translate('runtime.nvidia.confidence')} value={confidenceLabel(device.confidence)} />
-                </dl>
+                  <RuntimeFact label={translate('runtime.nvidia.source')} value={translate('runtime.nvidia.source.smi')} />
+                  <RuntimeFact label={translate('runtime.nvidia.observedAt')} value={formatDateTime(device.observedAt)} />
+                  <RuntimeFact label={translate('runtime.nvidia.confidence')} value={confidenceLabel(device.confidence)} />
+                </RuntimeFacts>
               </li>
             ))}
           </ul>
         </section>
       ) : nvidia.state === 'unavailable' ? (
-        <p className="mt-2 font-medium text-danger">
-          {nvidiaStateLabel(nvidia.state)} · {nvidiaReasonLabel(nvidia.reason)}
+        <p className="runtime-strong" data-tone="danger">
+          {nvidiaStateLabel(nvidia.state)}{' '}
+          <span className="runtime-row-kind">{nvidiaReasonLabel(nvidia.reason)}</span>
         </p>
       ) : null}
       {host.missingFields.length > 0 ? (
-        <p className="mt-2 text-muted">
+        <p className="runtime-note">
           {translate('runtime.host.missing')}:{' '}
           {host.missingFields.map(hostFieldLabel).join(', ')}
         </p>
@@ -380,29 +235,41 @@ function HostProjection({ host }: { host: RuntimeHostTelemetry }) {
   )
 }
 
+/** Runtime facts as a description list (runtime.css); shared with the resource-conflict dialog. */
+export function RuntimeFacts({ children }: { children: ReactNode }) {
+  return <dl className="runtime-facts">{children}</dl>
+}
+
+/** A value with its provenance as quiet meta pieces beside it, separated by space, not commas. */
+export function RuntimeFact({ label, value, mono = false, meta = [] }: { label: string; value: string; mono?: boolean; meta?: readonly string[] }) {
+  return (
+    <div className="runtime-fact">
+      <dt>{label}</dt>
+      <dd>
+        <span className="runtime-fact-value" data-mono={mono || undefined}>{value}</span>
+        {meta.length > 0 ? <>{' '}<span className="runtime-fact-meta">{meta.map((item, index) => <span key={index}>{index > 0 ? ' ' : ''}{item}</span>)}</span></> : null}
+      </dd>
+    </div>
+  )
+}
+
 function MemoryFact({ label, fact }: { label: string; fact: RuntimeMemoryFact }) {
   return (
-    <Fact
+    <RuntimeFact
       label={label}
-      value={`${fact.bytes === null ? translate('runtime.unknown') : formatBytes(fact.bytes)} · ${confidenceLabel(fact.confidence)} · ${memorySourceLabel(fact.source)} · ${memoryBasisLabel(fact.basis)}`}
+      value={fact.bytes === null ? translate('runtime.unknown') : formatBytes(fact.bytes)}
+      meta={[confidenceLabel(fact.confidence), memorySourceLabel(fact.source), memoryBasisLabel(fact.basis)]}
     />
   )
 }
 
-function Fact({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string
-  value: string
-  mono?: boolean
-}) {
+function AllocationFact({ label, bytes }: { label: string; bytes: number | null }) {
   return (
-    <>
-      <dt>{label}:</dt>
-      <dd className={`min-w-0 break-words ${mono ? 'font-mono' : ''}`}>{value}</dd>
-    </>
+    <RuntimeFact
+      label={label}
+      value={bytes === null ? translate('runtime.unknown') : formatBytes(bytes)}
+      meta={[translate('runtime.confidence.observed'), translate('runtime.source.ollama')]}
+    />
   )
 }
 
@@ -411,10 +278,6 @@ function formatElapsed(iso: string): string {
   return Number.isNaN(timestamp)
     ? translate('runtime.unknown')
     : formatDuration(Math.max(0, Date.now() - timestamp))
-}
-
-function allocationLabel(bytes: number | null): string {
-  return `${bytes === null ? translate('runtime.unknown') : formatBytes(bytes)} · ${translate('runtime.confidence.observed')} · ${translate('runtime.source.ollama')}`
 }
 
 function ownerLabel(owner: RuntimeResourceOwner): string {

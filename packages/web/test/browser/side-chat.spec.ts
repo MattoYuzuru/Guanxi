@@ -29,7 +29,8 @@ function withLog(log: MockLog): Partial<SessionFeaturesFixture> {
       const side = /^\/api\/agent\/s1\/side-chat\/(respond|save|send)$/u.exec(url.pathname)
       const json = (body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
       if (url.pathname === '/api/sessions/s1/events' && method === 'GET') {
-        return void await json({ sessionId: 's1', events: log.events, nextAfter: log.events.length, lastSeq: log.events.length, hasMore: false }) ?? true
+        await json({ sessionId: 's1', events: log.events, nextAfter: log.events.length, lastSeq: log.events.length, hasMore: false })
+        return true
       }
       if (!side) return false
       const body = route.request().postDataJSON() as { operationId?: string; text?: string; requestId?: string; messages?: { role: string; text: string }[] }
@@ -66,8 +67,16 @@ async function open(page: Page, log: MockLog, overrides: Partial<SessionFeatures
   await installSessionFeaturesApi(page, fixture)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto('/agent/s1')
-  await expect(page.getByTestId('side-chat-panel')).toBeVisible()
+  await openPanel(page, overrides.locale ?? 'en')
   return fixture
+}
+/** Side chat is a side panel toggled from the session header; it starts closed. */
+async function openPanel(page: Page, locale: 'en' | 'ru' = 'en') {
+  const toggle = page.getByRole('button', { name: locale === 'en' ? 'Side chat' : 'Боковой чат', exact: true })
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('side-chat-panel')).toBeVisible()
 }
 const sessionLog = (page: Page) => page.evaluate(async () => {
   const body = await (await fetch('/api/sessions/s1/events?after=0')).json() as { lastSeq: number; events: { type: string }[] }
@@ -89,7 +98,12 @@ test('an unsaved side chat leaves the session log untouched (exact counts), says
   const log = createLog()
   await open(page, log)
   await expect(page.getByTestId('side-chat-ephemeral')).toHaveText('Ephemeral')
-  await expect(page.getByTestId('side-chat-notice')).toContainText('Reloading or leaving this page discards it unless you save it')
+  await expect(page.getByTestId('side-chat-notice')).toHaveText('Private to this tab and outside the session log until you save it.')
+  await panel(page).getByRole('button', { name: 'About side chat', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Side chat' })).toContainText('Reloading or leaving this page discards it unless you save it')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(panel(page)).toBeVisible()
   const before = await sessionLog(page)
   expect(before).toEqual({ lastSeq: 3, count: 3, byType: { 'agent.policy': 1, prompt: 1, 'assistant.message': 1 } })
 
@@ -113,7 +127,7 @@ test('an unsaved side chat leaves the session log untouched (exact counts), says
   // The page warns before an unsaved chat is lost, and only then.
   expect(await page.evaluate(() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented })).toBe(true)
   await page.reload()
-  await expect(panel(page)).toBeVisible()
+  await openPanel(page)
   await expect(panel(page).getByTestId('side-chat-turn')).toHaveCount(0)
   await expect(panel(page).getByText('Nothing yet. Ask a question about this session.', { exact: true })).toHaveCount(1)
   expect(await sessionLog(page)).toEqual(before)
@@ -154,6 +168,7 @@ test('Save appends exactly one note, once; Send posts exactly one prompt, once; 
   expect(log.saved.size).toBe(2)
   // Saved chats are discarded without a warning; the log keeps them across reload.
   await page.reload()
+  await openPanel(page)
   await expect(panel(page).getByTestId('side-chat-turn')).toHaveCount(0)
   expect((await sessionLog(page)).count).toBe(6)
 })
@@ -183,10 +198,11 @@ test('a failed Save keeps the chat and its retry reuses the operation: one note 
   await panel(page).getByRole('button', { name: 'Save to session log', exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('node_unreachable')
-  await expect(page.getByRole('alert')).toContainText('retrying it cannot duplicate it')
-  await panel(page).getByRole('button', { name: 'Try again' }).click()
+  await expect(page.getByRole('alert')).toContainText('saving or sending it again cannot duplicate it')
+  await expect(panel(page).getByRole('button', { name: /retry|try again/iu })).toHaveCount(0)
+  await panel(page).getByRole('button', { name: 'Save to session log', exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
-  await panel(page).getByRole('button', { name: 'Try again' }).click()
+  await panel(page).getByRole('button', { name: 'Save to session log', exact: true }).click()
   await expect(page.getByTestId('side-chat-status')).toHaveText('Already saved as event 4. Nothing new was written.')
   expect(log.save).toBe(3)
   expect((await sessionLog(page)).byType['agent.note']).toBe(1)
@@ -288,7 +304,7 @@ test('errors are single and accessible; phone width and large text do not overfl
   await expect(page.getByRole('alert')).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('context_too_large')
   await expect(panel(page)).toContainText('700000 bytes against a bound of 616000 bytes')
-  await expect(panel(page).getByRole('button', { name: 'Try again' })).toHaveCount(0)
+  await expect(panel(page).getByRole('button', { name: /retry|try again|ask again/iu })).toHaveCount(0)
   expect(await serious(page), 'error').toEqual([])
   const fits = async (label: string) => {
     const measured = await page.evaluate(() => {
@@ -299,7 +315,8 @@ test('errors are single and accessible; phone width and large text do not overfl
     expect(measured.document, `${label} document`).toBeLessThanOrEqual(0)
     expect(measured.host, `${label} route host`).toBeLessThanOrEqual(1)
     expect(measured.panelRight, `${label} panel`).toBeLessThanOrEqual(1)
-    const small = await panel(page).locator('button, select, input, textarea').evaluateAll(elements => elements.filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && (box.height < 24 || box.width < 24) }).length)
+    // Radio segments carry a visually hidden, aria-hidden native input for forms; it is not a target.
+    const small = await panel(page).locator('button, select, input, textarea').evaluateAll(elements => elements.filter(element => { const box = element.getBoundingClientRect(); return element.getAttribute('aria-hidden') !== 'true' && box.width > 0 && (box.height < 24 || box.width < 24) }).length)
     expect(small, `${label} targets under 24 px`).toBe(0)
   }
   await fits('phone 320')

@@ -1,0 +1,110 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-palette-preview {
+  container-type: inline-size;
+  /* Inline-size containment has no intrinsic width, so the preview asks for the 5xl width
+     and lets the frame cap it. */
+  width: var(--layout-container-5xl);
+  @apply max-w-full;
+}
+
+.gx-palette-preview-columns {
+  display: grid;
+  gap: var(--spacing-12);
+  @apply grid-cols-1;
+}
+
+@container (min-width: 40rem) {
+  .gx-palette-preview-columns {
+    @apply grid-cols-2;
+  }
+}
+
+.gx-palette-preview-theme {
+  border-radius: var(--border-radius-glass);
+  background-color: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-text-size);
+  line-height: var(--font-line-height-ui);
+  overflow: hidden;
+}
+
+.gx-palette-preview-chrome {
+  display: flex;
+  gap: var(--spacing-8);
+  padding: var(--spacing-8);
+}
+
+.gx-palette-preview-nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: var(--spacing-64);
+  @apply m-0 list-none p-0;
+  color: var(--color-text-secondary);
+}
+
+.gx-palette-preview-nav li {
+  padding: var(--spacing-4) var(--spacing-6);
+  border-radius: var(--border-radius-inline);
+}
+
+.gx-palette-preview-nav li[data-current='true'] {
+  background-color: var(--color-background-hover);
+  color: var(--color-text-primary);
+}
+
+.gx-palette-preview-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  min-width: 0;
+  padding: var(--spacing-12);
+  border: var(--border-width-regular) solid var(--color-border-primary);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-secondary);
+  box-shadow: var(--elevation-2-shadow);
+}
+
+.gx-palette-preview-heading {
+  @apply m-0;
+  font-size: var(--font-size-15);
+  font-weight: var(--font-weight-heading);
+}
+
+.gx-palette-preview-body,
+.gx-palette-preview-secondary {
+  @apply m-0;
+}
+
+.gx-palette-preview-secondary {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.gx-palette-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+
+.gx-palette-preview-swatches {
+  display: grid;
+  gap: var(--spacing-6);
+  @apply m-0 grid-cols-2;
+}
+
+.gx-palette-preview-swatch dt {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+.gx-palette-preview-swatch dd {
+  @apply m-0;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-12);
+}

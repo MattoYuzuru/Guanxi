@@ -564,11 +564,11 @@ export async function installChatApiFixture(
       })
 
       window.fetch = async (input, init) => {
-        const rawUrl = typeof input === 'string' ? input : input.url
+        const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         const url = new URL(rawUrl, window.location.origin)
         const method =
           (init?.method ??
-            (typeof input === 'string' ? undefined : input.method) ??
+            (input instanceof Request ? input.method : undefined) ??
             'GET').toUpperCase()
 
         if (url.pathname === '/api/health') return json(health)
@@ -635,7 +635,7 @@ export async function installChatApiFixture(
         }
         if (url.pathname === `/api/jobs/${jobId}/events` && method === 'GET') {
           const requestHeaders = new Headers(
-            init?.headers ?? (typeof input === 'string' ? undefined : input.headers),
+            init?.headers ?? (input instanceof Request ? input.headers : undefined),
           )
           const after = Number(requestHeaders.get('Last-Event-ID') ?? '0')
           const body = new ReadableStream<Uint8Array>({

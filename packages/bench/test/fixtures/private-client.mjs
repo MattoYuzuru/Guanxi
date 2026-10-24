@@ -6,7 +6,7 @@
  * test temp directory; it never contains a credential or private completion.
  */
 import { spawn } from 'node:child_process'
-import { fstatSync, readSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, fstatSync, readSync, readdirSync, readlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { PrivateFrameDecoder, encodePrivateFrame } from '../../src/private-channel.ts'
 
 const reportPath = process.env.BENCH_FIXTURE_REPORT
@@ -18,6 +18,7 @@ const report = {
   argv: process.argv.slice(0),
   env: { ...process.env },
   fd5Pipe: false, fd6Pipe: false, fd3Socket: false, fd4Socket: false,
+  inheritedControlCapabilities: [],
   requests: [], responses: [], responseKeys: [], messageKeys: [],
   descendantPid: null,
   wroteStdout: false, wroteStderr: false,
@@ -63,10 +64,29 @@ try { report.fd5Pipe = fstatSync(5).isFIFO() } catch { /* not passed */ }
 try { report.fd6Pipe = fstatSync(6).isFIFO() } catch { /* not passed */ }
 try { report.fd3Socket = fstatSync(3).isSocket() } catch { /* not passed */ }
 try { report.fd4Socket = fstatSync(4).isSocket() } catch { /* not passed */ }
+// Node may reuse ignored fd 5/6 for internal pipes. Check the actual parent's control
+// capabilities rather than treating every internal FIFO as a leaked parent descriptor.
+if (process.platform === 'linux') {
+  const controls = [5, 6].map(fd => readlinkSync(`/proc/${process.ppid}/fd/${fd}`))
+  report.inheritedControlCapabilities = readdirSync('/proc/self/fd').filter(fd => {
+    try { return controls.includes(readlinkSync(`/proc/self/fd/${fd}`)) } catch { return false }
+  })
+} else {
+  report.inheritedControlCapabilities = [5, 6].filter(fd => {
+    try { return fstatSync(fd).isSocket() } catch { return false }
+  })
+}
 try { writeSync(1, 'fixture ignored stdout\n'); report.wroteStdout = true } catch { /* ignored */ }
 try { writeSync(2, 'fixture ignored stderr\n'); report.wroteStderr = true } catch { /* ignored */ }
 
 try {
+  if (mode === 'eof-exit-zero' || mode === 'eof-exit-seven') {
+    closeSync(4)
+    sleep(75)
+    report.finalizationFinished = true
+    writeReport()
+    process.exit(mode === 'eof-exit-seven' ? 7 : 0)
+  }
   if (mode === 'bad') throw new Error('fixture bad client')
   if (mode === 'malformed') {
     const header = Buffer.alloc(4); header.writeUInt32BE(3)

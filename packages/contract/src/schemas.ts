@@ -42,13 +42,36 @@ export const fitLevelSchema = z.enum(['green', 'yellow', 'red', 'unknown'])
 export type FitLevel = z.infer<typeof fitLevelSchema>
 
 /**
+ * Why a fit verdict has its level, as a code the client localises (the summary is node-authored
+ * Russian prose kept for logs and older clients; product UI renders this code instead).
+ */
+export const fitReasonSchema = z.enum([
+  'cloud',
+  'loaded_partial_gpu',
+  'loaded_on_accelerator',
+  'loaded_tight',
+  'headroom',
+  'tight',
+  'spills_to_cpu',
+  'vendor_exceeds',
+  'vendor_requires',
+  'insufficient_data',
+])
+export type FitReason = z.infer<typeof fitReasonSchema>
+
+/**
  * Вердикт «потянет ли железо». Всегда содержит разбор, чтобы UI мог показать
  * не только цвет, но и почему именно такой цвет.
  */
 export const fitVerdictSchema = z.object({
   level: fitLevelSchema,
-  /** Короткая формулировка для карточки, на русском. */
+  /** Node-authored Russian prose for logs and older clients; the UI renders `reason` instead. */
   summary: z.string(),
+  /**
+   * The localisable reason for `level`. Optional only for compatibility with older nodes and
+   * stored verdicts (expand step); this node always sends it.
+   */
+  reason: fitReasonSchema.optional(),
   /** При каком размере окна считали. */
   contextLength: positiveSafeIntegerSchema,
   modelBytes: z.number().int(),

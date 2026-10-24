@@ -26,7 +26,6 @@ export interface RowHandlers {
   onRead(row: NotificationWire): Promise<boolean>
   onSnooze(row: NotificationWire, untilMs: number): Promise<boolean>
   onAction(row: NotificationWire, body: ExecuteNotificationActionBody): Promise<boolean>
-  onRecheck(): void
   onDismiss(row: NotificationWire): void
 }
 
@@ -58,7 +57,6 @@ export function NotificationRow(props: NotificationRowProps) {
   const [panel, setPanel] = useState<Panel>(null)
   const snoozeRef = useRef<HTMLButtonElement>(null)
   const switchRef = useRef<HTMLButtonElement>(null)
-  const retryRef = useRef<(() => Promise<boolean>) | null>(null)
   const pending = op?.status === 'pending'
   const facts = row.facts
   const title = notificationTitle(row)
@@ -67,10 +65,9 @@ export function NotificationRow(props: NotificationRowProps) {
     requestAnimationFrame(() => (restore === 'snooze' ? snoozeRef : switchRef).current?.focus())
   }
 
-  const run = (attempt: () => Promise<boolean>) => {
-    retryRef.current = attempt
-    return attempt()
-  }
+  // A failed action is repeated from its own button (the store reuses the request key when the
+  // outcome is unknown); there is no separate Retry (D-203).
+  const run = (attempt: () => Promise<boolean>) => attempt()
 
   const actions = row.actions.filter((action) => !OWN_CONTROL.has(action))
   const entries = [
@@ -157,8 +154,7 @@ export function NotificationRow(props: NotificationRowProps) {
     </div>
     {reasons.size > 0 && <ul data-testid="notification-reasons" aria-label={t('notifications.actions.disabled')} className="flex min-w-0 flex-col gap-1 text-12 text-secondary">
       {[...reasons.values()].map((reason) => <li key={reason.id} id={reason.id} className="break-words">{reason.text}</li>)}
-      {!availability.loaded && !availability.loading && availability.failure && !offline &&
-        <li><Button size="sm" variant="ghost" onClick={props.onRecheck}>{t('notifications.actions.recheck')}</Button></li>}
+      {!availability.loaded && availability.failure && !offline && <li>{t('notifications.actions.rechecking')}</li>}
     </ul>}
 
     {panel === 'snooze' && <SnoozeForm now={now} resetsAt={facts.resetsAt} busy={pending}
@@ -181,7 +177,6 @@ export function NotificationRow(props: NotificationRowProps) {
       {op.keepsKey && <p className="text-secondary">{t('notifications.failed.keepKey')}</p>}
       <p className="break-words text-secondary">{t('notifications.failed.at', { time: formatDateTime(new Date(op.failure.at).toISOString()), code: op.failure.code })}</p>
       <div className="flex flex-wrap gap-2">
-        {retryRef.current && <Button size="sm" disabled={pending} onClick={() => { void retryRef.current?.() }}>{t('notifications.retry')}</Button>}
         <Button size="sm" variant="ghost" onClick={() => props.onDismiss(row)}>{t('notifications.dismiss')}</Button>
       </div>
     </div>}

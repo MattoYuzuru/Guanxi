@@ -643,11 +643,13 @@ func operationTestPolicyProbe(payload: String) {
         refuse("payload_schema", "The test policy probe needs an approval or revocation payload")
     }
     var accessControlCalls = 0
-    var capturedProtection: CFTypeRef?
+    var capturedAccessibilityDeviceOnly: Bool?
     var capturedFlags: SecAccessControlCreateFlags?
     let createAccessControl: AccessControlFactory = { allocator, protection, flags, error in
         accessControlCalls += 1
-        capturedProtection = protection
+        // Capture the value at the API boundary, before the contexts below are created;
+        // do not retain a bridged CF reference for a deferred comparison in the JSON emit.
+        capturedAccessibilityDeviceOnly = CFEqual(protection, kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
         capturedFlags = flags
         return SecAccessControlCreateWithFlags(allocator, protection, flags, error)
     }
@@ -663,14 +665,14 @@ func operationTestPolicyProbe(payload: String) {
         _ = try makeApprovalAccessControl(create: createAccessControl)
         let first = makeConfirmationContext(reason: reason, contextFactory: createContext)
         let second = makeConfirmationContext(reason: reason, contextFactory: createContext)
-        guard let capturedProtection, let capturedFlags else {
+        guard let capturedAccessibilityDeviceOnly, let capturedFlags else {
             refuse("policy_not_captured", "The access-control factory was not called")
         }
         emit([
             "ok": true,
             "accessControlCalls": accessControlCalls,
             "accessControlCreated": true,
-            "accessibilityDeviceOnly": CFEqual(capturedProtection, kSecAttrAccessibleWhenUnlockedThisDeviceOnly),
+            "accessibilityDeviceOnly": capturedAccessibilityDeviceOnly,
             "privateKeyUsage": capturedFlags.contains(.privateKeyUsage),
             "userPresence": capturedFlags.contains(.userPresence),
             "contextFactoryCalls": createdContexts.count,

@@ -5,9 +5,10 @@
   flex-direction: column;
   gap: var(--spacing-8);
   padding: var(--spacing-12);
-  border: var(--border-width-regular) solid var(--color-border-danger);
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-left: var(--spacing-2) solid var(--color-border-danger);
   border-radius: var(--border-radius-panel);
-  background-color: var(--color-background-secondary);
+  background-color: var(--color-background-danger-subtle);
   color: var(--color-text-primary);
 }
 

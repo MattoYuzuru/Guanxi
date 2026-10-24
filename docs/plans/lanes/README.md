@@ -1,6 +1,6 @@
 # Parallel lanes
 
-**Status:** accepted (owner, 2026-10-20) · **Updated:** 2026-10-22
+**Status:** accepted (owner, 2026-10-20) · **Updated:** 2026-10-24
 
 Several agents, possibly from different model families and harnesses, work on independent
 roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 GB). This file
@@ -43,7 +43,7 @@ DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open afte
    your lane file. They override anything you assume from other harnesses.
 2. **Worktree and branch:** work only in your own git worktree on your lane branch. Never
    commit to `main`, never push, never merge. The integrator merges.
-   - Run `npm ci` in a new worktree before any check, then confirm with
+   - Run `npm ci` once in a new worktree before its first check, then confirm with
      `node -e "console.log(require.resolve('@guanxi/contract'))"`. It must print a path inside
      your worktree.
    - A worktree nested in the main checkout (`.claude/worktrees/…`) without its own
@@ -57,18 +57,21 @@ DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open afte
    - The browser gate, the Vite dev server and proxy, and `npm run dev:server` read them.
    - A busy port fails loudly, and an invalid value fails with a message naming the variable.
      Never kill a process you did not start.
-5. **Heavy checks go through the shared lock.** These are `npm test`, `npm run test:web:browser`,
-   `npm run build`, Storybook builds and visual snapshots:
+5. **Scoped local iteration; final hosted CI.** Follow [the CI protocol](../../operations/ci.md).
+   Workers run exact tests for changed behavior and affected consumers; they do not run
+   `npm test`, full browser/catalog suites, Storybook or all builds after every edit.
+   The lead publishes one reviewed integration candidate as a ready PR, then checks
+   `npm run ci:finish -- <PR-number> --wait`. A worker cannot replace CI with a local receipt.
+   A justified resource-heavy local reproduction still uses the shared lock:
 
    ```bash
-   agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- npm run test:web:browser
+   agent-dev run --cwd "$PWD" --node 26 --resource heavy --lock-timeout 3600 -- node --test path/to/affected.test.ts
    ```
 
-   `--lock-timeout` makes the call wait for the lock; without it a busy lock returns
-   `resource_busy` at once, which is not a test failure. Run one check per call and stop at
-   the first failure. If your sandbox cannot run
-   `agent-dev` or write `~/.local/state/agent-dev`, run the check directly with your lane's
-   ports and write "ran without the shared lock" in the hand-off.
+   Preserve the server key-file import guard for server tests (see the CI protocol). Busy means
+   wait or work independently; do not bypass the lock. Run dependent commands sequentially
+   and stop on failure. Existing clones/dependencies are reused; `npm ci` is needed after lock
+   or runtime changes, missing modules or a diagnosed installation problem, not each handoff.
 6. **Live server:** never use the owner's `~/.guanxi`; two servers on one data directory
    reconcile each other's chat jobs.
    - With the exports from rule 4, `npm run dev:server` is safe.
@@ -118,14 +121,16 @@ The local `infra/dsh-run.sh` and `dsh-queue.sh` now share four atomic `flock` sl
 streams before writing a private final-only JSONL. Stub verification covers exit propagation,
 stream exclusion, name collisions, concurrent slots and gate failure short-circuiting.
 The old launcher logs remain historical local files; do not inspect or export stored reasoning.
-`infra/lane-gates.sh` now stops at the first failed install/direct/heavy command.
+Legacy `infra/*gates.sh` entrypoints are compatibility adapters to the current protocol;
+they no longer reinstall dependencies or start full local runs automatically.
 
 - **Fitting tasks:** fully specified work. Review-fix rounds, where each finding already names a
   file:line, a scenario and the smallest fix, suit it well. So does mechanical new work with a
   design written by the integrator.
 - **Workspace:** a standalone `git clone` on the lane branch, not a worktree. The sandbox can
   only write inside its working directory, and a worktree's git metadata lives outside it. The
-  integrator runs `npm ci` first.
+  integrator installs dependencies once when creating a new checkout; reuse existing clones
+  and installations unless the lock/runtime changed or installation is diagnosed broken.
 - **Inside the sandbox:** the run uses targeted `node --test` files plus
   `npx tsc --noEmit -p <package>` under `nice -n 10` only. Node's type stripping does not
   typecheck, and one DeepSeek fix round shipped a type error that only `tsc` caught. It cannot
@@ -133,7 +138,7 @@ The old launcher logs remain historical local files; do not inspect or export st
 - **Not for DeepSeek:** code whose tests start a nested sandbox (`sandbox-exec`, `bwrap`,
   containers), because DeepSeek's own sandbox refuses them. X1's sandboxed-worker regressions
   slipped through that way. Such fixes go to Codex.
-- **Integrator duties:** fetch the branch, run the full gates through the shared lock, arrange
+- **Integrator duties:** collect the existing branch, arrange
   an independent GPT 6.1 Sol / high review after DeepSeek (owner, continuation), then merge
   only after the required checks. Existing original-code cross-family review obligations stay
   explicit in each handoff.
@@ -142,10 +147,14 @@ The old launcher logs remain historical local files; do not inspect or export st
 
 - [ ] Read the hand-off and the diff; check that ownership was respected.
 - [ ] Cross-family review done ([REVIEW](REVIEW.md)), findings fixed on the lane branch.
-- [ ] `git merge --no-ff` the lane into `main`, regenerate `package-lock.json` with `npm install`
-      if any `package.json` changed.
-- [ ] On `main`, run typecheck, `npm test`, browser gate, build, `lint:md` and `check:licenses`
-      through the shared lock.
-- [ ] Move the hand-off to `docs/plans/evidence/<lane>.md`, summarise it in `PHASE_STATUS.md`
-      and update `NEXT_AGENT_PROMPT.md`.
-- [ ] Push `main` and tell lanes that started from an older `main` to merge it.
+- [ ] Compose the lane on a private integration branch, regenerate `package-lock.json` with
+      `npm install` if dependencies/workspace manifests changed. Do not stage unchecked code
+      directly on main.
+- [ ] Finalize the hand-off in `docs/plans/evidence/<lane>.md`, status and next prompt before
+      publishing the final ready candidate. Link its PR/checks; record exact final run identity
+      in the workflow receipt, PR description and final response without another tree edit.
+- [ ] Publish the reviewed integration candidate as a ready PR; require its parallel full CI
+      and successful `ci:finish`. Refresh and revalidate if `main` changed. Do not repeat the
+      full local gate on the same candidate before/after merging.
+- [ ] Integrate the tested candidate through the authorized merge method; tell lanes which
+      base changed. Reuse their checkouts and preserve dirty work when incorporating main.

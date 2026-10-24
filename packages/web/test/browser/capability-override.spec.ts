@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { pickValue } from './fixtures/select.ts'
 
 const AT = '2026-08-07T00:00:00.000Z'
 const DIGEST = 'sha256:fixture'
@@ -219,8 +220,7 @@ test('user capability overrides stay separate, truthful, keyboard and layout saf
   await expect(add).toBeFocused()
   expect(mutations).toEqual([])
 
-  await page.getByRole('combobox', { name: 'Какую capability утвердить' })
-    .selectOption('tools')
+  await pickValue(page, page.getByRole('combobox', { name: 'Какую capability утвердить' }), 'tools')
   await add.press('Enter')
   await addDialog.getByRole('button', { name: 'Утвердить capability' }).press('Enter')
   await expect(page.getByText('Ваше утверждение записано.')).toBeVisible()
@@ -281,10 +281,11 @@ test('user capability overrides stay separate, truthful, keyboard and layout saf
   expect(mutations).toHaveLength(2)
   expect(mutations[1]?.method).toBe('DELETE')
 
+  // D-203: identity drift re-reads the model by itself (no Reload button); the re-read is not
+  // a mutation.
   const beforeReload = mutations.length
-  await page.getByRole('button', { name: 'Перечитать модель' }).click()
+  await expect(page.getByRole('button', { name: 'Перечитать модель' })).toHaveCount(0)
   await expect(page.getByText('sha256:replaced').first()).toBeVisible()
-  // The explicit reload re-reads the model; it is not itself a mutation.
   expect(mutations).toHaveLength(beforeReload)
 
   // A reloaded exact identity that no longer matches shows no stale assertion.

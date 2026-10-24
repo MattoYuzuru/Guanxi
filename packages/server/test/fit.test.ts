@@ -216,3 +216,29 @@ describe('computeFit', () => {
     assert.equal(verdict.level, 'unknown')
   })
 })
+
+describe('fit reason codes (localised by the client, never node prose)', () => {
+  const usable = M2_PRO_16GB.usableMemoryBytes
+  const base = { contextLength: 4_096, hardware: M2_PRO_16GB, modelBytes: QWEN2_MODEL_BYTES }
+  const cases: Array<[string, Parameters<typeof computeFit>[0], string]> = [
+    ['cloud', { ...base, isCloud: true }, 'cloud'],
+    ['loaded, partly on the CPU', { ...base, loaded: { sizeBytes: 8_000_000_000, sizeVramBytes: 4_000_000_000 } }, 'loaded_partial_gpu'],
+    ['loaded, fully on the accelerator with headroom', { ...base, loaded: { sizeBytes: 5_000_000_000, sizeVramBytes: 5_000_000_000 } }, 'loaded_on_accelerator'],
+    ['loaded, fully on the accelerator but tight', { ...base, loaded: { sizeBytes: Math.round(usable * 0.95), sizeVramBytes: Math.round(usable * 0.95) } }, 'loaded_tight'],
+    ['calibrated with headroom', { ...base, calibrationSamples: QWEN2_SAMPLES }, 'headroom'],
+    ['formula, tight', { ...base, modelBytes: Math.round(usable * 0.9), modelInfo: QWEN2_MODEL_INFO }, 'tight'],
+    ['formula, spills to the CPU', { ...base, contextLength: 1_048_576, modelInfo: QWEN2_MODEL_INFO }, 'spills_to_cpu'],
+    ['vendor hint within memory', { ...base, vramHintBytes: 2_000_000_000 }, 'vendor_requires'],
+    ['vendor hint over memory', { ...base, vramHintBytes: usable * 2 }, 'vendor_exceeds'],
+    ['no model data', { ...base }, 'insufficient_data'],
+  ]
+  for (const [name, input, reason] of cases) {
+    it(`${name}: ${reason}`, () => {
+      assert.equal(computeFit(input).reason, reason)
+    })
+  }
+  it('covers every code of the contract enum', async () => {
+    const { fitReasonSchema } = await import('@guanxi/contract')
+    assert.deepEqual([...new Set(cases.map(([, , reason]) => reason))].sort(), [...fitReasonSchema.options].sort())
+  })
+})

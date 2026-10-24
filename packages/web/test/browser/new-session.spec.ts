@@ -15,7 +15,20 @@ async function open(page: Page, fixture: SessionFeaturesFixture, path = '/agent'
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(path)
 }
-const form = (page: Page, name = 'New session') => page.getByRole('form', { name, exact: true })
+const form = (page: Page, name = 'New session') => page.getByRole('region', { name, exact: true })
+const start = (page: Page) => page.getByRole('button', { name: 'Start session' })
+const prompt = (page: Page) => page.getByRole('textbox', { name: 'What should the agent do?' })
+const retryButtons = (page: Page) => page.getByRole('button', { name: /Retry|Refresh|Try again/u })
+/** Opens the model popover at the composer's lower right and types a model ID. */
+async function chooseModel(page: Page, model: string) {
+  await page.getByRole('button', { name: /^(Choose a model|Model: )/u }).click()
+  await page.getByLabel('Model ID').fill(model)
+}
+async function chooseProject(page: Page, name: string) {
+  await page.getByRole('button', { name: /^(Choose a project|Project: )/u }).click()
+  await page.getByRole('menuitem', { name: new RegExp(name, 'u') }).click()
+  await expect(page.getByRole('button', { name: `Project: ${name}` })).toHaveCount(1)
+}
 
 /** Serious and critical violations only, as `rule: target` lines. */
 async function seriousViolations(page: Page): Promise<string[]> {
@@ -30,47 +43,64 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
   const fixture = createSessionFeaturesFixture({ progress: { 'session-1': completedProgress('session-1') } })
   await open(page, fixture)
   await expect(form(page)).toBeVisible()
-  await expect(page.getByRole('heading', { level: 1, name: 'New session' })).toHaveCount(1)
+  await expect(page.getByRole('heading', { level: 1, name: 'What should the agent do?' })).toHaveCount(1)
+  // D-207: an empty session is the composer; it takes focus.
+  await expect(prompt(page)).toBeFocused()
 
   const focused = () => page.evaluate(() => {
     const element = document.activeElement as HTMLElement | null
     if (!element) return null
     const label = element.getAttribute('aria-label') ?? (element as HTMLInputElement).labels?.[0]?.textContent ?? element.textContent
-    const style = getComputedStyle(element)
-    const ring = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0 || style.boxShadow !== 'none'
+    // The composer shows focus on the whole card (accent border and halo), not on its text area.
+    const target = element.tagName === 'TEXTAREA' ? element.closest('[data-slot="composer"]') as HTMLElement ?? element : element
+    const style = getComputedStyle(target)
+    // A resting shadow is not focus: the card counts as focused only with the accent border.
+    const probe = document.createElement('span'); probe.style.color = 'var(--color-border-accent)'; document.body.append(probe)
+    const accent = getComputedStyle(probe).color; probe.remove()
+    const ring = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0
+      || (target !== element && style.borderTopColor === accent)
     return { label: (label ?? '').trim(), ring }
   })
-  await page.getByLabel('Project', { exact: true }).focus()
-  expect(await focused()).toEqual({ label: 'Project', ring: true })
-  await page.keyboard.type('A') // type-ahead picks "Alpha"; arrow keys open the popup on macOS
-  await expect(page.getByLabel('Project', { exact: true })).toHaveValue('p')
+  const tabTo = async (label: string, key = 'Tab') => {
+    for (let step = 0; step < 6; step++) {
+      await page.keyboard.press(key)
+      if ((await focused())?.label === label) return
+    }
+    throw new Error(`keyboard never reached ${label}`)
+  }
+
+  // Shift+Tab reaches the project picker above the composer; Enter opens it, Enter picks the first project.
+  await page.keyboard.press('Shift+Tab')
+  expect(await focused()).toEqual({ label: 'Choose a project', ring: true })
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menu')).toHaveCount(1)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: 'Project: Alpha' })).toBeFocused()
 
   const order: string[] = []
-  const expected = ['What should the agent do?', 'Connection', 'Model ID', 'Access mode', 'Run options']
-  for (let step = 0; step < expected.length; step++) {
+  for (const expected of ['What should the agent do?', 'Access: Read-only', 'Run options', 'Choose a model']) {
     await page.keyboard.press('Tab')
     const state = await focused()
     expect(state?.ring, `focus ring on ${state?.label}`).toBe(true)
     order.push(state?.label ?? '')
-    if (state?.label === 'What should the agent do?') await page.keyboard.type('Inspect the repository')
-    if (state?.label === 'Connection') await page.keyboard.type('F')
-    if (state?.label === 'Model ID') await page.keyboard.type('fixture')
+    if (expected === 'What should the agent do?') await page.keyboard.type('Inspect the repository')
   }
-  expect(order).toEqual(expected)
-  // Enter opens the disclosure from the keyboard; Tab then reaches the Start button last.
-  await expect(form(page).locator('details')).not.toHaveAttribute('open', '')
+  expect(order).toEqual(['What should the agent do?', 'Access: Read-only', 'Run options', 'Choose a model'])
+  // The model popover opens from the keyboard; the only connection is already chosen.
   await page.keyboard.press('Enter')
-  await expect(form(page).locator('details')).toHaveAttribute('open', '')
-  await page.keyboard.press('Enter')
-  await expect(form(page).locator('details')).not.toHaveAttribute('open', '')
+  await expect(page.getByRole('button', { name: 'Fixture model' })).toHaveAttribute('aria-pressed', 'true')
+  await tabTo('Model ID')
+  await page.keyboard.type('fixture')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Model: fixture' })).toBeFocused()
   await page.keyboard.press('Tab')
   expect(await focused()).toEqual({ label: 'Start session', ring: true })
-  await expect(page.getByRole('button', { name: 'Start session' })).toBeEnabled()
+  await expect(start(page)).not.toHaveAttribute('aria-disabled', 'true')
 
-  await page.getByLabel('What should the agent do?').focus()
+  await prompt(page).focus()
   await page.keyboard.press('Shift+Enter')
   await page.keyboard.type('Second line')
-  await expect(page.getByLabel('What should the agent do?')).toHaveValue('Inspect the repository\nSecond line')
+  await expect(prompt(page)).toHaveValue('Inspect the repository\nSecond line')
   expect(fixture.requests.create).toHaveLength(0)
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/agent\/session-1$/u)
@@ -82,39 +112,33 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
   }])
 })
 
-test('screen-reader structure: landmarks, names, descriptions and one live status', async ({ page }) => {
+test('screen-reader structure: names, the one-line need description and one live hint', async ({ page }) => {
   await open(page, createSessionFeaturesFixture())
   await expect(form(page)).toBeVisible()
-  await expect(form(page)).toMatchAriaSnapshot(`
-    - form "New session":
-      - combobox "Project"
-      - paragraph: /A project can have no folder/
-      - textbox "What should the agent do?"
-      - paragraph: /Enter starts the session/
-      - combobox "Connection"
-      - textbox "Model ID"
-      - combobox "Access mode"
-      - group: Run options
-      - paragraph: "Still needed to start:"
-      - list:
-        - listitem: Choose a project.
-        - listitem: Choose a model connection.
-        - listitem: Enter a model ID.
-        - listitem: Describe the task.
-      - button "Start session" [disabled]
-      - status
-  `)
-  // Every control has a programmatic name and a description that contains its hint.
-  const unnamed = await form(page).locator('input, select, textarea, button, summary').evaluateAll(
+  const region = form(page)
+  await expect(region.getByRole('button', { name: 'Choose a project' })).toHaveCount(1)
+  await expect(region.getByRole('textbox', { name: 'What should the agent do?' })).toHaveCount(1)
+  await expect(region.getByRole('button', { name: 'Access: Read-only' })).toHaveCount(1)
+  await expect(region.getByRole('button', { name: 'Run options' })).toHaveCount(1)
+  await expect(region.getByRole('button', { name: 'Choose a model' })).toHaveCount(1)
+  await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
+  // The hint names only the first missing need, and Send is described by it.
+  await expect(page.locator('#new-session-needs')).toHaveText('Choose a project.')
+  await expect(start(page)).toHaveAccessibleDescription('Choose a project.')
+  await expect(region.getByRole('status')).toHaveCount(1)
+  await expect(retryButtons(page)).toHaveCount(0)
+  // Every control has a programmatic name, including the ones inside the popovers.
+  await page.getByRole('button', { name: 'Run options' }).click()
+  await expect(page.getByLabel('Network allowlist (comma-separated hosts)')).toHaveAccessibleDescription(/Loopback hosts require a port/u)
+  const unnamed = await page.locator('main input, main select, main textarea, main button, [data-slot="popover-content"] input, [data-slot="popover-content"] textarea, [data-slot="popover-content"] button').evaluateAll(
     elements => elements.filter(element => {
       const control = element as HTMLInputElement
       return !(control.getAttribute('aria-label') || control.labels?.length || control.textContent?.trim())
     }).length)
   expect(unnamed).toBe(0)
-  await expect(page.getByLabel('Project', { exact: true })).toHaveAccessibleDescription(/A project can have no folder/u)
+  await page.keyboard.press('Escape')
+  await chooseModel(page, 'fixture')
   await expect(page.getByLabel('Model ID')).toHaveAccessibleDescription(/exact model ID/u)
-  await expect(page.getByRole('button', { name: 'Start session' })).toHaveAccessibleDescription(/Still needed to start/u)
-  await expect(form(page).getByRole('status')).toHaveCount(1) // the form's own start status, empty until a start is in flight
 })
 
 test('every state has no critical or serious axe finding, in both themes and both locales', async ({ page }) => {
@@ -125,16 +149,17 @@ test('every state has no critical or serious axe finding, in both themes and bot
     const name = locale === 'en' ? 'New session' : 'Новая сессия'
     await expect(form(page, name)).toBeVisible()
     expect(await seriousViolations(page), `${locale}/${theme} ready`).toEqual([])
-    await form(page, name).locator('details > summary').click()
-    await page.getByLabel(locale === 'en' ? 'Access mode' : 'Режим доступа').selectOption('full-access')
+    await page.getByRole('button', { name: locale === 'en' ? 'Access: Read-only' : 'Доступ: Только чтение' }).click()
+    await page.getByRole('menuitem', { name: locale === 'en' ? 'Full access' : 'Полный доступ' }).click()
+    await page.getByRole('button', { name: locale === 'en' ? 'Run options' : 'Параметры запуска' }).click()
     await page.getByLabel(locale === 'en' ? 'Network allowlist (comma-separated hosts)' : 'Разрешённые сетевые адреса (через запятую)').fill('localhost')
     await expect(page.getByRole('list', { name: locale === 'en' ? 'Changed options' : 'Изменённые параметры' })).toBeVisible()
     expect(await seriousViolations(page), `${locale}/${theme} run options, chips and invalid host`).toEqual([])
   }
 })
 
-test('loading, empty, error, offline and start-failure states are single, accessible and recoverable', async ({ page }) => {
-  // Loading: a skeleton and one status, no form, until the held request is released.
+test('loading, empty, error, offline and start-failure states are single, accessible and recover by themselves', async ({ page }) => {
+  // Loading: a skeleton and one status, no composer, until the held request is released.
   let release!: () => void
   const fixture = createSessionFeaturesFixture({ holdProjects: new Promise<void>(resolve => { release = resolve }) })
   await open(page, fixture)
@@ -148,32 +173,35 @@ test('loading, empty, error, offline and start-failure states are single, access
 
   // Start failure: one alert, focus moves to it, nothing typed is lost, no navigation.
   fixture.create = () => ({ status: 409, body: { code: 'root_busy' } })
-  await page.getByLabel('Project', { exact: true }).selectOption('p')
-  await page.getByLabel('What should the agent do?').fill('Inspect')
-  await page.getByLabel('Connection').selectOption(FIXTURE_CONNECTION)
-  await page.getByLabel('Model ID').fill('fixture')
-  await page.getByRole('button', { name: 'Start session' }).click()
+  await chooseProject(page, 'Alpha')
+  await prompt(page).fill('Inspect')
+  await chooseModel(page, 'fixture')
+  await page.keyboard.press('Escape')
+  await start(page).click()
   await expect(page.getByRole('alert')).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('The session could not be started')
   await expect(page.getByRole('alert')).toContainText('Another full-access session already uses one of these folders')
   expect(await page.evaluate(() => document.activeElement?.contains(document.querySelector('[role="alert"]')))).toBe(true)
-  await expect(page.getByLabel('What should the agent do?')).toHaveValue('Inspect')
+  await expect(prompt(page)).toHaveValue('Inspect')
+  await expect(page.getByRole('button', { name: 'Model: fixture' })).toHaveCount(1)
   expect(page.url()).toMatch(/\/agent$/u)
   expect(fixture.requests.create).toHaveLength(1)
+  await expect(retryButtons(page)).toHaveCount(0)
   expect(await seriousViolations(page), 'start failure').toEqual([])
 
-  // Offline: the node drops; Retry reaches it again. Exactly one alert, Start disabled.
+  // Offline: the node drops; one status line, no alert, no Retry, Start blocked; it recovers by itself.
   fixture.agentNetwork = 'down'
   await page.reload()
   await expect(page.locator('[data-state="node_unreachable"]')).toHaveCount(1)
-  await expect(page.getByRole('alert')).toHaveCount(1)
-  await expect(page.getByText('No choices were loaded before the connection dropped.', { exact: true })).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Start session' })).toBeDisabled()
+  await expect(page.locator('[data-state="node_unreachable"]')).toHaveAttribute('role', 'status')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(retryButtons(page)).toHaveCount(0)
+  await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
   expect(await seriousViolations(page), 'offline').toEqual([])
   fixture.agentNetwork = 'up'
-  await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect(form(page)).toBeVisible()
-  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(page.locator('[data-state="node_unreachable"]')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Choose a project' })).toHaveCount(1)
 
   // Error: the node answers with a failure; the source and code are named and copyable.
   await page.unrouteAll({ behavior: 'ignoreErrors' })
@@ -188,6 +216,7 @@ test('loading, empty, error, offline and start-failure states are single, access
   await expect(page.getByText('GET /api/agent/projects', { exact: true })).toHaveCount(1)
   await expect(page.getByRole('alert')).toContainText('egress_unavailable')
   await expect(page.getByRole('alert')).toContainText('Session choices could not be loaded. The node is still preparing secret protection')
+  await expect(retryButtons(page)).toHaveCount(0)
   expect(await seriousViolations(page), 'error').toEqual([])
 
   // Empty: one sentence and one primary action each.
@@ -218,49 +247,51 @@ test('seeded violation: an unnamed icon button in the new-session screen is repo
   expect((await seriousViolations(page)).some(line => line.startsWith('button-name: ') && line.includes('data-g14-seed'))).toBe(true)
 })
 
-test('local runtimes require a context size and the form blocks starting until it is valid', async ({ page }) => {
+test('local runtimes require a context size in the model picker and starting waits until it is valid', async ({ page }) => {
   const fixture = createSessionFeaturesFixture({ connections: [fixtureConnection(FIXTURE_LOCAL_CONNECTION, 'Local Ollama', 'local_runtime')] })
   await open(page, fixture)
-  await page.getByLabel('Project', { exact: true }).selectOption('q')
-  await page.getByLabel('What should the agent do?').fill('Inspect')
-  await page.getByLabel('Connection').selectOption(FIXTURE_LOCAL_CONNECTION)
-  await page.getByLabel('Model ID').fill('llama')
-  await expect(page.getByRole('button', { name: 'Start session' })).toBeDisabled()
-  await expect(page.getByText('Set the local runtime context under Run options.', { exact: true })).toHaveCount(1)
-  await expect(form(page).locator('details')).toHaveAttribute('open', '') // the disclosure that holds the required field opened by itself
-  await page.getByLabel('Local runtime context (tokens)').fill('0')
-  await expect(page.getByLabel('Local runtime context (tokens)')).toHaveAttribute('aria-invalid', 'true')
-  await expect(page.getByRole('button', { name: 'Start session' })).toBeDisabled()
-  await page.getByLabel('Local runtime context (tokens)').fill('8192')
-  await expect(page.getByRole('button', { name: 'Start session' })).toBeEnabled()
-  await page.getByRole('button', { name: 'Start session' }).click()
+  await chooseProject(page, 'Beta')
+  await prompt(page).fill('Inspect')
+  await chooseModel(page, 'llama')
+  await expect(page.getByRole('button', { name: 'Local Ollama' })).toHaveAttribute('aria-pressed', 'true') // the only connection is preselected
+  await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.locator('#new-session-needs')).toHaveText('Set the context window in the model picker.')
+  await page.getByLabel('Context window, tokens').fill('0')
+  await expect(page.getByLabel('Context window, tokens')).toHaveAttribute('aria-invalid', 'true')
+  await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
+  await page.getByLabel('Context window, tokens').fill('8192')
+  await expect(start(page)).not.toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+  await start(page).click()
   await expect(page).toHaveURL(/\/agent\/session-1$/u)
   expect(fixture.requests.create).toHaveLength(1)
   expect(fixture.requests.create[0]).toMatchObject({ connectionId: FIXTURE_LOCAL_CONNECTION, contextTokens: 8192 })
 })
 
-test('recent projects persist per browser, are selectable and are never duplicated', async ({ page }) => {
-  const fixture = createSessionFeaturesFixture({ progress: { 'session-1': completedProgress('session-1') } })
+test('a new session opens in the most recent project, which persists per browser and is never duplicated', async ({ page }) => {
+  // The started session belongs to Beta, as the node would report; opening it keeps Beta current (P2).
+  const fixture = createSessionFeaturesFixture({ progress: { 'session-1': { ...completedProgress('session-1'), projectId: 'q' } } })
   await open(page, fixture)
-  await expect(page.getByRole('region', { name: 'Recent projects' })).toHaveCount(0)
-  await page.getByLabel('Project', { exact: true }).selectOption('q')
-  await page.getByLabel('What should the agent do?').fill('Inspect')
-  await page.getByLabel('Connection').selectOption(FIXTURE_CONNECTION)
-  await page.getByLabel('Model ID').fill('fixture')
-  await page.getByRole('button', { name: 'Start session' }).click()
+  await expect(page.getByRole('button', { name: 'Choose a project' })).toHaveCount(1)
+  await chooseProject(page, 'Beta')
+  await prompt(page).fill('Inspect')
+  await chooseModel(page, 'fixture')
+  await page.keyboard.press('Escape')
+  await start(page).click()
   await expect(page).toHaveURL(/\/agent\/session-1$/u)
   await page.goto('/agent')
-  const recent = page.getByRole('region', { name: 'Recent projects' })
-  await expect(recent.getByRole('button')).toHaveCount(1)
-  await expect(recent.getByRole('button', { name: 'Beta' })).toHaveAttribute('aria-pressed', 'false')
-  await recent.getByRole('button', { name: 'Beta' }).click()
-  await expect(recent.getByRole('button', { name: 'Beta' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByLabel('Project', { exact: true })).toHaveValue('q')
+  await expect(page.getByRole('button', { name: 'Project: Beta' })).toHaveCount(1)
   await expect(page.getByText('Project folders: 1', { exact: true })).toHaveCount(1)
-  // A deleted project drops out of the list instead of showing a dead entry.
+  await page.getByRole('button', { name: 'Project: Beta' }).click()
+  const items = page.getByRole('menuitem')
+  await expect(items).toHaveCount(2)
+  await expect(items.first()).toContainText('Beta')
+  await page.keyboard.press('Escape')
+  // A deleted project drops out instead of showing a dead entry; the only remaining project is current.
   fixture.projects = [fixtureProject('p', 'Alpha')]
   await page.reload()
-  await expect(page.getByRole('region', { name: 'Recent projects' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Project: Alpha' })).toHaveCount(1)
+  await expect(page.getByText('Beta')).toHaveCount(0)
 })
 
 test('phone width (320 px) and large text keep the screen inside the viewport with 24 px targets, even with long names', async ({ page }) => {
@@ -273,9 +304,7 @@ test('phone width (320 px) and large text keep the screen inside the viewport wi
   await page.addInitScript(() => localStorage.setItem('guanxi.newSession.recentProjects.v1', JSON.stringify(['long', 'p'])))
   await open(page, fixture)
   await expect(form(page)).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Recent projects' }).getByRole('button')).toHaveCount(2)
-  await page.getByLabel('Project', { exact: true }).selectOption('long')
-  await form(page).locator('details > summary').click()
+  await expect(page.getByRole('button', { name: `Project: ${longProject}` })).toHaveCount(1)
   const check = async (label: string) => {
     const overflow = await page.evaluate(() => {
       const host = document.querySelector('[data-slot="shell-route-host"]')
@@ -283,22 +312,24 @@ test('phone width (320 px) and large text keep the screen inside the viewport wi
     })
     expect(overflow.document, `${label} document overflow`).toBeLessThanOrEqual(0)
     expect(overflow.host, `${label} route host overflow`).toBeLessThanOrEqual(1)
-    const small = await page.locator('main').locator('button, select, summary, input:not([type="checkbox"]), textarea').evaluateAll(
+    const small = await page.locator('main, [data-slot="popover-content"]').locator('button, select, input:not([type="checkbox"]), textarea').evaluateAll(
       elements => elements.filter(element => {
         const box = element.getBoundingClientRect()
         return box.width > 0 && (box.height < 24 || box.width < 24)
       }).map(element => `${element.tagName} ${element.textContent?.trim().slice(0, 20)} ${Math.round(element.getBoundingClientRect().height)}`))
     expect(small, `${label} targets under 24 px`).toEqual([])
-    const outside = await page.locator('main').locator('button, select, textarea, input, summary').evaluateAll(
+    const outside = await page.locator('main, [data-slot="popover-content"]').locator('button, select, textarea, input').evaluateAll(
       elements => elements.filter(element => element.getBoundingClientRect().right > innerWidth + 1).length)
     expect(outside, `${label} controls past the right edge`).toBe(0)
   }
   await check('phone 320')
+  await page.getByRole('button', { name: 'Run options' }).click()
+  await check('phone 320 with run options open')
+  await page.keyboard.press('Escape')
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
   await check('phone 320 at 200% text')
   expect(await seriousViolations(page), 'phone at 200% text').toEqual([])
 })
-
 test('reduced motion: nothing animates on the screen, and the skeleton is static', async ({ page }) => {
   let release!: () => void
   const fixture = createSessionFeaturesFixture({ holdProjects: new Promise<void>(resolve => { release = resolve }) })

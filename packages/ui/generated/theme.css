@@ -27,6 +27,7 @@
   --color-accent-foreground: var(--color-text-on-accent);
   --color-control: var(--color-border-control);
   --color-divider: var(--color-border-primary);
+  --color-hairline: var(--color-border-secondary);
   --color-focus: var(--color-ring-primary);
   --color-warning: var(--color-text-warning);
   --color-danger: var(--color-text-danger);
@@ -69,6 +70,8 @@
   --animate-sheen: guanxi-sheen var(--motion-duration-loop) var(--motion-easing-standard) infinite;
   --animate-spinner: guanxi-spin var(--motion-duration-loop) var(--motion-easing-linear) infinite;
   --shadow-popover: var(--elevation-2-shadow);
+  --shadow-pane: var(--elevation-pane-shadow);
+  --shadow-control: var(--elevation-control-shadow);
   --blur-glass: var(--material-glass-blur);
   --blur-tinted: var(--material-tinted-blur);
   --leading-ui: var(--font-line-height-ui);

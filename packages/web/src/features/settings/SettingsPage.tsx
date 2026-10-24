@@ -19,6 +19,7 @@ import { useLocale } from '../../lib/locale-context.tsx'
 import { parsePositiveSafeInteger } from '../../lib/contextLength.ts'
 import { useTheme } from '../../lib/theme.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { Glossary } from './Glossary.tsx'
 import { GlossarySettingsLink } from '../voice/GlossarySettingsLink.tsx'
 import { DeveloperSettings } from '../catalog/DeveloperSettings.tsx'
@@ -34,7 +35,9 @@ type SaveFailure =
 
 export function SettingsPage() {
   const models = useAsync((signal) => api.listModels(undefined, signal), [])
-  const { setPreference } = useTheme()
+  // One theme source of truth: the device's theme store, applied before first paint. The chrome
+  // toggle and this field both write it; Save mirrors it to the node instead of overwriting it.
+  const { preference: themePreference, setPreference } = useTheme()
   const {
     source: localeSource,
     settings,
@@ -44,6 +47,15 @@ export function SettingsPage() {
     acceptSettings,
     reloadSettings,
   } = useLocale()
+  // A failed settings read stays on screen while Guanxi retries by itself (D-203), so the view
+  // does not flash between the error and a skeleton on every attempt.
+  const [lastSettingsError, setLastSettingsError] = useState<unknown>(null)
+  useEffect(() => {
+    if (settingsError) setLastSettingsError(settingsError)
+    else if (!settingsLoading && settings) setLastSettingsError(null)
+  }, [settingsError, settingsLoading, settings])
+  useAutoRecover(lastSettingsError, reloadSettings)
+  const shownSettingsError = settingsError ?? (settingsLoading ? lastSettingsError : null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -98,7 +110,7 @@ export function SettingsPage() {
         enableBash: draft.enableBash,
         prewarmEnabled: draft.prewarmEnabled,
         locale: draft.locale,
-        theme: draft.theme,
+        theme: themePreference,
         webSearch: {
           provider: draft.webSearch.provider,
           baseUrl: draft.webSearch.baseUrl,
@@ -106,7 +118,6 @@ export function SettingsPage() {
         },
       })
 
-      setPreference(result.theme)
       acceptSettings(result)
       setDraft({
         ...result,
@@ -122,7 +133,7 @@ export function SettingsPage() {
     }
   }
 
-  if (settingsLoading || (!draft && settingsError === null)) {
+  if (!shownSettingsError && (settingsLoading || (!draft && settingsError === null))) {
     return (
       <div className="mx-auto max-w-3xl space-y-3 px-5 py-5">
         <Skeleton className="h-7 w-40" />
@@ -131,19 +142,12 @@ export function SettingsPage() {
     )
   }
 
-  if (settingsError || !draft) {
+  if (shownSettingsError || !draft) {
     return (
       <div className="mx-auto max-w-3xl px-5 py-5">
-        <Callout
-          tone="danger"
-          title={translate('settings.load.error')}
-          action={
-            <Button size="sm" onClick={reloadSettings}>
-              {translate('settings.retry')}
-            </Button>
-          }
-        >
-          {settingsError ? errorMessage(settingsError) : translate('settings.load.error')}
+        <Callout tone="danger" title={translate('settings.load.error')}>
+          {shownSettingsError ? errorMessage(shownSettingsError) : translate('settings.load.error')}
+          <span className="mt-1 block">{translate('settings.recovering')}</span>
         </Callout>
       </div>
     )
@@ -385,8 +389,8 @@ export function SettingsPage() {
           <Field label={translate('settings.interface.theme')} htmlFor="settings-theme">
             <Select
               id="settings-theme"
-              value={draft.theme}
-              onChange={(value) => update('theme', value as Settings['theme'])}
+              value={themePreference}
+              onChange={(value) => setPreference(value as Settings['theme'])}
               options={[
                 { value: 'system', label: translate('theme.system') },
                 { value: 'light', label: translate('theme.light') },

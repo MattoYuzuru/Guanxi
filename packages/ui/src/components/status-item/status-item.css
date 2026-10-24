@@ -1,0 +1,93 @@
+@reference '../../styles/tailwind-reference.css';
+
+.gx-status-item {
+  position: relative;
+  display: inline-flex;
+}
+
+.gx-status-item-trigger {
+  gap: var(--spacing-6);
+  padding-inline: var(--spacing-8);
+  color: var(--color-text-secondary);
+}
+
+.gx-status-item-trigger.gx-icon-button {
+  padding-inline: 0;
+}
+
+.gx-status-item-trigger[data-popup-open] {
+  background-color: var(--color-background-pressed);
+  color: var(--color-text-primary);
+}
+
+.gx-status-item-glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--icon-size-16);
+  height: var(--icon-size-16);
+}
+
+/* Unknown: the glyph dims and a small dashed ring marks it; the popover says "Unknown". A stale
+   value (the latest read failed) keeps its value and gets the same dashed mark. */
+.gx-status-item[data-stale] .gx-status-item-value {
+  color: var(--color-text-secondary);
+}
+
+.gx-status-item[data-tone='unknown'] .gx-status-item-glyph {
+  color: var(--color-text-tertiary);
+}
+
+.gx-status-item-unknown {
+  position: absolute;
+  @apply -right-0.5 -bottom-0.5;
+  width: var(--spacing-6);
+  height: var(--spacing-6);
+  box-sizing: border-box;
+  border: var(--border-width-regular) dashed currentColor;
+  @apply rounded-full;
+  background-color: var(--color-background-primary);
+}
+
+.gx-status-item[data-tone='accent'] .gx-status-item-glyph {
+  color: var(--color-text-accent);
+}
+
+.gx-status-item[data-tone='success'] .gx-status-item-glyph {
+  color: var(--color-text-success);
+}
+
+.gx-status-item[data-tone='warning'] .gx-status-item-glyph {
+  color: var(--color-text-warning);
+}
+
+.gx-status-item[data-tone='danger'] .gx-status-item-glyph {
+  color: var(--color-text-danger);
+}
+
+.gx-status-item-value {
+  /* A fixed slot: a changing value never moves its neighbours (P3). */
+  min-width: var(--layout-status-value);
+  text-align: start;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+.gx-status-item-popover {
+  width: var(--layout-container-2xs);
+}
+
+/* Detail lists may scroll; the popup is then a focusable scroll region (tabIndex 0). */
+.gx-status-item-popover[data-size='wide'] {
+  width: var(--layout-container-sm);
+  max-height: min(var(--available-height), var(--layout-container-lg));
+  overflow-y: auto;
+}
+
+.gx-status-item-empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}

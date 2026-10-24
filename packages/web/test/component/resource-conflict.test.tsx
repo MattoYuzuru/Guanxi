@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Job, RuntimeSnapshot } from '@guanxi/contract'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -198,6 +198,13 @@ describe('resource conflict decision', () => {
     expect(dialog.textContent).toContain('Контекст:8k')
     expect(dialog.textContent).toContain('Позиция 1')
     expect(dialog.textContent).toContain('Позиция 2')
+    // Queue rows are label and value pairs (visual pass 5), not one line of comma-joined facts.
+    const waiters = within(within(dialog).getByRole('region', { name: /^Работа впереди/u })).getAllByRole('listitem')
+    expect(waiters).toHaveLength(2)
+    for (const waiter of waiters) {
+      expect(waiter.querySelectorAll('dl')).toHaveLength(1)
+      expect([...waiter.querySelectorAll('dd')].map(node => node.textContent)).not.toContainEqual(expect.stringMatching(/, /u))
+    }
     expect(dialog.textContent).toContain('одним permit')
     expect(dialog.textContent).not.toContain('Parallel')
     const queue = screen.getByRole('button', { name: 'Поставить после текущей' })
@@ -323,8 +330,7 @@ describe('resource conflict decision', () => {
   it('requires explicit retry after cancel failure and keeps one dispatch/key', async () => {
     const loader = vi.fn(async () => runtimeSnapshotFixture())
     let cancelCalls = 0
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = new URL(typeof input === 'string' ? input : input.toString(), 'http://fixture')
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET').toUpperCase() === 'POST') {
         cancelCalls += 1
         return cancelCalls === 1

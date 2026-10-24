@@ -205,7 +205,9 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(reasoningContent)
 
   reasoningExpired = true
-  await dialog.getByRole('button', { name: 'Обновить рассуждения' }).press('Enter')
+  // D-203: no Refresh button for reasoning; the list re-reads by itself (here on window focus).
+  await expect(dialog.getByRole('button', { name: 'Обновить рассуждения' })).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(dialog.getByText('В этом Chat нет сохранённых рассуждений.')).toHaveCount(1)
   await expect(dialog.getByText('Сгенерированные ответы', { exact: true })).toHaveCount(1)
   await expect(dialog.getByRole('button', { name: 'Копировать рассуждение' })).toHaveCount(0)
@@ -222,7 +224,9 @@ test('Chat retention survives reload and contains repeated save, error and narro
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@role="alert"][1]')).toBeFocused()
 
-  await dialog.getByRole('button', { name: 'Повторить retention' }).press('Enter')
+  // D-203: no Retry button; the failed save keeps its own Save button, which sends the same policy.
+  await expect(dialog.getByRole('button', { name: 'Повторить retention' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Сохранить retention' }).press('Enter')
   await expect.poll(() => retentionPatches).toBe(2)
   expect(retentionReads).toBe(1)
   expect(patchBodies).toEqual([
@@ -417,7 +421,9 @@ test('explicit Session leave confirms, retries exact scope and records pending M
   const error = dialog.getByText('Не удалось сохранить запрос в локальное хранилище.')
   await expect(error).toBeVisible()
   await expect(error.locator('xpath=ancestor::*[@role="alert"][1]')).toBeFocused()
-  await dialog.getByRole('button', { name: 'Повторить retention' }).press('Enter')
+  // D-203: no Retry button; the failed leave keeps its own confirmation, which repeats the exact scope.
+  await expect(dialog.getByRole('button', { name: 'Повторить retention' })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Подтвердить выход' }).press('Enter')
   await expect.poll(() => leaveCalls).toBe(2)
   expect(leaveBodies).toEqual([
     { leaveVersion: 1, chatId: thread.id, scope: 'projectless' },

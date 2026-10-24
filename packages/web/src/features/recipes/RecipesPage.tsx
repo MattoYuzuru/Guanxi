@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   RECIPE_OPERATIONS,
   RECIPE_REVISION_VERSION,
@@ -12,9 +12,10 @@ import {
   type RecipeOperation,
   type RecipeScopeQuery,
 } from '@guanxi/contract'
-import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
+import { Badge, Button, Callout, EmptyState, Select, Skeleton } from '../../components/ui.tsx'
 import { ApiRequestError, api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -116,6 +117,7 @@ export function RecipesPage() {
     initialSnapshotReference?.scope ?? { scope: 'projectless' },
   )
   const selected = scope.scope === 'project' ? scope.projectId : 'projectless'
+  const scopeId = useId()
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl px-4 py-6 sm:px-5">
@@ -132,30 +134,27 @@ export function RecipesPage() {
         </Callout>
       </div>
 
-      <label className="mt-5 block max-w-md text-xs font-medium">
-        {translate('recipes.scope.label')}
-        <select
+      <div className="mt-5 max-w-md text-xs font-medium">
+        <label htmlFor={scopeId} className="block">{translate('recipes.scope.label')}</label>
+        <Select
+          id={scopeId}
           value={selected}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-          onChange={(event) => setScope(event.target.value === 'projectless'
+          className="mt-1"
+          onChange={(value) => setScope(value === 'projectless'
             ? { scope: 'projectless' }
-            : { scope: 'project', projectId: event.target.value })}
-        >
-          <option value="projectless">{translate('recipes.scope.projectless')}</option>
-          {projects.data?.projects.map((project) => (
-            <option key={project.id} value={project.id}>{project.name}</option>
-          ))}
-        </select>
-      </label>
+            : { scope: 'project', projectId: value })}
+          options={[
+            { value: 'projectless', label: translate('recipes.scope.projectless') },
+            ...(projects.data?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
+          ]}
+        />
+      </div>
       {projects.loading ? <p role="status" className="mt-1 text-2xs">{translate('recipes.projects.loading')}</p> : null}
       {projects.error ? (
         <div className="mt-2" role="alert">
-          <Callout
-            tone="warning"
-            title={translate('recipes.projects.error')}
-            action={<Button size="sm" onClick={projects.reload}>{translate('recipes.retry')}</Button>}
-          >
+          <Callout tone="warning" title={translate('recipes.projects.error')}>
             {errorMessage(projects.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         </div>
       ) : null}
@@ -186,6 +185,7 @@ function RecipeScopePanel({
   const [reload, setReload] = useState(0)
   const [name, setName] = useState('')
   const [operation, setOperation] = useState<RecipeOperation>('complete')
+  const operationId = useId()
   const [instructions, setInstructions] = useState('')
   const [modelReference, setModelReference] = useState('')
   const [defaults, setDefaults] = useState('{}')
@@ -199,11 +199,17 @@ function RecipeScopePanel({
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
     : translate('recipes.scope.projectless'), [locale, projects, scope])
 
+  // Reads of the scope already on screen are quiet (D-203): a recovery after a failure or a
+  // reload after a revision conflict keeps the list and any error until the answer lands.
+  const shownScope = useRef<string | null>(null)
+  const scopeKey = JSON.stringify(scope)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setLoadError(null)
-    setRecipes(null)
+    if (shownScope.current !== scopeKey) {
+      setLoading(true)
+      setLoadError(null)
+      setRecipes(null)
+    }
     api.listRecipes(query(scope), controller.signal).then(
       (response) => {
         if (controller.signal.aborted) return
@@ -214,18 +220,22 @@ function RecipeScopePanel({
         ) {
           setLoadError(translate('recipes.scopeMismatch'))
         } else {
+          setLoadError(null)
           setRecipes(response.recipes)
         }
+        shownScope.current = scopeKey
         setLoading(false)
       },
       (error) => {
         if (controller.signal.aborted) return
+        shownScope.current = scopeKey
         setLoadError(errorMessage(error))
         setLoading(false)
       },
     )
     return () => controller.abort('recipe-scope-changed')
-  }, [reload, scope])
+  }, [reload, scope, scopeKey])
+  useAutoRecover(loadError, () => setReload((value) => value + 1))
 
   useEffect(() => {
     if (loadError) requestAnimationFrame(() => errorRef.current?.focus())
@@ -288,12 +298,16 @@ function RecipeScopePanel({
           {translate('recipes.name.label')}
           <input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-control bg-canvas px-2" />
         </label>
-        <label className="text-xs font-medium">
-          {translate('recipes.operation.label')}
-          <select value={operation} onChange={(event) => setOperation(event.target.value as RecipeOperation)} className="mt-1 h-8 w-full rounded-md border border-control bg-canvas px-2">
-            {RECIPE_OPERATIONS.map((value) => <option key={value} value={value}>{translate(`recipes.operation.${value}`)}</option>)}
-          </select>
-        </label>
+        <div className="text-xs font-medium">
+          <label htmlFor={operationId} className="block">{translate('recipes.operation.label')}</label>
+          <Select
+            id={operationId}
+            value={operation}
+            className="mt-1"
+            onChange={(value) => setOperation(value as RecipeOperation)}
+            options={RECIPE_OPERATIONS.map((value) => ({ value, label: translate(`recipes.operation.${value}`) }))}
+          />
+        </div>
         <label className="text-xs font-medium sm:col-span-2">
           {translate('recipes.instructions.label')}
           <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={3} className="mt-1 w-full rounded-md border border-control bg-canvas p-2" />
@@ -318,7 +332,7 @@ function RecipeScopePanel({
         <div className="mt-4" role="alert">
           <h3 ref={errorRef} tabIndex={-1} className="text-sm font-semibold outline-none">{translate('recipes.error.title')}</h3>
           <p className="mt-1 break-words text-xs text-danger">{loadError}</p>
-          <Button className="mt-2" size="sm" onClick={() => setReload((value) => value + 1)}>{translate('recipes.retry')}</Button>
+          <p className="mt-2 text-12 text-secondary">{translate('common.recovering')}</p>
         </div>
       ) : recipes?.length === 0 ? (
         <div className="mt-4"><EmptyState title={translate('recipes.empty.title')} description={translate('recipes.empty.description')} /></div>
@@ -403,8 +417,8 @@ function RecipeCard({
       referencedProject !== expectedProject
     ) return
     const controller = new AbortController()
+    // A recovery lookup keeps its error shown until it succeeds (D-203).
     setSnapshotLoading(true)
-    setSnapshotError(null)
     api.getRecipeJobSnapshot(
       recipe.id,
       initialSnapshotReference.recipeRevision,
@@ -416,6 +430,7 @@ function RecipeCard({
     ).then(
       (projection) => {
         if (controller.signal.aborted) return
+        setSnapshotError(null)
         setSnapshotProjection(projection)
         setSnapshotLoading(false)
       },
@@ -427,6 +442,10 @@ function RecipeCard({
     )
     return () => controller.abort('recipe-snapshot-reference-changed')
   }, [initialSnapshotReference, recipe.id, scope, snapshotReadAttempt])
+  // A failed lookup of a remembered snapshot recovers by itself; a failed create keeps its own
+  // Confirm button (same Job intent), so neither has a Retry button.
+  useAutoRecover(snapshotError !== null && snapshotKey === null && initialSnapshotReference ? snapshotError : null,
+    () => setSnapshotReadAttempt((attempt) => attempt + 1))
 
   const scoped = <T extends object>(body: T) => scope.scope === 'project'
     ? { ...body, scope: 'project' as const, projectId: scope.projectId }
@@ -473,6 +492,8 @@ function RecipeCard({
       if (nextError instanceof ApiRequestError && nextError.code === 'recipe_revision_conflict') {
         setConflict(true)
         setError(translate('recipes.conflict'))
+        // The shown revision is stale: read the current one at once (D-203: no Reload button).
+        onReload()
       } else {
         setError(errorMessage(nextError))
       }
@@ -547,7 +568,7 @@ function RecipeCard({
         <dt className="text-muted">{translate('recipes.operation.label')}</dt><dd>{translate(`recipes.operation.${configuration.operation}`)}</dd>
         <dt className="text-muted">{translate('recipes.model.label')}</dt><dd className="break-words">{configuration.model.state === 'explicit' ? configuration.model.reference : translate('recipes.model.none')}</dd>
         <dt className="text-muted">{translate('recipes.retention')}</dt><dd>{translate(`recipes.retention.${configuration.retention.mode}`)}</dd>
-        <dt className="text-muted">{translate('recipes.provenance')}</dt><dd className="break-all font-mono text-2xs">sha256:{recipe.currentRevision.canonical.sha256} · {recipe.currentRevision.canonical.byteSize} B</dd>
+        <dt className="text-muted">{translate('recipes.provenance')}</dt><dd className="break-all font-mono text-2xs">sha256:{recipe.currentRevision.canonical.sha256}, {recipe.currentRevision.canonical.byteSize} B</dd>
         <dt className="text-muted">{translate('recipes.updated')}</dt><dd><time dateTime={recipe.updatedAt}>{formatDateTime(recipe.updatedAt)}</time></dd>
       </dl>
       <p className="mt-3 whitespace-pre-wrap break-words text-xs">{configuration.instructions || translate('recipes.instructions.empty')}</p>
@@ -570,7 +591,7 @@ function RecipeCard({
       {error ? (
         <div ref={errorRef} tabIndex={-1} role="alert" className="mt-3 outline-none">
           <p className="text-xs text-danger">{error}</p>
-          {conflict ? <Button className="mt-2" size="sm" onClick={onReload}>{translate('recipes.conflict.reload')}</Button> : null}
+          {conflict ? <p className="mt-1 text-12 text-secondary">{translate('recipes.conflict.reloaded')}</p> : null}
         </div>
       ) : null}
       <div className="mt-4 border-t border-divider pt-3">
@@ -587,7 +608,7 @@ function RecipeCard({
           <div className="mt-2 rounded-md border border-control p-2">
             <p className="text-xs">{translate('recipes.snapshot.confirmation')}</p>
             <p className="mt-1 break-all text-2xs text-muted">
-              {recipe.id} · {translate('recipes.revision')} {recipe.currentRevision.revision}
+              {recipe.id}, {translate('recipes.revision')} {recipe.currentRevision.revision}
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" loading={snapshotLoading} onClick={() => void createSnapshot()}>
@@ -607,7 +628,7 @@ function RecipeCard({
             </div>
           </div>
         ) : null}
-        {snapshotLoading && !confirmSnapshot ? (
+        {snapshotLoading && !confirmSnapshot && !snapshotError ? (
           <p role="status" className="mt-2 text-xs">{translate('recipes.snapshot.loading')}</p>
         ) : null}
         {snapshotError ? (
@@ -618,18 +639,8 @@ function RecipeCard({
             className="mt-2 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-focus"
           >
             <p className="break-words text-xs text-danger">{snapshotError}</p>
-            {snapshotKey ? (
-              <Button className="mt-2" size="sm" onClick={() => void createSnapshot()}>
-                {translate('recipes.snapshot.retry')}
-              </Button>
-            ) : initialSnapshotReference ? (
-              <Button
-                className="mt-2"
-                size="sm"
-                onClick={() => setSnapshotReadAttempt((attempt) => attempt + 1)}
-              >
-                {translate('recipes.snapshot.retryRead')}
-              </Button>
+            {!snapshotKey && initialSnapshotReference ? (
+              <p className="mt-1 text-12 text-secondary">{translate('common.recovering')}</p>
             ) : null}
           </div>
         ) : null}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   QUICK_RUN_OPERATIONS,
   QUICK_RUN_VERSION,
@@ -10,9 +10,10 @@ import {
   type QuickRunScopeQuery,
   type RetentionPolicy,
 } from '@guanxi/contract'
-import { Badge, Button, Callout, EmptyState, Skeleton } from '../../components/ui.tsx'
+import { Badge, Button, Callout, EmptyState, Select, Skeleton } from '../../components/ui.tsx'
 import { api, errorMessage } from '../../lib/api.ts'
 import { formatDateTime } from '../../lib/format.ts'
+import { useAutoRecover } from '../../lib/recover.ts'
 import { translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { useAsync } from '../../lib/useAsync.ts'
@@ -40,6 +41,7 @@ function policyFor(mode: RetentionPolicy['mode']): RetentionPolicy {
 export function QuickRunsPage() {
   const projects = useAsync((signal) => api.listProjects(signal), [])
   const [scope, setScope] = useState<ScopeSelection>({ scope: 'projectless' })
+  const scopeId = useId()
   const selectedScope = scope.scope === 'project' ? scope.projectId : 'projectless'
 
   return (
@@ -57,24 +59,21 @@ export function QuickRunsPage() {
         </Callout>
       </div>
 
-      <label className="mt-5 block max-w-md text-xs font-medium">
-        {translate('quickRuns.scope.label')}
-        <select
+      <div className="mt-5 max-w-md text-xs font-medium">
+        <label htmlFor={scopeId} className="block">{translate('quickRuns.scope.label')}</label>
+        <Select
+          id={scopeId}
           value={selectedScope}
-          className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-          onChange={(event) => {
-            const value = event.target.value
-            setScope(value === 'projectless'
-              ? { scope: 'projectless' }
-              : { scope: 'project', projectId: value })
-          }}
-        >
-          <option value="projectless">{translate('quickRuns.scope.projectless')}</option>
-          {projects.data?.projects.map((project) => (
-            <option key={project.id} value={project.id}>{project.name}</option>
-          ))}
-        </select>
-      </label>
+          className="mt-1"
+          onChange={(value) => setScope(value === 'projectless'
+            ? { scope: 'projectless' }
+            : { scope: 'project', projectId: value })}
+          options={[
+            { value: 'projectless', label: translate('quickRuns.scope.projectless') },
+            ...(projects.data?.projects ?? []).map((project) => ({ value: project.id, label: project.name })),
+          ]}
+        />
+      </div>
       {projects.loading ? (
         <p role="status" className="mt-1 text-2xs text-muted">
           {translate('quickRuns.projects.loading')}
@@ -82,12 +81,9 @@ export function QuickRunsPage() {
       ) : null}
       {projects.error ? (
         <div className="mt-2" role="alert">
-          <Callout
-            tone="warning"
-            title={translate('quickRuns.projects.error')}
-            action={<Button size="sm" onClick={projects.reload}>{translate('quickRuns.retry')}</Button>}
-          >
+          <Callout tone="warning" title={translate('quickRuns.projects.error')}>
             {errorMessage(projects.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         </div>
       ) : null}
@@ -110,13 +106,13 @@ function QuickRunScopePanel({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [operation, setOperation] = useState<QuickRunOperation>('complete')
+  const operationId = useId()
   const [creating, setCreating] = useState(false)
   const [restoreCreateFocus, setRestoreCreateFocus] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({})
   const [focusActionErrorId, setFocusActionErrorId] = useState<string | null>(null)
-  const retryPolicies = useRef(new Map<string, RetentionPolicy>())
   const creatingRef = useRef(false)
   const updatingRef = useRef<string | null>(null)
   const errorHeadingRef = useRef<HTMLHeadingElement>(null)
@@ -127,11 +123,15 @@ function QuickRunScopePanel({
     ? projects.find((project) => project.id === scope.projectId)?.name ?? scope.projectId
     : translate('quickRuns.scope.projectless'), [locale, projects, scope])
 
+  // A recovery read after a failure keeps the error on screen until it succeeds (D-203).
+  const loadFailed = useRef(false)
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true)
-    setLoadError(null)
-    setQuickRuns(null)
+    if (!loadFailed.current) {
+      setLoading(true)
+      setLoadError(null)
+      setQuickRuns(null)
+    }
     api.listQuickRuns(scopeQuery(scope), controller.signal).then(
       (response) => {
         if (controller.signal.aborted) return
@@ -141,21 +141,26 @@ function QuickRunScopePanel({
           response.projectId !== expectedProjectId ||
           response.quickRuns.some((quickRun) => !matchesScope(quickRun, scope))
         ) {
+          loadFailed.current = true
           setLoadError(translate('quickRuns.scopeMismatch'))
           setLoading(false)
           return
         }
+        loadFailed.current = false
+        setLoadError(null)
         setQuickRuns(response.quickRuns)
         setLoading(false)
       },
       (error) => {
         if (controller.signal.aborted) return
+        loadFailed.current = true
         setLoadError(errorMessage(error))
         setLoading(false)
       },
     )
     return () => controller.abort('quick-run-scope-changed')
   }, [reload, scope])
+  useAutoRecover(loadError, () => setReload((value) => value + 1))
 
   useEffect(() => {
     if (loadError) requestAnimationFrame(() => errorHeadingRef.current?.focus())
@@ -232,10 +237,8 @@ function QuickRunScopePanel({
       if (updated.id !== quickRun.id || !matchesScope(updated, scope)) {
         throw new Error(translate('quickRuns.scopeMismatch'))
       }
-      retryPolicies.current.delete(quickRun.id)
       setQuickRuns((current) => current?.map((item) => item.id === updated.id ? updated : item) ?? null)
     } catch (error) {
-      retryPolicies.current.set(quickRun.id, policy)
       setActionErrors((current) => ({ ...current, [quickRun.id]: errorMessage(error) }))
       setFocusActionErrorId(quickRun.id)
     } finally {
@@ -260,9 +263,7 @@ function QuickRunScopePanel({
           {translate('quickRuns.error.title')}
         </h2>
         <p className="mt-1 break-words text-xs text-secondary">{loadError}</p>
-        <Button className="mt-3" onClick={() => setReload((value) => value + 1)}>
-          {translate('quickRuns.retry')}
-        </Button>
+        <p className="mt-2 text-12 text-secondary">{translate('common.recovering')}</p>
       </section>
     )
   }
@@ -280,20 +281,16 @@ function QuickRunScopePanel({
       </div>
 
       <form onSubmit={create} className="mt-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="min-w-0 flex-1 text-xs font-medium">
-          {translate('quickRuns.operation.label')}
-          <select
+        <div className="min-w-0 flex-1 text-xs font-medium">
+          <label htmlFor={operationId} className="block">{translate('quickRuns.operation.label')}</label>
+          <Select
+            id={operationId}
             value={operation}
-            className="mt-1 h-8 w-full min-w-0 rounded-md border border-control bg-surface px-2 text-xs text-foreground"
-            onChange={(event) => setOperation(event.target.value as QuickRunOperation)}
-          >
-            {QUICK_RUN_OPERATIONS.map((value) => (
-              <option key={value} value={value}>
-                {translate(`quickRuns.operation.${value}`)}
-              </option>
-            ))}
-          </select>
-        </label>
+            className="mt-1"
+            onChange={(value) => setOperation(value as QuickRunOperation)}
+            options={QUICK_RUN_OPERATIONS.map((value) => ({ value, label: translate(`quickRuns.operation.${value}`) }))}
+          />
+        </div>
         <Button ref={createButtonRef} type="submit" variant="primary" loading={creating}>
           {translate('quickRuns.create')}
         </Button>
@@ -367,16 +364,7 @@ function QuickRunScopePanel({
                       className="mt-3 outline-none"
                     >
                       <p className="break-words text-2xs text-danger">{actionError}</p>
-                      <Button
-                        className="mt-1"
-                        size="sm"
-                        onClick={() => {
-                          const policy = retryPolicies.current.get(quickRun.id)
-                          if (policy) void updateRetention(quickRun, policy)
-                        }}
-                      >
-                        {translate('quickRuns.retention.retry')}
-                      </Button>
+                      <p className="mt-1 text-12 text-muted">{translate('quickRuns.retention.again')}</p>
                     </div>
                   ) : null}
                 </article>

@@ -2,7 +2,8 @@
  * Renders the plugin-contributed sidebar list slot. Nothing but an empty
  * wrapper renders while no plugin contributes, so unloading the last
  * contributor removes the list. If the list held keyboard focus when it went
- * away, focus moves to the next control after the slot instead of the page body.
+ * away, focus moves to the next control after the slot (or, when none follows, the nearest one
+ * before it) instead of the page body.
  */
 import { useCallback, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { Link } from '../lib/router.tsx'
@@ -37,6 +38,11 @@ export function SidebarSlot({ slots = webKernel.slots }: { slots?: SlotRegistry 
       }
       next = next.nextElementSibling
     }
+    // Nothing focusable follows (the session list has no controls when it is empty): fall back to
+    // the nearest focusable control before the slot, still never the page body.
+    const before = [...document.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      .filter(element => root.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_PRECEDING)
+    before.at(-1)?.focus()
   }, [entries])
 
   return (

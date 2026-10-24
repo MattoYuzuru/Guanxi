@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
+import { expectValue, pickValue } from './fixtures/select.ts'
 
 type FixtureSnapshot = {
   events: string[]
@@ -172,10 +173,10 @@ async function installFixture(page: Page, enabled = true): Promise<void> {
       }
 
       window.fetch = async (input, init) => {
-        const rawUrl = typeof input === 'string' ? input : input.url
+        const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         const url = new URL(rawUrl, window.location.origin)
         const method = (
-          init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET'
+          init?.method ?? (input instanceof Request ? input.method : undefined) ?? 'GET'
         ).toUpperCase()
         if (url.pathname === '/api/health') return json(health)
         if (url.pathname === '/api/runtime') return json(runtime)
@@ -299,12 +300,12 @@ test('stable exact selection prewarms once, then cleanup precedes one Chat dispa
   await installFixture(page)
   await page.goto('/chat')
   const selector = page.getByRole('combobox', { name: 'Модель для нового диалога' })
-  await expect(selector).toHaveValue('model-a:latest')
+  await expectValue(selector, 'model-a:latest')
 
-  await selector.selectOption('model-b:latest')
+  await pickValue(page, selector, 'model-b:latest')
   await flushPassiveEffects(page)
   await page.clock.fastForward(400)
-  await selector.selectOption('model-c:latest')
+  await pickValue(page, selector, 'model-c:latest')
   await flushPassiveEffects(page)
   await page.clock.fastForward(600)
   await expect(page.getByText(/Прогреваем точную модель/u)).toBeVisible()
@@ -384,9 +385,7 @@ test('settings-off, hidden document, and navigation cancel before any prewarm co
     })
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  await page.getByRole('combobox', { name: 'Модель для нового диалога' }).selectOption(
-    'model-b:latest',
-  )
+  await pickValue(page, page.getByRole('combobox', { name: 'Модель для нового диалога' }), 'model-b:latest')
   await page.getByRole('link', { name: 'Настройки' }).click()
   await expect(page).toHaveURL(/\/settings$/u)
   await page.clock.fastForward(1_200)

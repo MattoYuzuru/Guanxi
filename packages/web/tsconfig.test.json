@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src", "test", "playwright.config.ts", "vitest.config.ts", "vite.config.ts", "dev-ports.ts"],
+  "exclude": ["test/browser/zz-lane-screens.spec.ts", "test-results"]
+}

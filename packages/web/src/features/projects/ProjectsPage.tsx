@@ -76,9 +76,7 @@ export function ProjectsPage() {
           <p className="mt-1 break-words text-xs text-secondary">
             {errorMessage(projects.error)}
           </p>
-          <Button className="mt-4" variant="primary" onClick={projects.reload}>
-            {translate('projects.retry')}
-          </Button>
+          <p className="mt-3 text-12 text-secondary">{translate('common.recovering')}</p>
         </div>
       </div>
     )
@@ -127,12 +125,9 @@ export function ProjectsPage() {
 
       {Boolean(projects.error && projects.data) && (
         <div className="mt-4" role="alert">
-          <Callout
-            tone="warning"
-            title={translate('projects.refresh.error')}
-            action={<Button size="sm" onClick={projects.reload}>{translate('projects.retry')}</Button>}
-          >
+          <Callout tone="warning" title={translate('projects.refresh.error')}>
             {errorMessage(projects.error)}
+            <span className="mt-1 block">{translate('common.recovering')}</span>
           </Callout>
         </div>
       )}
@@ -292,9 +287,7 @@ function ProjectChats({ projectId }: { projectId: string }) {
           <p className="break-words text-2xs text-danger">
             {translate('projects.chats.error')}: {errorMessage(chats.error)}
           </p>
-          <Button className="mt-1" size="sm" onClick={chats.reload}>
-            {translate('projects.retry')}
-          </Button>
+          <p className="mt-1 text-12 text-muted">{translate('common.recovering')}</p>
         </div>
       ) : (chats.data?.chats.length ?? 0) === 0 ? (
         <p className="mt-2 text-2xs text-muted">{translate('projects.chats.empty')}</p>

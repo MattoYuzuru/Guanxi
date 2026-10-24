@@ -1,6 +1,6 @@
 # Instructions for agents
 
-**Status:** implemented · **Updated:** 2026-10-20 · **Scope:** the whole repository
+**Status:** implemented · **Updated:** 2026-10-24 · **Scope:** the whole repository
 
 Guanxi is an early-alpha, local-first agent harness. The code in `packages/` today is the
 Alamo-era Ollama workbench; the target architecture is being re-founded on an own plugin
@@ -31,7 +31,8 @@ strings go through locale keys (English source, curated Russian).
    one slice: orientation, plan, vertical implementation, independent verification, docs and
    commits. A slice without it is incomplete.
 7. Owner answers: the newest record wins
-   ([2026-10-23 addendum](docs/decisions/2026-10-23-owner-decisions-addendum.md) over
+   ([2026-10-24 CI protocol](docs/decisions/2026-10-24-ci-protocol.md) over
+   [2026-10-23 addendum](docs/decisions/2026-10-23-owner-decisions-addendum.md) over
    [2026-10-23](docs/decisions/2026-10-23-owner-decisions.md) over
    [2026-10-22](docs/decisions/2026-10-22-owner-decisions.md) over
    [2026-10-21](docs/decisions/2026-10-21-owner-decisions.md) over the
@@ -41,7 +42,7 @@ strings go through locale keys (English source, curated Russian).
    [2026-10-19](docs/decisions/2026-10-19-owner-decisions.md) over the legacy records of
    2026-08-18 and 2026-08-02).
 8. Working in a parallel lane? Follow [`docs/plans/lanes/`](docs/plans/lanes/README.md): your
-   own worktree and branch, your lane's ports, heavy checks through the shared lock, and a
+   own worktree and branch, your lane's ports, scoped local checks, final hosted CI, and a
    hand-off file instead of the status files below.
 9. After every bounded slice, update `PHASE_STATUS.md` and rewrite `NEXT_AGENT_PROMPT.md` for
    the next unfinished slice. If blocked, leave the prompt on the current slice with the
@@ -128,12 +129,19 @@ npm run lint:md
 npm run check:licenses
 ```
 
-`npm test` runs server, CLI and web component regression tests. Deterministic Chromium tests
-run separately with `npm run test:web:browser`: 40 mocked tests covering legacy slices
-P0-A–P3-P. Last local baseline (2026-10-20): 25 consecutive green full runs after the S0
-flake fixes recorded in `PHASE_STATUS`. Treat any failure as a regression to investigate, not
-as a known flake. It is a mocked gate without live Ollama, GPU or network; never call it a
-full regression suite or production validation.
+The validation protocol is [CI and local checks](docs/operations/ci.md). During iteration,
+run the changed module's tests and affected consumers, not the full gate. `npm run
+check:affected -- <base-ref>` prints guidance; it does not execute checks or prove coverage.
+Commit at coherent checkpoints; push a draft PR at review/handoff, not after each edit.
+A ready PR runs the full parallel hosted matrix. Before declaring the slice complete, run
+`npm run ci:finish -- <PR-number> --wait` from its clean, reviewed HEAD and fix required
+failures. Record the run URL and tested revision. CI completion is a separate condition from
+independent review. Changes to the final candidate require fresh CI.
+
+`npm test` remains available for explicitly justified full local diagnosis. Full CI covers its
+leaf suites, browser gates and builds; it is an offline regression envelope, not proof of live
+models, paid providers, owner hardware or Secure Enclave. Historical test counts are not
+current coverage. Do not retry failures until green or lower assertions to satisfy CI.
 
 The browser gate needs Chromium installed first: `npx playwright install chromium` from
 `packages/web` (no postinstall hook). Run the gate only from the repository root or
@@ -189,7 +197,8 @@ A change is ready when:
    duplicate" needs an explicit count. A claimed but unchecked property is debt, not done;
 5. **independent verification was performed as a separate action** (see WORKFLOW), its
    findings fixed, and the fix visible as a separate commit;
-6. **the browser gate `npm run test:web:browser` passed** for any slice that changes web code;
+6. **the full hosted gate passed for the current ready candidate**, including browser gates
+   for web changes; `ci:finish` records exact evidence (see the CI protocol for platform limits);
 7. documentation reflects the new current state;
 8. residual risk is named, and `proposed` is never presented as `implemented`;
 9. `PHASE_STATUS.md` holds evidence split into **new / regression envelope**, and

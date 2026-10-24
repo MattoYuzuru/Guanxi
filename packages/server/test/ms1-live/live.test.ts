@@ -2,13 +2,13 @@
  * executor in front of the fake llama-server in attach mode, a port-forward emulator between them. See
  * docs/plans/lanes/MS1-live.handoff.md for what this cannot prove: no real model, no SSH, no second machine. */
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { RELAY_RUNTIME_PROBE } from '@guanxi/contract/federation'
 import { REMOTE_RELAY_COUNTER_SOURCE, REMOTE_RELAY_PROPS_SOURCE } from '../../src/relay/remote-runtime.ts'
 import { fakeRender, fakeTokens } from '../fixtures/fake-llama-server.ts'
-import { cli, createLiveWorld, until, type LiveWorld, pinLifecycle } from './live-world.ts'
+import { cli, createLiveWorld, freeWorldPorts, LiveNode, LiveWorld, StartupPortCollision, until, pinLifecycle } from './live-world.ts'
 
 const num = (a: number, b: number) => a - b
 const TERMINAL = ['completed', 'failed', 'interrupted', 'input_required', 'canceled']
@@ -22,6 +22,63 @@ async function preflight(w: LiveWorld, role: 'home' | 'executor', extra: string[
   return { code: result.code, report: JSON.parse(result.out) as Preflight, text: result.out }
 }
 const check = (report: Preflight, id: string) => report.checks.find(c => c.id === id)
+
+test('fixture port groups are distinct and only a typed failed startup is an allocation collision', async () => {
+  assert.equal(new Set(await freeWorldPorts()).size, 4)
+  const node = new LiveNode('fixture', '', '', 1, 2, {})
+  node.events.push({ event: 'failed', code: 'port_in_use' })
+  await assert.rejects(node.wait('started'), StartupPortCollision)
+  await assert.rejects(node.wait('other'), error => !(error instanceof StartupPortCollision))
+  node.events[0]!['code'] = 'start_failed'
+  await assert.rejects(node.wait('started'), error => !(error instanceof StartupPortCollision))
+})
+
+test('fixture port allocation retries a transient collision only after removing the partial world', async t => {
+  const dirs: string[] = []
+  const cleanups: Array<() => unknown> = []
+  const mocked = t.mock.method(LiveWorld.prototype, 'init', async function(this: LiveWorld) {
+    dirs.push(this.dir)
+    assert.equal(cleanups.length, dirs.length, 'cleanup ownership is registered before each initialization')
+    if (dirs.length === 1) throw new StartupPortCollision('synthetic port collision')
+  })
+  try {
+    const world = await createLiveWorld({ after(fn) { cleanups.push(fn); t.after(fn) } })
+    assert.equal(dirs.length, 2)
+    assert.notEqual(dirs[0], dirs[1])
+    assert.equal(existsSync(dirs[0]!), false)
+    assert.equal(existsSync(world.dir), true)
+  } finally { mocked.mock.restore() }
+})
+
+test('fixture port allocation is bounded and never retries another failure or unconfirmed cleanup', async t => {
+  let calls = 0
+  let failure: Error = new StartupPortCollision('persistent collision')
+  let latest: LiveWorld | undefined
+  let stillAlive = false
+  const mocked = t.mock.method(LiveWorld.prototype, 'init', async function(this: LiveWorld) {
+    calls++; latest = this
+    if (stillAlive) this.home = { alive: true } as LiveNode
+    throw failure
+  })
+  try {
+    await assert.rejects(createLiveWorld(t), StartupPortCollision)
+    assert.equal(calls, 3)
+    calls = 0; failure = new Error('unrelated startup error')
+    await assert.rejects(createLiveWorld(t), error => error === failure)
+    assert.equal(calls, 1)
+    calls = 0; failure = new StartupPortCollision('collision with failed cleanup')
+    const cleanup = t.mock.method(LiveWorld.prototype, 'close', async () => { throw new Error('fixture_cleanup_unconfirmed') })
+    try {
+      await assert.rejects(createLiveWorld(t), /fixture_cleanup_unconfirmed/)
+      assert.equal(calls, 1); assert.equal(existsSync(latest!.dir), true)
+    } finally { cleanup.mock.restore(); await latest?.close() }
+    calls = 0; stillAlive = true
+    try {
+      await assert.rejects(createLiveWorld(t), /fixture_cleanup_unconfirmed/)
+      assert.equal(calls, 1); assert.equal(existsSync(latest!.dir), true)
+    } finally { latest!.home.alive = false; await latest?.close() }
+  } finally { mocked.mock.restore() }
+})
 
 /** Nothing the nodes print, log or store holds the private key. */
 function assertNoKey(w: LiveWorld) {

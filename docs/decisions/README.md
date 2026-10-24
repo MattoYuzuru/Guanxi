@@ -10,7 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
-| [2026-10-23 addendum](2026-10-23-owner-decisions-addendum.md) (D-200–D-210: UI redesign, palette, icons over text, no retry buttons, composer layout, models in chat, fleet map, Sonnet MS1 lead) | accepted |
+| [2026-10-23 addendum](2026-10-23-owner-decisions-addendum.md) (D-200–D-212: UI redesign, palette, icons over text, no retry buttons, composer layout, models in chat, fleet map, Sonnet MS1 lead, API-key and subscription-token routes for it) | accepted |
 | [2026-10-23](2026-10-23-owner-decisions.md) (D-196–D-199: Fedora real runs, Claude Code as MS1 lead, Guanxi-Test-Repo target, local R3 observation journal with paths) | accepted |
 | [2026-10-22](2026-10-22-owner-decisions.md) (D-195: restored Fedora checks and deliberate retirement of Agent Workstation) | accepted |
 | [2026-10-21](2026-10-21-owner-decisions.md) (D-185–D-194: real fleet, Fedora home, own phone relay, compute-provider protocol, interactive headroom, owner-bound subscriptions, local AI, training, scale, benchmark host) | accepted |
@@ -70,3 +70,8 @@ They describe the code that exists in `packages/` today. Their target-state role
 | [0012 estimated parallel admission verdict](../legacy/alamo/decisions/0012-estimated-parallel-admission-verdict.md) | carried forward into the fit ladder (ADR-0031) |
 | [0013 phase 4 service control and clients](../legacy/alamo/decisions/0013-phase-4-service-control-and-clients.md) | carried forward into ADR-0026 |
 | [0014 notification persistence and delivery](../legacy/alamo/decisions/0014-notification-persistence-and-delivery.md) | carried forward; its outbox pattern is reused for wake-ups (ADR-0019) |
+
+## 2026-10-24 validation protocol
+
+[D-213 — hosted final CI and scoped local iteration](2026-10-24-ci-protocol.md) supersedes
+older per-lane/per-merge full local gate requirements.

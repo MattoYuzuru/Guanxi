@@ -19,6 +19,7 @@ const TTL: ChatRetentionProjection = {
   expiresAt: EXPIRES_AT,
   expirySource: 'server_calculated',
   enforcement: 'rolling_ttl_trash',
+  sessionLeave: null,
 }
 const SESSION: ChatRetentionProjection = {
   ...TTL,
@@ -147,9 +148,12 @@ describe('Chat retention info', () => {
     })
     await act(async () => mutation.reject(new Error('safe leave failure')))
     expect(await screen.findByText('safe leave failure')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    // The failed leave keeps its own confirm button (D-203): pressing it again is the next step.
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить выход' }))
     expect(await screen.findByText('safe leave failure')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    await waitFor(() => expect(api.leaveSessionChat).toHaveBeenCalledTimes(2))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить выход' }))
     const result = (await screen.findByText(
       'Выход зафиксирован; активная работа должна завершиться',
     )).closest('[role="status"]')!
@@ -292,7 +296,7 @@ describe('Chat retention info', () => {
     expect(document.querySelector(`li time[datetime="${EXPIRES_AT}"]`)).toBeNull()
   })
 
-  it('focuses a safe error, retries GET and rejects a mismatched Chat identity', async () => {
+  it('focuses a safe error, recovers the GET by itself and rejects a mismatched Chat identity', async () => {
     vi.mocked(api.getChatRetention)
       .mockResolvedValueOnce({ ...TTL, chatId: 'chat-other', projectId: 'project-a' })
       .mockResolvedValueOnce({ ...TTL, projectId: 'project-a' })
@@ -300,13 +304,14 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     const error = await screen.findByText('Retention относится к другому Chat scope.')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     await screen.findByText('Восстанавливаемое истечение применяется')
     expect(api.getChatRetention).toHaveBeenCalledTimes(2)
     expect(screen.queryByText('Retention относится к другому Chat scope.')).toBeNull()
   })
 
-  it('retries a failed Save as the same PATCH without an extra GET', async () => {
+  it('repeats a failed Save from its own button as the same PATCH without an extra GET', async () => {
     vi.spyOn(api, 'updateChatRetention')
       .mockRejectedValueOnce(new Error('safe write failure'))
       .mockResolvedValueOnce({
@@ -323,7 +328,8 @@ describe('Chat retention info', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить retention' }))
     const error = await screen.findByText('safe write failure')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить retention' }))
     await waitFor(() => expect(api.updateChatRetention).toHaveBeenCalledTimes(2))
     expect(api.updateChatRetention).toHaveBeenNthCalledWith(1, 'chat-1', {
       retentionVersion: 1,
@@ -354,7 +360,8 @@ describe('Chat retention info', () => {
     expect(screen.queryByRole('button', { name: 'Сохранить retention' })).toBeNull()
     expect(document.querySelector(`form time[datetime="${EXPIRES_AT}"]`)).toBeNull()
     expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить retention' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     await screen.findByText('Восстанавливаемое истечение применяется')
     expect(api.getChatRetention).toHaveBeenCalledTimes(2)
     expect(api.updateChatRetention).toHaveBeenCalledTimes(1)
@@ -396,7 +403,7 @@ describe('Chat retention info', () => {
     let clickedDownload: { download: string; href: string } | null = null
     const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:reasoning-export')
     const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
       clickedDownload = { download: this.download, href: this.href }
     })
     vi.spyOn(api, 'getReasoningArtifact')
@@ -411,11 +418,12 @@ describe('Chat retention info', () => {
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
     const exportedBlob = createObjectURL.mock.calls[0]?.[0]
     expect(exportedBlob).toBeInstanceOf(Blob)
+    if (!(exportedBlob instanceof Blob)) throw new Error('the export is a Blob')
     const exportedText = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.addEventListener('load', () => resolve(String(reader.result)))
       reader.addEventListener('error', () => reject(reader.error))
-      reader.readAsText(exportedBlob!)
+      reader.readAsText(exportedBlob)
     })
     expect(exportedText).toBe('exported diagnostic only')
     expect(clickedDownload).toEqual({
@@ -450,14 +458,15 @@ describe('Chat retention info', () => {
     expect(screen.queryByRole('button', { name: 'Экспортировать рассуждение' })).toBeNull()
   })
 
-  it('refreshes after server cleanup to a separate empty reasoning state and keeps the answer', async () => {
+  it('picks up server cleanup by itself (no Refresh button) as a separate empty reasoning state and keeps the answer', async () => {
     vi.mocked(api.listReasoningArtifacts)
       .mockResolvedValueOnce(REASONING)
       .mockResolvedValueOnce({ ...REASONING, artifacts: [] })
     render(<ChatRetentionInfo chatId="chat-1" chatTitle="Cleanup" projectId={null} />)
     fireEvent.click(screen.getByRole('button', { name: 'Информация о чате' }))
     expect(await screen.findAllByRole('button', { name: 'Копировать рассуждение' })).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить рассуждения' }))
+    expect(screen.queryAllByRole('button', { name: /^(Обновить|Повторить)/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findByText('В этом Chat нет сохранённых рассуждений.')).toBeTruthy()
     expect(screen.getByText('Сгенерированные ответы')).toBeTruthy()
     expect(screen.getByText((_, element) =>
@@ -467,7 +476,7 @@ describe('Chat retention info', () => {
     expect(api.listReasoningArtifacts).toHaveBeenCalledTimes(2)
   })
 
-  it('focuses reasoning load errors and retries with exact Project scope', async () => {
+  it('focuses reasoning load errors and recovers by itself with exact Project scope', async () => {
     vi.mocked(api.getChatRetention).mockResolvedValue({ ...TTL, projectId: 'project-a' })
     vi.mocked(api.listReasoningArtifacts)
       .mockRejectedValueOnce(new Error('safe Artifact load failure'))
@@ -485,13 +494,14 @@ describe('Chat retention info', () => {
     const error = await screen.findByText('safe Artifact load failure')
     await waitFor(() => expect(error.closest('[tabindex="-1"]')).toBe(document.activeElement))
     expect(screen.queryByText(/Автоматическое удаление применяется/u)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить загрузку рассуждений' }))
+    expect(screen.queryAllByRole('button', { name: /^Повторить загрузку/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
     await screen.findByRole('button', { name: 'Копировать рассуждение' })
     expect(screen.getByText(/Автоматическое удаление применяется/u)).toBeTruthy()
     expect(api.listReasoningArtifacts).toHaveBeenLastCalledWith(
       'chat-1',
       { artifactVersion: 1, enforcementVersion: 1, scope: 'project', projectId: 'project-a' },
-      undefined,
+      expect.any(AbortSignal),
     )
     expect(api.listReasoningArtifacts).toHaveBeenCalledTimes(2)
   })

@@ -13,6 +13,7 @@ import { CatalogVariantInstall } from './CatalogVariantInstall.tsx'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { InstalledEvidenceSummary } from './InstalledEvidence.tsx'
+import { FactList } from './Facts.tsx'
 
 export type ModelCardData =
   | { kind: 'local'; model: LocalModel }
@@ -58,9 +59,6 @@ export const ModelCard = memo(function ModelCard({
   const primary = capabilities.filter((capability) =>
     HIGHLIGHT_CAPABILITIES.includes(capability),
   )
-  const secondary = capabilities.filter(
-    (capability) => !HIGHLIGHT_CAPABILITIES.includes(capability),
-  )
 
   return (
     <article
@@ -70,7 +68,7 @@ export const ModelCard = memo(function ModelCard({
       )}
       aria-label={model.name}
     >
-      {/* Заголовок */}
+      {/* Заголовок: имя ведёт в профиль, облако — единственная метка рядом с ним. */}
       <header className="mb-2">
         <div className="flex items-start justify-between gap-2">
           <Link
@@ -87,69 +85,44 @@ export const ModelCard = memo(function ModelCard({
             </Badge>
           )}
         </div>
-
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted">
-          {local ? (
-            <>
-              <span title={translate('model.family')}>{local.family}</span>
-              <Dot />
-              <span title={translate('model.parameters')}>{local.parameterSize}</span>
-              <Dot />
-              <span title={translate('model.quantization')}>{local.quantization}</span>
-            </>
-          ) : (
-            <span className="line-clamp-2 leading-4" title={catalog?.description}>
-              {catalog?.description}
-            </span>
-          )}
-        </div>
+        {catalog?.description ? (
+          <p className="mt-1 line-clamp-2 text-2xs leading-4 text-muted" title={catalog.description}>
+            {catalog.description}
+          </p>
+        ) : null}
       </header>
+
+      {/* Факты вместо россыпи меток: подпись и значение, значение весом. */}
+      <FactList
+        className="mb-2"
+        label={translate('models.facts.label')}
+        facts={[
+          local && { label: translate('models.facts.family'), value: local.family },
+          local && { label: translate('models.facts.parameters'), value: local.parameterSize },
+          local && { label: translate('models.facts.quantization'), value: local.quantization },
+          local?.contextLimit.state === 'declared'
+            ? { label: translate('models.facts.context'), value: formatContextLength(local.contextLimit.value), title: translate('context.limit.declared') }
+            : local
+              ? { label: translate('models.facts.context'), value: translate('context.window.unknown'), tone: 'muted', title: translate('context.limit.unknown') }
+              : model.contextLength !== null
+                ? { label: translate('models.facts.context'), value: formatContextLength(model.contextLength), title: translate('model.context.declared') }
+                : null,
+          local
+            ? { label: translate('models.facts.disk'), value: formatBytes(local.sizeBytes) }
+            : catalog?.vramBytes !== null && catalog?.vramBytes !== undefined
+              ? { label: translate('models.facts.vendorMemory'), value: formatBytes(catalog.vramBytes), title: translate('model.vendorMemory') }
+              : null,
+          catalog?.requiredPlan === 'pro' && { label: translate('models.facts.plan'), value: translate('models.facts.plan.pro'), title: translate('model.paid') },
+        ]}
+      />
 
       {local ? <InstalledEvidenceSummary descriptor={local.descriptor} /> : null}
 
-      {/* Характеристики */}
-      <div className="mb-2 flex flex-wrap items-center gap-1">
-        {local?.contextLimit.state === 'declared' ? (
-          <Badge tone="outline" title={translate('context.limit.declared')}>
-            {translate('context.window.short')} {formatContextLength(local.contextLimit.value)}
-          </Badge>
-        ) : local ? (
-          <Badge tone="outline" title={translate('context.limit.unknown')}>
-            {translate('context.window.unknown')}
-          </Badge>
-        ) : model.contextLength !== null ? (
-          <Badge tone="outline" title={translate('model.context.declared')}>
-            {translate('model.context.short')} {formatContextLength(model.contextLength)}
-          </Badge>
-        ) : null}
-        {local ? (
-          <Badge tone="outline" title={translate('model.disk')}>
-            {formatBytes(local.sizeBytes)}
-          </Badge>
-        ) : (
-          catalog?.vramBytes !== null && (
-            <Badge tone="outline" title={translate('model.vendorMemory')}>
-              vram ~{formatBytes(catalog?.vramBytes)}
-            </Badge>
-          )
-        )}
-        {catalog?.requiredPlan === 'pro' && (
-          <Badge tone="accent" title={translate('model.paid')}>
-            pro
-          </Badge>
-        )}
-      </div>
-
-      {/* Возможности */}
-      {(primary.length > 0 || secondary.length > 0) && (
+      {/* Только заметные возможности; полный список — в профиле модели. */}
+      {primary.length > 0 && (
         <div className="mb-2.5 flex flex-wrap gap-1">
           {primary.map((capability) => (
-            <Badge key={capability} tone="accent" title={translate(CAPABILITY_LABEL[capability].hint)}>
-              {translate(CAPABILITY_LABEL[capability].short)}
-            </Badge>
-          ))}
-          {secondary.map((capability) => (
-            <Badge key={capability} tone="neutral" title={translate(CAPABILITY_LABEL[capability].hint)}>
+            <Badge key={capability} tone="outline" title={translate(CAPABILITY_LABEL[capability].hint)}>
               {translate(CAPABILITY_LABEL[capability].short)}
             </Badge>
           ))}
@@ -170,15 +143,9 @@ export const ModelCard = memo(function ModelCard({
           <div className="mb-2.5 flex-1">
             <FitIndicator fit={model.fit} compact />
           </div>
+          {/* Одно главное действие; профиль открывается по имени модели. */}
           <footer className="mt-auto">
           <div className="flex gap-1.5">
-            <Link
-              to={paths.model(model.name)}
-              onFocus={onFocusCard}
-              className="flex h-8 flex-1 items-center justify-center rounded-md border border-control bg-surface px-3 text-xs font-medium hover:bg-inset"
-            >
-              {translate('model.profile')}
-            </Link>
             <Link
               to={`${paths.chat()}?model=${encodeURIComponent(model.name)}${selectedContextLength === undefined ? '' : `&numCtx=${selectedContextLength}`}`}
               onFocus={onFocusCard}
@@ -193,10 +160,6 @@ export const ModelCard = memo(function ModelCard({
     </article>
   )
 })
-
-function Dot() {
-  return <span className="text-control">·</span>
-}
 
 /** Кнопка «Установить» в карточке каталога, когда скачивание ещё не начато. */
 export function InstallButton({ onClick }: { onClick: () => void }) {

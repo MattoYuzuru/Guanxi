@@ -67,8 +67,9 @@ if (process.env['GUANXI_GATE_FIXTURES'] !== '1' && stories.length > 1) {
 /**
  * The phone story is rendered inside the catalog harness, whose cell reserves a 16 px gutter on
  * each side. Give only its synthetic host wrapper the width left by a 390 px viewport after those
- * gutters, then measure the real shell. This is deliberately not a CSS/jsdom assertion: it fails
- * in Chromium while the sidebar's 1 px glass border sits outside its 18 rem/100% content width.
+ * gutters, then measure the real shell. This is deliberately not a CSS/jsdom assertion. Since the
+ * phone visual pass the narrow shell keeps its navigation in a closed drawer: the sidebar has no
+ * box, main spans the shell edge to edge, and the strip offers the drawer toggle without keycaps.
  */
 const PHONE_VIEWPORT = { width: 390, height: 844 } as const
 const PHONE_RIGHT_GUTTER = 16
@@ -125,7 +126,11 @@ if (phoneStory) {
           host: rect(host),
           shell: rect(shell),
           bodyFlexDirection: getComputedStyle(body).flexDirection,
-          sidebar: rect(sidebar),
+          narrow: shell.hasAttribute('data-narrow'),
+          sidebarHidden: (sidebar as HTMLElement).hidden && (sidebar as HTMLElement).inert,
+          sidebarDisplay: getComputedStyle(sidebar).display,
+          drawerToggles: shell.querySelectorAll('[data-slot="app-shell-sidebar-header"] button[aria-expanded="false"]').length,
+          keycaps: shell.querySelectorAll('[data-slot="kbd"]').length,
           main: rect(main),
         }
       })
@@ -133,18 +138,17 @@ if (phoneStory) {
       expect(geometry.host.width, 'positive host width').toBeGreaterThan(0)
       expect(geometry.host.width).toBeCloseTo(availableWidth, 1)
       expect(geometry.shell.width).toBeCloseTo(geometry.host.width, 1)
-      // The bordered sidebar owns the whole shell width, so both its edges are the shell's.
-      expect(geometry.sidebar.left).toBeCloseTo(geometry.shell.left, 1)
-      expect(geometry.sidebar.right).toBeCloseTo(geometry.shell.right, 1)
-      expect(geometry.sidebar.width).toBeCloseTo(geometry.shell.width, 1)
-      expect(geometry.sidebar.left).toBeGreaterThanOrEqual(geometry.shell.left - 0.5)
-      expect(geometry.sidebar.right).toBeLessThanOrEqual(geometry.shell.right + 0.5)
-      expect(geometry.main.left).toBeGreaterThanOrEqual(geometry.shell.left - 0.5)
-      expect(geometry.main.right).toBeLessThanOrEqual(geometry.shell.right + 0.5)
-      // At the phone breakpoint the body is a column and the sidebar precedes main.
+      // The narrow shell: the drawer is closed, so the sidebar has no box and cannot take focus.
+      expect(geometry.narrow).toBe(true)
+      expect(geometry.sidebarHidden).toBe(true)
+      expect(geometry.sidebarDisplay).toBe('none')
+      expect(geometry.drawerToggles).toBe(1)
+      expect(geometry.keycaps).toBe(0)
+      // Main owns the whole shell width, so both its edges are the shell's.
       expect(geometry.bodyFlexDirection).toBe('column')
-      expect(geometry.main.left).toBeCloseTo(geometry.sidebar.left, 1)
-      expect(geometry.main.top).toBeGreaterThanOrEqual(geometry.sidebar.bottom - 0.5)
+      expect(geometry.main.left).toBeCloseTo(geometry.shell.left, 1)
+      expect(geometry.main.right).toBeCloseTo(geometry.shell.right, 1)
+      expect(geometry.main.width).toBeCloseTo(geometry.shell.width, 1)
     })
   }
 }

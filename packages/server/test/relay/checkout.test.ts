@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import fsPromises, { chmod, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import { test } from 'node:test'
@@ -111,6 +112,32 @@ test('a removal that fails is cleanup_unconfirmed and the allocation is retained
   assert.ok((await lstat(dirname(owned.root))).isDirectory(), 'the evidence of failure is the retained directory')
   failing = false
   await owned.close()
+  await assert.rejects(lstat(dirname(owned.root)), { code: 'ENOENT' })
+})
+
+test('cleanup accepts a child removed between fallback metadata and directory traversal, and still proves the allocation gone', async t => {
+  let removals = 0
+  const f = await fixture(t, { remove: async path => {
+    if (++removals === 1) throw Object.assign(new Error('synthetic first removal failure'), { code: 'EACCES' })
+    await rm(path, { recursive: true, force: true })
+  } })
+  const owned = await f.allocator.allocate(f.policy(), new AbortController().signal)
+  const vanishing = join(owned.root, 'vanishing')
+  await mkdir(vanishing)
+  const original = fsPromises.opendir
+  let removedBetweenOperations = false
+  const mocked = t.mock.method(fsPromises, 'opendir', async (path: Parameters<typeof original>[0], options?: Parameters<typeof original>[1]) => {
+    if (path === vanishing) {
+      await rm(vanishing, { recursive: true })
+      removedBetweenOperations = true
+    }
+    return original(path, options)
+  })
+  syncBuiltinESMExports()
+  try { await owned.close() }
+  finally { mocked.mock.restore(); syncBuiltinESMExports() }
+  assert.equal(removedBetweenOperations, true, 'the fixture exercised disappearance after lstat')
+  assert.equal(removals, 2)
   await assert.rejects(lstat(dirname(owned.root)), { code: 'ENOENT' })
 })
 

@@ -9,8 +9,8 @@ const session = (sessionId: string, title: string, state: SessionPageItem['execu
   execution: state, navigation: { kind: 'inspector', sessionId },
 })
 const props = (): ShellSidebarProps => ({ rail: false, location: '/', sessions: [], pinned: [], unseen: new Set<string>(), loading: false,
-  loadingMore: false, error: false, omitted: false, observedAt: null, hasMore: false,
-  onLoadMore: vi.fn(), onRefresh: vi.fn(), onPin: vi.fn() })
+  loadingMore: false, error: false, omitted: false, hasMore: false,
+  onLoadMore: vi.fn(), onPin: vi.fn() })
 
 describe('shell navigation and session presentation', () => {
   it('keeps all four core destinations accessible in the rail', () => {
@@ -44,20 +44,33 @@ describe('shell navigation and session presentation', () => {
     expect(within(sessions).getAllByRole('link')).toHaveLength(2)
     expect(within(sessions).getAllByRole('link', { name: 'First' })).toHaveLength(1)
     expect(within(screen.getByRole('region', { name: 'Pinned' })).getByRole('link', { name: 'First' })).toBeTruthy()
-    expect(within(sessions).getByText('No current data')).toBeTruthy()
-    expect(within(sessions).getByText('Waiting for you')).toBeTruthy()
-    expect(within(sessions).getByText(/Saved run state .* observed/)).toBeTruthy()
+    // Status and provenance are each row's description (D-202: less visible text), unknown is not zero.
+    const first = within(sessions).getByRole('link', { name: 'First' })
+    expect(document.getElementById(first.getAttribute('aria-describedby')!)?.textContent).toBe('No current data')
+    const second = within(sessions).getByRole('link', { name: 'Second' })
+    const description = document.getElementById(second.getAttribute('aria-describedby')!)?.textContent ?? ''
+    expect(description).toMatch(/^Waiting for you Saved run state, observed at .+\.$/u)
+    expect(second.querySelector('.shell-status-dot')?.getAttribute('data-status')).toBe('waiting')
+    expect(sessions.textContent).not.toContain('·')
     expect(within(sessions).getByText('Some pinned sessions are outside the loaded pages.')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Unpin First' }))
+    // A toggle states its state once (P3): one name, pressed for the pinned row, not a changing label too.
+    const pins = screen.getAllByRole('button', { name: /^Pin / })
+    expect(pins.map(button => [button.getAttribute('aria-label'), button.getAttribute('aria-pressed')]))
+      .toEqual([['Pin First', 'true'], ['Pin Second', 'false']])
+    expect(screen.queryAllByRole('button', { name: /^Unpin / })).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Pin First', pressed: true }))
     expect(values.onPin).toHaveBeenCalledExactlyOnceWith('s1')
     fireEvent.click(screen.getByRole('button', { name: 'Load more sessions' }))
     expect(values.onLoadMore).toHaveBeenCalledTimes(1)
     expect(sessions.textContent).not.toContain('0 sessions')
   })
-  it('shows errors and incomplete history instead of falsely claiming an empty list', () => {
+  it('shows errors and incomplete history instead of falsely claiming an empty list, with no Refresh button', () => {
     setActiveLocale('en')
     render(<ShellSidebar {...props()} error omitted />)
-    expect(screen.getByRole('alert').textContent).toContain('Sessions could not be refreshed')
+    // D-203: the list recovers by itself; the sidebar says so and offers no manual reload.
+    expect(screen.getByRole('status').textContent).toBe('Waiting for the node. The list appears as soon as it answers.')
+    expect(screen.queryAllByRole('button', { name: /refresh|retry/iu })).toHaveLength(0)
+    expect(screen.queryAllByText(/fetched/iu)).toHaveLength(0)
     expect(screen.getByText('Some sessions are temporarily unavailable.')).toBeTruthy()
     expect(screen.queryByText('No sessions yet. Start a new session.')).toBeNull()
   })

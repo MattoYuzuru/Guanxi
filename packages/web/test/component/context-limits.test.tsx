@@ -2,12 +2,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Health, LocalModel, ModelDetail, Settings } from '@guanxi/contract'
 import { legacyInstalledModelDescriptor } from '@guanxi/contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { applySettingsPatch } from '../helpers/settings.ts'
 import { LauncherPage } from '../../src/features/launcher/LauncherPage.tsx'
 import { ModelPage } from '../../src/features/models/ModelPage.tsx'
 import { SettingsPage } from '../../src/features/settings/SettingsPage.tsx'
 import { api } from '../../src/lib/api.ts'
 import { LocaleProvider } from '../../src/lib/locale-context.tsx'
 import { ThemeProvider } from '../../src/lib/theme.tsx'
+import { factPairs } from '../helpers/facts.ts'
 
 const CUSTOM_CONTEXT = 1_048_577
 const OBSERVED_AT = '2026-08-03T00:00:00.000Z'
@@ -17,7 +19,7 @@ const HEALTH: Health = {
   appVersion: 'test',
   application: { state: 'reachable', source: 'application_http', observedAt: OBSERVED_AT },
   ollama: {
-    installed: true, running: true, state: 'reachable', source: 'ollama_api_version',
+    installed: true, installSource: 'runtime_response', running: true, state: 'reachable', source: 'ollama_api_version',
     observedAt: OBSERVED_AT, version: '0.12.6', host: 'http://fixture.invalid', installHint: null,
   },
   hardware: {
@@ -90,9 +92,7 @@ describe('no-artificial-context-cap UI', () => {
   it('saves and reloads an exact Settings value above the retired ceiling', async () => {
     vi.spyOn(api, 'getSettings').mockResolvedValue(SETTINGS)
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [local()] })
-    const update = vi.spyOn(api, 'updateSettings').mockImplementation(async (patch) => ({
-      ...SETTINGS, ...patch, defaultNumCtx: patch.defaultNumCtx ?? SETTINGS.defaultNumCtx,
-    }))
+    const update = vi.spyOn(api, 'updateSettings').mockImplementation(async (patch) => applySettingsPatch(SETTINGS, patch))
     installMatchMedia()
     render(
       <LocaleProvider>
@@ -136,7 +136,7 @@ describe('no-artificial-context-cap UI', () => {
     fireEvent.change(input, { target: { value: String(CUSTOM_CONTEXT) } })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(getModel).toHaveBeenLastCalledWith('fixture:latest', CUSTOM_CONTEXT, expect.any(AbortSignal)))
-    expect(view.container.textContent).toContain('Объявленный provider максимум: 1.9M')
-    expect(screen.getAllByText(/окно 1M/).length).toBeGreaterThan(0)
+    expect(factPairs(view.container)).toContainEqual(['Объявленный provider максимум', '1.9M'])
+    expect(factPairs(view.container)).toContainEqual(['Окно контекста', '1M'])
   })
 })

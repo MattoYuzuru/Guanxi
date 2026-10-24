@@ -113,7 +113,7 @@ test('EmptyState has one sentence and one named action with exact pointer and ke
   await expect(page.getByTestId('empty-actions')).toHaveText('3')
 })
 
-test('ErrorState keyboard disclosure, actual clipboard, current feedback and retry busy guard', async ({ page, context }) => {
+test('ErrorState keyboard disclosure, actual clipboard, current feedback and action busy guard', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await open(page)
   const error = page.getByRole('alert')
@@ -134,9 +134,9 @@ test('ErrorState keyboard disclosure, actual clipboard, current feedback and ret
   await expect(error.getByRole('status')).toHaveText('')
   await copy.click()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('source=fixture-geometry\nstatus=502')
-  const retry = error.getByRole('button', { name: 'Retry', exact: true })
+  const retry = error.getByRole('button', { name: 'Start Ollama', exact: true })
   await retry.click()
-  const busy = error.getByRole('button', { name: 'Retrying…', exact: true })
+  const busy = error.getByRole('button', { name: 'Starting Ollama…', exact: true })
   await expect(busy).toHaveAttribute('aria-busy', 'true')
   await busy.focus()
   await page.keyboard.press('Enter')

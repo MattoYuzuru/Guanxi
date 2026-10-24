@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 import { PROJECT_PRESENTATION_VERSION, SESSION_ROUTES } from '@guanxi/contract'
 import { SHELL_PREFERENCES_KEY } from '../../src/features/shell/preferences.ts'
 import { browserSettings, runtimeBrowserSnapshot } from './fixtures/runtime-snapshot.ts'
-import { choosePaletteCommand } from './fixtures/shell-navigation.ts'
+import { choosePaletteCommand, closeNavigation, openNavigation } from './fixtures/shell-navigation.ts'
 
 const observedAt = '2026-10-22T12:00:00.000Z'
 const health = {
@@ -158,8 +158,15 @@ test('mounts one shell and one slot around actual chat, workspace and non-chat r
   expect(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link').evaluateAll(
     links => links.map(link => link.getAttribute('href')),
   )).toEqual(['/agent', '/projects', '/', '/settings'])
-  await expect(page.getByText('No current data', { exact: true })).toHaveCount(4)
-  await expect(page.getByText(/Local hardware observation · .* · observed/u)).toBeVisible()
+  // D-202/D-204: icon status items, no mode chips, no runtime bar. Items with no source on the node
+  // (quota, keep-awake, power) are not shown rather than as permanent Unknown icons (P3).
+  await expect(page.getByRole('button', { name: /: Unknown$/u })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^(Quota|Keep awake|Power)\b/u })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^(Developer|Visual)$/u })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Runtime and resources' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'This device' }).click()
+  await expect(page.getByRole('dialog').getByText(/^Local hardware probe, observed at .+\.$/u)).toBeVisible()
+  await page.keyboard.press('Escape')
 
   await choosePaletteCommand(page, 'Session workspace')
   await expect(page).toHaveURL(/\/workspace$/u)
@@ -226,7 +233,7 @@ test('move, rail, hide and show preserve route content, focus and stored geometr
   await expect(heading).toHaveAttribute('data-shell-route-identity', 'original')
 
   await page.getByRole('button', { name: 'Show sidebar' }).click()
-  await expect(page.getByRole('button', { name: 'Navigation sidebar' })).toBeFocused()
+  await expect(page.locator(shellSidebar)).toBeFocused()
   await expect(page.locator(shellSidebar)).toHaveAttribute('data-visibility', 'expanded')
   await expect(heading).toHaveAttribute('data-shell-route-identity', 'original')
   expect(await page.locator('main').count()).toBe(1)
@@ -283,7 +290,7 @@ test('Ctrl/Meta+K has one handler, one action and reveals secondary routes while
   expect(await page.locator(sidebarSlot).count()).toBe(1)
 })
 
-test('health loading, failure and Retry stay usable before the shell mounts', async ({ page }) => {
+test('health loading and failure come before the shell, and the failure recovers by itself (D-203)', async ({ page }) => {
   const fixture = createFixture()
   fixture.health = 'hold'
   await installShellApi(page, fixture)
@@ -296,8 +303,11 @@ test('health loading, failure and Retry stay usable before the shell mounts', as
   await expect(page.getByRole('heading', { name: 'The Guanxi server is not responding' })).toBeVisible()
   expect(await page.getByRole('navigation', { name: 'Main navigation' }).count()).toBe(0)
 
+  await expect(page.getByRole('button', { name: /Check again|Retry/u })).toHaveCount(0)
+  await expect(page.getByText('Guanxi reconnects by itself as soon as the server answers.')).toBeVisible()
   fixture.health = 'ok'
-  await page.getByRole('button', { name: 'Check again' }).click()
+  // Regaining focus reads again at once (the backoff timer would too, later).
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
   await expectEmptySessionList(page)
   expect(await page.locator('main').count()).toBe(1)
@@ -352,6 +362,9 @@ for (const locale of ['en', 'ru'] as const) {
     const navigation = page.getByRole('navigation', {
       name: locale === 'en' ? 'Main navigation' : 'Главная навигация',
     })
+    // On a phone the navigation is a drawer (visual pass, item 4): closed until asked for.
+    await expect(navigation).toHaveCount(0)
+    await openNavigation(page)
     await expect(navigation).toBeVisible()
     await expectEmptySessionList(page, locale)
     expect(await navigation.getByRole('link').count()).toBe(4)
@@ -382,5 +395,77 @@ for (const locale of ['en', 'ru'] as const) {
     expect(layout.main.right).toBeLessThanOrEqual(layout.viewport)
     expect(layout.reducedMotion).toBe(true)
     await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'))
+    await closeNavigation(page)
+    await expect(navigation).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 }
+
+/* D-206 graphics tiers: static by default, Max graphics opt-in, never under reduced motion. */
+async function enableMaxGraphics(page: Page) {
+  await page.getByRole('button', { name: 'Customise' }).click()
+  const popover = page.getByTestId('shell-customise')
+  await popover.getByRole('switch', { name: 'Max graphics' }).click()
+  await expect(popover.getByRole('switch', { name: 'Max graphics' })).toBeChecked()
+  await page.keyboard.press('Escape')
+}
+
+test('static is the default: no canvas, opaque chrome', async ({ page }) => {
+  await installShellApi(page, createFixture())
+  await page.goto('/agent')
+  await expect(page.getByRole('navigation', { name: 'Main navigation' })).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('data-graphics', 'static')
+  await expect(page.getByTestId('max-graphics')).toHaveCount(0)
+  await expect(page.locator('html')).not.toHaveAttribute('data-graphics-active', '')
+})
+
+test.describe('with motion allowed', () => {
+  test.use({ contextOptions: { reducedMotion: 'no-preference' } })
+  test('Max graphics adds one non-interactive canvas behind the chrome, and the panes stay opaque', async ({ page }) => {
+    await installShellApi(page, createFixture())
+    await page.goto('/agent')
+    await enableMaxGraphics(page)
+    await expect(page.locator('html')).toHaveAttribute('data-graphics', 'max')
+    const webgl = await page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl')))
+    // Reported as skipped, never as passed, where the browser build has no WebGL.
+    test.skip(!webgl, 'WebGL is unavailable in this browser build')
+    const canvas = page.getByTestId('max-graphics')
+    await expect(canvas).toHaveCount(1)
+    await expect(page.locator('html')).toHaveAttribute('data-graphics-active', '')
+    expect(await canvas.evaluate(element => getComputedStyle(element).pointerEvents)).toBe('none')
+    expect(await canvas.getAttribute('aria-hidden')).toBe('true')
+    const main = page.locator('[data-slot="app-shell-main"]')
+    const background = await main.evaluate(element => getComputedStyle(element).backgroundColor)
+    expect(background).not.toMatch(/rgba\(.*, 0\)|transparent/u)
+    // The preference persists across a reload.
+    await page.reload()
+    await expect(page.getByTestId('max-graphics')).toHaveCount(1)
+  })
+})
+
+test('without WebGL no canvas is left behind and the chrome stays opaque', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type === 'webgl' ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest)
+    } as typeof original
+  })
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await installShellApi(page, createFixture())
+  await page.goto('/agent')
+  await enableMaxGraphics(page)
+  await expect(page.locator('html')).toHaveAttribute('data-graphics', 'max')
+  await expect(page.getByTestId('max-graphics')).toHaveCount(0)
+  await expect(page.locator('html')).not.toHaveAttribute('data-graphics-active', '')
+})
+
+test('reduced motion keeps the static design even with Max graphics on', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await installShellApi(page, createFixture())
+  await page.goto('/agent')
+  expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true)
+  await enableMaxGraphics(page)
+  await expect(page.locator('html')).toHaveAttribute('data-graphics', 'max')
+  await expect(page.getByTestId('max-graphics')).toHaveCount(0)
+  await expect(page.locator('html')).not.toHaveAttribute('data-graphics-active', '')
+})

@@ -7,8 +7,9 @@ import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
 import { CodexClient } from './codex.ts'
-import { canonicalExecutable, isolatedEnvironment, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
+import { canonicalExecutable, isolatedEnvironment, configDirectoryFor, AgentProcess, startClaudeAuthStatus, probeOrphanGroup, killOrphanGroup, processMayBeAlive, readBootId,
   type ClaudeAuthProbe, type ProcessCleanup } from './process.ts'
+import { vendorSettingsPresent } from './settings-guard.ts'
 import { ExternalStore } from './store.ts'
 import { ADAPTERS, API_ENV } from './profiles.ts'
 import { admissionPolicyDigest } from './admission.ts'
@@ -25,8 +26,11 @@ const installationSchema = z.object({
   adapter: z.enum(['claude-code', 'copilot', 'gemini-cli', 'opencode', 'goose', 'codex']), connectionId: z.string().uuid(),
   ownerAccountId: z.string().min(1), nodeId: z.string().min(1), billingAccount: z.string().min(1),
   executable: z.string().min(1), version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$/),
-  claudeExecutable: z.string().optional(), claudeBare: z.boolean().optional(), concurrency: z.number().int().positive().optional(),
-}).strict()
+  claudeExecutable: z.string().optional(), claudeBare: z.boolean().optional(),
+  claudeEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(), concurrency: z.number().int().positive().optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.claudeEffort !== undefined && value.adapter !== 'claude-code') ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['claudeEffort'], message: 'claude_only' })
+})
 
 function combineCleanup(outcomes: readonly ProcessCleanup[]): ProcessCleanup {
   return outcomes.find(outcome => !outcome.confirmed) ?? outcomes[0] ?? { confirmed: true, reason: 'no_child' }
@@ -208,11 +212,19 @@ export class ExternalAgents {
     const install = this.installation(owner, connectionId)
     return this.track(async () => {
       if (!['claude-code', 'codex', 'copilot'].includes(install.adapter)) throw new ExternalAgentError('api_or_local_required')
+      // An API-key connection signs in nowhere: the key comes from the K3 vault at launch.
+      const stored = this.connections.store.get(owner, connectionId)
+      if (stored.auth === 'api_key' || stored.secretRef) throw new ExternalAgentError('api_or_local_required')
       const config = await isolatedEnvironment(this.root, install)
       const executable = await canonicalExecutable(install.adapter === 'claude-code' ? install.claudeExecutable ?? '' : install.executable)
       return this.scrubber.scrub({ nodeId: this.policy.nodeId, executable, args: install.adapter === 'claude-code' ? ['auth', 'login'] : install.adapter === 'codex' ? ['login'] : [],
         interaction: install.adapter === 'copilot' ? '/login' : null, environment: config.env })
     })
+  }
+  /** Where this installation's private CLI directory is (a path only): what to clean when `claude_settings_present` refuses a launch. */
+  configDirectory(owner: string, actor: string, connectionId: string) {
+    this.assertOwner(owner, actor)
+    return configDirectoryFor(this.root, this.installation(owner, connectionId))
   }
   limits(owner: string, connectionId: string, now = Date.now()) {
     const install = this.installation(owner, connectionId)
@@ -252,8 +264,33 @@ export class ExternalAgents {
       value, source: `${install.adapter}@${install.version}:${source}`, observedAt: new Date().toISOString(), confidence: value === null ? 'unknown' : confidence,
     } })
   }
+  /** Whether a Claude Code launch is paid by an Anthropic API key (a K3 `model_api` connection) instead of the owner's subscription. */
+  private claudeApiKeyMode(install: AgentInstallation, row: Connection) {
+    return install.adapter === 'claude-code' && row.auth === 'api_key'
+  }
+  /** D-212: a Claude Code connection that holds the owner's subscription token (`claude setup-token`). K3 hands it over only to K5. */
+  private claudeTokenMode(install: AgentInstallation, row: Connection, key: string | undefined) {
+    return install.adapter === 'claude-code' && row.auth === 'cli_login' && key !== undefined
+  }
+  /** Either vault credential for Claude Code: the key is then in this launch's environment and the vendor's own files must not be able to redirect it. */
+  private claudeVaultMode(install: AgentInstallation, row: Connection, key: string | undefined) {
+    return this.claudeApiKeyMode(install, row) || this.claudeTokenMode(install, row, key)
+  }
   private payment(install: AgentInstallation, row: Connection, key: string | undefined, env: NodeJS.ProcessEnv, model: string) {
-    if (['claude-code', 'codex', 'copilot'].includes(install.adapter)) {
+    if (this.claudeTokenMode(install, row, key)) {
+      if (row.kind !== 'agent' || row.provider !== 'claude-code') throw new ExternalAgentError('subscription_connection_required')
+      env.CLAUDE_CODE_OAUTH_TOKEN = key
+      env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'
+    } else if (this.claudeApiKeyMode(install, row)) {
+      // The one place the key enters a child: its launch environment. K3 already refused a non-`sk-ant-api` key (an OAuth token
+      // would silently switch the SDK to subscription bearer auth) and registered the value with the scrubber.
+      if (row.kind !== 'model_api' || row.provider !== 'anthropic' || row.baseUrl) throw new ExternalAgentError('claude_api_connection_required')
+      if (!key) throw new ExternalAgentError('claude_api_key_required')
+      env.ANTHROPIC_API_KEY = key
+      // Observed with CLI 2.1.287 and no network: with this variable the CLI starts its MCP stdio subprocesses without ANTHROPIC_API_KEY (and
+      // without CLAUDE_CONFIG_DIR), and the ACP bridge 0.94.0 still initialises and opens a session. Only the CLI process itself holds the key.
+      env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'
+    } else if (['claude-code', 'codex', 'copilot'].includes(install.adapter)) {
       if (row.kind !== 'agent' || row.provider !== install.adapter || row.auth !== 'cli_login' || key) throw new ExternalAgentError('subscription_connection_required')
     } else {
       if (install.adapter === 'gemini-cli' && (row.provider !== 'google' || row.kind !== 'model_api' || !key)) throw new ExternalAgentError('gemini_api_key_required')
@@ -294,7 +331,10 @@ export class ExternalAgents {
     const resolved = this.resolve(input.ownerAccountId, input.projectId, input.role, input.sessionRoles)
     const binding = bindingSchema.parse(resolved.binding)
     const install = this.installation(input.ownerAccountId, binding.connectionId, binding.backend)
-    if (input.actorAccountId !== input.ownerAccountId && HOST_TOOL_ADAPTERS.has(install.adapter)) throw new ExternalAgentError('host_tools_owner_only')
+    // Claude Code runs host tools whoever pays for it: with an API key it joins the API-key adapters above. On a subscription connection
+    // K3 refuses another author by itself (`Connection cannot pay`).
+    if (input.actorAccountId !== input.ownerAccountId && (HOST_TOOL_ADAPTERS.has(install.adapter) ||
+      this.claudeApiKeyMode(install, this.connections.store.get(input.ownerAccountId, binding.connectionId)))) throw new ExternalAgentError('host_tools_owner_only')
     if (typeof input.prompt !== 'string' || !input.prompt.trim()) throw new ExternalAgentError('empty_prompt')
     if (input.lead && (install.adapter === 'codex' || ADAPTERS[install.adapter].protocol !== 'acp-v1')) throw new ExternalAgentError('lead_adapter_unsupported')
     if (binding.params.temperature !== undefined || binding.params.maxTokens !== undefined ||
@@ -319,10 +359,16 @@ export class ExternalAgents {
         try {
           const executable = await canonicalExecutable(install.executable)
           this.assertActive(dispatchSignal)
-          // API agents never reuse a vendor login/config from an earlier invocation.
-          config = await isolatedEnvironment(this.root, row.auth === 'api_key' ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
+          // API agents never reuse a vendor login/config from an earlier invocation. Claude Code is the exception: a lead resumes
+          // its saved ACP session (`session/load`) from the transcripts in this directory. The key is never written there (it
+          // lives in the child's environment only), and the sign-in state of an earlier subscription is not used while the key is set.
+          const throwaway = row.auth === 'api_key' && install.adapter !== 'claude-code'
+          config = await isolatedEnvironment(this.root, throwaway ? { ...install, connectionId: `${install.connectionId}:${randomUUID()}` } : install)
           this.assertActive(dispatchSignal)
           this.payment(install, row, key, config.env, binding.model)
+          // Claude's own settings files can redirect a credential (`env.ANTHROPIC_BASE_URL`) or relax permissions; this directory is Guanxi's,
+          // so a file there is not the owner's. Existence only: nothing is opened.
+          if (this.claudeVaultMode(install, row, key) && await vendorSettingsPresent(config.configDirectory)) throw new ExternalAgentError('claude_settings_present')
           if (install.adapter === 'claude-code') {
             if (!install.claudeExecutable) throw new ExternalAgentError('claude_binary_required')
             const claude = await canonicalExecutable(install.claudeExecutable)
@@ -331,7 +377,7 @@ export class ExternalAgents {
             this.observeEffectiveBare(install)
             this.observe(install, 'bare', install.claudeBare ?? null, 'node_launch_policy', 'high')
             if (install.claudeBare) {
-              this.observe(install, 'billing', null, 'bare_does_not_read_subscription')
+              if (!this.claudeApiKeyMode(install, row)) this.observe(install, 'billing', null, 'bare_does_not_read_subscription')
               throw new ExternalAgentError('bare_subscription_unavailable')
             }
             this.assertActive(dispatchSignal)
@@ -341,10 +387,25 @@ export class ExternalAgents {
             if (!probeCleanup.confirmed) throw new ExternalAgentError('cleanup_unconfirmed')
             this.assertActive(dispatchSignal)
             if (!auth.ok) throw new ExternalAgentError('auth_status_unavailable')
-            this.observe(install, 'subscription_login', auth.status.loggedIn && auth.status.authMethod === 'claude.ai', 'claude_auth_status')
-            // Login is an observation, not proof of whether this request will be extra usage.
-            this.observe(install, 'billing', null, 'billing_not_reported')
-            if (!auth.status.loggedIn || auth.status.authMethod !== 'claude.ai') throw new ExternalAgentError('claude_login_required')
+            if (this.claudeTokenMode(install, row, key)) {
+              // The CLI prints `oauth_token` when only CLAUDE_CODE_OAUTH_TOKEN is set (2.1.287); an API key would win over it, and none is in this environment.
+              const tokened = auth.status.loggedIn && auth.status.authMethod === 'oauth_token'
+              this.observe(install, 'token_login', tokened, 'claude_auth_status')
+              this.observe(install, 'billing', tokened ? 'subscription' : null, tokened ? 'claude_code_oauth_token_connection' : 'token_not_in_effect', tokened ? 'high' : 'medium')
+              if (!tokened) throw new ExternalAgentError('claude_token_not_in_effect')
+            } else if (this.claudeApiKeyMode(install, row)) {
+              // Only the key this launch injected may satisfy the probe: any other method (a leftover login, a helper, a token)
+              // means the CLI would bill something else than the connection the owner chose.
+              const keyed = auth.status.loggedIn && auth.status.authMethod === 'api_key' && auth.status.apiKeySource === 'ANTHROPIC_API_KEY'
+              this.observe(install, 'api_key_login', keyed, 'claude_auth_status')
+              this.observe(install, 'billing', keyed ? 'api_usage' : null, keyed ? 'anthropic_api_key_connection' : 'api_key_not_in_effect', keyed ? 'high' : 'medium')
+              if (!keyed) throw new ExternalAgentError('claude_api_key_not_in_effect')
+            } else {
+              this.observe(install, 'subscription_login', auth.status.loggedIn && auth.status.authMethod === 'claude.ai', 'claude_auth_status')
+              // Login is an observation, not proof of whether this request will be extra usage.
+              this.observe(install, 'billing', null, 'billing_not_reported')
+              if (!auth.status.loggedIn || auth.status.authMethod !== 'claude.ai') throw new ExternalAgentError('claude_login_required')
+            }
           }
           this.assertActive(dispatchSignal)
           handle = this.log.open(sessionId, { kind: 'agent' })
@@ -391,7 +452,11 @@ export class ExternalAgents {
               (item): { text: string; status: 'pending' | 'active' | 'verification_requested' } => ({ text: item.step,
                 status: item.status === 'completed' ? 'verification_requested' : item.status === 'inProgress' ? 'active' : 'pending' })) } }))
             : await client.prompt(binding.model, prompt, config.cwd, input.lead && { ...input.lead,
-              ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) })
+              ...(input.lead.seededPrompt === undefined ? {} : { seededPrompt: this.scrubber.scrub(input.lead.seededPrompt) }) },
+            { ...(install.claudeEffort === undefined ? {} : { effort: install.claudeEffort,
+              // What the agent was actually asked or found, as a fact with its source: a loaded session that reports no options keeps its own effort.
+              onEffort: (state: 'applied' | 'current' | 'kept_by_loaded_session') => this.observe(install, 'effort', state === 'kept_by_loaded_session' ? null : install.claudeEffort!,
+                state === 'applied' ? 'acp_set_config_option' : state === 'current' ? 'acp_session_option_current' : 'loaded_session_options_not_reported', state === 'kept_by_loaded_session' ? 'low' : 'high') }), ...(this.claudeVaultMode(install, row, key) ? { pin: true } : {}) })
           dispatchSignal.throwIfAborted()
           const safe = this.scrubber.scrub(output)
           handle.append({ type: 'assistant.message', data: { messageId, step: 0, text: safe.text } })
@@ -417,7 +482,7 @@ export class ExternalAgents {
             finalCode = this.finishHolder(holder, cleanup)
           } catch { finalCode = 'admission_release_failed' } finally {
             // API-key directories are throwaway; subscription config directories persist for sign-in.
-            if (config && row.auth === 'api_key') await rm(config.configDirectory, { recursive: true, force: true }).catch(() => undefined)
+            if (config && row.auth === 'api_key' && install.adapter !== 'claude-code') await rm(config.configDirectory, { recursive: true, force: true }).catch(() => undefined)
             handle?.close()
             const count = (this.active.get(group) ?? 1) - 1
             if (count > 0) this.active.set(group, count)

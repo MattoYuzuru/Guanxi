@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CatalogModel, Health, ListCatalogResponse } from '@guanxi/contract'
 import { useMemo, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -20,7 +20,7 @@ const HEALTH: Health = {
   ok: true, appVersion: 'test',
   application: { state: 'reachable', source: 'application_http', observedAt: AT },
   ollama: {
-    installed: true, running: true, state: 'reachable', source: 'ollama_api_version',
+    installed: true, installSource: 'runtime_response', running: true, state: 'reachable', source: 'ollama_api_version',
     observedAt: AT, version: '0.12.6', host: 'http://fixture.invalid', installHint: null,
   },
   hardware: {
@@ -152,7 +152,7 @@ describe('catalog query transport and filter projection', () => {
       signal: AbortSignal
       resolve: (value: ListCatalogResponse) => void
     }> = []
-    vi.spyOn(api, 'listCatalog').mockImplementation((params, signal) =>
+    vi.spyOn(api, 'listCatalog').mockImplementation((params = {}, signal) =>
       new Promise((resolve) => requests.push({ q: params.q, signal: signal!, resolve })),
     )
     render(<LauncherPage health={HEALTH} />)
@@ -168,14 +168,15 @@ describe('catalog query transport and filter projection', () => {
     expect(screen.queryByRole('button', { name: 'Добавить к сравнению fixture:a' })).toBeNull()
   })
 
-  it('distinguishes transport error/retry and filtered empty clear without resource actions', async () => {
+  it('distinguishes a transport error that recovers by itself and filtered empty clear without resource actions', async () => {
     vi.spyOn(api, 'listModels').mockResolvedValue({ models: [] })
     const catalogApi = vi.spyOn(api, 'listCatalog')
       .mockRejectedValueOnce(new Error('safe catalog failure'))
       .mockResolvedValue(EMPTY_RESPONSE)
     render(<LauncherPage health={HEALTH} />)
     expect(await screen.findByText('Каталог недоступен')).toBeTruthy()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Повторить' }).at(-1)!)
+    expect(screen.queryAllByRole('button', { name: /^(Повторить|Обновить)$/u })).toHaveLength(0)
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
     expect(await screen.findByText('Каталог пуст')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Поиск по каталогу моделей'), { target: { value: 'absent' } })
     expect(await screen.findByText('Нет подходящих точных вариантов')).toBeTruthy()

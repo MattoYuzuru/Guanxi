@@ -94,10 +94,10 @@ test('failed partial response and stop reason remain truthful after reload', asy
     }
 
     window.fetch = async (input, init) => {
-      const rawUrl = typeof input === 'string' ? input : input.url
+      const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const url = new URL(rawUrl, window.location.origin)
       const method =
-        (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
+        (init?.method ?? (input instanceof Request ? input.method : undefined) ?? 'GET').toUpperCase()
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), {
           status: 200,
@@ -221,10 +221,10 @@ test('live partial output remains visible when terminal history cannot be reload
     })
 
     window.fetch = async (input, init) => {
-      const rawUrl = typeof input === 'string' ? input : input.url
+      const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const url = new URL(rawUrl, window.location.origin)
       const method =
-        (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
+        (init?.method ?? (input instanceof Request ? input.method : undefined) ?? 'GET').toUpperCase()
 
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)
@@ -414,10 +414,10 @@ test('explicit Stop reloads the persisted cancelled partial outcome', async ({ p
     })
 
     window.fetch = async (input, init) => {
-      const rawUrl = typeof input === 'string' ? input : input.url
+      const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       const url = new URL(rawUrl, window.location.origin)
       const method =
-        (init?.method ?? (typeof input === 'string' ? undefined : input.method) ?? 'GET').toUpperCase()
+        (init?.method ?? (input instanceof Request ? input.method : undefined) ?? 'GET').toUpperCase()
 
       if (url.pathname === '/api/health') return json(health)
       if (url.pathname === '/api/settings') return json(settings)

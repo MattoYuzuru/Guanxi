@@ -13,7 +13,7 @@
   gap: var(--spacing-4);
   /* Tabs wrap rather than scroll, so nothing clips the focus ring outside a tab. */
   flex-wrap: wrap;
-  border-bottom: var(--border-width-regular) solid var(--color-border-primary);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
 }
 
 .gx-tabs-tab {
@@ -27,7 +27,7 @@
   @apply border-b-2;
   border-bottom-style: solid;
   border-bottom-color: transparent;
-  border-radius: var(--border-radius-inline) var(--border-radius-inline) 0 0;
+  border-radius: 0;
   background-color: transparent;
   color: var(--color-text-secondary);
   font-family: inherit;
@@ -42,12 +42,13 @@
 
 .gx-tabs-tab:hover:not([data-disabled]),
 [data-gx-force~='hover'] .gx-tabs-tab:not([data-disabled]) {
-  background-color: var(--color-background-hover);
+  border-bottom-color: var(--color-border-primary);
   color: var(--color-text-primary);
 }
 
-.gx-tabs-tab[data-active] {
-  border-bottom-color: var(--color-border-accent);
+.gx-tabs-tab[data-active],
+.gx-tabs-tab[data-active]:hover {
+  border-bottom-color: var(--color-text-primary);
   color: var(--color-text-primary);
 }
 

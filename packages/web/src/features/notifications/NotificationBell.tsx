@@ -1,3 +1,4 @@
+import { Icon, IconButton } from '@guanxi/ui'
 import { useEffect, useRef, useState } from 'react'
 import { formatDateTime } from '../../lib/format.ts'
 import { translate as t } from '../../lib/locale.ts'
@@ -8,14 +9,15 @@ import { useInboxSnapshot, useOptionalInboxStore } from './NotificationsProvider
 import { pluralText } from './model.ts'
 
 /**
- * The status-strip inbox entry: a link to the notification center with the unread count and a
- * polite live region that announces arrivals. Without a provider, or before the first answer,
- * the count is unknown and says so; it is never shown as 0.
+ * The status-strip inbox entry (D-202): a tray icon that links to the notification center, with
+ * the unread count as a badge, the full count sentence as its name and tooltip, and a polite live
+ * region that announces arrivals. Without a provider, or before the first answer, the count is
+ * unknown and says so; it is never shown as 0.
  */
 export function NotificationBell() {
   useLocale()
   const store = useOptionalInboxStore()
-  if (store === null) return <span className="text-secondary">{t('shell.status.unknown')}</span>
+  if (store === null) return <IconButton label={`${t('notifications.navigation')}: ${t('shell.status.unknown')}`} icon={<Icon name="inbox" />} disabled />
   return <Bell store={store} />
 }
 
@@ -48,13 +50,14 @@ function Bell({ store }: { store: InboxStore }) {
     : visible
 
   return <>
-    <Link to={paths.notifications()} data-testid="notification-bell" data-unread={summary.loaded ? summary.count : undefined}
+    <IconButton data-testid="notification-bell" data-unread={summary.loaded ? summary.count : undefined}
+      label={`${t('notifications.navigation')}: ${shown}`} icon={<Icon name="inbox" />}
+      badge={summary.loaded && summary.count > 0 ? summary.count : summary.loaded && summary.failure !== null ? true : undefined}
+      badgeTone={summary.loaded && summary.failure !== null && summary.count === 0 ? 'warning' : 'accent'}
       aria-current={route.name === 'notifications' ? 'page' : undefined}
-      className="inline-flex min-h-8 min-w-0 flex-wrap items-center gap-1 rounded-control px-2 py-1 text-12 hover:bg-inset focus-visible:outline-focus">
-      <span className="sr-only">{t('notifications.navigation')}: </span>
-      {summary.loaded && summary.count > 0 && <span aria-hidden="true">●</span>}
-      <span data-testid="notification-bell-count" className={summary.count > 0 ? 'font-heading' : undefined}>{shown}</span>
-    </Link>
+      nativeButton={false} render={<Link to={paths.notifications()} />} />
+    {/* Test hook only: the link's own name already says this, so it is hidden from assistive technology. */}
+    <span data-testid="notification-bell-count" className="sr-only" aria-hidden="true">{shown}</span>
     <span role="status" aria-live="polite" aria-atomic="true" data-testid="notification-live" className="sr-only">{announcement}</span>
   </>
 }

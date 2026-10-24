@@ -8,9 +8,12 @@ description: Build or change Guanxi user interface with the design system — we
 You are building UI that many agents change in parallel. Consistency comes from one design
 system and checks that fail, not from taste. Read before writing JSX:
 
-- `docs/design/PRINCIPLES.md` — sixteen principles, each with how to tell it is broken.
-- `docs/design/FOUNDATIONS.md` — tokens: colour, type (IBM Plex), spacing, radius, glass,
-  motion, icons, density.
+- `docs/design/PRINCIPLES.md` — seventeen principles, each with how to tell it is broken.
+- `docs/design/FOUNDATIONS.md` — tokens: colour (palette swaps are token-only, D-201), type
+  (IBM Plex), spacing, radius, elevation, glass, motion, icons (the `Icon` registry), density,
+  graphics tiers.
+- `docs/design/research/2026-10-23-redesign.md` — the D-200–D-207 direction: white panes on the
+  chrome, icon status items, no Retry or visible polling, one interface, the composer layout.
 - `docs/design/LAYOUT_AND_SCREENS.md` — zones, blocks, modes, screens, the state vocabulary.
 - `docs/design/COMPONENTS_AND_CATALOG.md` — component levels, catalog, approvals, gates.
 - `docs/design/BRAND.md` — logo rules, voice and tone, copy rules.
@@ -40,8 +43,13 @@ lands, the commands below are mandatory.
 - **Tokens only.** Semantic utilities and variables (`bg-surface`, `text-muted`,
   `border-control`, `gap-2`); no palette classes, hex values, arbitrary values or raw durations.
   If no token fits, stop and propose one in the hand-off; do not invent it.
-- **Glass only on floating layers** (sidebar, title strip, dock lanes, composer, menus, popovers,
-  toasts); reading surfaces stay opaque; never glass on glass.
+- **Glass only on floating layers** (menus, popovers, toasts, dialogs); reading surfaces, panes
+  and the composer stay opaque; the sidebar and status strip sit directly on the chrome; never
+  glass on glass.
+- **Icons over prose** (D-202): status as `StatusItem`, actions as `IconButton` with a name and a
+  tooltip; values carry the weight; no decorative middle dots.
+- **Live data** (D-203): no Retry/Refresh buttons and no "updated N s ago" captions; use
+  `useAsync` (quiet revalidation, automatic recovery, structural sharing) or `useAutoRecover`.
 - **States.** Cover default, hover, focus-visible, active, disabled, loading, empty, error,
   offline, unknown and estimated where they apply; each declared state has a story.
 - **Provenance.** Every number shows its source and age; unknown renders as unknown, never `0`.
@@ -54,15 +62,21 @@ lands, the commands below are mandatory.
 - **Layout.** Blocks are slot contributions; never move another plugin's block; the navigation's
   four core entries always exist.
 - **Imports.** Only from `@guanxi/ui`; never from its internals, `@base-ui/react`, `lucide-react`
-  or `motion` directly.
+  or `motion` directly. Name icons through `Icon` (`<Icon name="inbox" />`).
 
 ## Verify
 
-1. `npm run ui:check` (fast gates) and, for visual changes, `npm run ui:check:browser`.
+1. During iteration, run `npm run ui:check`, focused component tests and affected stories.
+   Full browser/catalog gates run on the final ready PR per `docs/operations/ci.md`; do not
+   repeat them locally after each edit. A heavy local reproduction uses the shared lock.
 2. Update visual snapshots only inside the pinned Playwright Docker image (`npm run ui:snapshots`).
 3. Never edit generated token output; never set `approved` — only the owner approves, in the
    app, with a signed record.
 4. The ESLint suppression file must not grow.
+5. In component tests, settle an asynchronous mocked failure with `await act(async () =>
+   { /* render or interaction */ })` before sending synthetic focus/online recovery events.
+   Visible error DOM alone does not prove passive recovery listeners are installed. Keep
+   exact request/error assertions; do not hide ordering races with retries or longer timeouts.
 
 ## Hand-off
 

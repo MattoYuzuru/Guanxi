@@ -13,6 +13,7 @@ import { streamHuggingFaceImport } from '../../lib/api.ts'
 import { SseHttpError } from '../../lib/sse.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate, type LocaleKey } from '../../lib/locale.ts'
+import { FactList } from './Facts.tsx'
 
 type Phase = Extract<HuggingFaceImportStreamEvent, { type: 'state' }>['data']['phase']
 type ImportState =
@@ -347,15 +348,20 @@ function ImportTerminal({
       {state.kind === 'completed' ? (
         <div className="mt-2 min-w-0 text-2xs text-secondary">
           <p>{translate('hf.import.installed')}</p>
-          <p className="mt-1 min-w-0 break-all font-mono">
-            {state.provenance.installation.normalizedModelReference} · {state.provenance.installation.digest}
-          </p>
+          <FactList
+            className="mt-1"
+            facts={[
+              { label: translate('models.facts.reference'), value: state.provenance.installation.normalizedModelReference, mono: true },
+              { label: translate('models.facts.digest'), value: state.provenance.installation.digest, mono: true },
+            ]}
+          />
           <p className="mt-1">
             {translate('hf.import.runtimeVerified')}
           </p>
-          <p className="mt-1">
-            {translate('hf.import.runtimeVersion')} · {state.provenance.installation.runtimeVersion}
-          </p>
+          <FactList
+            className="mt-1"
+            facts={[{ label: translate('hf.import.runtimeVersion'), value: state.provenance.installation.runtimeVersion }]}
+          />
           <p className="mt-1">
             {translate('hf.import.observed')} {formatDateTime(state.provenance.installation.observedAt)}
           </p>
@@ -376,7 +382,7 @@ function ImportTerminal({
       )}
       {!success ? (
         <Button size="sm" variant="secondary" onClick={onRetry} className="mt-2 min-h-11 sm:min-h-0">
-          {translate('hf.import.retry')}
+          {translate('hf.import.action')}
         </Button>
       ) : null}
     </div>
@@ -387,21 +393,33 @@ function ProbeObservation({ probe }: { probe: CompletionProbeEvidence }) {
   return (
     <div className="mt-2 text-2xs text-muted">
       <p>{translate('hf.import.probeEvidence')}</p>
-      <p className="mt-1">
-        {translate(`models.probe.state.${probe.status}` as LocaleKey)} ·{' '}
-        {translate(`models.probe.reason.${probe.reason}` as LocaleKey)}
-      </p>
+      <FactList
+        className="mt-1"
+        facts={[
+          { label: translate('models.facts.state'), value: translate(`models.probe.state.${probe.status}` as LocaleKey) },
+          { label: translate('models.facts.reason'), value: translate(`models.probe.reason.${probe.reason}` as LocaleKey) },
+        ]}
+      />
       <p className="mt-1">{translate('models.probe.observed')} {formatDateTime(probe.observedAt)}</p>
     </div>
   )
 }
 
 function TargetObservation({ target }: { target: HuggingFaceImportTargetObservation }) {
+  if (target.state === 'exact') {
+    return (
+      <FactList
+        className="mt-1"
+        facts={[
+          { label: translate('models.facts.reference'), value: target.normalizedModelReference, mono: true },
+          { label: translate('models.facts.digest'), value: target.digest, mono: true },
+        ]}
+      />
+    )
+  }
   return (
     <p className="mt-1 min-w-0 break-all font-mono text-2xs text-muted">
-      {target.state === 'exact'
-        ? `${target.normalizedModelReference} · ${target.digest}`
-        : translate(`hf.import.target.${target.state}` as LocaleKey)}
+      {translate(`hf.import.target.${target.state}` as LocaleKey)}
     </p>
   )
 }

@@ -209,3 +209,12 @@ test('lane-local virtualenv documentation is excluded while repository links are
   assert.deepEqual(listMarkdownFiles(root), ['source.md'])
   assert.deepEqual(kinds(checkLinks({ root, files: listMarkdownFiles(root) })), ['missing-file@3'])
 })
+
+test('CI and browser failure artifacts do not turn diagnostics into repository documentation', t => {
+  const root = makeRoot(t)
+  write(root, 'README.md', '# Project\n\n[bad](missing.md)\n')
+  write(root, '.ci-results/catalog/error-context.md', '# Diagnostic\n\n[bad](missing.md)\n')
+  write(root, 'packages/web/test-results/failure/error-context.md', '# Diagnostic\n\n[bad](missing.md)\n')
+  assert.deepEqual(listMarkdownFiles(root), ['README.md'])
+  assert.deepEqual(kinds(checkLinks({ root, files: listMarkdownFiles(root) })), ['missing-file@3'])
+})
