@@ -148,7 +148,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:7ed72812d5250648caf4cfa29368659f82729e2a89725d76226359a9a4387a55",
+      "sourceHash": "sha256:55a366f12110ebbfa1232b568d43a57c5f02e16115f332c4813cfc48315d2469",
       "snapshotHashes": {
         "default-dark": "sha256:d8cb99f4a94a3e153145d578218821a6bb3f24a95a6fae3465e4760b3ea249f9",
         "default-light": "sha256:be9060a69277f0ab395f857a7195d8bf0b4226ee1e62861f63b03094631209d7",
@@ -445,13 +445,15 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 12,
+        "count": 14,
         "files": [
           "packages/web/src/components/ui.tsx",
+          "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
           "packages/web/src/features/notifications/NotificationsPage.tsx",
+          "packages/web/src/features/session/SessionPanelsMenu.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
@@ -777,7 +779,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:cc0f6e9dec69a849e562f7a35ad0bd87634ff8839d469470f2ae600c561ceb0a",
+      "sourceHash": "sha256:9833784df363f103350bfa0f1232f590a756ae7b1663ed7e8f8da75735fd3ff4",
       "snapshotHashes": {
         "disabled-dark": "sha256:cb6dd16311a3ed0064be82e697488ac86902c3e44835b3e4b8027cb29c5827a8",
         "disabled-light": "sha256:759b02da3b97895de2dfb9dcdc508049281e42099b130f5e7a604b99ce1b12fe",
@@ -965,8 +967,9 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 1,
+        "count": 2,
         "files": [
+          "packages/web/src/features/session/SessionPanelsMenu.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx"
         ]
       },
@@ -1216,7 +1219,7 @@
           },
           {
             "name": "name",
-            "type": "\"code\" | \"search\" | \"stop\" | \"info\" | \"warning\" | \"keyboard\" | \"enter\" | \"send\" | \"timer\" | \"show\" | \"hide\" | \"copy\" | \"speed\" | \"device-laptop\" | \"device-desktop\" | \"device-server\" | \"device-phone\" | \"memory-unified\" | \"memory-ram\" | \"memory-free-pages\" | \"storage\" | \"cpu\" | \"thermal\" | \"quota\" | \"keep-awake\" | \"sleep\" | \"power\" | \"power-off\" | \"battery-charging\" | \"battery-medium\" | \"battery-low\" | \"inbox\" | \"bell\" | \"runtime\" | \"relay\" | \"lease\" | \"hibernating\" | \"network\" | \"offline\" | \"cloud\" | \"cloud-off\" | \"theme-light\" | \"theme-dark\" | \"customise\" | \"command\" | \"sidebar\" | \"sidebar-right\" | \"density-compact\" | \"density-comfortable\" | \"layers\" | \"sparkles\" | \"new\" | \"projects\" | \"folder\" | \"models\" | \"settings\" | \"history\" | \"layout\" | \"attach\" | \"voice\" | \"permission-read\" | \"permission-full\" | \"permission-ok\" | \"lock\" | \"unlock\" | \"effort\" | \"trace\" | \"chat\" | \"agent\" | \"user\" | \"workflow\" | \"branch\" | \"file\" | \"terminal\" | \"package\" | \"globe\" | \"wand\" | \"clock\" | \"check\" | \"close\" | \"plus\" | \"external\" | \"more\" | \"pin\" | \"unpin\" | \"trash\" | \"pause\" | \"play\" | \"expand\" | \"collapse\" | \"chevron-down\" | \"chevron-right\" | \"arrow-down\" | \"unknown\" | \"error\"",
+            "type": "\"code\" | \"search\" | \"stop\" | \"info\" | \"warning\" | \"context\" | \"keyboard\" | \"enter\" | \"send\" | \"timer\" | \"show\" | \"hide\" | \"copy\" | \"move\" | \"reset\" | \"speed\" | \"device-laptop\" | \"device-desktop\" | \"device-server\" | \"device-phone\" | \"memory-unified\" | \"memory-ram\" | \"memory-free-pages\" | \"storage\" | \"cpu\" | \"thermal\" | \"quota\" | \"keep-awake\" | \"sleep\" | \"power\" | \"power-off\" | \"battery-charging\" | \"battery-medium\" | \"battery-low\" | \"inbox\" | \"bell\" | \"runtime\" | \"relay\" | \"lease\" | \"hibernating\" | \"network\" | \"offline\" | \"cloud\" | \"cloud-off\" | \"theme-light\" | \"theme-dark\" | \"customise\" | \"command\" | \"sidebar\" | \"sidebar-right\" | \"density-compact\" | \"density-comfortable\" | \"layers\" | \"sparkles\" | \"new\" | \"projects\" | \"folder\" | \"models\" | \"settings\" | \"history\" | \"layout\" | \"panels\" | \"artifacts\" | \"plan\" | \"processes\" | \"environment\" | \"changes\" | \"save\" | \"save-as\" | \"attach\" | \"voice\" | \"permission-read\" | \"permission-full\" | \"permission-ok\" | \"lock\" | \"unlock\" | \"effort\" | \"trace\" | \"chat\" | \"agent\" | \"user\" | \"workflow\" | \"branch\" | \"file\" | \"terminal\" | \"package\" | \"globe\" | \"wand\" | \"clock\" | \"check\" | \"close\" | \"plus\" | \"external\" | \"more\" | \"pin\" | \"unpin\" | \"trash\" | \"pause\" | \"play\" | \"expand\" | \"collapse\" | \"chevron-down\" | \"chevron-right\" | \"arrow-down\" | \"unknown\" | \"error\"",
             "required": true,
             "description": ""
           },
@@ -1242,7 +1245,7 @@
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:58192b0b1b18b14b1efcc7a869ef201463dc7fae2995f70c52746730ca1d98aa",
+      "sourceHash": "sha256:23d2aa8bb93fd3e6471d21b90d6db5b997d06e56e847b37c8ec1bd9779add26f",
       "snapshotHashes": {
         "domain-dark-hc": "sha256:74c80f285b9405f3a56a3130705d77ae1d39b89e289140a0d5ef47bf489dbc39",
         "domain-dark": "sha256:74c80f285b9405f3a56a3130705d77ae1d39b89e289140a0d5ef47bf489dbc39",
@@ -1261,12 +1264,14 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 15,
+        "count": 19,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/agent/WorkspacePicker.tsx",
+          "packages/web/src/features/catalog/DeveloperSettings.tsx",
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
+          "packages/web/src/features/context/ContextPanel.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/models/CatalogVariantInstall.tsx",
           "packages/web/src/features/models/ModelCard.tsx",
@@ -1275,6 +1280,8 @@
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationBell.tsx",
+          "packages/web/src/features/session/SessionPanelsAside.tsx",
+          "packages/web/src/features/session/SessionPanelsMenu.tsx",
           "packages/web/src/features/shell/ShellCustomise.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx"
@@ -1455,7 +1462,7 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 11,
+        "count": 13,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
@@ -1465,6 +1472,8 @@
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationBell.tsx",
+          "packages/web/src/features/session/SessionPanelsAside.tsx",
+          "packages/web/src/features/session/SessionPanelsMenu.tsx",
           "packages/web/src/features/shell/ShellCustomise.tsx",
           "packages/web/src/features/shell/ShellSidebar.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx"
@@ -1578,10 +1587,11 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 5,
+        "count": 6,
         "files": [
           "packages/web/src/features/new-session/SessionPickers.tsx",
           "packages/web/src/features/notifications/NotificationRow.tsx",
+          "packages/web/src/features/session/SessionPanelsMenu.tsx",
           "packages/web/src/features/shell/ShellPalette.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx"
@@ -1665,6 +1675,8 @@
       "folder": "src/components/menu",
       "exports": [
         "Menu",
+        "MenuCheckboxItem",
+        "MenuCheckboxItemProps",
         "MenuContent",
         "MenuContentProps",
         "MenuGroup",
@@ -1674,6 +1686,10 @@
         "MenuItem",
         "MenuItemProps",
         "MenuProps",
+        "MenuRadioGroup",
+        "MenuRadioGroupProps",
+        "MenuRadioItem",
+        "MenuRadioItemProps",
         "MenuSeparator",
         "MenuSeparatorProps",
         "MenuTrigger",
@@ -1681,20 +1697,25 @@
       ],
       "componentExports": [
         "Menu",
+        "MenuCheckboxItem",
         "MenuContent",
         "MenuGroup",
         "MenuGroupLabel",
         "MenuItem",
+        "MenuRadioGroup",
+        "MenuRadioItem",
         "MenuSeparator",
         "MenuTrigger"
       ],
       "states": [
         "closed",
-        "open"
+        "open",
+        "checkable"
       ],
       "stories": [
         "closed",
-        "open"
+        "open",
+        "checkable"
       ],
       "props": {
         "Menu": [],
@@ -1739,6 +1760,59 @@
             "description": "`danger` for a destructive item; it still needs a confirmation that states the effect."
           }
         ],
+        "MenuCheckboxItem": [
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "description",
+            "type": "ReactNode",
+            "required": false,
+            "description": "A quieter second line under the label, e.g. the scope of a setting."
+          },
+          {
+            "name": "end",
+            "type": "ReactNode",
+            "required": false,
+            "description": "A trailing value or shortcut before the indicator."
+          },
+          {
+            "name": "icon",
+            "type": "ReactNode",
+            "required": false,
+            "description": "A leading icon (an `<Icon />`), decorative."
+          },
+          {
+            "name": "indicator",
+            "type": "\"switch\" | \"check\" | undefined",
+            "required": false,
+            "description": "`check` marks a visible item (a shown panel); `switch` draws an inline switch for a setting."
+          }
+        ],
+        "MenuRadioGroup": [],
+        "MenuRadioItem": [
+          {
+            "name": "className",
+            "type": "string | undefined",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "description",
+            "type": "ReactNode",
+            "required": false,
+            "description": ""
+          },
+          {
+            "name": "icon",
+            "type": "ReactNode",
+            "required": false,
+            "description": ""
+          }
+        ],
         "MenuGroup": [],
         "MenuGroupLabel": [
           {
@@ -1762,27 +1836,40 @@
         "--border-radius-control",
         "--border-radius-panel",
         "--border-width-regular",
+        "--color-background-accent",
+        "--color-background-accent-hover",
         "--color-background-danger-subtle",
+        "--color-background-disabled",
         "--color-background-hover",
+        "--color-background-secondary",
+        "--color-border-control",
         "--color-border-secondary",
+        "--color-text-accent",
         "--color-text-danger",
         "--color-text-disabled",
+        "--color-text-on-accent",
         "--color-text-primary",
         "--color-text-secondary",
         "--color-text-tertiary",
+        "--elevation-control-shadow",
         "--font-line-height-ui",
         "--font-size-12",
         "--font-text-size",
         "--font-weight-label",
         "--icon-size-16",
+        "--icon-size-18",
         "--layer-popover",
         "--layout-container-3xs",
+        "--motion-duration-fast",
+        "--motion-duration-moderate",
+        "--motion-easing-standard",
         "--row-height",
         "--spacing-12",
+        "--spacing-2",
         "--spacing-4",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:074c136bdb4a6057ceaaf5308ad5d27a9369752532fd2c6505bbb644b5ba7c1e",
+      "sourceHash": "sha256:96faf2434c340a53da175c7351fffd73203e892a411008285f8c1e2c6b497fef",
       "snapshotHashes": {
         "closed-dark-hc": "sha256:1b1499492a0432b5e6538d0231614478c415caeec324100f60eeba094062c045",
         "closed-dark": "sha256:a49b163a4a8ec74c89a95a1e960196eb87a470831752e6387081f6643d7987cd",
@@ -1797,10 +1884,11 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 3,
         "files": [
           "packages/web/src/features/launcher/LauncherPage.tsx",
-          "packages/web/src/features/new-session/SessionPickers.tsx"
+          "packages/web/src/features/new-session/SessionPickers.tsx",
+          "packages/web/src/features/session/SessionPanelsMenu.tsx"
         ]
       },
       "since": "0.1.0"
@@ -2222,7 +2310,7 @@
         "--spacing-6",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:c760c7f16e858aeec983e10bf8924732b26a988592497902d56ee3bd3c9bee1b",
+      "sourceHash": "sha256:a0dfb8d3c537dc00730a619547f860a3108af9848f04ce6af1ba3500ec0160da",
       "snapshotHashes": {
         "default-dark-hc": "sha256:a971d145fb548c07196af159846a00a7b972a0cc27bb2c85a237db04b56d62ac",
         "default-dark": "sha256:3ab669dc352a4107045da8223be8d3d5a6235a428e7df376856dcaafe128922f",
@@ -2249,8 +2337,9 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 2,
+        "count": 3,
         "files": [
+          "packages/web/src/features/session/SessionPanelsAside.tsx",
           "packages/web/src/features/shell/ShellCustomise.tsx",
           "packages/web/src/features/side-chat/SideChatPanel.tsx"
         ]
@@ -2482,7 +2571,7 @@
           },
           {
             "name": "icon",
-            "type": "\"code\" | \"search\" | \"stop\" | \"info\" | \"warning\" | \"keyboard\" | \"enter\" | \"send\" | \"timer\" | \"show\" | \"hide\" | \"copy\" | \"speed\" | \"device-laptop\" | \"device-desktop\" | \"device-server\" | \"device-phone\" | \"memory-unified\" | \"memory-ram\" | \"memory-free-pages\" | \"storage\" | \"cpu\" | \"thermal\" | \"quota\" | \"keep-awake\" | \"sleep\" | \"power\" | \"power-off\" | \"battery-charging\" | \"battery-medium\" | \"battery-low\" | \"inbox\" | \"bell\" | \"runtime\" | \"relay\" | \"lease\" | \"hibernating\" | \"network\" | \"offline\" | \"cloud\" | \"cloud-off\" | \"theme-light\" | \"theme-dark\" | \"customise\" | \"command\" | \"sidebar\" | \"sidebar-right\" | \"density-compact\" | \"density-comfortable\" | \"layers\" | \"sparkles\" | \"new\" | \"projects\" | \"folder\" | \"models\" | \"settings\" | \"history\" | \"layout\" | \"attach\" | \"voice\" | \"permission-read\" | \"permission-full\" | \"permission-ok\" | \"lock\" | \"unlock\" | \"effort\" | \"trace\" | \"chat\" | \"agent\" | \"user\" | \"workflow\" | \"branch\" | \"file\" | \"terminal\" | \"package\" | \"globe\" | \"wand\" | \"clock\" | \"check\" | \"close\" | \"plus\" | \"external\" | \"more\" | \"pin\" | \"unpin\" | \"trash\" | \"pause\" | \"play\" | \"expand\" | \"collapse\" | \"chevron-down\" | \"chevron-right\" | \"arrow-down\" | \"unknown\" | \"error\"",
+            "type": "\"code\" | \"search\" | \"stop\" | \"info\" | \"warning\" | \"context\" | \"keyboard\" | \"enter\" | \"send\" | \"timer\" | \"show\" | \"hide\" | \"copy\" | \"move\" | \"reset\" | \"speed\" | \"device-laptop\" | \"device-desktop\" | \"device-server\" | \"device-phone\" | \"memory-unified\" | \"memory-ram\" | \"memory-free-pages\" | \"storage\" | \"cpu\" | \"thermal\" | \"quota\" | \"keep-awake\" | \"sleep\" | \"power\" | \"power-off\" | \"battery-charging\" | \"battery-medium\" | \"battery-low\" | \"inbox\" | \"bell\" | \"runtime\" | \"relay\" | \"lease\" | \"hibernating\" | \"network\" | \"offline\" | \"cloud\" | \"cloud-off\" | \"theme-light\" | \"theme-dark\" | \"customise\" | \"command\" | \"sidebar\" | \"sidebar-right\" | \"density-compact\" | \"density-comfortable\" | \"layers\" | \"sparkles\" | \"new\" | \"projects\" | \"folder\" | \"models\" | \"settings\" | \"history\" | \"layout\" | \"panels\" | \"artifacts\" | \"plan\" | \"processes\" | \"environment\" | \"changes\" | \"save\" | \"save-as\" | \"attach\" | \"voice\" | \"permission-read\" | \"permission-full\" | \"permission-ok\" | \"lock\" | \"unlock\" | \"effort\" | \"trace\" | \"chat\" | \"agent\" | \"user\" | \"workflow\" | \"branch\" | \"file\" | \"terminal\" | \"package\" | \"globe\" | \"wand\" | \"clock\" | \"check\" | \"close\" | \"plus\" | \"external\" | \"more\" | \"pin\" | \"unpin\" | \"trash\" | \"pause\" | \"play\" | \"expand\" | \"collapse\" | \"chevron-down\" | \"chevron-right\" | \"arrow-down\" | \"unknown\" | \"error\"",
             "required": true,
             "description": ""
           },
@@ -2601,7 +2690,7 @@
         "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:c67e83d17943e69cd5261b9a5f75ea4685cc3c4d37f28ab043eb8fea4fa5ac67",
+      "sourceHash": "sha256:fda7c75d632b59efed44f657bfa9fddca4fba561c61be56d7769209b8c34790b",
       "snapshotHashes": {
         "badge-dark": "sha256:e95fea265ee1b76f963eb09d94f21f50b321572e4189ac8ada73f1479c62691a",
         "badge-light": "sha256:b933cd44835755a71947f8e8da57116400bf6bbf700c91223eb88a6f8f9acedc",
@@ -3275,8 +3364,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 0,
-        "files": []
+        "count": 1,
+        "files": [
+          "packages/web/src/features/chat/ChatPage.tsx"
+        ]
       },
       "since": "0.1.0"
     },
@@ -3337,6 +3428,7 @@
         "--color-background-secondary",
         "--color-background-tertiary",
         "--color-border-primary",
+        "--color-border-secondary",
         "--color-ring-primary",
         "--color-text-primary",
         "--color-text-secondary",
@@ -3344,15 +3436,17 @@
         "--focus-ring-offset",
         "--focus-ring-width",
         "--font-line-height-prose",
+        "--font-size-12",
         "--font-text-size",
-        "--font-weight-heading",
+        "--font-weight-label",
         "--panel-padding",
         "--spacing-12",
+        "--spacing-2",
         "--spacing-4",
         "--spacing-64",
         "--spacing-8"
       ],
-      "sourceHash": "sha256:15427c5faa8be4c38b2bb555967a2707eda7a5d0fd06d6d85a2d0c2cc14365ad",
+      "sourceHash": "sha256:3efcc53db55e20635e26e7d1ed7a4c5dedc84d3a29c2309b20e68264ce2fae27",
       "snapshotHashes": {
         "default-dark": "sha256:45f730b8a2c91349e4eb3b032a40279036228b389a620dfdf4b85b6831fb5b6d",
         "default-light": "sha256:d071cc5cda394099a646cbf8af5460c1abf2026efe7ac0492752087ccf7793d8",
