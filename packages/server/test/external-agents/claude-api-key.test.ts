@@ -272,7 +272,7 @@ test('a settings path that is a dangling symlink still refuses the launch (lstat
 test('a lead turn allows its own node tool server and nothing else; a turn without one allows nothing', async t => {
   const f = await apiFixture(t)
   await f.scenario('claude-code', { lead: {} })
-  const turn = { ...leadTurn(null), mcpServers: [{ name: 'guanxi', url: 'http://127.0.0.1:9/mcp', headers: [{ name: 'Authorization', value: 'Bearer test-only' }] }] }
+  const turn = { ...leadTurn(null), mcpServers: [{ type: 'http' as const, name: 'guanxi', url: 'http://127.0.0.1:9/mcp', headers: [{ name: 'Authorization', value: 'Bearer test-only' }] }] }
   await f.service().run({ ...input, lead: turn })
   const options = (await f.trace('claude-code')).find(frame => frame.method === 'session/new')!.params._meta.claudeCode.options
   assert.deepEqual(options.allowedTools, ['mcp__guanxi'])

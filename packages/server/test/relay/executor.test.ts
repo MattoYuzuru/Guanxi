@@ -82,11 +82,22 @@ test('normative cycle/token/money/wall caps wrap up before another model call', 
       moneyMicros: kind === 'money' ? 0 : null, wallMs: kind === 'wall' ? 1 : null }, actions: () => canonical({ action: 'handoff' }) })
     try {
       if (kind === 'wall') f.relay.change(f.attempt, 'fixture_time', l => { l.startedAt -= 2 })
+      // A zero money cap stops once anything was spent (or a cost is unknown); free calls alone do not reach it (next test).
+      if (kind === 'money') f.relay.change(f.attempt, 'fixture_spend', l => { l.moneyMicros = 1 })
       await f.executor.run(f.attempt)
       assert.equal(f.store.get(f.run.id).state, 'wrapping_up', kind)
       assert.equal(f.prompts.filter(p => p.startsWith('Execute')).length, kind === 'cycles' ? 1 : 0, kind)
     } finally { f.close() }
   }
+})
+test('a zero money cap stops on an unknown cost before any call', async () => {
+  const g = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
+  try {
+    g.relay.change(g.attempt, 'fixture_unknown_cost', l => { l.unknownCosts = 1 })
+    await g.executor.run(g.attempt)
+    assert.equal(g.store.get(g.run.id).state, 'wrapping_up')
+    assert.equal(g.prompts.filter(p => p.startsWith('Execute')).length, 0)
+  } finally { g.close() }
 })
 test('stopping an in-flight model preserves the ledger and never replays it on recovery', async () => {
   const f=fixture()
@@ -289,8 +300,9 @@ test('the invalid-action limit counts invalid turns, not every turn', async () =
     assert.equal(verifies, 0)
   } finally { f.close() }
 })
-test('a local runtime reports known zero cost and does not trip a generous money cap', async () => {
-  const f = fixture({ caps: { moneyMicros: 1_000_000_000 } })
+test('a local runtime reports known zero cost and trips neither a generous nor a zero money cap', async () => {
+  for (const moneyMicros of [1_000_000_000, 0]) {
+  const f = fixture({ caps: { moneyMicros } })
   try {
     const meter = { observe: async () => window, count: (text: string) => Buffer.byteLength(text) + window.framingTokens, maxCostMicros: () => 0 }
     let work = 0
@@ -315,8 +327,9 @@ test('a local runtime reports known zero cost and does not trip a generous money
     assert.ok(prompts.length > 1)
     assert.equal(l.moneyMicros, 0)
     assert.equal(l.unknownCosts, 0)
-    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.store.get(f.run.id).state, 'completed', `money cap ${moneyMicros}`)
   } finally { f.close() }
+  }
 })
 test('a cancel racing seal preparation ends the run cleanly without stale_lease', async () => {
   const f = fixture()

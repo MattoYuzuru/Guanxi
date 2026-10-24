@@ -53,7 +53,9 @@ export class RelayExecutor {
     const c = l.caps
     if (c.cycles !== null && l.cycle + Number(nextCycle) > c.cycles) return 'cycles'
     if (c.tokens !== null && l.tokens >= c.tokens) return 'tokens'
-    if (c.moneyMicros !== null && (l.moneyMicros >= c.moneyMicros || l.unknownCosts > 0)) return 'money'
+    // A zero money cap admits only calls that cost exactly nothing (local compute): any spend or an unknown cost stops it. A positive cap
+    // stops once it is reached, before a call that could exceed it.
+    if (c.moneyMicros !== null && (l.unknownCosts > 0 || (c.moneyMicros === 0 ? l.moneyMicros > 0 : l.moneyMicros >= c.moneyMicros))) return 'money'
     if (c.wallMs !== null && this.store.clock() - l.startedAt >= c.wallMs) return 'wall'
     return null
   }
