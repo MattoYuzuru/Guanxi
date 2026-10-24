@@ -31,12 +31,12 @@ export function createLeadPlugin(config: LeadPluginConfig) {
       provide(ctx, LEAD_SERVICE, Object.freeze({
         startLead: lead.startLead.bind(lead), resume: lead.resume.bind(lead), cancel: lead.cancel.bind(lead),
         pump: lead.pump.bind(lead), idle: lead.idle.bind(lead), health: lead.health.bind(lead),
-        sessions: () => lead.store.sessions().map(row => ({ runId: row.run_id, acpSessionId: row.acp_session_id, loadSession: row.load_session === 1,
-          turns: row.turns, failures: row.failures, retryAt: row.retry_at, fallbackUsed: row.fallback_used === 1 })),
+        sessions: () => lead.store.sessionStates().map(row => ({ runId: row.run_id, acpSessionId: row.acp_session_id, loadSession: row.load_session === 1,
+          turns: row.turns, failures: row.failures, retryAt: row.retry_at, fallbackUsed: row.fallback_used === 1, task: row.task, state: row.run_state })),
       }))
     },
   })
 }
 export type LeadHostService = Pick<LeadService, 'startLead' | 'resume' | 'cancel' | 'pump' | 'idle' | 'health'> & {
-  sessions(): { runId: string; acpSessionId: string | null; loadSession: boolean; turns: number; failures: number; retryAt: number; fallbackUsed: boolean }[]
+  sessions(): { runId: string; acpSessionId: string | null; loadSession: boolean; turns: number; failures: number; retryAt: number; fallbackUsed: boolean; task: string; state: string | null }[]
 }

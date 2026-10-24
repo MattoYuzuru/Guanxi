@@ -2,6 +2,7 @@
  * from the home's `lead` section, the lead delegates through `guanxi_delegate`, and the plan runs on the executor. */
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { createLiveWorld, until, type LiveWorld, pinLifecycle } from './live-world.ts'
@@ -61,6 +62,13 @@ test('a restart that is asked to start the lead again does not start a second on
   await w.home.wait('started'); await w.home.wait('lead-exists')
   assert.equal(w.home.find('lead-started'), undefined, 'no second lead was started')
   assert.equal(w.home.count('SELECT COUNT(*) AS n FROM lead_sessions'), before)
+  // The first lead's run is finished: a different task starts a new lead instead of being refused forever.
+  await w.home.stop()
+  writeFileSync(`${w.dir}/lead-prompt-2.txt`, 'A different task for a new lead.\n')
+  w.home.spawn(['--lead-prompt-file', `${w.dir}/lead-prompt-2.txt`, '--project', w.projectId])
+  await w.home.wait('started'); await w.home.wait('lead-started')
+  assert.equal(w.home.find('lead-exists'), undefined)
+  await until(() => w.home.count('SELECT COUNT(*) AS n FROM lead_sessions') === before + 1, 'the new lead to be recorded', 30_000)
 })
 
 test('the owner\'s configuration binds the lead: an executor or caps beyond the configuration are refused, nothing hibernates and no relay starts', async t => {
