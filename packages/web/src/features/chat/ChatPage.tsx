@@ -557,9 +557,7 @@ function ThreadPage({
   const model = displayModelSelection(chat.thread.model)
 
   return (
-    <div className="native-session session-view" data-testid="session-view">
-      <div className="native-session-layout">
-      <section className="native-session-main" aria-labelledby={headingId}>
+    <section className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
         {/* Round 4: title, model and context never overlap — the title truncates, the model is a
             chip that drops its name first, the context is an icon and a value; actions are icons. */}
         <header className="native-session-header session-header" data-testid="session-header">
@@ -605,6 +603,9 @@ function ThreadPage({
           </div>
         </header>
 
+        {/* The panels sit beside the timeline under the header, so the header stays reachable. */}
+        <div className="native-session-layout">
+        <div className="native-session-main">
         <MessageTimeline
           messages={chat.messages}
           contextCheckpoints={chat.contextCheckpoints}
@@ -631,7 +632,7 @@ function ThreadPage({
             context={<ContextChip context={chat.context} />}
           />
         </div>
-      </section>
+        </div>
 
       {!layoutControls && <SessionPanelsAside panels={panels} onClosed={() => composerRef.current?.focus()}
         render={panel => panel === 'context'
@@ -666,7 +667,7 @@ function ThreadPage({
           returnFocusRef={composerRef}
         />
       )}
-    </div>
+    </section>
   )
 }
 
@@ -834,13 +835,14 @@ export function MessageView({ message }: { message: Message }) {
         <div className="mb-1 flex items-center gap-2 text-2xs text-secondary">
           <span>{user ? translate('chat.role.you') : message.role === 'assistant' ? PRODUCT_NAME : translate('chat.role.tool')}</span>
           <span>{formatTime(message.createdAt)}</span>
-          {message.usage?.cacheHit && <Badge tone="green">{translate('chat.cache.badge')}</Badge>}
-          {message.role === 'assistant' && (
+          {/* Round 4 text diet: a completed turn carries no status badge or cache caption; both sit in
+              the details popover. Unfinished, failed and cancelled turns keep their badge. */}
+          {message.role === 'assistant' && message.turnStatus !== 'completed' && (
             <Badge tone={turnStatusTone(message.turnStatus)}>
               {turnStatusLabel(message.turnStatus)}
             </Badge>
           )}
-          {message.role === 'assistant' && message.usage && <MessageUsage usage={message.usage} />}
+          {message.role === 'assistant' && message.usage && <MessageUsage usage={message.usage} message={message} />}
         </div>
 
         {message.thinking && (
@@ -871,12 +873,15 @@ export function MessageView({ message }: { message: Message }) {
 }
 
 /** Per-message facts behind an icon with an anchored popover (D-207), not a row of captions. */
-function MessageUsage({ usage }: { usage: NonNullable<Message['usage']> }) {
+function MessageUsage({ usage, message }: { usage: NonNullable<Message['usage']>; message: Message }) {
   return <Popover>
     <PopoverTrigger render={<IconButton size="sm" label={translate('chat.message.details')} icon={<Icon name="info" />} />} />
     <PopoverContent align="start">
       <PopoverTitle>{translate('chat.message.details')}</PopoverTitle>
       <dl className="gx-popover-facts">
+        <dt>{translate('chat.message.status')}</dt><dd>{turnStatusLabel(message.turnStatus)}</dd>
+        {message.stopReason && <><dt>{translate('chat.turn.reason')}</dt><dd>{turnStopReasonLabel(message.stopReason)}</dd></>}
+        <dt>{translate('chat.cache.badge')}</dt><dd>{translate(usage.cacheHit ? 'context.cache.hitTitle' : 'context.cache.missTitle')}</dd>
         <dt>{translate('chat.message.promptTokens')}</dt><dd>{formatInteger(usage.promptTokens)}</dd>
         <dt>{translate('chat.message.outputTokens')}</dt><dd>{formatInteger(usage.evalTokens)}</dd>
         <dt>{translate('chat.message.speed')}</dt><dd>{translate('format.tokensPerSecond', { value: usage.tokensPerSecond.toFixed(1) })}</dd>
@@ -907,8 +912,9 @@ function TurnOutcomeView({ message }: { message: Message }) {
       )
     }
 
+    // Announced, not printed: the visible message is the answer itself (round 4 text diet).
     return (
-      <p className="mt-1.5 text-2xs text-muted" role="status">
+      <p className="sr-only" role="status" data-testid="turn-completed">
         {translate('chat.turn.status.completed')}
         {reason ? `, ${translate('chat.turn.reason')}: ${reason}` : ''}
       </p>

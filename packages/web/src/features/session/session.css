@@ -2,8 +2,13 @@
    overlaps, and side panels as one rounded pane beside the timeline. Tokens only. */
 @reference '../../../../ui/src/styles/tailwind-reference.css';
 
+.session-view {
+  /* Header on top; below it the timeline column and any side panels (round 4). */
+  flex-direction: column;
+}
+
 .session-view .native-session-main {
-  /* The timeline brings its own scroll region; the column owns the header and dock. */
+  /* The timeline brings its own scroll region; the column owns the dock. */
   overflow: hidden;
 }
 
@@ -121,9 +126,20 @@
   line-height: var(--font-line-height-prose);
 }
 
-/* The sheet geometry from the native session applies; a sheet has no outer margin or radius. */
+/* A medium session keeps the panel beside the timeline, narrower; only a narrow one shows it over
+   the timeline (below the header), and a phone as a full-screen sheet. */
 @container (max-width: 1023px) {
   .session-panels {
+    position: static;
+    width: var(--layout-container-xs);
+  }
+}
+
+@container (max-width: 719px) {
+  .session-panels {
+    position: absolute;
+    inset: 0;
+    width: auto;
     margin: 0;
     border: 0;
     border-radius: 0;
@@ -132,6 +148,10 @@
 
 @media (max-width: 639px) {
   .session-panels {
+    position: fixed;
+    z-index: var(--layer-dialog);
+    inset: 0;
+    width: auto;
     margin: 0;
     border: 0;
     border-radius: 0;

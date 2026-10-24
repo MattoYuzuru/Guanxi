@@ -2709,8 +2709,9 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 1,
+        "count": 2,
         "files": [
+          "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/shell/ShellStatus.tsx"
         ]
       },

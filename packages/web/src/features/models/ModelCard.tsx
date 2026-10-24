@@ -1,5 +1,5 @@
 /**
- * Карточка модели для карусели. Работает и с установленной моделью, и с
+ * Карточка модели для сетки моделей. Работает и с установленной моделью, и с
  * карточкой каталога — это разные типы контракта, поэтому union, а не
  * «общий» самодельный тип.
  */
@@ -88,7 +88,7 @@ export const ModelCard = memo(function ModelCard({
   return (
     <article
       className={cx(
-        'surface flex h-full w-[300px] flex-col rounded-xl p-3 shadow-[var(--shadow-card)]',
+        'surface flex h-full w-full flex-col rounded-xl p-3 shadow-[var(--shadow-card)]',
         'transition-colors duration-150 hover:border-control',
       )}
       aria-label={model.name}

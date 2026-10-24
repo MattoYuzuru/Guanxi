@@ -23,7 +23,9 @@
   min-width: 0;
   margin: 0;
   color: var(--color-text-primary);
-  font-weight: var(--font-weight-label);
+  font-size: var(--font-size-13);
+  /* Values carry the weight (D-202, round 4): heavier and tabular; labels stay quiet. */
+  font-weight: var(--font-weight-heading);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -100,4 +102,25 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-4);
+}
+
+/* Model grid (round 4): equal, opaque, unscaled cards that wrap; no carousel. */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--layout-container-3xs)), 1fr));
+  gap: var(--spacing-12);
+  align-items: stretch;
+}
+
+.model-grid-item {
+  display: flex;
+  min-width: 0;
+}
+
+.model-grid-item > * {
+  flex: 1 1 auto;
+}
+
+.model-grid-skeleton {
+  height: var(--layout-container-3xs);
 }

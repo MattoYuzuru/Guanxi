@@ -15,7 +15,7 @@ import type {
   ListCatalogResponse,
 } from '@guanxi/contract'
 import { CATALOG_DEFAULT_PAGE_SIZE, DEFAULT_NUM_CTX } from '@guanxi/contract'
-import { Icon, IconButton, Menu, MenuContent, MenuItem, MenuTrigger } from '@guanxi/ui'
+import { Icon, IconButton, Menu, MenuContent, MenuItem, MenuTrigger, StatusItem } from '@guanxi/ui'
 import { api, errorMessage } from '../../lib/api.ts'
 import { useAsync, useDebounced } from '../../lib/useAsync.ts'
 import {
@@ -24,9 +24,8 @@ import {
   EmptyState,
   Input,
   Skeleton,
-  Stat,
 } from '../../components/ui.tsx'
-import { ModelCarousel, type CarouselItem } from '../models/ModelCarousel.tsx'
+import { ModelGrid, type ModelGridItem } from '../models/ModelGrid.tsx'
 import { ModelCard } from '../models/ModelCard.tsx'
 import { AddFromOllama } from '../models/AddFromOllama.tsx'
 import { HuggingFaceDiscovery } from '../models/HuggingFaceDiscovery.tsx'
@@ -202,15 +201,14 @@ export function LauncherPage({ health }: { health: Health }) {
     clearCompareRows(true)
   }, [clearCompareRows])
 
-  const localItems: CarouselItem[] = useMemo(
+  const localItems: ModelGridItem[] = useMemo(
     () =>
       (local.data?.models ?? []).map((model) => ({
         key: model.name,
-        render: ({ focusIndex }) => (
+        render: () => (
           <ModelCard
             data={{ kind: 'local', model }}
             selectedContextLength={contextLength}
-            onFocusCard={focusIndex}
             onInstalled={onInstalled}
           />
         ),
@@ -218,15 +216,14 @@ export function LauncherPage({ health }: { health: Health }) {
     [contextLength, local.data, onInstalled],
   )
 
-  const catalogItems: CarouselItem[] = useMemo(
+  const catalogItems: ModelGridItem[] = useMemo(
     () =>
       catalogProjection.models.map((model) => ({
         key: model.name,
-        render: ({ focusIndex }) => (
+        render: () => (
           <ModelCard
             data={{ kind: 'catalog', model }}
             selectedContextLength={contextLength}
-            onFocusCard={focusIndex}
             onInstalled={onInstalled}
             compareTargets={compareTargets}
             onToggleCompare={(variant) => toggleCompare(model, variant)}
@@ -246,33 +243,27 @@ export function LauncherPage({ health }: { health: Health }) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold tracking-tight">{translate('launcher.title')}</h1>
-            <p className="mt-0.5 text-xs text-secondary">
-              {translate('launcher.fitBasis')}
-            </p>
           </div>
 
           <div className="flex items-end gap-4">
-            <div className="hidden items-center gap-4 sm:flex">
-              <Stat
-                label={translate('hardware.acceleratorProfile')}
-                value={hardware.acceleratorName ?? hardware.accelerator}
-                hint={translate('launcher.hardware.cpu', {
+            {/* Round 4: icons and emphasised values; each label and its detail sit in the item's popover. */}
+            <div className="hidden items-center gap-1 sm:flex" role="group" aria-label={translate('launcher.fitBasis')} data-testid="launcher-hardware">
+              <StatusItem icon="cpu" label={translate('hardware.acceleratorProfile')} value={hardware.acceleratorName ?? hardware.accelerator}>
+                <p className="gx-popover-description">{translate('launcher.hardware.cpu', {
                   model: hardware.cpuModel,
                   cores: hardware.cpuCores,
                   deviceNote: translate('hardware.deviceCountUnknown'),
-                })}
-              />
-              <Stat
-                label={translate('launcher.memory.available')}
-                value={formatBytes(hardware.usableMemoryBytes)}
-                hint={
-                  hardware.unifiedMemory
-                    ? translate('launcher.memory.unified', { total: formatBytes(hardware.totalMemoryBytes) })
-                    : translate('launcher.memory.system', { total: formatBytes(hardware.totalMemoryBytes) })
-                }
-              />
+                })}</p>
+              </StatusItem>
+              <StatusItem icon={hardware.unifiedMemory ? 'memory-unified' : 'memory-ram'} label={translate('launcher.memory.available')} value={formatBytes(hardware.usableMemoryBytes)}>
+                <p className="gx-popover-description">{hardware.unifiedMemory
+                  ? translate('launcher.memory.unified', { total: formatBytes(hardware.totalMemoryBytes) })
+                  : translate('launcher.memory.system', { total: formatBytes(hardware.totalMemoryBytes) })}</p>
+              </StatusItem>
               {hardware.freeDiskBytes !== null && (
-                <Stat label={translate('launcher.disk.free')} value={formatBytes(hardware.freeDiskBytes)} />
+                <StatusItem icon="storage" label={translate('launcher.disk.free')} value={formatBytes(hardware.freeDiskBytes)}>
+                  <p className="gx-popover-description">{translate('launcher.fitBasis')}</p>
+                </StatusItem>
               )}
             </div>
 
@@ -339,7 +330,7 @@ export function LauncherPage({ health }: { health: Health }) {
                 </MenuContent>
               </Menu>
               </div>
-              <p id="launcher-context-hint" className="mt-1 max-w-64 text-2xs text-muted">
+              <p id="launcher-context-hint" className="sr-only">
                 {translate('launcher.context.hint')}
               </p>
               {contextError ? (
@@ -360,7 +351,7 @@ export function LauncherPage({ health }: { health: Health }) {
         />
 
         {local.loading ? (
-          <CarouselSkeleton />
+          <GridSkeleton />
         ) : local.error ? (
           <Callout tone="danger" title={translate('launcher.installed.error')}>
             {errorMessage(local.error)}
@@ -372,7 +363,7 @@ export function LauncherPage({ health }: { health: Health }) {
             description={translate('launcher.installed.emptyHint')}
           />
         ) : (
-          <ModelCarousel items={localItems} ariaLabel={translate('launcher.installed.list')} />
+          <ModelGrid items={localItems} ariaLabel={translate('launcher.installed.list')} />
         )}
       </section>
 
@@ -434,7 +425,7 @@ export function LauncherPage({ health }: { health: Health }) {
 
         <div className={catalog.data ? 'mt-3' : ''}>
           {replacingCatalog ? (
-            <CarouselSkeleton />
+            <GridSkeleton />
           ) : catalog.error ? (
             <Callout tone="danger" title={translate('launcher.catalog.error')}>
               {errorMessage(catalog.error)}
@@ -480,7 +471,7 @@ export function LauncherPage({ health }: { health: Health }) {
               }
             />
           ) : (
-            <ModelCarousel items={catalogItems} ariaLabel={translate('launcher.catalog.list')} />
+            <ModelGrid items={catalogItems} ariaLabel={translate('launcher.catalog.list')} />
           )}
         </div>
 
@@ -757,14 +748,11 @@ function localizedModelCount(count: number): string {
   return translate(key, { count })
 }
 
-function CarouselSkeleton() {
+function GridSkeleton() {
   return (
-    <div className="flex gap-3.5 overflow-hidden px-[6vw]">
-      {[0, 1, 2, 3, 4].map((index) => (
-        <Skeleton
-          key={index}
-          className="h-[268px] w-[300px] shrink-0"
-        />
+    <div className="model-grid" aria-hidden="true">
+      {[0, 1, 2, 3].map((index) => (
+        <Skeleton key={index} className="model-grid-skeleton" />
       ))}
     </div>
   )

@@ -97,7 +97,10 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
 
   await expect(page.getByText('Persisted canonical answer', { exact: true })).toBeVisible()
   await expect(page.getByText('Live stream draft', { exact: true })).toHaveCount(0)
-  await expect(page.getByText(/завершён, Причина остановки/)).toBeVisible()
+  // Round 4 text diet: completion is announced, not printed as a caption or a badge.
+  await expect(page.getByTestId('turn-completed')).toHaveText(/завершён, Причина остановки/)
+  await expect(page.getByTestId('turn-completed')).toHaveClass(/sr-only/)
+  await expect(page.locator('article').getByText('завершён', { exact: true })).toHaveCount(0)
   await expect(composer).toBeEnabled()
   await expect(page.getByRole('button', { name: 'Отправить' })).toBeVisible()
 

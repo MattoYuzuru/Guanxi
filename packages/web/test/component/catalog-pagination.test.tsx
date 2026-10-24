@@ -175,9 +175,9 @@ describe('bounded catalog paging', () => {
     expect(catalog).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 1, pageSize: 12 }), expect.any(AbortSignal),
     )
-    const catalogCarousel = screen.getByRole('group', { name: 'Каталог моделей' })
-    expect(catalogCarousel.querySelectorAll('.embla-slide')).toHaveLength(12)
-    expect(container.querySelectorAll('[role="tab"][aria-label^="Модель "]')).toHaveLength(12)
+    const catalogGrid = screen.getByRole('group', { name: 'Каталог моделей' })
+    expect(catalogGrid.querySelectorAll('.model-grid-item')).toHaveLength(12)
+    expect(container.querySelectorAll('[role="tab"][aria-label^="Модель "]')).toHaveLength(0)
     const pager = screen.getByRole('navigation', { name: 'Страницы каталога' })
     expect(within(pager).getAllByRole('button')).toHaveLength(2)
   })

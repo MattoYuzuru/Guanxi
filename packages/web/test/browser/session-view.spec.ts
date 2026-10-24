@@ -171,4 +171,12 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
   // The context value in the header toggles the same panel.
   await page.getByTestId('session-context').click()
   await expect(panels.getByRole('heading', { name: 'Context', exact: true })).toBeVisible()
+  // At every width the open panel leaves the header (and its menu) reachable.
+  for (const width of [1024, 800, 390]) {
+    await page.setViewportSize({ width, height: 800 })
+    const header = await box(page.getByTestId('session-header'))
+    const aside = await box(panels)
+    if (width > 639) expect(overlaps(header, aside), `panel covers the header at ${width}`).toBe(false)
+    if (width > 639) await trigger.click({ trial: true })
+  }
 })

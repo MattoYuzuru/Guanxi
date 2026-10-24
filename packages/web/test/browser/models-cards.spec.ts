@@ -1,8 +1,7 @@
 /**
- * Visual pass 3 (Models): a card shows at most four key facts with the rest behind an anchored
- * details popover, its chat action is not a full-width primary, and cards that fit the row are a
- * plain row (no carousel controls or shrunken neighbours); many cards on a narrow screen still
- * scroll as a carousel.
+ * Visual pass 3 and round 4 (Models): a card shows at most four key facts, values emphasised, with
+ * the rest behind an anchored details popover; its chat action is not a full-width primary; cards
+ * are a grid of equal, opaque, unscaled cards at every width — no carousel, arrows or dots.
  */
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
@@ -73,19 +72,45 @@ test('a card shows at most four facts, the rest in an anchored details popover, 
   expect((await new AxeBuilder({ page }).include('[role="dialog"]').analyze()).violations.map(violation => violation.id)).toEqual([])
 })
 
-test('cards that fit the row are a plain row: no carousel controls and no shrunken neighbours', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await open(page, three)
+/** Every card and each of its ancestors up to the grid renders unscaled and fully opaque. */
+async function unscaledOpaque(page: Page) {
+  return page.locator('article').evaluateAll(cards => cards.map(card => {
+    let node: Element | null = card, scaled = false, faded = false
+    while (node && !node.matches('[data-testid="model-grid"]')) {
+      const style = getComputedStyle(node)
+      if (style.transform !== 'none' && style.transform !== 'matrix(1, 0, 0, 1, 0, 0)') scaled = true
+      if (Number(style.opacity) < 1) faded = true
+      node = node.parentElement
+    }
+    return { scaled, faded }
+  }))
+}
+
+const many = [...three, ...Array.from({ length: 5 }, (_, index) => model(`fixture-${index}:7b`, '7.6B', 4_700_000_000 + index * 100_000_000, 'green'))]
+
+for (const width of [1440, 600, 390]) test(`cards are a grid of equal, opaque, unscaled cards with no carousel at ${width} px (round 4)`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 })
+  await open(page, many)
   const installed = page.getByRole('group', { name: 'Installed models' })
   await expect(installed).toHaveCount(1)
+  await expect(installed.locator('article')).toHaveCount(8)
   await expect(page.getByRole('button', { name: /^(Previous|Next) model$/u })).toHaveCount(0)
   await expect(page.getByRole('tablist')).toHaveCount(0)
-  const transforms = await page.locator('article').evaluateAll(cards => cards.map(card => getComputedStyle(card.closest('.embla-tween') ?? card).transform))
-  expect(transforms.every(transform => transform === 'none' || transform === 'matrix(1, 0, 0, 1, 0, 0)')).toBe(true)
-})
-
-test('many cards on a narrow screen still scroll as a carousel with controls', async ({ page }) => {
-  await page.setViewportSize({ width: 600, height: 900 })
-  await open(page, three)
-  await expect(page.getByRole('button', { name: 'Next model' }).first()).toBeVisible()
+  await expect(page.locator('[aria-roledescription]')).toHaveCount(0)
+  for (const card of await unscaledOpaque(page)) expect(card).toEqual({ scaled: false, faded: false })
+  // Equal widths, every card inside the viewport (nothing parked off screen behind arrows).
+  const boxes = await installed.locator('article').evaluateAll(cards => cards.map(card => card.getBoundingClientRect().toJSON() as DOMRect))
+  for (const box of boxes) {
+    expect(Math.abs(box.width - boxes[0]!.width)).toBeLessThanOrEqual(1)
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(width)
+  }
+  // Values carry the weight: a fact's value is heavier than its label.
+  const weights = await installed.locator('article').first().locator('.model-fact').first().evaluate(row => [
+    Number(getComputedStyle(row.querySelector('dt')!).fontWeight), Number(getComputedStyle(row.querySelector('dd')!).fontWeight)])
+  expect(weights[1]).toBeGreaterThan(weights[0]!)
+  // The fit verdict keeps its colour: green, yellow and red cards read in three different colours.
+  const verdictColours = await installed.locator('article .model-card-fit p').evaluateAll(nodes => nodes.slice(0, 3).map(node => getComputedStyle(node).color))
+  expect(new Set(verdictColours).size).toBe(3)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
