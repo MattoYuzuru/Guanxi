@@ -10,20 +10,17 @@ Evidence of the real runs: [MS1 fault runs](evidence/ms1-fault-runs-2026-10-24.m
 
 ## MS1 under D-214
 
-Met on real hardware: delegation by the official Claude Code lead (Sonnet 5.5 medium, owner's `sk-ant-usr` API key), survival
-of a dropped link (E1), executor restart (E2) and runtime restart (E3), one honest wake after a home restart (E4), zero lead
-tokens while asleep, exactly one wake per run. Still open:
+Met on real hardware (run A7 and the fault runs before it): the official Claude Code lead (Sonnet 5.5 medium, owner's
+`sk-ant-usr` API key) delegated ten `ledger-lite` items to Qwen3.8-27B on the Fedora node and slept 2 h 29 min at zero lead
+tokens; the run survived a dropped link (E1), an executor restart (E2) and a llama-server restart (E3); all ten items closed
+green (93/93 reproduced in a clean clone); exactly one wake. A home restart while the lead sleeps (E4, run B) ends with one
+honest wake. Still open:
 
-1. **All plan items green in one run.** Read the outcome of run A6 in the evidence file. If it did not close all ten items,
-   inspect the relay session log (`~/ms1/home/data/guanxi.db`, `session_events` of the newest `relay_public_starts` row) for
-   the stop reason, fix product defects (not the model), and rerun with `~/ms1/ops/faults-run.sh`. Reproduce green items in a
-   clean clone from the sealed bundle (`relay_seals.bundle`), as in the evidence file.
-2. **B3 relay benchmark gate.** No measurement exists. Ask the owner whether MS1 waits for a B3 cohort on the Fedora node
-   (days of GPU time at the observed ~13 min per item) or whether B3 moves to MS2 with a smaller smoke cohort now. Do not decide
-   this by default.
-3. Product residuals found on the runs: a node-served read-only project view for the lead (its plan facts now come from the
-   prompt); probe/strip compatibility for runs sealed before `dcd108ef` (one forced degraded probe on resume); `cd X || exit
-   125` instead of `cd X &&` for the relay shell.
+1. **B3 relay benchmark gate.** No measurement exists. Ask the owner whether MS1 waits for a B3 cohort on the Fedora node
+   (days of GPU time at ~15 min per item) or whether B3 moves to MS2 with a smaller smoke cohort now. Do not decide by default.
+2. Product residuals found on the runs: a node-served read-only project view for the lead (its plan facts now come from the
+   prompt); runs sealed before the strip changes resume once through the degraded probe path; `cd X || exit 125` instead of
+   `cd X &&` for the relay shell; the relay's fixed-command shell path still hides a non-zero exit as `tool_failed`.
 
 ## UI and connections (MS2 track)
 

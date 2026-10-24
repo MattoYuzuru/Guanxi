@@ -3,7 +3,7 @@
 **Status:** implemented tracker · **Updated:** 2026-10-24
 **Current stage:** wave 6 — MS1 fault runs with the real Claude Code lead (2026-10-24, D-214–D-218).
 Branch `lead/ms1-close` (integration candidate) adds, each independently reviewed by Opus 5.5 with fixes in separate
-commits: **MS1 lead/relay hardening** from ten defects found on real runs (user API key family `sk-ant-usr`, the lead's own
+commits: **MS1 lead/relay hardening** from eleven defects found on real runs (user API key family `sk-ant-usr`, the lead's own
 MCP tool pre-allowed, finished-lead restart, zero money cap, bounded transient call retries for link drops and restarts,
 bounded executor stop, wake prompt and stop reasons in the packet, allowed executors and argv acceptance in the delegate
 tool, relay shell in its checkout with visible output, probes answering from the handoff strip); **K3 catalog**
@@ -12,9 +12,22 @@ duplicates, connection removal, the `/connections` centre and a catalog model pi
 session view, layout and panels behind one icon menu, Developer/Visual split withdrawn per D-217, Models grid, quieter text,
 round-3 fixes). **Real evidence** ([MS1 fault runs](evidence/ms1-fault-runs-2026-10-24.md)): E1 link drop, E2 executor
 restart, E3 runtime restart survived on the Fedora executor; E4 home restart ends with one honest wake; zero lead tokens
-while asleep; exactly one wake in every run; best run before the last fixes closed 5 of 10 items with green gates,
-independently reproduced in a clean checkout. MS1 is **not closed**: all plan items green in one run (run A6 in progress
-at hand-off) and the B3 benchmark gate remain. Earlier wave: [Fedora record](evidence/fedora-real-runtime-2026-10-23.md).
+while asleep; exactly one wake in every run; run **A7 closed all ten `ledger-lite` items** with the lead asleep for 2 h 29 min at zero lead tokens and E1–E3 injected,
+reproduced 93/93 in a clean checkout. The MS1 exit of D-214 is met **except the B3 benchmark gate**, which awaits an owner
+decision (a full cohort needs days of GPU time). Earlier wave: [Fedora record](evidence/fedora-real-runtime-2026-10-23.md).
+
+## Wave 6 evidence (2026-10-24)
+
+- **New:** MS1 real runs A–A7 and B with E1–E4 injected ([record](evidence/ms1-fault-runs-2026-10-24.md)); focused tests added
+  with each fix (each checked to fail without its fix): K5 key family, lead tool permission, finished-lead restart, zero
+  money cap, transient retries (call, observe, count, measure), bounded executor stop, wake prompt and stop facts, executor
+  hint and argv acceptance, relay shell cwd and output, probe strip; K3 catalog, Ollama auto connection, import families and
+  removal; connections centre and picker component and browser specs; UI round 4 session view, panels menu, phone sheet,
+  Models cards and render-count tests.
+- **Regression envelope (local, focused per D-213):** server relay/leads/ms1-live/external-agents/connections/remote/federation
+  suites 1 155 tests green at the lane merge points; web component suite 747/747; affected browser specs 68 (63 + the 5
+  rewritten new-session cases) and the runtime-health spec; `ui:check` green after regenerating the catalog manifest. Hosted
+  CI evidence is in PR MattoYuzuru/Guanxi#2.
 
 ## Validation protocol migration (2026-10-24)
 
