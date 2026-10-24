@@ -65,7 +65,7 @@ import { useWorkspaceControls } from '../workspace/controls.ts'
 import { panelBlockId, useSessionPanels } from '../session/panels.ts'
 import { clearSessionContext, publishSessionContext } from '../session/session-context.ts'
 import { SessionPanelsMenu } from '../session/SessionPanelsMenu.tsx'
-import { SessionPanelEmpty, SessionPanelsAside, usePhoneSheet } from '../session/SessionPanelsAside.tsx'
+import { SessionPanelEmpty, SessionPanelsAside, useNarrowSession } from '../session/SessionPanelsAside.tsx'
 import '../native-agent/native-session.css'
 import '../session/session.css'
 import type { StreamBuffer } from './streamBuffer.ts'
@@ -472,7 +472,8 @@ function ThreadPage({
   // Round 4: side panels open beside the timeline; in the free arrangement they are dock blocks.
   const layoutControls = useWorkspaceControls()
   const panels = useSessionPanels()
-  const phoneSheet = usePhoneSheet() && panels.active !== null && !layoutControls
+  const [narrowSession, sessionRef] = useNarrowSession()
+  const modalSheet = narrowSession && panels.active !== null && !layoutControls
   const headingId = useId()
   const [contextWriter] = useState(() => Symbol('session-context'))
   useEffect(() => {
@@ -560,19 +561,19 @@ function ThreadPage({
     else panels.toggle('context', !contextShown)
   }
   const model = displayModelSelection(chat.thread.model)
-  // On a phone the Context panel is a sheet over an inert timeline: a confirmed checkpoint closes
+  // In a narrow session the Context panel is a modal sheet over the app: a confirmed checkpoint closes
   // it, so the new checkpoint marker in the timeline can take focus and be seen.
   const compactFromPanel = async () => {
     const result = await chat.compact()
-    if (phoneSheet) panels.toggle('context', false)
+    if (modalSheet) panels.toggle('context', false)
     return result
   }
 
   return (
-    <section className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
+    <section ref={sessionRef} className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
         {/* Round 4: title, model and context never overlap — the title truncates, the model is a
             chip that drops its name first, the context is an icon and a value; actions are icons. */}
-        <header className="native-session-header session-header" data-testid="session-header" inert={phoneSheet || undefined}>
+        <header className="native-session-header session-header" data-testid="session-header">
           <div className="native-session-heading session-heading">
             {chat.project && <>
               <nav aria-label={translate('native.breadcrumb')} className="native-session-crumbs">
@@ -617,7 +618,7 @@ function ThreadPage({
 
         {/* The panels sit beside the timeline under the header, so the header stays reachable. */}
         <div className="native-session-layout">
-        <div className="native-session-main" inert={phoneSheet || undefined}>
+        <div className="native-session-main">
         <MessageTimeline
           messages={chat.messages}
           contextCheckpoints={chat.contextCheckpoints}
@@ -646,7 +647,7 @@ function ThreadPage({
         </div>
         </div>
 
-      {!layoutControls && <SessionPanelsAside panels={panels} onClosed={() => composerRef.current?.focus()}
+      {!layoutControls && <SessionPanelsAside panels={panels} modal={narrowSession} onClosed={() => composerRef.current?.focus()}
         render={panel => panel === 'context'
           ? <ContextPanel context={chat.context} usage={chat.usage} compacting={chat.compacting} onCompact={compactFromPanel} disabled={chat.isStreaming} />
           : <SessionPanelEmpty panel={panel} />} />}

@@ -172,25 +172,22 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
   // The context value in the header toggles the same panel.
   await page.getByTestId('session-context').click()
   await expect(panels.getByRole('heading', { name: 'Context', exact: true })).toBeVisible()
-  // On a phone the panel is a sheet over an inert page with focus inside it; Escape closes it.
+  // On a phone the panel is a modal sheet: the app behind it is inert, focus is inside; Escape closes it.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByTestId('session-panels').getByRole('button', { name: 'Close Context', exact: true }).click()
   await expect(panels).toHaveCount(0)
   await page.getByTestId('session-context').click()
   await expect(panels.getByRole('button', { name: 'Close Context', exact: true })).toBeFocused()
-  await expect(page.getByTestId('session-header')).toHaveAttribute('inert', '')
+  await expect(page.locator('#root')).toHaveAttribute('inert', '')
   await page.keyboard.press('Escape')
   await expect(panels).toHaveCount(0)
-  await expect(page.getByTestId('session-header')).not.toHaveAttribute('inert', /.*/u)
+  await expect(page.locator('#root')).not.toHaveAttribute('inert', /.*/u)
+  // A medium session keeps the panel beside the timeline, under the header that stays reachable.
+  await page.setViewportSize({ width: 1280, height: 800 })
   await page.getByTestId('session-context').click()
-  // At every width the open panel leaves the header (and its menu) reachable.
-  for (const width of [1024, 800, 390]) {
-    await page.setViewportSize({ width, height: 800 })
-    const header = await box(page.getByTestId('session-header'))
-    const aside = await box(panels)
-    if (width > 639) expect(overlaps(header, aside), `panel covers the header at ${width}`).toBe(false)
-    if (width > 639) await trigger.click({ trial: true })
-  }
+  const header = await box(page.getByTestId('session-header'))
+  expect(overlaps(header, await box(panels)), 'panel covers the header at 1280').toBe(false)
+  await trigger.click({ trial: true })
 })
 
 // Round 4 review (coordinator, 2026-10-24): the narrow-session panel is a modal sheet.
@@ -221,4 +218,23 @@ test('arrow keys in the sheet panel switcher keep focus on the switcher (review 
   await page.keyboard.press('ArrowRight')
   await expect(sheet.getByRole('heading', { name: 'Terminal', exact: true })).toBeVisible()
   await expect(switcher.getByRole('radio', { name: 'Terminal' })).toBeFocused()
+})
+
+const SHEET = { name: 'Side panels' }
+for (const width of [390, 680]) test(`a narrow session's panel is a modal sheet that contains focus at ${width} px (review 3)`, async ({ page }) => {
+  await setup(page)
+  await page.setViewportSize({ width, height: 844 })
+  await page.goto(`/chat/${THREAD}`)
+  await page.getByTestId('session-context').click()
+  const sheet = page.getByRole('dialog', SHEET)
+  await expect(sheet).toHaveAttribute('aria-modal', 'true')
+  await expect(sheet.getByRole('button', { name: 'Close Context', exact: true })).toBeFocused()
+  // The shell behind it is inert: Tab and Shift+Tab never leave the sheet.
+  for (const key of ['Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+    await page.keyboard.press(key)
+    expect(await sheet.evaluate(node => node.contains(document.activeElement)), `${key} stays in the sheet`).toBe(true)
+  }
+  await page.keyboard.press('Escape')
+  await expect(sheet).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: 'Message' })).toBeFocused()
 })

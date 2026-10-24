@@ -127,8 +127,7 @@
   line-height: var(--font-line-height-prose);
 }
 
-/* A medium session keeps the panel beside the timeline, narrower; only a narrow one shows it over
-   the timeline (below the header), and a phone as a full-screen sheet. */
+/* A medium session (720–1023 px) keeps the panel beside the timeline, narrower. */
 @container (max-width: 1023px) {
   .session-view .session-panels {
     position: static;
@@ -136,25 +135,14 @@
   }
 }
 
-@container (max-width: 719px) {
-  .session-view .session-panels {
-    position: absolute;
-    inset: 0;
-    width: auto;
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-  }
-}
-
-@media (max-width: 639px) {
-  .session-view .session-panels {
-    position: fixed;
-    z-index: var(--layer-dialog);
-    inset: 0;
-    width: auto;
-    margin: 0;
-    border: 0;
-    border-radius: 0;
-  }
+/* A narrow session (under 720 px, measured on the pane) shows the panels as a modal full-screen
+   sheet on the document body (review 3); it is outside the session, so it is styled on its own. */
+.session-panels.session-panels-sheet {
+  position: fixed;
+  z-index: var(--layer-dialog);
+  inset: 0;
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
 }
