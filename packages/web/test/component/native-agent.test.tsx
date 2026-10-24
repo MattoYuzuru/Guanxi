@@ -30,6 +30,7 @@ it('new session defaults to Read-only, exposes zero-root scratch state and submi
     if (String(url) === '/api/connections') return Response.json({ connections: [{ id: '11111111-1111-4111-8111-111111111111', accountId: 'local', name: 'Fixture', kind: 'model_api',
       provider: 'deepseek', auth: 'api_key', unattended: false, secretRef: null, facts: {}, createdAt: '2026-10-21T00:00:00.000Z', balance: null }], costs: [], vault: { unlocked: false, unattendedAvailable: false } })
     if (String(url) === '/api/agent') { requests.push(JSON.parse(String(init.body))); return Response.json({ sessionId: 'session' }) }
+    if (String(url) === '/api/connections/11111111-1111-4111-8111-111111111111/models') return Response.json({ models: [] })
     throw new Error('Unexpected request')
   }))
   render(<NativeAgentPage sessionId={null} />)
@@ -48,7 +49,9 @@ it('new session defaults to Read-only, exposes zero-root scratch state and submi
   fireEvent.click(screen.getByRole('button', { name: 'Access: Full access' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Read-only' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Access: Read-only' })).toBeTruthy())
-  fireEvent.click(screen.getByRole('button', { name: 'Choose a model' }))
+  // The only connection is preselected; the catalog picker lists its models and keeps a typed ID as the fallback.
+  fireEvent.click(screen.getByRole('button', { name: /^Model connection: / }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Other model ID…' }))
   fireEvent.change(await screen.findByLabelText('Model ID'), { target: { value: 'fixture' } })
   fireEvent.change(screen.getByLabelText('What should the agent do?'), { target: { value: 'Inspect' } })
   fireEvent.click(screen.getByRole('button', { name: 'Start session' }))

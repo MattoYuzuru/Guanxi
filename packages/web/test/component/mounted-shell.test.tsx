@@ -153,9 +153,9 @@ describe('mounted product shell', () => {
     const navigation = await shell()
     await emptySessions()
 
-    expect(within(navigation).getAllByRole('link')).toHaveLength(4)
+    expect(within(navigation).getAllByRole('link')).toHaveLength(5)
     expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href')))
-      .toEqual(['/agent', '/projects', '/', '/settings'])
+      .toEqual(['/agent', '/projects', '/', '/connections', '/settings'])
     expect(container.querySelectorAll('main')).toHaveLength(1)
     expect(container.querySelectorAll('[data-slot="sidebar-slot"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-slot="app-shell-sidebar"]')).toHaveLength(1)
