@@ -91,7 +91,7 @@ function run(request: unknown, env: NodeJS.ProcessEnv): Result {
     const input = join(dir, 'request.json')
     writeFileSync(input, JSON.stringify(request))
     const debug = spawnSync('lldb', ['--batch', '-o', 'settings set target.disable-aslr false',
-      '-o', `process launch --stdin ${JSON.stringify(input)}`, '-o', 'thread backtrace all', '--', testBinary],
+      '-o', `process launch --stdin ${JSON.stringify(input)}`, '-k', 'thread backtrace all', '--', testBinary],
     { env, encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 })
     diagnostic = `${debug.stdout ?? ''}\n${debug.stderr ?? ''}\n${debug.error?.message ?? ''}`
   }
