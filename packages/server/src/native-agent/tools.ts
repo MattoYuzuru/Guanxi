@@ -73,13 +73,14 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       : await fallback.map(root, budget, scopedPath, signal)) }
     finally { await fallback.close(); await governor.close() }
   }
-  const run = async (command: string, signal?: AbortSignal, accepted = [0], fixed = true, cwd?: string) => {
+  /** `accepted: null` accepts any exit code: the caller reads `code` itself (the relay's shell, whose model must see a failing test's output). */
+  const run = async (command: string, signal?: AbortSignal, accepted: readonly number[] | null = [0], fixed = true, cwd?: string) => {
     // The sandbox starts every command in HOME/TMPDIR=scratch. A caller with one unit of work (the relay
     // checkout) names it here, exactly as the gate command names its own clean checkout.
     const line = cwd ? `cd ${quote(cwd)} && ${command}` : command
     const result = await (ctx.executeCommand ?? sandboxCommand)(policy, line, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
-    if (clean.code === null || !accepted.includes(clean.code)) throw new Error('tool_failed')
+    if (clean.code === null || (accepted !== null && !accepted.includes(clean.code))) throw new Error('tool_failed')
     return JSON.stringify(clean)
   }
   /** One page of a text file starting at byte `offset`. The result is the command result with the cursor fields in front; `stdout`
@@ -166,7 +167,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
     tool('file_read', 'Read a UTF-8 text file in roots, scratch or attachments. Absolute paths select another root. offset is a byte offset (default 0); the result has more and nextOffset, so a large file is read page by page with offset=nextOffset.', { path: Type.String(), offset: Type.Optional(Type.String()) }, async (a, s) => fileRead(a.path!, a.offset, s)),
     tool('file_write', 'Write UTF-8 content. Read-only writes only to scratch. Protected paths are always denied.', { path: Type.String(), content: Type.String() }, async (a, s) => run(`printf %s ${quote(a.content!)} > ${quote(path(a.path!, true))}`, s)),
     tool('shell', 'Run a shell command under the access policy and a PID-namespace execution owner. macOS requires the local container runtime and provisioned execution image; no host-shell fallback. Fixed pwd/ls/cat/head/tail/wc commands also work without that runtime.', { command: Type.String() }, async (a, s) => {
-      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, [0], false, ctx.cwd)
+      if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, ctx.cwd ? null : [0], false, ctx.cwd)
       const [program, ...args] = a.command!.split(/ +/)
       const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
       return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s, [0], true, ctx.cwd)

@@ -47,7 +47,10 @@ test('a relay shell runs in its checkout, so node --test and fixed reads resolve
     assert.equal(read.code, 0)
     assert.match(read.stdout, /import test from 'node:test'/)
     assert.deepEqual(issued.map(issue => issue.fixed), [false, true], 'node --test is arbitrary execution; cat keeps the fixed-command path')
-    // A failed command is a failed tool, not a successful result whose text says "denied".
-    await assert.rejects(w.tool('shell', { command: 'false' }), /tool_failed/)
+    // A command that exits non-zero is a result the relay model must read (a red test shows which assertion failed),
+    // not an opaque failure: the exit code and the scrubbed output come back.
+    const failed = JSON.parse(await w.tool('shell', { command: 'echo boom >&2; exit 3' })) as { code: number; stderr: string }
+    assert.equal(failed.code, 3)
+    assert.match(failed.stderr, /boom/)
   } finally { handle.close(); f.close(); await rm(parent, { recursive: true, force: true }) }
 })
