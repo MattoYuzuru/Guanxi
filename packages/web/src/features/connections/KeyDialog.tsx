@@ -68,6 +68,7 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
     // The field is empty for the whole request, including a validation refusal.
     setKey(''); setFailure(undefined)
     let createdId: string | undefined
+    // This dialog owns the failure copy: a page-level alert would duplicate it and outlive the close.
     const result = await run(async () => {
       try {
         const target = connection ?? await connectionApi.create({
@@ -85,7 +86,7 @@ export function ConnectionKeyDialog({ entry, connection, open, busy, run, onOpen
         if (createdId) await connectionApi.remove(createdId).catch(() => undefined)
         throw error
       }
-    })
+    }, { inline: true })
     if (result.ok) { onOpenChange(false); onSaved?.() }
     else setFailure(result.code)
   }
