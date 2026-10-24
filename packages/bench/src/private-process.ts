@@ -483,10 +483,12 @@ export async function runPrivateTrial(options: PrivateTrialOptions): Promise<Pri
     lifetime = stdio[5] as Writable | null
     if (!input || !output || !lifetime) fail('child_start_failed')
     lifetime.on('error', () => {})
-    const shutdown = () => {
+    const shutdown = (reason?: PrivateStreamReason) => {
       if (shutdownStarted) return
       shutdownStarted = true
-      try { lifetime!.end() } catch { /* supervisor observes EOF */ }
+      // Only clean request EOF permits a bounded natural exit/status settlement.
+      // Abort/protocol failures retain immediate group termination.
+      try { lifetime!.end(reason === 'channel_input_ended' ? 'N' : undefined) } catch { /* supervisor observes EOF */ }
       const timer = setTimeout(() => {
         if (!closed && current.pid) signalGroup(current.pid, 'SIGKILL')
       }, policy.shutdownGraceMs)

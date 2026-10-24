@@ -23,6 +23,8 @@ const pgid = process.pid
 const clientToken = randomBytes(32).toString('base64url')
 const clientTokenHash = createHash('sha256').update(clientToken).digest('hex')
 let shutting = false
+let naturalEOF = false, terminating = false, clientExited = false
+let naturalTimer
 let record = {
   version: 2, bindingTag, nonceHash, supervisorPid: pgid, pgid,
   clientPid: null, clientExitCode: null, clientTokenHash, clientScript, startedAt: Date.now(),
@@ -37,9 +39,10 @@ function control(value) {
 function groupSignal(signal) {
   try { process.kill(-pgid, signal); return true } catch { return false }
 }
-function shutdown() {
-  if (shutting) return
-  shutting = true
+function terminateGroup() {
+  if (terminating) return
+  terminating = true
+  clearTimeout(naturalTimer)
   groupSignal('SIGTERM')
   const timer = setTimeout(() => {
     groupSignal('SIGKILL')
@@ -48,6 +51,15 @@ function shutdown() {
     setTimeout(() => process.exit(1), 50).unref()
   }, killGrace)
   timer.ref()
+}
+function shutdown() {
+  if (shutting) return
+  shutting = true
+  if (naturalEOF && !clientExited) {
+    // EOF can precede waitpid/Node's exit callback. Persist the real status before
+    // killing the remaining group, bounded by the existing kill grace, not a new timeout.
+    naturalTimer = setTimeout(terminateGroup, killGrace)
+  } else terminateGroup()
 }
 // SIGTERM from our own group signal must not end the grace window early.
 process.on('SIGTERM', () => {})
@@ -77,8 +89,10 @@ child.on('error', () => {
   process.exit(1)
 })
 child.on('exit', code => {
+  clientExited = true
   record = { ...record, clientExitCode: code }
   try { writeRecord() } catch { /* parent/reaper retains the record */ }
+  if (shutting && naturalEOF) terminateGroup()
 })
 if (!child.pid) {
   control({ status: 'start_error', code: 'client_spawn_failed' })
@@ -97,7 +111,8 @@ control({ status: 'ready', supervisorPid: pgid, pgid, clientPid: child.pid, clie
 
 try {
   const lifetime = createReadStream(null, { fd: 5, autoClose: false })
-  lifetime.on('data', () => {})
+  // Only the trusted parent owns this descriptor. Clients cannot request a grace window.
+  lifetime.on('data', chunk => { naturalEOF = chunk.length === 1 && chunk[0] === 78 })
   lifetime.on('end', shutdown)
   lifetime.on('close', shutdown)
   lifetime.on('error', shutdown)
