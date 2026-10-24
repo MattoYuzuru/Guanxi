@@ -10,11 +10,12 @@ import { openNavigation } from './fixtures/shell-navigation.ts'
 const THREAD = chatFixtureThreadId('completed')
 const LONG_TITLE = 'Inspecting model path permissions on the Fedora workstation before the nightly import job runs again'
 
-async function setup(page: Page, title = LONG_TITLE) {
+async function setup(page: Page, title = LONG_TITLE, stored: { open: string[]; active: string } | null = null) {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await installChatApiFixture(page, 'completed')
-  await page.addInitScript(({ threadId, title }) => {
-    localStorage.removeItem('guanxi.session-panels')
+  await page.addInitScript(({ threadId, title, stored }) => {
+    if (stored) localStorage.setItem('guanxi.session-panels', JSON.stringify(stored))
+    else localStorage.removeItem('guanxi.session-panels')
     const base = window.fetch.bind(window)
     window.fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.origin)
@@ -31,7 +32,7 @@ async function setup(page: Page, title = LONG_TITLE) {
       if (url.pathname === '/api/settings' && response.ok) return Response.json({ ...await response.json(), locale: 'en' })
       return response
     }
-  }, { threadId: THREAD, title })
+  }, { threadId: THREAD, title, stored })
 }
 
 async function openFromSidebar(page: Page) {
@@ -190,4 +191,22 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
     if (width > 639) expect(overlaps(header, aside), `panel covers the header at ${width}`).toBe(false)
     if (width > 639) await trigger.click({ trial: true })
   }
+})
+
+// Round 4 review (coordinator, 2026-10-24): the narrow-session panel is a modal sheet.
+
+test('arrow keys in the sheet panel switcher keep focus on the switcher (review 2)', async ({ page }) => {
+  await setup(page, LONG_TITLE, { open: ['context', 'terminal'], active: 'context' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/chat/${THREAD}`)
+  const sheet = page.getByTestId('session-panels')
+  await expect(page.getByTestId('session-title')).toBeVisible()
+  // Stored panels open only by a user action on a phone (review 4); the context value is one.
+  if (await sheet.count() === 0) await page.getByTestId('session-context').click()
+  const switcher = sheet.getByRole('radiogroup', { name: 'Shown panel' })
+  await expect(switcher.getByRole('radio')).toHaveCount(2)
+  await switcher.getByRole('radio', { name: 'Context' }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(sheet.getByRole('heading', { name: 'Terminal', exact: true })).toBeVisible()
+  await expect(switcher.getByRole('radio', { name: 'Terminal' })).toBeFocused()
 })

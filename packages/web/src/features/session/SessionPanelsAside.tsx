@@ -19,8 +19,10 @@ export function SessionPanelsAside({ panels, render, onClosed }: {
   const closeButton = useRef<HTMLButtonElement>(null)
   const active = panels.active
   const sheet = usePhoneSheet()
-  // On a phone the panel is a full-screen sheet over an inert page: focus moves into it (review P2).
-  useEffect(() => { if (sheet && active) closeButton.current?.focus() }, [sheet, active])
+  const isOpen = active !== null
+  // On a phone the panel is a full-screen sheet over an inert page: focus moves into it when the
+  // sheet opens, not when the shown panel changes (arrow keys in the switcher keep their focus).
+  useEffect(() => { if (sheet && isOpen) closeButton.current?.focus() }, [sheet, isOpen])
   if (!active) return null
   const title = (panel: SessionPanel) => t(`workspaceLayout.block.${panel}`)
   const close = () => {
