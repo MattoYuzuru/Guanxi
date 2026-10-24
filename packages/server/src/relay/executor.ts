@@ -294,8 +294,11 @@ export class RelayExecutor {
       }
       const expected = probes(sealed.ledger)
       await this.fresh(a, w, signal)
+      // The probe answers from the handoff it will receive: the strip carries `current` and
+      // `currentStatus` raw (the canonical handoff only escapes it), so no separate `open` list is
+      // invented beside the handoff.
       const { text: prompt } = await this.pack(PROBE_PROMPT,
-        { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
+        { head: [strip(sealed.ledger), canonical(h)] }, measure, t.H)
       let correct = false
       try { correct = !damaged && canonical(parseModelJson((await this.call(a, 'probe', prompt, w, t, signal, this.schemas?.probe)).text)) === canonical(expected) }
       catch (e) { if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed', 'response_schema_rejected'].includes(e.code)) throw e }

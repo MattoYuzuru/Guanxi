@@ -15,11 +15,8 @@ export const ms1Script = reply((prompt: string) => {
     const hash = /"ledgerHash":"([0-9a-f]{64})"/.exec(prompt)![1]
     const head = /"head":"([0-9a-f]{40,64})"/.exec(prompt)![1]
     const revision = /"revision":"([^"]+)"/.exec(prompt)![1]
-    const open = [...prompt.matchAll(/\{"dependsOn":\[([^\]]*)\],"id":"([^"]+)","status":"([^"]+)"\}/g)]
-      .map(m => ({ deps: m[1] ? m[1].split(',').map(s => s.replace(/"/g, '')) : [], id: m[2]!, status: m[3]! }))
-    const ids = new Set(open.map(o => o.id))
-    const next = open.find(o => o.deps.every(d => !ids.has(d)))
-    return JSON.stringify({ ledgerHash: hash, head, nextItem: next ? next.id : null, nextStatus: next ? next.status : null, revision })
+    const strip = JSON.parse(prompt.split('\n').find(line => line.startsWith('{') && line.includes('"currentStatus"'))!) as { current: string | null; currentStatus: string | null }
+    return JSON.stringify({ ledgerHash: hash, head, nextItem: strip.current, nextStatus: strip.currentStatus, revision })
   }
   if (!prompt.includes('"name":"file_write"')) {
     const current = /"current":"([^"]+)"/.exec(prompt)![1]!
