@@ -160,10 +160,16 @@ export class ConnectionStore {
     if (JSON.stringify({ ...existing, id: '' }) !== JSON.stringify({ ...row, id: '' })) throw new Error('Conflicting usage receipt')
     return existing
   }
-  costs(accountId: string): ConnectionCost[] {
-    return this.db.prepare(`SELECT data FROM costs WHERE account_id=?
-      AND connection_id NOT IN (SELECT connection_id FROM removed_connections WHERE account_id=?) ORDER BY rowid`).all(accountId, accountId)
+  /** Every append-only receipt, including spend on connections hidden from the public projection. */
+  receipts(accountId: string): ConnectionCost[] {
+    return this.db.prepare('SELECT data FROM costs WHERE account_id=? ORDER BY rowid').all(accountId)
       .map(row => connectionCostSchema.parse(JSON.parse(String(row.data))))
+  }
+  /** Public cost projection: a removed connection's history stays in the ledger but leaves the snapshot. */
+  costs(accountId: string): ConnectionCost[] {
+    const removed = new Set(this.db.prepare('SELECT connection_id FROM removed_connections WHERE account_id=?')
+      .all(accountId).map(row => String(row.connection_id)))
+    return this.receipts(accountId).filter(cost => !removed.has(cost.connectionId))
   }
   close() { this.db.close() }
 }
