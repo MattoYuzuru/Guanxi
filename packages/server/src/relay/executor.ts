@@ -65,10 +65,14 @@ export class RelayExecutor {
     this.store.runs.wrappingUp(a)
   }
   /** One measure per cycle: packing, the boundary and dispatch evidence use the same unit. */
-  private measure(w: WindowObservation, signal: AbortSignal): Measure | AsyncMeasure {
+  private measure(a: Attempt, w: WindowObservation, signal: AbortSignal): Measure | AsyncMeasure {
     const exact = this.model.countIsExact === true, remote = this.model.countAsync
-    // A remote exact meter answers over the network. The executor never blocks the event loop for it.
-    if (exact && remote) return Object.assign(async (value: string) => (await remote(this.scrubber.scrub(value), signal)) + w.framingTokens, { exact, async: true as const })
+    // A remote exact meter answers over the network. The executor never blocks the event loop for it, and a dropped
+    // link is retried exactly like a model call: packing would otherwise stop the whole relay on an executor restart.
+    if (exact && remote) return Object.assign(async (value: string) => {
+      const clean = this.scrubber.scrub(value)
+      return (await this.retryTransient(a, 'measure', signal, () => remote(clean, signal))) + w.framingTokens
+    }, { exact, async: true as const })
     return Object.assign((value: string) => exact
       ? this.model.count(this.scrubber.scrub(value)) + w.framingTokens
       : upperTokens(value, w), { exact })
@@ -89,6 +93,22 @@ export class RelayExecutor {
   /** A cancel or takeover can revoke the fence while the executor is already reporting. */
   private lost(error: unknown): boolean {
     return error instanceof Error && 'code' in error && ['stale_lease', 'writer_busy', 'invalid_transition'].includes(String((error as { code?: unknown }).code))
+  }
+  /** The one bounded retry of a transient transport failure. No reservation is held for observe/count/measure, so the
+   * same call can be repeated after the wait; the fence is rechecked first so a deposed attempt never uses the answer. */
+  private async retryTransient<T>(a: Attempt, purpose: string, signal: AbortSignal, action: () => Promise<T>): Promise<T> {
+    const waits = this.limits.transientRetryMs ?? []
+    for (let retry = 0; ; retry++) {
+      try { return await action() } catch (error) {
+        const reason = this.failureReason(error)
+        if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
+          this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_retry', purpose, reason, retry: retry + 1, waitMs: waits[retry] }) } })
+          try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
+          if (!signal.aborted) { this.checkExecution(a); continue }
+        }
+        throw error
+      }
+    }
   }
   /** R1 has no separate read-only fence probe; its existing fenced extension transaction is
    * the execution-fence check before the host await. */
@@ -177,30 +197,20 @@ export class RelayExecutor {
    * previous call, gate or judge sample may have taken minutes: counting first would refuse a request the runtime can still serve. The window must
    * be the one this cycle was planned for. Dispatch observes again itself, so the freshness rule there is unchanged. */
   private async fresh(a: Attempt, w: WindowObservation, signal: AbortSignal): Promise<void> {
-    const waits = this.limits.transientRetryMs ?? []
-    // No reservation is held yet, so a dropped link here can wait and re-observe just like a failed call. The fence is
-    // rechecked after each wait: an observation under a deposed attempt is never used, even if the link came back.
-    for (let retry = 0; ; retry++) {
-      try {
-        const current = await this.model.observe(signal)
-        invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
-        return
-      } catch (error) {
-        const reason = this.failureReason(error)
-        if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
-          try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
-          if (!signal.aborted) { this.checkExecution(a); continue }
-        }
-        throw error
-      }
-    }
+    // No reservation is held yet, so a dropped link here can wait and re-observe just like a failed call.
+    await this.retryTransient(a, 'observe', signal, async () => {
+      const current = await this.model.observe(signal)
+      invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
+      return current
+    })
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal, responseSchema?: JsonSchema): Promise<Reply> {
     signal.throwIfAborted()
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const clean = this.scrubber.scrub(prompt)
     await this.fresh(a, w, signal)
-    const count = this.model.countAsync ? await this.model.countAsync(clean, signal) : this.model.count(clean)
+    const countAsync = this.model.countAsync
+    const count = countAsync ? await this.retryTransient(a, 'count', signal, () => countAsync(clean, signal)) : this.model.count(clean)
     invariant(Number.isSafeInteger(count) && count >= 0 && count <= t.H, 'context_ceiling')
     const l = this.store.read(a.run_id), reason = this.caps(l)
     if (reason) { this.wrap(a, reason); throw new RelayError('cap_reached') }
@@ -463,7 +473,8 @@ export class RelayExecutor {
         const current = this.store.read(a.run_id)
         const cap = this.caps(current, true)
         if (cap) { this.wrap(a, cap); return current }
-        const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w, signal)
+        const w = await this.retryTransient(a, 'observe', signal, () => this.model.observe(signal))
+        const t = thresholds(w, this.reserves), measure = this.measure(a, w, signal)
         this.store.begin(a)
         if (this.eta) this.store.updateEta(a, this.eta)
         const judged = await this.judgeSample(a, 'cycle_start', signal)

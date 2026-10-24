@@ -130,6 +130,59 @@ test('a transient observation failure before admission waits, re-observes and th
     assert.ok(observes >= 3, 'the failed observation was retried before the first reservation')
     assert.equal(f.store.get(f.run.id).state, 'completed')
     assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'observe'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a transient cycle-start observation failure is retried and the run continues', async () => {
+  const f = fixture({ limits: { transientRetryMs: [1, 1] } })
+  try {
+    let observes = 0
+    const observe = f.model.observe.bind(f.model)
+    f.model.observe = async signal => { observes++; if (observes === 1) throw new RelayError('runtime_meter_unavailable'); return observe(signal) }
+    await f.executor.run(f.attempt)
+    assert.ok(observes >= 2, 'the failed cycle-start observation was retried')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'observe'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a transient exact admission count failure is retried and the run continues', async () => {
+  const f = fixture({ limits: { transientRetryMs: [1, 1] } })
+  try {
+    let counts = 0
+    f.model.countAsync = async (text: string) => {
+      counts++
+      if (counts === 1) throw new RelayError('runtime_meter_unavailable')
+      return f.model.count(text)
+    }
+    await f.executor.run(f.attempt)
+    assert.ok(counts >= 2, 'the failed count was retried')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'count'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a transient remote pack measure failure is retried and the run continues', async () => {
+  const f = fixture({ exact: true, limits: { transientRetryMs: [1, 1] } })
+  try {
+    let failed = false
+    f.model.countAsync = async (text: string) => {
+      if (text.startsWith('Execute') && !failed) { failed = true; throw new RelayError('runtime_meter_unavailable') }
+      return f.model.count(text)
+    }
+    await f.executor.run(f.attempt)
+    assert.equal(failed, true, 'the first remote measure failed')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'measure'), JSON.stringify(retries))
   } finally { f.close() }
 })
 test('a retry rechecks the execution fence after its wait and does not re-send a canceled call', async () => {
