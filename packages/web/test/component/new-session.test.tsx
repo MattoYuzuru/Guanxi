@@ -536,6 +536,17 @@ describe('catalog model picker', () => {
     expect(document.body.textContent).not.toContain('dotenv')
   })
 
+  it('focuses the model search when the picker opens, not the first connection button', async () => {
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    const trigger = screen.getByRole('button', { name: 'Model connection: Fixture model' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const search = await screen.findByLabelText('Search models')
+    await waitFor(() => expect(document.activeElement).toBe(search))
+  })
+
   it('lists the selected connection models, filters them, and selects with arrow keys and Enter', async () => {
     install()
     render(<NewSessionScreen />)

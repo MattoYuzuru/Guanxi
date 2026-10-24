@@ -13,6 +13,7 @@ test('native session keyboard creation and progress replay have exact counts on 
       if (path === '/api/agent/projects') return Response.json({ projects: [{ id: 'p', name: 'Fixture project', filesystemBindings: [] }] })
       if (path === '/api/connections') return Response.json({ connections: [{ id, accountId: 'local', name: 'Fixture model', kind: 'model_api', provider: 'deepseek', auth: 'api_key',
         unattended: false, secretRef: null, facts: {}, balance: null, createdAt: '2026-10-21T00:00:00.000Z' }], costs: [], vault: { unlocked: false, unattendedAvailable: false } })
+      if (path === `/api/connections/${id}/models`) return Response.json([{ id: 'fixture', facts: {} }])
       if (path === '/api/agent' && init?.method === 'POST') {
         const values = JSON.parse(String(init.body))
         if (values.mode !== 'read-only' || values.projectId !== 'p') return Response.json({ code: 'invalid' }, { status: 400 })
@@ -27,10 +28,11 @@ test('native session keyboard creation and progress replay have exact counts on 
   // D-207: the only project and the only connection are preselected; the model is in the lower-right picker.
   await expect(page.getByRole('button', { name: 'Проект: Fixture project', exact: true })).toHaveCount(1)
   await expect(page.getByRole('button', { name: 'Доступ: Только чтение', exact: true })).toHaveCount(1)
-  await page.getByRole('button', { name: 'Выберите модель', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Fixture model', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await page.getByLabel('ID модели', { exact: true }).fill('fixture')
-  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Подключение модели: Fixture model', exact: true }).click()
+  const picker = page.locator('[data-slot="popover-content"]').filter({ has: page.getByRole('group', { name: 'Подключение', exact: true }) })
+  await expect(picker.getByRole('button', { name: 'Fixture model', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await picker.getByRole('listbox', { name: 'Модели', exact: true }).getByRole('option', { name: 'fixture', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Модель: Fixture model, fixture', exact: true })).toHaveCount(1)
   await page.getByLabel('Что должен сделать агент?', { exact: true }).fill('Inspect')
   await expect(page.getByText('Без папок, запись только в scratch', { exact: true })).toHaveCount(1)
   await page.getByRole('button', { name: 'Начать сессию', exact: true }).focus()

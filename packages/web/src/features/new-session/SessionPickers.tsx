@@ -109,7 +109,6 @@ export function ModelPicker({ connections, connectionId, onConnection, model, on
   const errorCode = models.error instanceof ConnectionRequestError ? models.error.code : null
 
   useEffect(() => { setSearch(''); setCustom(false) }, [connectionId])
-  useEffect(() => { if (open) searchRef.current?.focus() }, [open])
 
   const chooseConnection = (id: string) => {
     if (id !== connectionId) { onConnection(id); onModel('') }
@@ -149,7 +148,7 @@ export function ModelPicker({ connections, connectionId, onConnection, model, on
       <span className="new-session-choice-connection">{active ? activeLabel : t('newSession.model.choose')}</span>
       {active && model.trim() ? <span className="new-session-choice-model">{model.trim()}</span> : null}
     </PopoverTrigger>
-    <PopoverContent side="top" align="end" className="new-session-model-popover w-md">
+    <PopoverContent side="top" align="end" className="new-session-model-popover w-md" initialFocus={searchRef}>
       <PopoverTitle>{t('newSession.model.label')}</PopoverTitle>
       <div className="flex flex-col gap-3 pt-1" onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); setOpen(false) }

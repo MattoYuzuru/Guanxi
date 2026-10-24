@@ -49,6 +49,8 @@ export interface SessionFeaturesFixture {
   theme: 'light' | 'dark' | 'system'
   projects: unknown[]
   connections: unknown[]
+  /** Model IDs `GET /api/connections/:id/models` reports; unknown connections get the fixture pair. */
+  models: Record<string, string[]>
   workspaces: unknown[] | 'fail'
   sessions: SessionPageItem[]
   /** Answers `POST /api/agent`; defaults to a 202 with `session-1`. */
@@ -73,6 +75,7 @@ export function createSessionFeaturesFixture(overrides: Partial<SessionFeaturesF
     locale: 'en', theme: 'light',
     projects: [fixtureProject('p', 'Alpha'), fixtureProject('q', 'Beta', ['w1'])],
     connections: [fixtureConnection()],
+    models: { [FIXTURE_CONNECTION]: ['fixture', 'fixture-large'], [FIXTURE_LOCAL_CONNECTION]: ['llama'] },
     workspaces: [fixtureWorkspace('w1', 'Repo'), fixtureWorkspace('w2', 'Docs')],
     sessions: [], progress: {}, events: {}, titles: {}, agentNetwork: 'up', holdProjects: null,
     create: () => ({ status: 202, body: { sessionId: 'session-1' } }),
@@ -130,9 +133,11 @@ export async function installSessionFeaturesApi(page: Page, fixture: SessionFeat
         ? finish(route, { code: 'internal_error', message: 'workspaces', details: null }, 500)
         : finish(route, { workspaces: fixture.workspaces })
     }
-    if (/^\/api\/connections\/[^/]+\/models$/u.test(path)) return finish(route, [
-      { id: 'fixture', facts: {} }, { id: 'fixture-large', facts: {} },
-    ])
+    const connectionModels = /^\/api\/connections\/([^/]+)\/models$/u.exec(path)
+    if (connectionModels) {
+      const ids = fixture.models[decodeURIComponent(connectionModels[1] ?? '')] ?? ['fixture', 'fixture-large']
+      return finish(route, ids.map(id => ({ id, facts: {} })))
+    }
     if (path === '/api/connections') return finish(route, { connections: fixture.connections, costs: [], vault: { unlocked: false, unattendedAvailable: false } })
     if (path === '/api/agent/projects') {
       fixture.requests.projects++
