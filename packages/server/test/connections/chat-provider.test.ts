@@ -104,12 +104,51 @@ test('dotenv file import is idempotent, rotates, preserves retired scrubbing and
   assert.equal(f.vault.unlocked('local'), true)
 })
 
-test('parallel same-file imports create exactly one connection and endpoint changes get a separate identity', async t => {
+test('parallel same-file imports create one connection; an endpoint change with the same key reuses it', async t => {
   const { service } = await setup(t), value = canary()
   const results = await Promise.all([0, 1].map(() => service.importKeys('local', [{ provider: 'openai', value }])))
   assert.deepEqual(results.map(result => result.imported[0]!.action), ['created', 'unchanged'])
-  await imported(service, value, 'https://api.example.invalid/v1')
+  const endpoint = 'https://api.example.invalid/v1'
+  const id = await imported(service, value, endpoint)
+  assert.equal(service.snapshot('local').connections.length, 1)
+  assert.equal(service.store.get('local', id).baseUrl, endpoint)
+  const other = await imported(service, canary(), 'https://other.example.invalid/v1')
+  assert.notEqual(other, id)
   assert.equal(service.snapshot('local').connections.length, 2)
+})
+
+test('reimporting the same OpenAI key with an endpoint reuses one connection; a different key stays separate', async t => {
+  const f = await setup(t), key = 'sk-test-' + 'x'.repeat(40), otherKey = 'sk-test-' + 'y'.repeat(40)
+  const first = await f.service.importKeys('local', [{ provider: 'openai', value: key }])
+  const id = first.imported[0]!.connectionId
+  assert.equal(f.service.snapshot('local').connections.length, 1)
+  const withEndpoint = await f.service.importKeys('local', [{ provider: 'openai', value: key, baseUrl: 'https://api.example.invalid/v1' }])
+  assert.deepEqual(withEndpoint.imported, [{ connectionId: id, provider: 'openai', action: 'unchanged' }])
+  assert.equal(f.service.snapshot('local').connections.length, 1)
+  assert.equal(f.store.get('local', id).baseUrl, 'https://api.example.invalid/v1')
+  // A different secret without an endpoint is still a separate identity, not a rotation of the rooted one.
+  const different = await f.service.importKeys('local', [{ provider: 'openai', value: otherKey }])
+  const otherId = different.imported[0]!.connectionId
+  assert.notEqual(otherId, id)
+  assert.equal(f.store.get('local', otherId).baseUrl, undefined)
+  assert.equal(f.service.snapshot('local').connections.length, 2)
+  const otherRooted = await f.service.importKeys('local', [{ provider: 'openai', value: otherKey, baseUrl: 'https://other.example.invalid/v1' }])
+  assert.equal(otherRooted.imported[0]!.connectionId, otherId)
+  assert.equal(f.store.get('local', otherId).baseUrl, 'https://other.example.invalid/v1')
+  // The reverse same-secret import removes the endpoint but keeps the original identity.
+  const withoutEndpoint = await f.service.importKeys('local', [{ provider: 'openai', value: key }])
+  assert.equal(withoutEndpoint.imported[0]!.connectionId, id)
+  assert.equal(f.store.get('local', id).baseUrl, undefined)
+  assert.equal(f.service.snapshot('local').connections.length, 2)
+})
+
+test('imported connections use catalog labels and a compatible endpoint names its host', async t => {
+  const f = await setup(t), file = join(f.dir, 'labels.env')
+  await writeFile(file, `DEEPSEEK_API_KEY=${canary()}\nOPENAI_COMPAT_API_KEY=${canary()}\nOPENAI_COMPAT_API_URL=https://api.example.invalid/v1\n`)
+  const result = await importProviderKeysFile(f.service, 'local', file)
+  const rows = result.imported.map(item => f.store.get('local', item.connectionId))
+  assert.deepEqual(rows.map(row => row.name).sort(), ['DeepSeek', 'OpenAI-compatible (api.example.invalid)'])
+  assert.ok(rows.every(row => row.facts.origin?.value === 'provider_key_import'))
 })
 
 test('failed file reads and invalid endpoint errors never include file contents or canaries', async t => {
@@ -615,6 +654,7 @@ test('one file imports official OpenAI and a separate compatible endpoint withou
   assert.equal(rows[0]!.baseUrl, undefined)
   assert.equal(rows[1]!.baseUrl, 'https://api.example.invalid/v1')
   assert.notEqual(rows[0]!.id, rows[1]!.id)
+  assert.deepEqual(rows.map(row => row.name), ['OpenAI', 'OpenAI-compatible (api.example.invalid)'])
   assert.deepEqual((await importProviderKeysFile(f.service, 'local', file)).imported.map(item => item.action), ['unchanged', 'unchanged'])
 })
 

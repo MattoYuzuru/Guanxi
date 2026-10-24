@@ -5,7 +5,7 @@ import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { AssistantMessage, Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
-import { MAX_DISCOVERED_MODELS, providerModelIdSchema, type Connection, type ConnectionFact, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
+import { MAX_DISCOVERED_MODELS, providerCatalog, providerModelIdSchema, type Connection, type ConnectionFact, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
 import type { OllamaAdapter } from '../ollama/plugin.ts'
 import type { OllamaChatRequest, OllamaChatChunk } from '../ollama/types.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
@@ -133,6 +133,15 @@ export class Connections {
       throw error
     }
   }
+  private importedConnectionName(entry: ImportedProvider) {
+    if (entry.provider === 'openai' && entry.baseUrl) return `OpenAI-compatible (${new URL(entry.baseUrl).host})`
+    return providerCatalog.find(item => item.provider === entry.provider)?.label ?? entry.provider
+  }
+  private recordImportOrigin(accountId: string, connectionId: string) {
+    this.store.observe(accountId, connectionId, {
+      origin: { value: 'provider_key_import', source: 'connection_import', observedAt: new Date().toISOString(), confidence: 'high' },
+    })
+  }
   /** Trusted import keeps one identity per provider/API root. Never grants unattended consent. */
   importKeys(accountId: string, entries: ImportedProvider[]) {
     const task = this.imports.then(() => this.importEntries(accountId, entries))
@@ -145,12 +154,26 @@ export class Connections {
       await this.#vault.unlock(accountId)
       const imported: { connectionId: string; provider: string; action: 'created' | 'rotated' | 'unchanged' }[] = []
       // No await inside the transaction: synchronous writers cannot interleave.
-      const prepared = []
+      const prepared: { entry: ImportedProvider; row: Connection | undefined; same: boolean }[] = []
       for (const entry of entries) {
         const mapped = this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND endpoint=?')
           .get(accountId, entry.provider, entry.baseUrl ?? '')
-        const row = mapped ? this.store.get(accountId, String(mapped.connection_id)) : undefined
-        prepared.push({ entry, row, same: row ? await this.#vault.matches(accountId, row.id, entry.value) : false })
+        let row = mapped ? this.store.get(accountId, String(mapped.connection_id)) : undefined
+        let same = row ? await this.#vault.matches(accountId, row.id, entry.value) : false
+        // An endpoint-only change reuses the imported connection that already holds this
+        // provider's secret. A different secret remains a separate identity.
+        if (!row) {
+          for (const candidate of this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? ORDER BY rowid')
+            .all(accountId, entry.provider)) {
+            const id = String(candidate.connection_id)
+            if (await this.#vault.matches(accountId, id, entry.value)) {
+              row = this.store.get(accountId, id)
+              same = true
+              break
+            }
+          }
+        }
+        prepared.push({ entry, row, same })
       }
       this.store.db.exec('BEGIN IMMEDIATE')
       try {
@@ -158,14 +181,28 @@ export class Connections {
         if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
           throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
         for (const [index, { entry, row, same }] of prepared.entries()) {
-          // A Claude Code subscription token belongs to an `agent` connection: only K5 can receive it, for the official CLI's environment.
-          const connection = row ?? this.store.create(accountId, entry.provider === 'claude-code'
-            ? { name: 'claude-code (dotenv)', kind: 'agent', provider: 'claude-code', auth: 'cli_login' }
-            : { name: `${entry.provider} (dotenv)`, kind: 'model_api', provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
-          if (row?.baseUrl && row.allowPrivate !== (entry.allowPrivate ?? false))
-            this.store.setImportedNetworkPolicy(accountId, row.id, entry.allowPrivate ?? false)
+          const name = this.importedConnectionName(entry)
+          let connection = row
+          if (!connection) {
+            // A Claude Code subscription token belongs to an `agent` connection: only K5 can receive it, for the official CLI's environment.
+            connection = this.store.create(accountId, entry.provider === 'claude-code'
+              ? { name, kind: 'agent', provider: 'claude-code', auth: 'cli_login' }
+              : { name, kind: 'model_api', provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
+            this.recordImportOrigin(accountId, connection.id)
+          } else {
+            const endpointChanged = (connection.baseUrl ?? undefined) !== entry.baseUrl
+            const consentChanged = entry.baseUrl !== undefined && connection.allowPrivate !== (entry.allowPrivate ?? false)
+            if (endpointChanged || consentChanged || connection.name !== name)
+              this.store.setImportedEndpoint(accountId, connection.id,
+                entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : {}, name)
+            // The mapping follows the connection's current root. A stale alias must not let a
+            // later import with a different secret rotate this connection instead of creating one.
+            if (endpointChanged)
+              this.store.db.prepare('DELETE FROM dotenv_imports WHERE account_id=? AND provider=? AND connection_id=?')
+                .run(accountId, entry.provider, connection.id)
+          }
           if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
-          if (!row) this.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)')
+          this.store.db.prepare('INSERT OR REPLACE INTO dotenv_imports VALUES(?,?,?,?)')
             .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)
           imported.push({ connectionId: connection.id, provider: entry.provider, action: !row ? 'created' : same ? 'unchanged' : 'rotated' })
         }

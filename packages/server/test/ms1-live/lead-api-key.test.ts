@@ -36,8 +36,8 @@ const keychain = async (): Promise<VaultKeychain> => ({ key: () => { keychainRea
 test('config: the lead pays by subscription unless told otherwise, and the API-key options belong to api_key only', () => {
   const sub = parseMs1LiveConfig(home(), '/etc/x/ms1-live.json').home!.lead!
   assert.deepEqual([sub.auth, sub.connection, sub.providerKeysFile, sub.effort], ['subscription', undefined, undefined, undefined])
-  const api = parseMs1LiveConfig(home({ auth: 'api_key', connection: 'anthropic (dotenv)', providerKeysFile: '/Users/x/keys.env', effort: 'medium' }), '/etc/x/ms1-live.json').home!.lead!
-  assert.deepEqual([api.auth, api.connection, api.providerKeysFile, api.effort], ['api_key', 'anthropic (dotenv)', '/Users/x/keys.env', 'medium'])
+  const api = parseMs1LiveConfig(home({ auth: 'api_key', connection: 'Anthropic', providerKeysFile: '/Users/x/keys.env', effort: 'medium' }), '/etc/x/ms1-live.json').home!.lead!
+  assert.deepEqual([api.auth, api.connection, api.providerKeysFile, api.effort], ['api_key', 'Anthropic', '/Users/x/keys.env', 'medium'])
   refused(home({ connection: 'x' }), 'config_key_mode_only', 'home.lead.connection')
   refused(home({ auth: 'subscription', providerKeysFile: '/x/keys.env' }), 'config_key_mode_only', 'home.lead.providerKeysFile')
   refused(home({ auth: 'api_key', providerKeysFile: 'keys.env' }), 'config_path_not_absolute', 'home.lead.providerKeysFile')
@@ -123,8 +123,8 @@ test('start imports the key into the node\'s vault, wires K5 to that connection 
   const first = await boot(w.settings())
   const connections = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
   const rows = connections.snapshot('local').connections
-  assert.deepEqual(rows.map(row => row.name).sort(), ['anthropic (dotenv)', 'ms1-executor'], 'no subscription connection is created')
-  const paying = rows.find(row => row.name === 'anthropic (dotenv)')!
+  assert.deepEqual(rows.map(row => row.name).sort(), ['Anthropic', 'Ollama', 'ms1-executor'], 'no subscription connection is created')
+  const paying = rows.find(row => row.name === 'Anthropic')!
   assert.deepEqual([paying.kind, paying.provider, paying.auth], ['model_api', 'anthropic', 'api_key'])
   assert.equal(first.ms1Live!.leadConnectionId, paying.id)
   const external = first.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
@@ -173,7 +173,7 @@ test('start refuses, by code and field and without a value, when the lead\'s key
   const run = (settings: Ms1LiveSettings) => start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
   const first = await run(w.settings())
   const connections = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
-  const imported = connections.snapshot('local').connections.find(row => row.name === 'anthropic (dotenv)')!
+  const imported = connections.snapshot('local').connections.find(row => row.name === 'Anthropic')!
   const second = connections.create('local', { name: 'second-anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   await connections.saveSecret('local', second.id, fakeKey())
   await first.close()
@@ -222,7 +222,7 @@ test('a key file that was imported pays for the lead: a named older connection, 
   const outcome = async (connection?: string) => run(w.settings(config => { if (connection) config.home.lead.connection = connection })).then(async server => { const id = server.ms1Live!.leadConnectionId; await server.close(); return id }, error => error)
   // Two connections hold keys, but the file just imported belongs to one of them: it pays, without naming it.
   assert.equal(await outcome(), imported)
-  assert.equal(await outcome('anthropic (dotenv)'), imported)
+  assert.equal(await outcome('Anthropic'), imported)
   // Naming another connection while a file was imported would pay with a key this boot did not import.
   const refused = await outcome('older-anthropic')
   assert.ok(refused instanceof Ms1LiveError && refused.code === 'lead_connection_not_imported' && refused.field === 'home.lead.connection', `got ${refused instanceof Error ? refused.message : refused}`)
@@ -287,9 +287,9 @@ test('oauth_token: start imports the token as a Claude Code connection only, wir
     writeKeys(w.keyFile, text)
     const server = await boot(w.settings(asToken))
     const rows = server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections
-    assert.deepEqual(rows.map(row => [row.name, row.kind, row.provider, row.auth]).sort(), [['claude-code (dotenv)', 'agent', 'claude-code', 'cli_login'], ['ms1-executor', 'local_runtime', 'ollama', 'none']],
+    assert.deepEqual(rows.map(row => [row.name, row.kind, row.provider, row.auth]).sort(), [['Claude Code', 'agent', 'claude-code', 'cli_login'], ['Ollama', 'local_runtime', 'ollama', 'none'], ['ms1-executor', 'local_runtime', 'ollama', 'none']],
       'no Anthropic API connection and no subscription-login connection: the token is not an API key')
-    const paying = rows.find(row => row.name === 'claude-code (dotenv)')!
+    const paying = rows.find(row => row.name === 'Claude Code')!
     assert.ok(paying.secretRef); assert.equal(server.ms1Live!.leadConnectionId, paying.id)
     const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
     assert.deepEqual(external.capabilities('local').map(c => [c.adapter, c.connectionId]), [['claude-code', paying.id]])

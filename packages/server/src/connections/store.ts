@@ -82,6 +82,20 @@ export class ConnectionStore {
     if (!row.baseUrl) throw new ConnectionError('validation_failed', 'Custom endpoint required')
     return this.write({ ...row, allowPrivate })
   }
+  /** Trusted import only: replace or clear an owner-pinned API root and its network consent. */
+  setImportedEndpoint(accountId: string, id: string,
+    endpoint: { baseUrl?: string; allowPrivate?: boolean }, name?: string): Connection {
+    const row = this.get(accountId, id)
+    const next: Connection = { ...row, ...(name === undefined ? {} : { name }) }
+    if (endpoint.baseUrl === undefined) {
+      delete next.baseUrl
+      delete next.allowPrivate
+    } else {
+      next.baseUrl = endpoint.baseUrl
+      next.allowPrivate = endpoint.allowPrivate ?? false
+    }
+    return this.write(next)
+  }
   setUnattended(accountId: string, id: string, unattended: boolean): Connection {
     return this.write({ ...this.get(accountId, id), unattended })
   }

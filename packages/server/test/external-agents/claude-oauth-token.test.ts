@@ -29,7 +29,7 @@ async function files(dir: string): Promise<string[]> {
 test('token mode: the token arrives as CLAUDE_CODE_OAUTH_TOKEN in the bridge and probe environment only, billed to the subscription', async t => {
   const f = await tokenFixture(t)
   const row = f.connections.store.get(owner, f.bindings[0]!.connectionId)
-  assert.deepEqual([row.kind, row.provider, row.auth, row.name], ['agent', 'claude-code', 'cli_login', 'claude-code (dotenv)'])
+  assert.deepEqual([row.kind, row.provider, row.auth, row.name], ['agent', 'claude-code', 'cli_login', 'Claude Code'])
   assert.ok(row.secretRef, 'the token is in the vault')
   assert.equal(f.connections.snapshot(owner).connections.some(c => c.kind === 'model_api'), false, 'it never became a model API connection')
   const result = await f.service().run(input)
