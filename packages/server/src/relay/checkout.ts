@@ -176,7 +176,12 @@ export class OwnedCheckoutAllocator {
     await chmod(path, entry.isDirectory() ? 0o700 : 0o600).catch(() => undefined)
     if (!entry.isDirectory()) return
     const names: string[] = []
-    for await (const item of await opendir(path)) names.push(item.name)
+    try { for await (const item of await opendir(path)) names.push(item.name) }
+    catch (error) {
+      // A partially failed recursive removal can finish a sibling after lstat above.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
     for (const name of names) await this.writable(join(path, name))
   }
 }

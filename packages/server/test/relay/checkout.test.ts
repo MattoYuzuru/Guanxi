@@ -126,7 +126,7 @@ test('cleanup accepts a child removed between fallback metadata and directory tr
   await mkdir(vanishing)
   const original = fsPromises.opendir
   let removedBetweenOperations = false
-  const mocked = t.mock.method(fsPromises, 'opendir', async (path, options) => {
+  const mocked = t.mock.method(fsPromises, 'opendir', async (path: Parameters<typeof original>[0], options?: Parameters<typeof original>[1]) => {
     if (path === vanishing) {
       await rm(vanishing, { recursive: true })
       removedBetweenOperations = true

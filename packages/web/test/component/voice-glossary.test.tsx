@@ -802,7 +802,9 @@ describe('history', () => {
   it('reports a history failure once, with its source, and recovers by itself', async () => {
     await open()
     node.fail.set('GET /:id/history', { status: 500, code: 'internal_error', once: true })
-    fireEvent.click(button('History of Hono'))
+    // Settle the synthetic response and passive recovery effect before sending focus.
+    // Observing the error DOM alone can precede installation of its focus listener.
+    await act(async () => { fireEvent.click(button('History of Hono')) })
     await waitFor(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]?.textContent).toContain('The history could not be loaded')
     expect(alerts()[0]?.textContent).toContain('GET /api/voice/glossary/:id/history')
