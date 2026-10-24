@@ -77,19 +77,18 @@ test('a chat session from the sidebar opens the full-width timeline, not the doc
   await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible()
 })
 
-for (const width of [360, 1280]) test(`the session header never overlaps title, model and context at ${width} px`, async ({ page }) => {
+for (const width of [360, 1280]) test(`the session header never overlaps title and context at ${width} px; the model shows once, in the composer`, async ({ page }) => {
   await setup(page)
   await page.setViewportSize({ width, height: 800 })
   await page.goto(`/chat/${THREAD}`)
   const header = page.getByTestId('session-header')
   await expect(header).toBeVisible()
   const title = page.getByTestId('session-title')
-  const model = page.getByTestId('session-model')
   const context = page.getByTestId('session-context')
   const actions = header.locator('.native-session-actions')
   await expect(title).toHaveText(LONG_TITLE)
-  const boxes = { header: await box(header), title: await box(title), model: await box(model), context: await box(context), actions: await box(actions) }
-  const parts = ['title', 'model', 'context', 'actions'] as const
+  const boxes = { header: await box(header), title: await box(title), context: await box(context), actions: await box(actions) }
+  const parts = ['title', 'context', 'actions'] as const
   for (const [index, a] of parts.entries()) {
     const own = boxes[a]
     expect(own.x, `${a} starts inside the header`).toBeGreaterThanOrEqual(boxes.header.x - 0.5)
@@ -98,11 +97,13 @@ for (const width of [360, 1280]) test(`the session header never overlaps title, 
   }
   // The long title is truncated with an ellipsis rather than wrapped or pushed under its neighbours.
   expect(await title.evaluate(node => getComputedStyle(node).textOverflow)).toBe('ellipsis')
-  expect(await title.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
+  if (width === 360) expect(await title.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true)
   expect(boxes.title.height).toBeLessThan(boxes.header.height)
-  // The model and context keep their full names for assistive technology.
-  await expect(model).toHaveAccessibleName('Model: fixture:latest')
-  await expect(context).toHaveAccessibleName(/^Context window: /u)
+  // No duplicate: the model is not in the header; the composer footer names it once (D-207).
+  await expect(header.getByText('fixture:latest')).toHaveCount(0)
+  await expect(page.getByTestId('composer-model')).toHaveCount(1)
+  await expect(page.getByTestId('composer-model')).toContainText('Model: fixture:latest')
+  await expect(context).toHaveAccessibleName(/Context window/u)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 

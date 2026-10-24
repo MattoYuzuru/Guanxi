@@ -576,8 +576,8 @@ function ThreadPage({
 
   return (
     <section ref={sessionRef} className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
-        {/* Round 4: title, model and context never overlap — the title truncates, the model is a
-            chip that drops its name first, the context is an icon and a value; actions are icons. */}
+        {/* Round 4: title and context never overlap — the title truncates, the context is an icon and
+            a value; actions are icons. The model is shown once, in the composer footer (D-207). */}
         <header className="native-session-header session-header" data-testid="session-header">
           <div className="native-session-heading session-heading">
             {chat.project && <>
@@ -589,10 +589,8 @@ function ThreadPage({
             <h1 id={headingId} className="native-session-title" data-testid="session-title">{chat.thread.title}</h1>
           </div>
           {chat.thread.mode === 'agent' && <Badge tone="accent">{translate('chat.mode.agent')}</Badge>}
-          <span className="session-model" data-testid="session-model" role="img" aria-label={translate('session.model', { model })}>
-            <Icon name="models" size={14} />
-            <span className="session-model-name" aria-hidden="true">{model}</span>
-          </span>
+          {/* The model lives once, in the composer footer (D-207); the header keeps the context gauge
+              (round 4 review: no duplicated model/context). */}
           {chat.context && <Tooltip>
             <TooltipTrigger render={<UiButton variant="ghost" size="sm" className="session-context" data-testid="session-context"
               aria-pressed={contextShown} onClick={toggleContext}
@@ -1236,7 +1234,10 @@ function ChatComposer({
           </span>
         ) : undefined}
         trailing={<>
-          <span className="max-w-3xs truncate font-mono text-12 text-secondary" title={model}>{model}</span>
+          <span className="max-w-3xs truncate font-mono text-12 text-secondary" data-testid="composer-model">
+            <span className="sr-only">{translate('session.model', { model })}</span>
+            <span aria-hidden="true">{model}</span>
+          </span>
           {context}
         </>}
       />
