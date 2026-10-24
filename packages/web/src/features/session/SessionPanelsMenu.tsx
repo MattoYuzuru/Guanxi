@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from 'react'
 import {
   Button, Dialog, DialogContent, DialogFooter, DialogTitle, Icon, IconButton, Input, Menu, MenuCheckboxItem, MenuContent,
   MenuGroup, MenuGroupLabel, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, MenuTrigger, PortalContainerProvider, type IconName,
@@ -33,7 +33,10 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
   const register = layout?.registerMenu
   // Registered before paint, so the workspace's fallback bar never flashes beside a session header.
   useLayoutEffect(() => (fallback ? undefined : register?.()), [fallback, register])
-  const [naming, setNaming] = useState(false)
+  const [naming, setNaming] = useState<'saveAs' | 'rename' | null>(null)
+  // After a name dialog saves, the docked pane is inert until the save settles: focus returns to
+  // the trigger once the workspace is no longer busy.
+  const [returnPending, setReturnPending] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const [triggerDocument, setTriggerDocument] = useState<Document | null>(null)
   // A stable ref callback: it runs on mount and unmount only, not on every render (review P3).
@@ -43,6 +46,11 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
   // document is read again on open, since a pane can move between windows without remounting.
   const portal = triggerDocument?.body ?? null
   const busy = layout?.busy ?? false
+  useEffect(() => {
+    if (!returnPending || busy) return
+    setReturnPending(false)
+    requestAnimationFrame(() => trigger.current?.focus())
+  }, [returnPending, busy])
   const rows = layout
     ? layout.blocks.map(block => ({ id: block.id, label: block.label, icon: panelIconOf(block.id), checked: !block.hidden,
       onChange: (next: boolean) => layout.setVisible(block.id, next) }))
@@ -84,25 +92,30 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
           </MenuGroup>}
           <MenuSeparator />
           <MenuItem disabled={busy} onClick={layout.save}><Icon name="save" />{t('workspaceLayout.save')}</MenuItem>
-          <MenuItem disabled={busy} onClick={() => setNaming(true)}><Icon name="save-as" />{t('session.layout.saveAs')}</MenuItem>
+          <MenuItem disabled={busy} onClick={() => setNaming('saveAs')}><Icon name="save-as" />{t('session.layout.saveAs')}</MenuItem>
+          <MenuItem disabled={busy} onClick={() => setNaming('rename')}><Icon name="new" />{t('session.layout.rename')}</MenuItem>
           <MenuItem disabled={busy || layout.phone} onClick={layout.move}><Icon name="move" />{t('session.layout.move')}</MenuItem>
           <MenuItem disabled={busy} onClick={layout.reset}><Icon name="reset" />{t('workspaceLayout.reset')}</MenuItem>
         </> : arrangePath ? <MenuItem onClick={() => navigate(arrangePath)}><Icon name="layout" />{t('session.layout.arrange')}</MenuItem> : null}
       </MenuContent>
     </Menu>
-    {layout && <SaveAsDialog key={naming ? 'naming' : 'idle'} open={naming} initial={layout.name} onClose={() => { setNaming(false); requestAnimationFrame(() => trigger.current?.focus()) }}
-      onSave={name => { setNaming(false); layout.saveAs(name); requestAnimationFrame(() => trigger.current?.focus()) }} />}
+    {layout && <NameDialog key={naming ?? 'idle'} open={naming !== null} initial={layout.name}
+      title={t(naming === 'rename' ? 'session.layout.renameTitle' : 'session.layout.saveAsTitle')}
+      returnFocus={trigger} onClose={() => setNaming(null)}
+      onSave={name => { if (naming === 'rename') layout.rename(name); else layout.saveAs(name); setNaming(null); setReturnPending(true) }} />}
   </>
   // The wrapper is always present in the free arrangement, so the tree (and an open menu) never remounts.
   return layout ? <PortalContainerProvider container={portal}>{menu}</PortalContainerProvider> : menu
 }
 
-function SaveAsDialog({ open, initial, onClose, onSave }: { open: boolean; initial: string; onClose: () => void; onSave: (name: string) => void }) {
+/** One name field for Save as new and Rename; the title says which. */
+function NameDialog({ open, initial, title, returnFocus, onClose, onSave }: { open: boolean; initial: string; title: string; returnFocus: RefObject<HTMLButtonElement | null>; onClose: () => void; onSave: (name: string) => void }) {
   const [name, setName] = useState(initial)
   const submit = (event: FormEvent) => { event.preventDefault(); onSave(name.trim() || initial) }
   return <Dialog open={open} onOpenChange={next => { if (!next) onClose() }}>
-    <DialogContent>
-      <DialogTitle>{t('session.layout.saveAsTitle')}</DialogTitle>
+    {/* Focus returns to the menu's trigger: the menu item that opened the dialog is gone. */}
+    <DialogContent finalFocus={returnFocus}>
+      <DialogTitle>{title}</DialogTitle>
       <form onSubmit={submit} className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-12">
           <span className="text-secondary">{t('workspaceLayout.layout')}</span>

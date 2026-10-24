@@ -827,6 +827,22 @@ test('a session block hidden from its dock tab leaves the panels menu reachable 
   await expect(menuButtons).toHaveCount(1)
 })
 
+test('the layout menu renames the active layout in place through a name dialog (round 4 review 6)', async ({ page }) => {
+  await open(page)
+  await layoutAction(page, 'Rename layout…')
+  const dialog = page.getByRole('dialog', { name: 'Rename layout', exact: true })
+  const name = dialog.getByRole('textbox', { name: 'Named layout' })
+  await expect(name).toHaveValue('Default layout')
+  await name.fill('Focus layout')
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => (window as any).__LAYOUT_WRITES__.length)).toBe(1)
+  const written = await page.evaluate(() => (window as any).__LAYOUT_WRITES__[0].document as LayoutDocument)
+  expect(written.id).toBe('default-developer')
+  expect(written.name).toBe('Focus layout')
+  await expect(page.getByRole('button', { name: 'Panels and layout', exact: true })).toBeFocused()
+})
+
 test('choice menus preserve focus when tabbing away or clicking outside them', async ({ page }) => {
   await open(page)
   await move(page, 'Terminal', 'Right')

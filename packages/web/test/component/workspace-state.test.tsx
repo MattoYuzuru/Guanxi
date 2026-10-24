@@ -83,6 +83,22 @@ describe('Workspace actual failure boundaries with a controlled docking adapter'
     expect(controls!.addable.map(entry => entry.label)).toEqual(['Another Terminal', 'Another Browser'])
   })
 
+  it('renames the active layout in place: same id, new name (round 4 review 6)', async () => {
+    let controls: WorkspaceLayoutControls | null = null
+    function Capture() { controls = useWorkspaceControls(); return null }
+    withBuiltInBlocks()
+    vi.mocked(api.saveLayout).mockImplementation(async document => ({ document, recovered: [] }))
+    vi.mocked(api.saveLayoutGeometry).mockResolvedValue({ geometry: {} })
+    render(<Workspace><Capture /></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    await act(async () => controls!.rename('Focus layout'))
+    await waitFor(() => expect(api.saveLayout).toHaveBeenCalledTimes(1))
+    const saved = vi.mocked(api.saveLayout).mock.calls[0]![0]
+    expect(saved.id).toBe('default-developer')
+    expect(saved.name).toBe('Focus layout')
+    await waitFor(() => expect(controls!.name).toBe('Focus layout'))
+  })
+
   it('keeps the layout name when a Save as fails, so a later Save never renames the original (review P2)', async () => {
     let controls: WorkspaceLayoutControls | null = null
     function Capture() { controls = useWorkspaceControls(); return null }

@@ -464,6 +464,8 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     save: () => { void save() },
     // The new name becomes the layout's name only once the node confirms the save (review P2).
     saveAs: next => { void save(true, undefined, next) },
+    // Renaming in place was the toolbar name field plus Save; it is one menu item now (review 6).
+    rename: next => { void save(false, undefined, next) },
     reset,
     move: () => openMove(),
     registerMenu,

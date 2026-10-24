@@ -27,6 +27,8 @@ export interface WorkspaceLayoutControls {
   name: string
   save: () => void
   saveAs: (name: string) => void
+  /** Saves the active layout in place under a new name (its id and scope stay). */
+  rename: (name: string) => void
   reset: () => void
   /** Opens the keyboard-operable move dialog; unavailable on a phone. */
   move: () => void
