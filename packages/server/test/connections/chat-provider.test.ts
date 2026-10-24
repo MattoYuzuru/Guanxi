@@ -142,6 +142,19 @@ test('reimporting the same OpenAI key with an endpoint reuses one connection; a 
   assert.equal(f.service.snapshot('local').connections.length, 2)
 })
 
+test('a legacy openai (dotenv) row is renamed and marked by a later import', async t => {
+  const f = await setup(t), key = canary()
+  const legacy = f.store.create('local', { name: 'openai (dotenv)', kind: 'model_api', provider: 'openai', auth: 'api_key' })
+  await f.vault.unlock('local')
+  f.store.setSecret('local', legacy.id, f.vault.put('local', key))
+  const result = await f.service.importKeys('local', [{ provider: 'openai', family: 'OPENAI_API_KEY', value: key }])
+  assert.deepEqual(result.imported, [{ connectionId: legacy.id, provider: 'openai', action: 'unchanged' }])
+  const row = f.store.get('local', legacy.id)
+  assert.equal(row.name, 'OpenAI')
+  assert.equal(row.facts.origin?.value, 'provider_key_import')
+  assert.equal(f.service.snapshot('local').connections.length, 1)
+})
+
 test('imported connections use catalog labels and a compatible endpoint names its host', async t => {
   const f = await setup(t), file = join(f.dir, 'labels.env')
   await writeFile(file, `DEEPSEEK_API_KEY=${canary()}\nOPENAI_COMPAT_API_KEY=${canary()}\nOPENAI_COMPAT_API_URL=https://api.example.invalid/v1\n`)
