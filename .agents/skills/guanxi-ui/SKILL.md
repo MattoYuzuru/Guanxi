@@ -73,6 +73,10 @@ lands, the commands below are mandatory.
 3. Never edit generated token output; never set `approved` — only the owner approves, in the
    app, with a signed record.
 4. The ESLint suppression file must not grow.
+5. In component tests, settle an asynchronous mocked failure with `await act(async () =>
+   { /* render or interaction */ })` before sending synthetic focus/online recovery events.
+   Visible error DOM alone does not prove passive recovery listeners are installed. Keep
+   exact request/error assertions; do not hide ordering races with retries or longer timeouts.
 
 ## Hand-off
 

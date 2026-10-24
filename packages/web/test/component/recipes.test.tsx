@@ -287,7 +287,8 @@ describe('RecipesPage', () => {
       .mockResolvedValueOnce(snapshotProjection(false))
     const create = vi.spyOn(api, 'createRecipeJobSnapshot')
 
-    render(<RecipesPage />)
+    // Flush the rejected synthetic read and recovery subscription before sending online.
+    await act(async () => { render(<RecipesPage />) })
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('snapshot read failed')
     expect(screen.queryAllByRole('button', { name: /^(Повторить|Загрузить текущую)/u })).toHaveLength(0)
