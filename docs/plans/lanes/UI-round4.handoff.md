@@ -1,7 +1,7 @@
 # UI round 4 hand-off
 
 **Status:** implemented, locally validated (focused component tests, affected browser specs and UI
-gates under the shared heavy lock; no hosted CI, no live model) · **Updated:** 2026-10-24 ·
+gates under the shared heavy lock; no hosted CI, no live model) · **Updated:** 2026-10-24 (second review round) ·
 **Branch:** `claude/ui-round4` from main `dd079680` · **Source of truth:** owner feedback
 2026-10-23 (`Guanxi-lanes/prompts/ui-r4-refs/owner-feedback-2026-10-23.ru.md`, references `1.png`, `2.png`)
 
@@ -89,10 +89,37 @@ screenshots; `146e1c85` fixed the phone checkpoint focus found by `context-check
 after the inert change. Not changed: the panel close returns focus to the composer, not the
 opener (accepted); the fallback bar can flash while a chat loads inside the free arrangement.
 
+## Second review round (coordinator, 2026-10-24)
+
+An independent review of `dd079680..b3c77813` found no blockers; each should-fix item is its own
+commit with a test that failed before the fix (the browser cases ran first against `785896e6`,
+receipts `check-rp4h4a3j` and `check-yqqj9h4i`).
+
+| Item | Commit | Test that failed before |
+| --- | --- | --- |
+| 5 the session re-rendered on every runtime poll | `785896e6` | `shell-runtime-render` "an open chat session (`/chat/<id>`) renders nothing for such a poll" (8 vs 5 renders) |
+| 2 arrow keys in the sheet's switcher lost focus | `007dd33f` | `session-view` "arrow keys in the sheet panel switcher keep focus" |
+| 1 closing the last sheet panel focused `<body>` | `93f2ebb6` | `session-view` "closing the last panel of a phone sheet returns focus to the composer" |
+| 3 the sheet was not modal; 640–719 px overlay uncontained | `1518b51d` | `session-view` "a narrow session's panel is a modal sheet that contains focus" at 390 and 680 px |
+| 4 stored panels reopened as a focus-taking sheet | `6cb867dc` | `session-view` "stored panels never reopen as a sheet on a phone…", unit `session-panels` |
+| 6 renaming a layout in place was lost | `c2718b66` | `workspace-state` "renames the active layout in place", `workspace.spec` rename dialog |
+| 7 model cards used native `title` | `76a71ef6` | `model-card` "explains facts through design popovers" (6 title attributes before) |
+| model/context shown twice | `6f7efa85` | `session-view` header case: the model is absent from the header, once in the composer |
+| nits | `07b54695` | `provider-context` ('unknown' word, no cache dot at 0 tokens), `session-view` (constant control name), `workspace.spec` (back to the timeline) |
+
+**Decision recorded:** the model is shown once, in the composer footer (D-207); the session header
+keeps only the context gauge, which also opens the Context panel. A narrow session (pane under
+720 px, measured on the pane) shows panels as a modal full-screen sheet on the document body
+(`role=dialog`, `aria-modal`, the app root inert, Tab wrapping, Escape closes, focus returns to
+the composer); 720–1023 px keeps the narrower side pane.
+
+Commands at `07b54695` (clean): 32 affected browser specs, 102/102 (`check-62bvqpcx`) and 80/80
+(`check-50fayu3m`); 24 focused web vitest files, 128/128; `npm run ui:check`, `npm run lint`,
+web typecheck, `lint:md` pass. `ui:check:browser` was not re-run: no `@guanxi/ui` source changed
+after `5f2e529d` (only the generated manifest's usage counts).
+
 ## Residual risk and what is still not what the owner asked
 
-- The model and the context value appear twice: in the header (the lead's B) and in the composer
-  footer (D-207). The owner should choose one.
 - The free arrangement's built-in layout still shows all eleven blocks at once; it is no longer the
   default view, but "Arrange panels freely" or the palette's "Session workspace" still opens it.
 - Side panels other than Context are honest placeholders ("No terminal service is attached"):
@@ -106,6 +133,8 @@ opener (accepted); the fallback bar can flash while a chat loads inside the free
 - `embla-carousel-react` is now unused in `packages/web/package.json`; removing it changes the lock.
 - Dropping a dragged tab onto the chat card's content shows no drop target (only on its padding);
   this predates round 4 and is not fixed.
+- The composer's model readout has no tooltip; a very long model id is truncated there (its full
+  name is read by screen readers).
 - Axe flags Base UI's focus guards around any open non-modal menu (`aria-hidden-focus`); the new
   axe check scans the menu itself.
 - A layout the owner saved earlier in the free arrangement still applies there.
