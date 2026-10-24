@@ -1,7 +1,7 @@
 ---
 id: segmented-control
 level: primitive
-states: [default, icons, focus-visible, disabled]
+states: [default, icons, focus-visible, disabled, uneven]
 tokens: []
 since: 0.1.0
 ---
@@ -26,12 +26,14 @@ graphics tier, without opening a menu (D-204 customisation area).
 ## Anatomy and variants
 
 A recessed track (pressed fill, 8 px radius, 2 px padding) holding segments; the selected
-segment is a raised white chip with the inner highlight and the control shadow. Variants: text,
-icon and text, icon only.
+segment is a raised white chip with the inner highlight and the control shadow. Segments are
+grid columns of one size: each is as wide as the widest label plus 12 px of padding on each side,
+so a shrink-wrapped control never squeezes a long label. Variants: text, icon and text, icon only.
 
 ## States
 
-default, icons (icon only), focus-visible and disabled.
+default, icons (icon only), focus-visible, disabled, and uneven (labels of different lengths at
+one equal width).
 
 ## Accessibility
 

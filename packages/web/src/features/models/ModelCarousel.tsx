@@ -54,6 +54,9 @@ export function ModelCarousel({
   const [selected, setSelected] = useState(0)
   const [canPrev, setCanPrev] = useState(false)
   const [canNext, setCanNext] = useState(false)
+  // Every card fits the row: then this is a plain row, not a carousel (visual pass 3).
+  const [fits, setFits] = useState(false)
+  const fitsRef = useRef(false)
   const tweenNodesRef = useRef<HTMLElement[]>([])
 
   /* ── scale/opacity покадрово ── */
@@ -67,6 +70,10 @@ export function ModelCarousel({
   }, [])
 
   const applyTween = useCallback((api: EmblaCarouselType) => {
+    if (fitsRef.current) {
+      for (const node of tweenNodesRef.current) { node.style.transform = ''; node.style.opacity = ''; node.style.zIndex = '' }
+      return
+    }
     const progress = api.scrollProgress()
     const snaps = api.scrollSnapList()
     const nodes = tweenNodesRef.current
@@ -96,12 +103,15 @@ export function ModelCarousel({
       setSelected(emblaApi.selectedScrollSnap())
       setCanPrev(emblaApi.canScrollPrev())
       setCanNext(emblaApi.canScrollNext())
+      const nextFits = emblaApi.scrollSnapList().length <= 1
+      fitsRef.current = nextFits
+      setFits(nextFits)
     }
 
     const onReInit = () => {
       collectTweenNodes(emblaApi)
-      applyTween(emblaApi)
       sync()
+      applyTween(emblaApi)
     }
     const onScroll = () => applyTween(emblaApi)
     const onSettle = () => applyTween(emblaApi)
@@ -210,10 +220,11 @@ export function ModelCarousel({
         className="embla-viewport"
         ref={emblaRef}
         role="group"
-        aria-roledescription={translate('model.carousel.description')}
+        aria-roledescription={fits ? undefined : translate('model.carousel.description')}
         aria-label={ariaLabel}
-        tabIndex={0}
-        onKeyDown={onKeyDown}
+        tabIndex={fits ? undefined : 0}
+        onKeyDown={fits ? undefined : onKeyDown}
+        data-fits={fits || undefined}
       >
         <div className="embla-container px-[6vw]">
           {items.map((item, index) => (
@@ -229,7 +240,7 @@ export function ModelCarousel({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-center gap-3">
+      {fits ? null : <div className="mt-3 flex items-center justify-center gap-3">
         <Button
           variant="ghost"
           size="sm"
@@ -268,7 +279,7 @@ export function ModelCarousel({
         >
           →
         </Button>
-      </div>
+      </div>}
     </div>
   )
 }

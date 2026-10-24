@@ -790,11 +790,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 3,
+        "count": 4,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
-          "packages/web/src/features/new-session/NewSessionScreen.tsx"
+          "packages/web/src/features/new-session/NewSessionScreen.tsx",
+          "packages/web/src/features/side-chat/SideChatPanel.tsx"
         ]
       },
       "since": "0.1.0"
@@ -1254,7 +1255,7 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 14,
+        "count": 15,
         "files": [
           "packages/web/src/components/ui.tsx",
           "packages/web/src/features/agent/WorkspacePicker.tsx",
@@ -1262,6 +1263,7 @@
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
           "packages/web/src/features/models/CatalogVariantInstall.tsx",
+          "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
           "packages/web/src/features/new-session/NewSessionScreen.tsx",
@@ -1445,11 +1447,12 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 10,
+        "count": 11,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
           "packages/web/src/features/chat/ChatRetentionInfo.tsx",
           "packages/web/src/features/launcher/LauncherPage.tsx",
+          "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
@@ -2003,9 +2006,10 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 6,
+        "count": 7,
         "files": [
           "packages/web/src/features/chat/ChatPage.tsx",
+          "packages/web/src/features/models/ModelCard.tsx",
           "packages/web/src/features/native-agent/NativeAgentPage.tsx",
           "packages/web/src/features/native-agent/NativeTimeline.tsx",
           "packages/web/src/features/new-session/SessionPickers.tsx",
@@ -2133,13 +2137,15 @@
         "default",
         "icons",
         "focus-visible",
-        "disabled"
+        "disabled",
+        "uneven"
       ],
       "stories": [
         "default",
         "icons",
         "focus-visible",
-        "disabled"
+        "disabled",
+        "uneven"
       ],
       "props": {
         "SegmentedControl": [
@@ -2203,29 +2209,33 @@
         "--font-weight-label",
         "--motion-duration-fast",
         "--motion-easing-standard",
+        "--spacing-12",
         "--spacing-2",
         "--spacing-6",
-        "--spacing-8",
         "--target-minimum"
       ],
-      "sourceHash": "sha256:f61315ee2a0258be6cf3f10df5c50d01138b4beb25312340e285757a68b691ba",
+      "sourceHash": "sha256:4226bd8762e8a76e1917e40ed00fed6c4eebb355348432db705b065124e6fcc5",
       "snapshotHashes": {
-        "default-dark-hc": "sha256:117099e5e353794399ea98ad4896f9bd693de491ab7d7ec25bc9bdda3b533512",
-        "default-dark": "sha256:d6b1a278b79882b3c6967d94b26949d23a16551bc6d2d19232b5e9f49e927ca4",
-        "default-light-hc": "sha256:d3e4ab90c9baffd602069f81b48aa3f5b8588f76c536523fe0a682b7fdf6c33e",
-        "default-light": "sha256:18e40fb7230ce3d27343931aee8d6f89f2ee62d2738dbf1b22757ddd867780d9",
-        "disabled-dark-hc": "sha256:06702984b6582679b0afc595c7a11f9d72050586f2016e95091e598eb679c87d",
-        "disabled-dark": "sha256:a8aeec788f5332ab6bead72aa868a7220fbf6b13085ba4e04e93b1a73d0aba0b",
-        "disabled-light-hc": "sha256:b40aff9a7a9b2a9b7ecc9088f2ef17da3a2aceefb5a15f10213157c9f0c8c13d",
-        "disabled-light": "sha256:1a1368f5b6fce2c8552c8b325bfb01ab25666dbdb6a4de6214dfb86849c079f1",
-        "focus-visible-dark-hc": "sha256:2abbb5ceb9de861adf3e272126b64cd41a4d107f1b2101a1ab81c2fd439fedd1",
-        "focus-visible-dark": "sha256:948fc7d5339c56ea0dd31bd7839b5ccb9ac5274c6f6ae228cddf4f02d9cdf5a1",
-        "focus-visible-light-hc": "sha256:4d1fbd9715f5a0774447cb77ca26d47f4f6277f8f773a927536add177b7ee5ba",
-        "focus-visible-light": "sha256:68bc1431b5a2b329a2c10ff686c6c8c85ba3c5c124308a55a490a170dab8513d",
+        "default-dark-hc": "sha256:a971d145fb548c07196af159846a00a7b972a0cc27bb2c85a237db04b56d62ac",
+        "default-dark": "sha256:3ab669dc352a4107045da8223be8d3d5a6235a428e7df376856dcaafe128922f",
+        "default-light-hc": "sha256:64e393ab5e18b020907dcd6b0b4787424acb97ba061f35b548bdecdf0d5294b6",
+        "default-light": "sha256:ca0ed3b4a25051ecc506acac951ab427c89318059aa76bd610fcc9690086d69d",
+        "disabled-dark-hc": "sha256:c2071a7760d52df3cbae4c6bfd7817a6b1bb530f6bd9aa802f21c069a3afc000",
+        "disabled-dark": "sha256:c47da0bf7955ebc6e1a3df4c614305cae9c24e50947cb77863fb55228ad6223d",
+        "disabled-light-hc": "sha256:239e935973d0987f11cb7aa26c666b02854936333869fc14eccebe7eb77e1dfa",
+        "disabled-light": "sha256:0e720c6995017ee756668dab895b857945b28362e821928fdbf6365debb40a90",
+        "focus-visible-dark-hc": "sha256:872a81a10e1c85959cfe31bbe29bbdd42ef075a9317e13c4eb938ccdfb6320d0",
+        "focus-visible-dark": "sha256:378d20efc7b8bca27c49f7312a02a13e8fec1c258c8f4615d5f12e0f2c04d97a",
+        "focus-visible-light-hc": "sha256:242112fc7d382619a2cc909e8bc89f2824a2d8f032f094094a809b38f98aa177",
+        "focus-visible-light": "sha256:803ace9b7f87c4135a4d00116e8e610867a3c101a91176d797af50ee4342048e",
         "icons-dark-hc": "sha256:4746cf1847c0559aa2ba21f9ea02eba3043e6092d19cdbe47521e4cad03ccc66",
         "icons-dark": "sha256:2672606e50d3d81d2846c766e51706070d16c32c6bc5f1da53a50e2f28e2cf49",
         "icons-light-hc": "sha256:53d56c93ef78ef3ddd88cc37c95ff81eb6bea58acf75f4020f04959558881ee7",
-        "icons-light": "sha256:31f7c6de925b717f974f3b30455be9afa9f24c9c9a77d194abe40be7fc7c0430"
+        "icons-light": "sha256:31f7c6de925b717f974f3b30455be9afa9f24c9c9a77d194abe40be7fc7c0430",
+        "uneven-dark-hc": "sha256:18cca89e6507aaf8482a73fcd7988b6a9ceb0b461823025d8bbd135dda211af9",
+        "uneven-dark": "sha256:58962fec8e8a2db58f6d2511aba65391968e01d0f01738637a19d5a182a8c5d5",
+        "uneven-light-hc": "sha256:d40b4697157cff9a719431bdb65afb64eff7fc9d631dd7164024f9523a818072",
+        "uneven-light": "sha256:0c79dd83d89f5199ed2ddadb7793888225b08b88192a7f93bccb9b218a91e3e2"
       },
       "storedStatus": "review",
       "signature": "absent",
@@ -3011,10 +3021,9 @@
       "signature": "absent",
       "status": "review",
       "usage": {
-        "count": 4,
+        "count": 3,
         "files": [
           "packages/web/src/features/new-session/SessionPickers.tsx",
-          "packages/web/src/features/side-chat/SideChatPanel.tsx",
           "packages/web/src/features/voice/GlossaryEntryForm.tsx",
           "packages/web/src/features/voice/GlossaryPreview.tsx"
         ]

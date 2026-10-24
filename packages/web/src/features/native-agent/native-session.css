@@ -255,6 +255,12 @@
   min-width: 0;
 }
 
+.native-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+
 .native-section-title {
   margin: 0;
   color: var(--color-text-tertiary);

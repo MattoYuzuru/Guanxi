@@ -153,7 +153,9 @@ describe('manual completion probe', () => {
     fireEvent.keyDown(launch, { key: 'Enter' })
     fireEvent.click(launch)
     const dialog = await screen.findByRole('dialog', { name: 'Ненадолго загрузить и проверить модель?' })
-    expect(dialog.getAttribute('aria-describedby')).toBe('completion-probe-confirmation')
+    const described = document.getElementById(dialog.getAttribute('aria-describedby')!)
+    expect(described).not.toBeNull()
+    expect(dialog.contains(described)).toBe(true)
     await waitFor(() => expect(document.activeElement).toBe(
       screen.getByRole('button', { name: 'Запустить проверку' }),
     ))

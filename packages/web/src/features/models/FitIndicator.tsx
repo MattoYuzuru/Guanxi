@@ -86,12 +86,15 @@ export function FitIndicator({
   usableBytesOverride,
   compact = false,
   defaultOpen = false,
+  summary = false,
 }: {
   fit: FitVerdict
   /** Если общий объём железа известен точнее, чем в вердикте. */
   usableBytesOverride?: number
   compact?: boolean
   defaultOpen?: boolean
+  /** The verdict and its meter only; the facts and the breakdown live elsewhere (a card's details). */
+  summary?: boolean
 }) {
   const color = FIT_COLOR_VAR[fit.level]
   const basis = BASIS_META[fit.basis]
@@ -129,6 +132,7 @@ export function FitIndicator({
         className="mt-1.5"
         label={translate('fit.aria', { summary: reason })}
       />
+      {summary ? null : <>
 
       <div className="mt-1.5 flex items-center justify-between gap-2 text-2xs text-muted">
         <FactList
@@ -195,6 +199,7 @@ export function FitIndicator({
           <p className="mt-2 text-2xs text-secondary">{translate(basis.hint)}</p>
         </div>
       </Disclosure>
+      </>}
     </div>
   )
 }
