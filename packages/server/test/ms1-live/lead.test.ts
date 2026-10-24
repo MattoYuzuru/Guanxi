@@ -71,6 +71,23 @@ test('a restart that is asked to start the lead again does not start a second on
   await until(() => w.home.count('SELECT COUNT(*) AS n FROM lead_sessions') === before + 1, 'the new lead to be recorded', 30_000)
 })
 
+test('a restart with the same over-long task does not start a second lead after the first finished', async t => {
+  const w = await createLiveWorld(t, { lead: true })
+  await w.registerProject()
+  const prompt = 'Make the fixture project green. ' + 'x'.repeat(4_100)
+  const started = await w.restartHomeWithLead(brief(w, { executor: { connectionId: w.home.find('started')!['connectionId'], model: 'some-other-model' } }), prompt)
+  await w.home.wait('lead-first', 90_000)
+  await until(() => w.home.one<{ state: string }>('SELECT state FROM durable_runs WHERE id=?', started['runId'])?.state === 'completed', 'the refused lead to finish', 90_000)
+  const before = w.home.count('SELECT COUNT(*) AS n FROM lead_sessions')
+  assert.equal(before, 1)
+  assert.ok(w.home.one<{ task: string }>('SELECT task FROM lead_sessions')!.task.length <= 4_000, 'the stored task is the clipped normal form')
+  await w.home.stop()
+  w.home.spawn(['--lead-prompt-file', `${w.dir}/lead-prompt.txt`, '--project', w.projectId])
+  await w.home.wait('started'); await w.home.wait('lead-exists')
+  assert.equal(w.home.find('lead-started'), undefined, 'no second lead was started')
+  assert.equal(w.home.count('SELECT COUNT(*) AS n FROM lead_sessions'), before)
+})
+
 test('the owner\'s configuration binds the lead: an executor or caps beyond the configuration are refused, nothing hibernates and no relay starts', async t => {
   const cases: Array<[string, (w: LiveWorld) => Record<string, unknown>, RegExp]> = [
     ['an executor model the owner never allowed', w => brief(w, { executor: { connectionId: w.home.find('started')!['connectionId'], model: 'some-other-model' } }), /executor_not_allowed/],

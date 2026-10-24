@@ -205,7 +205,8 @@ export async function setUpLead(server: Awaited<ReturnType<typeof start>>, setti
     // A restart asked for the same task never starts a second lead, nor does any lead that is still live (input_required waits for an explicit
     // resume). A lead whose run finished (completed, failed, canceled) does not block a new task.
     const finished = new Set(['completed', 'failed', 'canceled'])
-    if (leads.sessions().some(lead => lead.task === prompt || !finished.has(lead.state ?? ''))) emit({ event: 'lead-exists', hint: 'a live lead or a lead with the same task exists on this node; it was not started again' })
+    const task = leads.normalizeTask(prompt)
+    if (leads.sessions().some(lead => lead.task === task || !finished.has(lead.state ?? ''))) emit({ event: 'lead-exists', hint: 'a live lead or a lead with the same task exists on this node; it was not started again' })
     else {
       const started = leads.startLead({ ownerAccountId: LOCAL_ACCOUNT_ID, actorAccountId: LOCAL_ACCOUNT_ID, projectId: project, prompt })
       emit({ event: 'lead-started', runId: started.runId })

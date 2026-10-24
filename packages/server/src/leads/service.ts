@@ -84,6 +84,9 @@ export function wakePrompt(packet: string, accepted: boolean): string {
 const NO_FALLBACK = new Set(['empty_prompt'])
 const CURRENCIES = new Set(['USD', 'EUR', 'RUB'])
 const clip = (text: string, max: number) => { const points = Array.from(text); return points.length <= max ? text : points.slice(0, max - 1).join('') + '…' }
+/** The stored task of a lead, exactly as `startLead` records it: the scrubbed prompt, clipped to 4000 code points.
+ * `ms1-live start` compares a restarted prompt through this function, never against the raw file. */
+export function normalizeTask(prompt: string, scrubber: EgressScrubber): string { return clip(scrubber.scrub(prompt), 4_000) }
 
 /** Orchestrates external ACP leads on top of R1 (promises, outbox, fences) and K5 (processes). */
 export class LeadService {
@@ -117,6 +120,8 @@ export class LeadService {
     this.tools.setExecutors(options.executors)
     this.ownsTools = options.tools === undefined
   }
+  /** The task this service would store for `prompt`; the CLI refuses to start a second lead with the same one. */
+  normalizeTask(prompt: string): string { return normalizeTask(prompt, this.scrubber) }
   private now(): number { return (this.o.clock ?? Date.now)() }
   private fault(point: string): void { this.o.fault?.(`lead:${point}`) }
   health() { return { failure: this.failure } }
@@ -147,7 +152,7 @@ export class LeadService {
     }
     const runId = input.runId ?? randomUUID()
     leadInvariant(!this.store.session(runId), 'lead_exists')
-    const task = clip(this.scrubber.scrub(input.prompt), 4_000)
+    const task = normalizeTask(input.prompt, this.scrubber)
     const attempt = this.runs.createStarted({ id: runId, sessionId: runId }, (a, db, emit) => {
       this.store.insertSession(db, { run_id: runId, owner_account_id: input.ownerAccountId, actor_account_id: input.actorAccountId,
         project_id: input.projectId, session_roles: canonical(roles), fallback: input.fallback ? canonical(input.fallback) : null,
