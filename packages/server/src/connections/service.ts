@@ -236,10 +236,23 @@ export class Connections {
         const refs = prepared.map(({ entry, same }) => same ? null : this.#vault.put(accountId, entry.value))
         if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
           throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
-        for (const [index, { entry, row, same }] of prepared.entries()) {
+        for (const [index, item] of prepared.entries()) {
+          const { entry, row } = item
           const family = this.importedFamily(entry)
           const name = this.importedConnectionName(entry)
+          let same = item.same
           let connection = row
+          // Preparation ran before BEGIN IMMEDIATE; re-read the reusable row under the write lock so a
+          // concurrent DELETE cannot be overwritten with a mapping that points at the removed connection.
+          if (connection) {
+            try { connection = this.store.get(accountId, connection.id) }
+            catch (error) {
+              if (!(error instanceof ConnectionError) || error.code !== 'connection_not_found') throw error
+              connection = undefined
+              same = false
+            }
+          }
+          const reused = connection !== undefined
           if (!connection) {
             // A Claude Code subscription token belongs to an `agent` connection: only K5 can receive it, for the official CLI's environment.
             connection = this.store.create(accountId, entry.provider === 'claude-code'
@@ -261,10 +274,10 @@ export class Connections {
                 .run(accountId, entry.provider, connection.id)
             }
           }
-          if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
+          if (!same) this.saveImportedSecret(accountId, connection.id, refs[index] ?? this.#vault.put(accountId, entry.value))
           this.store.db.prepare('INSERT OR REPLACE INTO dotenv_imports(account_id,provider,family,endpoint,connection_id) VALUES(?,?,?,?,?)')
             .run(accountId, entry.provider, family, entry.baseUrl ?? '', connection.id)
-          imported.push({ connectionId: connection.id, provider: entry.provider, action: !row ? 'created' : same ? 'unchanged' : 'rotated' })
+          imported.push({ connectionId: connection.id, provider: entry.provider, action: !reused ? 'created' : same ? 'unchanged' : 'rotated' })
         }
         this.store.db.exec('COMMIT')
         return { imported }

@@ -1169,6 +1169,31 @@ test('DELETE hides a connection, drops its dotenv identity and keeps the retired
   assert.deepEqual(f.service().snapshot(account).connections.map(item => item.id), [again.imported[0]!.connectionId])
 })
 
+test('a DELETE between import preparation and its transaction cannot leave a mapping to the removed row', async t => {
+  const f = await setup(t); const s = f.service(); const key = fakeKey()
+  const first = await s.importKeys(account, [{ provider: 'deepseek', value: key }])
+  const removedId = first.imported[0]!.connectionId
+  // The row is read during preparation; remove it after the secret comparison and before BEGIN IMMEDIATE.
+  const originalMatches = Vault.prototype.matches
+  let removed = false
+  Vault.prototype.matches = async function (accountId, connectionId, value) {
+    const result = await originalMatches.call(this, accountId, connectionId, value)
+    if (!removed && connectionId === removedId) { removed = true; s.store.remove(accountId, connectionId) }
+    return result
+  }
+  try {
+    const again = await s.importKeys(account, [{ provider: 'deepseek', value: key }])
+    assert.equal(removed, true)
+    assert.equal(again.imported[0]!.action, 'created')
+    assert.notEqual(again.imported[0]!.connectionId, removedId)
+    const mapped = s.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=?')
+      .get(account, 'deepseek')!
+    assert.equal(String(mapped.connection_id), again.imported[0]!.connectionId)
+    assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM removed_connections WHERE connection_id=?').get(removedId)!.n, 1)
+    assert.ok(s.store.get(account, again.imported[0]!.connectionId).secretRef)
+  } finally { Vault.prototype.matches = originalMatches }
+})
+
 test('DELETE refuses with connection_in_use while a model call still runs, then succeeds', async t => {
   let started!: () => void; let release!: () => void
   const running = new Promise<void>(resolve => { started = resolve })
