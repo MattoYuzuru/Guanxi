@@ -71,10 +71,12 @@
 }
 
 .connections-rail {
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: var(--spacing-2);
-  border-bottom: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .connections-rail-item {

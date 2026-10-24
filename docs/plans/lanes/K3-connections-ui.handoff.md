@@ -19,7 +19,7 @@
 - **Endpoint models.** `GET /:id/models` now returns discovered IDs for a pinned endpoint,
   local `/api/tags` models for a local runtime and pi-ai catalog facts otherwise.
 - **C1 Connections centre (web).** `/connections` is a route and a shell destination (Settings
-  still links to it). The view is catalog-driven: a desktop tab rail and phone segmented control
+  still links to it). The view is catalog-driven: a desktop button rail and phone segmented control
   in `providerCategoryOrder`, provider cards with a monogram, connection count, key hint, docs
   link, Add key/Connect, and per-connection test, rotate, models and remove actions. Removal
   confirms in a Dialog. Add/rotate uses a Dialog with show/hide, typed inline errors, a key
@@ -46,9 +46,23 @@
 - `npx tsc --noEmit -p packages/web` — pass; `packages/web/tsconfig.test.json` — pass;
   `-p packages/server` — pass; `-p packages/contract` — pass.
 - `node packages/web/scripts/localized-copy-inventory.mjs` — exit 0.
-- `npm run lint:md` — 311 files, 0 errors; 310 files, 819 links, 0 problems.
+- `npm run lint:md` — 312 files, 0 errors; 311 files, 819 links, 0 problems.
 - `npx eslint` on the changed source/tests and `npx stylelint` on the two changed stylesheets
   — exit 0.
+- `npm run ui:check` — G11 passes after replacing the draft `Tabs` primitive with `Button`.
+  The overall command still exits 1 on G10 (stale `packages/ui/catalog/manifest.json`, no UI
+  package was changed in this lane) and G12 (the clone has no `main` base branch). G11 reports
+  the expected review-component hand-off warnings for `button`, `segmented-control`,
+  `status-item` and `workspace-chrome`.
+
+## Components and catalog
+
+- Used without modification: `Button`, `Dialog`, `Popover`, `IconButton`, `Input`, `Icon` and
+  `SegmentedControl` from `@guanxi/ui` (Tooltip is reached through `IconButton`). All are
+  `review` status; this lane changes no component, story or approval record.
+- A first implementation used `Tabs` for the desktop category rail. G11 rejected it as a
+  `draft` component, so the rail now uses the reviewed `Button` primitive with
+  `aria-pressed`. No new draft component was added.
 
 ## Mutation checks
 

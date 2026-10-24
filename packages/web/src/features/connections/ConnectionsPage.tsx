@@ -5,7 +5,7 @@ import type {
 import { providerCatalog, providerCategoryOrder } from '@guanxi/contract'
 import {
   Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, Icon, IconButton,
-  SegmentedControl, Tabs, TabsList, TabsTab,
+  SegmentedControl,
 } from '@guanxi/ui'
 import { getActiveLocale, translate } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
@@ -181,14 +181,16 @@ export function ConnectionsView({ snapshot, loading = false, error = false, erro
             onValueChange={value => setCategory(value)}
             options={categories.map(item => ({ value: item.value,
               label: `${translate(`connections.category.${item.value}`)} (${item.connected})` }))} />
-          : <Tabs value={category} onValueChange={value => setCategory(value as ProviderCategory)}>
-            <TabsList className="connections-rail">
-              {categories.map(item => <TabsTab key={item.value} value={item.value} className="connections-rail-item">
+          : <ul className="connections-rail">
+            {categories.map(item => <li key={item.value}>
+              <Button variant={item.value === category ? 'secondary' : 'ghost'} size="sm"
+                className="connections-rail-item w-full justify-between" aria-pressed={item.value === category}
+                onClick={() => setCategory(item.value)}>
                 <span>{translate(`connections.category.${item.value}`)}</span>
                 <span className="connections-count">{item.connected}</span>
-              </TabsTab>)}
-            </TabsList>
-          </Tabs>}
+              </Button>
+            </li>)}
+          </ul>}
       </nav>
 
       <div className="connections-catalog">
