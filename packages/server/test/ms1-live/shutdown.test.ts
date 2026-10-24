@@ -55,6 +55,26 @@ test('SIGTERM aborts an in-flight dispatch, exits within the bound and a restart
   assert.notEqual(status.status, 'canceled', JSON.stringify(status))
 })
 
+test('SIGTERM on the home during a remote call records the stop, not a retry, and settles its pin journal', { timeout: 240_000 }, async t => {
+  const w = await createLiveWorld(t, { fake: { completionDelayMs: 60_000 } })
+  await w.registerProject()
+  const started = await w.startRelay('live-home-stop', 2)
+  assert.equal(started.status, 202, JSON.stringify(started.body))
+  await until(async () => (await w.fake.count('/completion')) >= 1, 'the delayed completion to reach the fake llama-server', 60_000)
+  const row = w.home.one<{ run_id: string; session_id: string }>('SELECT run_id, session_id FROM relay_public_starts WHERE key=?', 'live-home-stop')
+  assert.ok(row, 'the relay start is recorded')
+  assert.equal(w.home.child.kill('SIGTERM'), true)
+  const exit = await w.home.exit
+  assert.equal(exit.code, 0, `a clean home stop exits 0 (signal ${exit.signal})\n${w.home.stderr.join('').slice(-2000)}`)
+  assert.equal(w.home.events.some(event => event.event === 'stop'), false, 'the home has no forced stop line')
+  const events = w.home.rows<{ type: string; payload: string }>('SELECT type, payload FROM session_events WHERE session_id=? ORDER BY seq', row!.session_id)
+  const notes = events.filter(event => event.type === 'agent.note').map(event => JSON.parse((JSON.parse(event.payload) as { text: string }).text) as Record<string, unknown>)
+  assert.equal(notes.some(note => note['relay'] === 'call_retry'), false, 'a graceful stop is not a transient failure')
+  const errors = events.filter(event => event.type === 'error').map(event => (JSON.parse(event.payload) as { code: string }).code)
+  assert.equal(errors.at(-1), 'relay_stopped', JSON.stringify(errors))
+  assert.equal(w.home.count('SELECT COUNT(*) n FROM federation_relay_pin_journal'), 0, 'the acknowledged unpin deleted its journal row')
+})
+
 test('a close past the stop bound emits exactly one forced JSON line and exits non-zero', async () => {
   let finish!: () => void
   const closing = new Promise<void>(resolve => { finish = resolve })

@@ -548,10 +548,12 @@ export async function start(options: StartOptions = {}) {
   const close = (): Promise<void> => {
     if (closing) return closing
     closing = (async () => {
-      // Abort in-flight dispatch holders before waiting for a listener. Their model calls are outbound and are not
+      // Abort executor-side dispatch holders before waiting for a listener. Their model calls are outbound and are not
       // connections of either listener; aborting here means the llama-server `/completion` fetch dies with the node
-      // instead of holding the close open for the model's own deadline.
-      federation?.close()
+      // instead of holding the close open for the model's own deadline. A home keeps the previous order (relay first,
+      // federation with the plugin): closing federation early would turn a graceful stop into a refusal and leave the
+      // relay pin journaled, because `settleRelayPin` cannot delete after the federation is closed.
+      if (live?.role === 'executor') federation?.attemptDispatch?.close()
       // Stop accepting commands first; existing Chat streams get the drain grace to observe their truthful
       // internal-shutdown terminal event, then `closeAllConnections()` drops whatever is left.
       const listenersClosed = Promise.all([drainListener(instance), drainListener(federationInstance)])
