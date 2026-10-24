@@ -350,7 +350,8 @@ describe('discarding and reload warning', () => {
     expect(blocked()).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Save to session log' }))
     await screen.findByText(/Saved to the session log as event 13/)
-    expect(blocked()).toBe(false)
+    // The guard is re-registered by an effect after the saved state commits; the status text can render first.
+    await waitFor(() => expect(blocked()).toBe(false))
   })
 })
 

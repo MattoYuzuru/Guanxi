@@ -960,7 +960,8 @@ describe('runtime reconciliation composition inventory', () => {
     assert.doesNotMatch(webShellHost, /useRuntimeProjection|useRuntimeSelector/u)
     assert.doesNotMatch(webRuntime, /\bapi\.|useRuntimePolling|\bfetch\(/u)
     assert.doesNotMatch(webShell, /api\.runtimeSnapshot|\bfetch\(|listRunning|modelsRunning|\/api\/ps/u)
-    assert.match(webConflict, /useRuntimeProjection\(\)/u)
+    // The conflict decision reads the one shared runtime projection (a reader and a narrow selector since round 4), never the API.
+    assert.match(webConflict, /useRuntime(?:Projection\(\)|Reader\(\)|Selector\()/u)
     assert.match(webConflict, /api\.getJob\(/u)
     assert.match(webConflict, /api\.cancelJob\(/u)
     assert.doesNotMatch(webChat, /api\.runtimeSnapshot|api\.cancelJob|api\.getJob/u)
