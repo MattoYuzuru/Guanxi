@@ -1,0 +1,73 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { affected } from './affected.mjs'
+import { completion } from './finish.mjs'
+import { coreArguments, inventory, matrix, tasks, validateInventory } from './tasks.mjs'
+
+test('current root composition and workspace build/test entrypoints are classified', () => validateInventory())
+test('new workspaces, build/test entrypoints and root composition cannot silently disappear', () => {
+  assert.throws(() => validateInventory([...inventory(), { name: '@guanxi/future', scripts: { build: 'tool build' } }]), /Unclassified workspace/)
+  for (const script of ['test:future', 'build:desktop', 'bundle:build']) {
+    const packages = structuredClone(inventory()); packages[1].scripts[script] = 'tool'
+    assert.throws(() => validateInventory(packages), /Unclassified entrypoint/)
+  }
+  const packages = structuredClone(inventory()); packages[0].scripts.test += ' && npm run test:future'
+  assert.throws(() => validateInventory(packages), /Root npm test changed/)
+})
+test('draft matrix is quick; ready matrix contains every unique declared task', () => {
+  assert.deepEqual(matrix(false).include.map(x => x.id), ['quality'])
+  assert.deepEqual(matrix(true).include.map(x => x.id), tasks.map(x => x.id))
+  assert.equal(new Set(tasks.map(x => x.id)).size, tasks.length)
+  assert.equal(matrix(true).include.filter(x => x.native).length, 3)
+})
+test('Node shards execute disjoint files and preserve import guards (flags precede paths)', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'guanxi-ci-shards-'))
+  try {
+    const guard = join(directory, 'guard.mjs'); writeFileSync(guard, 'process.env.CI_TEST_GUARD="yes"')
+    const files = [1, 2, 3, 4].map(n => {
+      const file = join(directory, `${n}.test.mjs`)
+      writeFileSync(file, `import {test} from 'node:test'; import assert from 'node:assert/strict'; test('fixture-${n}',()=>assert.equal(process.env.CI_TEST_GUARD,'yes'))`)
+      return file
+    })
+    const counts = []
+    for (const n of [1, 2]) {
+      const report = join(directory, `${n}.xml`)
+      const env = { ...process.env }; delete env.NODE_TEST_CONTEXT
+      execFileSync(process.execPath, coreArguments(`node --import '${guard}' --test ${files.map(f => `'${f}'`).join(' ')}`, `${n}/2`, report), { env })
+      const xml = readFileSync(report, 'utf8'); counts.push([...xml.matchAll(/name="fixture-(\d)"/g)].map(m => m[1]))
+    }
+    assert.equal(counts[0].length, 2); assert.equal(counts[1].length, 2)
+    assert.deepEqual([...new Set(counts.flat())].sort(), ['1', '2', '3', '4'])
+    assert.throws(() => coreArguments('node --test test.ts && false', '1/2', 'report'), /literal node/)
+  } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+function green() {
+  return {
+    head: 'head', pr: { draft: false, state: 'open', head: { sha: 'head' }, base: { sha: 'base' }, merge_commit_sha: 'merge' },
+    run: { head_sha: 'head', event: 'pull_request', status: 'completed', conclusion: 'success', html_url: 'https://example.invalid/run' },
+    candidate: { head: 'head', base: 'base', tested: 'merge' },
+    jobs: ['Full gate', ...tasks.map(t => `check / ${t.id}`)].map(name => ({ name, status: 'completed', conclusion: 'success' })),
+  }
+}
+test('completion accepts only current reviewed candidate with every job actually successful', () => {
+  assert.equal(completion(green()).ok, true)
+  for (const change of [
+    x => { x.pr.head.sha = 'new' }, x => { x.run.head_sha = 'old' },
+    x => { x.pr.base.sha = 'new' }, x => { x.pr.merge_commit_sha = 'new' },
+    x => { x.pr.draft = true }, x => { x.run.event = 'workflow_dispatch' },
+    x => { x.run.conclusion = 'cancelled' }, x => { x.run.status = 'in_progress' },
+    x => { x.jobs.pop() }, x => { x.jobs.push(x.jobs[0]) },
+    x => { x.jobs[1].conclusion = 'skipped' }, x => { x.jobs[1].conclusion = 'failure' },
+  ]) { const value = green(); change(value); assert.equal(completion(value).ok, false) }
+})
+test('affected guidance widens unknown/contract scope and does not execute checks', () => {
+  assert.deepEqual(affected(['docs/example.md']).areas, ['docs'])
+  assert.deepEqual(affected(['packages/contract/src/index.ts']).areas, ['shared'])
+  assert.deepEqual(affected(['packages/web/src/App.tsx', 'packages/ui/tokens/base.tokens.json']).areas, ['ui', 'web'])
+  assert.deepEqual(affected(['packages/future/src/new.ts']).areas, ['shared'])
+})

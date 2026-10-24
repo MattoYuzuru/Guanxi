@@ -1,0 +1,139 @@
+name: Guanxi CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+  # Main receives quick checks; the ready PR already tested its integration candidate.
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guanxi-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  GUANXI_WEB_PORT: '5173'
+  GUANXI_API_PORT: '4310'
+  GUANXI_PROVIDER_KEYS_FILE: ''
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      full: ${{ steps.plan.outputs.full }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.9.0'
+          package-manager-cache: false
+      - id: plan
+        run: node scripts/ci/run.mjs plan
+      - name: Record immutable candidate identity
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          TESTED_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p .ci-results
+          node -e 'const fs=require("node:fs"); fs.writeFileSync(".ci-results/candidate.json", JSON.stringify({head:process.env.HEAD_SHA,base:process.env.BASE_SHA,tested:process.env.TESTED_SHA}))'
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: candidate-${{ github.run_attempt }}
+          path: .ci-results/candidate.json
+          retention-days: 7
+
+  checks:
+    needs: plan
+    name: check / ${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      TASK: ${{ matrix.id }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.9.0'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare Linux sandbox prerequisites
+        if: matrix.native
+        run: bash scripts/ci/prepare-linux.sh
+      - name: Image inputs
+        if: matrix.native || matrix.catalog
+        id: images
+        run: node scripts/ci/images.mjs
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        if: matrix.native
+      - name: Build native execution image
+        if: matrix.native
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: packages/server/src/native-agent/container
+          load: true
+          tags: guanxi-native-execution:k4-v3
+          labels: |
+            org.guanxi.execution-profile=k4-v3
+            org.guanxi.execution-guard-sha256=${{ steps.images.outputs.guard }}
+          cache-from: type=gha,scope=native-linux-amd64-v1
+          cache-to: type=gha,mode=max,scope=native-linux-amd64-v1
+      - name: Require native image (no unavailable-runtime pass)
+        if: matrix.native
+        run: docker run --rm --network none guanxi-native-execution:k4-v3 node --version
+      - name: Install Chromium and system dependencies
+        if: matrix.browser
+        working-directory: packages/web
+        run: npx playwright install --with-deps chromium
+      - name: Fetch exact visual baseline image
+        if: matrix.catalog
+        env:
+          PLAYWRIGHT_IMAGE: ${{ steps.images.outputs.playwright }}
+        run: docker pull "$PLAYWRIGHT_IMAGE"
+      - name: Execute task
+        run: node scripts/ci/run.mjs run "$TASK"
+      - name: Retain failure diagnostics and task receipts
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ci-${{ matrix.id }}-${{ github.run_attempt }}
+          path: |
+            .ci-results/
+            packages/web/test-results/
+            packages/ui/test-results/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: warn
+
+  gate:
+    name: Full gate
+    needs: [plan, checks]
+    if: ${{ always() && github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the entire planned matrix
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          FULL: ${{ needs.plan.outputs.full }}
+        run: |
+          test "$PLAN_RESULT" = success
+          test "$CHECKS_RESULT" = success
+          test "$FULL" = true

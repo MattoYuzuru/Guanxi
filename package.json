@@ -39,7 +39,10 @@
     "lint:css": "stylelint \"packages/*/src/**/*.css\" \"plugins/**/*.css\" --allow-empty-input",
     "lint:suppressions": "node packages/ui/gates/lint/suppressions.mjs",
     "codemod:semantic": "node scripts/codemods/semantic-colours.mjs",
-    "test:codemods": "node --test scripts/codemods/*.test.mjs"
+    "test:codemods": "node --test scripts/codemods/*.test.mjs",
+    "ci:plan": "node scripts/ci/run.mjs plan",
+    "ci:finish": "node scripts/ci/finish.mjs",
+    "check:affected": "node scripts/ci/affected.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
