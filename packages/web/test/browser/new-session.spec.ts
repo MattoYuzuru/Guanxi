@@ -19,11 +19,16 @@ const form = (page: Page, name = 'New session') => page.getByRole('region', { na
 const start = (page: Page) => page.getByRole('button', { name: 'Start session' })
 const prompt = (page: Page) => page.getByRole('textbox', { name: 'What should the agent do?' })
 const retryButtons = (page: Page) => page.getByRole('button', { name: /Retry|Refresh|Try again/u })
-/** Opens the model popover at the composer's lower right and chooses a listed model. */
+/** The model popover, scoped so its connection buttons and options never collide with the trigger. */
+const modelPicker = (page: Page) => page.locator('[data-slot="popover-content"]')
+  .filter({ has: page.getByRole('group', { name: 'Connection', exact: true }) })
+const modelTrigger = (page: Page) => page.getByRole('button', { name: /^(Choose a model|Model connection: |Model: )/u })
+/** Opens the model popover at the composer's lower right and chooses a listed model by exact ID. */
 async function chooseModel(page: Page, model: string) {
-  const list = page.getByRole('listbox', { name: 'Models' })
-  if (await list.count() === 0) await page.getByRole('button', { name: /^(Choose a model|Model: |Model connection: )/u }).click()
-  await page.getByRole('option', { name: model }).click()
+  const picker = modelPicker(page)
+  if (await picker.count() === 0) await modelTrigger(page).click()
+  await picker.getByRole('listbox', { name: 'Models', exact: true })
+    .getByRole('option', { name: model, exact: true }).click()
 }
 async function chooseProject(page: Page, name: string) {
   await page.getByRole('button', { name: /^(Choose a project|Project: )/u }).click()
@@ -81,7 +86,7 @@ test('keyboard alone completes the flow: exact tab order, visible focus, one req
   expect(order).toEqual(['What should the agent do?', 'Access: Read-only', 'Run options', 'Model connection: Fixture model'])
   // The model popover opens from the keyboard; the only connection is already chosen.
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: 'Fixture model' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(modelPicker(page).getByRole('button', { name: 'Fixture model', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByLabel('Search models')).toBeFocused()
   await page.keyboard.type('fixture')
   await page.keyboard.press('ArrowDown')
@@ -133,7 +138,7 @@ test('screen-reader structure: names, the one-line need description and one live
   await page.keyboard.press('Escape')
   await chooseModel(page, 'fixture')
   await page.getByRole('button', { name: /^(Model: |Model connection: )/u }).click()
-  await page.getByRole('button', { name: 'Other model ID…' }).click()
+  await page.getByRole('button', { name: 'Other model ID…', exact: true }).click()
   await expect(page.getByLabel('Model ID')).toHaveAccessibleDescription(/exact model ID/u)
 })
 
@@ -249,7 +254,7 @@ test('local runtimes require a context size in the model picker and starting wai
   await chooseProject(page, 'Beta')
   await prompt(page).fill('Inspect')
   await chooseModel(page, 'llama')
-  await expect(page.getByRole('button', { name: 'Local Ollama' })).toHaveAttribute('aria-pressed', 'true') // the only connection is preselected
+  await expect(modelPicker(page).getByRole('button', { name: 'Local Ollama', exact: true })).toHaveAttribute('aria-pressed', 'true') // the only connection is preselected
   await expect(start(page)).toHaveAttribute('aria-disabled', 'true')
   await expect(page.locator('#new-session-needs')).toHaveText('Set the context window in the model picker.')
   await page.getByLabel('Context window, tokens').fill('0')
