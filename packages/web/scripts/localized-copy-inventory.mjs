@@ -44,6 +44,7 @@ const TECHNICAL_EXCEPTIONS = [
   { file: 'features/chat/useChat.ts', value: 'prefill', count: 1, reason: 'runtime phase identifier' },
   { file: 'features/chat/ChatPage.tsx', value: 'Guanxi', count: 2, reason: 'central product brand' },
   { file: 'lib/api.ts', value: 'unknown', count: 1, reason: 'API error sentinel' },
+  { file: 'features/session/panels.ts', value: 'guanxi.core/', count: 1, reason: 'kernel block id prefix' },
 ]
 
 function literalValue(node) {

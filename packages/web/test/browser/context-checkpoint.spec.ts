@@ -162,7 +162,8 @@ test('context checkpoint reconciles a lost POST response exactly and survives ha
 
   await page.goto('/chat/thread-p3-m')
   await expect(page.getByText('Original source 0', { exact: true })).toHaveCount(1)
-  await page.getByText('Контекст и скорость').click()
+  // Round 4: the header's context value opens the Context panel beside the timeline.
+  await page.getByTestId('session-context').click()
   await page.getByRole('button', { name: 'Свернуть контекст' }).click()
   await page.getByRole('button', { name: 'Создать checkpoint' }).click()
 

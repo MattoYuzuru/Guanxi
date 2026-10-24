@@ -8,9 +8,11 @@ import { sideChatEnglish, sideChatRussian } from '../features/side-chat/messages
 import { voiceGlossaryEnglish, voiceGlossaryRussian } from '../features/voice/messages.ts'
 import { notificationsEnglish, notificationsRussian } from '../features/notifications/messages.ts'
 import { modelsEnglish, modelsRussian } from '../features/models/messages.ts'
+import { sessionEnglish, sessionRussian } from '../features/session/messages.ts'
 
 const english = {
   ...modelsEnglish,
+  ...sessionEnglish,
   ...workspaceEnglish,
   ...shellEnglish,
   ...nativeEnglish,
@@ -1852,6 +1854,7 @@ type Messages = Record<LocaleKey, string>
 
 const russian: Messages = {
   ...modelsRussian,
+  ...sessionRussian,
   ...connectionRussian,
   ...nativeRussian,
   ...newSessionRussian,

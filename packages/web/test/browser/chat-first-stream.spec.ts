@@ -30,10 +30,9 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   await page.keyboard.press('Enter')
 
   await expect(page).toHaveURL(/\/chat\/thread-p0-e-full$/)
-  const currentThread = page.locator(
-    'nav[aria-label="История диалогов"] a[aria-current="page"]',
-  )
-  await expect(currentThread).toContainText('P0-E release gate')
+  // Round 4: the session view has no second chat list; its header names the open chat.
+  const currentThread = page.getByTestId('session-title')
+  await expect(currentThread).toHaveText('P0-E release gate')
 
   const composer = page.getByRole('textbox', { name: 'Сообщение' })
   await composer.fill('Run the P0-E release flow')
@@ -120,9 +119,7 @@ test('create, redirect, stream, done, and hard reload use the persisted outcome'
   // `toBeVisible` прошёл бы и при duplicate render, поэтому count проверяется явно.
   await expect(page.getByText('Persisted canonical answer', { exact: true })).toHaveCount(1)
   await expect(page.getByText('Live stream draft', { exact: true })).toHaveCount(0)
-  await expect(
-    page.locator('nav[aria-label="История диалогов"] a[aria-current="page"]'),
-  ).toContainText('P0-E release gate')
+  await expect(page.getByTestId('session-title')).toHaveText('P0-E release gate')
   expect((await readChatFixture(page)).detailReads).toBeGreaterThan(beforeReload.detailReads)
 
   await composer.focus()

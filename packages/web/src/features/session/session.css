@@ -1,0 +1,139 @@
+/* Session view (round 4): the chat session on the native session's geometry, a header that never
+   overlaps, and side panels as one rounded pane beside the timeline. Tokens only. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.session-view .native-session-main {
+  /* The timeline brings its own scroll region; the column owns the header and dock. */
+  overflow: hidden;
+}
+
+/* Header: the title takes only the room left and truncates first; the model chip shrinks next; the
+   context value and the icon actions never shrink. */
+.session-header {
+  gap: var(--spacing-6);
+}
+
+.session-heading {
+  flex: 1 1 0;
+  min-width: var(--spacing-64);
+}
+
+.session-model {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-width: var(--spacing-24);
+  max-width: var(--layout-container-3xs);
+  padding: var(--spacing-2) var(--spacing-6);
+  overflow: hidden;
+  border-radius: var(--border-radius-inline);
+  background-color: var(--color-background-tertiary);
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.session-model svg {
+  flex: none;
+}
+
+.session-model-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+}
+
+.session-context {
+  flex: none;
+  padding-inline: var(--spacing-6);
+}
+
+.session-context[aria-pressed='true'] {
+  background-color: var(--color-background-accent-subtle);
+}
+
+/* A narrow session keeps the model's icon and drops its name (still named for assistive tech). */
+@container (max-width: 520px) {
+  .session-model {
+    flex: none;
+    min-width: 0;
+    padding-inline: var(--spacing-4);
+  }
+
+  .session-model-name {
+    display: none;
+  }
+}
+
+/* Side panels: one rounded pane floating beside the timeline. */
+.session-panels {
+  margin: var(--spacing-8) var(--spacing-8) var(--spacing-8) 0;
+  overflow: hidden;
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-secondary);
+}
+
+.session-panels-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--control-height);
+  padding: var(--spacing-4) var(--spacing-4) var(--spacing-4) var(--spacing-12);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.session-panels-icon {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+
+.session-panels-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-panels-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.session-panels-body:not([data-panel='context']) {
+  padding: var(--spacing-12);
+}
+
+.session-panels-empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+  line-height: var(--font-line-height-prose);
+}
+
+/* The sheet geometry from the native session applies; a sheet has no outer margin or radius. */
+@container (max-width: 1023px) {
+  .session-panels {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 639px) {
+  .session-panels {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+}
