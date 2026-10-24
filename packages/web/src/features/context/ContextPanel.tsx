@@ -378,7 +378,7 @@ export function contextDescription(context: ContextState): string {
 
 /** The short value: the provider's window in tokens, or the share of the local window in use. */
 export function contextValue(context: ContextState): string {
-  if (context.providerContext) return context.allocatedTokens === null ? '?' : formatTokens(context.allocatedTokens)
+  if (context.providerContext) return context.allocatedTokens === null ? translate('context.chip.unknown') : formatTokens(context.allocatedTokens)
   return formatPercent(context.percent ?? 0)
 }
 
@@ -398,7 +398,8 @@ export function ContextChip({ context }: { context: ContextState | null }) {
     <span className="context-chip" data-tone={contextTone(context)}>
       <Icon name="context" size={14} />
       <span className="context-chip-value" aria-hidden="true">{contextValue(context)}</span>
-      {!context.providerContext && <span className="context-chip-cache" data-hit={context.cacheHit || undefined} aria-hidden="true" />}
+      {/* A fresh chat has no cache yet: no hit or miss dot before the first tokens. */}
+      {!context.providerContext && context.usedTokens > 0 && <span className="context-chip-cache" data-hit={context.cacheHit || undefined} aria-hidden="true" />}
       <span className="sr-only">{contextDescription(context)}{context.providerContext ? '' : ` ${context.cacheHit ? translate('context.cache.hitTitle') : translate('context.cache.missTitle')}`}</span>
     </span>
   )

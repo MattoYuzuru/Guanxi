@@ -19,7 +19,8 @@ export const sessionEnglish = {
   'session.layout.saveAsTitle': 'Save as a new layout',
   'session.layout.saveAsConfirm': 'Save',
   'session.model': 'Model: {model}',
-  'session.context.open': 'Context window: {value}. Show the context panel',
+  'session.context.open': 'Context panel: {value}',
+  'session.layout.timeline': 'Back to the timeline',
 } as const
 
 export const sessionRussian: Record<keyof typeof sessionEnglish, string> = {
@@ -42,5 +43,6 @@ export const sessionRussian: Record<keyof typeof sessionEnglish, string> = {
   'session.layout.saveAsTitle': 'Сохранить как новую раскладку',
   'session.layout.saveAsConfirm': 'Сохранить',
   'session.model': 'Модель: {model}',
-  'session.context.open': 'Окно контекста: {value}. Показать панель контекста',
+  'session.context.open': 'Панель контекста: {value}',
+  'session.layout.timeline': 'Вернуться к ленте сессии',
 }

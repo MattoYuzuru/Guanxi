@@ -843,6 +843,16 @@ test('the layout menu renames the active layout in place through a name dialog (
   await expect(page.getByRole('button', { name: 'Panels and layout', exact: true })).toBeFocused()
 })
 
+test('the free arrangement links back to the session timeline (round 4 review nit)', async ({ page }) => {
+  await setup(page)
+  await page.goto(`/workspace/${chatFixtureThreadId('completed')}`)
+  await expect(page.locator('[data-block="guanxi.core/chat"]')).toBeVisible()
+  await layoutAction(page, 'Back to the timeline')
+  await expect(page).toHaveURL(new RegExp(`/chat/${chatFixtureThreadId('completed')}$`, 'u'))
+  await expect(page.getByTestId('session-view')).toBeVisible()
+  await expect(page.locator('.workspace')).toHaveCount(0)
+})
+
 test('choice menus preserve focus when tabbing away or clicking outside them', async ({ page }) => {
   await open(page)
   await move(page, 'Terminal', 'Right')

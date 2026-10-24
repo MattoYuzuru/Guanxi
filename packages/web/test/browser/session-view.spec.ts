@@ -103,7 +103,7 @@ for (const width of [360, 1280]) test(`the session header never overlaps title a
   await expect(header.getByText('fixture:latest')).toHaveCount(0)
   await expect(page.getByTestId('composer-model')).toHaveCount(1)
   await expect(page.getByTestId('composer-model')).toContainText('Model: fixture:latest')
-  await expect(context).toHaveAccessibleName(/Context window/u)
+  await expect(context).toHaveAccessibleName(/^Context panel: .*tokens/u)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
@@ -170,8 +170,14 @@ test('side panels open from one menu, by keyboard, beside the timeline, and clos
   await page.keyboard.press('Escape')
   await expect(panels).toHaveCount(0)
   await expect(page.getByRole('textbox', { name: 'Message' })).toBeFocused()
-  // The context value in the header toggles the same panel.
-  await page.getByTestId('session-context').click()
+  // The context value in the header toggles the same panel; its name does not flip with the state
+  // (aria-pressed carries it).
+  const contextControl = page.getByTestId('session-context')
+  const unpressedName = await contextControl.getAttribute('aria-label')
+  expect(unpressedName).toMatch(/^Context panel: /u)
+  await contextControl.click()
+  await expect(contextControl).toHaveAttribute('aria-pressed', 'true')
+  await expect(contextControl).toHaveAttribute('aria-label', unpressedName!)
   await expect(panels.getByRole('heading', { name: 'Context', exact: true })).toBeVisible()
   // On a phone the panel is a modal sheet: the app behind it is inert, focus is inside; Escape closes it.
   // Narrowing the window does not turn open side panels into a sheet that grabs focus (review 4).

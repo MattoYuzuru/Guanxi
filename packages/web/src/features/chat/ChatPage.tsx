@@ -601,7 +601,8 @@ function ThreadPage({
           </Tooltip>}
           <div className="native-session-actions">
             <SessionPanelsMenu panels={panels} layout={layoutControls}
-              arrangePath={paths.workspace(chat.thread.id, projectId)} />
+              arrangePath={paths.workspace(chat.thread.id, projectId)}
+              timelinePath={layoutControls ? (projectId ? paths.projectChat(projectId, chat.thread.id) : paths.chat(chat.thread.id)) : undefined} />
             {chat.thread.mode === 'chat' && (
               <ChatRetentionInfo
                 chatId={chat.thread.id}

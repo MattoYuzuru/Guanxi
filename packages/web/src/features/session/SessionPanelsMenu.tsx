@@ -22,6 +22,8 @@ export interface SessionPanelsMenuProps {
   arrangePath?: string
   /** The workspace's own bar, shown while no session header carries the menu. */
   fallback?: boolean
+  /** From the free arrangement, the way back to the session's full-width timeline. */
+  timelinePath?: string
 }
 
 /**
@@ -29,7 +31,7 @@ export interface SessionPanelsMenuProps {
  * icons, then — in the free arrangement — the layout settings and actions that used to be a row of
  * bordered buttons. Every action stays reachable from the keyboard and keeps its label.
  */
-export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = false }: SessionPanelsMenuProps) {
+export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = false, timelinePath }: SessionPanelsMenuProps) {
   const register = layout?.registerMenu
   // Registered before paint, so the workspace's fallback bar never flashes beside a session header.
   useLayoutEffect(() => (fallback ? undefined : register?.()), [fallback, register])
@@ -96,6 +98,10 @@ export function SessionPanelsMenu({ panels, layout, arrangePath, fallback = fals
           <MenuItem disabled={busy} onClick={() => setNaming('rename')}><Icon name="new" />{t('session.layout.rename')}</MenuItem>
           <MenuItem disabled={busy || layout.phone} onClick={layout.move}><Icon name="move" />{t('session.layout.move')}</MenuItem>
           <MenuItem disabled={busy} onClick={layout.reset}><Icon name="reset" />{t('workspaceLayout.reset')}</MenuItem>
+          {timelinePath && <>
+            <MenuSeparator />
+            <MenuItem onClick={() => navigate(timelinePath)}><Icon name="chat" />{t('session.layout.timeline')}</MenuItem>
+          </>}
         </> : arrangePath ? <MenuItem onClick={() => navigate(arrangePath)}><Icon name="layout" />{t('session.layout.arrange')}</MenuItem> : null}
       </MenuContent>
     </Menu>
