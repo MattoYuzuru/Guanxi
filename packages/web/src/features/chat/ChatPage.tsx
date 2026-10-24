@@ -560,6 +560,13 @@ function ThreadPage({
     else panels.toggle('context', !contextShown)
   }
   const model = displayModelSelection(chat.thread.model)
+  // On a phone the Context panel is a sheet over an inert timeline: a confirmed checkpoint closes
+  // it, so the new checkpoint marker in the timeline can take focus and be seen.
+  const compactFromPanel = async () => {
+    const result = await chat.compact()
+    if (phoneSheet) panels.toggle('context', false)
+    return result
+  }
 
   return (
     <section className="native-session session-view" data-testid="session-view" aria-labelledby={headingId}>
@@ -641,7 +648,7 @@ function ThreadPage({
 
       {!layoutControls && <SessionPanelsAside panels={panels} onClosed={() => composerRef.current?.focus()}
         render={panel => panel === 'context'
-          ? <ContextPanel context={chat.context} usage={chat.usage} compacting={chat.compacting} onCompact={chat.compact} disabled={chat.isStreaming} />
+          ? <ContextPanel context={chat.context} usage={chat.usage} compacting={chat.compacting} onCompact={compactFromPanel} disabled={chat.isStreaming} />
           : <SessionPanelEmpty panel={panel} />} />}
       </div>
 
