@@ -453,6 +453,11 @@ test('HTTP API exposes references only, validates routes and blocks cross-origin
   const secret = fakeKey()
   response = await send(`/${row.id}/secret`, { value: secret }, 'PUT')
   assert.equal(response.status, 200); assert.equal((await response.text()).includes(secret), false)
+  const catalog = await routes.request(`http://localhost/${row.id}/models`)
+  assert.equal(catalog.status, 200)
+  const listed = await catalog.json() as { id: string; facts: Record<string, { source: string }> }[]
+  assert.ok(listed.length > 0)
+  assert.match(listed[0]!.facts['pi-ai.context']!.source, /pi-ai/u)
   assert.equal((await send('/', apiInput, 'POST', { Origin: 'https://attacker.example' })).status, 403)
   assert.equal((await send('/', { ...apiInput, auth: 'oauth' })).status, 400)
   const snapshot = await (await routes.request('http://localhost/')).text()
