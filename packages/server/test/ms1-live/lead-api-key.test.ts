@@ -228,6 +228,29 @@ test('a key file that was imported pays for the lead: a named older connection, 
   assert.ok(refused instanceof Ms1LiveError && refused.code === 'lead_connection_not_imported' && refused.field === 'home.lead.connection', `got ${refused instanceof Error ? refused.message : refused}`)
 })
 
+test('legacy dotenv labels resolve to the imported lead connection in both auth modes', async t => {
+  const w = await pair(t)
+  const boot = (settings: Ms1LiveSettings, dataDir: string) => start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
+  // API key: an older config still names `anthropic (dotenv)`.
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${fakeKey()}\n`)
+  const apiDir = join(w.root, 'api-data')
+  const api = await boot(w.settings(), apiDir)
+  const apiId = api.ms1Live!.leadConnectionId
+  await api.close()
+  const legacyApi = await boot(w.settings(config => { delete config.home.lead.providerKeysFile; config.home.lead.connection = 'anthropic (dotenv)' }), apiDir)
+  assert.equal(legacyApi.ms1Live!.leadConnectionId, apiId)
+  await legacyApi.close()
+  // Subscription token: an older config still names `claude-code (dotenv)`.
+  writeKeys(w.keyFile, `CLAUDE_CODE_OAUTH_TOKEN=${fakeToken()}\n`)
+  const tokenDir = join(w.root, 'token-data')
+  const token = await boot(w.settings(asToken), tokenDir)
+  const tokenId = token.ms1Live!.leadConnectionId
+  await token.close()
+  const legacyToken = await boot(w.settings(config => { asToken(config); delete config.home.lead.providerKeysFile; config.home.lead.connection = 'claude-code (dotenv)' }), tokenDir)
+  assert.equal(legacyToken.ms1Live!.leadConnectionId, tokenId)
+  await legacyToken.close()
+})
+
 test('start reads the key file from the same environment the command was given as doctor does, not from the process\'s own', async t => {
   const w = await pair(t)
   w.settings(config => { delete config.home.lead.providerKeysFile })

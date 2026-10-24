@@ -229,7 +229,8 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   At boot the home imports the credential from that dotenv file into its own K3 vault (the import of D-208; `GUANXI_PROVIDER_KEYS_FILE`
   in the command's environment names the file instead, when set), resolves the one connection that holds it (`home.lead.connection`
   names it by name or id when there are several; a connection that was not imported from the file just read cannot pay) and binds K5's
-  `claude-code` installation to it. A file that is named but holds no credential of the mode, or fails to import in any line, refuses the
+  `claude-code` installation to it. A config that still names the legacy `anthropic (dotenv)` or `claude-code (dotenv)` label resolves
+  to the same imported connection. A file that is named but holds no credential of the mode, or fails to import in any line, refuses the
   start; an older credential in the vault is used only when no file is named.
 
   - **`oauth_token`.** The token is read from `CLAUDE_CODE_OAUTH_TOKEN`, or from an `sk-ant-oat` value under `ANTHROPIC_API_KEY` (only in
