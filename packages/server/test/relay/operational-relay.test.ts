@@ -132,7 +132,7 @@ test('the checkout the executor works in is the exact base commit: a file commit
   await until(() => results().length >= 2)
   await f.starts.stop(f.input.key)
   assert.equal(results()[0]!.status, 'ok'); assert.match(results()[0]!.result ?? '', /synthetic task content/)
-  assert.equal(results()[1]!.result, 'tool_denied_or_failed', 'src/later.txt exists in the project but only after the plan base, so the checkout has no such file')
+  assert.equal(results()[1]!.result, 'tool_failed', 'src/later.txt exists in the project but only after the plan base, so the checkout has no such file; the fixed code says the command failed, not that the tool was denied')
   assert.match(await readFile(join(f.source, 'src', 'later.txt'), 'utf8'), /committed after the plan base/)
   assert.deepEqual(await f.holdings(), [])
 })

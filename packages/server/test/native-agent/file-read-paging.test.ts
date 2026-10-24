@@ -104,7 +104,7 @@ test('an offset that is not a byte position this tool returned is refused with a
   assert.deepEqual(await f.read({ path: join(f.root, 'u.txt'), offset: '1' }), { error: 'invalid_offset' }, 'inside a character')
   assert.equal((await f.read({ path: join(f.root, 'u.txt'), offset: '3' })).stdout, '界界')
   assert.deepEqual((await f.read({ path: join(f.root, 'u.txt'), offset: '99' })).stdout, '')
-  assert.equal((await f.call('file_read', { path: join(f.root, 'missing.txt') })).error, 'tool_denied_or_failed')
+  assert.equal((await f.call('file_read', { path: join(f.root, 'missing.txt') })).error, 'tool_failed')
   assert.equal((await f.call('file_read', { path: '/etc/hosts' })).error, 'path_denied', 'outside every allowed root')
   const tiny = await setup(t, { pageBytes: 20 })
   await writeFile(join(tiny.root, 'x.txt'), 'content')

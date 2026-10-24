@@ -331,13 +331,15 @@ decoded under a JSON Schema, and the schema is a pinned part of the request, not
   EF BF BD. Without a budget the whole remainder is returned as before and an untrustworthy cursor is `null`. A budget that cannot hold one character is
   `page_too_small`, an offset inside a character `invalid_offset`. The executor passes `pageBytes = floor(T_hard / 4)`, the per-turn bound it applies to every tool result, so a
   page is sized to fit it and is never cut by the executor behind a cursor that says it was read; `tool_output_read` honours the same
-  budget. Without a budget (the K4 session) the result is the old one plus the cursor fields.
+  budget. Without a budget (the K4 session) the result is the old one plus the cursor fields. A tool error whose message is a fixed code
+  (`/^[a-z0-9_]{1,64}$/`, for example `tool_failed`, `sandbox_failed` or `path_denied`) is returned as that code; any other message
+  (an OS error, a path, provider text) becomes `tool_denied_or_failed`, so free text never reaches the model or the trace.
 - **Prompts (ADR-0025).** The work prompt is generated from the tool list (`name(arg, arg?)`), its examples are valid JSON (the model had
   copied `{action:tool,name,args}` with unquoted keys) spaced after the colon so they cannot be mistaken for the relay's own compact
-  turns, and it says once that arguments are strings and that `more:true` continues at `offset=nextOffset`. The probe prompt defines
-  each key; the cause of `nextItem: null` while an item was open was the strip's `next` (another item) beside the probe's `nextItem`,
-  which is the strip's `current`. The check itself, its inputs and its expected values are unchanged. The B1 bench does not exist yet:
-  these two prompt edits are minimal and factual, and carry no bench result.
+  turns, and it says once that arguments are strings and that `more:true` continues at `offset=nextOffset`. The probe prompt names only
+  what the handoff shows: `nextItem` is the strip's `current` and `nextStatus` is the strip's `currentStatus` (both null when there is no
+  current item), so the probe no longer invents an `open` list beside the handoff. The check itself, its inputs and its expected values
+  are unchanged. The B1 bench does not exist yet: these prompt edits are minimal and factual, and carry no bench result.
 - **A rejected schema.** A `/completion` refused (4xx or 500) while a `json_schema` was sent is `llama_server_schema_rejected`, then
   `response_schema_rejected` (never `runtime_identity_unknown`). K3 keeps a trusted transport's fixed refusal code as `ConnectionError.reason`
   (message and `code: provider_failed` are unchanged), so the executor's `call_failed_reason` note, the signed terminal `reason` and the
@@ -404,7 +406,9 @@ report; a later lead decides completion/cancellation.
 ## Workspace boundary
 
 `GitRelayWorkspace` uses K4's tools and ExecutionOwner with Full access, a dedicated root,
-planner protected paths and harness-owned `.git`. Checkpoints use raw hash-object/update-index/commit-tree plumbing without filters,
+planner protected paths and harness-owned `.git`. Its `shell` starts in that checkout, not in K4's empty scratch directory (the gate
+command also `cd`s into its clean checkout), so a plan-relative `node --test test/…` resolves the files the plan names. Checkpoints use
+raw hash-object/update-index/commit-tree plumbing without filters,
 hooks or inherited credential environment. Dirty checks use one filter-neutral `git status --porcelain=v2`; object reads are
 streamed through one `git cat-file --batch`. Tests/specs/CI paths are additionally rejected at checkpoint and seal validation;
 the default heuristic covers `test`/`tests`/`spec`/`specs`/`__tests__`, `*.test.*`/`*.spec.*`, `*_test.go`, `*_test.py`/

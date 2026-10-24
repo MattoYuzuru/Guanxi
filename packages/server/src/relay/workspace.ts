@@ -127,6 +127,9 @@ export class GitRelayWorkspace implements RelayWorkspace {
     for (const p of w.protectedPaths) relativePath.parse(p)
     // Keep the repository metadata harness-owned. The model checkpoints through a fixed tool.
     context.policy = { ...context.policy, protectedPaths: [...context.policy.protectedPaths, join(root, '.git'), ...w.protectedPaths.map(p => resolve(root, p))] }
+    // The relay's unit of work is this checkout, not K4's scratch (the gate also starts with `cd` to its
+    // clean checkout). Without this, `node --test test/…` resolves in the empty scratch directory.
+    context.cwd = root
     invariant(!await w.dirty(), 'checkout_dirty')
     invariant((await w.git(['rev-parse', 'HEAD'])).trim() === plan.base, 'base_mismatch')
     return w
