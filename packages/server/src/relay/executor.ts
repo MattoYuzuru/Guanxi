@@ -79,6 +79,13 @@ export class RelayExecutor {
   private dropped(a: Attempt, cycle: number, dropped: number, cut: number): void {
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'context_dropped', dropped, cut, cycle }) } })
   }
+  /** The fixed reason of a failed call: a relay code, or a transport's own fixed refusal code. A message is never read. */
+  private failureReason(error: unknown): string {
+    const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
+    return error instanceof RelayError ? error.code
+      : fixed((error as { reason?: unknown })?.reason) ? (error as { reason: string }).reason
+      : fixed((error as { code?: unknown })?.code) ? (error as { code: string }).code : 'unknown'
+  }
   /** A cancel or takeover can revoke the fence while the executor is already reporting. */
   private lost(error: unknown): boolean {
     return error instanceof Error && 'code' in error && ['stale_lease', 'writer_busy', 'invalid_transition'].includes(String((error as { code?: unknown }).code))
@@ -169,15 +176,30 @@ export class RelayExecutor {
   /** A fresh observation of the loaded runtime, before anything is counted. An exact count is valid only against a recent observation, and the
    * previous call, gate or judge sample may have taken minutes: counting first would refuse a request the runtime can still serve. The window must
    * be the one this cycle was planned for. Dispatch observes again itself, so the freshness rule there is unchanged. */
-  private async fresh(w: WindowObservation, signal: AbortSignal): Promise<void> {
-    const current = await this.model.observe(signal)
-    invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
+  private async fresh(a: Attempt, w: WindowObservation, signal: AbortSignal): Promise<void> {
+    const waits = this.limits.transientRetryMs ?? []
+    // No reservation is held yet, so a dropped link here can wait and re-observe just like a failed call. The fence is
+    // rechecked after each wait: an observation under a deposed attempt is never used, even if the link came back.
+    for (let retry = 0; ; retry++) {
+      try {
+        const current = await this.model.observe(signal)
+        invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
+        return
+      } catch (error) {
+        const reason = this.failureReason(error)
+        if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
+          try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
+          if (!signal.aborted) { this.checkExecution(a); continue }
+        }
+        throw error
+      }
+    }
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal, responseSchema?: JsonSchema): Promise<Reply> {
     signal.throwIfAborted()
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const clean = this.scrubber.scrub(prompt)
-    await this.fresh(w, signal)
+    await this.fresh(a, w, signal)
     const count = this.model.countAsync ? await this.model.countAsync(clean, signal) : this.model.count(clean)
     invariant(Number.isSafeInteger(count) && count >= 0 && count <= t.H, 'context_ceiling')
     const l = this.store.read(a.run_id), reason = this.caps(l)
@@ -204,10 +226,8 @@ export class RelayExecutor {
       ...(responseSchema ? { responseSchema } : {}) })) }
     catch (error) {
       // Only a fixed code is recorded: a message may carry provider text or paths.
-      const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
       // K3 keeps a trusted transport's fixed refusal code as `reason`; its own code is the generic provider_failed.
-      const reason = error instanceof RelayError ? error.code : fixed((error as { reason?: unknown })?.reason) ? (error as { reason: string }).reason
-        : fixed((error as { code?: unknown })?.code) ? (error as { code: string }).code : 'unknown'
+      const reason = this.failureReason(error)
       // A transient transport failure re-sends the same reserved call after a wait: the reservation, request id and prompt are unchanged,
       // nothing was observed, and dispatch re-observes the runtime. A stop, a lost fence or the wall cap end the waiting.
       if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
@@ -263,7 +283,7 @@ export class RelayExecutor {
         this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe_degraded', cycle: h.cycle }) } })
       }
       const expected = probes(sealed.ledger)
-      await this.fresh(w, signal)
+      await this.fresh(a, w, signal)
       const { text: prompt } = await this.pack(PROBE_PROMPT,
         { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
@@ -382,7 +402,7 @@ export class RelayExecutor {
     try {
       const ledger = this.store.read(a.run_id)
       const notes = selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
-      await this.fresh(w, signal)
+      await this.fresh(a, w, signal)
       const context = await this.pack('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
         { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
       if (context.dropped || context.cut) this.dropped(a, ledger.cycle, context.dropped, context.cut)
@@ -466,7 +486,7 @@ export class RelayExecutor {
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
-          await this.fresh(w, signal)
+          await this.fresh(a, w, signal)
           const context = await this.pack(this.workText, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
           const used = await measure(context.text)
           if (context.dropped || context.cut) {

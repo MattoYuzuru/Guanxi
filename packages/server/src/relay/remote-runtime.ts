@@ -335,7 +335,10 @@ class RemoteRelaySession implements RelayRuntimeSession {
     } catch (error) {
       // The call settles only after the executor acknowledged the cancel (or its holder has provably expired).
       await this.stop(childId, offerId ? ref() : undefined, dispatched, inFlight)
-      throw error
+      // A dropped link, a timeout or a refused offer is a transport failure like any other: report it as the meter being
+      // briefly unavailable so the executor's bounded retry can re-send the same reserved call. Cancellation, a lost
+      // fence and stale_lease keep their own behaviour in `refuse`.
+      this.refuse(error, active)
     }
   }
   /** Cancel at the home first, so renewals and late results are refused, then ask the executor directly and wait for its

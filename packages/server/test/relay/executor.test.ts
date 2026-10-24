@@ -120,6 +120,18 @@ test('a transient transport failure re-sends the same reserved call after a wait
     assert.equal(h.log.readAll(h.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 0)
   } finally { h.close() }
 })
+test('a transient observation failure before admission waits, re-observes and the run completes', async () => {
+  const f = fixture({ limits: { transientRetryMs: [1, 1] } })
+  try {
+    let observes = 0
+    const observe = f.model.observe.bind(f.model)
+    f.model.observe = async signal => { observes++; if (observes === 2) throw new RelayError('runtime_meter_unavailable'); return observe(signal) }
+    await f.executor.run(f.attempt)
+    assert.ok(observes >= 3, 'the failed observation was retried before the first reservation')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+  } finally { f.close() }
+})
 test('a zero money cap stops on an unknown cost before any call', async () => {
   const g = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
   try {

@@ -146,6 +146,20 @@ test('an executor that stops answering leaves the relay interrupted for the owne
   assert.equal(f.home.log.readAll(receipt.sessionId!, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 2)
 })
 
+test('a dropped link during the first offer is retried and the run completes', async t => {
+  const f = await fixture(t, { transientRetryMs: [1, 1, 1] })
+  let offers = 0
+  f.rules.push(path => { if (path === '/attempts/offers' && ++offers === 1) throw new Error('fixture partition') })
+  const receipt = await f.starts.start(f.input)
+  await until(() => !['running', 'preparing'].includes(f.starts.status(f.input.key).status))
+  const status = f.starts.status(f.input.key)
+  assert.equal(status.status, 'completed', JSON.stringify({ errors: f.errors(receipt.sessionId!), error: status.error }))
+  assert.ok(offers >= 2, 'the transport failure was retried')
+  const notes = f.home.log.readAll(receipt.sessionId!, 'person').filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+  const retries = notes.filter(text => text.includes('"call_retry"'))
+  assert.ok(retries.some(text => text.includes('"reason":"runtime_meter_unavailable"')), JSON.stringify(retries))
+})
+
 test('an executor that does not serve the relay runtime refuses admission before any run, session or allocation exists', async t => {
   const f = await fixture(t, { noRelayRuntime: true })
   await assert.rejects(f.starts.start(f.input), /runtime_meter_unavailable/)
