@@ -219,7 +219,7 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   `bare_subscription_unavailable` if `claudeBare` is set. On macOS the login keychain may not be separable by these variables.
 - **Without a CLI sign-in: the `claude setup-token` token or an API key (D-211, D-212).** `home.lead.auth` is `"subscription"` (default: the
   sign-in above), `"oauth_token"` (the long-lived subscription token of `claude setup-token`, `sk-ant-oat…`; billed to your Claude
-  subscription) or `"api_key"` (a real Anthropic API key, `sk-ant-api…`; billed as API usage). The two vault modes need no sign-in:
+  subscription) or `"api_key"` (a real Anthropic API key, `sk-ant-api…` or `sk-ant-usr…`; billed as API usage). The two vault modes need no sign-in:
 
   ```json
   "lead": { "auth": "oauth_token", "providerKeysFile": "/Users/<you>/…/your-dotenv-file", "effort": "medium", "model": "<bridge model value>",
@@ -237,7 +237,7 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
     as an Anthropic API connection: K3's `complete()`, chat and every other adapter refuse it, and K3 still refuses `sk-ant-oat` as an API
     key everywhere. K5 injects it as `CLAUDE_CODE_OAUTH_TOKEN` into the bridge and `claude auth status` environments only, and
     `auth status` must report `authMethod: "oauth_token"` (CLI 2.1.287 does with only that variable set; it prints no token source) or the
-    run refuses `claude_token_not_in_effect`. An `sk-ant-api` value is refused in this mode (`lead_key_wrong_family` in `doctor`). The
+    run refuses `claude_token_not_in_effect`. An `sk-ant-api` or `sk-ant-usr` value is refused in this mode (`lead_key_wrong_family` in `doctor`). The
     connection's `billing` fact reads `subscription`.
   - **`api_key`.** `ANTHROPIC_API_KEY` is imported as the `anthropic (dotenv)` model-API connection and injected as `ANTHROPIC_API_KEY`;
     `auth status` must report `authMethod: "api_key"` with `apiKeySource: "ANTHROPIC_API_KEY"` or the run refuses
