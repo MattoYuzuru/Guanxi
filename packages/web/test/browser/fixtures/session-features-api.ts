@@ -130,6 +130,9 @@ export async function installSessionFeaturesApi(page: Page, fixture: SessionFeat
         ? finish(route, { code: 'internal_error', message: 'workspaces', details: null }, 500)
         : finish(route, { workspaces: fixture.workspaces })
     }
+    if (/^\/api\/connections\/[^/]+\/models$/u.test(path)) return finish(route, [
+      { id: 'fixture', facts: {} }, { id: 'fixture-large', facts: {} },
+    ])
     if (path === '/api/connections') return finish(route, { connections: fixture.connections, costs: [], vault: { unlocked: false, unattendedAvailable: false } })
     if (path === '/api/agent/projects') {
       fixture.requests.projects++
