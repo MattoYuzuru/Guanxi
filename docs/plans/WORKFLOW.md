@@ -1,7 +1,6 @@
 # Workflow — how to deliver one slice
 
-**Status:** accepted working protocol · **Updated:** 2026-10-19 (translated and adapted from
-the legacy protocol of 2026-08-02)
+**Status:** accepted working protocol · **Updated:** 2026-10-24 (CI validation replaces repeated full local gates)
 
 ## Short version
 
@@ -62,7 +61,20 @@ tools; regression commands; residual risks; and **claimed-but-unproven propertie
 every statement in docs or an exit gate, the reviewer looks for an assertion that fails when
 the property is violated. Indirect proof is a finding.
 
-### 4a. Counting tests
+### 4a. Validation cadence
+
+Follow [CI and local checks](../operations/ci.md). Iterate with focused tests and relevant
+consumer checks. After implementation and independent review, commit a coherent candidate,
+push/update one PR, mark it ready and let the parallel full gate run. Draft PRs get quick checks;
+branch-only pushes do not run full CI. End with `npm run ci:finish -- <PR-number> --wait`.
+A session is not complete while its required CI is pending, failed, cancelled or stale.
+
+Do not rerun all local gates before and after every merge. One tested integration candidate
+is the unit of evidence; refreshing its base or changing its code requires revalidation.
+The lead owns publication/integration and final CI; a worker hands off reviewed commits and
+scoped test evidence. Independent reviewers do not duplicate the entire test matrix.
+
+### 4b. Counting tests
 
 A headline number is not evidence. Separate:
 
@@ -72,7 +84,7 @@ A headline number is not evidence. Separate:
 Write `K2: 11 new / 20 envelope`, not `K2 20/20`. The same file is never credited to two
 slices.
 
-### 4b. Benchmarks (after stage B1 exists)
+### 4c. Benchmarks (after stage B1 exists)
 
 A slice that changes prompts, tools, routing or compaction attaches a bench result (smoke at
 least) per [ADR-0025](../decisions/0025-bench-stage-and-ab-gate.md). Simplifications need
@@ -146,6 +158,6 @@ Stages without a dependency between them (see the [roadmap graph](roadmap.mmd)) 
 separate sessions at the same time when they touch different packages. Each session works in
 its own worktree, avoids running heavy checks (browser gate, benchmarks) at the same time as
 another session on the same machine (use a shared lock if your environment provides one), and
-merges only after its own exit gate. The concrete rules for the current wave (lanes, owned
+merges only after the current integration candidate passes hosted CI. The concrete rules for the current wave (lanes, owned
 paths, ports, the `agent-dev` lock, hand-off files and merge order) are in
 [lanes/README](lanes/README.md).

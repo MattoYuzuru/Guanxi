@@ -70,3 +70,8 @@ They describe the code that exists in `packages/` today. Their target-state role
 | [0012 estimated parallel admission verdict](../legacy/alamo/decisions/0012-estimated-parallel-admission-verdict.md) | carried forward into the fit ladder (ADR-0031) |
 | [0013 phase 4 service control and clients](../legacy/alamo/decisions/0013-phase-4-service-control-and-clients.md) | carried forward into ADR-0026 |
 | [0014 notification persistence and delivery](../legacy/alamo/decisions/0014-notification-persistence-and-delivery.md) | carried forward; its outbox pattern is reused for wake-ups (ADR-0019) |
+
+## 2026-10-24 validation protocol
+
+[D-213 — hosted final CI and scoped local iteration](2026-10-24-ci-protocol.md) supersedes
+older per-lane/per-merge full local gate requirements.

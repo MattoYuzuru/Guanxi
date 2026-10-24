@@ -1,6 +1,6 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-23
+**Status:** implemented tracker · **Updated:** 2026-10-24
 **Current stage:** wave 5 — owner-present Fedora runs (2026-10-23). `ssh fedora` is back (D-196).
 Since wave 4, local `main` (pushed at `536cad90`) additionally contains, each with an independent Opus
 review and fixes in separate commits: **F2-reap** (stale executor relay pins reaped: home pin journal,
@@ -21,6 +21,14 @@ No stage exit or milestone is claimed: MS1 still needs R2-json, a successful mul
 Claude Code lead (Sonnet 5.5 medium, D-210; the ACP bridge is not installed and its login is owner-only),
 the ≥ 6-hour run and recorded R3/B3 evidence. MS2 adds the UI redesign (D-200–D-207, lane in a second pass).
 Earlier records: [2026-10-23](evidence/coordination-2026-10-23.md), [2026-10-22](evidence/coordination-2026-10-22.md).
+
+## Validation protocol migration (2026-10-24)
+
+D-213 moves final full checks to parallel hosted CI and local iteration to affected modules.
+Implementation/research, **new / regression envelope** evidence, independent review and
+hosted run state are tracked in [CI migration evidence](../research/2026-10-24-ci.md).
+This operational slice does not close any product-stage exit. Agents were paused by the
+owner; restart from [the lead prompt](CLAUDE_LEAD_RESTART.md) and preserve existing checkouts.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,

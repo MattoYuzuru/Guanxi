@@ -66,7 +66,9 @@ lands, the commands below are mandatory.
 
 ## Verify
 
-1. `npm run ui:check` (fast gates) and, for visual changes, `npm run ui:check:browser`.
+1. During iteration, run `npm run ui:check`, focused component tests and affected stories.
+   Full browser/catalog gates run on the final ready PR per `docs/operations/ci.md`; do not
+   repeat them locally after each edit. A heavy local reproduction uses the shared lock.
 2. Update visual snapshots only inside the pinned Playwright Docker image (`npm run ui:snapshots`).
 3. Never edit generated token output; never set `approved` — only the owner approves, in the
    app, with a signed record.
