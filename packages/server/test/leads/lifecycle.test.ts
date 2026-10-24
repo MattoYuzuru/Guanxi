@@ -186,9 +186,9 @@ test('a resolution wake for a child that never started does not say the work ran
   const runs = f.runs(), realStart = runs.start.bind(runs)
   let unstarted = false
   runs.start = ((runId: string) => {
-    if (!unstarted && runId !== 'lead-1') {
+    if (!unstarted && runs.get(runId).state === 'submitted') {
       unstarted = true
-      return { ...runs.attempts('lead-1')[0]!, run_id: runId, id: 'unstarted-child-attempt' }
+      return { id: 'unstarted-child-attempt', run_id: runId, ordinal: 1, wake_seq: null, state: 'delivered', epoch: 1, token: 1, first_model_at: null }
     }
     return realStart(runId)
   }) as typeof runs.start
