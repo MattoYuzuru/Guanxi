@@ -23,17 +23,26 @@ General settings forms, transcript rows or a replacement for the docking adapter
 ## Anatomy and variants
 
 The discriminated `kind` selects toolbar, pane, mover, phone or state. Controls compose the
-existing Button, Input, Textarea, Menu, Dialog, EmptyState and ErrorState components. Pane drafts are
-controlled by the host and do not execute commands or navigate.
+existing Button, IconButton, Input, Textarea, Menu, Dialog, EmptyState and ErrorState components.
+Pane drafts are controlled by the host and do not execute commands or navigate.
+
+A pane header (round 4) is the block title in a quiet label face and two borderless icon actions,
+move and hide, whose labels the host formats with the block name ("Move Terminal…"). There are no
+text buttons in a pane header. `chromeless` drops the header for a block that brings its own, such
+as the session timeline, whose dock tab already names it.
+
+The `toolbar` kind is no longer the product's default chrome: the session view puts layout
+actions in one menu in its header (owner feedback 2026-10-23). The kind stays for hosts that need a
+visible form.
 
 ## States
 
 Default pane; empty pane; unavailable block placeholder; error with retry; phone tab list.
-Loading reserves the known toolbar/content geometry with a static, noninteractive skeleton;
+Loading reserves the known content geometry with a static, noninteractive skeleton (no toolbar row);
 the saved docking grid is unknown before hydration. Pane descriptions are supporting text,
 not empty collections. Real empty content has one meaningful action.
-The skeleton reserves the known control slots and workspace extent; saved density, dynamic
-labels, toolbar wrapping and phone content height are not known before the layout arrives.
+The skeleton reserves the workspace extent; saved density, dynamic labels and phone content
+height are not known before the layout arrives.
 Controlled terminal draft; toolbar with save; open move dialog. Toolbar actions expose disabled while persistence is pending. Move choices are named menus.
 
 ## Accessibility

@@ -203,6 +203,14 @@ function LoadError({ error, route, title }: { error: unknown; route: string; tit
 
 /* ─────────────────────────── One session's trace ──────────────────────── */
 
+/** The session-log event a deep link names, or null. */
+function eventFromLocation(): number | null {
+  const value = new URLSearchParams(window.location.search).get('event')
+  if (value === null || !/^\d+$/u.test(value)) return null
+  const seq = Number(value)
+  return Number.isSafeInteger(seq) && seq > 0 ? seq : null
+}
+
 function SessionInspector({ sessionId }: { sessionId: string }) {
   const [timeline, setTimeline] = useState<TimelineState>(EMPTY_TIMELINE)
   const [summary, setSummary] = useState<SessionSummary | null>(null)
@@ -211,7 +219,8 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
   const [loadedAt, setLoadedAt] = useState<string | null>(null)
   const [live, setLive] = useState<Live>({ state: 'connecting' })
   const [tab, setTab] = useState<'timeline' | 'spans'>('timeline')
-  const [highlighted, setHighlighted] = useState<number | null>(null)
+  // A deep link (`?event=<seq>`, from a session turn's trace icon) opens the trace at that event.
+  const [highlighted, setHighlighted] = useState<number | null>(() => eventFromLocation())
   const [unseen, setUnseen] = useState(0)
   const [nonce, setNonce] = useState(0)
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -314,11 +323,13 @@ function SessionInspector({ sessionId }: { sessionId: string }) {
 
   // A search result asks for an event: show the timeline, then focus that row.
   useEffect(() => {
-    if (highlighted === null || tab !== 'timeline') return
+    if (highlighted === null || tab !== 'timeline' || loading) return
     const row = document.getElementById(`inspector-event-${highlighted}`)
-    row?.scrollIntoView?.({ block: 'center' })
-    row?.focus()
-  }, [highlighted, tab])
+    if (!row) return
+    followRef.current = false
+    row.scrollIntoView?.({ block: 'center' })
+    row.focus()
+  }, [highlighted, tab, loading])
 
   const reload = useCallback(() => setNonce((value) => value + 1), [])
   const reveal = useCallback((seq: number) => {

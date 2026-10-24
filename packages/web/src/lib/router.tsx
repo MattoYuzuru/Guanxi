@@ -136,8 +136,9 @@ export const paths = {
   developerComponents: () => '/settings/developer/components',
   voiceGlossary: () => '/settings/voice/glossary',
   notifications: () => '/notifications',
-  inspector: (sessionId?: string | null) =>
-    sessionId ? `/inspector/${encodeURIComponent(sessionId)}` : '/inspector',
+  /** A trace, optionally opened at one session-log event (`?event=<seq>`). */
+  inspector: (sessionId?: string | null, event?: number | null) =>
+    sessionId ? `/inspector/${encodeURIComponent(sessionId)}${event != null ? `?event=${event}` : ''}` : '/inspector',
 }
 
 /* ──────────────────────────────── Хуки ────────────────────────────────── */

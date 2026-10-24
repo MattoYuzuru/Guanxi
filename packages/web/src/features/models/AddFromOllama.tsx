@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useId, useEffect, useRef, useState, type FormEvent } from 'react'
 import type {
   OllamaReferencePreview,
   PullStreamEvent,
@@ -37,6 +37,9 @@ export function AddFromOllama({
   installedNames: readonly string[]
   onInstalled: () => void
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { addFromOllamaDescription: `${idBase}-add-from-ollama-description`, ollamaReferenceInput: `${idBase}-ollama-reference-input`, ollamaReferenceHint: `${idBase}-ollama-reference-hint` }
   const [open, setOpen] = useState(false)
   const [reference, setReference] = useState('')
   const [state, setState] = useState<FlowState>({ kind: 'editing' })
@@ -197,7 +200,7 @@ export function AddFromOllama({
         open={open}
         onClose={close}
         title={translate('models.addOllama.title')}
-        describedBy="add-from-ollama-description"
+        describedBy={ids.addFromOllamaDescription}
         initialFocusRef={inputRef}
         returnFocusRef={entryRef}
         dismissable={state.kind !== 'pulling'}
@@ -233,27 +236,27 @@ export function AddFromOllama({
           ) : undefined
         }
       >
-        <p id="add-from-ollama-description" className="text-xs text-secondary">
+        <p id={ids.addFromOllamaDescription} className="text-xs text-secondary">
           {translate('models.addOllama.description')}
         </p>
 
         {(state.kind === 'editing' || state.kind === 'validating' || state.kind === 'invalid') && (
           <form className="mt-3 space-y-2" onSubmit={(event) => void preview(event)}>
-            <label className="block text-xs font-medium" htmlFor="ollama-reference-input">
+            <label className="block text-xs font-medium" htmlFor={ids.ollamaReferenceInput}>
               {translate('models.addOllama.input.label')}
             </label>
             <Input
               ref={inputRef}
-              id="ollama-reference-input"
+              id={ids.ollamaReferenceInput}
               value={reference}
               onChange={(event) => changeReference(event.target.value)}
               placeholder={translate('models.addOllama.input.placeholder')}
-              aria-describedby="ollama-reference-hint"
+              aria-describedby={ids.ollamaReferenceHint}
               aria-invalid={state.kind === 'invalid'}
               className="w-full min-w-0"
               autoComplete="off"
             />
-            <p id="ollama-reference-hint" className="text-2xs text-muted">
+            <p id={ids.ollamaReferenceHint} className="text-2xs text-muted">
               {translate('models.addOllama.input.hint')}
             </p>
             {state.kind === 'invalid' && <p role="alert" className="text-xs text-danger">{state.message}</p>}

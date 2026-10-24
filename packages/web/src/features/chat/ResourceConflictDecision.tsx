@@ -10,7 +10,7 @@ import { Button, Modal, Spinner } from '../../components/ui.tsx'
 import { ApiRequestError, api } from '../../lib/api.ts'
 import { formatContextLength, formatDateTime } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
-import { useRuntimeProjection } from '../health/RuntimeContext.tsx'
+import { useRuntimeReader, useRuntimeSelector } from '../health/RuntimeContext.tsx'
 import { RuntimeFact, RuntimeFacts } from '../health/RuntimeStatus.tsx'
 
 const CANCELLATION_POLL_INTERVAL_MS = 250
@@ -51,9 +51,12 @@ type ConflictDecision = {
 }
 
 export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, localAdmission = true) {
-  const runtime = useRuntimeProjection()
+  // Round 4 review: the session must not re-render on every runtime poll. Callbacks read the
+  // latest state when they run; only an open decision subscribes to new samples.
+  const readRuntime = useRuntimeReader()
   const [decision, setDecision] = useState<ConflictDecision | null>(null)
   const decisionRef = useRef<ConflictDecision | null>(null)
+  const openSample = useRuntimeSelector((state) => (decisionRef.current ? state.data : null))
   const readAbortRef = useRef<AbortController | null>(null)
   const requestPendingRef = useRef(false)
   const dispatchPendingRef = useRef(false)
@@ -109,7 +112,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, loca
       readAbortRef.current = controller
 
       try {
-        const snapshot = await runtime.refresh(controller.signal, true)
+        const snapshot = await readRuntime().refresh(controller.signal, true)
         if (controller.signal.aborted) return 'ignored'
         if (!hasConservativeConflict(snapshot)) {
           dispatchIntent(intent, false)
@@ -119,7 +122,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, loca
         return 'conflict'
       } catch (error) {
         if (isAbort(error, controller.signal) && !bounded.timedOut()) return 'ignored'
-        const lastConfirmed = runtime.data
+        const lastConfirmed = readRuntime().data
         if (lastConfirmed && hasConservativeConflict(lastConfirmed)) {
           setDecision(createDecision(intent, lastConfirmed, 'stale'))
           return 'conflict'
@@ -134,7 +137,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, loca
         if (readAbortRef.current === controller) readAbortRef.current = null
       }
     },
-    [dispatchIntent, runtime, localAdmission],
+    [dispatchIntent, readRuntime, localAdmission],
   )
 
   const close = useCallback(() => {
@@ -167,7 +170,7 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, loca
     updateDecision((current) => ({ ...current, action: 'verifying', error: null }))
 
     try {
-      const fresh = await runtime.refresh(controller.signal, true)
+      const fresh = await readRuntime().refresh(controller.signal, true)
       if (controller.signal.aborted) return
       const active = normalActiveLease(fresh)
 
@@ -264,15 +267,15 @@ export function useResourceConflictDecision(dispatch: ChatIntentDispatcher, loca
       bounded.cleanup()
       if (readAbortRef.current === controller) readAbortRef.current = null
     }
-  }, [dispatchIntent, runtime, updateDecision])
+  }, [dispatchIntent, readRuntime, updateDecision])
 
   useEffect(() => {
     const current = decisionRef.current
-    const sample = runtime.data
+    const sample = openSample
     if (!current || !sample || current.action !== 'idle') return
     if (conflictFingerprint(sample) === conflictFingerprint(current.snapshot)) return
     setDecision({ ...current, snapshot: sample, sampleState: 'updated', error: null })
-  }, [runtime.data])
+  }, [openSample])
 
   useEffect(
     () => () => {

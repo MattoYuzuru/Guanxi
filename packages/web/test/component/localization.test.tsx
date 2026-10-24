@@ -202,13 +202,13 @@ describe('locale catalogs', () => {
       </LocaleProvider>,
     )
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy()
-    expect(screen.getByTitle('Runs in Ollama Cloud and does not consume local memory')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Runs in Ollama Cloud and does not consume local memory' })).toBeTruthy()
 
     resolveSettings(SETTINGS)
     expect(await screen.findByRole('button', { name: 'Копировать код' })).toBeTruthy()
-    expect(await screen.findByTitle('Считается в облаке Ollama, локальная память не тратится')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Считается в облаке Ollama, локальная память не тратится' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Copy code' })).toBeNull()
-    expect(screen.queryByTitle('Runs in Ollama Cloud and does not consume local memory')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Runs in Ollama Cloud and does not consume local memory' })).toBeNull()
   })
 
   it('rerenders memoized Quick Run and Recipe scope names after delayed settings bootstrap', async () => {

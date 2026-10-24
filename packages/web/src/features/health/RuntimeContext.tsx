@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { RuntimeSnapshot } from '@guanxi/contract'
 import { api } from '../../lib/api.ts'
 import {
@@ -6,7 +6,18 @@ import {
   type RuntimePollingState,
 } from './useRuntimePolling.ts'
 
-const RuntimeContext = createContext<RuntimePollingState | null>(null)
+/**
+ * The shared runtime sample as an external store. The node rebuilds every snapshot (a new
+ * observation time and memory sample), so the sample's identity changes on every poll; consumers
+ * therefore subscribe to the slice they show (P2, D-203). A consumer whose slice is unchanged does
+ * not re-render, and the context value itself never changes.
+ */
+interface RuntimeStore {
+  getState: () => RuntimePollingState
+  subscribe: (listener: () => void) => () => void
+}
+
+const RuntimeContext = createContext<RuntimeStore | null>(null)
 
 /**
  * Persistent shell owner for the single sampled Runtime query loop. Feature
@@ -19,16 +30,82 @@ export function RuntimeProvider({
   children: ReactNode
   loader?: (signal: AbortSignal) => Promise<RuntimeSnapshot>
 }) {
-  const runtime = useRuntimePolling(loader)
-  return <RuntimeContext.Provider value={runtime}>{children}</RuntimeContext.Provider>
+  const polling = useRuntimePolling(loader)
+  const { data, error, loading, refreshing, retry, refresh } = polling
+  // One state object per real change; retry and refresh are stable.
+  const state = useMemo<RuntimePollingState>(
+    () => ({ data, error, loading, refreshing, retry, refresh }),
+    [data, error, loading, refreshing, retry, refresh],
+  )
+  const current = useRef(state)
+  const listeners = useRef(new Set<() => void>())
+  const store = useMemo<RuntimeStore>(() => ({
+    getState: () => current.current,
+    subscribe: (listener) => { listeners.current.add(listener); return () => { listeners.current.delete(listener) } },
+  }), [])
+  useLayoutEffect(() => {
+    if (current.current === state) return
+    current.current = state
+    for (const listener of listeners.current) listener()
+  }, [state])
+  return <RuntimeContext.Provider value={store}>{children}</RuntimeContext.Provider>
 }
 
+/**
+ * Subscribes to one slice of the runtime state. The component re-renders only when `isEqual`
+ * says the slice changed (by default identity, which structural sharing keeps for unchanged
+ * subtrees such as the governor).
+ */
+export function useRuntimeSelector<T>(
+  select: (state: RuntimePollingState) => T,
+  isEqual: (previous: T, next: T) => boolean = Object.is,
+): T {
+  const store = useContext(RuntimeContext)
+  if (!store) throw new Error('RuntimeProvider is missing')
+  return useStoreSelector(store, select, isEqual)
+}
+
+/**
+ * Reads the current runtime state without subscribing: for callbacks (a send's admission check)
+ * that need the latest sample when they run, not a re-render on every poll.
+ */
+export function useRuntimeReader(): () => RuntimePollingState {
+  const store = useContext(RuntimeContext)
+  if (!store) throw new Error('RuntimeProvider is missing')
+  return store.getState
+}
+
+/** The whole runtime state: for views that show the sample itself (the status items, details). */
 export function useRuntimeProjection(): RuntimePollingState {
-  const runtime = useContext(RuntimeContext)
-  if (!runtime) throw new Error('RuntimeProvider is missing')
-  return runtime
+  return useRuntimeSelector(identity)
 }
 
 export function useOptionalRuntimeProjection(): RuntimePollingState | null {
-  return useContext(RuntimeContext)
+  const store = useContext(RuntimeContext)
+  return useStoreSelector(store, identity, Object.is)
+}
+
+const identity = (state: RuntimePollingState) => state
+const noStore: RuntimeStore = { getState: () => null as unknown as RuntimePollingState, subscribe: () => () => {} }
+
+function useStoreSelector<T>(
+  store: RuntimeStore | null,
+  select: (state: RuntimePollingState) => T,
+  isEqual: (previous: T, next: T) => boolean,
+): T {
+  const target = store ?? noStore
+  const selection = useRef<{ state: RuntimePollingState; value: T } | null>(null)
+  const getSnapshot = () => {
+    const state = target.getState()
+    const last = selection.current
+    if (last && last.state === state) return last.value
+    const value = select(state)
+    if (last && isEqual(last.value, value)) {
+      selection.current = { state, value: last.value }
+      return last.value
+    }
+    selection.current = { state, value }
+    return value
+  }
+  return useSyncExternalStore(target.subscribe, getSnapshot, getSnapshot)
 }

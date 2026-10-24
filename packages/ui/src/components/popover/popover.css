@@ -53,7 +53,8 @@
 .gx-popover-facts dd {
   margin: 0;
   color: var(--color-text-primary);
-  font-weight: var(--font-weight-label);
+  /* Values carry the weight (D-202, round 4); labels stay in the secondary tone. */
+  font-weight: var(--font-weight-heading);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }

@@ -2,12 +2,15 @@
  * Adapted from shadcn/ui (base) apps/v4/registry/bases/base/ui/dropdown-menu.tsx
  * @ ba1503c64472b82256d9de95e2e62c5901a38e8b, MIT, Copyright (c) 2023 shadcn.
  * Modified by Guanxi contributors: renamed to Menu, portal container, glass material, danger
- * item variant, semantic-token CSS; submenus and checkbox items are left for later.
+ * item variant, semantic-token CSS; checkbox items (check or switch indicator) and radio items
+ * for settings menus (round 4); submenus are left for later.
  */
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { cx } from '../../lib/cx.ts'
 import { usePortalContainer } from '../../lib/portal.tsx'
+import { Icon } from '../icon/icon.tsx'
+import '../switch/switch.css'
 import './menu.css'
 
 type WithClassName<T> = Omit<T, 'className'> & { className?: string }
@@ -72,6 +75,79 @@ export function MenuItem({ variant = 'default', className, ...props }: MenuItemP
       {...props}
     />
   )
+}
+
+export interface MenuCheckboxItemProps extends WithClassName<ComponentProps<typeof MenuPrimitive.CheckboxItem>> {
+  /** A leading icon (an `<Icon />`), decorative. */
+  icon?: ReactNode
+  /** `check` marks a visible item (a shown panel); `switch` draws an inline switch for a setting. */
+  indicator?: 'check' | 'switch'
+  /** A quieter second line under the label, e.g. the scope of a setting. */
+  description?: ReactNode
+  /** A trailing value or shortcut before the indicator. */
+  end?: ReactNode
+}
+
+/**
+ * A checkable row: icon, label, optional description and trailing value, then a check mark or an
+ * inline switch. The row is the control (`menuitemcheckbox` with `aria-checked`); the switch is
+ * drawn, not focusable. Checkbox items keep the menu open, so several can be toggled in a row.
+ */
+export function MenuCheckboxItem({ icon, indicator = 'check', description, end, className, children, ...props }: MenuCheckboxItemProps) {
+  return (
+    <MenuPrimitive.CheckboxItem
+      data-slot="menu-checkbox-item"
+      data-indicator={indicator}
+      className={cx('gx-menu-item gx-menu-checkable', className)}
+      {...props}
+    >
+      {icon ? <span className="gx-menu-item-icon" aria-hidden="true">{icon}</span> : null}
+      <span className="gx-menu-item-text">
+        <span className="gx-menu-item-label">{children}</span>
+        {description ? <span className="gx-menu-item-description">{description}</span> : null}
+      </span>
+      {end ? <span className="gx-menu-item-end">{end}</span> : null}
+      {indicator === 'switch' ? (
+        <span className="gx-switch gx-menu-switch" data-checked={props.checked ? '' : undefined} data-disabled={props.disabled ? '' : undefined} aria-hidden="true">
+          <span className="gx-switch-thumb" />
+        </span>
+      ) : (
+        <MenuPrimitive.CheckboxItemIndicator className="gx-menu-check" keepMounted>
+          <CheckGlyph />
+        </MenuPrimitive.CheckboxItemIndicator>
+      )}
+    </MenuPrimitive.CheckboxItem>
+  )
+}
+
+export type MenuRadioGroupProps = ComponentProps<typeof MenuPrimitive.RadioGroup>
+export interface MenuRadioItemProps extends WithClassName<ComponentProps<typeof MenuPrimitive.RadioItem>> {
+  icon?: ReactNode
+  description?: ReactNode
+}
+
+export function MenuRadioGroup(props: MenuRadioGroupProps) {
+  return <MenuPrimitive.RadioGroup data-slot="menu-radio-group" {...props} />
+}
+
+/** One choice of a radio group (a save scope, a named layout): icon, label, a check when chosen. */
+export function MenuRadioItem({ icon, description, className, children, ...props }: MenuRadioItemProps) {
+  return (
+    <MenuPrimitive.RadioItem data-slot="menu-radio-item" className={cx('gx-menu-item gx-menu-checkable', className)} {...props}>
+      {icon ? <span className="gx-menu-item-icon" aria-hidden="true">{icon}</span> : null}
+      <span className="gx-menu-item-text">
+        <span className="gx-menu-item-label">{children}</span>
+        {description ? <span className="gx-menu-item-description">{description}</span> : null}
+      </span>
+      <MenuPrimitive.RadioItemIndicator className="gx-menu-check" keepMounted>
+        <CheckGlyph />
+      </MenuPrimitive.RadioItemIndicator>
+    </MenuPrimitive.RadioItem>
+  )
+}
+
+function CheckGlyph() {
+  return <Icon name="check" size={16} />
 }
 
 export function MenuGroup(props: MenuGroupProps) {

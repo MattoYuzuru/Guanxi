@@ -3,7 +3,6 @@
 .workspace-content { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
 .workspace-content > [role='tabpanel'] { min-width: 0; }
 .workspace-retained-pane { font-family: var(--font-family-sans); @apply w-full; @apply h-full; }
-.workspace-dock-lanes { padding: var(--spacing-8); background: var(--color-background-secondary); border-bottom: var(--border-width-regular) solid var(--color-border-primary); color: var(--color-text-secondary); }
 @media (max-width: 639px) {
   .workspace { height: auto; @apply min-h-full; }
   .workspace-content { overflow: visible; }
@@ -11,3 +10,4 @@
 }
 
 .workspace-chat-content { display: flex; flex-direction: column; min-height: 0; min-width: 0; @apply h-full; }
+.workspace-bar { display: flex; flex: none; justify-content: flex-end; padding: var(--spacing-4) var(--spacing-8); border-bottom: var(--border-width-regular) solid var(--color-border-secondary); }

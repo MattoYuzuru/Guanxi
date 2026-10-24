@@ -13,6 +13,7 @@ root.dataset.motion = 'reduced'
 function Fixture() {
   const [density, setDensity] = useState<'compact' | 'comfortable'>('compact')
   const [prompt, setPrompt] = useState('')
+  const [context, setContext] = useState<'session' | 'last' | 'none'>('session')
   return (
     <main style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 24 }}>
       <div data-testid="switches" style={{ display: 'flex', gap: 16 }}>
@@ -28,6 +29,11 @@ function Fixture() {
       </div>
       <SegmentedControl label="Density" value={density} onValueChange={setDensity}
         options={[{ value: 'compact', label: 'Compact' }, { value: 'comfortable', label: 'Comfortable' }]} />
+      {/* Shrink-wrapped, as in the side-chat panel and the Customise popover (not stretched by this column). */}
+      <div style={{ alignSelf: 'flex-start' }}>
+        <SegmentedControl label="Context from the session" value={context} onValueChange={setContext}
+          options={[{ value: 'session', label: 'Whole session' }, { value: 'last', label: 'Last turns' }, { value: 'none', label: 'No context' }]} />
+      </div>
       <div style={{ width: 560 }}>
         <Composer label="Message" value={prompt} onValueChange={setPrompt} onSend={() => setPrompt('')} />
       </div>

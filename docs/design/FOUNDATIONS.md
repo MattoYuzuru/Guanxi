@@ -155,6 +155,12 @@ data-only plugin).
 - **Container widths** (`max-w-*`, `w-*`): 3xs 16rem, 2xs 18rem, xs 20rem, sm 24rem, md 28rem,
   lg 32rem, xl 36rem, 2xl 42rem, 3xl 48rem, 4xl 56rem, 5xl 64rem, 6xl 72rem, 7xl 80rem. This is
   Tailwind's scale, kept as Guanxi tokens so existing layouts do not change.
+- **Safe area** (environment tokens): `--safe-area-inset-top|right|bottom|left` are the device's
+  safe-area insets, 0 where there are none. DTCG dimensions are px or rem only, so the token build
+  emits them from a fixed list as `env(safe-area-inset-*, 0px)`; product CSS reads the variables and
+  never writes `env()` itself (G6). Use them with a spacing floor, for example
+  `max(var(--spacing-16), var(--safe-area-inset-bottom))` under a docked composer. The web app sets
+  `viewport-fit=cover` so the insets are reported.
 - **Radius** grows with the layer: inline (chips, tags, kbd) 6 · controls 8 · panels, panes and cards
   12 · glass layers, menus, popovers, sheets and dialogs 14 · app tile 21.9% (D-200: tighter,
   concentric radii; a child never has a larger radius than its parent).
