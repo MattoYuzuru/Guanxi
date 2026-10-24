@@ -3,7 +3,7 @@
  * fixture model call is the only work in flight (no acceptance gate, no container). */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { MS1_LIVE_STOP_BOUND_MS } from '../../src/index.ts'
+import { MS1_LIVE_STOP_BOUND_MS, stopBoundMsFor } from '../../src/index.ts'
 import { runBoundedStop } from '../../src/ms1-live/stop.ts'
 import { createLiveWorld, until } from './live-world.ts'
 
@@ -73,6 +73,15 @@ test('SIGTERM on the home during a remote call records the stop, not a retry, an
   const errors = events.filter(event => event.type === 'error').map(event => (JSON.parse(event.payload) as { code: string }).code)
   assert.equal(errors.at(-1), 'relay_stopped', JSON.stringify(errors))
   assert.equal(w.home.count('SELECT COUNT(*) n FROM federation_relay_pin_journal'), 0, 'the acknowledged unpin deleted its journal row')
+})
+
+test('the home role installs no forced stop bound while the executor keeps it', () => {
+  assert.equal(stopBoundMsFor('home', undefined), undefined)
+  assert.equal(stopBoundMsFor('home', 25), undefined, 'a requested bound is still refused for the home role')
+  assert.equal(stopBoundMsFor('executor', undefined), MS1_LIVE_STOP_BOUND_MS)
+  assert.equal(stopBoundMsFor('executor', 25), 25)
+  assert.equal(stopBoundMsFor(undefined, 25), 25, 'a plain start keeps its caller-requested bound')
+  assert.equal(stopBoundMsFor(undefined, undefined), undefined)
 })
 
 test('a close past the stop bound emits exactly one forced JSON line and exits non-zero', async () => {

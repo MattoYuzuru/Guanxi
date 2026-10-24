@@ -155,6 +155,14 @@ const here = dirname(fileURLToPath(import.meta.url))
  * `{"event":"stop","forced":true}`. Named policy, not a per-run guess. */
 export const MS1_LIVE_STOP_BOUND_MS = 10_000
 
+/** The forced bound is an executor policy. A home must abort its relay, settle pins and reap detached Claude Code
+ * process groups, so its close stays unbounded. A plain caller may still ask for a bound. */
+export function stopBoundMsFor(role: 'home' | 'executor' | undefined, requested: number | undefined): number | undefined {
+  if (role === 'home') return undefined
+  if (role === 'executor') return requested ?? MS1_LIVE_STOP_BOUND_MS
+  return requested
+}
+
 export interface StartOptions {
   port?: number
   host?: string
@@ -596,9 +604,9 @@ export async function start(options: StartOptions = {}) {
     return closing
   }
 
-  // A live node is a service: a stop that cannot finish inside the bound ends as a forced exit, never as a systemd
-  // SIGKILL minutes later. A plain `start()` keeps the old unbounded behaviour unless the caller asks for a bound.
-  const stopBoundMs = options.shutdown?.boundMs ?? (live ? MS1_LIVE_STOP_BOUND_MS : undefined)
+  // An executor is a service: a stop that cannot finish inside the bound ends as a forced exit, never as a systemd
+  // SIGKILL minutes later. The home stays unbounded, and a plain `start()` keeps the old behaviour unless asked.
+  const stopBoundMs = stopBoundMsFor(live?.role, options.shutdown?.boundMs)
   const forcedStop = options.shutdown?.forced ?? ((event: { event: 'stop'; forced: true }) => { process.stdout.write(JSON.stringify(event) + '\n') })
   const shutdown = () => {
     if (stopBoundMs === undefined) {

@@ -179,8 +179,12 @@ The relay run keeps its own cap accounting; never add the two.
    flight ends `interrupted`, its ledger is kept, the lead must re-delegate.
 3. Stop the ssh forward, then the executor (`Ctrl-C`), then llama-server (your service manager).
 
-The stop is bounded at 10 seconds (`MS1_LIVE_STOP_BOUND_MS`): an in-flight remote dispatch is aborted with the executor, both roles
-close their listeners, and a close that has not finished at the bound exits non-zero with `{"event":"stop","forced":true}`.
+The **executor** stop is bounded at 10 seconds (`MS1_LIVE_STOP_BOUND_MS`): an in-flight remote dispatch is aborted with it, its
+listeners are force-dropped after the drain grace, and a close that has not finished at the bound exits non-zero with
+`{"event":"stop","forced":true}`. The **home** stop has no such bound: it first aborts the relay and lets an in-flight call end as
+the stop, waits for the acknowledged unpin so the journal row is settled, and only then disposes the plugins; that ordering is what
+also stops the detached Claude Code process groups. A home close is therefore allowed to outlast 10 seconds, and a broken one still
+has to be stopped by the service manager.
 
 Pins are now reaped (F2-reap): the home journals each pin before it is sent, re-sends a signed `unpin` for every journal row at start
 and every 60 s, and the executor leases each pin (10 minutes, renewed by the live run's 60-second heartbeat). A long run therefore
