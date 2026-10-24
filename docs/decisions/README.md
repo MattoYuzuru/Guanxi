@@ -10,6 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
+| [2026-10-24](2026-10-24-owner-decisions.md) (D-214–D-218: MS1 exit by fault scenarios instead of six hours, user API key for the lead, worker models, Developer/Visual split withdrawn, in-app connections centre with a provider catalog) | accepted |
 | [2026-10-23 addendum](2026-10-23-owner-decisions-addendum.md) (D-200–D-212: UI redesign, palette, icons over text, no retry buttons, composer layout, models in chat, fleet map, Sonnet MS1 lead, API-key and subscription-token routes for it) | accepted |
 | [2026-10-23](2026-10-23-owner-decisions.md) (D-196–D-199: Fedora real runs, Claude Code as MS1 lead, Guanxi-Test-Repo target, local R3 observation journal with paths) | accepted |
 | [2026-10-22](2026-10-22-owner-decisions.md) (D-195: restored Fedora checks and deliberate retirement of Agent Workstation) | accepted |
