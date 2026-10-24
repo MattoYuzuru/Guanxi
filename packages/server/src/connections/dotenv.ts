@@ -8,7 +8,9 @@ import type { Connections } from './service.ts'
 
 const keys = { OPENAI_API_KEY: 'openai', OPENAI_COMPAT_API_KEY: 'openai', DEEPSEEK_API_KEY: 'deepseek', ANTHROPIC_API_KEY: 'anthropic',
   OPENROUTER_API_KEY: 'openrouter', GOOGLE_API_KEY: 'google' } as const
-export interface ImportedProvider { provider: Connection['provider']; value: string; baseUrl?: string; allowPrivate?: boolean }
+export interface ImportedProvider { provider: Connection['provider']; value: string; baseUrl?: string; allowPrivate?: boolean
+  /** The dotenv name that produced this entry. Import reuse is scoped to it, so OPENAI_API_KEY and OPENAI_COMPAT_API_KEY never share a connection. */
+  family?: string }
 /** Node's dotenv parser treats shell substitutions and ${variables} as literal data. */
 export interface KeyFileOptions {
   /** D-212: read the owner's Claude Code subscription token (`sk-ant-oat...`) as a credential of the official CLI. It is taken from
@@ -44,7 +46,7 @@ export function parseProviderKeyFile(text: string, options: KeyFileOptions = {})
       const endpoint = name === 'OPENAI_COMPAT_API_KEY' ? data.OPENAI_COMPAT_API_URL : provider === 'openai' ? data.OPENAI_API_URL : undefined
       if (name === 'OPENAI_COMPAT_API_KEY' && !endpoint) throw new Error('compatible_root_required')
       const baseUrl = endpoint ? connectionBaseUrlSchema.parse(endpoint).replace(/\/+$/, '') : undefined
-      entries.push({ provider, value, ...(baseUrl ? { baseUrl, allowPrivate: data.GUANXI_PROVIDER_ALLOW_PRIVATE === '1' } : {}) })
+      entries.push({ provider, family: name, value, ...(baseUrl ? { baseUrl, allowPrivate: data.GUANXI_PROVIDER_ALLOW_PRIVATE === '1' } : {}) })
       } catch { errors.push({ key: name, code: 'invalid_provider_key' }) }
     }
     if (!entries.length && !errors.length) throw new Error('no_supported_key')

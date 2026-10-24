@@ -861,7 +861,7 @@ test('review: pending node-key injection rejects revocation and rotation after a
   unavailable.close(); assert.equal(used, 0)
 })
 
-test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
+test('review: migrations 2 to 4 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput); const secret = fakeKey()
   await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const before = {
@@ -873,14 +873,23 @@ test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting key
   s.store.db.exec('DROP TABLE dotenv_imports; DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version>=2;')
   await f.restart()
   const next = f.service()
-  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3])
+  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3, 4])
   assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports').get()!.n, 0)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_keys').all(), before.keys)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_secrets').all(), before.secrets)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM connections').all(), before.connections)
+  // A version-3 mapping has no family; append-only migration 4 makes it the official OpenAI family.
+  const legacy = next.store.create(account, { name: 'openai (dotenv)', kind: 'model_api', provider: 'openai', auth: 'api_key' })
+  next.store.db.exec(`DROP TABLE dotenv_imports;
+    CREATE TABLE dotenv_imports(account_id TEXT NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL,
+      connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
+    DELETE FROM k3_migrations WHERE version=4;`)
+  next.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)').run(account, 'openai', '', legacy.id)
+  await f.restart()
+  assert.deepEqual(f.service().store.db.prepare('SELECT family FROM dotenv_imports').all().map(row => row.family), ['OPENAI_API_KEY'])
   assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, true)
-  await next.unlockVault(account)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(next.store.get(account, row.id).secretRef as SecretRef))
+  await f.service().unlockVault(account)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(f.service().store.get(account, row.id).secretRef as SecretRef))
 })
 
 test('review: registry grants and rotates only the current unattended credential, then revokes it atomically', async t => {

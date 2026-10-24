@@ -137,6 +137,11 @@ export class Connections {
     if (entry.provider === 'openai' && entry.baseUrl) return `OpenAI-compatible (${new URL(entry.baseUrl).host})`
     return providerCatalog.find(item => item.provider === entry.provider)?.label ?? entry.provider
   }
+  /** Reuse belongs to one dotenv name family; official OpenAI and its compatible name never share a row. */
+  private importedFamily(entry: ImportedProvider) {
+    if (entry.provider !== 'openai') return entry.provider
+    return entry.family === 'OPENAI_COMPAT_API_KEY' ? 'OPENAI_COMPAT_API_KEY' : 'OPENAI_API_KEY'
+  }
   private recordImportOrigin(accountId: string, connectionId: string) {
     this.store.observe(accountId, connectionId, {
       origin: { value: 'provider_key_import', source: 'connection_import', observedAt: new Date().toISOString(), confidence: 'high' },
@@ -155,17 +160,25 @@ export class Connections {
       const imported: { connectionId: string; provider: string; action: 'created' | 'rotated' | 'unchanged' }[] = []
       // No await inside the transaction: synchronous writers cannot interleave.
       const prepared: { entry: ImportedProvider; row: Connection | undefined; same: boolean }[] = []
+      // A row claimed by one entry of this batch is never reused by another entry.
+      const claimed = new Set<string>()
       for (const entry of entries) {
-        const mapped = this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND endpoint=?')
-          .get(accountId, entry.provider, entry.baseUrl ?? '')
-        let row = mapped ? this.store.get(accountId, String(mapped.connection_id)) : undefined
-        let same = row ? await this.#vault.matches(accountId, row.id, entry.value) : false
+        const family = this.importedFamily(entry)
+        let row: Connection | undefined
+        let same = false
+        const mapped = this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND family=? AND endpoint=?')
+          .get(accountId, entry.provider, family, entry.baseUrl ?? '')
+        if (mapped && !claimed.has(String(mapped.connection_id))) {
+          row = this.store.get(accountId, String(mapped.connection_id))
+          same = await this.#vault.matches(accountId, row.id, entry.value)
+        }
         // An endpoint-only change reuses the imported connection that already holds this
-        // provider's secret. A different secret remains a separate identity.
+        // family's secret. Another family, or a row already claimed in this batch, is separate.
         if (!row) {
-          for (const candidate of this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? ORDER BY rowid')
-            .all(accountId, entry.provider)) {
+          for (const candidate of this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND family=? ORDER BY rowid')
+            .all(accountId, entry.provider, family)) {
             const id = String(candidate.connection_id)
+            if (claimed.has(id)) continue
             if (await this.#vault.matches(accountId, id, entry.value)) {
               row = this.store.get(accountId, id)
               same = true
@@ -173,6 +186,19 @@ export class Connections {
             }
           }
         }
+        // A mapping written before migration 4 has no family. Its row still carries the old
+        // `<provider> (dotenv)` name and is the official family's identity.
+        if (!row && family !== 'OPENAI_COMPAT_API_KEY') {
+          for (const candidate of this.store.list(accountId)) {
+            if (candidate.provider !== entry.provider || candidate.name !== `${entry.provider} (dotenv)` || claimed.has(candidate.id)) continue
+            if (await this.#vault.matches(accountId, candidate.id, entry.value)) {
+              row = candidate
+              same = true
+              break
+            }
+          }
+        }
+        if (row) claimed.add(row.id)
         prepared.push({ entry, row, same })
       }
       this.store.db.exec('BEGIN IMMEDIATE')
@@ -181,6 +207,7 @@ export class Connections {
         if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
           throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
         for (const [index, { entry, row, same }] of prepared.entries()) {
+          const family = this.importedFamily(entry)
           const name = this.importedConnectionName(entry)
           let connection = row
           if (!connection) {
@@ -190,6 +217,7 @@ export class Connections {
               : { name, kind: 'model_api', provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
             this.recordImportOrigin(accountId, connection.id)
           } else {
+            if (connection.facts.origin?.value !== 'provider_key_import') this.recordImportOrigin(accountId, connection.id)
             const endpointChanged = (connection.baseUrl ?? undefined) !== entry.baseUrl
             const consentChanged = entry.baseUrl !== undefined && connection.allowPrivate !== (entry.allowPrivate ?? false)
             if (endpointChanged || consentChanged || connection.name !== name)
@@ -202,8 +230,8 @@ export class Connections {
                 .run(accountId, entry.provider, connection.id)
           }
           if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
-          this.store.db.prepare('INSERT OR REPLACE INTO dotenv_imports VALUES(?,?,?,?)')
-            .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)
+          this.store.db.prepare('INSERT OR REPLACE INTO dotenv_imports(account_id,provider,family,endpoint,connection_id) VALUES(?,?,?,?,?)')
+            .run(accountId, entry.provider, family, entry.baseUrl ?? '', connection.id)
           imported.push({ connectionId: connection.id, provider: entry.provider, action: !row ? 'created' : same ? 'unchanged' : 'rotated' })
         }
         this.store.db.exec('COMMIT')

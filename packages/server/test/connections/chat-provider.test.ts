@@ -658,6 +658,28 @@ test('one file imports official OpenAI and a separate compatible endpoint withou
   assert.deepEqual((await importProviderKeysFile(f.service, 'local', file)).imported.map(item => item.action), ['unchanged', 'unchanged'])
 })
 
+test('one key under both OpenAI names keeps two stable connections across repeated imports', async t => {
+  const f = await setup(t), file = join(f.dir, 'same-key-both-names.env'), key = canary(), root = 'https://api.example.invalid/v1'
+  await writeFile(file, `OPENAI_API_KEY=${key}\n`)
+  const official = (await importProviderKeysFile(f.service, 'local', file)).imported[0]!.connectionId
+  await writeFile(file, `OPENAI_API_KEY=${key}\nOPENAI_COMPAT_API_KEY=${key}\nOPENAI_COMPAT_API_URL=${root}\n`)
+  let compat = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const imported = await importProviderKeysFile(f.service, 'local', file)
+    assert.equal(imported.imported.length, 2)
+    assert.equal(f.service.snapshot('local').connections.length, 2, `connection count after import ${attempt + 1}`)
+    const officialRow = f.store.get('local', official)
+    const compatRow = f.store.get('local', imported.imported[1]!.connectionId)
+    assert.equal(officialRow.baseUrl, undefined)
+    assert.equal(officialRow.name, 'OpenAI')
+    assert.equal(compatRow.baseUrl, root)
+    assert.equal(compatRow.name, 'OpenAI-compatible (api.example.invalid)')
+    assert.notEqual(compatRow.id, official)
+    if (compat) assert.equal(compatRow.id, compat)
+    compat = compatRow.id
+  }
+})
+
 test('boot survives provider import failure and logs only a fixed code with models unavailable', async t => {
   const { start } = await import('../../src/index.ts')
   const f = await setup(t), value = canary(), file = join(f.dir, 'boot-invalid.env')

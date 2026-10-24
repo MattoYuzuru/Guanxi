@@ -46,6 +46,19 @@ export class ConnectionStore {
           connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
           INSERT INTO k3_migrations VALUES(3);`)
       }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=4').get()) {
+        // Append the dotenv name family to the identity. Legacy rows had one openai
+        // identity for both names; treat them as the official OPENAI_API_KEY family.
+        this.db.exec(`
+          CREATE TABLE dotenv_imports_v4(account_id TEXT NOT NULL, provider TEXT NOT NULL, family TEXT NOT NULL, endpoint TEXT NOT NULL,
+            connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,family,endpoint));
+          INSERT INTO dotenv_imports_v4(account_id,provider,family,endpoint,connection_id)
+            SELECT account_id, provider, CASE WHEN provider='openai' THEN 'OPENAI_API_KEY' ELSE provider END, endpoint, connection_id
+            FROM dotenv_imports;
+          DROP TABLE dotenv_imports;
+          ALTER TABLE dotenv_imports_v4 RENAME TO dotenv_imports;
+          INSERT INTO k3_migrations VALUES(4);`)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
     for (const file of [path, `${path}-wal`, `${path}-shm`]) chmodSync(file, 0o600)
