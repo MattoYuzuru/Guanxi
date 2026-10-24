@@ -12,6 +12,7 @@ import { IconButton } from '../icon-button/icon-button.tsx'
 import { Kbd } from '../kbd/kbd.tsx'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../menu/menu.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover.tsx'
+import { VisibleLabels } from '../../lib/visible-labels.tsx'
 import './app-shell-chrome.css'
 
 export type AppShellSide = 'left' | 'right'
@@ -240,7 +241,10 @@ export function AppShellChrome({
             {narrow && actions ? (
               <Popover>
                 <PopoverTrigger render={<IconButton label={labels.more ?? labels.palette} icon={<Icon name="more" />} />} />
-                <PopoverContent keepMounted align="end" className="gx-app-shell-overflow" data-slot="app-shell-overflow" aria-label={labels.more ?? labels.palette}>{actions}</PopoverContent>
+                <PopoverContent keepMounted align="end" className="gx-app-shell-overflow" data-slot="app-shell-overflow" aria-label={labels.more ?? labels.palette}>
+                  {/* No hover on a touch screen: each item shows its label as text (P3). */}
+                  <VisibleLabels>{actions}</VisibleLabels>
+                </PopoverContent>
               </Popover>
             ) : actions}
             <button

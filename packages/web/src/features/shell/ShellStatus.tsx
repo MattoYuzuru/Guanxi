@@ -80,7 +80,7 @@ export function ShellStatusItems({ runtime, stale, health, healthStale = false, 
   const available = sample?.availableMemoryBytes
   const memoryValue = available && available.bytes !== null ? formatBytes(available.bytes) : undefined
 
-  return <div className="flex min-w-0 flex-wrap items-center gap-0.5" data-testid="shell-status-items">
+  return <div className="shell-status-items flex min-w-0 flex-wrap items-center gap-0.5" data-testid="shell-status-items">
     <StatusItem icon={deviceIcon(profile?.platform)} label={t('shell.status.device')} tone={profile ? 'neutral' : 'unknown'} stale={stale && Boolean(profile)} staleLabel={staleLabel}>
       {profile ? <>
         <Facts rows={[

@@ -242,3 +242,9 @@
     background-color: CanvasText;
   }
 }
+
+/* In the phone overflow sheet the status items are one labelled column (P3). */
+.gx-app-shell-overflow .shell-status-items {
+  flex-direction: column;
+  align-items: stretch;
+}

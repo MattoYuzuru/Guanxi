@@ -64,6 +64,11 @@ test('the phone strip is one row: navigation toggle, breadcrumb, one overflow an
   const overflow = page.locator('[data-slot="app-shell-overflow"]')
   await expect(overflow).toBeVisible()
   for (const name of [/^This device/u, /^Memory/u, /^Runtime/u, /^Customise$/u]) await expect(overflow.getByRole('button', { name })).toHaveCount(1)
+  // No hover on a touch screen: each item shows its label as text, and no tooltip appears (P3).
+  for (const label of ['This device', 'Memory', 'Runtime', 'Customise']) await expect(overflow.getByText(label, { exact: true })).toBeVisible()
+  await overflow.getByRole('button', { name: /^Memory/u }).hover()
+  await page.waitForTimeout(700)
+  await expect(page.locator('[data-slot="tooltip-content"]:visible')).toHaveCount(0)
   const box = await overflow.boundingBox()
   expect(box!.x).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual(400)
