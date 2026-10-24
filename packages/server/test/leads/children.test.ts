@@ -153,7 +153,7 @@ test('the report holds one gate result per item for the current head: the newest
 
 const stopLedger = { plan: { items: [{ id: 't1', title: 'One' }] }, items: { t1: 'open' }, head: 'h1', evidence: [], diffstat: '', proposals: [], cycle: 1,
   tokens: 0, moneyMicros: 0, unknownCosts: 0 }
-const note = (value: Record<string, unknown>, jobId = 'relay-run') => ({ type: 'agent.note', jobId, data: { text: JSON.stringify(value) } })
+const note = (value: Record<string, unknown>, jobId: string | null = 'relay-run') => ({ type: 'agent.note', jobId, data: { text: JSON.stringify(value) } })
 const error = (code: string, message = 'PRIVATE relay message', jobId = 'relay-run') => ({ type: 'error', jobId, data: { code, message } })
 
 test('the report carries the relay stop reason from the fixed codes in its own session log', () => {
@@ -181,6 +181,14 @@ test('a child run\'s error code is not reported as the relay\'s', () => {
   assert.equal(report.narrative, 'relay run status: input_required; stopped: model_failed (work call: runtime_meter_unavailable)')
   assert.equal(report.narrative.includes('child_failed'), false)
   assert.equal(report.narrative.includes('child_reason'), false)
+})
+
+test('a stop note without the envelope run id can name the relay run in its payload', () => {
+  const reporter = relayStartsChildReporter(
+    { status: () => status('input_required', 'relay-run', 'relay-session') },
+    { read: () => stopLedger as never },
+    { readAll: () => [error('model_failed'), note({ relay: 'call_failed_reason', runId: 'relay-run', purpose: 'work', reason: 'runtime_meter_unavailable' }, null)] as never })
+  assert.equal(reporter.report('child-1')!.narrative, 'relay run status: input_required; stopped: model_failed (work call: runtime_meter_unavailable)')
 })
 
 test('wrapping_up is a working state, not a stop: no stop facts are attached', () => {

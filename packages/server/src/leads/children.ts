@@ -2,7 +2,7 @@ import type { RelayService } from '../relay/plugin.ts'
 import type { RelayStarts } from '../relay/start.ts'
 import type { RunStore } from '../runs/store.ts'
 import type { SessionLog } from '../session-log/log.ts'
-import type { RelayStartStatus, SessionEvent } from '@guanxi/contract'
+import type { RelayStartStatus } from '@guanxi/contract'
 import { TERMINAL_RUN_STATES } from '../runs/types.ts'
 import { LeadError, type ChildHandle, type ChildLaunch, type ChildReport, type ChildReporter, type ChildStarter } from './types.ts'
 
@@ -126,18 +126,18 @@ const stopFactsOf = (log: Pick<SessionLog, 'readAll'>, sessionId: string, relayR
     let error: string | null = null
     let call: RelayStopFacts['call'] = null
     // The `rc-*` child runs share the relay run's session. Their lifecycle and error events are not the relay's stop:
-    // only events stamped with the relay run id (relay events carry it as `jobId`; run lifecycle carries `data.runId`)
-    // contribute. A note may also repeat the id in its payload for readers of older envelopes.
-    const own = (event: SessionEvent): boolean => event.jobId === relayRunId || event.type === 'run.lifecycle' && event.data.runId === relayRunId
+    // an event contributes only when it carries the relay run id, as `jobId` (all relay events) or, for a note, in its
+    // payload. Error events have no payload field for it, so `jobId` is their only association.
     for (const event of log.readAll(sessionId, 'person')) {
-      if (!own(event)) continue
-      if (event.type === 'error') error = fixed(event.data.code) ? event.data.code : null
-      else if (event.type === 'agent.note') {
+      if (event.type === 'error') {
+        if (event.jobId !== relayRunId) continue
+        error = fixed(event.data.code) ? event.data.code : null
+      } else if (event.type === 'agent.note') {
         let note: unknown
         try { note = JSON.parse(event.data.text) } catch { continue }
         if (note === null || typeof note !== 'object') continue
         const value = note as { relay?: unknown; runId?: unknown; purpose?: unknown; reason?: unknown }
-        if (value.relay !== 'call_failed_reason' || (value.runId !== undefined && value.runId !== relayRunId)) continue
+        if (value.relay !== 'call_failed_reason' || (event.jobId !== relayRunId && value.runId !== relayRunId)) continue
         const { purpose, reason } = value
         call = fixed(purpose) && fixed(reason) ? { purpose, reason } : null
       }
