@@ -39,7 +39,7 @@
 - `npm exec --workspace @guanxi/web -- vitest run test/component/connections.test.tsx
   test/component/new-session.test.tsx test/component/shell-sidebar.test.tsx
   test/component/localization.test.tsx test/component/localized-copy-inventory.test.tsx`
-  — 5 files, 68 tests, 68 pass.
+  — 5 files, 69 tests, 69 pass.
 - `node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test
   packages/server/test/connections/model-access.test.ts packages/server/test/connections/chat-provider.test.ts`
   — 90 tests, 90 pass (includes 3 new DELETE cases and endpoint-model assertions).
@@ -82,6 +82,7 @@ Each was applied once, the focused test failed, then the file was restored.
 - Picker preselect: removing the stored last choice failed.
 - Picker fallback: hiding "Other model ID…" failed.
 - Trigger: replacing the two spans with a middle-dot string failed.
+- Failed page read: removing `useAutoRecover` left the alert and blocked recovery.
 
 ## Residuals
 

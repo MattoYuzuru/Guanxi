@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Connection, ConnectionSnapshot } from '@guanxi/contract'
-import { ConnectionsView } from '../../src/features/connections/ConnectionsPage.tsx'
+import { ConnectionRequestError } from '../../src/features/connections/api.ts'
+import { ConnectionsPage, ConnectionsView } from '../../src/features/connections/ConnectionsPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 
 const DEEPSEEK = '11111111-1111-4111-8111-111111111111'
@@ -17,7 +18,7 @@ const empty: ConnectionSnapshot = { connections: [], costs: [], vault: { unlocke
 const snapshot = (connections: Connection[]): ConnectionSnapshot => ({ ...empty, connections })
 const run = vi.fn(async (action: () => Promise<unknown>) => {
   try { await action(); return { ok: true as const } }
-  catch (error) { return { ok: false as const, code: error instanceof Error && 'code' in error ? String(error.code) as never : undefined } }
+  catch (error) { return { ok: false as const, code: error instanceof ConnectionRequestError ? error.code : undefined } }
 })
 
 afterEach(() => { vi.unstubAllGlobals(); setActiveLocale('ru'); run.mockClear() })
@@ -137,6 +138,22 @@ it('lists models with search and marks a local runtime error inline without a Re
   expect(alert.textContent).toContain('Models could not be listed.')
   expect(alert.textContent).toContain('provider request failed')
   expect(screen.queryAllByRole('button', { name: /retry|refresh/iu })).toHaveLength(0)
+})
+
+it('a failed read recovers by itself, keeps the alert until a read succeeds and offers no Retry', async () => {
+  setActiveLocale('en')
+  const fetchMock = vi.fn()
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValue(Response.json(snapshot([connection()])))
+  vi.stubGlobal('fetch', fetchMock)
+  render(<ConnectionsPage />)
+  const alert = await screen.findByRole('alert')
+  expect(alert.textContent).toContain('could not be read')
+  expect(screen.queryAllByRole('button', { name: /retry|refresh/iu })).toHaveLength(0)
+  await act(async () => { window.dispatchEvent(new Event('online')) })
+  await screen.findByRole('article', { name: 'DeepSeek' })
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('shows one vault action in the header and unlocks from a failed initial load', async () => {
