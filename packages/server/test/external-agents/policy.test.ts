@@ -211,6 +211,18 @@ test('subscription owner conflict is per adapter and node, and API-key adapters 
   await f.reload({ installations: [opencode, { ...opencode, ownerAccountId: 'other-owner', connectionId: randomUUID() }] })
 })
 
+test('capabilities skips a removed connection instead of failing every caller', async t => {
+  const f = await fixture(t, ['codex', 'opencode'])
+  const [removed, live] = f.installations
+  f.service().setProjectRoles(owner, owner, 'p', { lead: f.bindings[0]! })
+  assert.deepEqual(f.service().capabilities(owner).map(capability => capability.connectionId), [removed!.connectionId, live!.connectionId])
+
+  f.connections.remove(owner, removed!.connectionId)
+  // The project role still points at the removed connection; that must not hide the live installation.
+  assert.deepEqual(f.service().capabilities(owner).map(capability => capability.connectionId), [live!.connectionId])
+  assert.throws(() => f.service().resolve(owner, 'p', 'lead'), /Connection not found/)
+})
+
 test('quota above 100% stays known and fact times come from real observations', async t => {
   const f = await fixture(t, ['codex'])
   const install = f.installations[0]!

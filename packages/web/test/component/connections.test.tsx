@@ -168,6 +168,7 @@ it('asks for confirmation in a dialog before DELETE and never uses window.confir
   fireEvent.click(screen.getByRole('button', { name: 'Remove DeepSeek' }))
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).getByText('Remove DeepSeek?')).toBeTruthy()
+  expect(within(dialog).getByText(/Sessions, roles and leads bound to this connection will fail/u)).toBeTruthy()
   expect(calls).toEqual([])
   await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Remove connection' })))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
@@ -231,7 +232,7 @@ it('shows one vault action in the header and unlocks from a failed initial load'
 })
 
 it.each([
-  ['en', 'in use by a running session'], ['ru', 'используется запущенной сессией'],
+  ['en', 'in use by a call that is running right now'], ['ru', 'используется вызовом, который выполняется прямо сейчас'],
 ] as const)('renders the typed in-use refusal in %s', (locale, copy) => {
   setActiveLocale(locale)
   render(<ConnectionsView snapshot={null} error errorCode="connection_in_use" mutate={run} />)
