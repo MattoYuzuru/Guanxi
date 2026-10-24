@@ -708,6 +708,20 @@ test('one key under both OpenAI names keeps two stable connections across repeat
   }
 })
 
+test('official and compatible entries with the same key and root stay two rows', async t => {
+  const f = await setup(t), file = join(f.dir, 'same-key-same-root.env'), key = canary(), root = 'https://api.example.invalid/v1'
+  await writeFile(file, `OPENAI_API_KEY=${key}\nOPENAI_API_URL=${root}\nOPENAI_COMPAT_API_KEY=${key}\nOPENAI_COMPAT_API_URL=${root}\n`)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await importProviderKeysFile(f.service, 'local', file)
+    assert.equal(result.imported.length, 2)
+    assert.equal(new Set(result.imported.map(item => item.connectionId)).size, 2)
+    assert.equal(f.service.snapshot('local').connections.length, 2)
+    assert.deepEqual(f.store.db.prepare('SELECT family FROM dotenv_imports ORDER BY family').all().map(row => row.family),
+      ['OPENAI_API_KEY', 'OPENAI_COMPAT_API_KEY'])
+    assert.equal(f.store.db.prepare('SELECT count(DISTINCT endpoint) AS n FROM dotenv_imports').get()!.n, 1)
+  }
+})
+
 test('boot survives provider import failure and logs only a fixed code with models unavailable', async t => {
   const { start } = await import('../../src/index.ts')
   const f = await setup(t), value = canary(), file = join(f.dir, 'boot-invalid.env')
