@@ -117,7 +117,8 @@ export class LeadService {
         Object.keys(caps).length === names.length && names.every(name => typeof caps[name] === 'number' && Number.isSafeInteger(caps[name]) && (caps[name] as number) >= 0), 'invalid_input')
     }
     this.tools = options.tools ?? new LeadToolServer()
-    this.tools.setExecutors(options.executors)
+    // An injected server may already name the host's executors; no list means "leave it as it is", not "reset it".
+    if (options.executors !== undefined) this.tools.setExecutors(options.executors)
     this.ownsTools = options.tools === undefined
   }
   /** The task this service would store for `prompt`; the CLI refuses to start a second lead with the same one. */

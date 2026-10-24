@@ -99,6 +99,20 @@ test('the lead service passes its configured executors to tools/list', async t =
   } finally { grant.revoke() }
 })
 
+test('an injected tool server keeps the executors it was built with when the service has no list', async t => {
+  const tools = new LeadToolServer({ executors: [{ connectionId: 'fedora', model: 'local' }] })
+  t.after(() => tools.close())
+  await leadFixture(t, { plugin: { tools } })
+  const url = await tools.url()
+  const grant = tools.grant({ runId: 'r', attemptId: 'a', wakeSeq: null }, async () => ({ kind: 'result', text: 'ok' }))
+  try {
+    const response = await fetch(url, { method: 'POST', body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      headers: { 'content-type': 'application/json', [grant.header.name]: grant.header.value } })
+    const tool = ((await response.json()) as any).result.tools[0]
+    assert.equal(tool.description.endsWith(' Allowed executors on this node: connectionId=fedora model=local'), true)
+  } finally { grant.revoke() }
+})
+
 test('the tool schema matches the contract schema field by field', () => {
   const shape = (leadDelegateInputSchema as unknown as { _def: { schema: { shape: Record<string, { isOptional(): boolean }> } } })._def.schema.shape
   const optional = Object.entries(shape).filter(([, field]) => field.isOptional()).map(([key]) => key)
