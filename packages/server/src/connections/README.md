@@ -32,7 +32,8 @@ not an internal error.
   references, usage receipts and settings responses. Clients only receive references.
 - The registry, ledger and vault use `connections.sqlite` next to the node database. K3's
   migration version table is independent of legacy `user_version`. Version 1 creates new
-  tables; never rewrite it after distribution. Removing the plugin leaves this database
+  tables; version 4 adds only `removed_connections` and leaves the migration history append-only.
+  Never rewrite a migration after distribution. Removing the plugin leaves this database
   and OS wrapping keys intact. Back up both; losing the wrapping key loses the vault.
 - Each account has an AES-256-GCM data key wrapped with an OS-keychain key through
   `@napi-rs/keyring` 2.1.2. Account/ref additional authenticated data prevents moving
@@ -110,12 +111,20 @@ stages. Every server route, including the legacy API and SPA, passes an exact Ho
 allowlist before CORS. It accepts loopback authorities, the configured listening authority
 and configured Vite authorities, and ignores forwarded headers. Mutations require JSON and same-origin or explicitly configured development origins.
 Responses use `Cache-Control: no-store`. Routes list/create connections, change unattended,
-unlock/lock, save a key without readback, list model facts (installed models for a local Ollama runtime) and request a balance probe.
-The settings UI loads only when Connections is opened; failure does not disable other settings.
+unlock/lock, save a key without readback, list model facts (pi-ai catalog, discovered endpoint IDs or installed models for a local Ollama runtime), request a balance probe and remove a connection.
+`DELETE /api/connections/:id` soft-removes the row through the append-only migration 4 table
+`removed_connections`: it disappears from the snapshot, every model/connection picker and the
+cost projection, while its cost ledger rows stay for append-only accounting. The dotenv import
+mapping is dropped, so a later trusted import creates a new connection; its vault records and
+retired refs stay registered for the egress scrubber, exactly as rotation retains old records.
+The node-key copy is removed. Removal refuses with `connection_in_use` (409) while this registry
+has an active `complete()`, `localChat()` or `dispatchAgent()` call. It does not inspect durable
+relay/lead/session state outside this process; that state has other owners.
+The settings UI links to the connections centre at `/connections`; failure here does not disable other settings.
 A balance without an observation timestamp renders unknown, even when its numeric value exists.
-Failures have distinct contract codes for missing connections (404), locked vaults (423),
-policy denial (403), unavailable egress protection (503), invalid input (400), provider errors
-(502) and internal errors (500). Raw error text never crosses this boundary. The UI offers
+Failures have distinct contract codes for missing connections (404), in-use connections (409),
+locked vaults (423), policy denial (403), unavailable egress protection (503), invalid input (400),
+provider errors (502) and internal errors (500). Raw error text never crosses this boundary. The UI offers
 Unlock for a locked-vault error, including when the initial list load failed. Routes resolve
 the live service for each request after plugin reload.
 

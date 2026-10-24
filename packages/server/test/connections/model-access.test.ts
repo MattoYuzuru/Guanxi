@@ -861,7 +861,7 @@ test('review: pending node-key injection rejects revocation and rotation after a
   unavailable.close(); assert.equal(used, 0)
 })
 
-test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
+test('review: migrations 2, 3 and 4 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput); const secret = fakeKey()
   await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const before = {
@@ -873,7 +873,7 @@ test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting key
   s.store.db.exec('DROP TABLE dotenv_imports; DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version>=2;')
   await f.restart()
   const next = f.service()
-  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3])
+  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3, 4])
   assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports').get()!.n, 0)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_keys').all(), before.keys)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_secrets').all(), before.secrets)
@@ -1066,4 +1066,78 @@ test('N7: interactive rotation succeeds after node opt-in is disabled and remove
     model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'policy-off-background', background: true,
   }), error => error instanceof ConnectionError && error.code === 'policy_denied')
   assert.equal(calls, 1)
+})
+
+test('DELETE hides a connection, drops its dotenv identity and keeps the retired secret redacted', async t => {
+  const f = await setup(t); const s = f.service(); const routes = connectionRoutes(f.service, account)
+  const secret = fakeKey()
+  const imported = await s.importKeys(account, [{ provider: 'deepseek', value: secret }])
+  const row = s.store.get(account, imported.imported[0]!.connectionId)
+  const ref = row.secretRef as SecretRef
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
+  assert.equal(scrubber.scrub(secret), redactionMarker(ref))
+  assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports WHERE connection_id=?').get(row.id)!.n, 1)
+
+  const removed = await routes.request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(await removed.json(), { id: row.id })
+  assert.deepEqual(f.service().snapshot(account).connections, [])
+  assert.throws(() => f.service().store.get(account, row.id), /not found/)
+  const listed = await (await routes.request('http://localhost/')).json() as { connections: unknown[] }
+  assert.deepEqual(listed.connections, [])
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM dotenv_imports WHERE connection_id=?').get(row.id)!.n, 0)
+  // The node-key copy is gone; the vault record stays for the long-lived scrubber.
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets WHERE connection_id=?').get(row.id)!.n, 0)
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM vault_secrets WHERE ref=?').get(ref)!.n, 1)
+  assert.equal(scrubber.scrub(secret), redactionMarker(ref))
+
+  // A fresh activation re-registers the retained vault record for redaction.
+  await f.restart(true)
+  const restarted = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
+  assert.equal(restarted.scrub(secret), redactionMarker(ref))
+  // No mapping survives, so the next trusted import creates a new identity instead of reviving the old one.
+  const again = await f.service().importKeys(account, [{ provider: 'deepseek', value: secret }])
+  assert.equal(again.imported[0]!.action, 'created')
+  assert.notEqual(again.imported[0]!.connectionId, row.id)
+  assert.deepEqual(f.service().snapshot(account).connections.map(item => item.id), [again.imported[0]!.connectionId])
+})
+
+test('DELETE refuses with connection_in_use while a model call still runs, then succeeds', async t => {
+  let started!: () => void; let release!: () => void
+  const running = new Promise<void>(resolve => { started = resolve })
+  const held = new Promise<void>(resolve => { release = resolve })
+  const f = await setup(t, { pi: { async complete(model) {
+    started()
+    await held
+    return { role: 'assistant', api: model.api, provider: model.provider, model: model.id,
+      content: [{ type: 'text', text: 'fixture' }], timestamp: Date.now(), stopReason: 'stop',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
+  } } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  const call = s.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'delete-running', requestId: 'delete-running',
+  })
+  await running
+  const routes = connectionRoutes(f.service, account)
+  const refused = await routes.request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(refused.status, 409)
+  assert.deepEqual(await refused.json(), { code: 'connection_in_use' })
+  assert.equal(f.service().snapshot(account).connections.length, 1)
+  release()
+  await call
+  const removed = await routes.request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(f.service().snapshot(account).connections, [])
+})
+
+test('DELETE hides a removed connection from costs while the append-only ledger row stays', async t => {
+  const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput)
+  s.store.record({ accountId: account, connectionId: row.id, runId: 'cost-run', requestId: 'cost-request',
+    inputTokens: 1, outputTokens: 1, costUsd: 0.5, source: 'fixture', observedAt: new Date().toISOString(), confidence: 'medium' })
+  assert.equal(s.snapshot(account).costs.length, 1)
+  await connectionRoutes(f.service, account).request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(f.service().snapshot(account).costs.length, 0)
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM costs WHERE connection_id=?').get(row.id)!.n, 1)
 })

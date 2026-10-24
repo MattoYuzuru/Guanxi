@@ -46,18 +46,50 @@ export class ConnectionStore {
           connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
           INSERT INTO k3_migrations VALUES(3);`)
       }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=4').get()) {
+        // A separate table keeps the connection row (and the append-only cost ledger) intact while
+        // hiding the connection from every snapshot and picker. The vault record stays for redaction.
+        this.db.exec(`CREATE TABLE IF NOT EXISTS removed_connections(connection_id TEXT PRIMARY KEY REFERENCES connections(id),
+          account_id TEXT NOT NULL, removed_at TEXT NOT NULL);
+          CREATE INDEX IF NOT EXISTS removed_connections_account ON removed_connections(account_id);
+          INSERT INTO k3_migrations VALUES(4);`)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
     for (const file of [path, `${path}-wal`, `${path}-shm`]) chmodSync(file, 0o600)
   }
   list(accountId: string): Connection[] {
-    return this.db.prepare('SELECT data FROM connections WHERE account_id=? ORDER BY rowid').all(accountId)
+    return this.db.prepare(`SELECT data FROM connections WHERE account_id=?
+      AND id NOT IN (SELECT connection_id FROM removed_connections WHERE account_id=?) ORDER BY rowid`).all(accountId, accountId)
       .map(row => connectionSchema.parse(JSON.parse(String(row.data))))
   }
   get(accountId: string, id: string): Connection {
-    const row = this.db.prepare('SELECT data FROM connections WHERE account_id=? AND id=?').get(accountId, id)
+    const row = this.db.prepare(`SELECT data FROM connections WHERE account_id=? AND id=?
+      AND id NOT IN (SELECT connection_id FROM removed_connections WHERE account_id=?)`).get(accountId, id, accountId)
     if (!row) throw new ConnectionError('connection_not_found', 'Connection not found')
     return connectionSchema.parse(JSON.parse(String(row.data)))
+  }
+  /** Soft removal: the row and its cost ledger survive, but the connection leaves every list and picker.
+   * The dotenv mapping is dropped so a later import creates a new connection; vault records remain so the
+   * scrubber still redacts historical output. */
+  remove(accountId: string, id: string): { id: string } {
+    const row = this.get(accountId, id)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('INSERT OR REPLACE INTO removed_connections VALUES(?,?,?)')
+        .run(id, accountId, new Date().toISOString())
+      this.db.prepare('DELETE FROM dotenv_imports WHERE account_id=? AND connection_id=?').run(accountId, id)
+      // The node-key copy exists only for unattended dispatch; a removed connection must not keep it.
+      this.db.prepare('DELETE FROM vault_node_secrets WHERE account_id=? AND connection_id=?').run(accountId, id)
+      const safe = connectionSchema.parse(this.scrubber.scrub({ ...row, secretRef: null }))
+      this.db.prepare('UPDATE connections SET data=? WHERE id=? AND account_id=?')
+        .run(JSON.stringify(safe), id, accountId)
+      this.db.exec('COMMIT')
+      return { id }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
   create(accountId: string, input: CreateConnection, endpoint?: { baseUrl: string; allowPrivate?: boolean }): Connection {
     const data = createConnectionSchema.parse(input)
@@ -116,7 +148,8 @@ export class ConnectionStore {
     return existing
   }
   costs(accountId: string): ConnectionCost[] {
-    return this.db.prepare('SELECT data FROM costs WHERE account_id=? ORDER BY rowid').all(accountId)
+    return this.db.prepare(`SELECT data FROM costs WHERE account_id=?
+      AND connection_id NOT IN (SELECT connection_id FROM removed_connections WHERE account_id=?) ORDER BY rowid`).all(accountId, accountId)
       .map(row => connectionCostSchema.parse(JSON.parse(String(row.data))))
   }
   close() { this.db.close() }

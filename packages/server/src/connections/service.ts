@@ -65,6 +65,7 @@ export class Connections {
   private imports: Promise<unknown> = Promise.resolve()
   private closed = false
   private readonly discovered = new Map<string, { checked: number; observedAt: string | null; models: string[]; source: string; state: 'current' | 'stale' | 'unknown'; confidence: 'medium' | 'low' | 'unknown' }>()
+  private readonly inUse = new Map<string, number>()
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
   #vault: Vault
@@ -97,6 +98,17 @@ export class Connections {
     this.resolveEndpoint = resolveEndpoint
   }
   private assertOpen() { if (this.closed) throw new Error('Connections plugin unloaded'); this.lifetime.throwIfAborted() }
+  /** Only calls that can still consume the credential count; a probe or model listing does not hold a session. */
+  private enter(id: string) { this.inUse.set(id, (this.inUse.get(id) ?? 0) + 1) }
+  private exit(id: string) {
+    const remaining = (this.inUse.get(id) ?? 0) - 1
+    if (remaining > 0) this.inUse.set(id, remaining)
+    else this.inUse.delete(id)
+  }
+  private async withUse<T>(id: string, task: () => Promise<T>): Promise<T> {
+    this.enter(id)
+    try { return await task() } finally { this.exit(id) }
+  }
   private track<T>(task: () => Promise<T>): Promise<T> {
     this.assertOpen()
     const promise = task()
@@ -113,6 +125,14 @@ export class Connections {
     this.assertOpen()
     if (input.unattended && !this.#vault.unattendedAvailable) throw new ConnectionError('policy_denied', 'Node unattended access is not enabled')
     return this.store.create(accountId, input)
+  }
+  /** Refuses while this registry knows of a running model, runtime or agent call. Session ownership
+   * stays with the callers; this registry holds no durable relay/lead state and does not inspect it. */
+  remove(accountId: string, id: string) {
+    this.assertOpen()
+    this.store.get(accountId, id)
+    if (this.inUse.has(id)) throw new ConnectionError('connection_in_use', 'Connection is in use by a running call')
+    return this.store.remove(accountId, id)
   }
   /** One user-visible local Ollama connection per account. No secret, vault or Ollama request is involved. */
   ensureLocalOllama(accountId: string): Connection {
@@ -305,10 +325,18 @@ export class Connections {
     return this.track(() => this.probes.probe(this.store.get(accountId, id), signal
       ? AbortSignal.any([this.lifetime, signal]) : this.lifetime))
   }
-  async models(accountId: string, id: string, signal?: AbortSignal) {
+  async models(accountId: string, id: string, signal?: AbortSignal): Promise<{ id: string; facts: Record<string, ConnectionFact> }[]> {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
     if (connection.kind === 'local_runtime') return this.localModels(signal)
+    if (connection.baseUrl) {
+      // A pinned endpoint advertises its own IDs; never substitute the public provider catalog.
+      const catalog = await this.chatModels(accountId, id, signal)
+      return catalog.models.map(modelId => ({ id: modelId, facts: {
+        'endpoint.model': { value: true, source: catalog.source, observedAt: catalog.observedAt, confidence: catalog.confidence },
+        'endpoint.discovery': { value: catalog.state, source: catalog.source, observedAt: catalog.observedAt, confidence: catalog.confidence },
+      } }))
+    }
     const observedAt = new Date().toISOString()
     return piModels(connection.provider).map(model => ({ id: model.id, facts: {
       'pi-ai.context': { value: model.contextWindow, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
@@ -341,7 +369,7 @@ export class Connections {
     }
   }
   complete(accountId: string, id: string, context: Context, call: ModelCall): Promise<AssistantMessage> {
-    return this.track(async () => {
+    return this.track(() => this.withUse(id, async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const catalogModel = piModels(connection.provider).find(item => item.id === call.model)
@@ -442,10 +470,10 @@ export class Connections {
         if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Model request cancelled' : 'Model request failed')
       }
-    })
+    }))
   }
   localChat(accountId: string, id: string, request: OllamaChatRequest, call: Omit<ModelCall, 'model'> & { transport?: LocalChatTransport }): Promise<OllamaChatChunk> {
-    return this.track(async () => {
+    return this.track(() => this.withUse(id, async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'local_runtime') throw new Error('Not a local runtime connection')
       if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
@@ -505,14 +533,14 @@ export class Connections {
         throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed', reason)
       }
       finally { lease?.release() }
-    })
+    }))
   }
   /** K5's trusted process boundary. Identity is the original prompt author, including delegation.
    * A sharing grant never enables another person's prompt on a subscription connection. */
   dispatchAgent<T>(ownerAccountId: string, id: string, actorAccountId: string, editorAllowed: boolean,
     call: { background?: boolean; signal?: AbortSignal },
     launch: (connection: import('@guanxi/contract').Connection, key: string | undefined, signal: AbortSignal) => Promise<T>): Promise<T> {
-    return this.track(async () => {
+    return this.track(() => this.withUse(id, async () => {
       const connection = this.store.get(ownerAccountId, id)
       if (actorAccountId !== ownerAccountId &&
         (connection.auth === 'cli_login' || !editorAllowed || !['model_api', 'local_runtime'].includes(connection.kind))) {
@@ -532,7 +560,7 @@ export class Connections {
         return this.#vault.inject(ownerAccountId, id, call.background ?? false, key => { assertOAuthToken(key); return launch(connection, key, signal) })
       }
       return launch(connection, undefined, signal)
-    })
+    }))
   }
   /** Caller supplies a pre-authorized destination; scrubbing precedes hashing. */
   writeArtifact(accountId: string, destination: string, value: unknown) {

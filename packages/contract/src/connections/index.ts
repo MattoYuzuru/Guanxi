@@ -60,6 +60,8 @@ export const connectionSchema = z.object({
 }).strict()
 export const updateConnectionSchema = z.object({ unattended: z.boolean() }).strict()
 export const connectionSecretInputSchema = z.object({ value: z.string().min(8).max(16384) }).strict()
+/** Removal keeps the ledger row; the response names exactly what left the visible snapshot. */
+export const deleteConnectionResponseSchema = z.object({ id: z.string().uuid() }).strict()
 export const connectionCostSchema = z.object({
   id: z.string().uuid(), connectionId: z.string().uuid(), accountId: z.string(),
   runId: z.string().min(1), requestId: z.string().min(1),
@@ -82,7 +84,7 @@ export type ConnectionSnapshot = z.infer<typeof connectionSnapshotSchema>
 
 /** Stable recovery categories; raw provider/keychain errors never cross the wire. */
 export const connectionErrorCodeSchema = z.enum([
-  'connection_not_found', 'vault_locked', 'policy_denied', 'egress_unavailable',
+  'connection_not_found', 'connection_in_use', 'vault_locked', 'policy_denied', 'egress_unavailable',
   'internal_error', 'validation_failed', 'quota_exhausted', 'provider_failed',
 ])
 export const connectionErrorSchema = z.object({ code: connectionErrorCodeSchema }).strict()
@@ -91,6 +93,13 @@ export type ConnectionErrorCode = z.infer<typeof connectionErrorCodeSchema>
 export const MAX_DISCOVERED_MODELS = 1024
 export const MAX_PROVIDER_MODEL_ID = 256
 export const providerModelIdSchema = z.string().min(1).max(MAX_PROVIDER_MODEL_ID)
+/** One model an owner connection can run, with only scrubbed, referenced facts. */
+export const connectionModelSchema = z.object({
+  id: providerModelIdSchema,
+  facts: z.record(connectionFactSchema),
+}).strict()
+export const connectionModelsSchema = z.array(connectionModelSchema).max(MAX_DISCOVERED_MODELS)
+export type ConnectionModel = z.infer<typeof connectionModelSchema>
 /** Generic picker data; selection is opaque to clients and persists as Thread.model. */
 export const chatModelSelection = (connectionId: string, modelId: string): string =>
   `k3:${connectionId}:${encodeURIComponent(modelId)}`

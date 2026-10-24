@@ -180,6 +180,10 @@ test('custom connection discovers models with explicit credentials, refuses redi
   assert.deepEqual(calls, [{ url: 'https://api.example.invalid/v1/models', redirect: 'error', auth: `Bearer ${value}` }])
   await f.service.chatModels('local', id)
   assert.equal(calls.length, 1)
+  const listed = await f.service.models('local', id)
+  assert.deepEqual(listed.map(model => model.id), ['owner-model'])
+  assert.equal(listed[0]!.facts['endpoint.discovery']!.value, 'current')
+  assert.equal(listed[0]!.facts['endpoint.discovery']!.source, 'api.example.invalid')
   assert.equal(f.service.snapshot('local').connections[0]!.baseUrl, 'https://api.example.invalid')
 })
 
