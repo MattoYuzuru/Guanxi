@@ -63,6 +63,43 @@ function responseSse(content = 'ok') {
   return new Response(frames.map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
 }
 
+test('plugin apply ensures exactly one Ollama connection and leaves existing connections untouched', async t => {
+  const f = await setup(t)
+  const first = f.service().snapshot('local').connections
+  assert.deepEqual(first.map(row => [row.name, row.kind, row.provider, row.auth]), [['Ollama', 'local_runtime', 'ollama', 'none']])
+  const manual = f.service().create('local', { name: 'Manual', kind: 'model_api', provider: 'deepseek', auth: 'api_key' })
+  const before = f.service().snapshot('local').connections
+  await f.restart()
+  const after = f.service().snapshot('local').connections
+  assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama').length, 1)
+  assert.deepEqual(after.find(row => row.name === 'Ollama'), before.find(row => row.name === 'Ollama'))
+  assert.deepEqual(after.find(row => row.id === manual.id), before.find(row => row.id === manual.id))
+})
+
+test('the Ollama connection lists installed models and returns a typed error when the runtime is down', async t => {
+  const calls: string[] = []
+  const f = await setup(t, { transport: async (url) => {
+    calls.push(String(url))
+    if (String(url).endsWith('/api/tags')) return Response.json({ models: [
+      { name: 'fixture:latest', digest: 'sha256:fixture' }, { name: 'fixture:latest' },
+    ] })
+    throw new Error('Unexpected HTTP call')
+  } })
+  const local = f.service().snapshot('local').connections.find(row => row.name === 'Ollama')!
+  const installed = await connectionRoutes(f.service, 'local').request(`http://localhost/${local.id}/models`)
+  assert.equal(installed.status, 200)
+  const body = await installed.json() as { id: string; facts: Record<string, { source: string }> }[]
+  assert.deepEqual(body.map(model => model.id), ['fixture:latest'])
+  assert.equal(body[0]!.facts['ollama.installed']!.source, 'ollama:/api/tags')
+  assert.equal(calls.filter(url => url.endsWith('/api/tags')).length, 1)
+
+  const down = await setup(t)
+  const downLocal = down.service().snapshot('local').connections.find(row => row.name === 'Ollama')!
+  const failed = await connectionRoutes(down.service, 'local').request(`http://localhost/${downLocal.id}/models`)
+  assert.equal(failed.status, 502)
+  assert.deepEqual(await failed.json(), { code: 'provider_failed' })
+})
+
 test('trusted single-attempt K3 call refuses an adapter second HTTP attempt before transport', async t => {
   let requests = 0, retries: number | undefined
   const f = await setup(t, { transport: async () => { requests++; return responseSse() },
@@ -722,7 +759,7 @@ test('E6: short keys cannot enter the vault or corrupt scrubbed rows; probes val
 
 test('pi-ai facts carry the actual catalog observation time', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput)
-  const before = Date.now(); const models = s.models(account, row.id); const after = Date.now()
+  const before = Date.now(); const models = await s.models(account, row.id); const after = Date.now()
   assert.ok(models.length > 0)
   for (const model of models) for (const [key, fact] of Object.entries(model.facts)) {
     if (!key.startsWith('pi-ai.')) continue

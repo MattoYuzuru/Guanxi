@@ -29,6 +29,9 @@ export const connectionsPlugin = definePlugin<ConnectionsConfig>({
     const probes = new BalanceProbes(store, vault, config.transport)
     const connections = new Connections(store, vault, probes, scrubber, ctx.signal,
       ctx.service<OllamaAdapter>('ollama'), ctx.service<ResourceGovernor>('governor'), config.localHost, config.pi, config.transport)
+    // Every node has one user-visible local Ollama connection. It holds no secret and is
+    // created transactionally, so a restart or a concurrent apply cannot add a second one.
+    connections.ensureLocalOllama('local')
     ctx.effect(() => async () => { vault.close(); await connections.close(); store.close() }, 'connections.close')
     // A locked keychain leaves the source visibly unready, with all K3 egress closed.
     // The scrubber receives ready('vault') only after every historical row is registered.

@@ -38,7 +38,7 @@ export function connectionRoutes(resolveConnections: () => Connections, accountI
     const input = connectionSecretInputSchema.parse(await c.req.json())
     return c.json(publicConnection(resolveConnections().saveSecret(accountId, c.req.param('id'), input.value)))
   })
-  routes.get('/:id/models', c => c.json(resolveConnections().models(accountId, c.req.param('id'))))
+  routes.get('/:id/models', async c => c.json(await resolveConnections().models(accountId, c.req.param('id'), c.req.raw.signal)))
   routes.post('/:id/probe', async c => c.json(await resolveConnections().probe(accountId, c.req.param('id'), c.req.raw.signal)))
   return routes
 }

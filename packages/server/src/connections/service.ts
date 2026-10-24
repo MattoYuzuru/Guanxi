@@ -5,7 +5,7 @@ import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { AssistantMessage, Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
-import { MAX_DISCOVERED_MODELS, providerModelIdSchema, type Connection, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
+import { MAX_DISCOVERED_MODELS, providerModelIdSchema, type Connection, type ConnectionFact, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
 import type { OllamaAdapter } from '../ollama/plugin.ts'
 import type { OllamaChatRequest, OllamaChatChunk } from '../ollama/types.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
@@ -113,6 +113,25 @@ export class Connections {
     this.assertOpen()
     if (input.unattended && !this.#vault.unattendedAvailable) throw new ConnectionError('policy_denied', 'Node unattended access is not enabled')
     return this.store.create(accountId, input)
+  }
+  /** One user-visible local Ollama connection per account. No secret, vault or Ollama request is involved. */
+  ensureLocalOllama(accountId: string): Connection {
+    this.assertOpen()
+    this.store.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.store.list(accountId).find(row => row.kind === 'local_runtime' && row.provider === 'ollama')
+      if (existing) {
+        this.store.db.exec('COMMIT')
+        return existing
+      }
+      const connection = this.store.create(accountId,
+        { name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: false })
+      this.store.db.exec('COMMIT')
+      return connection
+    } catch (error) {
+      this.store.db.exec('ROLLBACK')
+      throw error
+    }
   }
   /** Trusted import keeps one identity per provider/API root. Never grants unattended consent. */
   importKeys(accountId: string, entries: ImportedProvider[]) {
@@ -249,9 +268,10 @@ export class Connections {
     return this.track(() => this.probes.probe(this.store.get(accountId, id), signal
       ? AbortSignal.any([this.lifetime, signal]) : this.lifetime))
   }
-  models(accountId: string, id: string) {
+  async models(accountId: string, id: string, signal?: AbortSignal) {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
+    if (connection.kind === 'local_runtime') return this.localModels(signal)
     const observedAt = new Date().toISOString()
     return piModels(connection.provider).map(model => ({ id: model.id, facts: {
       'pi-ai.context': { value: model.contextWindow, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
@@ -259,6 +279,29 @@ export class Connections {
       'pi-ai.reasoning': { value: model.reasoning, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
       ...modelsDevFacts(connection.provider, model.id),
     } }))
+  }
+  /** Installed models of the configured local runtime, bounded and never a provider catalog substitute. */
+  private async localModels(signal?: AbortSignal) {
+    const cancellation = AbortSignal.any([this.lifetime, AbortSignal.timeout(5_000), ...(signal ? [signal] : [])])
+    try {
+      const tags = await this.ollama.client(normalizeHost(this.localHost())).tags(cancellation)
+      const observedAt = new Date().toISOString()
+      const models: { id: string; facts: Record<string, ConnectionFact> }[] = []
+      const seen = new Set<string>()
+      for (const model of tags.models) {
+        if (models.length >= MAX_DISCOVERED_MODELS) break
+        if (seen.has(model.name) || !providerModelIdSchema.safeParse(model.name).success) continue
+        seen.add(model.name)
+        models.push({ id: model.name, facts: {
+          'ollama.installed': { value: true, source: 'ollama:/api/tags', observedAt, confidence: 'high' },
+          'ollama.digest': { value: model.digest || null, source: 'ollama:/api/tags', observedAt, confidence: 'high' },
+        } })
+      }
+      return models
+    } catch {
+      signal?.throwIfAborted()
+      throw new ConnectionError('provider_failed', 'Local runtime models are unavailable')
+    }
   }
   complete(accountId: string, id: string, context: Context, call: ModelCall): Promise<AssistantMessage> {
     return this.track(async () => {
