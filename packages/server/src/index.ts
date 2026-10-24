@@ -251,14 +251,15 @@ function defaultNotificationDeliverySettings(): DeliverySettings {
  * larger: this is the polite part of closing one listener, not the whole shutdown. */
 const LISTENER_DRAIN_GRACE_MS = 1_500
 
-/** `server.close()` stops accepting, then drops idle connections at once and whatever is still active after the grace. */
-function drainListener(server: ReturnType<typeof serve> | undefined): Promise<void> {
+/** `server.close()` stops accepting and drops idle connections at once. Only an MS1 live listener force-drops whatever is
+ * still active after the grace; the plain dev server keeps waiting for its open responses. */
+function drainListener(server: ReturnType<typeof serve> | undefined, force = false): Promise<void> {
   if (!server) return Promise.resolve()
   const closed = new Promise<void>(resolveClose => { server.close(() => resolveClose()) })
   const connections = server as unknown as { closeIdleConnections?: () => void; closeAllConnections?: () => void }
   connections.closeIdleConnections?.()
-  const force = setTimeout(() => connections.closeAllConnections?.(), LISTENER_DRAIN_GRACE_MS)
-  return closed.finally(() => clearTimeout(force))
+  const timer = force ? setTimeout(() => connections.closeAllConnections?.(), LISTENER_DRAIN_GRACE_MS) : undefined
+  return closed.finally(() => { if (timer) clearTimeout(timer) })
 }
 
 export async function start(options: StartOptions = {}) {
@@ -564,7 +565,7 @@ export async function start(options: StartOptions = {}) {
       if (live?.role === 'executor') federation?.attemptDispatch?.close()
       // Stop accepting commands first; existing Chat streams get the drain grace to observe their truthful
       // internal-shutdown terminal event, then `closeAllConnections()` drops whatever is left.
-      const listenersClosed = Promise.all([drainListener(instance), drainListener(federationInstance)])
+      const listenersClosed = Promise.all([drainListener(instance, live !== null), drainListener(federationInstance, live !== null)])
       // MS1 live: an inbound observe or count may be waiting on a model-file hash. Stopping the runtime ends that work (the request
       // is answered with a refusal).
       const liveClosing = live?.close().catch(() => undefined)
