@@ -233,6 +233,15 @@ it('shows one vault action in the header and unlocks from a failed initial load'
   expect(requests).toEqual(['POST /api/connections/vault/unlock'])
 })
 
+it('keeps the Russian removal copy on redacting old logs, not editing them', async () => {
+  setActiveLocale('ru')
+  render(<ConnectionsView snapshot={snapshot([connection()])} mutate={run} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Удалить DeepSeek' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText(/только чтобы скрывать ключ в старых журналах/u)).toBeTruthy()
+  expect(within(dialog).queryByText(/редактирования старых журналов/u)).toBeNull()
+})
+
 it.each([
   ['en', 'in use by a call that is running right now'], ['ru', 'используется вызовом, который выполняется прямо сейчас'],
 ] as const)('renders the typed in-use refusal in %s', (locale, copy) => {

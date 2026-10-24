@@ -178,7 +178,7 @@ export const connectionRussian: Record<keyof typeof connectionEnglish, string> =
   'connections.key.submitConnect': 'Подключить',
   'connections.key.saving': 'Ключ сохраняется',
   'connections.remove.title': 'Удалить {name}?',
-  'connections.remove.description': 'Подключение исчезнет из всех списков выбора. Сессии, роли и ведущие, привязанные к этому подключению, перестанут работать. Сохранённый ключ останется в хранилище только для редактирования старых журналов.',
+  'connections.remove.description': 'Подключение исчезнет из всех списков выбора. Сессии, роли и ведущие, привязанные к этому подключению, перестанут работать. Сохранённый ключ останется в хранилище только чтобы скрывать ключ в старых журналах.',
   'connections.remove.autoDescription': 'Ollama останется удалённым даже после перезапуска, пока вы снова не подключите его из этого каталога. Сессии, роли и ведущие, привязанные к этому подключению, перестанут работать.',
   'connections.remove.confirm': 'Удалить подключение',
   'connections.remove.pending': 'Удаление',
