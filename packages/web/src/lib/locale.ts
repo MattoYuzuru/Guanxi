@@ -1724,15 +1724,8 @@ const english = {
     'Enter a repository as owner/name, or an exact HTTPS huggingface.co model-page URL.',
   'hf.boundary':
     'Search and selection are read-only. Download writes managed staging; a separate confirmed import uses local Ollama blob/create and the controlled probe. It never uses Hugging Face pull, shell, or remote Ollama.',
-  'settings.section.developer': 'Developer',
-  'settings.developer.mode': 'Developer mode',
-  'settings.developer.modeHint':
-    'Shows the Developer area of Settings in this browser, including the live component catalog.',
+  'settings.section.design': 'Design system',
   'settings.developer.components': 'Open the component catalog',
-  'developer.catalog.off.title': 'Developer mode is off',
-  'developer.catalog.off.description':
-    'The component catalog is part of the Developer area. Turn on Developer mode in Settings to open it.',
-  'developer.catalog.off.action': 'Open Settings',
   'developer.catalog.loading': 'Loading the component catalog',
   'developer.catalog.loadError': 'The component catalog could not be loaded',
   'developer.catalog.reload': 'Reload',
@@ -3565,15 +3558,8 @@ const russian: Messages = {
     'Укажите репозиторий как owner/name или точный HTTPS-URL страницы модели на huggingface.co.',
   'hf.boundary':
     'Поиск и выбор только читают. Download пишет managed staging; отдельный confirmed import использует local Ollama blob/create и controlled probe. Hugging Face pull, shell и remote Ollama не используются.',
-  'settings.section.developer': 'Разработка',
-  'settings.developer.mode': 'Режим разработчика',
-  'settings.developer.modeHint':
-    'Показывает раздел «Разработка» в настройках этого браузера, включая живой каталог компонентов.',
+  'settings.section.design': 'Дизайн-система',
   'settings.developer.components': 'Открыть каталог компонентов',
-  'developer.catalog.off.title': 'Режим разработчика выключен',
-  'developer.catalog.off.description':
-    'Каталог компонентов входит в раздел «Разработка». Включите режим разработчика в настройках, чтобы открыть его.',
-  'developer.catalog.off.action': 'Открыть настройки',
   'developer.catalog.loading': 'Загрузка каталога компонентов',
   'developer.catalog.loadError': 'Не удалось загрузить каталог компонентов',
   'developer.catalog.reload': 'Перезагрузить',

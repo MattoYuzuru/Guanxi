@@ -1,6 +1,6 @@
 /**
  * G14 on the app flows COMPONENTS_AND_CATALOG §5 names: no serious or critical axe violation on
- * the Settings screen (with the Developer section and its catalog link on) and in the
+ * the Settings screen (with the Design system section and its catalog link) and in the
  * new-session flow (the empty chat screen, then the new dialog with its composer). Each flow
  * also has a seeded violation, an unnamed icon-only button injected into it, which the scan
  * must report, so a scan that silently checks nothing fails.
@@ -87,10 +87,8 @@ async function injectUnnamedIconButton(page: Page, selector: string): Promise<vo
 
 async function openSettings(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.addInitScript(() => localStorage.setItem('guanxi.developerMode', 'on'))
   await mockSettingsApi(page)
   await page.goto('/settings')
-  await expect(page.getByRole('switch', { name: 'Developer mode' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByRole('link', { name: 'Open the component catalog' })).toBeVisible()
 }
 
@@ -101,12 +99,12 @@ async function openNewSession(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'Создать диалог' })).toBeVisible()
 }
 
-test('G14 Settings with the Developer section has no serious or critical axe violation', async ({ page }) => {
+test('G14 Settings with the Design system section has no serious or critical axe violation', async ({ page }) => {
   await openSettings(page)
   expect(await seriousViolations(page)).toEqual([])
 })
 
-test('G14 seeded: an unnamed icon button in the Developer section is reported', async ({ page }) => {
+test('G14 seeded: an unnamed icon button in the Design system section is reported', async ({ page }) => {
   await openSettings(page)
   const section = page.getByRole('link', { name: 'Open the component catalog' }).locator('xpath=ancestor::section[1]')
   await expect(section).toHaveCount(1)
