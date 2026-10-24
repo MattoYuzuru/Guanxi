@@ -3,6 +3,16 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { coreArguments, matrix, readJSON, root, tasks, validateInventory } from './tasks.mjs'
 
+export function plan(eventName, event = {}) {
+  if (eventName === 'workflow_dispatch' && event.inputs?.task && event.inputs.task !== 'all') {
+    const include = matrix(true).include.filter(task => task.id === event.inputs.task)
+    if (include.length !== 1) throw new Error(`Unknown diagnostic task ${event.inputs.task}`)
+    return { full: false, matrix: { include } }
+  }
+  const full = eventName !== 'push' && (eventName !== 'pull_request' || !event.pull_request?.draft)
+  return { full, matrix: matrix(full) }
+}
+
 export async function runTask(id) {
   validateInventory()
   const task = tasks.find(t => t.id === id)
@@ -33,8 +43,7 @@ if (process.argv[1] === import.meta.filename) {
     if (command === 'plan') {
       validateInventory()
       const event = process.env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) : {}
-      const full = process.env.GITHUB_EVENT_NAME !== 'push' && (process.env.GITHUB_EVENT_NAME !== 'pull_request' || !event.pull_request?.draft)
-      const result = matrix(full)
+      const { full, matrix: result } = plan(process.env.GITHUB_EVENT_NAME, event)
       if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(result)}\nfull=${full}\n`)
       console.log(JSON.stringify({ full, ...result }, null, 2))
     } else if (command === 'run') process.exitCode = await runTask(value)

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { affected } from './affected.mjs'
 import { candidateArtifact, completion } from './finish.mjs'
+import { plan } from './run.mjs'
 import { coreArguments, indirectScripts, inventory, matrix, tasks, validateInventory } from './tasks.mjs'
 
 test('current root composition and workspace build/test entrypoints are classified', () => validateInventory())
@@ -26,6 +27,17 @@ test('draft matrix is quick; ready matrix contains every unique declared task', 
   assert.equal(new Set(tasks.map(x => x.id)).size, tasks.length)
   assert.equal(matrix(true).include.filter(x => x.native).length, 3)
   assert.equal(matrix(true).include.find(x => x.catalog).os, 'ubuntu-24.04-arm', 'exact G13 baselines use the observed ARM raster platform')
+})
+test('manual single-task diagnosis cannot narrow ready PR validation or claim a full run', () => {
+  const event = { inputs: { task: 'mac-signer' }, pull_request: { draft: false } }
+  const diagnostic = plan('workflow_dispatch', event)
+  assert.equal(diagnostic.full, false)
+  assert.deepEqual(diagnostic.matrix.include.map(task => task.id), ['mac-signer'])
+  assert.deepEqual(plan('pull_request', event).matrix, matrix(true))
+  assert.equal(plan('pull_request', event).full, true)
+  assert.deepEqual(plan('workflow_dispatch', { inputs: { task: 'all' } }).matrix, matrix(true))
+  assert.throws(() => plan('workflow_dispatch', { inputs: { task: 'unknown' } }), /Unknown diagnostic task/)
+  assert.deepEqual(plan('push').matrix, matrix(false))
 })
 test('adding steps to an indirectly covered existing entrypoint cannot silently omit them', () => {
   for (const [workspace, scripts] of Object.entries(indirectScripts)) for (const script of Object.keys(scripts)) {

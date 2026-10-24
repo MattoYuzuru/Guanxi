@@ -89,6 +89,13 @@ with the identifier from `SIGNER_IDENTIFIER` (default `local.approval-signer`). 
 builds fail if `strings` finds `SIGNER_TEST_`; test builds contain the hooks on purpose and must
 never be installed.
 
+The hosted [CI profile](../../docs/operations/ci.md) selects Xcode 26.3 / Swift 6.2.4 on
+macOS 15 explicitly. An isolated same-OS comparison on 2026-10-24 found the optimized
+synthetic policy probe failing with captured-value corruption under default Xcode 16.4 /
+Swift 6.1.2, and passing under 26.3. Local macOS 26 / Swift 6.3.3 also passes. Preserve `-O`
+and the assertions; record `xcrun swiftc --version` when changing hosted tools. This is an
+observed test/toolchain envelope, not a proof of a general compiler defect or owner signing.
+
 The test build replaces the Secure Enclave with `P256.Signing.PrivateKey` loaded from the raw
 32-byte key named by `SIGNER_TEST_KEY`, replaces the authenticator with a fake that appends one
 line per authentication to `SIGNER_TEST_AUTH_LOG` (and denies when `SIGNER_TEST_AUTH_DENY=1`),

@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      task:
+        description: 'all for a full diagnostic run, or one exact task ID (never final PR evidence)'
+        type: string
+        default: all
   # Main receives quick checks; the ready PR already tested its integration candidate.
   push:
     branches: [main]
@@ -73,6 +78,14 @@ jobs:
           node-version: '26.9.0'
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Require the observed signer toolchain
+        if: matrix.id == 'mac-signer'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+        run: |
+          test -d "$DEVELOPER_DIR"
+          printf 'DEVELOPER_DIR=%s\n' "$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcrun swiftc --version
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
       - name: Restore pinned native test tool
@@ -135,7 +148,7 @@ jobs:
   gate:
     name: Full gate
     needs: [plan, checks]
-    if: ${{ always() && github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ always() && github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'workflow_dispatch' || !github.event.inputs.task || github.event.inputs.task == 'all') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Require the entire planned matrix

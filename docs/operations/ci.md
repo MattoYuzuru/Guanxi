@@ -81,6 +81,12 @@ off so one run reports independent failures together. Newer runs supersede older
 the same PR only. Main pushes run quick checks; manual dispatch runs the full matrix but
 does not substitute for the final PR completion contract.
 
+After this workflow exists on main, isolated hosted diagnosis can use
+`gh workflow run full-gate.yml --ref YOUR_BRANCH -f task=mac-signer` (or another exact task ID).
+This manual mode explicitly reports `full: false` and skips the aggregate Full gate; it
+cannot narrow a ready PR or satisfy `ci:finish`. Use `task=all` for a full manual diagnostic
+run. Keep the PR draft while publishing diagnostic fixes, then publish one ready candidate.
+
 The inventory rejects new workspaces, unclassified test/build entrypoints and body changes
 to indirectly covered commands (shards, wrappers and generator checks). When adding a
 package, test mode, build target or changing root test composition, update its task/classification,
@@ -128,8 +134,11 @@ provider credentials, reasoning or private runtime logs.
 
 Linux core jobs explicitly prepare bubblewrap/user namespaces, a checksummed standalone
 setpriv build and the pinned native image, then execute a real synthetic sandbox preflight;
-an unavailable image is a failing setup step. macOS signer tests compile the real helper;
-platform-specific skips remain visible in logs. Hosted macOS does not provide this owner's
+an unavailable image is a failing setup step. macOS signer tests explicitly select Xcode
+26.3 on macOS 15 and compile the real optimized helper; missing toolchains fail setup.
+The hosted image's older default Xcode 16.4 corrupts the synthetic probe's captured values;
+an isolated same-OS comparison passes on 26.3. Do not silently fall back to that default.
+Platform-specific skips remain visible in logs. Hosted macOS does not provide this owner's
 Colima setup, Secure Enclave identity or Touch ID. macOS container/sandbox behavior, owner
 hardware, Fedora/live/paid integration and the six-hour MS1 exit still need their explicit
 integration envelope. Do not relabel the hosted offline gate as production validation.
