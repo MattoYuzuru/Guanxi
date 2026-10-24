@@ -58,6 +58,10 @@ export class LeadStore {
     return this.db.prepare('SELECT * FROM lead_sessions WHERE run_id=?').get(runId) as unknown as LeadSession | undefined
   }
   sessions(): LeadSession[] { return this.db.prepare('SELECT * FROM lead_sessions ORDER BY run_id').all() as unknown as LeadSession[] }
+  /** Each lead with its R1 run state (null when the run row is missing), for callers that must tell a finished lead from a live one. */
+  sessionStates(): Array<LeadSession & { run_state: string | null }> {
+    return this.db.prepare('SELECT s.*, r.state AS run_state FROM lead_sessions s LEFT JOIN durable_runs r ON r.id = s.run_id ORDER BY s.run_id').all() as unknown as Array<LeadSession & { run_state: string | null }>
+  }
   delegation(runId: string, key: string): LeadDelegation | undefined {
     return this.db.prepare('SELECT * FROM lead_delegations WHERE lead_run_id=? AND key=?').get(runId, key) as unknown as LeadDelegation | undefined
   }

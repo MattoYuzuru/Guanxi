@@ -98,7 +98,7 @@ export function describeConfigError(error: Ms1LiveError): string {
     account_mismatch: 'The two nodes belong to different accounts.', peer_not_owner_device: 'Both nodes must be owner devices.',
     peer_scope_invalid: 'Both identities must carry exactly the attempts and replicas scopes and no admin right.',
     config_path_not_absolute: 'This path must be absolute.', config_key_mode_only: 'This option belongs to home.lead.auth "api_key" or "oauth_token".',
-    lead_key_missing: 'No credential is available for the lead. api_key: the key file needs ANTHROPIC_API_KEY (sk-ant-api...). oauth_token: it needs CLAUDE_CODE_OAUTH_TOKEN, or an sk-ant-oat value under ANTHROPIC_API_KEY. Or none was imported into this node\'s vault.',
+    lead_key_missing: 'No credential is available for the lead. api_key: the key file needs ANTHROPIC_API_KEY (sk-ant-api... or sk-ant-usr...). oauth_token: it needs CLAUDE_CODE_OAUTH_TOKEN, or an sk-ant-oat value under ANTHROPIC_API_KEY. Or none was imported into this node\'s vault.',
     lead_key_import_failed: 'The provider key file could not be imported (see the doctor); the lead will not start on a half-imported vault.',
     lead_connection_not_found: 'No connection of that name or id exists in this node\'s K3 registry.',
     lead_connection_ambiguous: 'More than one connection could pay for the lead (api_key: Anthropic API-key connections; oauth_token: Claude Code token connections): name one in home.lead.connection.',

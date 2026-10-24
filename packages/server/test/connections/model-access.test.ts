@@ -303,6 +303,15 @@ test('Anthropic OAuth cannot be enabled through schema, key aliasing, config fla
   assert.equal(/from ['"][^'"]*\/(?:oauth|providers\/anthropic)['"]/.test(source), false)
 })
 
+test('Anthropic API keys accept the user family and still refuse OAuth, admin, session, foreign and short values', () => {
+  const userKey = `sk-ant-usr01-${'x'.repeat(90)}`
+  assert.doesNotThrow(() => assertApiKey('anthropic', userKey))
+  for (const refused of [`sk-ant-oat01-${'a'.repeat(40)}`, `sk-ant-admin01-${'b'.repeat(40)}`, `sk-ant-sid01-${'c'.repeat(40)}`,
+    `ant-api03-${'d'.repeat(40)}`, 'sk-ant-']) {
+    assert.throws(() => assertApiKey('anthropic', refused), /API key/, refused)
+  }
+})
+
 const probeFixtures: Record<BalanceProbe, { fixture: { response: unknown; recordedAt: string }; amount: number; currency: 'USD' | 'CNY' }> = {
   openrouter: { fixture: openrouterFixture, amount: 74.5, currency: 'USD' },
   deepseek: { fixture: deepseekFixture, amount: 110, currency: 'CNY' },

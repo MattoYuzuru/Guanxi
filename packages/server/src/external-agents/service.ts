@@ -282,8 +282,9 @@ export class ExternalAgents {
       env.CLAUDE_CODE_OAUTH_TOKEN = key
       env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'
     } else if (this.claudeApiKeyMode(install, row)) {
-      // The one place the key enters a child: its launch environment. K3 already refused a non-`sk-ant-api` key (an OAuth token
-      // would silently switch the SDK to subscription bearer auth) and registered the value with the scrubber.
+      // The one place the key enters a child: its launch environment. K3 already refused any value that is not an Anthropic
+      // API key family (`sk-ant-api...` or `sk-ant-usr...`); an OAuth token would silently switch the SDK to subscription bearer
+      // auth. K3 registered the value with the scrubber.
       if (row.kind !== 'model_api' || row.provider !== 'anthropic' || row.baseUrl) throw new ExternalAgentError('claude_api_connection_required')
       if (!key) throw new ExternalAgentError('claude_api_key_required')
       env.ANTHROPIC_API_KEY = key

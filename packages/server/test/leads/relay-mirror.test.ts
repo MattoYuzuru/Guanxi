@@ -13,7 +13,7 @@ class FakeRelayStarts {
   readonly stops: string[] = []
   readonly runs = new Map<string, string>()
   private status0(key: string): RelayStartStatus {
-    return { key, runId: this.runs.get(key) ?? null, sessionId: null, status: this.state, error: null, source: 'run-home', observedAt: new Date(0).toISOString(),
+    return { key, runId: this.runs.get(key) ?? null, sessionId: 'relay-session', status: this.state, error: null, source: 'run-home', observedAt: new Date(0).toISOString(),
       confidence: 'observed', runtime: null, runtimeAgeMs: null, meter: null, reserves: null }
   }
   async start(raw: { key: string }) {
@@ -29,6 +29,8 @@ class FakeRelayStarts {
 }
 const ledger = { plan: { items: [{ id: 't1', title: 'Fix it' }] }, items: { t1: 'done' }, head: 'abc123', evidence: [{ item: 't1', head: 'abc123', ok: true, output: 'npm test green' }],
   diffstat: '1 file changed', proposals: [], cycle: 2, tokens: 500, moneyMicros: 0, unknownCosts: 0 }
+const relayEvents = [{ type: 'error', jobId: 'relay-run-1', data: { code: 'model_failed', message: 'Relay execution stopped; ledger retained.' } },
+  { type: 'agent.note', jobId: 'relay-run-1', data: { text: JSON.stringify({ relay: 'call_failed_reason', runId: 'relay-run-1', purpose: 'work', reason: 'runtime_meter_unavailable' }) } }]
 
 async function mirrorFixture(t: Parameters<typeof leadFixture>[0], lead: Record<string, unknown> = {}) {
   const relay = new FakeRelayStarts()
@@ -40,7 +42,7 @@ async function mirrorFixture(t: Parameters<typeof leadFixture>[0], lead: Record<
     start: (launch: ChildLaunch) => (inner ??= relayStartsChildStarter(relay as never, { consent: 'full-access', domains: [], runs: ref!.runs(), pollMs: 1, sleep })).start(launch),
     stop: (id: string) => (inner ??= relayStartsChildStarter(relay as never, { consent: 'full-access', domains: [], runs: ref!.runs(), pollMs: 1, sleep })).stop(id),
   }
-  const reporter = relayStartsChildReporter(relay as never, { read: () => ledger as never })
+  const reporter = relayStartsChildReporter(relay as never, { read: () => ledger as never }, { readAll: () => relayEvents as never })
   const f = await leadFixture(t, { lead, plugin: { child: starter, reporter } })
   ref = f
   const step = async () => { for (const tick of ticks.splice(0)) tick(); await new Promise(resolve => setTimeout(resolve, 15)) }
@@ -89,7 +91,9 @@ test('a relay run that stops at a cap or needs input settles for good: the lead 
     const run = f.runs()
     assert.equal(run.promises(runId)[0]!.outcome, 'failed', state)
     assert.equal(run.wakes(runId).length, 1, state)
-    assert.match(String((await resumed(f))[0]!.text), new RegExp(`narrative: relay run status: ${state}`))
+    const narrative = String((await resumed(f))[0]!.text).split('\n').find(line => line.startsWith('narrative: '))
+    assert.equal(narrative, state === 'wrapping_up' ? 'narrative: relay run status: wrapping_up'
+      : 'narrative: relay run status: input_required; stopped: model_failed (work call: runtime_meter_unavailable)', state)
     assert.equal(run.get(runId).state, 'completed')
   }
 })

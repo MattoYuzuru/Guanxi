@@ -12,11 +12,20 @@ export type CycleState = typeof states[number]
 export interface WindowObservation { tokens: number; source: string; observedAt: number; confidence: 'high'; framingTokens: number }
 export interface RelayLimits {
   gateTimeoutMs: number; goalBytes: number; pageBytes: number; invalidActions: number
+  /** Waits before re-sending a model call that failed for a transient transport reason (a dropped node link, an executor
+   * restart, a runtime not yet back). One entry per retry; exhausting them fails the call as before. */
+  transientRetryMs?: readonly number[]
   /** Ask the runtime to decode probes, work actions and judge verdicts under a JSON Schema (llama-server `json_schema`). Turn it off only for a
    * runtime that rejects the grammar; the replies are then validated exactly as before. */
   structuredOutput: boolean
 }
-export const DEFAULT_RELAY_LIMITS: RelayLimits = { gateTimeoutMs: 120_000, goalBytes: 512, pageBytes: 2048, invalidActions: 3, structuredOutput: true }
+export const DEFAULT_RELAY_LIMITS: RelayLimits = { gateTimeoutMs: 120_000, goalBytes: 512, pageBytes: 2048, invalidActions: 3, structuredOutput: true,
+  transientRetryMs: [5_000, 15_000, 30_000, 60_000, 120_000, 240_000] }
+/** Call failures that say nothing about the request or the model: the transport or the runtime was briefly unavailable. */
+/** Only codes a relay call path can actually produce: the home-side meter refused/unavailable (including a transport
+ * failure mapped by `RemoteRelaySession.chat`) and a local llama-server that is briefly down. The ms1-live doctor's
+ * `peer_unreachable`/`peer_unavailable` are probe results, never a relay call failure. */
+export const TRANSIENT_CALL_REASONS: ReadonlySet<string> = new Set(['runtime_meter_unavailable', 'llama_server_unavailable'])
 export interface Reserves { turn: number; safety: number; handoff: number; tool: number; stepMedian: number; effective: number }
 export interface Thresholds { W: number; H: number; hard: number; soft: number; handoff: number }
 export type NoteKind = 'decision' | 'dead_end' | 'hypothesis' | 'open_issue' | 'lesson'

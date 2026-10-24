@@ -23,6 +23,8 @@ export interface LeadServiceOptions {
   reporter?: ChildReporter
   /** Host policy for the executor a lead may name; throw a stable code to refuse before hibernation. */
   validateExecutor?: (executor: LeadDelegateInput['executor'], ownerAccountId: string, brief: Readonly<LeadDelegateInput>) => void
+  /** Executors the host allows, named to the lead in the tool description. Validation remains `validateExecutor`. */
+  executors?: readonly { connectionId: string; model: string }[]
   /** Owner ceilings on caps, deadline and detach; without them the lead's brief is taken as given. */
   limits?: LeadLimits
   /** D-142: the lead connection's billing fact, shown as data with its source and age. */
@@ -68,11 +70,23 @@ interface Live { cancel: AbortController; hibernate: AbortController; userCancel
 interface Observed { text: string; usage: LeadUsage | null; acp: LeadSessionInfo | null; activity: boolean }
 
 const ACP_BACKENDS = new Set(adapterIdSchema.options.filter(id => id !== 'codex'))
+/** A held `guanxi_delegate` call looks like a refusal to the model when `session/load` replays it.
+ * The wake prompt says what happened before the packet: the delegation was accepted and the
+ * interrupted call was hibernation. Never a packet field; `guanxi.wake/v1` is unchanged. */
+export const WAKE_ACCEPTED = 'Your guanxi_delegate call was accepted and the work ran while you were hibernated; the interrupted tool call you may see above was the hibernation, not a refusal. Result:'
+/** Wake prompts after an accepted delegation of this lead carry the fixed sentence; a lead that
+ * never delegated keeps the packet alone. */
+export function wakePrompt(packet: string, accepted: boolean): string {
+  return accepted ? `${WAKE_ACCEPTED}\n${packet}` : packet
+}
 /** Only a request defect is independent of the connection; every other failure before the first
  * update may be answered by the run policy's named fallback. */
 const NO_FALLBACK = new Set(['empty_prompt'])
 const CURRENCIES = new Set(['USD', 'EUR', 'RUB'])
 const clip = (text: string, max: number) => { const points = Array.from(text); return points.length <= max ? text : points.slice(0, max - 1).join('') + '…' }
+/** The stored task of a lead, exactly as `startLead` records it: the scrubbed prompt, clipped to 4000 code points.
+ * `ms1-live start` compares a restarted prompt through this function, never against the raw file. */
+export function normalizeTask(prompt: string, scrubber: EgressScrubber): string { return clip(scrubber.scrub(prompt), 4_000) }
 
 /** Orchestrates external ACP leads on top of R1 (promises, outbox, fences) and K5 (processes). */
 export class LeadService {
@@ -103,8 +117,12 @@ export class LeadService {
         Object.keys(caps).length === names.length && names.every(name => typeof caps[name] === 'number' && Number.isSafeInteger(caps[name]) && (caps[name] as number) >= 0), 'invalid_input')
     }
     this.tools = options.tools ?? new LeadToolServer()
+    // An injected server may already name the host's executors; no list means "leave it as it is", not "reset it".
+    if (options.executors !== undefined) this.tools.setExecutors(options.executors)
     this.ownsTools = options.tools === undefined
   }
+  /** The task this service would store for `prompt`; the CLI refuses to start a second lead with the same one. */
+  normalizeTask(prompt: string): string { return normalizeTask(prompt, this.scrubber) }
   private now(): number { return (this.o.clock ?? Date.now)() }
   private fault(point: string): void { this.o.fault?.(`lead:${point}`) }
   health() { return { failure: this.failure } }
@@ -135,7 +153,7 @@ export class LeadService {
     }
     const runId = input.runId ?? randomUUID()
     leadInvariant(!this.store.session(runId), 'lead_exists')
-    const task = clip(this.scrubber.scrub(input.prompt), 4_000)
+    const task = normalizeTask(input.prompt, this.scrubber)
     const attempt = this.runs.createStarted({ id: runId, sessionId: runId }, (a, db, emit) => {
       this.store.insertSession(db, { run_id: runId, owner_account_id: input.ownerAccountId, actor_account_id: input.actorAccountId,
         project_id: input.projectId, session_roles: canonical(roles), fallback: input.fallback ? canonical(input.fallback) : null,
@@ -289,6 +307,10 @@ export class LeadService {
     const brief = parsed.data
     if (canonical(this.scrubber.scrub(brief)) !== canonical(brief)) return refuse('content_withheld')
     if (!this.runs.alwaysOnHome) return refuse('no_always_on_home')
+    // The relay runs `acceptance` as argv. A program name with spaces or a JSON array text in one element never runs (`sh: not found`),
+    // so the lead is told now, while it can still correct its brief in this turn.
+    const argv = brief.plan.items.find(item => /\s/.test(item.acceptance[0]!) || /^[[{"]/.test(item.acceptance[0]!))
+    if (argv) return refuse(`invalid_brief: plan.items.${argv.id}.acceptance must be an argv array, one element per argument, e.g. ["node", "--test", "test/a.test.mjs"]`)
     const over = this.limitViolation(brief)
     if (over) return refuse(`delegation_exceeds_policy: ${over}`)
     try { this.o.validateExecutor?.(brief.executor, session.owner_account_id, brief) } catch (error) { return refuse(code(error)) }
@@ -568,7 +590,10 @@ export class LeadService {
       return this.deferWake(attempt, code(error))
     }
     this.fault('wake:packet_built')
-    const text = renderWakePacket(JSON.parse(row!.packet) as LeadWakePacket)
+    const packet = JSON.parse(row!.packet) as LeadWakePacket
+    // The fixed sentence says the work ran while the lead slept. Only a resolution of a child that had an attempt can
+    // say that: an escalation or quota wake leaves the child pending, and a child cancelled before its start never ran.
+    const text = wakePrompt(renderWakePacket(packet), packet.kind === 'resolution' && packet.child.attempts > 0)
     const resume = this.loadable(session)
     return this.runTurn({ attempt, kind: 'wake', wakeSeq, prompt: text, resume, seededPrompt: `${this.seedPrefix(session)}\n\n${text}` })
   }

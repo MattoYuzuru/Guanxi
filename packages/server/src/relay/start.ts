@@ -47,7 +47,8 @@ const codes = new Set(['runtime_meter_unavailable', 'relay_workspace_unavailable
   'relay_local_model_required', 'runtime_observation_stale', 'runtime_identity_unknown', 'runtime_identity_changed',
   'runtime_counter_mismatch', 'runtime_count_invalid', 'runtime_request_changed', 'relay_project_unavailable', 'relay_project_changed',
   'relay_checkout_invalid', 'relay_policy_invalid', 'relay_idempotency_conflict', 'relay_stopped', 'content_withheld',
-  'cleanup_unconfirmed', 'stale_lease', 'writer_busy', 'egress_not_ready', 'relay_closed', 'relay_not_found', 'judge_config_invalid'])
+  'cleanup_unconfirmed', 'stale_lease', 'writer_busy', 'egress_not_ready', 'relay_closed', 'relay_not_found', 'judge_config_invalid',
+  'contract_feature_unavailable'])
 export function relayStartCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : error instanceof Error ? error.message : ''
   return codes.has(code) ? code : 'relay_start_failed'

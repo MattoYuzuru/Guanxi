@@ -68,9 +68,14 @@ export class AcpClient {
     if (lead && object(this.capabilities.mcpCapabilities).http !== true) throw new ExternalAgentError('mcp_http_unsupported')
     // Programmatic settings are the bridge's highest-priority tier: they keep user/project/local files from moving the endpoint the
     // credential is sent to or from relaxing the permission mode (K5 answers every permission request with a refusal).
-    const pinned = settings.pin ? { _meta: { claudeCode: { options: { settings: { env: { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' }, permissions: { defaultMode: 'default' }, apiKeyHelper: '' } } } } } : {}
     const mcpServers = (lead?.mcpServers ?? []).map(server => ({ type: 'http' as const, name: server.name, url: server.url,
       headers: server.headers.map(header => ({ name: header.name, value: header.value })) }))
+    // A lead's own node tools (the per-turn MCP servers above) are the one exception to the refusal: the agent would otherwise ask
+    // permission for `guanxi_delegate`, K5 refuses, and the lead can never delegate. Nothing else is allowed.
+    const leadTools = mcpServers.map(server => `mcp__${server.name}`)
+    const permissions = { defaultMode: 'default', ...(leadTools.length ? { allow: leadTools } : {}) }
+    const pinned = settings.pin || leadTools.length ? { _meta: { claudeCode: { options: { ...(leadTools.length ? { allowedTools: leadTools } : {}),
+      settings: { ...(settings.pin ? { env: { ANTHROPIC_BASE_URL: 'https://api.anthropic.com' }, apiKeyHelper: '' } : {}), permissions } } } } } : {}
     let session: Record<string, unknown> | undefined
     let sessionId = ''
     let mode: 'new' | 'load' | 'seeded' = 'new'

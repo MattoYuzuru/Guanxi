@@ -1,11 +1,12 @@
 import { RelayJudgeCascade, type RelayCascadeInput } from './judge-cascade.ts'
 import { randomUUID } from 'node:crypto'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { Attempt } from '../runs/types.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { RelayStore } from './store.ts'
 import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
-import { DEFAULT_RELAY_LIMITS, invariant, RelayError, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
+import { DEFAULT_RELAY_LIMITS, invariant, RelayError, TRANSIENT_CALL_REASONS, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, requestAsync, thresholds, upperTokens, wallDeadline, type AsyncMeasure, type Measure, type RequestParts, type RequestResult } from './budget.ts'
 import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
 import { parseModelJson } from './model-json.ts'
@@ -53,7 +54,9 @@ export class RelayExecutor {
     const c = l.caps
     if (c.cycles !== null && l.cycle + Number(nextCycle) > c.cycles) return 'cycles'
     if (c.tokens !== null && l.tokens >= c.tokens) return 'tokens'
-    if (c.moneyMicros !== null && (l.moneyMicros >= c.moneyMicros || l.unknownCosts > 0)) return 'money'
+    // A zero money cap admits only calls that cost exactly nothing (local compute): any spend or an unknown cost stops it. A positive cap
+    // stops once it is reached, before a call that could exceed it.
+    if (c.moneyMicros !== null && (l.unknownCosts > 0 || (c.moneyMicros === 0 ? l.moneyMicros > 0 : l.moneyMicros >= c.moneyMicros))) return 'money'
     if (c.wallMs !== null && this.store.clock() - l.startedAt >= c.wallMs) return 'wall'
     return null
   }
@@ -62,10 +65,14 @@ export class RelayExecutor {
     this.store.runs.wrappingUp(a)
   }
   /** One measure per cycle: packing, the boundary and dispatch evidence use the same unit. */
-  private measure(w: WindowObservation, signal: AbortSignal): Measure | AsyncMeasure {
+  private measure(a: Attempt, w: WindowObservation, signal: AbortSignal): Measure | AsyncMeasure {
     const exact = this.model.countIsExact === true, remote = this.model.countAsync
-    // A remote exact meter answers over the network. The executor never blocks the event loop for it.
-    if (exact && remote) return Object.assign(async (value: string) => (await remote(this.scrubber.scrub(value), signal)) + w.framingTokens, { exact, async: true as const })
+    // A remote exact meter answers over the network. The executor never blocks the event loop for it, and a dropped
+    // link is retried exactly like a model call: packing would otherwise stop the whole relay on an executor restart.
+    if (exact && remote) return Object.assign(async (value: string) => {
+      const clean = this.scrubber.scrub(value)
+      return (await this.retryTransient(a, 'measure', signal, () => remote(clean, signal))) + w.framingTokens
+    }, { exact, async: true as const })
     return Object.assign((value: string) => exact
       ? this.model.count(this.scrubber.scrub(value)) + w.framingTokens
       : upperTokens(value, w), { exact })
@@ -76,9 +83,32 @@ export class RelayExecutor {
   private dropped(a: Attempt, cycle: number, dropped: number, cut: number): void {
     this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'context_dropped', dropped, cut, cycle }) } })
   }
+  /** The fixed reason of a failed call: a relay code, or a transport's own fixed refusal code. A message is never read. */
+  private failureReason(error: unknown): string {
+    const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
+    return error instanceof RelayError ? error.code
+      : fixed((error as { reason?: unknown })?.reason) ? (error as { reason: string }).reason
+      : fixed((error as { code?: unknown })?.code) ? (error as { code: string }).code : 'unknown'
+  }
   /** A cancel or takeover can revoke the fence while the executor is already reporting. */
   private lost(error: unknown): boolean {
     return error instanceof Error && 'code' in error && ['stale_lease', 'writer_busy', 'invalid_transition'].includes(String((error as { code?: unknown }).code))
+  }
+  /** The one bounded retry of a transient transport failure. No reservation is held for observe/count/measure, so the
+   * same call can be repeated after the wait; the fence is rechecked first so a deposed attempt never uses the answer. */
+  private async retryTransient<T>(a: Attempt, purpose: string, signal: AbortSignal, action: () => Promise<T>): Promise<T> {
+    const waits = this.limits.transientRetryMs ?? []
+    for (let retry = 0; ; retry++) {
+      try { return await action() } catch (error) {
+        const reason = this.failureReason(error)
+        if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
+          this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_retry', purpose, reason, retry: retry + 1, waitMs: waits[retry] }) } })
+          try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
+          if (!signal.aborted) { this.checkExecution(a); continue }
+        }
+        throw error
+      }
+    }
   }
   /** R1 has no separate read-only fence probe; its existing fenced extension transaction is
    * the execution-fence check before the host await. */
@@ -166,16 +196,21 @@ export class RelayExecutor {
   /** A fresh observation of the loaded runtime, before anything is counted. An exact count is valid only against a recent observation, and the
    * previous call, gate or judge sample may have taken minutes: counting first would refuse a request the runtime can still serve. The window must
    * be the one this cycle was planned for. Dispatch observes again itself, so the freshness rule there is unchanged. */
-  private async fresh(w: WindowObservation, signal: AbortSignal): Promise<void> {
-    const current = await this.model.observe(signal)
-    invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
+  private async fresh(a: Attempt, w: WindowObservation, signal: AbortSignal): Promise<void> {
+    // No reservation is held yet, so a dropped link here can wait and re-observe just like a failed call.
+    await this.retryTransient(a, 'observe', signal, async () => {
+      const current = await this.model.observe(signal)
+      invariant(current.tokens === w.tokens && current.source === w.source, 'window_changed')
+      return current
+    })
   }
   private async call(a: Attempt, purpose: string, prompt: string, w: WindowObservation, t: Thresholds, signal: AbortSignal, responseSchema?: JsonSchema): Promise<Reply> {
     signal.throwIfAborted()
     invariant(this.scrubber.isReady(), 'egress_not_ready')
     const clean = this.scrubber.scrub(prompt)
-    await this.fresh(w, signal)
-    const count = this.model.countAsync ? await this.model.countAsync(clean, signal) : this.model.count(clean)
+    await this.fresh(a, w, signal)
+    const countAsync = this.model.countAsync
+    const count = countAsync ? await this.retryTransient(a, 'count', signal, () => countAsync(clean, signal)) : this.model.count(clean)
     invariant(Number.isSafeInteger(count) && count >= 0 && count <= t.H, 'context_ceiling')
     const l = this.store.read(a.run_id), reason = this.caps(l)
     if (reason) { this.wrap(a, reason); throw new RelayError('cap_reached') }
@@ -194,19 +229,27 @@ export class RelayExecutor {
       if (quote !== null) state.moneyMicros += quote
     })
     this.store.emit(a, { type: 'assistant.started', data: { messageId: id, model: 'relay:' + purpose, step: l.cycle } })
-    let reply: Reply
+    let reply: Reply | undefined
+    const waits = this.limits.transientRetryMs ?? []
+    for (let retry = 0; reply === undefined; retry++) {
     try { reply = this.scrubber.scrub(await this.model.call(clean, { runId: a.run_id, requestId: id, maxOutput: this.reserves.turn, maxInput: t.H, window: w, signal, onStarted: () => this.store.runs.modelStarted(a),
       ...(responseSchema ? { responseSchema } : {}) })) }
     catch (error) {
       // Only a fixed code is recorded: a message may carry provider text or paths.
-      const fixed = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9_]{1,64}$/.test(value)
       // K3 keeps a trusted transport's fixed refusal code as `reason`; its own code is the generic provider_failed.
-      const reason = error instanceof RelayError ? error.code : fixed((error as { reason?: unknown })?.reason) ? (error as { reason: string }).reason
-        : fixed((error as { code?: unknown })?.code) ? (error as { code: string }).code : 'unknown'
+      const reason = this.failureReason(error)
+      // A transient transport failure re-sends the same reserved call after a wait: the reservation, request id and prompt are unchanged,
+      // nothing was observed, and dispatch re-observes the runtime. A stop, a lost fence or the wall cap end the waiting.
+      if (TRANSIENT_CALL_REASONS.has(reason) && retry < waits.length && !signal.aborted) {
+        this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_retry', purpose, reason, retry: retry + 1, waitMs: waits[retry] }) } })
+        try { await sleep(waits[retry]!, undefined, { signal }) } catch { /* the stop is handled below */ }
+        if (!signal.aborted && this.caps(this.store.read(a.run_id)) !== 'wall') { this.checkExecution(a); continue }
+      }
       this.store.change(a, 'call_failed', state => { state.pendingCall = null; state.errors++ })
-      this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', purpose, reason }) } })
+      this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'call_failed_reason', runId: a.run_id, purpose, reason }) } })
       // A grammar the server rejects is rejected for every later call too: say so, instead of letting the probe retry and fail as something else.
       throw new RelayError(reason === 'response_schema_rejected' ? reason : 'model_failed')
+    }
     }
     invariant([reply.inputTokens, reply.outputTokens].every(n => Number.isSafeInteger(n) && n >= 0) &&
       (reply.moneyMicros === null || Number.isSafeInteger(reply.moneyMicros) && reply.moneyMicros >= 0), 'usage_invalid')
@@ -250,7 +293,7 @@ export class RelayExecutor {
         this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe_degraded', cycle: h.cycle }) } })
       }
       const expected = probes(sealed.ledger)
-      await this.fresh(w, signal)
+      await this.fresh(a, w, signal)
       const { text: prompt } = await this.pack(PROBE_PROMPT,
         { head: [canonical(h), canonical({ open: sealed.ledger.plan.items.filter(i => sealed.ledger.items[i.id] !== 'done').map(i => ({ id: i.id, status: sealed.ledger.items[i.id], dependsOn: i.dependsOn })) })] }, measure, t.H)
       let correct = false
@@ -369,7 +412,7 @@ export class RelayExecutor {
     try {
       const ledger = this.store.read(a.run_id)
       const notes = selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
-      await this.fresh(w, signal)
+      await this.fresh(a, w, signal)
       const context = await this.pack('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
         { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
       if (context.dropped || context.cut) this.dropped(a, ledger.cycle, context.dropped, context.cut)
@@ -430,7 +473,8 @@ export class RelayExecutor {
         const current = this.store.read(a.run_id)
         const cap = this.caps(current, true)
         if (cap) { this.wrap(a, cap); return current }
-        const w = await this.model.observe(signal), t = thresholds(w, this.reserves), measure = this.measure(w, signal)
+        const w = await this.retryTransient(a, 'observe', signal, () => this.model.observe(signal))
+        const t = thresholds(w, this.reserves), measure = this.measure(a, w, signal)
         this.store.begin(a)
         if (this.eta) this.store.updateEta(a, this.eta)
         const judged = await this.judgeSample(a, 'cycle_start', signal)
@@ -453,7 +497,7 @@ export class RelayExecutor {
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
-          await this.fresh(w, signal)
+          await this.fresh(a, w, signal)
           const context = await this.pack(this.workText, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
           const used = await measure(context.text)
           if (context.dropped || context.cut) {

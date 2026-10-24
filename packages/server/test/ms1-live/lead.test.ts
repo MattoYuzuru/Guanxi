@@ -2,6 +2,7 @@
  * from the home's `lead` section, the lead delegates through `guanxi_delegate`, and the plan runs on the executor. */
 import assert from 'node:assert/strict'
 import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fakeTokens } from '../fixtures/fake-llama-server.ts'
 import { createLiveWorld, until, type LiveWorld, pinLifecycle } from './live-world.ts'
@@ -56,6 +57,30 @@ test('a restart that is asked to start the lead again does not start a second on
   await until(() => w.home.count("SELECT COUNT(*) AS n FROM durable_runs WHERE state='completed'") >= 1, 'the refused lead to finish', 90_000)
   const before = w.home.count('SELECT COUNT(*) AS n FROM lead_sessions')
   assert.equal(before, 1)
+  await w.home.stop()
+  w.home.spawn(['--lead-prompt-file', `${w.dir}/lead-prompt.txt`, '--project', w.projectId])
+  await w.home.wait('started'); await w.home.wait('lead-exists')
+  assert.equal(w.home.find('lead-started'), undefined, 'no second lead was started')
+  assert.equal(w.home.count('SELECT COUNT(*) AS n FROM lead_sessions'), before)
+  // The first lead's run is finished: a different task starts a new lead instead of being refused forever.
+  await w.home.stop()
+  writeFileSync(`${w.dir}/lead-prompt-2.txt`, 'A different task for a new lead.\n')
+  w.home.spawn(['--lead-prompt-file', `${w.dir}/lead-prompt-2.txt`, '--project', w.projectId])
+  await w.home.wait('started'); await w.home.wait('lead-started')
+  assert.equal(w.home.find('lead-exists'), undefined)
+  await until(() => w.home.count('SELECT COUNT(*) AS n FROM lead_sessions') === before + 1, 'the new lead to be recorded', 30_000)
+})
+
+test('a restart with the same over-long task does not start a second lead after the first finished', async t => {
+  const w = await createLiveWorld(t, { lead: true })
+  await w.registerProject()
+  const prompt = 'Make the fixture project green. ' + 'x'.repeat(4_100)
+  const started = await w.restartHomeWithLead(brief(w, { executor: { connectionId: w.home.find('started')!['connectionId'], model: 'some-other-model' } }), prompt)
+  await w.home.wait('lead-first', 90_000)
+  await until(() => w.home.one<{ state: string }>('SELECT state FROM durable_runs WHERE id=?', started['runId'])?.state === 'completed', 'the refused lead to finish', 90_000)
+  const before = w.home.count('SELECT COUNT(*) AS n FROM lead_sessions')
+  assert.equal(before, 1)
+  assert.ok(w.home.one<{ task: string }>('SELECT task FROM lead_sessions')!.task.length <= 4_000, 'the stored task is the clipped normal form')
   await w.home.stop()
   w.home.spawn(['--lead-prompt-file', `${w.dir}/lead-prompt.txt`, '--project', w.projectId])
   await w.home.wait('started'); await w.home.wait('lead-exists')

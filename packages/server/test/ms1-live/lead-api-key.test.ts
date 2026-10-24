@@ -25,6 +25,7 @@ const home = (leadOverrides: Record<string, unknown> = {}) => ({ version: 1, rol
 const refused = (raw: unknown, code: string, field: string) => assert.throws(() => parseMs1LiveConfig(raw, '/etc/x/ms1-live.json'),
   (error: unknown) => error instanceof Ms1LiveError && error.code === code && error.field === field, `${code} at ${field}`)
 const fakeKey = () => `sk-ant-api03-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
+const fakeUserKey = () => `sk-ant-usr01-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
 // The owner's own key file may be named in this process's environment: no test here may read it, and none may reach the OS keychain.
 let ambientKeyFile: string | undefined
 before(() => { ambientKeyFile = process.env['GUANXI_PROVIDER_KEYS_FILE']; delete process.env['GUANXI_PROVIDER_KEYS_FILE'] })
@@ -279,6 +280,30 @@ test('oauth_token: doctor explains the mode, accepts the token under either name
   assert.equal(mismatch?.code, 'lead_key_invalid')
 })
 
+test('doctor accepts a user API key (sk-ant-usr) in api_key mode and names only its family; oauth_token mode refuses it as an API key', async t => {
+  const w = await pair(t)
+  const tail = 'usrTailCanary'.repeat(8)
+  const key = `sk-ant-usr01-${tail}`
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${key}\n`)
+  const run = async (auth: 'api_key' | 'oauth_token') => {
+    w.settings(config => { config.home.lead.auth = auth })
+    const result = await cli(['doctor', '--config', join(w.home, 'ms1-live.json'), '--json'], { HOME: w.root })
+    assert.equal(result.out.includes(key), false, 'no key value in the report')
+    assert.equal(result.out.includes('usrTailCanary'), false, 'nothing beyond the family prefix')
+    assert.equal(result.err.includes(key), false, 'no key value on stderr')
+    assert.equal(result.err.includes('usrTailCanary'), false, 'nothing beyond the family prefix on stderr')
+    const checks = (JSON.parse(result.out) as { checks: Array<{ id: string; status: string; code?: string; summary: string; fix?: string }> }).checks
+    return checks.find(check => check.id === 'lead_key')!
+  }
+  const accepted = await run('api_key')
+  assert.equal(accepted.status, 'ok')
+  assert.match(accepted.summary, /sk-ant-usr/)
+  const wrongFamily = await run('oauth_token')
+  assert.equal(wrongFamily.code, 'lead_key_wrong_family')
+  assert.match(wrongFamily.summary, /sk-ant-usr/)
+  assert.match(wrongFamily.fix!, /Set home\.lead\.auth to "api_key"/)
+})
+
 test('oauth_token: start imports the token as a Claude Code connection only, wires K5 to it, and the token is in no file this node wrote', async t => {
   const w = await pair(t)
   const token = fakeToken()
@@ -338,10 +363,13 @@ test('after start the vault is unlocked for the lead, and a vault that cannot be
   assert.ok(outcome instanceof Ms1LiveError && outcome.code === 'lead_vault_locked', `got ${outcome instanceof Error ? `${outcome.name}: ${outcome.message}` : outcome}`)
 })
 
-test('end to end through the start command\'s lead set-up: the fixture agent receives the key from the vault, the lead turn completes, and no announced event or file holds it', async t => {
-  for (const mode of ['api_key', 'oauth_token'] as const) {
+test('end to end through the start command\'s lead set-up: the fixture agent receives the key (either API key family or a token) from the vault, the lead turn completes, and no announced event or file holds it', async t => {
+  for (const { mode, secret } of [
+    { mode: 'api_key' as const, secret: fakeKey() },
+    { mode: 'api_key' as const, secret: fakeUserKey() },
+    { mode: 'oauth_token' as const, secret: fakeToken() },
+  ]) {
     const w = await pair(t)
-    const secret = mode === 'api_key' ? fakeKey() : fakeToken()
     writeKeys(w.keyFile, mode === 'api_key' ? `ANTHROPIC_API_KEY=${secret}\n` : `CLAUDE_CODE_OAUTH_TOKEN=${secret}\n`)
     // The fixture agent stands in for both the ACP bridge and the CLI (it answers `auth status` like 2.1.287 does for the variable it is given).
     const agentDir = join(w.root, 'agent')
@@ -395,7 +423,7 @@ test('doctor names the failing variable and the family it saw (a label, never ch
   let check = await run(`ANTHROPIC_API_KEY=sk-ant-zzz-${tail}\n`, 'oauth_token')
   assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>/)
   check = await run(`ANTHROPIC_API_KEY=sk-ant-zzz-${tail}\n`, 'api_key')
-  assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>, not sk-ant-api/)
+  assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>, not an Anthropic API key/); assert.match(check.summary, /sk-ant-api\.\.\. or sk-ant-usr\.\.\./)
   check = await run(`ANTHROPIC_API_KEY=plain-${tail}\n`, 'api_key')
   assert.match(check.summary, /starts with not sk-ant/)
   check = await run(`CLAUDE_CODE_OAUTH_TOKEN=sk-ant-api03-${tail}\n`, 'oauth_token')
@@ -416,6 +444,7 @@ test('doctor names the failing variable and the family it saw (a label, never ch
 test('refusal summaries say what each mode needs', () => {
   const text = (code: string) => describeConfigError(new Ms1LiveError(code, 'home.lead.connection'))
   assert.match(text('lead_key_missing'), /api_key:.*ANTHROPIC_API_KEY.*oauth_token:.*CLAUDE_CODE_OAUTH_TOKEN/)
+  assert.match(text('lead_key_missing'), /sk-ant-api\.\.\. or sk-ant-usr\.\.\./)
   assert.match(text('lead_connection_ambiguous'), /oauth_token: Claude Code token connections/)
   assert.match(text('lead_connection_invalid'), /oauth_token needs a Claude Code connection/)
 })

@@ -82,11 +82,150 @@ test('normative cycle/token/money/wall caps wrap up before another model call', 
       moneyMicros: kind === 'money' ? 0 : null, wallMs: kind === 'wall' ? 1 : null }, actions: () => canonical({ action: 'handoff' }) })
     try {
       if (kind === 'wall') f.relay.change(f.attempt, 'fixture_time', l => { l.startedAt -= 2 })
+      // A zero money cap stops once anything was spent (or a cost is unknown); free calls alone do not reach it (next test).
+      if (kind === 'money') f.relay.change(f.attempt, 'fixture_spend', l => { l.moneyMicros = 1 })
       await f.executor.run(f.attempt)
       assert.equal(f.store.get(f.run.id).state, 'wrapping_up', kind)
       assert.equal(f.prompts.filter(p => p.startsWith('Execute')).length, kind === 'cycles' ? 1 : 0, kind)
     } finally { f.close() }
   }
+})
+test('a transient transport failure re-sends the same reserved call after a wait; exhausting the waits fails it as before', async () => {
+  let failures = 2, work = 0
+  const f = fixture({ limits: { transientRetryMs: [1, 1, 1] }, actions: () => {
+    if (failures-- > 0) throw new RelayError('runtime_meter_unavailable')
+    return canonical(work++ === 0 ? { action: 'verify', item: 'one' } : { action: 'handoff' })
+  } })
+  try {
+    const before = f.relay.read(f.run.id).tokens
+    await f.executor.run(f.attempt)
+    const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"'))
+    assert.equal(notes.length, 2)
+    assert.equal(f.relay.read(f.run.id).errors, 0, 'a retried call is not an error')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    assert.ok(f.relay.read(f.run.id).tokens > before)
+  } finally { f.close() }
+  const g = fixture({ limits: { transientRetryMs: [1, 1] }, actions: () => { throw new RelayError('runtime_meter_unavailable') } })
+  try {
+    await g.executor.run(g.attempt)
+    assert.equal(g.log.readAll(g.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 2)
+    assert.equal(g.store.get(g.run.id).state, 'input_required')
+    assert.equal(g.relay.read(g.run.id).pendingCall, null)
+  } finally { g.close() }
+  // A failure that says something about the request is never retried.
+  const h = fixture({ limits: { transientRetryMs: [1, 1] }, actions: () => { throw new RelayError('context_ceiling') } })
+  try {
+    await h.executor.run(h.attempt)
+    assert.equal(h.log.readAll(h.run.session_id, 'person').filter(e => e.type === 'agent.note' && e.data.text.includes('"call_retry"')).length, 0)
+  } finally { h.close() }
+})
+test('a transient observation failure before admission waits, re-observes and the run completes', async () => {
+  const f = fixture({ limits: { transientRetryMs: [1, 1] } })
+  try {
+    let observes = 0
+    const observe = f.model.observe.bind(f.model)
+    f.model.observe = async signal => { observes++; if (observes === 2) throw new RelayError('runtime_meter_unavailable'); return observe(signal) }
+    await f.executor.run(f.attempt)
+    assert.ok(observes >= 3, 'the failed observation was retried before the first reservation')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'observe'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a transient cycle-start observation failure is retried and the run continues', async () => {
+  const f = fixture({ limits: { transientRetryMs: [1, 1] } })
+  try {
+    let observes = 0
+    const observe = f.model.observe.bind(f.model)
+    f.model.observe = async signal => { observes++; if (observes === 1) throw new RelayError('runtime_meter_unavailable'); return observe(signal) }
+    await f.executor.run(f.attempt)
+    assert.ok(observes >= 2, 'the failed cycle-start observation was retried')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'observe'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a transient exact admission count failure is retried and the run continues', async () => {
+  const f = fixture({ limits: { transientRetryMs: [1, 1] } })
+  try {
+    let counts = 0
+    f.model.countAsync = async (text: string) => {
+      counts++
+      if (counts === 1) throw new RelayError('runtime_meter_unavailable')
+      return f.model.count(text)
+    }
+    await f.executor.run(f.attempt)
+    assert.ok(counts >= 2, 'the failed count was retried')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'count'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a transient remote pack measure failure is retried and the run continues', async () => {
+  const f = fixture({ exact: true, limits: { transientRetryMs: [1, 1] } })
+  try {
+    let failed = false
+    f.model.countAsync = async (text: string) => {
+      if (text.startsWith('Execute') && !failed) { failed = true; throw new RelayError('runtime_meter_unavailable') }
+      return f.model.count(text)
+    }
+    await f.executor.run(f.attempt)
+    assert.equal(failed, true, 'the first remote measure failed')
+    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.relay.read(f.run.id).items.one, 'done')
+    const retries = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note')
+      .map(e => JSON.parse((e.data as { text: string }).text) as Record<string, unknown>).filter(note => note['relay'] === 'call_retry')
+    assert.ok(retries.some(note => note['purpose'] === 'measure'), JSON.stringify(retries))
+  } finally { f.close() }
+})
+test('a retry rechecks the execution fence after its wait and does not re-send a canceled call', async () => {
+  let calls = 0
+  const f = fixture({ limits: { transientRetryMs: [100] } })
+  try {
+    const call = f.model.call.bind(f.model)
+    f.model.call = async (prompt, options) => {
+      calls++
+      if (calls === 1) {
+        setTimeout(() => f.store.cancel(f.run.id), 5)
+        throw new RelayError('runtime_meter_unavailable')
+      }
+      return call(prompt, options)
+    }
+    await f.executor.run(f.attempt)
+    assert.equal(calls, 1, 'the canceled call was not re-sent after the wait')
+    assert.equal(f.store.get(f.run.id).state, 'canceled')
+  } finally { f.close() }
+})
+test('a zero money cap refuses the pre-call reservation when a cost is possible or unknown', async () => {
+  for (const [label, maxCost] of [['quoted', () => 10], ['unknown', () => null], ['absent', undefined]] as const) {
+    const f = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
+    try {
+      if (maxCost) f.model.maxCostMicros = maxCost
+      else delete f.model.maxCostMicros
+      await f.executor.run(f.attempt)
+      assert.equal(f.prompts.filter(p => p.startsWith('Execute')).length, 0, `${label}: no work call was reserved`)
+      const notes = f.log.readAll(f.run.session_id, 'person').filter(e => e.type === 'agent.note').map(e => (e.data as { text: string }).text)
+      assert.ok(notes.some(text => text.includes('"relay":"cap"') && text.includes('"reason":"call_reserve"')), `${label}: ${JSON.stringify(notes)}`)
+      assert.equal(f.relay.read(f.run.id).pendingCall, null, `${label}: no reservation is held`)
+      assert.equal(f.store.get(f.run.id).state, 'wrapping_up', label)
+    } finally { f.close() }
+  }
+})
+test('a zero money cap stops on an unknown cost before any call', async () => {
+  const g = fixture({ caps: { cycles: null, tokens: null, moneyMicros: 0, wallMs: null }, actions: () => canonical({ action: 'handoff' }) })
+  try {
+    g.relay.change(g.attempt, 'fixture_unknown_cost', l => { l.unknownCosts = 1 })
+    await g.executor.run(g.attempt)
+    assert.equal(g.store.get(g.run.id).state, 'wrapping_up')
+    assert.equal(g.prompts.filter(p => p.startsWith('Execute')).length, 0)
+  } finally { g.close() }
 })
 test('stopping an in-flight model preserves the ledger and never replays it on recovery', async () => {
   const f=fixture()
@@ -289,8 +428,9 @@ test('the invalid-action limit counts invalid turns, not every turn', async () =
     assert.equal(verifies, 0)
   } finally { f.close() }
 })
-test('a local runtime reports known zero cost and does not trip a generous money cap', async () => {
-  const f = fixture({ caps: { moneyMicros: 1_000_000_000 } })
+test('a local runtime reports known zero cost and trips neither a generous nor a zero money cap', async () => {
+  for (const moneyMicros of [1_000_000_000, 0]) {
+  const f = fixture({ caps: { moneyMicros } })
   try {
     const meter = { observe: async () => window, count: (text: string) => Buffer.byteLength(text) + window.framingTokens, maxCostMicros: () => 0 }
     let work = 0
@@ -315,8 +455,9 @@ test('a local runtime reports known zero cost and does not trip a generous money
     assert.ok(prompts.length > 1)
     assert.equal(l.moneyMicros, 0)
     assert.equal(l.unknownCosts, 0)
-    assert.equal(f.store.get(f.run.id).state, 'completed')
+    assert.equal(f.store.get(f.run.id).state, 'completed', `money cap ${moneyMicros}`)
   } finally { f.close() }
+  }
 })
 test('a cancel racing seal preparation ends the run cleanly without stale_lease', async () => {
   const f = fixture()
