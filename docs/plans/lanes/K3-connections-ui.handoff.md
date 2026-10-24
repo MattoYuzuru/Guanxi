@@ -1,6 +1,6 @@
 # K3 connections centre and model picker handoff
 
-**Status:** implemented and locally validated; independent review fix round applied; browser/visual gates not run.
+**Status:** implemented and locally validated; independent review fix round 2 applied; the connections browser spec passed locally; other browser/visual gates not run.
 **Date:** 2026-10-24 · **Branch:** `lead/k3-connections-ui` · **Base:** `6fac2923` · no push.
 
 ## What exists
@@ -10,8 +10,10 @@
   ledger row. Migration 4 appends the dotenv name family; migration 5 adds only
   `removed_connections`; versions 1–3 are unchanged. A lane data directory created by the
   pre-merge lane build, where version 4 meant `removed_connections`, is lane-only and never
-  shipped: discard such lane data dirs; there is no repair code. The dotenv mapping is deleted,
-  so a later trusted import creates a new identity. The vault record
+  shipped: boot refuses it with `lane_data_dir_incompatible`, names the data directory to
+  discard, and repairs nothing. The dotenv mapping is deleted, so a later trusted import
+  creates a new identity; the import re-reads a reused row under `BEGIN IMMEDIATE`, so a
+  concurrent DELETE cannot leave a mapping to the removed connection. The vault record
   is retained and the node-key copy is deleted; a fresh activation still registers the retired
   value with the egress scrubber. The route refuses with `connection_in_use` (409) while this
   registry has an active `complete()`, `localChat()` or `dispatchAgent()` call. It does not inspect
@@ -37,40 +39,37 @@
   confirms in a Dialog and warns that bound sessions, roles and leads will fail. Add/rotate uses
   a Dialog with show/hide, typed inline errors, a key cleared before the request and again on
   close, and the contract's exact minimum key length. A failed create is rolled back with DELETE;
-  a failed rotation never deletes the existing row. A failed removal keeps one alert inside its
-  dialog. Successful add/rotate/remove focus the provider card heading. Models open in a
+  a failed rotation never deletes the existing row. A failed add, rotation or removal keeps one
+  alert inside its dialog and leaves no page alert after the close. Successful
+  add/rotate/remove focus the provider card heading. Models open in a
   searchable popover with a typed auto-recovering error. The base-URL field appears only for
   `optional`/`required` catalog entries and is read-only because HTTP cannot set a trusted
   endpoint (D-208); custom roots remain a key-file import.
 - **E1 New session picker (web).** Connections are grouped by catalog category; choosing one
   lists `GET /:id/models` with search, arrow keys, Home/End, Enter and Escape; the current model
-  is marked. Enter in the search commits nothing until the user moves the highlight to an option
-  with ArrowDown/Home/End, for any query; Enter then commits that option, never the first filtered
-  match. One option stays tabbable when a custom ID is set. "Other model ID…" is the only typed
-  fallback. The trigger uses two spans, never a middle-dot string. The last explicit choice is stored under
+  is marked. Enter in the search commits nothing until the user moves the highlight to an option,
+  for any query; ArrowDown moves from the search into the list, and Home/End work once an option
+  has focus. Enter then commits that option, never the first filtered match. One option stays
+  tabbable when a custom ID is set. "Other model ID…" is the only typed fallback. The trigger uses
+  two spans, never a middle-dot string. The last explicit choice is stored under
   `<PRODUCT_FILE_PREFIX>.newSession.modelChoice.v1`; a local runtime still requires context.
   `(dotenv)` names are never rendered.
 
 ## Commands and evidence
 
 - `npm exec --workspace @guanxi/web -- vitest run test/component/connections.test.tsx
-  test/component/connections-key-dialog.test.tsx test/component/new-session.test.tsx
-  test/component/localization.test.tsx test/component/localized-copy-inventory.test.tsx`
-  — 5 files, 73 tests, 73 pass.
+  test/component/new-session.test.tsx test/component/connections-key-dialog.test.tsx`
+  — 3 files, 56 tests, 56 pass.
 - `node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test
-  packages/server/test/connections/*.test.ts packages/server/test/external-agents/*.test.ts
-  packages/server/test/native-agent/side-chat*.test.ts` — 279 tests, 275 pass, 4 fail.
-  All four failures are in `external-agents/admission-reconcile.test.ts` and reproduce when
-  that file runs alone on this macOS clone (orphan-group start-time probing); they are outside
-  this fix round. The touched suites pass: `model-access.test.ts` 57/57, `policy.test.ts` 22/22,
-  `side-chat.test.ts` 23/23.
-- `npx tsc --noEmit -p packages/web` — pass; `packages/web/tsconfig.test.json` — pass;
-  `-p packages/server` — pass.
+  packages/server/test/connections/*.test.ts packages/server/test/ms1-live/lead-api-key.test.ts`
+  — 138 tests, 138 pass.
+- `GUANXI_WEB_PORT=5282 GUANXI_API_PORT=4382 npm run test:browser --workspace @guanxi/web --
+  test/browser/connections.spec.ts` — 1 test, 1 pass (Chromium installed).
+- `npx tsc --noEmit -p packages/web/tsconfig.test.json && npx tsc --noEmit -p packages/server`
+  — pass.
 - `node packages/web/scripts/localized-copy-inventory.mjs` — exit 0.
 - `npm run lint:md` — 312 files, 0 errors; 311 files, 819 links, 0 problems.
 - `npx eslint` on every changed source/test file — exit 0.
-- `packages/web/test/browser/connections.spec.ts` is rewritten for the catalogue centre and
-  typechecks; it was not run here (the lead runs browser gates).
 - Earlier-round UI gate result, unchanged by this fix round: G11 passes; the command exits 1 on
   G10 (stale catalog manifest, no UI package changed) and G12 (this clone has no `main` base).
 
@@ -113,16 +112,24 @@ Each was applied once, the focused test failed, then the file was restored.
 - Picker: restoring the empty-search Enter branch selected the first model; the old tabIndex
   expression left no option tabbable for a custom ID.
 - Remove failure: setting the page-level error produced two alerts instead of the one dialog alert.
-- Russian removal copy: the old "редактирования" wording failed the copy assertion.
+- Russian removal copy: the old "редактирования" wording failed the copy assertion; the current
+  wording changed "только чтобы скрывать ключ" to "только для того, чтобы скрывать его".
+- Browser gate: the old seed (a connected DeepSeek row) showed rotation instead of Add key and
+  failed before the key field; the rewritten gate seeds no row, uses exact names, and expects the
+  PUT on the id the mocked POST returned.
+- Key dialog: removing `{ inline: true }` produced two alerts and left the page alert after close.
+- Lane data dir: deleting the version-4 family guard let the lane-only store boot instead of
+  refusing with `lane_data_dir_incompatible`.
+- Import re-read: deleting the in-transaction re-read returned `unchanged` and mapped the
+  removed connection id.
+- Lead key: deleting the imported-row preference returned `lead_connection_ambiguous`.
+- Picker Enter: the added non-empty-query case passes before and after because this round only
+  aligned the comment and handoff with existing behaviour; there is no behaviour mutation.
 
 ## Residuals
 
-- No browser or visual gate was run (per the task). The rewritten
-  `packages/web/test/browser/connections.spec.ts` typechecks; the lead runs browser gates.
+- The connections browser spec passed locally (1 test); no visual gate was run.
 - The phone segmented control and the rail/underline layout were not observed in a real browser.
 - No live Ollama or provider key was used; tests use fake keys and local fixtures.
 - The in-use check is process-local. Durable relay/lead state is not queried, as documented.
 - Custom API roots cannot be entered through HTTP; the dialog shows the catalog policy read-only.
-- The full specified server glob has four unrelated `admission-reconcile` failures on this
-  macOS clone, reproducible in isolation. The touched connection, external-agent policy and
-  side-chat suites are green.
