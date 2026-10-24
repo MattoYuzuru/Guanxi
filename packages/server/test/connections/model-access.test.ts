@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createKernel } from '@guanxi/kernel'
 import { Hono } from 'hono'
-import { createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
+import { connectionSchema, createConnectionSchema, connectionSnapshotSchema } from '@guanxi/contract'
 import type { ResourceGovernor } from '../../src/runtime/resource-governor.ts'
 import { resourceGovernorPlugin } from '../../src/runtime/governor-plugin.ts'
 import { ollamaAdapterPlugin } from '../../src/ollama/plugin.ts'
@@ -33,23 +33,31 @@ const fakeKey = () => `test_${randomBytes(32).toString('hex')}`
 async function setup(t: { after(fn: () => unknown): void }, options: { transport?: typeof fetch; pi?: PiTransport; unattended?: boolean; ownerDevice?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'guanxi-k3-'))
   const keys = new Map<string, Buffer>()
+  let keychainReads = 0, transportReads = 0
+  const counts = { keychain: () => keychainReads, transport: () => transportReads,
+    reset: () => { keychainReads = 0; transportReads = 0 } }
   const keychain: VaultKeychain = { key(accountId, create, purpose) {
+    keychainReads++
     const id = JSON.stringify([purpose, accountId])
     if (!keys.has(id) && create) keys.set(id, randomBytes(32))
     if (!keys.has(id)) throw new Error('No wrapping key')
     return Buffer.from(keys.get(id)!)
   } }
+  const transport: typeof fetch = async (input, init) => {
+    transportReads++
+    return (options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }))(input, init)
+  }
   const kernel = createKernel()
   await kernel.plugin(resourceGovernorPlugin)
-  await kernel.plugin(ollamaAdapterPlugin, { fetch: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }) })
+  await kernel.plugin(ollamaAdapterPlugin, { fetch: transport })
   let egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] })
   const config = { databasePath: join(dir, 'connections.sqlite'), localHost: () => 'http://127.0.0.1:11434',
     policy: { ownerDevice: options.ownerDevice ?? true, nodeKeyOptIn: options.unattended ?? false }, keychain: async () => keychain,
-    transport: options.transport ?? (async () => { throw new Error('Unexpected HTTP call') }), pi: options.pi }
+    transport, pi: options.pi }
   let handle = await kernel.plugin(connectionsPlugin, config)
   const service = () => kernel.service<Connections>(CONNECTIONS_SERVICE)!
   t.after(async () => { await kernel.dispose(); for (const key of keys.values()) key.fill(0); await rm(dir, { recursive: true, force: true }) })
-  return { dir, kernel, service, config, async restart(freshEgress = false) {
+  return { dir, kernel, service, config, counts, async restart(freshEgress = false) {
     await handle.dispose()
     if (freshEgress) { await egress.dispose(); egress = await kernel.plugin(egressScrubberPlugin, { expectedSources: ['vault'] }) }
     handle = await kernel.plugin(connectionsPlugin, config)
@@ -62,6 +70,88 @@ function responseSse(content = 'ok') {
   ]
   return new Response(frames.map(value => `data: ${JSON.stringify(value)}\n\n`).join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
 }
+
+test('plugin apply ensures exactly one Ollama connection and leaves existing connections untouched', async t => {
+  const f = await setup(t)
+  const first = f.service().snapshot('local').connections
+  assert.deepEqual(first.map(row => [row.name, row.kind, row.provider, row.auth]), [['Ollama', 'local_runtime', 'ollama', 'none']])
+  const manual = f.service().create('local', { name: 'Manual', kind: 'model_api', provider: 'deepseek', auth: 'api_key' })
+  const before = f.service().snapshot('local').connections
+  await f.restart()
+  const after = f.service().snapshot('local').connections
+  assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama').length, 1)
+  assert.deepEqual(after.find(row => row.name === 'Ollama'), before.find(row => row.name === 'Ollama'))
+  assert.deepEqual(after.find(row => row.id === manual.id), before.find(row => row.id === manual.id))
+})
+
+test('an existing unattended executor runtime does not stand in for the local Ollama connection', async t => {
+  const f = await setup(t, { unattended: true })
+  const s = f.service()
+  // An upgraded MS1 home: its relay connection exists, but no apply has created Ollama yet.
+  s.store.db.exec('DELETE FROM connections')
+  s.store.create('local', { name: 'ms1-executor', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: true })
+  f.counts.reset()
+  await f.restart()
+  const first = f.service().snapshot('local').connections
+  assert.deepEqual(first.map(row => [row.name, row.unattended]).sort(), [['Ollama', false], ['ms1-executor', true]])
+  const auto = first.find(row => row.name === 'Ollama')!
+  assert.equal(auto.facts.origin?.value, 'local_runtime_auto')
+  await f.restart()
+  const after = f.service().snapshot('local').connections
+  assert.equal(after.filter(row => row.name === 'Ollama').length, 1)
+  assert.equal(after.filter(row => row.kind === 'local_runtime' && row.provider === 'ollama' && row.name === 'Ollama').length, 1)
+  assert.deepEqual(after.find(row => row.name === 'Ollama'), auto)
+  assert.equal(f.counts.keychain(), 0, 'ensureLocalOllama never reads the keychain')
+  assert.equal(f.counts.transport(), 0, 'ensureLocalOllama never calls Ollama or the network')
+})
+
+test('a removed auto Ollama row stays removed across restarts until the owner re-adds it', async t => {
+  const f = await setup(t)
+  const auto = f.service().snapshot('local').connections.find(row => row.name === 'Ollama')!
+  assert.equal(auto.facts.origin?.value, 'local_runtime_auto')
+  const removed = await connectionRoutes(f.service, 'local').request(`http://localhost/${auto.id}`, { method: 'DELETE' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(f.service().snapshot('local').connections, [])
+  const marked = f.service().store.findAutoLocalOllama('local')
+  assert.equal(marked?.removed, true)
+  assert.equal(marked?.connection.id, auto.id)
+  await f.restart()
+  assert.deepEqual(f.service().snapshot('local').connections, [], 'the apply must not recreate a removed auto row')
+
+  const created = await connectionRoutes(f.service, 'local').request('http://localhost/', { method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none' }) })
+  assert.equal(created.status, 201)
+  const readded = connectionSchema.parse(await created.json())
+  assert.equal(readded.facts.origin?.value, undefined, 'the catalog create route makes an ordinary row')
+  await f.restart()
+  assert.deepEqual(f.service().snapshot('local').connections.map(row => row.id), [readded.id],
+    'a restart reuses the owner re-added row instead of creating another')
+})
+
+test('the Ollama connection lists installed models and returns a typed error when the runtime is down', async t => {
+  const calls: string[] = []
+  const f = await setup(t, { transport: async (url) => {
+    calls.push(String(url))
+    if (String(url).endsWith('/api/tags')) return Response.json({ models: [
+      { name: 'fixture:latest', digest: 'sha256:fixture' }, { name: 'fixture:latest' },
+    ] })
+    throw new Error('Unexpected HTTP call')
+  } })
+  const local = f.service().snapshot('local').connections.find(row => row.name === 'Ollama')!
+  const installed = await connectionRoutes(f.service, 'local').request(`http://localhost/${local.id}/models`)
+  assert.equal(installed.status, 200)
+  const body = await installed.json() as { id: string; facts: Record<string, { source: string }> }[]
+  assert.deepEqual(body.map(model => model.id), ['fixture:latest'])
+  assert.equal(body[0]!.facts['ollama.installed']!.source, 'ollama:/api/tags')
+  assert.equal(calls.filter(url => url.endsWith('/api/tags')).length, 1)
+
+  const down = await setup(t)
+  const downLocal = down.service().snapshot('local').connections.find(row => row.name === 'Ollama')!
+  const failed = await connectionRoutes(down.service, 'local').request(`http://localhost/${downLocal.id}/models`)
+  assert.equal(failed.status, 502)
+  assert.deepEqual(await failed.json(), { code: 'provider_failed' })
+})
 
 test('trusted single-attempt K3 call refuses an adapter second HTTP attempt before transport', async t => {
   let requests = 0, retries: number | undefined
@@ -425,6 +515,11 @@ test('HTTP API exposes references only, validates routes and blocks cross-origin
   const secret = fakeKey()
   response = await send(`/${row.id}/secret`, { value: secret }, 'PUT')
   assert.equal(response.status, 200); assert.equal((await response.text()).includes(secret), false)
+  const catalog = await routes.request(`http://localhost/${row.id}/models`)
+  assert.equal(catalog.status, 200)
+  const listed = await catalog.json() as { id: string; facts: Record<string, { source: string }> }[]
+  assert.ok(listed.length > 0)
+  assert.match(listed[0]!.facts['pi-ai.context']!.source, /pi-ai/u)
   assert.equal((await send('/', apiInput, 'POST', { Origin: 'https://attacker.example' })).status, 403)
   assert.equal((await send('/', { ...apiInput, auth: 'oauth' })).status, 400)
   const snapshot = await (await routes.request('http://localhost/')).text()
@@ -731,7 +826,7 @@ test('E6: short keys cannot enter the vault or corrupt scrubbed rows; probes val
 
 test('pi-ai facts carry the actual catalog observation time', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput)
-  const before = Date.now(); const models = s.models(account, row.id); const after = Date.now()
+  const before = Date.now(); const models = await s.models(account, row.id); const after = Date.now()
   assert.ok(models.length > 0)
   for (const model of models) for (const [key, fact] of Object.entries(model.facts)) {
     if (!key.startsWith('pi-ai.')) continue
@@ -833,7 +928,7 @@ test('review: pending node-key injection rejects revocation and rotation after a
   unavailable.close(); assert.equal(used, 0)
 })
 
-test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
+test('review: migrations 2 to 5 upgrade a version-1 vault without rewriting keys, ciphertext or connections', async t => {
   const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput); const secret = fakeKey()
   await s.unlockVault(account); s.saveSecret(account, row.id, secret)
   const before = {
@@ -845,14 +940,23 @@ test('review: migrations 2 and 3 upgrade a version-1 vault without rewriting key
   s.store.db.exec('DROP TABLE dotenv_imports; DROP TABLE vault_node_secrets; DROP TABLE vault_node_keys; DELETE FROM k3_migrations WHERE version>=2;')
   await f.restart()
   const next = f.service()
-  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3])
+  assert.deepEqual(next.store.db.prepare('SELECT version FROM k3_migrations ORDER BY version').all().map(row => row.version), [1, 2, 3, 4, 5])
   assert.equal(next.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports').get()!.n, 0)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_keys').all(), before.keys)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM vault_secrets').all(), before.secrets)
   assert.deepEqual(next.store.db.prepare('SELECT * FROM connections').all(), before.connections)
+  // A version-3 mapping has no family; append-only migration 4 makes it the official OpenAI family.
+  const legacy = next.store.create(account, { name: 'openai (dotenv)', kind: 'model_api', provider: 'openai', auth: 'api_key' })
+  next.store.db.exec(`DROP TABLE dotenv_imports;
+    CREATE TABLE dotenv_imports(account_id TEXT NOT NULL, provider TEXT NOT NULL, endpoint TEXT NOT NULL,
+      connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
+    DELETE FROM k3_migrations WHERE version=4;`)
+  next.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)').run(account, 'openai', '', legacy.id)
+  await f.restart()
+  assert.deepEqual(f.service().store.db.prepare('SELECT family FROM dotenv_imports').all().map(row => row.family), ['OPENAI_API_KEY'])
   assert.equal(f.kernel.service<ConnectionsEgressReadiness>(CONNECTIONS_EGRESS_READINESS)!.ready, true)
-  await next.unlockVault(account)
-  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(next.store.get(account, row.id).secretRef as SecretRef))
+  await f.service().unlockVault(account)
+  assert.equal(f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!.scrub(secret), redactionMarker(f.service().store.get(account, row.id).secretRef as SecretRef))
 })
 
 test('review: registry grants and rotates only the current unattended credential, then revokes it atomically', async t => {
@@ -1038,4 +1142,103 @@ test('N7: interactive rotation succeeds after node opt-in is disabled and remove
     model: piModels('deepseek')[0]!.id, runId: 'run', requestId: 'policy-off-background', background: true,
   }), error => error instanceof ConnectionError && error.code === 'policy_denied')
   assert.equal(calls, 1)
+})
+
+test('DELETE hides a connection, drops its dotenv identity and keeps the retired secret redacted', async t => {
+  const f = await setup(t); const s = f.service(); const routes = connectionRoutes(f.service, account)
+  const secret = fakeKey()
+  const imported = await s.importKeys(account, [{ provider: 'deepseek', value: secret }])
+  const row = s.store.get(account, imported.imported[0]!.connectionId)
+  const ref = row.secretRef as SecretRef
+  const scrubber = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
+  assert.equal(scrubber.scrub(secret), redactionMarker(ref))
+  assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM dotenv_imports WHERE connection_id=?').get(row.id)!.n, 1)
+
+  const removed = await routes.request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(await removed.json(), { id: row.id })
+  assert.deepEqual(f.service().snapshot(account).connections, [])
+  assert.throws(() => f.service().store.get(account, row.id), /not found/)
+  const listed = await (await routes.request('http://localhost/')).json() as { connections: unknown[] }
+  assert.deepEqual(listed.connections, [])
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM dotenv_imports WHERE connection_id=?').get(row.id)!.n, 0)
+  // The node-key copy is gone; the vault record stays for the long-lived scrubber.
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM vault_node_secrets WHERE connection_id=?').get(row.id)!.n, 0)
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM vault_secrets WHERE ref=?').get(ref)!.n, 1)
+  assert.equal(scrubber.scrub(secret), redactionMarker(ref))
+
+  // A fresh activation re-registers the retained vault record for redaction.
+  await f.restart(true)
+  const restarted = f.kernel.service<EgressScrubber>(EGRESS_SCRUBBER_SERVICE)!
+  assert.equal(restarted.scrub(secret), redactionMarker(ref))
+  // No mapping survives, so the next trusted import creates a new identity instead of reviving the old one.
+  const again = await f.service().importKeys(account, [{ provider: 'deepseek', value: secret }])
+  assert.equal(again.imported[0]!.action, 'created')
+  assert.notEqual(again.imported[0]!.connectionId, row.id)
+  assert.deepEqual(f.service().snapshot(account).connections.map(item => item.id), [again.imported[0]!.connectionId])
+})
+
+test('a DELETE between import preparation and its transaction cannot leave a mapping to the removed row', async t => {
+  const f = await setup(t); const s = f.service(); const key = fakeKey()
+  const first = await s.importKeys(account, [{ provider: 'deepseek', value: key }])
+  const removedId = first.imported[0]!.connectionId
+  // The row is read during preparation; remove it after the secret comparison and before BEGIN IMMEDIATE.
+  const originalMatches = Vault.prototype.matches
+  let removed = false
+  Vault.prototype.matches = async function (accountId, connectionId, value) {
+    const result = await originalMatches.call(this, accountId, connectionId, value)
+    if (!removed && connectionId === removedId) { removed = true; s.store.remove(accountId, connectionId) }
+    return result
+  }
+  try {
+    const again = await s.importKeys(account, [{ provider: 'deepseek', value: key }])
+    assert.equal(removed, true)
+    assert.equal(again.imported[0]!.action, 'created')
+    assert.notEqual(again.imported[0]!.connectionId, removedId)
+    const mapped = s.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=?')
+      .get(account, 'deepseek')!
+    assert.equal(String(mapped.connection_id), again.imported[0]!.connectionId)
+    assert.equal(s.store.db.prepare('SELECT count(*) AS n FROM removed_connections WHERE connection_id=?').get(removedId)!.n, 1)
+    assert.ok(s.store.get(account, again.imported[0]!.connectionId).secretRef)
+  } finally { Vault.prototype.matches = originalMatches }
+})
+
+test('DELETE refuses with connection_in_use while a model call still runs, then succeeds', async t => {
+  let started!: () => void; let release!: () => void
+  const running = new Promise<void>(resolve => { started = resolve })
+  const held = new Promise<void>(resolve => { release = resolve })
+  const f = await setup(t, { pi: { async complete(model) {
+    started()
+    await held
+    return { role: 'assistant', api: model.api, provider: model.provider, model: model.id,
+      content: [{ type: 'text', text: 'fixture' }], timestamp: Date.now(), stopReason: 'stop',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
+  } } })
+  const s = f.service(); const row = s.create(account, apiInput)
+  await s.unlockVault(account); s.saveSecret(account, row.id, fakeKey())
+  const call = s.complete(account, row.id, { messages: [] }, {
+    model: piModels('deepseek')[0]!.id, runId: 'delete-running', requestId: 'delete-running',
+  })
+  await running
+  const routes = connectionRoutes(f.service, account)
+  const refused = await routes.request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(refused.status, 409)
+  assert.deepEqual(await refused.json(), { code: 'connection_in_use' })
+  assert.equal(f.service().snapshot(account).connections.length, 1)
+  release()
+  await call
+  const removed = await routes.request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(removed.status, 200)
+  assert.deepEqual(f.service().snapshot(account).connections, [])
+})
+
+test('DELETE hides a removed connection from costs while the append-only ledger row stays', async t => {
+  const f = await setup(t); const s = f.service(); const row = s.create(account, apiInput)
+  s.store.record({ accountId: account, connectionId: row.id, runId: 'cost-run', requestId: 'cost-request',
+    inputTokens: 1, outputTokens: 1, costUsd: 0.5, source: 'fixture', observedAt: new Date().toISOString(), confidence: 'medium' })
+  assert.equal(s.snapshot(account).costs.length, 1)
+  await connectionRoutes(f.service, account).request(`http://localhost/${row.id}`, { method: 'DELETE' })
+  assert.equal(f.service().snapshot(account).costs.length, 0)
+  assert.equal(f.service().store.db.prepare('SELECT count(*) AS n FROM costs WHERE connection_id=?').get(row.id)!.n, 1)
 })

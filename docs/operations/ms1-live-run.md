@@ -236,17 +236,18 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   At boot the home imports the credential from that dotenv file into its own K3 vault (the import of D-208; `GUANXI_PROVIDER_KEYS_FILE`
   in the command's environment names the file instead, when set), resolves the one connection that holds it (`home.lead.connection`
   names it by name or id when there are several; a connection that was not imported from the file just read cannot pay) and binds K5's
-  `claude-code` installation to it. A file that is named but holds no credential of the mode, or fails to import in any line, refuses the
+  `claude-code` installation to it. A config that still names the legacy `anthropic (dotenv)` or `claude-code (dotenv)` label resolves
+  to the same imported connection. A file that is named but holds no credential of the mode, or fails to import in any line, refuses the
   start; an older credential in the vault is used only when no file is named.
 
   - **`oauth_token`.** The token is read from `CLAUDE_CODE_OAUTH_TOKEN`, or from an `sk-ant-oat` value under `ANTHROPIC_API_KEY` (only in
-    this mode, and only when the first name is absent). It is stored as a `claude-code` *agent* connection (`claude-code (dotenv)`), never
+    this mode, and only when the first name is absent). It is stored as a `claude-code` *agent* connection (`Claude Code`), never
     as an Anthropic API connection: K3's `complete()`, chat and every other adapter refuse it, and K3 still refuses `sk-ant-oat` as an API
     key everywhere. K5 injects it as `CLAUDE_CODE_OAUTH_TOKEN` into the bridge and `claude auth status` environments only, and
     `auth status` must report `authMethod: "oauth_token"` (CLI 2.1.287 does with only that variable set; it prints no token source) or the
     run refuses `claude_token_not_in_effect`. An `sk-ant-api` or `sk-ant-usr` value is refused in this mode (`lead_key_wrong_family` in `doctor`). The
     connection's `billing` fact reads `subscription`.
-  - **`api_key`.** `ANTHROPIC_API_KEY` is imported as the `anthropic (dotenv)` model-API connection and injected as `ANTHROPIC_API_KEY`;
+  - **`api_key`.** `ANTHROPIC_API_KEY` is imported as the `Anthropic` model-API connection and injected as `ANTHROPIC_API_KEY`;
     `auth status` must report `authMethod: "api_key"` with `apiKeySource: "ANTHROPIC_API_KEY"` or the run refuses
     `claude_api_key_not_in_effect`. A subscription token is refused as an API key. The `billing` fact reads `api_usage`.
   - **Both modes.** The credential is in the CLI's environment only: not an argument, a file, an event or a log. K5 sets

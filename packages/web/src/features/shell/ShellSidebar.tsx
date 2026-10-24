@@ -26,10 +26,11 @@ export interface ShellSidebarProps {
   onPin(sessionId: string): void
 }
 
-const CORE: { key: 'new' | 'projects' | 'models' | 'settings'; icon: IconName; to: string }[] = [
+const CORE: { key: 'new' | 'projects' | 'models' | 'connections' | 'settings'; icon: IconName; to: string }[] = [
   { key: 'new', icon: 'new', to: paths.agent() },
   { key: 'projects', icon: 'projects', to: paths.projects() },
   { key: 'models', icon: 'models', to: paths.launcher() },
+  { key: 'connections', icon: 'relay', to: paths.connections() },
   { key: 'settings', icon: 'settings', to: paths.settings() },
 ]
 
@@ -117,10 +118,11 @@ export function ShellSidebar(props: ShellSidebarProps) {
 }
 
 /** Core destinations stay current on their nested legacy routes (models/:name, settings/developer). */
-function coreCurrent(key: 'new' | 'projects' | 'models' | 'settings', location: string): boolean {
+function coreCurrent(key: 'new' | 'projects' | 'models' | 'connections' | 'settings', location: string): boolean {
   const path = location.split('?')[0] ?? '/'
   if (key === 'new') return path === '/agent' || path.startsWith('/agent/')
   if (key === 'projects') return path === '/projects' || path.startsWith('/projects/')
   if (key === 'models') return path === '/' || path.startsWith('/models/')
+  if (key === 'connections') return path === '/connections'
   return path === '/settings' || path.startsWith('/settings/')
 }

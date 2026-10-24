@@ -124,3 +124,30 @@
   max-height: var(--layout-container-md);
   overflow-y: auto;
 }
+
+/* Two spans, not a middle-dot string: the connection and the model keep their own weight. */
+.new-session-choice-connection,
+.new-session-choice-model {
+  display: inline-block;
+  max-width: var(--layout-container-3xs);
+  overflow: hidden;
+  vertical-align: bottom;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-session-choice-model {
+  margin-left: var(--spacing-6);
+  padding-left: var(--spacing-6);
+  border-left: var(--border-width-regular) solid var(--color-border-primary);
+  color: var(--color-text-secondary);
+}
+
+.new-session-model-popover {
+  max-height: var(--layout-container-lg);
+  overflow-y: auto;
+}
+
+.new-session-model-list {
+  list-style: none;
+}

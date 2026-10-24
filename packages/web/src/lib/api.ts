@@ -173,6 +173,7 @@ export function errorMessage(error: unknown): string {
 
 const API_ERROR_KEYS = {
   connection_not_found: 'connections.error.connection_not_found',
+  connection_in_use: 'connections.error.connection_in_use',
   vault_locked: 'connections.error.vault_locked',
   policy_denied: 'connections.error.policy_denied',
   egress_unavailable: 'connections.error.egress_unavailable',

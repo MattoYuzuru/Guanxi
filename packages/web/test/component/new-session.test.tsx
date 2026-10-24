@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NewSessionScreen } from '../../src/features/new-session/NewSessionScreen.tsx'
 import { RECENT_PROJECTS_KEY, readRecentProjects, rememberProject } from '../../src/features/new-session/recent.ts'
+import { LAST_MODEL_CHOICE_KEY } from '../../src/features/new-session/model-choice.ts'
 import { newSessionEnglish, newSessionRussian } from '../../src/features/new-session/messages.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 
@@ -34,6 +35,9 @@ function install(fixture: Fixture = {}) {
       calls.create.push(JSON.parse(String(init.body)))
       return state.create ? state.create() : Response.json({ sessionId: 'session-1' }, { status: 202 })
     }
+    if (path.startsWith('/api/connections/') && path.endsWith('/models')) {
+      return Response.json([{ id: 'fixture', facts: {} }, { id: 'fixture-large', facts: {} }])
+    }
     if (path.startsWith('/api/models')) return Response.json({ models: [] })
     if (path.startsWith('/api/agent/projects/') && init?.method === 'PATCH') { calls.patch.push(JSON.parse(String(init.body))); return state.patch ? state.patch() : Response.json({}) }
     throw new Error(`Unexpected request ${path}`)
@@ -50,9 +54,9 @@ const retryButtons = () => screen.queryAllByRole('button', { name: /Retry|Refres
 async function ready() { await waitFor(() => expect(screen.queryByText('Loading session choices…')).toBeNull()); await screen.findByRole('region', { name: 'New session' }) }
 /** Opens the model popover at the composer's lower right unless it is already open. */
 async function openModel() {
-  if (screen.queryByLabelText('Model ID')) return
-  fireEvent.click(screen.getByRole('button', { name: /^(Choose a model|Model: )/ }))
-  await screen.findByLabelText('Model ID')
+  if (screen.queryByRole('group', { name: 'Connection' })) return
+  fireEvent.click(screen.getByRole('button', { name: /^(Choose a model|Model: |Model connection: )/ }))
+  await screen.findByRole('group', { name: 'Connection' })
 }
 /** Opens the run options popover at the composer's lower left unless it is already open. */
 async function openOptions() {
@@ -70,10 +74,14 @@ async function chooseMode(label: 'Read-only' | 'Full access') {
   fireEvent.click(await screen.findByRole('menuitem', { name: label }))
   await waitFor(() => expect(screen.getByRole('button', { name: `Access: ${label}` })).toBeTruthy())
 }
+async function chooseModel(id = 'fixture') {
+  const option = await screen.findByRole('option', { name: id })
+  await act(async () => { fireEvent.click(option) })
+}
 /** The default fixture has one project and one connection, both preselected. */
 async function fillValid() {
   await openModel()
-  fireEvent.change(field('Model ID'), { target: { value: 'fixture' } })
+  await chooseModel()
   fireEvent.change(prompt(), { target: { value: 'Inspect' } })
 }
 
@@ -276,7 +284,7 @@ describe('new-session start flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
     expect(screen.getByRole('button', { name: 'Fixture model' }).getAttribute('aria-pressed')).toBe('true')
     expect(hint()).toBe('Enter a model ID.')
-    fireEvent.change(field('Model ID'), { target: { value: 'fixture' } })
+    await chooseModel()
     expect(hint()).toBe('Describe the task.')
     expect(blocked()).toBe(true)
     fireEvent.change(prompt(), { target: { value: 'Inspect' } })
@@ -347,7 +355,7 @@ describe('new-session start flow', () => {
     await waitFor(() => expect(document.activeElement).toBe(title.closest('[tabindex="-1"]')))
     expect(title.textContent).toContain(copy) // the specific reason is inside the announced alert
     expect(prompt().value).toBe('Inspect')
-    expect(screen.getByRole('button', { name: 'Model: fixture' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Model: Fixture model, fixture' })).toBeTruthy()
     expect(window.location.pathname).toBe('/agent')
     expect(readRecentProjects()).toEqual([])
     expect(calls.create).toHaveLength(1)
@@ -426,6 +434,8 @@ describe('new-session start flow', () => {
     await openModel()
     fireEvent.click(screen.getByRole('button', { name: 'Local Ollama' }))
     expect(blocked()).toBe(true)
+    expect(hint()).toBe('Enter a model ID.')
+    await chooseModel()
     expect(hint()).toBe('Set the context window in the model picker.')
     const context = await screen.findByLabelText('Context window, tokens') as HTMLInputElement
     fireEvent.change(context, { target: { value: '12.5' } })
@@ -511,6 +521,133 @@ describe('recent projects', () => {
   })
 })
 
+describe('catalog model picker', () => {
+  it('groups connections by catalog category and hides the retired (dotenv) suffix', async () => {
+    install({ connections: [connection(CONNECTION, 'Legacy (dotenv)', 'model_api'), connection(LOCAL, 'Local Ollama', 'local_runtime')] })
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    const group = screen.getByRole('group', { name: 'Connection' })
+    expect(within(group).getByText('LLM APIs')).toBeTruthy()
+    expect(within(group).getByText('Local runtimes')).toBeTruthy()
+    expect(within(group).getByRole('button', { name: 'Legacy' })).toBeTruthy()
+    expect(within(group).getByRole('button', { name: 'Local Ollama' })).toBeTruthy()
+    expect(document.body.textContent).not.toContain('(dotenv)')
+    expect(document.body.textContent).not.toContain('dotenv')
+  })
+
+  it('lists the selected connection models, filters them, and selects with arrow keys and Enter', async () => {
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
+    const search = await screen.findByLabelText('Search models')
+    expect(screen.getByRole('option', { name: 'fixture' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'fixture-large' })).toBeTruthy()
+    fireEvent.change(search, { target: { value: 'large' } })
+    expect(screen.queryByRole('option', { name: 'fixture' })).toBeNull()
+    const large = screen.getByRole('option', { name: 'fixture-large' })
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(large)
+    await act(async () => { fireEvent.keyDown(large, { key: 'Enter' }) })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Model: Fixture model, fixture-large' })).toBeTruthy())
+    expect(screen.queryByRole('group', { name: 'Connection' })).toBeNull()
+  })
+
+  it('does not commit the first model on Enter in an empty search until focus moves to it', async () => {
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
+    const search = await screen.findByLabelText('Search models')
+    expect(screen.getByRole('option', { name: 'fixture' })).toBeTruthy()
+    search.focus()
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(document.activeElement).toBe(search)
+    expect(screen.getByRole('group', { name: 'Connection' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Model connection: Fixture model' })).toBeTruthy()
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(screen.getByRole('option', { name: 'fixture' }))
+    await act(async () => { fireEvent.keyDown(document.activeElement!, { key: 'Enter' }) })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Model: Fixture model, fixture' })).toBeTruthy())
+  })
+
+  it('does not commit a filtered model on Enter in the search until the highlight moves', async () => {
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
+    const search = await screen.findByLabelText('Search models')
+    fireEvent.change(search, { target: { value: 'large' } })
+    search.focus()
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(screen.getByRole('group', { name: 'Connection' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Model connection: Fixture model' })).toBeTruthy()
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    const large = screen.getByRole('option', { name: 'fixture-large' })
+    expect(document.activeElement).toBe(large)
+    await act(async () => { fireEvent.keyDown(large, { key: 'Enter' }) })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Model: Fixture model, fixture-large' })).toBeTruthy())
+  })
+
+  it('keeps exactly one model option tabbable when a custom ID is set', async () => {
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
+    await screen.findByRole('option', { name: 'fixture' })
+    fireEvent.click(screen.getByRole('button', { name: 'Other model ID…' }))
+    fireEvent.change(screen.getByLabelText('Model ID'), { target: { value: 'owner/custom:model' } })
+    const options = screen.getAllByRole('option')
+    expect(options).toHaveLength(2)
+    expect(options.filter(option => option.tabIndex === 0)).toHaveLength(1)
+    expect(options[0]!.tabIndex).toBe(0)
+  })
+
+  it('renders the trigger as two styled spans and never a middle-dot string', async () => {
+    window.localStorage.setItem(LAST_MODEL_CHOICE_KEY, JSON.stringify({ connectionId: CONNECTION, model: 'fixture' }))
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    const trigger = await screen.findByRole('button', { name: 'Model: Fixture model, fixture' })
+    expect(trigger.querySelectorAll('span.new-session-choice-connection')).toHaveLength(1)
+    expect(trigger.querySelectorAll('span.new-session-choice-model')).toHaveLength(1)
+    expect(trigger.textContent).not.toContain('·')
+  })
+
+  it('preselects the last connection and model from central storage', async () => {
+    window.localStorage.setItem(LAST_MODEL_CHOICE_KEY, JSON.stringify({ connectionId: CONNECTION, model: 'fixture-large' }))
+    install()
+    render(<NewSessionScreen />)
+    await ready()
+    expect(await screen.findByRole('button', { name: 'Model: Fixture model, fixture-large' })).toBeTruthy()
+    await openModel()
+    expect(screen.getByRole('option', { name: 'fixture-large' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('option', { name: 'fixture' }).getAttribute('aria-selected')).toBe('false')
+  })
+
+  it('reveals a typed model ID only as a fallback and sends it unchanged', async () => {
+    const { calls } = install()
+    render(<NewSessionScreen />)
+    await ready()
+    await openModel()
+    fireEvent.click(screen.getByRole('button', { name: 'Fixture model' }))
+    await screen.findByRole('option', { name: 'fixture' })
+    expect(screen.queryByLabelText('Model ID')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Other model ID…' }))
+    fireEvent.change(screen.getByLabelText('Model ID'), { target: { value: 'owner/custom:model' } })
+    fireEvent.change(prompt(), { target: { value: 'Inspect' } })
+    fireEvent.click(start())
+    await waitFor(() => expect(calls.create).toHaveLength(1))
+    expect(calls.create[0]).toMatchObject({ connectionId: CONNECTION, model: 'owner/custom:model' })
+    expect(window.localStorage.getItem(LAST_MODEL_CHOICE_KEY)).toContain('owner/custom:model')
+  })
+})
+
 describe('locale parity', () => {
   it('keeps every placeholder identical in English and Russian and leaves no empty copy', () => {
     const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort()
@@ -528,7 +665,7 @@ describe('locale parity', () => {
     expect(screen.getByRole('button', { name: 'Начать сессию' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Проект: Alpha' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Доступ: Только чтение' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Выберите модель' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Подключение модели: Fixture model' })).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/newSession\./)
   })
 })

@@ -5,7 +5,7 @@ import { ConnectionError } from './errors.ts'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { AssistantMessage, Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
-import { MAX_DISCOVERED_MODELS, providerModelIdSchema, type Connection, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
+import { MAX_DISCOVERED_MODELS, providerCatalog, providerModelIdSchema, type Connection, type ConnectionFact, type ConnectionSnapshot, type CreateConnection } from '@guanxi/contract'
 import type { OllamaAdapter } from '../ollama/plugin.ts'
 import type { OllamaChatRequest, OllamaChatChunk } from '../ollama/types.ts'
 import type { ResourceGovernor } from '../runtime/resource-governor.ts'
@@ -65,6 +65,7 @@ export class Connections {
   private imports: Promise<unknown> = Promise.resolve()
   private closed = false
   private readonly discovered = new Map<string, { checked: number; observedAt: string | null; models: string[]; source: string; state: 'current' | 'stale' | 'unknown'; confidence: 'medium' | 'low' | 'unknown' }>()
+  private readonly inUse = new Map<string, number>()
   private active = new Set<Promise<unknown>>()
   readonly store: ConnectionStore
   #vault: Vault
@@ -97,6 +98,17 @@ export class Connections {
     this.resolveEndpoint = resolveEndpoint
   }
   private assertOpen() { if (this.closed) throw new Error('Connections plugin unloaded'); this.lifetime.throwIfAborted() }
+  /** Only calls that can still consume the credential count; a probe or model listing does not hold a session. */
+  private enter(id: string) { this.inUse.set(id, (this.inUse.get(id) ?? 0) + 1) }
+  private exit(id: string) {
+    const remaining = (this.inUse.get(id) ?? 0) - 1
+    if (remaining > 0) this.inUse.set(id, remaining)
+    else this.inUse.delete(id)
+  }
+  private async withUse<T>(id: string, task: () => Promise<T>): Promise<T> {
+    this.enter(id)
+    try { return await task() } finally { this.exit(id) }
+  }
   private track<T>(task: () => Promise<T>): Promise<T> {
     this.assertOpen()
     const promise = task()
@@ -114,6 +126,57 @@ export class Connections {
     if (input.unattended && !this.#vault.unattendedAvailable) throw new ConnectionError('policy_denied', 'Node unattended access is not enabled')
     return this.store.create(accountId, input)
   }
+  /** Refuses while this registry knows of a running model, runtime or agent call. Session ownership
+   * stays with the callers; this registry holds no durable relay/lead state and does not inspect it. */
+  remove(accountId: string, id: string) {
+    this.assertOpen()
+    this.store.get(accountId, id)
+    if (this.inUse.has(id)) throw new ConnectionError('connection_in_use', 'Connection is in use by a running call')
+    return this.store.remove(accountId, id)
+  }
+  /** One user-visible local Ollama connection per account. No secret, vault or Ollama request is involved.
+   * A removed marked row suppresses recreation across restarts; the owner re-adds it from the catalog. */
+  ensureLocalOllama(accountId: string): Connection | undefined {
+    this.assertOpen()
+    this.store.db.exec('BEGIN IMMEDIATE')
+    try {
+      const auto = this.store.findAutoLocalOllama(accountId)
+      if (auto) {
+        this.store.db.exec('COMMIT')
+        return auto.removed ? undefined : auto.connection
+      }
+      const existing = this.store.list(accountId).find(row => row.kind === 'local_runtime' && row.provider === 'ollama' &&
+        row.name === 'Ollama' && !row.unattended)
+      if (existing) {
+        this.store.db.exec('COMMIT')
+        return existing
+      }
+      const created = this.store.create(accountId,
+        { name: 'Ollama', kind: 'local_runtime', provider: 'ollama', auth: 'none', unattended: false })
+      const connection = this.store.observe(accountId, created.id, {
+        origin: { value: 'local_runtime_auto', source: 'connection_apply', observedAt: new Date().toISOString(), confidence: 'high' },
+      })
+      this.store.db.exec('COMMIT')
+      return connection
+    } catch (error) {
+      this.store.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+  private importedConnectionName(entry: ImportedProvider) {
+    if (entry.provider === 'openai' && entry.baseUrl) return `OpenAI-compatible (${new URL(entry.baseUrl).host})`
+    return providerCatalog.find(item => item.provider === entry.provider)?.label ?? entry.provider
+  }
+  /** Reuse belongs to one dotenv name family; official OpenAI and its compatible name never share a row. */
+  private importedFamily(entry: ImportedProvider) {
+    if (entry.provider !== 'openai') return entry.provider
+    return entry.family === 'OPENAI_COMPAT_API_KEY' ? 'OPENAI_COMPAT_API_KEY' : 'OPENAI_API_KEY'
+  }
+  private recordImportOrigin(accountId: string, connectionId: string) {
+    this.store.observe(accountId, connectionId, {
+      origin: { value: 'provider_key_import', source: 'connection_import', observedAt: new Date().toISOString(), confidence: 'high' },
+    })
+  }
   /** Trusted import keeps one identity per provider/API root. Never grants unattended consent. */
   importKeys(accountId: string, entries: ImportedProvider[]) {
     const task = this.imports.then(() => this.importEntries(accountId, entries))
@@ -126,29 +189,95 @@ export class Connections {
       await this.#vault.unlock(accountId)
       const imported: { connectionId: string; provider: string; action: 'created' | 'rotated' | 'unchanged' }[] = []
       // No await inside the transaction: synchronous writers cannot interleave.
-      const prepared = []
+      const prepared: { entry: ImportedProvider; row: Connection | undefined; same: boolean }[] = []
+      // A row claimed by one entry of this batch is never reused by another entry.
+      const claimed = new Set<string>()
       for (const entry of entries) {
-        const mapped = this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND endpoint=?')
-          .get(accountId, entry.provider, entry.baseUrl ?? '')
-        const row = mapped ? this.store.get(accountId, String(mapped.connection_id)) : undefined
-        prepared.push({ entry, row, same: row ? await this.#vault.matches(accountId, row.id, entry.value) : false })
+        const family = this.importedFamily(entry)
+        let row: Connection | undefined
+        let same = false
+        const mapped = this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND family=? AND endpoint=?')
+          .get(accountId, entry.provider, family, entry.baseUrl ?? '')
+        if (mapped && !claimed.has(String(mapped.connection_id))) {
+          row = this.store.get(accountId, String(mapped.connection_id))
+          same = await this.#vault.matches(accountId, row.id, entry.value)
+        }
+        // An endpoint-only change reuses the imported connection that already holds this
+        // family's secret. Another family, or a row already claimed in this batch, is separate.
+        if (!row) {
+          for (const candidate of this.store.db.prepare('SELECT connection_id FROM dotenv_imports WHERE account_id=? AND provider=? AND family=? ORDER BY rowid')
+            .all(accountId, entry.provider, family)) {
+            const id = String(candidate.connection_id)
+            if (claimed.has(id)) continue
+            if (await this.#vault.matches(accountId, id, entry.value)) {
+              row = this.store.get(accountId, id)
+              same = true
+              break
+            }
+          }
+        }
+        // A mapping written before migration 4 has no family. Its row still carries the old
+        // `<provider> (dotenv)` name and is the official family's identity.
+        if (!row && family !== 'OPENAI_COMPAT_API_KEY') {
+          for (const candidate of this.store.list(accountId)) {
+            if (candidate.provider !== entry.provider || candidate.name !== `${entry.provider} (dotenv)` || claimed.has(candidate.id)) continue
+            if (await this.#vault.matches(accountId, candidate.id, entry.value)) {
+              row = candidate
+              same = true
+              break
+            }
+          }
+        }
+        if (row) claimed.add(row.id)
+        prepared.push({ entry, row, same })
       }
       this.store.db.exec('BEGIN IMMEDIATE')
       try {
         const refs = prepared.map(({ entry, same }) => same ? null : this.#vault.put(accountId, entry.value))
         if (prepared.some(({ entry }) => entry.baseUrl && this.scrubber.scrub(entry.baseUrl) !== entry.baseUrl))
           throw new ConnectionError('validation_failed', 'API root must not contain a registered credential')
-        for (const [index, { entry, row, same }] of prepared.entries()) {
-          // A Claude Code subscription token belongs to an `agent` connection: only K5 can receive it, for the official CLI's environment.
-          const connection = row ?? this.store.create(accountId, entry.provider === 'claude-code'
-            ? { name: 'claude-code (dotenv)', kind: 'agent', provider: 'claude-code', auth: 'cli_login' }
-            : { name: `${entry.provider} (dotenv)`, kind: 'model_api', provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
-          if (row?.baseUrl && row.allowPrivate !== (entry.allowPrivate ?? false))
-            this.store.setImportedNetworkPolicy(accountId, row.id, entry.allowPrivate ?? false)
-          if (!same) this.saveImportedSecret(accountId, connection.id, refs[index]!)
-          if (!row) this.store.db.prepare('INSERT INTO dotenv_imports VALUES(?,?,?,?)')
-            .run(accountId, entry.provider, entry.baseUrl ?? '', connection.id)
-          imported.push({ connectionId: connection.id, provider: entry.provider, action: !row ? 'created' : same ? 'unchanged' : 'rotated' })
+        for (const [index, item] of prepared.entries()) {
+          const { entry, row } = item
+          const family = this.importedFamily(entry)
+          const name = this.importedConnectionName(entry)
+          let same = item.same
+          let connection = row
+          // Preparation ran before BEGIN IMMEDIATE; re-read the reusable row under the write lock so a
+          // concurrent DELETE cannot be overwritten with a mapping that points at the removed connection.
+          if (connection) {
+            try { connection = this.store.get(accountId, connection.id) }
+            catch (error) {
+              if (!(error instanceof ConnectionError) || error.code !== 'connection_not_found') throw error
+              connection = undefined
+              same = false
+            }
+          }
+          const reused = connection !== undefined
+          if (!connection) {
+            // A Claude Code subscription token belongs to an `agent` connection: only K5 can receive it, for the official CLI's environment.
+            connection = this.store.create(accountId, entry.provider === 'claude-code'
+              ? { name, kind: 'agent', provider: 'claude-code', auth: 'cli_login' }
+              : { name, kind: 'model_api', provider: entry.provider, auth: 'api_key' }, entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : undefined)
+            this.recordImportOrigin(accountId, connection.id)
+          } else {
+            if (connection.facts.origin?.value !== 'provider_key_import') this.recordImportOrigin(accountId, connection.id)
+            const endpointChanged = (connection.baseUrl ?? undefined) !== entry.baseUrl
+            const consentChanged = entry.baseUrl !== undefined && connection.allowPrivate !== (entry.allowPrivate ?? false)
+            if (endpointChanged || consentChanged || connection.name !== name)
+              this.store.setImportedEndpoint(accountId, connection.id,
+                entry.baseUrl ? { baseUrl: entry.baseUrl, allowPrivate: entry.allowPrivate ?? false } : {}, name)
+            // The mapping follows the connection's current root. A stale alias must not let a
+            // later import with a different secret rotate this connection instead of creating one.
+            if (endpointChanged) {
+              this.discovered.delete(connection.id)
+              this.store.db.prepare('DELETE FROM dotenv_imports WHERE account_id=? AND provider=? AND connection_id=?')
+                .run(accountId, entry.provider, connection.id)
+            }
+          }
+          if (!same) this.saveImportedSecret(accountId, connection.id, refs[index] ?? this.#vault.put(accountId, entry.value))
+          this.store.db.prepare('INSERT OR REPLACE INTO dotenv_imports(account_id,provider,family,endpoint,connection_id) VALUES(?,?,?,?,?)')
+            .run(accountId, entry.provider, family, entry.baseUrl ?? '', connection.id)
+          imported.push({ connectionId: connection.id, provider: entry.provider, action: !reused ? 'created' : same ? 'unchanged' : 'rotated' })
         }
         this.store.db.exec('COMMIT')
         return { imported }
@@ -249,9 +378,18 @@ export class Connections {
     return this.track(() => this.probes.probe(this.store.get(accountId, id), signal
       ? AbortSignal.any([this.lifetime, signal]) : this.lifetime))
   }
-  models(accountId: string, id: string) {
+  async models(accountId: string, id: string, signal?: AbortSignal): Promise<{ id: string; facts: Record<string, ConnectionFact> }[]> {
     this.assertOpen()
     const connection = this.store.get(accountId, id)
+    if (connection.kind === 'local_runtime') return this.localModels(signal)
+    if (connection.baseUrl) {
+      // A pinned endpoint advertises its own IDs; never substitute the public provider catalog.
+      const catalog = await this.chatModels(accountId, id, signal)
+      return catalog.models.map(modelId => ({ id: modelId, facts: {
+        'endpoint.model': { value: true, source: catalog.source, observedAt: catalog.observedAt, confidence: catalog.confidence },
+        'endpoint.discovery': { value: catalog.state, source: catalog.source, observedAt: catalog.observedAt, confidence: catalog.confidence },
+      } }))
+    }
     const observedAt = new Date().toISOString()
     return piModels(connection.provider).map(model => ({ id: model.id, facts: {
       'pi-ai.context': { value: model.contextWindow, source: '@earendil-works/pi-ai@1.3.0', observedAt, confidence: 'medium' as const },
@@ -260,8 +398,31 @@ export class Connections {
       ...modelsDevFacts(connection.provider, model.id),
     } }))
   }
+  /** Installed models of the configured local runtime, bounded and never a provider catalog substitute. */
+  private async localModels(signal?: AbortSignal) {
+    const cancellation = AbortSignal.any([this.lifetime, AbortSignal.timeout(5_000), ...(signal ? [signal] : [])])
+    try {
+      const tags = await this.ollama.client(normalizeHost(this.localHost())).tags(cancellation)
+      const observedAt = new Date().toISOString()
+      const models: { id: string; facts: Record<string, ConnectionFact> }[] = []
+      const seen = new Set<string>()
+      for (const model of tags.models) {
+        if (models.length >= MAX_DISCOVERED_MODELS) break
+        if (seen.has(model.name) || !providerModelIdSchema.safeParse(model.name).success) continue
+        seen.add(model.name)
+        models.push({ id: model.name, facts: {
+          'ollama.installed': { value: true, source: 'ollama:/api/tags', observedAt, confidence: 'high' },
+          'ollama.digest': { value: model.digest || null, source: 'ollama:/api/tags', observedAt, confidence: 'high' },
+        } })
+      }
+      return models
+    } catch {
+      signal?.throwIfAborted()
+      throw new ConnectionError('provider_failed', 'Local runtime models are unavailable')
+    }
+  }
   complete(accountId: string, id: string, context: Context, call: ModelCall): Promise<AssistantMessage> {
-    return this.track(async () => {
+    return this.track(() => this.withUse(id, async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'model_api' || connection.auth !== 'api_key') throw new ConnectionError('policy_denied', 'This connection is not a model API')
       const catalogModel = piModels(connection.provider).find(item => item.id === call.model)
@@ -362,10 +523,10 @@ export class Connections {
         if (error && typeof error === 'object' && 'status' in error && error.status === 429) throw new ConnectionError('quota_exhausted', 'Connection quota exhausted')
         throw new ConnectionError('provider_failed', signal.aborted ? 'Model request cancelled' : 'Model request failed')
       }
-    })
+    }))
   }
   localChat(accountId: string, id: string, request: OllamaChatRequest, call: Omit<ModelCall, 'model'> & { transport?: LocalChatTransport }): Promise<OllamaChatChunk> {
-    return this.track(async () => {
+    return this.track(() => this.withUse(id, async () => {
       const connection = this.store.get(accountId, id)
       if (connection.kind !== 'local_runtime') throw new Error('Not a local runtime connection')
       if (call.background && (!connection.unattended || !this.#vault.unattendedAvailable)) throw new ConnectionError('policy_denied', 'Unattended access disabled')
@@ -425,14 +586,14 @@ export class Connections {
         throw new ConnectionError('provider_failed', signal.aborted ? 'Runtime request cancelled' : 'Runtime request failed', reason)
       }
       finally { lease?.release() }
-    })
+    }))
   }
   /** K5's trusted process boundary. Identity is the original prompt author, including delegation.
    * A sharing grant never enables another person's prompt on a subscription connection. */
   dispatchAgent<T>(ownerAccountId: string, id: string, actorAccountId: string, editorAllowed: boolean,
     call: { background?: boolean; signal?: AbortSignal },
     launch: (connection: import('@guanxi/contract').Connection, key: string | undefined, signal: AbortSignal) => Promise<T>): Promise<T> {
-    return this.track(async () => {
+    return this.track(() => this.withUse(id, async () => {
       const connection = this.store.get(ownerAccountId, id)
       if (actorAccountId !== ownerAccountId &&
         (connection.auth === 'cli_login' || !editorAllowed || !['model_api', 'local_runtime'].includes(connection.kind))) {
@@ -452,7 +613,7 @@ export class Connections {
         return this.#vault.inject(ownerAccountId, id, call.background ?? false, key => { assertOAuthToken(key); return launch(connection, key, signal) })
       }
       return launch(connection, undefined, signal)
-    })
+    }))
   }
   /** Caller supplies a pre-authorized destination; scrubbing precedes hashing. */
   writeArtifact(accountId: string, destination: string, value: unknown) {

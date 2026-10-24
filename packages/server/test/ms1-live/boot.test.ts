@@ -40,7 +40,7 @@ test('without the option the boot is the plain one: no federation node, no pairi
   t.after(() => server.close())
   assert.equal(server.ms1Live, null); assert.equal(server.kernel.federation, null)
   assert.equal(server.kernel.node.service(FEDERATION_SERVICE), undefined, 'the federation plugin is not loaded')
-  assert.deepEqual(server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections, [], 'no connection is created behind the owner\'s back')
+  assert.deepEqual(server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections.map(row => [row.name, row.kind, row.provider, row.auth]), [['Ollama', 'local_runtime', 'ollama', 'none']], 'only the stock local Ollama connection is created behind the owner\'s back')
   const handshake = await fetch(`${server.url}/api/federation/handshake`)
   assert.equal(handshake.status, 404, 'there is no federation route to authenticate against')
   const relay = await fetch(`${server.url}/api/relay`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'k', projectId: 'p', connectionId: 'c', model: 'm', consent: 'full-access', domains: [],
@@ -78,7 +78,8 @@ test('a home boots with its pairing: one unattended executor connection created 
   const first = await start({ port: await freePort(), host: '127.0.0.1', dataDir, webDir: root, devOrigins: [], ms1Live: settings })
   const connection = first.ms1Live!.connectionId
   const listed = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections
-  assert.deepEqual(listed.map(c => [c.id, c.name, c.kind, c.unattended]), [[connection, 'ms1-executor', 'local_runtime', true]])
+  assert.deepEqual(listed.filter(c => c.name !== 'Ollama').map(c => [c.id, c.name, c.kind, c.unattended]), [[connection, 'ms1-executor', 'local_runtime', true]])
+  assert.deepEqual(listed.filter(c => c.name === 'Ollama').map(c => [c.kind, c.provider, c.auth]), [['local_runtime', 'ollama', 'none']])
   assert.ok(first.kernel.federation, 'the federation service is on the returned kernel'); assert.equal(first.kernel.federation!.identity.id, first.ms1Live!.identity.id)
   const federationUrl = `http://127.0.0.1:${settings.listen.federationPort}`
   const unsigned = await fetch(`${federationUrl}/api/federation/handshake`)
@@ -88,7 +89,7 @@ test('a home boots with its pairing: one unattended executor connection created 
   const second = await start({ port: await freePort(), host: '127.0.0.1', dataDir, webDir: root, devOrigins: [], ms1Live: settings })
   t.after(() => second.close())
   assert.equal(second.ms1Live!.connectionId, connection, 'the same connection, not a second one')
-  assert.equal(second.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections.length, 1)
+  assert.equal(second.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections.length, 2, 'the stock Ollama connection and the one executor connection')
 })
 
 test('a data directory belongs to one identity: booting it with another node\'s identity fails loudly instead of silently re-pairing', async t => {

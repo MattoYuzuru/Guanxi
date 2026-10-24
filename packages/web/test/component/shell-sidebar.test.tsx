@@ -13,12 +13,12 @@ const props = (): ShellSidebarProps => ({ rail: false, location: '/', sessions: 
   onLoadMore: vi.fn(), onPin: vi.fn() })
 
 describe('shell navigation and session presentation', () => {
-  it('keeps all four core destinations accessible in the rail', () => {
+  it('keeps the four core destinations and the connections centre accessible in the rail', () => {
     setActiveLocale('en')
     render(<ShellSidebar {...props()} rail />)
     const navigation = screen.getByRole('navigation', { name: 'Main navigation' })
-    expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/agent', '/projects', '/', '/settings'])
-    for (const name of ['New', 'Projects', 'Models', 'Settings']) expect(within(navigation).getByRole('link', { name })).toBeTruthy()
+    expect(within(navigation).getAllByRole('link').map(link => link.getAttribute('href'))).toEqual(['/agent', '/projects', '/', '/connections', '/settings'])
+    for (const name of ['New', 'Projects', 'Models', 'Connections', 'Settings']) expect(within(navigation).getByRole('link', { name })).toBeTruthy()
     expect(screen.queryByRole('region', { name: 'Sessions' })).toBeNull()
   })
   it('marks the owning core destination current on nested legacy routes', () => {
@@ -31,6 +31,10 @@ describe('shell navigation and session presentation', () => {
     rerender(<ShellSidebar {...props()} location="/settings/developer/components" />)
     expect(within(navigation).getByRole('link', { name: 'Settings' }).getAttribute('aria-current')).toBe('page')
     expect(within(navigation).getByRole('link', { name: 'Models' }).getAttribute('aria-current')).toBeNull()
+
+    rerender(<ShellSidebar {...props()} location="/connections" />)
+    expect(within(navigation).getByRole('link', { name: 'Connections' }).getAttribute('aria-current')).toBe('page')
+    expect(within(navigation).getByRole('link', { name: 'Settings' }).getAttribute('aria-current')).toBeNull()
   })
   it('lists pinned rows once, keeps unknown distinct from zero, and names missing pages and provenance', () => {
     setActiveLocale('en')
