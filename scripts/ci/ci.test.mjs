@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { affected } from './affected.mjs'
 import { candidateArtifact, completion } from './finish.mjs'
-import { coreArguments, inventory, matrix, tasks, validateInventory } from './tasks.mjs'
+import { coreArguments, indirectScripts, inventory, matrix, tasks, validateInventory } from './tasks.mjs'
 
 test('current root composition and workspace build/test entrypoints are classified', () => validateInventory())
 test('new workspaces, build/test entrypoints and root composition cannot silently disappear', () => {
@@ -26,6 +26,14 @@ test('draft matrix is quick; ready matrix contains every unique declared task', 
   assert.equal(new Set(tasks.map(x => x.id)).size, tasks.length)
   assert.equal(matrix(true).include.filter(x => x.native).length, 3)
   assert.equal(matrix(true).include.find(x => x.catalog).os, 'ubuntu-24.04-arm', 'exact G13 baselines use the observed ARM raster platform')
+})
+test('adding steps to an indirectly covered existing entrypoint cannot silently omit them', () => {
+  for (const [workspace, scripts] of Object.entries(indirectScripts)) for (const script of Object.keys(scripts)) {
+    const packages = structuredClone(inventory())
+    const pkg = packages.find(p => p.name === workspace)
+    pkg.scripts[script] += ' && node newly-required-step.mjs'
+    assert.throws(() => validateInventory(packages), /Indirect entrypoint changed/, `${workspace}:${script}`)
+  }
 })
 test('Node shards execute disjoint files and preserve import guards (flags precede paths)', () => {
   const directory = mkdtempSync(join(tmpdir(), 'guanxi-ci-shards-'))

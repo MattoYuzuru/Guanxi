@@ -29,6 +29,22 @@ export const coverage = {
   '@guanxi/web': ['test', 'test:browser', 'build'],
 }
 const rootTests = ['ui:check', 'test:codemods', 'test:gates --workspace @guanxi/ui', 'test:core', 'test:kernel', 'test:web', 'test:ui', 'test:bench']
+// These canonical entrypoints are covered indirectly (shards, wrappers or byte-for-byte
+// generator checks). A new step in their bodies needs an explicit coverage decision.
+export const indirectScripts = {
+  'guanxi-monorepo': {
+    'test:core': "node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test 'packages/server/test/**/*.test.ts' 'packages/cli/test/**/*.test.ts'",
+    'test:web:browser': 'npm run test:browser --workspace @guanxi/web',
+    'tokens:build': 'npm run tokens:build --workspace @guanxi/ui',
+  },
+  guanxi: { test: "node --test 'test/**/*.test.ts'" },
+  '@guanxi/server': { test: "node --import ./test/setup/no-ambient-key-file.mjs --test 'test/**/*.test.ts'" },
+  '@guanxi/kernel': { test: "node --test 'test/**/*.test.ts'" },
+  '@guanxi/ui': {
+    'tokens:build': 'node tokens/build.mjs',
+    'harness:build': 'vite build --config catalog/harness/vite.config.ts',
+  },
+}
 export function inventory(projectRoot = root) {
   return [readJSON(resolve(projectRoot, 'package.json')), ...readdirSync(resolve(projectRoot, 'packages'), { withFileTypes: true }).filter(d => d.isDirectory()).map(d => readJSON(resolve(projectRoot, 'packages', d.name, 'package.json')))]
 }
@@ -37,6 +53,9 @@ export function validateInventory(packages = inventory()) {
   if (JSON.stringify(packages[0].workspaces) !== JSON.stringify(['packages/*'])) errors.push('Workspace layout changed: extend CI discovery and classify every new workspace')
   for (const pkg of packages) {
     if (!(pkg.name in coverage)) errors.push(`Unclassified workspace ${pkg.name}: add its checks/builds to scripts/ci/tasks.mjs`)
+    for (const [name, body] of Object.entries(indirectScripts[pkg.name] ?? {})) {
+      if (pkg.scripts?.[name] !== body) errors.push(`Indirect entrypoint changed ${pkg.name}:${name}: reconcile its actual CI coverage before accepting this body`)
+    }
     for (const name of Object.keys(pkg.scripts ?? {})) {
       if (/^(test|build)(:|-|$)|:build$/.test(name) && !coverage[pkg.name]?.includes(name)) errors.push(`Unclassified entrypoint ${pkg.name}:${name}`)
     }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -116,7 +116,7 @@ function terminal(events: HuggingFaceDownloadStreamEvent[]) {
 }
 
 describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
-  it('does not discard a foreign replacement at a formerly owned artifact path', async () => {
+  it('does not discard a distinct foreign inode replacing the owned artifact path', async () => {
     const bytes = gguf()
     const rootDir = await root()
     const service = new HuggingFaceDownloadService({
@@ -133,9 +133,15 @@ describe('bounded cancel-safe exact Hugging Face GGUF download', () => {
     const events = await collect(service, confirmed(bytes))
     assert.equal(terminal(events).type, 'completed')
     const artifact = service.artifact('11111111-1111-4111-8111-111111111111')!
-    await rm(artifact.path)
     const foreign = Buffer.from('foreign replacement')
-    await writeFile(artifact.path, foreign)
+    const replacement = join(rootDir, 'replacement.gguf')
+    // Creating it while the original exists guarantees a different live inode. Unlink then
+    // recreate can immediately reuse the original inode on ext4, unlike the import caller
+    // which keeps its verified original descriptor open throughout cleanup.
+    await writeFile(replacement, foreign)
+    const identity = await lstat(replacement)
+    assert.ok(identity.dev !== artifact.device || identity.ino !== artifact.inode)
+    await rename(replacement, artifact.path)
 
     assert.equal(await service.discard(artifact.id), false)
     assert.deepEqual(await readFile(artifact.path), foreign)

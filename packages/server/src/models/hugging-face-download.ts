@@ -207,7 +207,9 @@ export class HuggingFaceDownloadService {
     return artifact ? { ...artifact, provenance: structuredClone(artifact.provenance) } : null
   }
 
-  /** Delete only the exact artifact that this process registered as owned. */
+  /** Delete the registered dev/inode only. The import caller keeps its verified descriptor
+   * open through cleanup: without that pin, unlink/recreate can reuse an inode on Linux.
+   * This is not a standalone proof against inode reuse or hostile concurrent path mutation. */
   async discard(id: string): Promise<boolean> {
     const artifact = this.artifacts.get(id)
     if (!artifact) return false

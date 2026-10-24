@@ -83,6 +83,18 @@ interface Result {
 
 function run(request: unknown, env: NodeJS.ProcessEnv): Result {
   const result = spawnSync(testBinary, [], { input: JSON.stringify(request), timeout: 30_000, env })
+  let diagnostic: string | undefined
+  if (result.signal && process.env['GITHUB_ACTIONS'] === 'true') {
+    // A hosted crash must keep failing, with the native stack rather than a guessed cause.
+    // This replays only the synthetic test request using the test build/fake authenticator.
+    const dir = temporary('signer-crash-')
+    const input = join(dir, 'request.json')
+    writeFileSync(input, JSON.stringify(request))
+    const debug = spawnSync('lldb', ['--batch', '-o', 'settings set target.disable-aslr false',
+      '-o', `process launch --stdin ${JSON.stringify(input)}`, '-o', 'thread backtrace all', '--', testBinary],
+    { env, encoding: 'utf8', timeout: 30_000, maxBuffer: 256 * 1024 })
+    diagnostic = `${debug.stdout ?? ''}\n${debug.stderr ?? ''}\n${debug.error?.message ?? ''}`
+  }
   const parsed = (() => {
     try {
       return JSON.parse(result.stdout.toString('utf8').trim()) as Record<string, any>
@@ -91,7 +103,7 @@ function run(request: unknown, env: NodeJS.ProcessEnv): Result {
     }
   })()
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, json: parsed,
-    signal: result.signal, error: result.error?.message }
+    signal: result.signal, error: result.error?.message ?? diagnostic }
 }
 
 function authLines(path: string): string[] {

@@ -31,8 +31,10 @@ its actual jobs/artifacts. Hosted portability failures are diagnosed rather than
 
 ## Boundaries and rollback
 
-No product behavior, database migration, live model, paid provider, deployment or remote
-machine changes. Hosted tests do not prove owner hardware/Secure Enclave/live runtime behavior.
+No feature work, database migration, live model, paid provider, deployment or remote machine
+changes. The first hosted run exposed bench child-supervision defects; the bounded fixes and
+regression evidence are recorded in the research. Hosted tests do not prove owner
+hardware/Secure Enclave/live runtime behavior.
 Keep baseline snapshots unchanged. Revert this workflow/protocol change to restore previous
 commands; retained data, lane branches and dependency installations are not removed.
 

@@ -75,12 +75,14 @@ The source is [the workflow](../../.github/workflows/full-gate.yml) and
 history, not only the feature head. The matrix covers root `npm test` leaves, static/type/doc
 checks, root builds (web before CLI), Storybook, both browser gates, three bounded core shards
 and macOS signer tests. Browser tests keep one worker per isolated shard; broad Node core
-tests use two file workers per shard to reduce timing-fixture starvation. Matrix fail-fast is
+tests use two file workers per shard to reduce timing-fixture starvation. The current twelve
+tasks may start concurrently on isolated runners; account runner capacity still applies. Matrix fail-fast is
 off so one run reports independent failures together. Newer runs supersede older runs for
 the same PR only. Main pushes run quick checks; manual dispatch runs the full matrix but
 does not substitute for the final PR completion contract.
 
-The inventory rejects new workspaces and unclassified test/build entrypoints. When adding a
+The inventory rejects new workspaces, unclassified test/build entrypoints and body changes
+to indirectly covered commands (shards, wrappers and generator checks). When adding a
 package, test mode, build target or changing root test composition, update its task/classification,
 dependency order, platform setup, cache inputs and completeness tests together. A command
 classification must identify an actual job or an explicit opt-in exclusion with rationale.
