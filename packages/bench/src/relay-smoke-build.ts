@@ -71,6 +71,8 @@ export class EvidenceBook {
 }
 
 export interface BuiltTrial { slot: RelayTrialSlot; notes: string[] }
+const maxOf = (values: readonly number[], floor = 0): number => values.reduce((m, v) => v > m ? v : m, floor)
+const minOf = (values: readonly number[]): number | null => values.length ? values.reduce((m, v) => v < m ? v : m, values[0]!) : null
 const safeId = (value: string, prefix: string): string => ID.test(value) ? value : `${prefix}-${sha256Hex(value).slice(0, 16)}`
 
 export function missingTrial(task: string, arm: string, seed: number, reason: 'not_collected' | 'unavailable' | 'unsupported'): RelayTrialSlot {
@@ -111,7 +113,7 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
   const ledger = obs.ledger
   const begins = new Map<number, Extract<SmokeFact, { kind: 'cycle_begin' }>>()
   for (const f of facts) if (f.kind === 'cycle_begin' && !begins.has(f.cycle)) begins.set(f.cycle, f)
-  const highest = Math.max(0, ...begins.keys(), ...(ledger?.seals.map(s => s.cycle) ?? []))
+  const highest = maxOf([...begins.keys(), ...(ledger?.seals.map(s => s.cycle) ?? [])])
   if (highest > horizon) notes.push('cycles_beyond_horizon')
   const last = Math.min(highest, horizon)
 
@@ -125,8 +127,8 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
   const attempts = attemptList.map(a => ({ id: a.id, epoch: a.epoch, receiptRef: book.add('attempt_receipt', task, arm.id, seed, a.id, null) }))
 
   const factTimes = facts.map(f => f.atMs)
-  const firstAt = factTimes.length ? Math.min(...factTimes) : null
-  const lastAt = factTimes.length ? Math.max(...factTimes) : null
+  const firstAt = minOf(factTimes)
+  const lastAt = factTimes.length ? maxOf(factTimes) : null
   const startMs = obs.startedAtMs === null ? firstAt : firstAt === null ? obs.startedAtMs : Math.min(obs.startedAtMs, firstAt)
   const sealAt = new Map<number, number>()
   for (const f of facts) if (f.kind === 'sealed' && !sealAt.has(f.cycle)) sealAt.set(f.cycle, f.atMs)
@@ -139,7 +141,7 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
     if (!begin) { cycles.push({ ordinal: k, state: 'unknown', reason: 'unavailable' }); continue }
     const inCycle = facts.filter(f => f.cycle === k)
     const start = Math.max(begin.atMs, previousEnd ?? 0, startMs ?? 0)
-    const end = Math.max(start, sealAt.get(k) ?? Math.max(...inCycle.map(f => f.atMs)))
+    const end = Math.max(start, sealAt.get(k) ?? maxOf(inCycle.map(f => f.atMs)))
     previousEnd = end
     const attempt = attemptOf(k)
     const e = (kind: RelayEvidenceKind) => book.add(kind, task, arm.id, seed, attempt, k)

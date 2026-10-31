@@ -1,6 +1,6 @@
 # B3-b — relay-benchmark smoke cohort producer: plan
 
-**Status:** plan written before implementation; B3 stays `proposed` and this lane evaluates no B3 gate ·
+**Status:** implemented and fixture-validated offline (see the [hand-off](B3-b-smoke.handoff.md)); B3 stays `proposed` and this lane evaluates no B3 gate ·
 **Updated:** 2026-10-31 · **Branch:** `lane/b3b-smoke` · **Base:** `lead/wave7` `14b1d569` ·
 **Ports:** 5233 / 4433 · **Decision:** D-219 (smoke cohort now, full cohort is an MS2 exit condition)
 

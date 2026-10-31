@@ -227,7 +227,8 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     rows.push({ task, arm: arm.id, seed, key: obs.key, endedBy: obs.endedBy, status: obs.status, cycles: built.slot.state === 'observed' ? built.slot.cycles.filter(c => c.state === 'observed').length : 0,
       ledgerRead: obs.ledger !== null, ledgerError: obs.ledgerError ?? null, notes: built.notes })
   }
-  const latest = Math.max(deps.now(), ...[...observed.values()].map(o => Math.max(o.finishedAtMs ?? 0, ...o.facts.map(f => f.atMs))))
+  let latest = deps.now()
+  for (const o of observed.values()) { latest = Math.max(latest, o.finishedAtMs ?? 0); for (const f of o.facts) if (f.atMs > latest) latest = f.atMs }
   const raw = assembleMeasurement({ plan, origin, trials: slots, book, recordedAtMs: latest, analysisAsOfMs: latest })
   const checked = checkRelayMeasurement(raw)
   const summary: SmokeSummary = {
