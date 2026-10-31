@@ -60,6 +60,14 @@ TLS, allowed roots).
 7. **Remote security profile**: loopback stays the default; remote binding requires accounts,
    TLS on one canonical hostname (own domain or `*.ts.net`), node credentials, allowed roots
    per node, and audit of remote execution.
+   *Implementation (U3 route wiring, 2026-11-01, implemented and locally validated):* one hook
+   authorizes every `/api/*` request from a route policy map and refuses an undeclared route
+   (also at boot), and `start()` refuses a non-loopback bind unless TLS, accounts, allowed roots
+   and a node credential are supplied (exit code 78), then serves HTTPS. Better Auth, per-account
+   stores and allowed-root enforcement are not yet implemented; until stores carry an owner,
+   collection and create routes are owner-only. Details:
+   [auth README](../../packages/server/src/auth/README.md) and the
+   [lane plan](../plans/lanes/U3-route-authz.plan.md).
 
 ## Consequences
 

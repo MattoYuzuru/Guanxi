@@ -57,13 +57,14 @@ node owner, and a member must not list or create into the owner's data.
 
 ### Enforcement
 
-`createApp` registers one `/api/*` hook before any route. It reads the endpoint routes matched
-for the request (`hono/route` `matchedRoutes`), looks each pattern up in the table, extracts the
-route parameters with Hono's own router, resolves the principal and resource, calls `can()` and
-refuses with `401 unauthenticated` (anonymous) or `403 forbidden`. A matched endpoint pattern
-without a policy answers `403 route_unmapped` before the handler runs. Matched `ALL` routes are
-treated as endpoints unless they are the known middleware or fallback patterns, so a new
-`.all('/api/x')` cannot slip past.
+`createApp` registers one `/api/*` hook before any route. It reads the first endpoint route Hono
+matched for the request (`hono/route` `matchedRoutes`; endpoint handlers answer without calling
+`next()`, so the first match is the one that responds, and a static route registered before a
+parameterized one shadows it), looks the pattern up in the table, extracts the route parameters
+with Hono's own router, resolves the principal and resource, calls `can()` and refuses with
+`401 unauthenticated` (anonymous) or `403 forbidden`. A matched endpoint pattern without a policy
+answers `403 route_unmapped` before the handler runs. A matched `ALL` route is an endpoint unless
+it is one of the known middleware or fallback patterns, so a new `.all('/api/x')` cannot slip past.
 
 `start()` runs the registration check after the last route is mounted: any `/api/*` endpoint
 route without a policy aborts boot with `RouteAuthzError('routes_unmapped')` listing the
