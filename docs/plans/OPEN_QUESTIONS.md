@@ -15,6 +15,7 @@ The owner answered the earlier questions below on 2026-10-20. K5 and Chat prompt
 | --- | --- | --- | --- |
 | Q-K3-chat | Which Chat default should replace the current shared orientation plus fixed English language instruction? | K3-chat, B1 | Use the byte-stable orientation first and "Reply in the language the user writes in." (350 UTF-8-byte total budget). This owner-requested default awaits an ADR-0025/B1 bench result; request tests prove bytes, not quality or non-inferiority. |
 | Q-245 | The editor payment grant is connection-wide and has no expiry (K5 default, 2026-10-21). Should it be scoped per share or project, with an expiry? | K5, U3 | K5 default: connection-wide, no expiry; owner answer pending. |
+| Q-246 | Local mode cannot tell a header-less same-host reverse proxy from the owner's own client (a proxy that rewrites `Host` and adds no forwarding header). Should the local owner be proved by a per-install secret that the shell, CLI and web read from the node's data directory (mode 0600), so a proxy cannot forward it? `proposed`, not implemented. | U3 | Recommended default: yes, a per-install local-owner secret; until then local mode trusts direct loopback clients only and the README says not to put a proxy in front. |
 
 ## Answered
 

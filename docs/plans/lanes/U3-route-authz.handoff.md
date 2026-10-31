@@ -187,3 +187,47 @@ node scripts/check-doc-links.mjs                                                
 New tests in the review round: 16 in `route-authz.test.ts` (27 total), 2 in `remote-boot.test.ts`
 (the HEAD sweep, a health case folded into the acceptance test), 1 in `route-boot.test.ts`, and one
 web case folded into the existing error-copy test.
+
+## Review round 2
+
+Focused re-review of the fix commits: H1 closed (20,176 anonymous requests across methods and path
+variants gave only 401, 403 or 404), remote mode holds. Findings below; code and tests in the commit
+`fix(auth): review round 2 ...`, docs in the one after.
+
+| Finding | Fix | Proof |
+| --- | --- | --- |
+| H-A a session viewer read the full chain of thought through `GET /api/threads/:id` and `GET /api/projects/:id/chats/:threadId` | `AuthzContext.resourceOwner` (the caller owns the resource the route named) and `auth/reasoning.ts`. Non-owners get `messages[].thinking = null` on both reads, no `thinking` events on the `POST /messages` SSE stream, and an empty `delta` on `thinking` outputs of `GET /api/jobs/:jobId/events` (the sequence stays: the replay cursor needs it). Audit of the rest: agent progress and result, side chat, quick runs, relay carry no reasoning (final text only; reasoning is a separate session-log event, owner-only routes). | `route-reasoning.test.ts` seeds a thread, a project chat and a chat job whose persisted stream carries reasoning, and reads each route as owner (sees it), viewer and editor (do not), through the real booted server and its SSE streams, plus helper tests. Mutations: each of the project read, the job stream and the chat stream passing `true` instead of the owner flag turns exactly its test red; the thread read was checked the same way |
+| M-A a header-less same-host proxy is undetectable | Refused headers extended to every `x-forwarded-*`, `forwarded`, `via`, `x-real-ip`, `x-client-ip`, `true-client-ip`, `x-original-forwarded-for` and `cf-*`. The limit is stated plainly in the README, plan and here: **local mode trusts direct loopback clients only; a proxy that adds no headers cannot be detected; do not put a reverse proxy in front of a local-mode node.** The per-install local-owner secret is recorded as `proposed` (plan and OPEN_QUESTIONS Q-246), not implemented | 14 header spellings across three peer shapes in the hook tests, 6 over a real socket; mutation (prefix list emptied) red |
+| L-A no-socket meant owner | `RouteAuthzOptions.trustInProcess`, default `false` in `routeAuthz()`: an address-less request answers `403 loopback_only` (`reason: no_socket`). `start()` passes `false`. **`createApp()` defaults it to `true`** because hundreds of existing tests call `createApp(...).request()` in process without a socket; changing them all is out of scope, and a real listener always supplies a socket. README corrected | Strict stub refuses, loopback socket passes, `start()` refuses an in-process request; mutation (`start()` trusting) red |
+| L-B a supplied `routePolicies` stayed mutable | `routeAuthz` and `start()` copy the supplied table into a sealed map (`sealRoutePolicies`) | Original mutated after the hook was built: behaviour unchanged; mutation (no copy) red |
+| L-C runtime and running models open to any user | `GET /api/runtime`, `GET /api/models/running` and, for the same reason, `POST /api/runtime/estimated-parallel-admission` are `node.admin` (owner or admin) | Stranger and link refused, admin and owner allowed; the matrix oracle covers the rows |
+
+One more existing assertion moved: `connections/host-allowlist.test.ts` N8 first sent `X-Forwarded-Host`
+alone and expected 200 for an allowed Host. Under M-A every `x-forwarded-*` header is a refused proxy
+header, so the test now asserts that a forbidden Host stays `host_denied` and an allowed Host with any
+forwarded header is refused as `proxied_request_refused` (not `host_denied`), and that the same allowed
+Host without forwarded headers is served. Its original property (the Host guard ignores forwarded host
+headers in both directions) still holds and is the reason the codes differ.
+
+New residuals: the header-less proxy limit (Q-246); `trustInProcess` defaults on in `createApp()`;
+reasoning in the web client for non-owners is untested in the UI because no non-owner web session
+exists yet.
+
+### Result lines after round 2
+
+```bash
+node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test packages/server/test/auth/*.test.ts packages/server/test/connections/host-allowlist.test.ts packages/server/test/session-log-cross-review.test.ts
+# tests 99 / pass 99 / fail 0
+agent-dev run --cwd <worktree> --node 26 --resource heavy --lock-timeout 3600 -- node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test <78 route, boot and auth files>
+# tests 895 / suites 93 / pass 895 / fail 0 / skipped 0
+npm exec --workspace @guanxi/web -- vitest run test/unit test/component/localization.test.tsx   # 21 files, 136 tests pass
+node --test packages/contract/test/*.test.ts                                                    # 4 pass
+npx tsc --noEmit -p packages/{server,contract,cli,web}                                          # exit 0, no output
+npx markdownlint-cli2 <auth README, plan, handoff, OPEN_QUESTIONS>                              # 0 errors
+node scripts/check-doc-links.mjs                                                                # 0 problems
+```
+
+New in round 2: 9 tests in `route-reasoning.test.ts` (5 over the booted server and its SSE
+streams, 4 helper tests), 3 in `route-authz.test.ts` (L-A, L-B, L-C) plus the widened header list,
+and one assertion block in `route-boot.test.ts`. The `agent-dev` list names one file that does not
+exist (`test/threads.test.ts`); the runner skipped it and the 895 count is the files that ran.

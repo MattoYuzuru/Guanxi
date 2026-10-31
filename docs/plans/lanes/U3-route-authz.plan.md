@@ -102,8 +102,8 @@ Method `ALL` rows are middleware or fallbacks, not endpoints.
 | GET | /api/settings | authorize | node | node.admin | owner only (node.admin) |
 | PUT | /api/settings | authorize | node | node.admin | owner only (node.admin) |
 | GET | /api/feature-flags | authenticated | | | any user |
-| GET | /api/runtime | authenticated | | | any user |
-| POST | /api/runtime/estimated-parallel-admission | authenticated | | | any user |
+| GET | /api/runtime | authorize | node | node.admin | owner/admin |
+| POST | /api/runtime/estimated-parallel-admission | authorize | node | node.admin | owner/admin |
 | POST | /api/approvals/:id | account | | | account |
 | GET | /api/layouts/context | account | | | account |
 | GET | /api/layouts | account | | | account |
@@ -120,7 +120,7 @@ Method `ALL` rows are middleware or fallbacks, not endpoints.
 | --- | --- | --- | --- | --- | --- |
 | GET | /api/models | authenticated | | | any user |
 | GET | /api/models/catalog | authenticated | | | any user |
-| GET | /api/models/running | authenticated | | | any user |
+| GET | /api/models/running | authorize | node | node.admin | owner/admin |
 | GET | /api/models/:name{.+} | authenticated | | | any user |
 | POST | /api/models/imports/ollama-reference/preview | authorize | node | node.admin | owner only (node.admin) |
 | POST | /api/models/imports/ollama-reference/start | authorize | node | node.admin | owner only (node.admin) |
@@ -332,3 +332,17 @@ resource (no grant, no admin role).
 
 Commands: `node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test <files>`,
 `npx tsc --noEmit -p packages/{server,contract,web,cli}`, web vitest for the api client.
+
+## Review round 2 additions
+
+- **Local-mode trust boundary.** Local mode trusts direct loopback clients only. The hook refuses a
+  non-loopback peer, a request with no socket (unless the host opts in with `trustInProcess`; `start()`
+  never does) and any proxy or CDN header (`x-forwarded-*`, `forwarded`, `via`, `x-real-ip`,
+  `x-client-ip`, `true-client-ip`, `x-original-forwarded-for`, `cf-*`). A proxy that adds no header
+  cannot be detected; do not put a reverse proxy in front of a local-mode node.
+- **Proposed, not implemented (Q-246).** A per-install local-owner secret: the node writes a random
+  secret into its data directory with mode 0600, and the shell, CLI and web read it and present it on
+  each request, so a proxy that does not hold the file cannot forward it. Recommended default; blocked
+  stage U3.
+- **Reasoning for grantees** is redacted in the thread read, the project chat read, the chat SSE stream
+  and the job event stream; see the auth README.

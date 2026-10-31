@@ -231,24 +231,54 @@ non-middleware `ALL` route hidden under them cannot be reached by an unauthorize
 
 ### Trust boundary of local mode
 
-The implicit owner is granted only when **both** hold:
+**Local mode trusts direct loopback clients only. Do not put a reverse proxy in front of a local-mode
+node.** A proxy that adds no identifying header cannot be detected: it connects from loopback, and if it
+rewrites `Host` as well the request looks exactly like the owner's own. Expose a node through the remote
+security profile (TLS, accounts) instead. A per-install local-owner secret that the shell, CLI and web
+read from the node's data directory (so a proxy cannot forward it) is proposed, not implemented:
+[Q-246](../../../../docs/plans/OPEN_QUESTIONS.md).
+
+The implicit owner is granted only when **all** of these hold:
 
 1. the socket peer (`getConnInfo(c).remote.address`) is loopback: `127.0.0.0/8`, `::1` or an
-   IPv4-mapped `127.x`. A non-loopback peer, or a socket with no address, answers `403 loopback_only`
+   IPv4-mapped `127.x`. A non-loopback peer answers `403 loopback_only`
    (`details.reason: non_loopback_peer`);
-2. the request carries none of `X-Forwarded-For`, `Forwarded` or `X-Real-IP`. Otherwise it answers
-   `403 proxied_request_refused`. A reverse proxy on the same host connects from loopback, so without this
-   rule it would turn internet traffic into the owner. Local mode is therefore incompatible with a
-   fronting proxy by design: expose a node through the remote security profile instead.
+2. the request has a socket at all. A request without one (an in-process `app.request()`) answers
+   `403 loopback_only` (`details.reason: no_socket`) unless the host opted in with
+   `RouteAuthzOptions.trustInProcess`. `start()` never opts in, so a real listener never relies on it;
+   `createApp()` (the embedding and test entry point) opts in by default so a harness can call routes
+   directly;
+3. the request carries none of the proxy and CDN headers `x-forwarded-*` (every suffix), `forwarded`,
+   `via`, `x-real-ip`, `x-client-ip`, `true-client-ip`, `x-original-forwarded-for` and `cf-*`.
+   Otherwise it answers `403 proxied_request_refused` (`details.reason: forwarded_headers`). This catches
+   a proxy that identifies itself; it is not a defence against one that does not (see above).
 
-A request with **no socket at all** (an in-process `app.request()` by the embedding host or a test) has no
-network peer and is treated as the owner; a real listener always supplies a socket. The existing per-route
-guards (`loopback_only` on the inspector, UI catalog, notifications, voice, work) remain as a second layer.
-The Host allowlist is a third, against DNS rebinding. None of this applies in remote mode, where the accounts
-adapter authenticates every request.
+The existing per-route guards (`loopback_only` on the inspector, UI catalog, notifications, voice, work)
+remain as a second layer, and the Host allowlist as a third, against DNS rebinding. None of this applies
+in remote mode, where the accounts adapter authenticates every request.
 
 `GET /api/health` returns `{ ok }` only to a signed-in user who is neither the node owner nor an admin; the
-hardware and Ollama report is for the owner and the admin role.
+hardware and Ollama report is for the owner and the admin role. `GET /api/runtime`,
+`GET /api/models/running` and `POST /api/runtime/estimated-parallel-admission` (host and memory facts) are
+operator-only (`node.admin`: the node owner or an admin) for the same reason.
+
+### Reasoning is redacted for grantees
+
+`AuthzContext.resourceOwner` tells a handler whether the caller owns the resource the route named.
+Handlers that a viewer or editor may call withhold the chain of thought from everyone else
+(`auth/reasoning.ts`):
+
+| Route | For a non-owner |
+| --- | --- |
+| `GET /api/threads/:id`, `GET /api/projects/:id/chats/:threadId` | `messages[].thinking` is `null` |
+| `POST /api/threads/:id/messages` (SSE) | `thinking` events are dropped |
+| `GET /api/jobs/:jobId/events` (SSE) | a `thinking` output keeps its sequence and type with an empty `delta` (the replay cursor needs the sequence) |
+
+Audited and carrying no reasoning: `GET /api/agent/:id` and `/result` (final text only; reasoning is a
+separate session-log event), side chat (never reasoning by construction), quick runs (no content yet),
+relay starts and results. The owner-only routes (session `events`, `spans`, `stream`, `export`, thread
+`reasoning-artifacts`) remain refused to every grantee. A route mounted without the hook (a bare test
+mount) sees everything; in production every `/api/*` request passes the hook.
 
 ## Remote bind at boot
 
