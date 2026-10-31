@@ -1,3 +1,4 @@
+import { canSeeReasoning, redactJobEvent } from '../auth/reasoning.ts'
 import { Hono, type Context } from 'hono'
 import {
   ROUTES,
@@ -60,8 +61,8 @@ function parseJobId(context: Context): string | null {
   return parsed.success ? parsed.data.jobId : null
 }
 
-function eventFrame(event: JobEvent): Uint8Array {
-  const parsed = jobStreamEventSchema.parse(event)
+function eventFrame(event: JobEvent, reasoning: boolean): Uint8Array {
+  const parsed = jobStreamEventSchema.parse(reasoning ? event : redactJobEvent(event))
   return encoder.encode(
     `id: ${parsed.sequence}\nevent: ${SSE_EVENT_NAME}\ndata: ${JSON.stringify(parsed)}\n\n`,
   )
@@ -82,6 +83,7 @@ function jobEventResponse(
   source: AsyncIterable<JobEvent>,
   subscriber: AbortController,
   requestSignal: AbortSignal,
+  reasoning: boolean,
 ): Response {
   const iterator = source[Symbol.asyncIterator]()
   let closed = false
@@ -106,7 +108,7 @@ function jobEventResponse(
             controller.close()
             return
           }
-          controller.enqueue(eventFrame(next.value))
+          controller.enqueue(eventFrame(next.value, reasoning))
         } catch {
           controller.enqueue(failureFrame())
           subscriber.abort()
@@ -196,6 +198,7 @@ export function jobsRoutes(app: AppContext): Hono {
         app.jobService.subscribe(jobId, cursor, subscriber.signal),
         subscriber,
         context.req.raw.signal,
+        canSeeReasoning(context),
       )
     } catch (error) {
       return jobFailure(context, error)

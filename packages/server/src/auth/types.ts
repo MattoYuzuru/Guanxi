@@ -83,6 +83,8 @@ export const ACTIONS = [
   'session.stop',
   /** Create, change or revoke share grants on a session. */
   'session.share',
+  /** Change a session's metadata: title, model, retention, restore from trash, leave. Owner only. */
+  'session.update',
   /** Permanently delete a session. */
   'session.delete',
   /** Read a project and its metadata. */

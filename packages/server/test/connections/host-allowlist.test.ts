@@ -43,15 +43,21 @@ test('E4: a real listener denies rebinding for Connections, unlock, a legacy rou
   assert.equal(mutations, 0)
 })
 
-test('N8: forwarded host headers neither authorize a forbidden Host nor deny an allowed Host', async () => {
+test('N8: forwarded host headers neither authorize a forbidden Host nor make the Host guard deny an allowed Host', async () => {
   const app = createApp(context, { host: '127.0.0.1', port: 4387, devOrigins: [] })
-  for (const [host, forwarded, expected] of [
-    ['evil.example:4387', '127.0.0.1:4387', 403],
-    ['127.0.0.1:4387', 'evil.example:4387', 200],
+  for (const [host, forwarded, expectedCode] of [
+    // A forbidden Host stays forbidden whatever the forwarded headers claim.
+    ['evil.example:4387', '127.0.0.1:4387', 'host_denied'],
+    // An allowed Host is not denied by the Host guard. Since U3 a local node refuses every proxy header
+    // (`X-Forwarded-*`, `Forwarded`) as a proxied request, with its own code: the owner is a direct client.
+    ['127.0.0.1:4387', 'evil.example:4387', 'proxied_request_refused'],
   ] as const) {
-    const response = await app.request('http://localhost/api/settings', { headers: {
-      Host: host, 'X-Forwarded-Host': forwarded, Forwarded: `host=${forwarded}`,
-    } })
-    assert.equal(response.status, expected)
+    for (const headers of [{ 'X-Forwarded-Host': forwarded }, { 'X-Forwarded-Host': forwarded, Forwarded: `host=${forwarded}` }] as Array<Record<string, string>>) {
+      const response = await app.request('http://localhost/api/settings', { headers: { Host: host, ...headers } })
+      assert.equal(response.status, 403)
+      assert.equal(((await response.json()) as { code: string }).code, expectedCode)
+    }
   }
+  // Without any forwarded header the allowed Host is served.
+  assert.equal((await app.request('http://localhost/api/settings', { headers: { Host: '127.0.0.1:4387' } })).status, 200)
 })

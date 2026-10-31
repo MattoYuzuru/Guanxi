@@ -201,28 +201,52 @@ describe('R3: the person audience answers loopback peers only', () => {
     }
   })
 
-  it('a server listening on 0.0.0.0 refuses the inspector through a private address (the reviewer case)', { timeout: 30_000 }, async () => {
+  it('a server listening on 0.0.0.0 refuses the inspector through a private address (the reviewer case)', { timeout: 30_000 }, async (t) => {
     const { networkInterfaces, tmpdir } = await import('node:os')
     const { mkdtemp, rm } = await import('node:fs/promises')
     const { join } = await import('node:path')
     const { start } = await import('../src/index.ts')
+    const { identity } = await import('./federation/harness.ts')
+    const { TLS_TEST_HOSTNAME, httpsGet, makeTlsFixture } = await import('./auth/tls-fixture.ts')
     const lan = Object.values(networkInterfaces()).flat().find((entry) => entry && entry.family === 'IPv4' && !entry.internal)
     const dataDir = await mkdtemp(join(tmpdir(), 'guanxi-k2-peer-'))
-    const server = await start({ port: 0, host: '0.0.0.0', dataDir, webDir: dataDir, devOrigins: [] })
+    // A 0.0.0.0 bind needs the remote security profile now (U3 route wiring): TLS, accounts, allowed roots and a node credential.
+    const tls = makeTlsFixture()
+    const node = identity('k2-peer-node')
+    const owner = { kind: 'user' as const, userId: 'owner-1', role: 'member' as const, groups: [] }
+    const server = await start({
+      port: 0, host: '0.0.0.0', dataDir, webDir: dataDir, devOrigins: [],
+      federation: { identity: node.identity, privateKey: node.privateKey },
+      remote: {
+        tls: { certPath: tls.certPath, keyPath: tls.keyPath, hostname: TLS_TEST_HOSTNAME },
+        allowedRoots: [join(dataDir, 'srv')],
+        accounts: { nodeOwnerId: 'owner-1', principal: () => owner },
+      },
+    })
     try {
       server.context.sessionLog!.open('network-test', { kind: 'agent' }).append({
         type: 'reasoning', data: { messageId: 'm', step: 0, text: 'network reasoning' },
       })
-      const local = await fetch(`http://127.0.0.1:${server.port}/api/sessions/network-test/events`)
+      const local = await httpsGet(server.port, '/api/sessions/network-test/events', { host: `127.0.0.1:${server.port}` })
       assert.equal(local.status, 200)
-      assert.ok((await local.text()).includes('network reasoning'), 'local access keeps working')
+      assert.ok(local.body.includes('network reasoning'), 'local access keeps working')
       if (lan) {
-        const remote = await fetch(`http://${lan.address}:${server.port}/api/sessions/network-test/events`)
+        // Over the LAN address with an allowed Host header: the Host allowlist passes, so only the socket peer decides.
+        const remote = await httpsGet(server.port, '/api/sessions/network-test/events', { host: `127.0.0.1:${server.port}` }, lan.address)
         assert.equal(remote.status, 403)
-        assert.equal((await remote.text()).includes('network reasoning'), false)
+        assert.match(remote.body, /loopback_only/u)
+        assert.equal(remote.body.includes('network reasoning'), false)
+        // A LAN request that names its own address is stopped even earlier, by the Host allowlist.
+        const named = await httpsGet(server.port, '/api/sessions/network-test/events', { host: `${lan.address}:${server.port}` }, lan.address)
+        assert.equal(named.status, 403)
+        assert.equal(named.body.includes('network reasoning'), false)
+      } else {
+        // No non-internal IPv4 interface on this machine: the LAN case cannot run, and the test says so.
+        t.diagnostic('no LAN interface: the private-address assertions were skipped')
       }
     } finally {
       await server.close()
+      tls.cleanup()
       await rm(dataDir, { recursive: true, force: true })
     }
   })

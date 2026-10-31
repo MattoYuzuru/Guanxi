@@ -3,7 +3,13 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_PORT, start } from '@guanxi/server'
+import {
+  DEFAULT_PORT,
+  REMOTE_BIND_EXIT_CODE,
+  RemoteBindError,
+  remoteBindRefusalMessage,
+  start,
+} from '@guanxi/server'
 import { probeExistingGuanxi } from './existing.ts'
 import { agentExec, agentExecExitCode } from './agent-exec.ts'
 import { relayExec, relayExecExitCode } from './relay-exec.ts'
@@ -165,16 +171,22 @@ if (existing?.kind === 'ui') {
     if (options.open) openBrowser(server.url)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException | null)?.code
-    if (code === 'EADDRINUSE') {
-      console.error(`Порт ${requested.port} уже занят другим процессом.`)
-      console.error('Запусти Guanxi на свободном порту: guanxi --port 0')
+    if (error instanceof RemoteBindError) {
+      // One message and one exit code for a refused remote bind, whatever else was misconfigured.
+      console.error(remoteBindRefusalMessage(error))
+      process.exitCode = REMOTE_BIND_EXIT_CODE
     } else {
-      console.error(
-        `Не удалось запустить Guanxi: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      )
+      if (code === 'EADDRINUSE') {
+        console.error(`Порт ${requested.port} уже занят другим процессом.`)
+        console.error('Запусти Guanxi на свободном порту: guanxi --port 0')
+      } else {
+        console.error(
+          `Не удалось запустить Guanxi: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        )
+      }
+      process.exitCode = 1
     }
-    process.exitCode = 1
   }
 }

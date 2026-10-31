@@ -1,17 +1,17 @@
 /**
- * Сборка HTTP-приложения.
+ * HTTP application assembly.
  *
- * Аутентификация подключается здесь же одним middleware. Локально это заглушка,
- * пропускающая всё; при выносе на сервер её место занимает настоящая проверка —
- * без правок в роутах. Это один из трёх инвариантов, ради которых фронт не
- * работает с файловой системой напрямую.
+ * Authorization is one middleware here (`routeAuthz`): every `/api/*` route is declared in the
+ * route policy map and routes carry no checks of their own. Locally the principal is the
+ * implicit owner; on a remote node an accounts adapter supplies it. This is one of the three
+ * invariants that keep the frontend away from the filesystem.
  */
 import { layoutsRoutes } from './layouts/routes.ts'
 import type { ReplicatedLayouts } from './layouts/replication.ts'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { hostAllowlist, type HostAllowlistOptions } from './http/host-allowlist.ts'
-import { approvalBody, updateSettingsBody } from '@guanxi/contract'
+import { approvalBody, minimalHealthSchema, updateSettingsBody } from '@guanxi/contract'
 import type { AppContext } from './context.ts'
 import { getOllamaStatus } from './ollama/status.ts'
 import { fail } from './http/errors.ts'
@@ -30,6 +30,7 @@ import { UiCatalogReviewService } from './ui-catalog/service.ts'
 import { unavailableSigner } from './ui-catalog/signer.ts'
 import { sessionLogRoutes } from './session-log/routes.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
+import { routeAuthz, type AuthzContext, type RouteAuthzOptions } from './auth/route-authz.ts'
 
 export interface CreateAppOptions extends HostAllowlistOptions {
   /** Разрешить обращения с dev-сервера Vite. */
@@ -43,6 +44,8 @@ export interface CreateAppOptions extends HostAllowlistOptions {
   uiCatalog?: UiCatalogReviewService
   /** The configured F1 node owns the account and signed layout write boundary. */
   layouts?: () => ReplicatedLayouts | null
+  /** Route authorization: absent is the single-owner local mode; remote mode passes the accounts adapter. */
+  authz?: RouteAuthzOptions
 }
 
 export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono {
@@ -65,15 +68,18 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
   }
 
   /*
-   * Место для аутентификации. Локально пропускаем всё: сервер слушает только
-   * петлевой интерфейс. При выносе наружу здесь появляется проверка сессии,
-   * и ни один роут об этом не узнает.
+   * The single authorization point. Locally the principal is the implicit owner (the boot guard
+   * keeps the listener on loopback); a remote node takes it from the accounts adapter. A route
+   * without a declared policy is refused.
    */
-  server.use('/api/*', async (_context, next) => {
-    await next()
-  })
+  // `createApp` is the embedding and test entry point: it trusts a socket-less in-process call unless told
+  // otherwise. `start()` passes `trustInProcess: false`, so a real listener never relies on it.
+  server.use('/api/*', routeAuthz({ trustInProcess: true, ...options.authz }))
 
-  server.get('/api/health', async (context) => {
+  server.get('/api/health', async (context: Context<{ Variables: { authz?: AuthzContext } }>) => {
+    // Hardware and Ollama detail are for the node owner and the admin role; any other signed-in user gets liveness only.
+    if (context.get('authz')?.operator !== true) return context.json(minimalHealthSchema.parse({ ok: true }))
+
     const observedAt = new Date().toISOString()
     const client = app.ollama()
     const ollama = await getOllamaStatus(client, options.ollamaStatus)

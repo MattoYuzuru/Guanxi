@@ -27,6 +27,7 @@ const ACTION_RESOURCE_TYPE: Record<Action, ResourceType | null> = {
   'session.prompt': 'session',
   'session.stop': 'session',
   'session.share': 'session',
+  'session.update': 'session',
   'session.delete': 'session',
   'project.read': 'project',
   'project.write': 'project',
@@ -62,7 +63,7 @@ const EDITOR_EXTRA: Record<ResourceType, readonly Action[]> = {
 /** Actions an owner adds on top of the viewer read action. */
 const OWNER_EXTRA: Record<ResourceType, readonly Action[]> = {
   project: ['project.write', 'project.share', 'project.delete'],
-  session: ['session.prompt', 'session.stop', 'session.share', 'session.delete'],
+  session: ['session.prompt', 'session.stop', 'session.share', 'session.update', 'session.delete'],
   connection: ['connection.use', 'connection.manage'],
   run: ['run.cancel'],
   node: ['node.admin'],
