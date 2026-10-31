@@ -75,6 +75,16 @@ test('a lead needs every owner ceiling, absolute paths for both binaries and an 
   refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, claudeExecutable: '~/.local/bin/claude' } } }), 'config_path_not_absolute', 'home.lead.claudeExecutable')
 })
 
+test('home.lead.projectView is opt-in: absent means off, true and false parse, and nothing but a boolean is accepted', () => {
+  const lead = { adapter: 'claude-code', bridge: '/x/claude-agent-acp', bridgeVersion: '0.94.0', claudeExecutable: '/x/claude',
+    limits: { maxCaps: { cycles: 40, tokens: 2_000_000, moneyMicros: 500_000, wallMs: 3_600_000 }, maxDeadlineMs: 86_400_000 } }
+  const parsed = (extra: Record<string, unknown>) => parseMs1LiveConfig(home({ home: { alwaysOn: true, reserves, lead: { ...lead, ...extra } } }), '/x/c.json').home!.lead!
+  assert.equal(parsed({}).projectView, undefined, 'absent is not enabled')
+  assert.equal(parsed({ projectView: true }).projectView, true)
+  assert.equal(parsed({ projectView: false }).projectView, false)
+  for (const bad of ['true', 1, 0, null, {}, []]) refused(home({ home: { alwaysOn: true, reserves, lead: { ...lead, projectView: bad } } }), 'config_invalid', 'home.lead.projectView')
+})
+
 test('loading reads one file by path; the environment variable is the only switch and unset means the plain boot', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ms1-config-'))
   try {

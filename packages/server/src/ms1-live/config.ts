@@ -127,6 +127,9 @@ const homeSchema = z.object({
     providerKeysFile: absolutePath.optional(),
     /** Effort of the lead's Claude Code sessions, set through the bridge's `effort` option (D-210: medium). Omitted: the vendor's own default. */
     effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+    /** Opt-in (lead default, 2026-10-31): give the lead the node-served read-only view of the delegated project's committed files
+     * (`guanxi_project_tree`, `guanxi_project_read`, `guanxi_project_search`). Off unless the owner sets it. */
+    projectView: z.boolean().optional(),
   }).strict().superRefine((value, ctx) => {
     for (const field of ['connection', 'providerKeysFile'] as const) {
       if (value.auth === 'subscription' && value[field] !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: 'key_mode_only' })

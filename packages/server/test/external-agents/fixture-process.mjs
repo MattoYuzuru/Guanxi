@@ -121,6 +121,11 @@ async function leadPrompt(frame) {
     await mcpCall({ jsonrpc: '2.0', method: 'notifications/initialized' }, toolAbort.signal)
     const listed = await mcpCall({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, toolAbort.signal)
     leadLog('tool_list', { tools: listed.body.result.tools.map(t => t.name) })
+    // Calls to the node's read-only project tools before the delegation (scenario `projectCalls`), answers logged as they came.
+    for (const [index, call] of (lead.projectCalls ?? []).entries()) {
+      const answered = await mcpCall({ jsonrpc: '2.0', id: 100 + index, method: 'tools/call', params: { name: call.name, arguments: call.arguments } }, toolAbort.signal)
+      leadLog('project_answer', { name: call.name, status: answered.status, isError: answered.body?.result?.isError === true, text: answered.body?.result?.content?.[0]?.text ?? null, error: answered.body?.error?.message ?? null })
+    }
     leadLog('tool_call', { sessionId })
     const firstCall = mcpCall({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'guanxi_delegate', arguments: brief } }, toolAbort.signal)
     firstCall.catch(() => undefined)

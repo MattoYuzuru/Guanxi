@@ -37,6 +37,19 @@ test('leads are opt-in, need the external-agent policy and carry the explicit al
   assert.throws(() => lead.startLead({ ownerAccountId: 'o', actorAccountId: 'o', projectId: 'p', prompt: 'x' }), /role_unassigned/)
 })
 
+test('the lead\'s project view is opt-in through start(): absent and false give the lead no project tools, true and an object give it the view', async t => {
+  const view = async (projectView: unknown) => {
+    const server = await boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, child, tickMs: 2_000_000_000, ...(projectView === undefined ? {} : { projectView }) } as never })
+    return server.kernel.node.service<LeadHostService>(LEAD_SERVICE)!.projectView
+  }
+  assert.equal(await view(undefined), false)
+  assert.equal(await view(false), false)
+  assert.equal(await view(true), true)
+  assert.equal(await view({}), true)
+  assert.equal(await view({ policy: { treeEntries: 5 } }), true)
+  await assert.rejects(view({ policy: { treeEntries: 0 } }), /invalid_policy/)
+})
+
 test('leads can run delegated plans through this node\'s own public relay start, with owner-chosen consent', async t => {
   await assert.rejects(boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, relay: { consent: 'full-access', domains: [] } } as never }), /leads\.relay requires validateExecutor/)
   await assert.rejects(boot(t, { externalAgents: { nodeId: 'boot-node', installations: [] }, leads: { alwaysOn: true, relay: { consent: 'full-access', domains: [] }, validateExecutor: () => undefined } as never }), /leads\.relay requires limits/)

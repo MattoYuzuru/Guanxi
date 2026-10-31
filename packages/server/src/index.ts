@@ -183,7 +183,10 @@ export interface StartOptions {
   /** Trusted opt-in for external-lead delegation and hibernation (LW). Needs `externalAgents` and a child
    * executor. `alwaysOn: true` is the host's explicit assertion that this node stays awake while leads
    * sleep (ADR-0019 decision 5); nothing here proves or arranges power. Not reachable over HTTP. */
-  leads?: Omit<LeadPluginConfig, 'db' | 'child'> & { alwaysOn: true } & (
+  leads?: Omit<LeadPluginConfig, 'db' | 'child' | 'projectView'> & { alwaysOn: true;
+    /** Opt-in (lead default, 2026-10-31): `true` gives the lead a read-only view of the delegated project's committed files; absent or `false`
+     * gives it no project tools. An object also overrides the policy (`policy`) or the root resolution (`roots`). */
+    projectView?: boolean | Partial<NonNullable<LeadPluginConfig['projectView']>> } & (
     { child: ChildStarter; relay?: undefined } |
     /** Delegated plans run through this node's public relay start; consent and domains are owner choices
      * the lead can never make for itself. */
@@ -381,6 +384,19 @@ export async function start(options: StartOptions = {}) {
       const wiring = live.leadWiring()
       if (wiring) { externalAgents = wiring.externalAgents; leads = wiring.leads }
     }
+    // One resolution of a project to its source roots: the relay start clones from it and the lead's read-only project view reads from it.
+    const observeProject: RelayStartHost['project'] = async (id, signal) => {
+      signal.throwIfAborted()
+      const project = kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)!.projects().find(p => p.id === id)
+      if (!project) throw new RelayError('relay_project_unavailable')
+      const roots = await Promise.all(project.filesystemBindings.map(async binding => {
+        const workspace = context.workspaces.get(binding.workspaceId)
+        if (!workspace) throw new RelayError('relay_project_unavailable')
+        return realpath(workspace.rootPath)
+      }))
+      signal.throwIfAborted()
+      return { projectId: id, roots, source: 'native-project-roots+workspace-store', observedAt: Date.now() }
+    }
     const relayOptions = options.relay ?? operationalRelay?.relay ?? liveRelay ?? undefined
     // `relayHost` is typed without the fields start owns, but a JavaScript caller is not held to types.
     const { runtime: _r, allocate: _a, reserves: _v, project: _p, nodePorts: _n, ...hostExtras } = (options.relayHost ?? {}) as Record<string, unknown>
@@ -396,18 +412,7 @@ export async function start(options: StartOptions = {}) {
         ...(relayOptions.runtime.counter || relayOptions.runtime.observer?.open ? { runtime: new RelayRuntimeSource(kernel.node.service<Connections>(CONNECTIONS_SERVICE)!,
           live ? () => { throw new RelayError('runtime_meter_unavailable') } : () => context.models(), relayOptions.runtime) } : {}) } : {}),
       nodePorts: () => [actualPort, portFromEnv(process.env, WEB_PORT_ENV, DEFAULT_WEB_PORT)],
-      project: async (id, signal) => {
-        signal.throwIfAborted()
-        const project = kernel.node.service<NativeAgentService>(NATIVE_AGENT_SERVICE)!.projects().find(p => p.id === id)
-        if (!project) throw new RelayError('relay_project_unavailable')
-        const roots = await Promise.all(project.filesystemBindings.map(async binding => {
-          const workspace = context.workspaces.get(binding.workspaceId)
-          if (!workspace) throw new RelayError('relay_project_unavailable')
-          return realpath(workspace.rootPath)
-        }))
-        signal.throwIfAborted()
-        return { projectId: id, roots, source: 'native-project-roots+workspace-store', observedAt: Date.now() }
-      },
+      project: observeProject,
     } })
     // MS2: three independent sidecars. Loading opens a database and starts nothing else.
     // A damaged sidecar disables only its own feature: its service stays unregistered and its routes
@@ -438,11 +443,13 @@ export async function start(options: StartOptions = {}) {
     await optional('work', () => kernel.node.plugin(workPlugin, { databasePath: sidecar('work.sqlite') }))
     if (externalAgents) await kernel.node.plugin(externalAgentPlugin, { dataDir: dirname(dbPath), policy: externalAgents })
     if (leads) {
-      const { alwaysOn: _assertion, relay: relayPolicy, child, ...lead } = leads
+      const { alwaysOn: _assertion, relay: relayPolicy, child, projectView, ...lead } = leads
       const relayService = kernel.node.service<RelayService>(RELAY_SERVICE)
       const runs = kernel.node.service<DurableRunsService>(DURABLE_RUNS_SERVICE)
       if (relayPolicy && (!relayService || !runs)) throw new Error('leads.relay requires the relay service')
       await kernel.node.plugin(createLeadPlugin({ ...lead, db,
+        // Opt-in: the lead reads the project it delegates through the node (read-only, committed files) only when the host asks for it.
+        ...(projectView ? { projectView: { roots: async (id, signal) => (await observeProject(id, signal)).roots, ...(projectView === true ? {} : projectView) } } : {}),
         child: child ?? relayStartsChildStarter(relayService!.publicStarts, { ...relayPolicy!, runs: runs!.store }),
         ...(lead.reporter || !relayPolicy ? {} : { reporter: relayStartsChildReporter(relayService!.publicStarts, relayService!, kernel.sessionLog ?? undefined) }) }))
     }

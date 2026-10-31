@@ -221,6 +221,13 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   the vendor's own default applies (a `settings.json` `effortLevel` in the private config directory is the vendor's mechanism and
   keeps working in subscription mode; Guanxi never writes it).
 
+- **Project view (opt-in).** The lead's working directory is empty. With `"projectView": true` in `home.lead` (default `false`: the lead
+  then has `guanxi_delegate` alone) the node serves it the project's committed files read-only through `guanxi_project_tree`,
+  `guanxi_project_read` and `guanxi_project_search` on the same tool server as `guanxi_delegate`. They read the project's repository
+  (exactly one bound workspace, a repository top level) at `HEAD` or a commit id, never the working tree, never open secret-named
+  files, scrub what they return, and each result names the `commit` to use as `plan.base`; every call is audited in the lead run's
+  session log. Your lead prompt may say so, but the tool descriptions already do, and the facts in the prompt remain the plan's source of truth. See
+  [the leads README](../../packages/server/src/leads/README.md#project-view-lp-lead-project-view).
 - **Bridge.** K5 does not run `claude`; it runs the ACP bridge, `https://github.com/agentclientprotocol/claude-agent-acp`
   (npm package `@agentclientprotocol/claude-agent-acp`), with no arguments, and gives it `CLAUDE_CODE_EXECUTABLE` pointing at your
   CLI. It is an operator-installed separate process, never a Guanxi dependency. Install it outside the repository with an exact
