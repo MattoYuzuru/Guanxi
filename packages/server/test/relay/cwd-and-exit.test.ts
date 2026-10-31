@@ -109,6 +109,61 @@ test('a fixed read that exits non-zero returns its code and scrubbed output to t
   } finally { await s.close() }
 })
 
+test('wrapper output on stderr before the failed-cd line does not hide the failure', async () => {
+  const s = await setup(); try {
+    const w = await GitRelayWorkspace.create(s.repo, s.p, s.context)
+    // A sandbox or guard wrapper that warns on stderr before the shell runs (bwrap, setpriv, the container guard).
+    const noisy = (rewrite: (command: string) => string): typeof sandboxCommand => async (policy, command, ...rest) => {
+      const result = await shell(policy, rewrite(command), ...rest)
+      return { ...result, stderr: 'wrapper: warning before the shell\nsecond wrapper line\n' + result.stderr }
+    }
+    s.context.executeCommand = noisy(command => command.replaceAll(s.repo, join(s.parent, 'gone')))
+    await assert.rejects(w.tool('shell', { command: 'echo ran' }), /cwd_unavailable/)
+    s.context.executeCommand = async (policy, command, ...rest) => {
+      await rm(policy.roots[0]!, { recursive: true, force: true })
+      return noisy(value => value)(policy, command, ...rest)
+    }
+    await assert.rejects(w.verify(s.p, 'one'), /cwd_unavailable/)
+  } finally { await s.close() }
+})
+
+test('a command that prints the marker words and exits 125 keeps its own result: only this call\'s exact line counts', async () => {
+  const s = await setup(); try {
+    const w = await GitRelayWorkspace.create(s.repo, s.p, s.context)
+    for (const printed of ['cwd_unavailable', 'cwd_unavailable:', 'cwd_unavailable:0123456789abcdef0123456789abcdef', 'cwd_unavailable_x']) {
+      const command = `echo ${printed} >&2; exit 125`
+      const ran = JSON.parse(await w.tool('shell', { command })) as { code: number; stderr: string }
+      assert.equal(ran.code, 125, printed)
+      assert.match(ran.stderr, /cwd_unavailable/)
+      const red = await w.verify({ ...s.p, items: [{ ...s.p.items[0]!, acceptance: ['/bin/sh', '-c', command] }] }, 'one')
+      assert.equal(red.ok, false, printed)
+      assert.equal((JSON.parse(red.output) as { code: number }).code, 125, printed)
+    }
+  } finally { await s.close() }
+})
+
+test('the shell result is scrubbed by the command wrapper itself and size-bounded', async () => {
+  const s = await setup(); try {
+    // A scrubber that only redacts structured results: the outer text bound (which scrubs strings) cannot cover for the command wrapper's own scrub.
+    const real = s.f.scrubber
+    real.register('secret://fixture/relay', 'synthetic-relay-secret')
+    s.context.scrubber = Object.assign(Object.create(real), { scrub: (value: unknown) => typeof value === 'string' ? value : real.scrub(value) })
+    const w = await GitRelayWorkspace.create(s.repo, s.p, s.context)
+    const leaked = JSON.parse(await w.tool('shell', { command: 'echo synthetic-relay-sec""ret; echo synthetic-relay-sec""ret >&2; exit 4' })) as { code: number; stdout: string; stderr: string }
+    assert.equal(leaked.code, 4)
+    assert.equal(leaked.stdout.includes('synthetic-relay-secret') || leaked.stderr.includes('synthetic-relay-secret'), false)
+    // Output past the bound is not returned whole: the result is an artifact reference with a short excerpt, and the code is not lost.
+    const big = await w.tool('shell', { command: "head -c 200000 /dev/zero | tr '\\0' x; exit 3" })
+    assert.ok(Buffer.byteLength(big) < 64 * 1024, `bounded result was ${Buffer.byteLength(big)} bytes`)
+    const bounded = JSON.parse(big) as { truncated: boolean; bytes: number; artifact: string; excerpt: string; readWith: string }
+    assert.equal(bounded.truncated, true)
+    assert.ok(bounded.excerpt.length <= 8 * 1024)
+    assert.equal(bounded.readWith, 'tool_output_read')
+    const page = JSON.parse(await w.tool('tool_output_read', { artifact: bounded.artifact, offset: '0' })) as { text: string }
+    assert.match(page.text, /"code":3/)
+  } finally { await s.close() }
+})
+
 test('without a relay checkout the native shell keeps a non-zero exit of a fixed read as tool_failed', async () => {
   const s = await setup(); try {
     const tool = nativeTools({ ...s.context, executeCommand: shell, policy: { ...s.context.policy, mode: 'read-only', roots: [s.repo] } }).find(t => t.name === 'shell')!

@@ -14,6 +14,7 @@ import { ResourceGovernor } from '../runtime/resource-governor.ts'
 import { type MapResult } from '../indexing/types.ts'
 import { dirname, relative, sep, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
+import { randomBytes } from 'node:crypto'
 import { NativeOutputs } from './outputs.ts'
 
 export interface NativeToolContext {
@@ -42,13 +43,21 @@ export interface NativeToolContext {
  * `cd "$HOME"`: it is neither the command's status (a failed `cd X && cmd` exits 1, which a red test or a missing file also does)
  * nor the shell's 126/127. */
 export const CWD_FAILED_EXIT = 125
-/** The first line of stderr after a failed `cd` (the shell's own message is silenced so nothing precedes it). A command that
- * merely exits 125 does not write it first. */
+/** The fixed code of a failed `cd`; a per-call random suffix follows it on the stderr line. */
 const CWD_MARKER = 'cwd_unavailable'
-/** `command` run in `directory`. The command does not run when the directory cannot be entered, and the failure is `cwdFailed`. */
-export const inDirectory = (directory: string, command: string) => `cd ${quote(directory)} 2>/dev/null || { echo ${CWD_MARKER} >&2; exit ${CWD_FAILED_EXIT}; }; ${command}`
-/** Whether the result is that of an `inDirectory` line that never started its command: infrastructure, not the command's own exit. */
-export const cwdFailed = (result: Pick<CommandResult, 'code' | 'stderr'>) => result.code === CWD_FAILED_EXIT && result.stderr.startsWith(CWD_MARKER)
+/** `command` run in `directory`, and the way to read its result. The command does not run when the directory cannot be entered.
+ *
+ * The failure is `failed(result)`: exit 125 **and** a stderr line that is exactly this call's marker line. The suffix is random per
+ * call, so a command that prints `cwd_unavailable` (or a prefix of the line) and exits 125 keeps its own result; the line is compared
+ * whole and anywhere in stderr, so a wrapper that writes its own stderr first (a sandbox or guard warning) does not hide the failure.
+ * The line is in the command text, so a command that reads its parent's arguments could still forge it: that only damages its own verdict. */
+export function inDirectory(directory: string, command: string): { line: string; failed(result: Pick<CommandResult, 'code' | 'stderr'>): boolean } {
+  const marker = `${CWD_MARKER}:${randomBytes(16).toString('hex')}`
+  return {
+    line: `cd ${quote(directory)} 2>/dev/null || { echo ${marker} >&2; exit ${CWD_FAILED_EXIT}; }; ${command}`,
+    failed: result => result.code === CWD_FAILED_EXIT && result.stderr.split('\n').some(row => row === marker),
+  }
+}
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const { policy, handle, scrubber } = ctx
   const outputs = new NativeOutputs(policy.runtimeBase ?? dirname(policy.scratch), handle.sessionId, scrubber)
@@ -88,11 +97,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const run = async (command: string, signal?: AbortSignal, accepted: readonly number[] | null = [0], fixed = true, cwd?: string) => {
     // The sandbox starts every command in HOME/TMPDIR=scratch. A caller with one unit of work (the relay
     // checkout) names it here, exactly as the gate command names its own clean checkout.
-    const line = cwd ? inDirectory(cwd, command) : command
-    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, line, signal, 120_000, fixed, scrubber)
+    const entered = cwd ? inDirectory(cwd, command) : undefined
+    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, entered?.line ?? command, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
     // The command never started: say so with a fixed code rather than hand the model a plausible exit.
-    if (cwd && cwdFailed(clean)) throw new Error(CWD_MARKER)
+    if (entered?.failed(clean)) throw new Error(CWD_MARKER)
     if (clean.code === null || (accepted !== null && !accepted.includes(clean.code))) throw new Error('tool_failed')
     return JSON.stringify(clean)
   }
