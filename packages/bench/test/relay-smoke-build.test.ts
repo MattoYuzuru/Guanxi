@@ -9,7 +9,7 @@ import {
 
 const costs = (rows: Array<[string, number]>): LedgerObservation['costs'] => rows.map(([key, inputTokens]) => ({ key, inputTokens, outputTokens: 100 }))
 const observed = (doc: ReturnType<typeof documentOf>): RelayObservedTrial => {
-  const slot = doc.raw.trials[0]
+  const slot = doc.raw.trials[0]!
   assert.equal(slot.state, 'observed')
   return slot as RelayObservedTrial
 }

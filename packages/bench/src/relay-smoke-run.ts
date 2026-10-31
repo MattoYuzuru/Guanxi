@@ -146,7 +146,8 @@ async function collect(deps: RunDeps, arm: string, status: RelayStartStatus): Pr
 export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: string, seed: number, deps: RunDeps): Promise<TrialObservation> {
   const key = trialKey(config.experimentId, task, arm.id, seed, config.keySalt)
   const cached = deps.store.load(key)
-  if (cached && cached.endedBy !== 'start_failed') { deps.log?.({ event: 'trial_resumed', task, arm: arm.id, seed }); return cached }
+  // A start that failed is never stored, so a rerun tries it again; every stored observation (even a cancelled one) is final.
+  if (cached) { deps.log?.({ event: 'trial_resumed', task, arm: arm.id, seed }); return cached }
   const base = { version: 1 as const, task, arm: arm.id, seed, key }
   const failed = (code: string, startedAtMs: number | null): TrialObservation => ({ ...base, runId: null, startedAtMs, finishedAtMs: deps.now(), status: null, statusError: code,
     windowTokens: null, facts: [], ledger: null, ledgerError: null, endedBy: 'start_failed' })

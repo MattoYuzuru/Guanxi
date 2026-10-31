@@ -95,12 +95,15 @@ const sealLedger = z.object({ cycle: z.number().int().nonnegative(), head: z.str
   evidence: z.array(z.object({ item: z.string(), head: z.string(), ok: z.boolean() }).passthrough()) }).passthrough()
 const sealHandoff = z.object({ ledgerHash: z.string(), bundleHash: z.string() }).passthrough()
 
+/** The home node keeps running and owns its database; the runner only ever reads it. */
+export const HOME_DB_OPEN_OPTIONS = Object.freeze({ readOnly: true })
+
 /** Read-only view of the three tables the cohort needs. The home node keeps running; this never writes. */
 export class SqliteLedgerReader {
   private readonly path: string
   constructor(path: string) { this.path = path }
   private open(): DatabaseSync {
-    try { return new DatabaseSync(this.path, { readOnly: true }) } catch { throw new SmokeSourceError('home_database_unreadable') }
+    try { return new DatabaseSync(this.path, HOME_DB_OPEN_OPTIONS) } catch { throw new SmokeSourceError('home_database_unreadable') }
   }
   /** Names the missing tables, or an empty list when the schema is usable. */
   check(): string[] {
