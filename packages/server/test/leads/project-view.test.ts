@@ -68,7 +68,8 @@ test('tree, read and search return the committed project at the named commit and
   assert.equal(byPath.get('README.md').size, Buffer.byteLength('# Ledger\nsee src/money.ts\n'))
   assert.equal(byPath.get('src').type, 'dir')
   assert.equal(byPath.get('link-file').type, 'symlink')
-  assert.deepEqual(root.bounds, { limit: 200, defaultLimit: 200, maxLimit: 2_000, maxResultBytes: 262_144 })
+  // The bounds report grew by the path bound (review L4: it now comes from the policy and is reported).
+  assert.deepEqual(root.bounds, { limit: 200, defaultLimit: 200, maxLimit: 2_000, maxResultBytes: 262_144, maxPathBytes: 4_096 })
   assert.equal(root.more, false); assert.equal(root.nextOffset, null)
 
   assert.deepEqual((await json(view.tree(repo.dir, { path: 'src' }))).entries.map((entry: any) => entry.path), ['src/deep', 'src/money.ts'])
@@ -160,13 +161,45 @@ test('secret-named files are denied by every tool, omitted and counted in listin
   assert.equal(all.withheld, 6, 'every denied file below the root is counted, none is named')
   const found = await json(view.search(repo.dir, { text: ENV_MARKER }))
   assert.deepEqual(found.matches, [])
-  assert.equal(found.withheld, 6)
+  // Review H1: a search says nothing about hidden paths. The earlier assertion pinned `withheld: 6` here, which was an oracle on their content.
+  assert.equal('withheld' in found, false)
+  assert.equal(found.note, 'Paths hidden by policy are never searched.')
   assert.equal(JSON.stringify([top, all, found]).includes(ENV_MARKER), false)
   // The name rule itself.
   for (const name of ['.env', 'a/.env.local', '.git/config', 'x/node_modules/y', '.npmrc', '.aws/credentials', 'id_ed25519', 'ID_RSA.pub', 'credentials.json', 'client_secret_1.json', 'a/b.PEM', 'tls.key', 'terraform.tfstate', 'x.tfvars', '.netrc', '.git-credentials']) {
     assert.equal(deniedPath(name), true, name)
   }
-  for (const name of ['README.md', 'src/environment.ts', 'src/keys.ts', 'src/credentials-ui/index.ts'.replace('credentials-ui', 'ui'), 'docs/env.md', 'monkey.ts']) assert.equal(deniedPath(name), false, name)
+  for (const name of ['README.md', 'src/environment.ts', 'src/keys.ts', 'src/ui/index.ts', 'docs/env.md', 'monkey.ts']) assert.equal(deniedPath(name), false, name)
+})
+
+test('the name policy covers each credential class (review M4) and does not hide ordinary code', async t => {
+  const classes: Record<string, string[]> = {
+    'secret data files': ['secrets.json', 'config/secret.yaml', 'SECRETS.YML', 'secrets.toml', 'secrets.properties', 'prod.secrets', 'secrets/db.txt', '.secrets/x', 'secret'],
+    'service accounts': ['service-account.json', 'gcp/my-service_account-prod.json', 'serviceaccount.json'],
+    'terraform': ['terraform.tfstate.backup', 'x/terraform.tfstate.1', 'prod.tfvars', 'prod.tfvars.json', 'terraform.tfstate'],
+    'private keys': ['AuthKey_ABC.p8', 'putty.ppk', 'backup.gpg', 'key.asc', 'x.pgp', 'a.jceks', 'a.keystore', 'deploy.key', 'tls.pem', 'cert.p12', 'cert.pfx'],
+    'tool credentials': ['.s3cfg', '.boto', '.dockercfg', '.docker/config.json', '.vault-token', '.vault_pass', '.vault', '.azure/accessTokens.json', '.gcloud/x', '.kube/config', 'kubeconfig', 'prod.kubeconfig',
+      '.npmrc', '.yarnrc.yml', '.pypirc', '.pgpass', '.htpasswd', '.netrc', '_netrc', '.terraformrc', 'terraform.rc', '.git-credentials', '.ssh/id_rsa'],
+  }
+  const repo = await makeRepo(t, { 'src/secrets.ts': 'export const store = 1\n', 'src/service.ts': 'export const s = 1\n', 'src/secret-santa.md': 'hi\n', 'src/keyboard.ts': 'k\n' })
+  const { view } = makeView()
+  for (const [kind, names] of Object.entries(classes)) {
+    for (const name of names) {
+      assert.equal(deniedPath(name), true, `${kind}: ${name}`)
+      assert.equal(await code(view.read(repo.dir, { path: name })), 'path_denied', `${kind}: ${name}`)
+    }
+  }
+  for (const name of ['src/secrets.ts', 'src/service.ts', 'src/secret-santa.md', 'src/keyboard.ts', 'src/serviceAccount.ts', 'docs/key.md']) assert.equal(deniedPath(name), false, name)
+  assert.match((await json(view.read(repo.dir, { path: 'src/secrets.ts' }))).text, /store/)
+  // Committed files of every class are omitted from the listing and counted, never named.
+  const files: Record<string, string> = {}
+  for (const name of Object.values(classes).flat().filter(name => !name.includes('/'))) files[`classes/${name}`] = ENV_MARKER + '\n'
+  const withClasses = await makeRepo(t, files)
+  const listed = await json(view.tree(withClasses.dir, { path: 'classes' }))
+  assert.deepEqual([listed.entries.length, listed.withheld], [0, Object.keys(files).length])
+  assert.ok(listed.withheld >= 30, `most class names are hidden (${listed.withheld})`)
+  assert.equal(JSON.stringify(listed).includes(ENV_MARKER), false)
+  assert.deepEqual((await json(view.search(withClasses.dir, { text: ENV_MARKER }))).matches, [])
 })
 
 // ---- scrubbing and bounds ---------------------------------------------------------------------
@@ -378,12 +411,167 @@ test('input is strict: unknown keys, wrong types and non-positive bounds are inv
 test('the tool schemas list exactly the inputs the validators accept', () => {
   const byName = new Map(PROJECT_VIEW_TOOLS.map(tool => [tool.name, tool.inputSchema as { properties: Record<string, unknown>; required?: string[]; additionalProperties: boolean }]))
   assert.deepEqual([...byName.keys()], [LEAD_PROJECT_TREE_TOOL, LEAD_PROJECT_READ_TOOL, LEAD_PROJECT_SEARCH_TOOL])
-  assert.deepEqual(Object.keys(byName.get(LEAD_PROJECT_TREE_TOOL)!.properties).sort(), ['limit', 'offset', 'path', 'recursive', 'ref'])
-  assert.deepEqual(Object.keys(byName.get(LEAD_PROJECT_READ_TOOL)!.properties).sort(), ['limit', 'offset', 'path', 'ref'])
-  assert.deepEqual(Object.keys(byName.get(LEAD_PROJECT_SEARCH_TOOL)!.properties).sort(), ['limit', 'offset', 'path', 'ref', 'text'])
+  assert.deepEqual(Object.keys(byName.get(LEAD_PROJECT_TREE_TOOL)!.properties).sort(), ['cursor', 'limit', 'offset', 'path', 'recursive', 'ref'])
+  assert.deepEqual(Object.keys(byName.get(LEAD_PROJECT_READ_TOOL)!.properties).sort(), ['cursor', 'limit', 'offset', 'path', 'ref'])
+  assert.deepEqual(Object.keys(byName.get(LEAD_PROJECT_SEARCH_TOOL)!.properties).sort(), ['cursor', 'limit', 'offset', 'path', 'ref', 'text'])
   assert.deepEqual([byName.get(LEAD_PROJECT_TREE_TOOL)!.required, byName.get(LEAD_PROJECT_READ_TOOL)!.required, byName.get(LEAD_PROJECT_SEARCH_TOOL)!.required], [undefined, ['path'], ['text']])
   for (const schema of byName.values()) assert.equal(schema.additionalProperties, false)
   for (const tool of PROJECT_VIEW_TOOLS) assert.match(tool.description, /Read-only/)
+})
+
+// ---- review fixes -----------------------------------------------------------------------------
+
+test('H1: the content of a hidden file cannot change any field of a search (no oracle on a committed secret)', async t => {
+  const outputs = new Map<string, string[]>()
+  for (const secret of ['hunter2-database-password', 'xylophone-database-password']) {
+    const repo = await makeRepo(t, { '.env': `DB_PASSWORD=${secret}\n`, 'config/.env.production': `TOKEN=${secret}\n`, 'keys/id_rsa': `${secret}\n`, 'src/note.ts': 'const note = "visible"\n' })
+    const { view } = makeView()
+    for (const text of ['h', 'x', 'hunter2', 'xylophone', 'DB_PASSWORD', 'database-password', 'visible', '=']) {
+      const out = JSON.parse((await view.search(repo.dir, { text })).text)
+      assert.equal(out.commit, repo.head)
+      out.commit = 'normalised'
+      outputs.set(text, [...(outputs.get(text) ?? []), JSON.stringify(out)])
+      assert.equal(JSON.stringify(out).includes(secret.slice(0, 6)), false)
+    }
+  }
+  for (const [text, [a, b]] of outputs) assert.equal(a, b, `search ${JSON.stringify(text)}: every output field is the same whatever the hidden files hold`)
+  for (const text of ['hunter2', 'xylophone', 'DB_PASSWORD']) {
+    const sample = JSON.parse(outputs.get(text)![0]!)
+    assert.deepEqual(sample.matches, [], text); assert.equal('withheld' in sample, false)
+  }
+  assert.equal(JSON.parse(outputs.get('visible')![0]!).matches.length, 1)
+})
+
+test('a search runs over the scrubbed text: a registered secret (also a multi-line one) is neither found nor leaked line by line', async t => {
+  const pem = 'PEMLINE-aaaaaaaa\nPEMLINE-bbbbbbbb\nPEMLINE-cccccccc'
+  const repo = await makeRepo(t, { 'src/cert.txt': `before\n${pem}\nafter\n`, 'src/config.ts': `const key = '${REGISTERED}'\n` })
+  const scrubber = new SecretScrubber()
+  scrubber.register('secret://test/registered', REGISTERED)
+  scrubber.register('secret://test/pem', pem)
+  const view = new ProjectView({ scrubber })
+  for (const text of ['PEMLINE-bbbbbbbb', 'PEMLINE', 'PEMLINE-aaaaaaaa', REGISTERED, 'zz-registered-secret', '0123456789']) {
+    const out = await json(view.search(repo.dir, { text }))
+    assert.deepEqual(out.matches, [], `no match for a piece of a redacted value: ${text}`)
+  }
+  const around = await json(view.search(repo.dir, { text: 'before' }))
+  assert.equal(around.matches[0].text, 'before')
+  assert.equal(JSON.stringify(await json(view.search(repo.dir, { text: 'after' }))).includes('PEMLINE'), false)
+  const key = await json(view.search(repo.dir, { text: 'const key' }))
+  assert.equal(JSON.stringify(key).includes(REGISTERED.slice(0, 8)), false)
+})
+
+test('M1: a huge single-line blob is never buffered whole; a big allowed line is cut around the match and the figures say what was skipped', async t => {
+  const repo = await makeRepo(t, { 'big/huge.txt': `needle${'h'.repeat(3_000_000)}`, 'big/long.txt': `${'a'.repeat(300_000)}needle${'b'.repeat(300_000)}`, 'big/binary.bin': Buffer.from([0, 1, 2]), 'big/small.txt': 'needle small\n' })
+  const { view } = makeView({ maxFileBytes: 1_000_000, lineChars: 60 })
+  const found = await json(view.search(repo.dir, { text: 'needle' }))
+  assert.deepEqual(found.matches.map((match: any) => match.path).sort(), ['big/long.txt', 'big/small.txt'])
+  const long = found.matches.find((match: any) => match.path === 'big/long.txt')
+  assert.match(long.text, /^….*needle.*…\[line clipped, \d+ more characters\]$/)
+  assert.ok(long.text.length < 200, 'the excerpt is bounded by lineChars, not by the line')
+  // The fixture also holds 3 committed symlinks and 4 ordinary files; hidden files are in no figure.
+  assert.equal(found.scan.skippedTooLarge, 1); assert.equal(found.scan.skippedNotText, 4); assert.equal(found.scan.files, 6); assert.equal(found.scan.complete, true)
+  assert.equal(found.truncated, true)
+  assert.ok(Buffer.byteLength(JSON.stringify(found)) < 2_000)
+  assert.equal(await code(view.read(repo.dir, { path: 'big/huge.txt' })), 'file_too_large: size 3000006 bytes, limit 1000000')
+  // A scan budget smaller than the allowed files is reported, not hidden.
+  const budget = await json(makeView({ maxScanBytes: 100_000, maxFileBytes: 1_000_000 }).view.search(repo.dir, { text: 'needle' }))
+  assert.equal(budget.scan.complete, false); assert.ok(budget.scan.unscanned >= 1); assert.equal(budget.truncated, true)
+})
+
+test('M2: repository-local configuration changes nothing (submodule recursion, filters, fsmonitor, attributes) and a gitlink is only listed', async t => {
+  const marker = join(tmpdir(), `guanxi-pview-marker-${process.pid}-${Date.now()}`)
+  const repo = await makeRepo(t, { '.gitattributes': '* filter=evil text=auto diff=evil\n', 'src/a.txt': 'needle in a\n' })
+  git(repo.dir, 'update-index', '--add', '--cacheinfo', `160000,${repo.head},vendor/sub`)
+  git(repo.dir, 'commit', '-q', '-m', 'gitlink')
+  for (const [key, value] of Object.entries({ 'submodule.recurse': 'true', 'grep.recurseSubmodules': 'true', 'core.fsmonitor': `touch ${marker}-fsmonitor`, 'filter.evil.smudge': `touch ${marker}-smudge; cat`,
+    'filter.evil.clean': `touch ${marker}-clean; cat`, 'diff.evil.textconv': `touch ${marker}-textconv; cat`, 'core.attributesFile': join(repo.dir, 'src/a.txt'), 'core.pager': `touch ${marker}-pager`,
+    'core.hooksPath': repo.dir, 'protocol.ext.allow': 'always', 'core.untrackedCache': 'true' })) git(repo.dir, 'config', key, value)
+  const { view } = makeView()
+  const tree = await json(view.tree(repo.dir, { path: 'vendor' }))
+  assert.deepEqual(tree.entries, [{ path: 'vendor/sub', type: 'submodule' }])
+  assert.equal(await code(view.read(repo.dir, { path: 'vendor/sub' })), 'not_a_file')
+  assert.equal((await json(view.search(repo.dir, { text: 'needle' }))).matches.length, 1)
+  assert.match((await json(view.read(repo.dir, { path: 'src/a.txt' }))).text, /^needle in a/)
+  const { readdirSync } = await import('node:fs')
+  assert.deepEqual(readdirSync(tmpdir()).filter(name => name.startsWith(`guanxi-pview-marker-${process.pid}-`)), [], 'no configured command ran')
+})
+
+test('L1/L4: the path and text bounds come from the policy and are reported', async t => {
+  const repo = await makeRepo(t)
+  const { view } = makeView({ maxPathBytes: 20, maxTextChars: 5 })
+  assert.equal(await code(view.read(repo.dir, { path: 'src/deep/inner.ts/xxxxxxxxxxxxx' })), 'path_invalid')
+  assert.equal(await code(view.search(repo.dir, { text: 'abcdef' })), 'invalid_input: text: longer than 5 characters')
+  const search = await json(view.search(repo.dir, { text: 'abcde' }))
+  assert.equal(search.bounds.maxTextChars, 5); assert.equal(search.bounds.maxPathBytes, 20)
+  assert.equal((await json(view.tree(repo.dir, {}))).bounds.maxPathBytes, 20)
+  assert.equal((await json(view.read(repo.dir, { path: 'README.md' }))).bounds.maxPathBytes, 20)
+  // A listing record longer than the path bound is dropped unread: counted as withheld in a tree, as skipped in a search, never buffered or named.
+  const longName = `long/${'d'.repeat(200)}/${'e'.repeat(200)}/${'f'.repeat(200)}.txt`
+  const odd = await makeRepo(t, { [longName]: 'needle\n', 'long/ok.txt': 'needle\n' })
+  const listed = await json(view.tree(odd.dir, { path: 'long', recursive: true }))
+  assert.deepEqual([listed.entries.map((entry: any) => entry.path), listed.withheld], [['long/ok.txt'], 1])
+  const searched = await json(view.search(odd.dir, { text: 'need', path: 'long' }))
+  assert.deepEqual([searched.matches.map((match: any) => match.path), searched.scan.skippedNotText], [['long/ok.txt'], 1])
+  assert.equal((await json(makeView().view.search(repo.dir, { text: 'x'.repeat(1_000) }))).bounds.maxTextChars, 1_000)
+  assert.equal(await code(makeView().view.search(repo.dir, { text: 'x'.repeat(1_001) })), 'invalid_input: text: longer than 1000 characters')
+})
+
+test('L3: a git process that outlives the timeout or prints past the bound is ended with its own fixed code', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'guanxi-pview-fakegit-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const repo = await makeRepo(t)
+  const slow = join(dir, 'slow-git'), loud = join(dir, 'loud-git')
+  await writeFile(slow, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 })
+  await writeFile(loud, "#!/bin/sh\nexec head -c 200000 /dev/zero\n", { mode: 0o755 })
+  const scrubber = new SecretScrubber()
+  const started = Date.now()
+  assert.equal(await code(new ProjectView({ scrubber, git: slow, policy: { timeoutMs: 300 } }).tree(repo.dir, {})), 'project_view_timeout')
+  assert.ok(Date.now() - started < 5_000, 'the call returns at the timeout, not when the process ends')
+  assert.equal(await code(new ProjectView({ scrubber, git: loud }).tree(repo.dir, {})), 'project_view_output_limit')
+  assert.equal(await code(new ProjectView({ scrubber, git: join(dir, 'absent') }).tree(repo.dir, {})), 'project_view_unavailable')
+})
+
+test('L5/L7: a cursor keeps the commit of the first page while HEAD moves; names with newlines and odd bytes are listed and searched exactly', async t => {
+  const files: Record<string, string> = {}
+  for (let i = 0; i < 12; i++) files[`pages/f${String(i).padStart(2, '0')}.txt`] = `needle ${i}\n`
+  files['pages/line\nbreak.txt'] = 'needle with newline name\n'
+  files['pages/tab\tname é.txt'] = 'needle tab\n'
+  const repo = await makeRepo(t, files)
+  const { view } = makeView()
+  const first = await json(view.tree(repo.dir, { path: 'pages', limit: 5 }))
+  assert.equal(first.nextCursor, `${repo.head}:5`)
+  const search1 = await json(view.search(repo.dir, { text: 'needle', limit: 5 }))
+  const read1 = await json(view.read(repo.dir, { path: 'pages/f00.txt', limit: 3 }))
+  assert.equal(search1.nextCursor, `${repo.head}:5`); assert.equal(read1.nextCursor, `${repo.head}:3`)
+  // HEAD moves: a file sorting before every other entry appears.
+  await writeFile(join(repo.dir, 'pages/aaa-new.txt'), 'needle newest\n')
+  await writeFile(join(repo.dir, 'pages/f00.txt'), 'changed\n')
+  const moved = repo.commit('moves HEAD')
+  const seen = [...first.entries.map((entry: any) => entry.path)]
+  for (let next: string | null = first.nextCursor; next;) {
+    const page: Record<string, any> = await json(view.tree(repo.dir, { path: 'pages', cursor: next }))
+    assert.equal(page.commit, repo.head, 'the continuation stays on the first page\'s commit')
+    seen.push(...page.entries.map((entry: any) => entry.path)); next = page.nextCursor
+  }
+  assert.equal(seen.length, 14); assert.equal(new Set(seen).size, 14, 'no gap and no duplicate')
+  assert.ok(seen.includes('pages/line\nbreak.txt') && seen.includes('pages/tab\tname é.txt'), 'names are exact')
+  const hits: string[] = search1.matches.map((match: any) => match.path)
+  for (let next: string | null = search1.nextCursor; next;) {
+    const page: Record<string, any> = await json(view.search(repo.dir, { text: 'needle', cursor: next, limit: 5 }))
+    assert.equal(page.commit, repo.head)
+    hits.push(...page.matches.map((match: any) => match.path)); next = page.nextCursor
+  }
+  assert.equal(hits.length, 14); assert.equal(new Set(hits).size, 14)
+  assert.ok(hits.includes('pages/line\nbreak.txt'))
+  const rest = await json(view.read(repo.dir, { path: 'pages/f00.txt', cursor: read1.nextCursor }))
+  assert.equal(rest.commit, repo.head); assert.equal(read1.text + rest.text, 'needle 0\n')
+  // Without a cursor the moved HEAD is what a plain request sees.
+  assert.equal((await json(view.tree(repo.dir, { path: 'pages' }))).commit, moved)
+  // A cursor is exclusive with ref/offset, must be one this tool issues and must name a commit that exists.
+  for (const bad of [{ cursor: first.nextCursor, ref: repo.head }, { cursor: first.nextCursor, offset: 1 }, { cursor: 'nonsense' }, { cursor: `${repo.head}:-1` }, { cursor: `HEAD:5` }]) {
+    assert.match(await code(view.tree(repo.dir, bad)), /^invalid_input: cursor:/, JSON.stringify(bad))
+  }
+  assert.equal(await code(view.tree(repo.dir, { cursor: `${'e'.repeat(40)}:0` })), 'ref_not_found')
 })
 
 // ---- in the lead service ----------------------------------------------------------------------
@@ -486,6 +674,20 @@ test('a failure of the root resolver or of the filesystem never leaks a path or 
   const answer = await turn.call(LEAD_PROJECT_TREE_TOOL, {})
   assert.deepEqual(answer, { kind: 'result', isError: true, text: 'project_view_unavailable' })
   await turn.finish()
+})
+
+test('L1: exactly one project root is a project the view can show (the relay requires the same)', async t => {
+  const repo = await makeRepo(t)
+  const none = await openTurn(t, repo, { roots: async () => [] })
+  assert.deepEqual(await none.call(LEAD_PROJECT_TREE_TOOL, {}), { kind: 'result', isError: true, text: 'project_view_unavailable' })
+  await none.finish()
+  const two = await openTurn(t, repo, { roots: async () => [repo.dir, repo.outside] })
+  assert.deepEqual(await two.call(LEAD_PROJECT_TREE_TOOL, {}), { kind: 'result', isError: true, text: 'project_view_unavailable' })
+  assert.deepEqual(two.notes().map(note => note.outcome), ['project_view_unavailable'])
+  await two.finish()
+  const one = await openTurn(t, repo, { roots: async () => [repo.dir] })
+  assert.ok((await one.call(LEAD_PROJECT_TREE_TOOL, {})).kind === 'result')
+  await one.finish()
 })
 
 test('content is not served when the call cannot be audited (the turn is no longer the fenced attempt)', async t => {
