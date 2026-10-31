@@ -55,6 +55,17 @@ async function portAccepts(port: number): Promise<boolean> {
   })
 }
 
+/** The error a refused `start()` raises. A boot that wrongly succeeds is closed first, so a regression fails instead of hanging. */
+async function refusal(options: Parameters<typeof start>[0]): Promise<RemoteBindError> {
+  const outcome = await start(options).then((server) => ({ server }), (error: unknown) => ({ error }))
+  if ('server' in outcome) {
+    await outcome.server.close()
+    assert.fail('start() must refuse this bind')
+  }
+  assert.ok(outcome.error instanceof RemoteBindError, String(outcome.error))
+  return outcome.error
+}
+
 interface ProcessResult { code: number | null; stdout: string; stderr: string }
 
 async function run(file: string, args: string[], env: Record<string, string>): Promise<ProcessResult> {
@@ -90,13 +101,10 @@ describe('remote bind refusal at boot', () => {
   for (const host of ['0.0.0.0', '::', '192.168.1.20', 'node.example.test']) {
     it(`start() refuses ${host} without the profile and creates nothing`, { timeout: 30_000 }, async () => {
       const dataDir = join(root, `data-${host.replace(/[^a-z0-9]/gu, '_')}`)
-      await assert.rejects(start({ port: 0, host, dataDir, webDir: root, devOrigins: [] }), (error: unknown) => {
-        assert.ok(error instanceof RemoteBindError)
-        assert.equal(error.code, 'remote_bind_forbidden')
-        assert.equal(error.host, host)
-        assert.deepEqual(error.missing, noProfile)
-        return true
-      })
+      const error = await refusal({ port: 0, host, dataDir, webDir: root, devOrigins: [] })
+      assert.equal(error.code, 'remote_bind_forbidden')
+      assert.equal(error.host, host)
+      assert.deepEqual(error.missing, noProfile)
       assert.equal(existsSync(dataDir), false, 'a refused bind must not create the data directory')
     })
   }
@@ -104,35 +112,23 @@ describe('remote bind refusal at boot', () => {
   it('reports each unmet part of a partial profile', { timeout: 30_000 }, async () => {
     const fixture = makeTlsFixture()
     try {
-      await assert.rejects(
-        start({
-          port: 0, host: '0.0.0.0', dataDir: join(root, 'partial'), webDir: root, devOrigins: [],
-          remote: { tls: { certPath: fixture.certPath, keyPath: fixture.keyPath, hostname: '10.0.0.5' }, allowedRoots: [], accounts },
-        }),
-        (error: unknown) => {
-          assert.ok(error instanceof RemoteBindError)
-          assert.deepEqual(error.missing, ['tls_hostname_ip_forbidden', 'allowed_roots_required', 'node_credential_required'])
-          return true
-        },
-      )
+      const error = await refusal({
+        port: 0, host: '0.0.0.0', dataDir: join(root, 'partial'), webDir: root, devOrigins: [],
+        remote: { tls: { certPath: fixture.certPath, keyPath: fixture.keyPath, hostname: '10.0.0.5' }, allowedRoots: [], accounts },
+      })
+      assert.deepEqual(error.missing, ['tls_hostname_ip_forbidden', 'allowed_roots_required', 'node_credential_required'])
     } finally {
       fixture.cleanup()
     }
   })
 
   it('refuses an unreadable TLS pair even on loopback, and names it', { timeout: 30_000 }, async () => {
-    await assert.rejects(
-      start({
-        port: 0, host: '127.0.0.1', dataDir: join(root, 'unreadable'), webDir: root, devOrigins: [],
-        federation: nodeCredential(),
-        remote: { tls: { certPath: join(root, 'missing-cert.pem'), keyPath: join(root, 'missing-key.pem'), hostname: TLS_TEST_HOSTNAME }, allowedRoots: [join(root, 'srv')], accounts },
-      }),
-      (error: unknown) => {
-        assert.ok(error instanceof RemoteBindError)
-        assert.deepEqual(error.missing, ['tls_files_unreadable'])
-        return true
-      },
-    )
+    const error = await refusal({
+      port: 0, host: '127.0.0.1', dataDir: join(root, 'unreadable'), webDir: root, devOrigins: [],
+      federation: nodeCredential(),
+      remote: { tls: { certPath: join(root, 'missing-cert.pem'), keyPath: join(root, 'missing-key.pem'), hostname: TLS_TEST_HOSTNAME }, allowedRoots: [join(root, 'srv')], accounts },
+    })
+    assert.deepEqual(error.missing, ['tls_files_unreadable'])
   })
 
   it('refuses accounts that cannot authenticate and a federation option without a private key', { timeout: 30_000 }, async () => {
@@ -140,14 +136,10 @@ describe('remote bind refusal at boot', () => {
     try {
       const tls = { certPath: fixture.certPath, keyPath: fixture.keyPath, hostname: TLS_TEST_HOSTNAME }
       const noAuth = { nodeOwnerId: 'owner-1' } as unknown as AccountsAdapter
-      await assert.rejects(
-        start({ port: 0, host: '0.0.0.0', dataDir: join(root, 'noauth'), webDir: root, devOrigins: [], federation: nodeCredential(), remote: { tls, allowedRoots: [join(root, 'srv')], accounts: noAuth } }),
-        (error: unknown) => error instanceof RemoteBindError && error.missing.join() === 'accounts_required',
-      )
-      await assert.rejects(
-        start({ port: 0, host: '0.0.0.0', dataDir: join(root, 'nokey'), webDir: root, devOrigins: [], federation: { ...nodeCredential(), privateKey: '' }, remote: { tls, allowedRoots: [join(root, 'srv')], accounts } }),
-        (error: unknown) => error instanceof RemoteBindError && error.missing.join() === 'node_credential_required',
-      )
+      const noAccounts = await refusal({ port: 0, host: '0.0.0.0', dataDir: join(root, 'noauth'), webDir: root, devOrigins: [], federation: nodeCredential(), remote: { tls, allowedRoots: [join(root, 'srv')], accounts: noAuth } })
+      assert.deepEqual(noAccounts.missing, ['accounts_required'])
+      const noKey = await refusal({ port: 0, host: '0.0.0.0', dataDir: join(root, 'nokey'), webDir: root, devOrigins: [], federation: { ...nodeCredential(), privateKey: '' }, remote: { tls, allowedRoots: [join(root, 'srv')], accounts } })
+      assert.deepEqual(noKey.missing, ['node_credential_required'])
     } finally {
       fixture.cleanup()
     }

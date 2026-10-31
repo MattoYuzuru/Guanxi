@@ -56,14 +56,13 @@ describe('route policy map against the booted server', () => {
     assert.ok(saved)
     policies.delete(key)
     try {
-      await assert.rejects(
-        start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] }),
-        (error: unknown) => {
-          assert.ok(error instanceof RouteAuthzError)
-          assert.deepEqual(error.routes, [key])
-          return true
-        },
-      )
+      const outcome = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
+        .then((server) => ({ server }), (error: unknown) => ({ error }))
+      // A boot that wrongly succeeds is closed first so the failure is an assertion, not a hung process.
+      if ('server' in outcome) await outcome.server.close()
+      assert.ok('error' in outcome, 'the boot must refuse an unmapped route')
+      assert.ok(outcome.error instanceof RouteAuthzError)
+      assert.deepEqual(outcome.error.routes, [key])
     } finally {
       policies.set(key, saved)
     }
