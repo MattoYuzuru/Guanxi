@@ -10,8 +10,12 @@ import { gitEnv, gitFlags } from '../relay/workspace.ts'
  *
  * The lead's cwd is an empty private directory, so the node serves the project instead. Everything is read from git objects of the
  * project's source repository (`ls-tree`, `cat-file`), never from its working tree: untracked and ignored files (where secrets live), a
- * dirty tree and symlinks on disk are out of reach by construction, and no hook, filter or repository config is honoured (the relay's
- * `gitEnv`/`gitFlags` plus the explicit overrides below; only plumbing that reads objects runs, never `grep`, `diff` or `status`).
+ * dirty tree and symlinks on disk are out of reach by construction. Only object plumbing runs (`rev-parse`, `ls-tree`, `cat-file`; never
+ * `grep`, `diff`, `status` or `show`), through the relay's `gitEnv`/`gitFlags` (no system or global config, hooks path, fsmonitor and
+ * external protocols off, replace objects ignored) plus these explicit overrides: `GIT_NO_LAZY_FETCH=1` (a missing blob of a partial clone is
+ * an error, never a fetch over the network or a repository-configured transport command), `GIT_LITERAL_PATHSPECS=1`, and `-c` settings for
+ * submodule recursion, the attributes file and the untracked cache. The repository's own `.git/config` is otherwise read by git as usual; the
+ * commands above do not consult filters, textconv, hooks or attributes.
  * The commit a result names is a valid `plan.base`, and the relay clones that same commit for the executor.
  *
  * Bounds come from `ProjectViewPolicy`, are reported in every result and never apply silently: a cut result says so and carries the
@@ -37,13 +41,13 @@ export interface ProjectViewPolicy {
   maxPathBytes: number
   /** Longest search text (characters). */
   maxTextChars: number
-  /** Most blob bytes one search reads; the result reports what was not scanned. */
+  /** Most blob bytes one search reads (each blob is at most `maxFileBytes`); the result reports what was not scanned. */
   maxScanBytes: number
 }
 export const DEFAULT_PROJECT_VIEW_POLICY: Readonly<ProjectViewPolicy> = Object.freeze({
   treeEntries: 200, maxTreeEntries: 2_000, pageBytes: 16_384, maxPageBytes: 65_536, maxFileBytes: 4_194_304,
   searchMatches: 100, maxSearchMatches: 500, lineChars: 400, maxResultBytes: 262_144, timeoutMs: 15_000,
-  maxPathBytes: 4_096, maxTextChars: 1_000, maxScanBytes: 268_435_456,
+  maxPathBytes: 4_096, maxTextChars: 1_000, maxScanBytes: 67_108_864,
 })
 
 /** A fixed, free-text-free failure. `detail` is bounded numbers or field names only, never a path, a message or a value. */
@@ -63,7 +67,7 @@ const SECRET_SEGMENT = [
   // Credential directories and dotfiles.
   /^\.(?:ssh|aws|gnupg|kube|docker|dockercfg|azure|gcloud|gsutil|npmrc|yarnrc\.yml|pypirc|netrc|pgpass|htpasswd|git-credentials|s3cfg|boto|terraformrc)$/i,
   /^_netrc$/i, /^terraform\.rc$/i, /^kubeconfig$/i, /\.kubeconfig$/i,
-  /^\.vault/i,
+  /^\.vault/i, /^\.firebase/i, /^\.token$/i, /\.token$/i, /\.ovpn$/i,
   // Private keys and keystores.
   /^id_(?:rsa|dsa|ecdsa|ed25519)/i,
   /\.(?:pem|key|p8|p12|pfx|ppk|jks|jceks|keystore|kdbx|gpg|asc|pgp)$/i,
@@ -78,9 +82,11 @@ const SECRET_SEGMENT = [
   // Terraform state and variables, including `.backup`, `.json` and numbered copies.
   /\.tfstate(?:\.|$)/i, /\.tfvars(?:\.|$)/i,
 ]
+/** Credential files that are named by their place, not by one segment. */
+const SECRET_PATH = [/(?:^|\/)\.config\/gh\/hosts\.yml$/i]
 /** True when any segment of a project-relative path names a file or directory no lead tool may read, list or search. */
 export function deniedPath(path: string): boolean {
-  return blocked(path) || path.split('/').some(segment => SECRET_SEGMENT.some(rule => rule.test(segment)))
+  return blocked(path) || SECRET_PATH.some(rule => rule.test(path)) || path.split('/').some(segment => SECRET_SEGMENT.some(rule => rule.test(segment)))
 }
 /** A project-relative path: `''` is the root. Anything that is not a plain relative path is `path_invalid`; a denied name is `path_denied`. */
 export function viewPath(raw: string | undefined, allowRoot: boolean, maxBytes = DEFAULT_PROJECT_VIEW_POLICY.maxPathBytes): string {
@@ -99,21 +105,34 @@ const HEX = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
 const CURSOR = /^([a-f0-9]{40}|[a-f0-9]{64}):(\d{1,15})$/
 /** Repository-local configuration must not widen what plumbing does: no submodule recursion, no attributes file, no untracked cache. */
 const CONFIG_OVERRIDES = ['-c', 'submodule.recurse=false', '-c', 'grep.recurseSubmodules=false', '-c', 'core.attributesFile=/dev/null', '-c', 'core.untrackedCache=false']
-type Sink = (chunk: Buffer) => boolean | void
+/** A sink may answer with a promise (the process is paused until it settles), so a long scan can yield to the event loop. */
+type Sink = (chunk: Buffer) => boolean | void | Promise<boolean | void>
 interface GitRun { code: number | null; stopped: boolean }
-/** One git process: absolute binary, argv only, no shell, hard timeout (rejects at once, without waiting for the pipes to close). The sink sees
- * stdout chunks; returning `false` ends the process early (not a failure), and a throw ends it with that error. */
-function runGit(bin: string, root: string, args: readonly string[], timeoutMs: number, sink: Sink, stdin?: string): Promise<GitRun> {
+/** One git process: absolute binary, argv only, no shell, hard timeout (rejects at once, without waiting for the pipes to close), killed when
+ * `signal` aborts (`project_view_cancelled`). The sink sees stdout chunks; returning `false` ends the process early (not a failure), and a
+ * throw ends it with that error. */
+function runGit(bin: string, signal: AbortSignal, root: string, args: readonly string[], timeoutMs: number, sink: Sink, stdin?: string): Promise<GitRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, [...gitFlags, ...CONFIG_OVERRIDES, ...args], { cwd: root, env: { ...gitEnv, GIT_LITERAL_PATHSPECS: '1', GIT_OPTIONAL_LOCKS: '0' },
-      stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] })
+    if (signal.aborted) return reject(new ProjectViewError('project_view_cancelled'))
+    const child = spawn(bin, [...gitFlags, ...CONFIG_OVERRIDES, ...args], { cwd: root,
+      env: { ...gitEnv, GIT_LITERAL_PATHSPECS: '1', GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1' }, stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] })
     let settled = false, stopped = false
-    const finish = (settle: () => void) => { if (settled) return; settled = true; clearTimeout(timer); settle() }
-    const timer = setTimeout(() => finish(() => { child.kill('SIGKILL'); reject(new ProjectViewError('project_view_timeout')) }), timeoutMs)
+    const finish = (settle: () => void) => { if (settled) return; settled = true; clearTimeout(timer); signal.removeEventListener('abort', onAbort); settle() }
+    const fatal = (error: unknown) => finish(() => { child.kill('SIGKILL'); reject(error) })
+    const timer = setTimeout(() => fatal(new ProjectViewError('project_view_timeout')), timeoutMs)
+    const onAbort = () => fatal(new ProjectViewError('project_view_cancelled'))
+    signal.addEventListener('abort', onAbort, { once: true })
     child.on('error', () => finish(() => reject(new ProjectViewError('project_view_unavailable'))))
     child.stdout!.on('data', (chunk: Buffer) => {
       if (settled || stopped) return
-      try { if (sink(chunk) === false) { stopped = true; child.kill('SIGKILL') } } catch (error) { finish(() => { child.kill('SIGKILL'); reject(error) }) }
+      const stop = () => { stopped = true; child.kill('SIGKILL') }
+      try {
+        const answer = sink(chunk)
+        if (answer instanceof Promise) {
+          child.stdout!.pause()
+          answer.then(keep => { if (settled || stopped) return; if (keep === false) stop(); else child.stdout!.resume() }, fatal)
+        } else if (answer === false) stop()
+      } catch (error) { fatal(error) }
     })
     child.on('close', code => finish(() => resolve({ code, stopped })))
     if (stdin !== undefined) { child.stdin!.on('error', () => undefined); child.stdin!.end(stdin) }
@@ -246,10 +265,10 @@ export interface ProjectViewResult { text: string; summary: ProjectViewSummary }
 // ---- the view ---------------------------------------------------------------------------------
 
 interface Entry { mode: string; type: string; oid: string; size: number | null; path: string }
-const ENTRY = /^(\d{6}) (blob|tree|commit) ([a-f0-9]{40,64}) +(-|\d+)\t([\s\S]+)$/
+const ENTRY = /^(\d{6}) (blob|tree|commit) ([a-f0-9]{40,64}) +(-|BAD|\d+)\t([\s\S]+)$/
 const parseEntry = (record: string): Entry | null => {
   const match = ENTRY.exec(record)
-  return match ? { mode: match[1]!, type: match[2]!, oid: match[3]!, size: match[4] === '-' ? null : Number(match[4]), path: match[5]! } : null
+  return match ? { mode: match[1]!, type: match[2]!, oid: match[3]!, size: match[4] === '-' || match[4] === 'BAD' ? null : Number(match[4]), path: match[5]! } : null
 }
 const kindOf = (entry: Entry): 'dir' | 'file' | 'symlink' | 'submodule' =>
   entry.type === 'tree' ? 'dir' : entry.type === 'commit' ? 'submodule' : entry.mode === '120000' ? 'symlink' : 'file'
@@ -271,6 +290,8 @@ export class ProjectView {
   readonly policy: Readonly<ProjectViewPolicy>
   private readonly scrubber: EgressScrubber
   private readonly git: string
+  /** Aborted by `close()`: ends every git process this view started and refuses new ones. */
+  private readonly lifetime = new AbortController()
   constructor(options: ProjectViewOptions) {
     this.scrubber = options.scrubber
     this.git = options.git ?? '/usr/bin/git'
@@ -280,38 +301,42 @@ export class ProjectView {
     this.policy = Object.freeze(policy)
   }
 
-  run(tool: string, root: string, raw: unknown): Promise<ProjectViewResult> {
+  /** Ends every running git process (`project_view_cancelled`) and refuses later calls; the node's shutdown calls it. */
+  close(): void { this.lifetime.abort() }
+  private signalFor(signal: AbortSignal | undefined): AbortSignal { return signal ? AbortSignal.any([this.lifetime.signal, signal]) : this.lifetime.signal }
+
+  run(tool: string, root: string, raw: unknown, signal?: AbortSignal): Promise<ProjectViewResult> {
     switch (tool) {
-      case LEAD_PROJECT_TREE_TOOL: return this.tree(root, raw)
-      case LEAD_PROJECT_READ_TOOL: return this.read(root, raw)
-      case LEAD_PROJECT_SEARCH_TOOL: return this.search(root, raw)
+      case LEAD_PROJECT_TREE_TOOL: return this.tree(root, raw, signal)
+      case LEAD_PROJECT_READ_TOOL: return this.read(root, raw, signal)
+      case LEAD_PROJECT_SEARCH_TOOL: return this.search(root, raw, signal)
       default: return Promise.reject(new ProjectViewError('unknown_tool'))
     }
   }
 
   private path(raw: string | undefined, allowRoot: boolean): string { return viewPath(raw, allowRoot, this.policy.maxPathBytes) }
-  private async buffered(root: string, args: readonly string[], maxBytes: number): Promise<{ code: number | null; text: string; bytes: Buffer }> {
+  private async buffered(signal: AbortSignal, root: string, args: readonly string[], maxBytes: number): Promise<{ code: number | null; text: string; bytes: Buffer }> {
     const out = collect(maxBytes)
-    const run = await runGit(this.git, root, args, this.policy.timeoutMs, out.sink)
+    const run = await runGit(this.git, signal, root, args, this.policy.timeoutMs, out.sink)
     return { code: run.code, text: out.text(), bytes: out.bytes() }
   }
   /** The top level of the project's git repository and the commit `ref` names. */
-  private async open(rootPath: string, rawRef: string | undefined): Promise<{ root: string; commit: string }> {
+  private async open(signal: AbortSignal, rootPath: string, rawRef: string | undefined): Promise<{ root: string; commit: string }> {
     const requested = rawRef === undefined || rawRef === '' ? 'HEAD' : rawRef
     if (requested !== 'HEAD' && !HEX.test(requested)) fail('ref_invalid')
     let root: string
     try { root = await realpath(rootPath) } catch { return fail('project_view_unavailable') }
     // The relay clones the repository and plans paths from its top level; a project root below it is not viewable either.
-    const prefix = await this.buffered(root, ['rev-parse', '--show-prefix'], 4_096)
+    const prefix = await this.buffered(signal, root, ['rev-parse', '--show-prefix'], 4_096)
     if (prefix.code !== 0 || prefix.text.trim() !== '') fail('project_view_unavailable')
-    const resolved = await this.buffered(root, ['rev-parse', '--verify', '--end-of-options', `${requested}^{commit}`], 4_096)
+    const resolved = await this.buffered(signal, root, ['rev-parse', '--verify', '--end-of-options', `${requested}^{commit}`], 4_096)
     const commit = resolved.text.trim()
     if (resolved.code !== 0 || !HEX.test(commit)) fail('ref_not_found')
     return { root, commit }
   }
   /** The tree entry at `path` itself (not its children), or null. */
-  private async entryAt(root: string, commit: string, path: string): Promise<Entry | null> {
-    const listed = await this.buffered(root, ['ls-tree', '-z', '--long', commit, '--', path], this.policy.maxPathBytes + 512)
+  private async entryAt(signal: AbortSignal, root: string, commit: string, path: string): Promise<Entry | null> {
+    const listed = await this.buffered(signal, root, ['ls-tree', '-z', '--long', commit, '--', path], this.policy.maxPathBytes + 512)
     if (listed.code !== 0) fail('project_view_unavailable')
     for (const record of listed.text.split('\0')) {
       const entry = record ? parseEntry(record) : null
@@ -332,13 +357,14 @@ export class ProjectView {
   }
   private bounds(extra: Record<string, number>): Record<string, number> { return { ...extra, maxResultBytes: this.policy.maxResultBytes, maxPathBytes: this.policy.maxPathBytes } }
 
-  async tree(rootPath: string, raw: unknown): Promise<ProjectViewResult> {
+  async tree(rootPath: string, raw: unknown, abort?: AbortSignal): Promise<ProjectViewResult> {
+    const signal = this.signalFor(abort)
     const input = parse(treeInput, raw)
     const path = this.path(input.path, true)
     const start = pin(input)
-    const { root, commit } = await this.open(rootPath, start.ref)
+    const { root, commit } = await this.open(signal, rootPath, start.ref)
     if (path !== '') {
-      const entry = await this.entryAt(root, commit, path)
+      const entry = await this.entryAt(signal, root, commit, path)
       if (!entry) fail('not_found')
       if (entry!.type !== 'tree') fail('not_a_directory')
     }
@@ -356,7 +382,7 @@ export class ProjectView {
       }
       total++
     })
-    const run = await runGit(this.git, root, ['ls-tree', ...(input.recursive ? ['-r'] : []), '-z', '--long', commit, ...(path === '' ? [] : ['--', `${path}/`])], this.policy.timeoutMs, listing)
+    const run = await runGit(this.git, signal, root, ['ls-tree', ...(input.recursive ? ['-r'] : []), '-z', '--long', commit, ...(path === '' ? [] : ['--', `${path}/`])], this.policy.timeoutMs, listing)
     if (run.code !== 0) fail('project_view_unavailable')
     let kept = page.length
     const body = this.serialize(shrink => {
@@ -369,19 +395,22 @@ export class ProjectView {
     return { text: body, summary: { path, commit, bytes: Buffer.byteLength(body), truncated: offset + kept < total, withheld } }
   }
 
-  async read(rootPath: string, raw: unknown): Promise<ProjectViewResult> {
+  async read(rootPath: string, raw: unknown, abort?: AbortSignal): Promise<ProjectViewResult> {
+    const signal = this.signalFor(abort)
     const input = parse(readInput, raw)
     const path = this.path(input.path, false)
     const start = pin(input)
-    const { root, commit } = await this.open(rootPath, start.ref)
-    const entry = await this.entryAt(root, commit, path)
+    const { root, commit } = await this.open(signal, rootPath, start.ref)
+    const entry = await this.entryAt(signal, root, commit, path)
     if (!entry) fail('not_found')
     const kind = kindOf(entry!)
     if (kind === 'symlink') fail('symlink_denied')
     if (kind !== 'file') fail('not_a_file')
-    const size = entry!.size ?? 0
+    // With lazy fetching off, git prints `BAD` for the size of a blob a partial clone does not hold: it is unavailable, not empty.
+    if (entry!.size === null) return fail('project_view_unavailable')
+    const size: number = entry!.size
     if (size > this.policy.maxFileBytes) fail('file_too_large', `size ${size} bytes, limit ${this.policy.maxFileBytes}`)
-    const blob = await this.buffered(root, ['cat-file', 'blob', entry!.oid], size)
+    const blob = await this.buffered(signal, root, ['cat-file', 'blob', entry!.oid], size)
     if (blob.code !== 0 || blob.bytes.length !== size) fail('project_view_unavailable')
     // Git's own rule for binary content, then strict UTF-8: a file the lead cannot read as text is refused, never mangled.
     if (blob.bytes.subarray(0, 8_000).includes(0)) fail('binary_file')
@@ -413,45 +442,48 @@ export class ProjectView {
 
   /** Searches the scrubbed text of every allowed blob of the commit, in tree order. Paths the name policy hides are removed from the list
    * before any blob is requested, so they are never opened and nothing in the result (matches, counts, scan figures) can depend on them. */
-  async search(rootPath: string, raw: unknown): Promise<ProjectViewResult> {
+  async search(rootPath: string, raw: unknown, abort?: AbortSignal): Promise<ProjectViewResult> {
+    const signal = this.signalFor(abort)
     const input = parse(searchInput, raw)
     // A newline would make a multi-line pattern; the text is one line of the scrubbed text.
     if (/[\u0000\r\n]/.test(input.text)) fail('invalid_input', 'text: must be a single line')
     if (Array.from(input.text).length > this.policy.maxTextChars) fail('invalid_input', `text: longer than ${this.policy.maxTextChars} characters`)
     const path = this.path(input.path, true)
     const start = pin(input)
-    const { root, commit } = await this.open(rootPath, start.ref)
+    const { root, commit } = await this.open(signal, rootPath, start.ref)
     let scope: string[] = []
     if (path !== '') {
-      const entry = await this.entryAt(root, commit, path)
+      const entry = await this.entryAt(signal, root, commit, path)
       if (!entry) fail('not_found')
       scope = ['--', entry!.type === 'tree' ? `${path}/` : path]
     }
     const offset = start.offset
     const limit = this.clamp(input.limit, this.policy.searchMatches, this.policy.maxSearchMatches)
     // 1. The allowed blobs, from the tree object: `-z`, so a file name may hold any byte but NUL.
-    const files: { path: string; oid: string; size: number }[] = []
-    let skippedLarge = 0, skippedOther = 0
+    // The scan budget is applied while listing: once the blobs kept would exceed `maxScanBytes` nothing more is stored, the rest is only counted.
+    // A record that is not a parsable entry (longer than the path bound) is counted nowhere: it may be a hidden path, and a figure for it would say so.
+    const queue: { path: string; oid: string; size: number }[] = []
+    let skippedLarge = 0, skippedOther = 0, unscanned = 0, budget = 0
     const listing = records(0, this.policy.maxPathBytes + 512, record => {
       const entry = record === null ? null : parseEntry(record.toString('utf8'))
-      if (!entry) { skippedOther++; return }
+      if (!entry) return
       if (deniedPath(entry.path)) return
       if (kindOf(entry) !== 'file' || entry.size === null || entry.size === 0) { skippedOther++; return }
       if (entry.size > this.policy.maxFileBytes) { skippedLarge++; return }
-      files.push({ path: entry.path, oid: entry.oid, size: entry.size })
+      if (unscanned > 0 || budget + entry.size > this.policy.maxScanBytes) { unscanned++; return }
+      budget += entry.size
+      queue.push({ path: entry.path, oid: entry.oid, size: entry.size })
     })
-    const listed = await runGit(this.git, root, ['ls-tree', '-r', '-z', '--long', commit, ...scope], this.policy.timeoutMs, listing)
+    const listed = await runGit(this.git, signal, root, ['ls-tree', '-r', '-z', '--long', commit, ...scope], this.policy.timeoutMs, listing)
     if (listed.code !== 0) fail('project_view_unavailable')
-    // 2. Only as many bytes as the scan budget allows are read; the rest is reported.
-    let budget = 0, take = files.length
-    for (let i = 0; i < files.length; i++) { budget += files[i]!.size; if (budget > this.policy.maxScanBytes) { take = i; break } }
-    const queue = files.slice(0, take)
-    const unscanned = files.length - take
+    // 2. Only the kept blobs are read.
     // 3. One `cat-file --batch`, each blob scrubbed as a whole and searched line by line.
     const matches: { path: string; line: number; text: string }[] = []
     let seen = 0, more = false, lineCut = false, scanned = 0, skippedBinary = 0
     const decoder = new TextDecoder('utf-8', { fatal: true })
+    let sinceYield = 0
     const frames = blobFrames(queue.map(file => file.size), (index, blob) => {
+      sinceYield += blob.length
       if (blob.subarray(0, 8_000).includes(0)) { skippedBinary++; return }
       let text: string
       try { text = decoder.decode(blob) } catch { skippedBinary++; return }
@@ -475,8 +507,15 @@ export class ProjectView {
         matches.push({ path: queue[index]!.path, line, text: excerpt.text })
       }
     })
+    // Scrubbing is synchronous: after about 8 MiB of blobs the process is paused and the event loop gets a turn.
+    const scanSink: Sink = chunk => {
+      const answer = frames.sink(chunk)
+      if (answer === false || sinceYield < 8_388_608) return answer
+      sinceYield = 0
+      return new Promise<void>(resolve => { setImmediate(resolve) })
+    }
     if (queue.length) {
-      const run = await runGit(this.git, root, ['cat-file', '--batch'], this.policy.timeoutMs, frames.sink, queue.map(file => file.oid).join('\n') + '\n')
+      const run = await runGit(this.git, signal, root, ['cat-file', '--batch'], this.policy.timeoutMs, scanSink, queue.map(file => file.oid).join('\n') + '\n')
       if (!run.stopped && (run.code !== 0 || !frames.done())) fail('project_view_unavailable')
     }
     let kept = matches.length

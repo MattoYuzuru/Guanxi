@@ -20,6 +20,8 @@ export interface LeadProjectViewOptions {
   /** Source roots of a project, as the relay start resolves them (the first one is read). Never taken from tool input. */
   roots(projectId: string, signal: AbortSignal): Promise<readonly string[]>
   policy?: Partial<ProjectViewPolicy>
+  /** Absolute path of the git binary (tests only). */
+  git?: string
 }
 export interface LeadServiceOptions {
   db: Db
@@ -130,13 +132,15 @@ export class LeadService {
     // An injected server may already name the host's executors; no list means "leave it as it is", not "reset it".
     if (options.executors !== undefined) this.tools.setExecutors(options.executors)
     this.ownsTools = options.tools === undefined
-    this.view = options.projectView ? new ProjectView({ scrubber: options.scrubber, ...(options.projectView.policy ? { policy: options.projectView.policy } : {}) }) : null
+    this.view = options.projectView ? new ProjectView({ scrubber: options.scrubber, ...(options.projectView.policy ? { policy: options.projectView.policy } : {}), ...(options.projectView.git ? { git: options.projectView.git } : {}) }) : null
   }
   /** The task this service would store for `prompt`; the CLI refuses to start a second lead with the same one. */
   normalizeTask(prompt: string): string { return normalizeTask(prompt, this.scrubber) }
   private now(): number { return (this.o.clock ?? Date.now)() }
   private fault(point: string): void { this.o.fault?.(`lead:${point}`) }
   health() { return { failure: this.failure } }
+  /** Whether the lead's project tools are configured. */
+  get projectViewEnabled(): boolean { return this.view !== null }
   private notice(notice: LeadNotice): void { try { this.o.notify?.(notice) } catch { /* A notification sink never owns control flow. */ } }
   private spawn<T>(promise: Promise<T>): Promise<T> {
     const task = promise.finally(() => this.tasks.delete(task))
@@ -334,7 +338,7 @@ export class LeadService {
       // The relay works on exactly one root; so does the view. None or several is not a project it can show.
       const root = roots.length === 1 ? roots[0] : undefined
       if (!root) throw new ProjectViewError('project_view_unavailable')
-      const result = await view.run(tool, root, input)
+      const result = await view.run(tool, root, input, live.cancel.signal)
       outcome = { ok: true, text: result.text, summary: result.summary }
     } catch (error) {
       // Only a fixed code leaves: an OS message, a path or a library error stays behind the generic one.
@@ -738,6 +742,7 @@ export class LeadService {
     this.closed = true
     for (const live of this.live.values()) live.cancel.abort()
     await this.idle()
+    this.view?.close()
     if (this.ownsTools) await this.tools.close()
   }
 }
