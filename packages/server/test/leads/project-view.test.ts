@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { LEAD_PROJECT_READ_TOOL, LEAD_PROJECT_SEARCH_TOOL, LEAD_PROJECT_TREE_TOOL } from '@guanxi/contract'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
-import { PROJECT_VIEW_TOOLS, ProjectView, ProjectViewError, deniedPath, type ProjectViewPolicy } from '../../src/leads/project-view.ts'
+import { DEFAULT_PROJECT_VIEW_POLICY, PROJECT_VIEW_TOOLS, ProjectView, ProjectViewError, deniedPath, type ProjectViewPolicy } from '../../src/leads/project-view.ts'
 import { LeadToolServer, type ExtraTool, type ToolGrantContext, type ToolHandler } from '../../src/leads/tool-server.ts'
 import { brief, leadFixture } from './helpers.ts'
 
@@ -20,22 +21,24 @@ const OUTSIDE_MARKER = 'OUTSIDE_MARKER_91bc'
 
 interface Repo { dir: string; outside: string; head: string; commit(message: string): string }
 /** A real repository with a committed mix of ordinary files, secret-named files and symlinks that point outside it. */
-async function makeRepo(t: TestContext, files: Record<string, string | Buffer> = {}, links: Record<string, string> = {}): Promise<Repo> {
+async function makeRepo(t: TestContext, files: Record<string, string | Buffer> = {}, links: Record<string, string> = {}, options: { plain?: boolean } = {}): Promise<Repo> {
   const root = await mkdtemp(join(tmpdir(), 'guanxi-pview-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const dir = join(root, 'repo'), outside = join(root, 'outside')
   await mkdir(dir); await mkdir(outside)
   await writeFile(join(outside, 'private.txt'), `${OUTSIDE_MARKER}\n`)
   git(dir, 'init', '-q', '-b', 'main')
-  const all: Record<string, string | Buffer> = {
+  const base: Record<string, string | Buffer> = {
     'README.md': '# Ledger\nsee src/money.ts\n',
     'src/money.ts': 'export const cents = (x: number) => Math.round(x * 100)\n// TODO: handle négatifs — émoji 🙂\n',
     'src/deep/inner.ts': 'export const inner = 1\n',
     'test/money.test.ts': "import { cents } from '../src/money.ts'\n",
     '.env': `API_TOKEN=${ENV_MARKER}\n`, 'config/.env.local': `LOCAL=${ENV_MARKER}\n`, '.ENV.production': `PROD=${ENV_MARKER}\n`,
     'keys/id_rsa': `-----BEGIN-----\n${ENV_MARKER}\n`, 'certs/server.pem': `${ENV_MARKER}\n`, '.ssh/config': `Host ${ENV_MARKER}\n`,
-    ...files,
   }
+  // `plain`: none of the base hidden files, so a test can compare a repository with hidden files against the same one without.
+  if (options.plain) for (const name of Object.keys(base)) if (deniedPath(name)) delete base[name]
+  const all = { ...base, ...files }
   for (const [name, content] of Object.entries(all)) { await mkdir(dirname(join(dir, name)), { recursive: true }); await writeFile(join(dir, name), content) }
   const allLinks = { 'link-file': join(outside, 'private.txt'), 'link-dir': outside, 'link-up': '..', ...links }
   for (const [name, target] of Object.entries(allLinks)) await symlink(target, join(dir, name))
@@ -178,6 +181,7 @@ test('the name policy covers each credential class (review M4) and does not hide
     'service accounts': ['service-account.json', 'gcp/my-service_account-prod.json', 'serviceaccount.json'],
     'terraform': ['terraform.tfstate.backup', 'x/terraform.tfstate.1', 'prod.tfvars', 'prod.tfvars.json', 'terraform.tfstate'],
     'private keys': ['AuthKey_ABC.p8', 'putty.ppk', 'backup.gpg', 'key.asc', 'x.pgp', 'a.jceks', 'a.keystore', 'deploy.key', 'tls.pem', 'cert.p12', 'cert.pfx'],
+    'tokens, vpn and cli credentials': ['.token', 'api.token', '.firebaserc', '.firebase', 'corp.ovpn', '.config/gh/hosts.yml'],
     'tool credentials': ['.s3cfg', '.boto', '.dockercfg', '.docker/config.json', '.vault-token', '.vault_pass', '.vault', '.azure/accessTokens.json', '.gcloud/x', '.kube/config', 'kubeconfig', 'prod.kubeconfig',
       '.npmrc', '.yarnrc.yml', '.pypirc', '.pgpass', '.htpasswd', '.netrc', '_netrc', '.terraformrc', 'terraform.rc', '.git-credentials', '.ssh/id_rsa'],
   }
@@ -511,7 +515,8 @@ test('L1/L4: the path and text bounds come from the policy and are reported', as
   const listed = await json(view.tree(odd.dir, { path: 'long', recursive: true }))
   assert.deepEqual([listed.entries.map((entry: any) => entry.path), listed.withheld], [['long/ok.txt'], 1])
   const searched = await json(view.search(odd.dir, { text: 'need', path: 'long' }))
-  assert.deepEqual([searched.matches.map((match: any) => match.path), searched.scan.skippedNotText], [['long/ok.txt'], 1])
+  // Review L1: a record that cannot be parsed (it may be a hidden path) is counted in no search figure.
+  assert.deepEqual([searched.matches.map((match: any) => match.path), searched.scan.skippedNotText], [['long/ok.txt'], 0])
   assert.equal((await json(makeView().view.search(repo.dir, { text: 'x'.repeat(1_000) }))).bounds.maxTextChars, 1_000)
   assert.equal(await code(makeView().view.search(repo.dir, { text: 'x'.repeat(1_001) })), 'invalid_input: text: longer than 1000 characters')
 })
@@ -574,6 +579,146 @@ test('L5/L7: a cursor keeps the commit of the first page while HEAD moves; names
   assert.equal(await code(view.tree(repo.dir, { cursor: `${'e'.repeat(40)}:0` })), 'ref_not_found')
 })
 
+// ---- review round 2 ---------------------------------------------------------------------------
+
+const waitFor = async (what: () => boolean, ms = 10_000) => { for (let waited = 0; !what() && waited < ms; waited += 20) await new Promise(resolve => setTimeout(resolve, 20)); return what() }
+const gone = (pid: number) => { try { process.kill(pid, 0); return false } catch { return true } }
+/** A `git` stand-in: a shell script, or a node script that runs the real git and rewrites what `cat-file --batch` prints. */
+async function stand(t: TestContext, name: string, source: string, shell = true): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'guanxi-pview-stand-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const file = join(dir, name)
+  await writeFile(file, `#!${shell ? '/bin/sh' : process.execPath}\n${source}`, { mode: 0o755 })
+  return file
+}
+const hang = (t: TestContext, pidFile: string) => stand(t, 'hang-git', `echo $$ > ${pidFile}\nexec sleep 30\n`)
+const batchStand = (t: TestContext, rewrite: string) => stand(t, 'batch-git.mjs', `import { spawn, spawnSync } from 'node:child_process'
+const args = process.argv.slice(2)
+if (!(args.includes('cat-file') && args.includes('--batch'))) { const r = spawnSync('/usr/bin/git', args, { stdio: 'inherit' }); process.exit(r.status ?? 1) }
+const child = spawn('/usr/bin/git', args, { stdio: ['inherit', 'pipe', 'inherit'] })
+const chunks = []
+child.stdout.on('data', c => chunks.push(c))
+child.on('close', async () => { const out = Buffer.concat(chunks); ${rewrite} })
+`, false)
+
+test('review M1: a partial clone with a missing blob never runs the repository\'s transport command or fetches; read and search fail with fixed answers', async t => {
+  const source = await makeRepo(t, { 'f.txt': 'needle here\n' }, {}, { plain: true })
+  git(source.dir, 'config', 'uploadpack.allowFilter', 'true'); git(source.dir, 'config', 'uploadpack.allowAnySHA1InWant', 'true')
+  const parent = await mkdtemp(join(tmpdir(), 'guanxi-pview-clone-'))
+  t.after(() => rm(parent, { recursive: true, force: true }))
+  const clone = join(parent, 'clone'), marker = join(parent, 'MARK')
+  execFileSync(GIT, ['clone', '-q', '--no-checkout', '--filter=blob:none', `file://${source.dir}`, clone], { env })
+  git(clone, 'config', 'remote.origin.url', 'ssh://nohost.invalid/repo'); git(clone, 'config', 'core.sshCommand', `touch ${marker}; false #`)
+  const { view } = makeView()
+  const tree = await json(view.tree(clone, { path: '' }))
+  assert.ok(tree.entries.some((entry: any) => entry.path === 'f.txt' && entry.type === 'file' && entry.size === undefined), 'listed, size unknown')
+  assert.equal(await code(view.read(clone, { path: 'f.txt' })), 'project_view_unavailable')
+  const found = await json(view.search(clone, { text: 'needle' }))
+  assert.deepEqual(found.matches, []); assert.equal(found.scan.files, 0)
+  assert.equal(existsSync(marker), false, 'no transport command ran')
+  // Control: with lazy fetching allowed the same configuration does run the command, so the assertions above prove something.
+  assert.throws(() => execFileSync(GIT, ['cat-file', 'blob', 'HEAD:f.txt'], { cwd: clone, env, stdio: 'pipe' }))
+  assert.equal(existsSync(marker), true)
+})
+
+test('review M2: nothing about a hidden file (size, emptiness, binary, symlink, count, long path) reaches any field of a search', async t => {
+  const policy = { maxFileBytes: 1_000, maxPathBytes: 40 }
+  const visible = { 'src/a.ts': 'needle a\n', 'src/b.ts': 'needle b\n', 'docs/big.txt': 'x'.repeat(2_000), 'docs/bin.dat': Buffer.from([0, 1]), 'docs/empty.txt': '' }
+  const search = async (hidden: Record<string, string | Buffer>, links: Record<string, string> = {}) => {
+    const repo = await makeRepo(t, { ...visible, ...hidden }, links, { plain: true })
+    const out = JSON.parse((await makeView(policy).view.search(repo.dir, { text: 'needle' })).text)
+    out.commit = 'normalised'
+    return JSON.stringify(out)
+  }
+  const baseline = await search({})
+  assert.equal(JSON.parse(baseline).matches.length, 2)
+  assert.equal(JSON.parse(baseline).scan.skippedTooLarge, 1)
+  const deep = `.ssh/${'d'.repeat(200)}/${'e'.repeat(200)}/${'f'.repeat(200)}`
+  const variants: Record<string, [Record<string, string | Buffer>, Record<string, string>?]> = {
+    'above maxFileBytes': [{ '.env': 'x'.repeat(5_000) }],
+    'empty': [{ '.env': '' }],
+    'binary': [{ '.env': Buffer.from([0, 1, 2]) }],
+    'a symlink': [{}, { '.env.local': '/etc/hosts' }],
+    'more hidden files': [{ '.env': 'a', '.ssh/id': 'b', 'secrets.json': 'c', 'keys/id_rsa': 'd', 'certs/x.pem': 'e' }],
+    'a record over the path bound': [{ [deep]: 'a' }],
+    'all of them': [{ '.env': 'x'.repeat(5_000), '.ssh/id': '', 'keys/id_rsa': Buffer.from([0]), [deep]: 'needle' }, { '.env.local': '/etc/hosts' }],
+  }
+  for (const [name, [hidden, links]] of Object.entries(variants)) assert.equal(await search(hidden, links), baseline, `hidden: ${name}`)
+})
+
+test('review L2/L3: a stuck git process is killed at the timeout, on abort and on close, and a lying cat-file is refused', async t => {
+  const repo = await makeRepo(t, { 'src/a.ts': 'needle a\n', 'src/b.ts': 'needle b\n' }, {}, { plain: true })
+  const scrubber = new SecretScrubber()
+  const pidDir = await mkdtemp(join(tmpdir(), 'guanxi-pview-pid-'))
+  t.after(() => rm(pidDir, { recursive: true, force: true }))
+  const pidFile = join(pidDir, 'pid')
+  const pidOf = async () => { assert.ok(await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''), 'the process started'); const pid = Number(readFileSync(pidFile, 'utf8')); await rm(pidFile); return pid }
+  const hanging = await hang(t, pidFile)
+
+  // timeout
+  assert.equal(await code(new ProjectView({ scrubber, git: hanging, policy: { timeoutMs: 1_500 } }).tree(repo.dir, {})), 'project_view_timeout')
+  const timedOut = await pidOf()
+  assert.ok(await waitFor(() => gone(timedOut)), 'the timed-out process is gone')
+
+  // abort
+  const view = new ProjectView({ scrubber, git: hanging })
+  const abort = new AbortController()
+  const aborted = code(view.tree(repo.dir, {}, abort.signal))
+  const abortedPid = await pidOf()
+  abort.abort()
+  assert.equal(await aborted, 'project_view_cancelled')
+  assert.ok(await waitFor(() => gone(abortedPid)), 'the aborted process is gone')
+  assert.equal(await code(view.tree(repo.dir, {}, abort.signal)), 'project_view_cancelled', 'an already aborted signal starts nothing')
+  assert.equal(existsSync(pidFile), false)
+
+  // close (the node's shutdown)
+  const closing = code(view.read(repo.dir, { path: 'src/a.ts' }))
+  const closingPid = await pidOf()
+  view.close()
+  assert.equal(await closing, 'project_view_cancelled')
+  assert.ok(await waitFor(() => gone(closingPid)), 'close ends the running process')
+  assert.equal(await code(view.tree(repo.dir, {})), 'project_view_cancelled', 'a closed view starts nothing')
+  assert.equal(existsSync(pidFile), false)
+
+  // cat-file --batch answers that disagree with ls-tree
+  const via = async (rewrite: string) => new ProjectView({ scrubber, git: await batchStand(t, rewrite) })
+  const honest = await json((await via('process.stdout.write(out)')).search(repo.dir, { text: 'needle' }))
+  assert.equal(honest.matches.length, 2)
+  const split = await json((await via('for (const byte of out) { process.stdout.write(Buffer.from([byte])); await new Promise(r => setImmediate(r)) }')).search(repo.dir, { text: 'needle' }))
+  assert.deepEqual(split.matches, honest.matches, 'a frame split at every byte is read the same')
+  const lies: Record<string, string> = {
+    'a size that disagrees with ls-tree': "process.stdout.write(Buffer.from(out.toString('latin1').replace(/^([a-f0-9]+ blob )(\\d+)/, (m, a, b) => a + (Number(b) + 1)), 'latin1'))",
+    'a missing object': "process.stdout.write('0000000000000000000000000000000000000000 missing\\n')",
+    'trailing bytes': "process.stdout.write(Buffer.concat([out, Buffer.from('junk\\n')]))",
+    'a truncated stream': 'process.stdout.write(out.subarray(0, out.length - 3))',
+    // The byte after the first frame's body is not the newline git prints; every later header is still well formed.
+    'a corrupted frame terminator': "const nl = out.indexOf(10); const size = Number(out.subarray(0, nl).toString().split(' ')[2]); const copy = Buffer.from(out); copy[nl + 1 + size] = 88; process.stdout.write(copy)",
+    'no header newline': "process.stdout.write('a'.repeat(1000))",
+  }
+  for (const [what, rewrite] of Object.entries(lies)) assert.equal(await code((await via(rewrite)).search(repo.dir, { text: 'needle' })), 'project_view_unavailable', what)
+})
+
+test('review L4/L5: the scan budget keeps only what fits and counts the rest exactly; a long scan yields to the event loop; the default budget is 64 MiB', async t => {
+  assert.equal(DEFAULT_PROJECT_VIEW_POLICY.maxScanBytes, 64 * 1_048_576)
+  const files: Record<string, string> = {}
+  for (let i = 0; i < 10; i++) files[`many/f${i}.txt`] = `needle ${'x'.repeat(92)}\n`
+  const repo = await makeRepo(t, files, {}, { plain: true })
+  const found = await json(makeView({ maxScanBytes: 450 }).view.search(repo.dir, { path: 'many', text: 'needle' }))
+  assert.equal(found.matches.length, 4); assert.deepEqual([found.scan.files, found.scan.unscanned, found.scan.complete, found.truncated], [4, 6, false, true])
+  assert.equal(found.bounds.maxScanBytes, 450)
+  assert.equal((await json(makeView().view.search(repo.dir, { path: 'many', text: 'needle' }))).bounds.maxScanBytes, 67_108_864)
+
+  const big = await makeRepo(t, { 'big/a.txt': `needle\n${'a'.repeat(3_500_000)}`, 'big/b.txt': `${'b'.repeat(3_500_000)}\nneedle\n`, 'big/c.txt': `needle\n${'c'.repeat(3_500_000)}` }, {}, { plain: true })
+  const yields = t.mock.method(globalThis, 'setImmediate')
+  const before = yields.mock.callCount()
+  await json(makeView().view.search(repo.dir, { path: 'many', text: 'needle' }))
+  const small = yields.mock.callCount() - before
+  const found3 = await json(makeView().view.search(big.dir, { path: 'big', text: 'needle' }))
+  const large = yields.mock.callCount() - before - small
+  assert.deepEqual(found3.matches.map((match: any) => [match.path, match.line]), [['big/a.txt', 1], ['big/b.txt', 2], ['big/c.txt', 1]])
+  assert.ok(large > small, `10.5 MB of blobs paused the process for the event loop (${large} vs ${small})`)
+})
+
 // ---- in the lead service ----------------------------------------------------------------------
 
 /** Captures the project tools of each turn's grant, so a test can call a handler the way the HTTP server would. */
@@ -583,10 +728,10 @@ class CapturingTools extends LeadToolServer {
 }
 type Answer = { kind: 'result'; text: string; isError?: boolean } | { kind: 'hold' }
 /** A lead whose turn stays open (the fixture agent hangs), with the project view over `repo`. */
-async function openTurn(t: TestContext, repo: Repo, options: { roots?: (id: string, signal: AbortSignal) => Promise<readonly string[]>; policy?: Partial<ProjectViewPolicy>; projectView?: boolean } = {}) {
+async function openTurn(t: TestContext, repo: Repo, options: { roots?: (id: string, signal: AbortSignal) => Promise<readonly string[]>; policy?: Partial<ProjectViewPolicy>; projectView?: boolean; git?: string } = {}) {
   const tools = new CapturingTools()
   t.after(() => tools.close())
-  const projectView = options.projectView === false ? {} : { projectView: { roots: options.roots ?? (async () => [repo.dir]), ...(options.policy ? { policy: options.policy } : {}) } }
+  const projectView = options.projectView === false ? {} : { projectView: { roots: options.roots ?? (async () => [repo.dir]), ...(options.policy ? { policy: options.policy } : {}), ...(options.git ? { git: options.git } : {}) } }
   const f = await leadFixture(t, { lead: { hang: true }, plugin: { tools, ...projectView } })
   const started = f.start()
   for (let i = 0; i < 400 && tools.captured.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 25))
@@ -601,7 +746,7 @@ async function openTurn(t: TestContext, repo: Repo, options: { roots?: (id: stri
   }
   let finished: Promise<unknown> | null = null
   // Idempotent, and registered for teardown: a failed assertion must not leave a hung lead turn holding the process open.
-  const finish = () => finished ??= (async () => { f.lead().cancel(started.runId); await started.first })()
+  const finish = () => finished ??= (async () => { f.lead()?.cancel(started.runId); await started.first.catch(() => undefined) })()
   t.after(finish)
   return { f, started, grant, tools, notes, call, finish }
 }
@@ -688,6 +833,36 @@ test('L1: exactly one project root is a project the view can show (the relay req
   const one = await openTurn(t, repo, { roots: async () => [repo.dir] })
   assert.ok((await one.call(LEAD_PROJECT_TREE_TOOL, {})).kind === 'result')
   await one.finish()
+})
+
+test('review L3: cancelling the lead ends the git process of a project call that is running', async t => {
+  const repo = await makeRepo(t)
+  const pidDir = await mkdtemp(join(tmpdir(), 'guanxi-pview-pid-'))
+  t.after(() => rm(pidDir, { recursive: true, force: true }))
+  const pidFile = join(pidDir, 'pid')
+  const turn = await openTurn(t, repo, { git: await hang(t, pidFile) })
+  const running = turn.call(LEAD_PROJECT_TREE_TOOL, {})
+  assert.ok(await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''), 'the project call started git')
+  const pid = Number(readFileSync(pidFile, 'utf8'))
+  assert.equal(gone(pid), false)
+  await turn.finish()
+  const answer = await running
+  assert.ok(answer.kind === 'result' && answer.isError === true)
+  assert.ok(await waitFor(() => gone(pid)), 'the process ended with the lead turn, not at the 15 s timeout')
+})
+
+test('review L3: shutting the lead service down ends the git process of a project call that is running', async t => {
+  const repo = await makeRepo(t)
+  const pidDir = await mkdtemp(join(tmpdir(), 'guanxi-pview-pid-'))
+  t.after(() => rm(pidDir, { recursive: true, force: true }))
+  const pidFile = join(pidDir, 'pid')
+  const turn = await openTurn(t, repo, { git: await hang(t, pidFile) })
+  const running = turn.call(LEAD_PROJECT_TREE_TOOL, {})
+  assert.ok(await waitFor(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''))
+  const pid = Number(readFileSync(pidFile, 'utf8'))
+  await turn.f.restartLead()
+  assert.ok(await waitFor(() => gone(pid)), 'closing the service killed the process, not the 15 s timeout')
+  assert.ok((await running).kind === 'result')
 })
 
 test('content is not served when the call cannot be audited (the turn is no longer the fenced attempt)', async t => {
