@@ -4,9 +4,34 @@
 **Current stage:** wave 7 (branch `lead/wave7`) — MS1 closed on the D-214 evidence; the B3 gate moved to MS2 with a smoke
 cohort now (D-219); Sonnet-only workers (D-220). Wave 6 (`lead/ms1-close`) merged into `main` as `c2f9a5d4` (PR
 MattoYuzuru/Guanxi#2, hosted gate green: run 40111090144, PR head `7f2d9f8d`, tested merge `1be83b9e`). The 22 merged lane
-clones in `Guanxi-lanes` and the merged branches were removed on 2026-10-31. In flight: MS1 relay residuals (`cd || exit
-125`, non-zero exit on the fixed-command path), a node-served read-only project view for the lead, and the B3 smoke-cohort
-runner (B3-b).
+clones in `Guanxi-lanes` and the merged branches were removed on 2026-10-31.
+
+## Wave 7 (2026-10-31)
+
+Four lanes, each by a Sonnet 5.5 author with a separate Sonnet 5.5 review (`sde-agent:implementation-reviewer`) and fixes in
+separate commits:
+
+- **MS1 relay residuals** ([hand-off](lanes/MS1-relay-residuals.handoff.md)): a composed `cd <checkout>` that fails exits 125
+  with a per-call marker line and is an infrastructure failure (`cwd_unavailable`), not a red gate; the relay `shell` tool's
+  fixed-command branch returns a non-zero exit with scrubbed, bounded output instead of `tool_failed`.
+- **Lead project view** ([hand-off](lanes/LP-lead-project-view.handoff.md)): opt-in (`home.lead.projectView` /
+  `leads.projectView`, default off — lead default 2026-10-31) read-only `guanxi_project_tree|read|search` on the lead's
+  `mcp__guanxi` server over committed git objects only; hidden-name policy applied before any blob is read, whole-blob
+  scrubbing, no oracle about hidden files in search, `GIT_NO_LAZY_FETCH`, bounded and cancellable. Two review rounds.
+- **B3-b smoke runner** ([hand-off](lanes/B3-b-smoke.handoff.md), [runbook](../../packages/bench/RELAY_SMOKE.md)): five
+  `ledger-lite` tasks from `Guanxi-Test-Repo`, an owner-API runner with resume, stop-before-next and fingerprints, emitting
+  `guanxi.b3.measurement/v1` for the B3-a validator; descriptive only.
+- **B3-c naive arm** ([hand-off](lanes/B3-c-naive-arm.handoff.md)) and **B3 integration**
+  ([hand-off](lanes/B3-integration.handoff.md)): a default-off, bench-only `home.relayCompaction: "naive"` relay mode
+  (refused together with `home.lead`), recorded per attempt; arms run as restart-per-arm passes; the runner confirms each
+  trial's arm from the run's own notes and the home database, refusing mixed or unconfirmed runs; drift pinned by driving
+  the real relay executor.
+
+Evidence — **new:** relay residuals 8 tests; project view 41 tests (+ mutation sets of 25, 20 and 17); B3-c 22 tests with a
+default-path digest pin; bench 112 new tests (281 total) and 128 mutation cases plus 19 server-shape mutants.
+**Regression envelope (local, focused):** relay + native-agent 432; leads/ms1-live/indexing/rehearsal 210; relay + ms1-live +
+llama-server 532; bench 169. Not run: a real model, the Fedora node, the macOS container path. The real B3 smoke cohort
+(ledger pass, then naive pass) is the next step on the Fedora pair.
 
 ## Wave 6 (2026-10-24, merged)
 

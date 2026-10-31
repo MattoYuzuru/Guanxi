@@ -65,7 +65,8 @@ I03 9/9, I04 8/8, I05 11/11. Lead cost for A4: two turns, $0.084 total (API usag
 ## Residuals
 
 - The lead has no read-only view of the project; its plan facts come from the prompt. A node-served read-only project tool
-  is the product fix (not started).
+  is the product fix: implemented opt-in in wave 7 (`home.lead.projectView`, see
+  [hand-off](../lanes/LP-lead-project-view.handoff.md)); not yet exercised by a real lead.
 - A `sk-ant-usr` key bills the owner's API credit; the lead's own spend is not under `moneyMicros` (runbook section 7).
 - The SSH forwards are owner-run; their reconnect loop is an ops script, not product.
 - Stale home relay pins after forced exits are reaped by F2-reap (observed nothing to reap in these runs).

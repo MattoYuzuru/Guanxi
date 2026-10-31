@@ -1,6 +1,6 @@
 # Next agent prompt — wave 7: MS1 residuals, B3 smoke cohort, MS2
 
-**Status:** active continuation · **Updated:** 2026-10-31
+**Status:** active continuation · **Updated:** 2026-10-31 (wave 7 lanes merged)
 
 Read [AGENTS](../../AGENTS.md), the [CI protocol](../operations/ci.md), [WORKFLOW](WORKFLOW.md), the newest owner decisions
 ([2026-10-31](../decisions/2026-10-31-owner-decisions.md), D-219–D-220) and [PHASE_STATUS](PHASE_STATUS.md). Work is on
@@ -16,17 +16,19 @@ Read [AGENTS](../../AGENTS.md), the [CI protocol](../operations/ci.md), [WORKFLO
 - Every delegated author and reviewer is a Sonnet 5.5 agent in its own worktree (D-220); the lead integrates, verifies and
   owns the PR.
 
-## In flight on `lead/wave7` (lane branches in `.claude/worktrees/`)
+## Done on `lead/wave7` (see PHASE_STATUS, wave 7)
 
-1. `lane/ms1-relay-residuals`: `cd <checkout> || exit 125` for composed relay commands; a non-zero exit on the relay's
-   fixed-command path returns code and scrubbed output instead of `tool_failed`.
-2. `lane/lead-project-view`: a node-served, read-only, bounded project view (`mcp__guanxi` tools) so the lead can read the
-   delegated checkout instead of relying on prompt-carried facts.
-3. `lane/b3b-smoke`: the B3 smoke-cohort corpus and runner that emits `guanxi.b3.measurement/v1` for the B3-a validator.
-   After review and merge, the lead runs the real smoke cohort on the Fedora node and records it under `evidence/`.
+MS1 relay residuals, the opt-in lead project view, the B3-b smoke runner, the B3-c naive arm and their integration — all
+independently reviewed with fixes in separate commits. Hosted CI for the wave 7 PR is the lead's to finish
+(`npm run ci:finish -- <PR> --wait`); check the PR description for the run URL.
 
-Each lane gets a separate Sonnet review (`sde-agent:implementation-reviewer`), fixes in separate commits, then one ready PR
-for `lead/wave7` and `npm run ci:finish -- <PR> --wait`.
+## Real B3 smoke cohort (needs the Fedora pair)
+
+Follow [RELAY_SMOKE](../../packages/bench/RELAY_SMOKE.md) and [ms1-live-run](../operations/ms1-live-run.md): both nodes on the
+same commit; pilot `ll-money-text` in the ledger pass (~75 min), then the full ledger pass (~6.5 h); restart home with
+`home.relayCompaction: "naive"` (no `home.lead`), pilot, then the naive pass with the same `--out`. Record the result under
+`evidence/` as a descriptive reading (no gate verdict), with an independent review. Optionally re-run MS1 with
+`home.lead.projectView: true` to see whether the real lead uses the view.
 
 ## Next (MS2 track, in this order unless the owner reorders)
 
