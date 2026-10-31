@@ -4,7 +4,7 @@
 import { relayStartInputSchema, type RelayStartInput, type RelayStartStatus } from '@guanxi/contract'
 import { z } from 'zod'
 import {
-  EvidenceBook, assembleMeasurement, buildTrialSlot, missingTrial, type ArmProfile, type TrialObservation,
+  EvidenceBook, assembleMeasurement, buildTrialSlot, missingTrial, type ArmProfile, type ModeProblem, type TrialObservation,
 } from './relay-smoke-build.ts'
 import { SMOKE_BASE_COMMIT, SMOKE_TASK_IDS, smokeDigests, smokePlan } from './relay-smoke-corpus.ts'
 import { armModeOf, projectEvents, sha256Hex, type EventLike } from './relay-smoke-facts.ts'
@@ -123,7 +123,7 @@ export const memoryStore = (): ObservationStore & { all: Map<string, TrialObserv
 
 const factSchema = z.object({ kind: z.string(), seq: z.number().int(), atMs: z.number().int(), cycle: z.number().int() }).passthrough()
 const gateSchema = z.object({ item: z.string(), head: z.string(), ok: z.boolean() }).strict()
-const sealSchema = z.object({ cycle: z.number().int(), epoch: z.number().int(), head: z.string(), items: z.record(z.string(), z.string()),
+const sealSchema = z.object({ cycle: z.number().int(), epoch: z.number().int(), attemptId: z.string().min(1), head: z.string(), items: z.record(z.string(), z.string()),
   evidence: z.array(gateSchema), ledgerSha256: z.string().nullable(), handoffLedgerSha256: z.string().nullable(),
   bundleSha256: z.string().nullable(), bundleMatchesHandoff: z.boolean().nullable(), artifactMatchesHandoff: z.boolean().nullable(), unreadable: z.literal(true).optional() }).strict()
 /** The stored shape of a trial observation. A file that does not match is refused, never trusted. */
@@ -264,9 +264,9 @@ export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: stri
   }
   // The arm is confirmed from the run's own events, never from the pass order or the configuration: a naive trial must show the
   // compaction note, a ledger trial none of the naive markers. A disagreement is a failure, not a relabel, and is not stored.
-  const mode = armModeOf(facts)
+  const mode = armModeOf(facts, ledger ? ledger.seals.map(s => ({ attemptId: s.attemptId, epoch: s.epoch })) : null)
   if (mode !== (arm.kind === 'naive_compaction' ? 'naive' : 'ledger')) {
-    const modeProblem = mode === 'unconfirmed' ? 'arm_mode_unconfirmed' : 'arm_mode_mismatch'
+    const modeProblem: ModeProblem = mode === 'unconfirmed' ? 'arm_mode_unconfirmed' : mode === 'mixed' ? 'arm_mode_mixed' : 'arm_mode_mismatch'
     deps.log?.({ event: 'trial_mode_problem', task, arm: arm.id, seed, code: modeProblem })
     return { ...observation, modeProblem }
   }
@@ -288,7 +288,7 @@ export interface SmokeSummary {
   expectedTrials: number
   incomplete: number
   /** Set when a relay could not be confirmed stopped; nothing was started after it. */
-  halted: 'relay_state_unknown' | 'arm_mode_mismatch' | 'arm_mode_unconfirmed' | null
+  halted: 'relay_state_unknown' | ModeProblem | null
   document: { valid: boolean; issues: RelayIssue[] }
 }
 export interface SmokeResult { measurement: RelayMeasurementInput | null; report: RelayMeasurementReport | null; summary: SmokeSummary; exitCode: 0 | 1 | 3 }
@@ -343,5 +343,5 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     document: { valid: checked.ok, issues: checked.ok ? [] : [...checked.issues] },
   }
   if (!checked.ok) return { measurement: null, report: null, summary, exitCode: 1 }
-  return { measurement: raw, report: reduceRelayMeasurement(raw), summary, exitCode: halted === 'arm_mode_mismatch' || halted === 'arm_mode_unconfirmed' ? 1 : incomplete ? 3 : 0 }
+  return { measurement: raw, report: reduceRelayMeasurement(raw), summary, exitCode: halted === 'arm_mode_mismatch' || halted === 'arm_mode_mixed' || halted === 'arm_mode_unconfirmed' ? 1 : incomplete ? 3 : 0 }
 }

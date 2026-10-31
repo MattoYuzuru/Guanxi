@@ -34,7 +34,7 @@ export const judge = (cycle: number, atMs: number, signals: string[], unknownFac
 
 export function seal(cycle: number, evidence: Array<{ item: string; ok: boolean }>, overrides: Partial<SealObservation> = {}): SealObservation {
   return {
-    cycle, epoch: 1, head: HEAD(cycle), items: {}, evidence: evidence.map(e => ({ item: e.item, head: HEAD(cycle), ok: e.ok })),
+    cycle, epoch: 1, attemptId: 'attempt-1', head: HEAD(cycle), items: {}, evidence: evidence.map(e => ({ item: e.item, head: HEAD(cycle), ok: e.ok })),
     ledgerSha256: H('c'), handoffLedgerSha256: H('c'), bundleSha256: H('d'), bundleMatchesHandoff: true, artifactMatchesHandoff: true, ...overrides,
   }
 }
@@ -63,11 +63,11 @@ export function observation(overrides: Partial<TrialObservation> = {}): TrialObs
   }
 }
 /** Builds one slot into a one-trial document (ledger arm planned, naive arm unsupported) and checks it. */
-export function documentOf(obs: TrialObservation, arm: ArmProfile = LEDGER_ARM, cfg: SmokeConfig = config()) {
+export function documentOf(obs: TrialObservation, arm: ArmProfile = LEDGER_ARM, cfg: SmokeConfig = config(), recordedAtMs = T0 + 2_000_000) {
   const book = new EvidenceBook()
   const plan = buildSmokePlan(cfg, book)
   const built = buildTrialSlot({ horizon: cfg.horizon, book, arm }, obs, plan)
-  const raw = assembleMeasurement({ plan, origin: 'synthetic_fixture', trials: [built.slot], book, recordedAtMs: T0 + 2_000_000, analysisAsOfMs: T0 + 2_000_000 })
+  const raw = assembleMeasurement({ plan, origin: 'synthetic_fixture', trials: [built.slot], book, recordedAtMs, analysisAsOfMs: recordedAtMs })
   const checked = checkRelayMeasurement(raw)
   return { raw, checked, built, report: checked.ok ? reduceRelayMeasurement(raw) : null }
 }

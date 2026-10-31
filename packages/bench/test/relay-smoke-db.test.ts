@@ -20,7 +20,7 @@ test('the reader recovers seals, the final ledger and call costs, and re-derives
     const path = join(dir, 'guanxi.db')
     const db = seed(path)
     db.exec("INSERT INTO relay_runs VALUES ('run-a', '" + canonicalText({ cycle: 2, head: 'b'.repeat(40), items: { I01: 'done', I02: 'verification_requested' }, evidence: [{ id: 'g', item: 'I01', head: 'b'.repeat(40), ok: true, output: 'x' }] }) + "')")
-    insertSeal(db, 'run-a', 1, 1); insertSeal(db, 'run-a', 2, 1, { tamper: 'ledger' }); insertSeal(db, 'run-a', 3, 2, { tamper: 'bundle' })
+    insertSeal(db, 'run-a', 1, 1, { attempt: 'att-one' }); insertSeal(db, 'run-a', 2, 1, { tamper: 'ledger', attempt: 'att-one' }); insertSeal(db, 'run-a', 3, 2, { tamper: 'bundle', attempt: 'att-two' })
     insertSeal(db, 'run-b', 1, 1)
     insertCost(db, 'run-a', 'm-1', 20_000); insertCost(db, 'run-b', 'm-9', 1, 1)
     db.close()
@@ -28,6 +28,7 @@ test('the reader recovers seals, the final ledger and call costs, and re-derives
     assert.deepEqual(reader.check(), [])
     const read = reader.read('run-a')
     assert.deepEqual(read.seals.map(s => [s.cycle, s.epoch]), [[1, 1], [2, 1], [3, 2]])
+    assert.deepEqual(read.seals.map(s => s.attemptId), ['att-one', 'att-one', 'att-two'], 'the sealing attempt, which the naive arm marker is checked against')
     assert.deepEqual(read.costs, [{ key: 'm-1', inputTokens: 20_000, outputTokens: 300 }], 'only this run, and no other run costs')
     const [honest, ledgerTamper, bundleTamper] = read.seals
     assert.equal(honest!.ledgerSha256, honest!.handoffLedgerSha256)
@@ -140,5 +141,6 @@ test('a seal whose ledger has an unexpected shape stays visible as unreadable, n
     const seals = new SqliteLedgerReader(path).read('run-a').seals
     assert.deepEqual(seals.map(s => [s.cycle, s.unreadable === true]), [[1, false], [2, true]])
     assert.deepEqual([seals[1]!.ledgerSha256, seals[1]!.evidence.length], [null, 0])
+    assert.equal(seals[1]!.attemptId, 'attempt-x', 'an unreadable seal still names its attempt, so the arm check does not lose it')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })

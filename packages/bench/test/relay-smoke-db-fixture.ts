@@ -29,13 +29,13 @@ export function seed(path: string): DatabaseSync {
   return db
 }
 export const hashOf = (value: unknown) => sha256Hex(canonicalText(value))
-export function insertSeal(db: DatabaseSync, run: string, cycle: number, epoch: number, options: { tamper?: 'ledger' | 'bundle' | 'artifact' | 'corrupt' } = {}): void {
+export function insertSeal(db: DatabaseSync, run: string, cycle: number, epoch: number, options: { tamper?: 'ledger' | 'bundle' | 'artifact' | 'corrupt'; attempt?: string } = {}): void {
   const ledger = { cycle, state: 'sealed', head: String(cycle).padStart(40, 'a'), items: { I01: 'done', I02: 'open' }, evidence: [{ id: 'g1', item: 'I01', head: String(cycle).padStart(40, 'a'), ok: true, output: 'PRIVATE-GATE-OUTPUT' }] }
   const bundle = new TextEncoder().encode(`bundle-${cycle}`)
   const handoff = { format: 'guanxi.handoff/v1', runId: run, cycle, ledgerHash: hashOf(ledger), bundleHash: sha256Hex(bundle), notes: [], narrative: 'n', degraded: false, ledger: { ref: 'r', strip: 's', head: ledger.head, revision: 'rev' } }
   if (options.tamper === 'ledger') handoff.ledgerHash = sha256Hex('other')
   if (options.tamper === 'bundle') handoff.bundleHash = sha256Hex('other')
-  db.prepare('INSERT INTO relay_seals VALUES (?,?,?,?,?,?,?,?,?,?)').run(run, cycle, 'attempt-x', epoch, 1, canonicalText(ledger),
+  db.prepare('INSERT INTO relay_seals VALUES (?,?,?,?,?,?,?,?,?,?)').run(run, cycle, options.attempt ?? 'attempt-x', epoch, 1, canonicalText(ledger),
     options.tamper === 'corrupt' ? '{not json' : canonicalText(handoff), options.tamper === 'artifact' ? sha256Hex('other') : hashOf(handoff), 'markdown', bundle)
 }
 export function insertCost(db: DatabaseSync, run: string, key: string, inputTokens: number, outputTokens = 300): void {

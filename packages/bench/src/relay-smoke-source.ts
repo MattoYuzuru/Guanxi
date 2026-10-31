@@ -139,21 +139,21 @@ export class SqliteLedgerReader {
   read(runId: string): LedgerObservation {
     const db = this.open()
     try {
-      const sealRows = db.prepare('SELECT cycle, epoch, ledger, handoff, artifact_hash AS artifactHash, bundle FROM relay_seals WHERE run_id=? ORDER BY cycle').all(runId) as Array<{
-        cycle: number; epoch: number; ledger: string; handoff: string; artifactHash: string; bundle: Uint8Array }>
+      const sealRows = db.prepare('SELECT cycle, epoch, attempt_id AS attemptId, ledger, handoff, artifact_hash AS artifactHash, bundle FROM relay_seals WHERE run_id=? ORDER BY cycle').all(runId) as Array<{
+        cycle: number; epoch: number; attemptId: string; ledger: string; handoff: string; artifactHash: string; bundle: Uint8Array }>
       const seals: SealObservation[] = []
       for (const row of sealRows) {
         let ledger: z.infer<typeof sealLedger>, handoff: z.infer<typeof sealHandoff> | null = null
         try { ledger = sealLedger.parse(JSON.parse(String(row.ledger))) } catch {
           // A seal whose ledger has an unexpected shape stays visible as a seal that could not be read, never silently dropped.
-          seals.push({ cycle: Number(row.cycle), epoch: Number(row.epoch), head: '', items: {}, evidence: [], ledgerSha256: null, handoffLedgerSha256: null, bundleSha256: null,
+          seals.push({ cycle: Number(row.cycle), epoch: Number(row.epoch), attemptId: String(row.attemptId), head: '', items: {}, evidence: [], ledgerSha256: null, handoffLedgerSha256: null, bundleSha256: null,
             bundleMatchesHandoff: null, artifactMatchesHandoff: null, unreadable: true })
           continue
         }
         try { handoff = sealHandoff.parse(JSON.parse(String(row.handoff))) } catch { /* a corrupt artifact is a failed integrity fact */ }
         const bundleSha256 = row.bundle instanceof Uint8Array ? sha256Hex(row.bundle) : null
         seals.push({
-          cycle: Number(row.cycle), epoch: Number(row.epoch), head: ledger.head, items: ledger.items,
+          cycle: Number(row.cycle), epoch: Number(row.epoch), attemptId: String(row.attemptId), head: ledger.head, items: ledger.items,
           evidence: ledger.evidence.map(e => ({ item: e.item, head: e.head, ok: e.ok })),
           ledgerSha256: sha256Hex(canonicalText(JSON.parse(String(row.ledger)))),
           handoffLedgerSha256: handoff?.ledgerHash ?? null, bundleSha256,

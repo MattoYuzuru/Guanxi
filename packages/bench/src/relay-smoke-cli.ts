@@ -115,6 +115,9 @@ async function preflight(config: SmokeConfig, repo: string | undefined, io: CliI
         const missing = new SqliteLedgerReader(arm.homeDb).check()
         checks.push({ name: `home_database:${arm.id}`, ok: missing.length === 0, ...(missing.length ? { code: `missing_tables:${missing.join(',')}` } : {}) })
       } catch (error) { checks.push({ name: `home_database:${arm.id}`, ok: false, code: error instanceof SmokeSourceError ? error.code : 'home_database_unreadable' }) }
+    } else if (arm.kind === 'naive_compaction') {
+      // The naive arm is attributed from the run's events and its sealing attempts (relay_seals.attempt_id): without the database no trial can be confirmed.
+      checks.push({ name: `home_database:${arm.id}`, ok: false, code: 'naive_arm_needs_home_database' })
     } else checks.push({ name: `home_database:${arm.id}`, ok: true, code: 'not_configured_items_context_integrity_unknown' })
   }
   return { ok: checks.every(c => c.ok), checks }

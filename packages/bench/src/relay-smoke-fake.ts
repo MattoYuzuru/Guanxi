@@ -38,6 +38,12 @@ export interface FakeCycle {
   tamper?: boolean
   /** Naive mode: the model-written summary was cut by the handoff bound. */
   summaryTruncated?: boolean
+  /** Naive mode: the summary was degraded, with the relay's fixed reason code (for example `model_failed`). */
+  summaryDegraded?: string
+  /** The executor attempt that ran this cycle (R1 epoch; default 1). A new attempt of a naive run writes its own marker. */
+  attempt?: number
+  /** The mode this cycle's attempt ran in, when the node was restarted in the other mode between attempts of one run. Default: the home mode. */
+  mode?: 'ledger' | 'naive'
 }
 export interface FakeScenario {
   cycles: readonly FakeCycle[]
@@ -145,10 +151,14 @@ export class FakeRelay implements RelaySource {
     const noteOf = (relay: string, payload: Record<string, unknown>, nested: boolean) => push('agent.note', { text: note(relay, payload, nested) })
     let call = 0
     noteOf('initialized', { revision: input.plan.revision, hash: sha256Hex(`init-${e.key}`) }, true)
-    // The naive arm states itself before its first model call; a ledger run writes none of the naive notes.
-    if (mode === 'naive') noteOf('compaction', { mode: 'naive' }, false)
+    const attemptId = (n: number): string => `${e.runId}-attempt-${n}`
+    const marked = new Set<number>()
     scenario.cycles.forEach((spec, index) => {
       const cycle = index + 1
+      const attempt = spec.attempt ?? 1
+      const here = spec.mode ?? mode
+      // A naive attempt states itself before its first model call, once; a ledger attempt writes none of the naive notes.
+      if (here === 'naive' && !marked.has(attempt)) { marked.add(attempt); noteOf('compaction', { mode: 'naive', attempt: attemptId(attempt), epoch: attempt }, false) }
       this.clock.advance(step)
       noteOf('cycle_begin', { cycle, state: 'orient', hash: sha256Hex(`ledger-${cycle}`) }, true)
       if (spec.deadEnd) {
@@ -157,12 +167,12 @@ export class FakeRelay implements RelaySource {
       const calls = spec.calls ?? 3
       for (let n = 0; n < calls; n++) {
         const messageId = uuid(++call)
-        push('assistant.started', { messageId, model: n === 0 && cycle > 1 && mode === 'ledger' ? 'relay:probe' : 'relay:work', step: cycle })
+        push('assistant.started', { messageId, model: n === 0 && cycle > 1 && here === 'ledger' ? 'relay:probe' : 'relay:work', step: cycle })
         push('assistant.message', { messageId, step: cycle, text: 'withheld' })
         costs.push({ key: messageId, inputTokens: spec.inputTokens ?? 20_000, outputTokens: 300 })
       }
-      if (cycle > 1 && mode === 'ledger') (spec.probe ?? [true]).forEach((correct, retry) => noteOf('probe', { retry, correct, damaged: false }, false))
-      if (cycle > 1 && mode === 'naive') noteOf('probe_not_applicable', { mode: 'naive', cycle, reason: 'ledger_facts_not_shown', damaged: false }, false)
+      if (cycle > 1 && here === 'ledger') (spec.probe ?? [true]).forEach((correct, retry) => noteOf('probe', { retry, correct, damaged: false }, false))
+      if (cycle > 1 && here === 'naive') noteOf('probe_not_applicable', { mode: 'naive', cycle, reason: 'ledger_facts_not_shown', damaged: false }, false)
       for (const gate of spec.items ?? []) {
         evidence.push({ item: gate.item, head: `${cycle}`.padStart(40, 'a'), ok: gate.ok })
         items[gate.item] = gate.ok ? 'done' : 'verification_requested'
@@ -171,12 +181,16 @@ export class FakeRelay implements RelaySource {
       if (spec.sealed !== false) {
         const ledgerSha = sha256Hex(`sealed-ledger-${e.key}-${cycle}`)
         seals.push({
-          cycle, epoch: 1, head: `${cycle}`.padStart(40, 'a'), items: { ...items }, evidence: evidence.map(x => ({ ...x })),
+          cycle, epoch: attempt, attemptId: attemptId(attempt), head: `${cycle}`.padStart(40, 'a'), items: { ...items }, evidence: evidence.map(x => ({ ...x })),
           ledgerSha256: ledgerSha, handoffLedgerSha256: spec.tamper ? sha256Hex('other') : ledgerSha, bundleSha256: sha256Hex(`bundle-${cycle}`),
           bundleMatchesHandoff: true, artifactMatchesHandoff: true,
         })
         noteOf('sealed', { cycle, ledgerHash: ledgerSha, bundleHash: sha256Hex(`bundle-${cycle}`) }, true)
-        if (mode === 'naive') noteOf('compaction_summary', { mode: 'naive', cycle, summaryBytes: 900, handoffLimitBytes: 4000, truncated: spec.summaryTruncated === true, degraded: false, inputDropped: spec.summaryTruncated ? 2 : 0, inputCut: 0 }, false)
+        if (here === 'naive') {
+          const degraded = spec.summaryDegraded !== undefined
+          noteOf('compaction_summary', { mode: 'naive', attempt: attemptId(attempt), cycle, summaryBytes: 900, summaryLimitBytes: 4000, outputLimitTokens: 1000,
+            truncated: spec.summaryTruncated === true || degraded, degraded, degradedReason: degraded ? spec.summaryDegraded : null, inputDropped: spec.summaryTruncated ? 2 : 0, inputCut: 0 }, false)
+        }
       }
     })
     if (scenario.error && !scenario.cycles.some(c => c.truncated)) push('error', { code: scenario.error, message: 'Relay execution stopped; ledger retained.' })

@@ -329,3 +329,53 @@ test('two passes against one endpoint: ledger pass, restart the home in naive mo
   assert.deepEqual(second.report!.pairedRelayVsNaive.state, 'descriptive')
   assert.ok(second.summary.trials.filter(t => t.arm === 'naive-compaction').every(t => t.notes.includes('compaction_summaries:5')))
 })
+
+const cyclesOf = (n: number, per: (cycle: number) => Partial<FakeScenario['cycles'][number]> = () => ({})): FakeScenario['cycles'] =>
+  Array.from({ length: n }, (_, i) => ({ items: [{ item: `I0${i + 1}`, ok: true }], probe: [true], calls: 3, inputTokens: 18_000, sealed: true, ...per(i + 1) }))
+
+test('a run whose attempts disagree about the mode is refused with its own code, whichever way the node was restarted, and is never stored', async () => {
+  type Mode = 'ledger' | 'naive'
+  const attempts = (first: Mode, second: Mode) => (c: number) => ({ attempt: c <= 2 ? 1 : 2, mode: c <= 2 ? first : second })
+  const mixed = async (planned: 'ledger-relay' | 'naive-compaction', home: Mode, perCycle: (cycle: number) => { attempt: number; mode: Mode }) => {
+    const r = rig({ scenario: () => ({ status: 'completed', cycles: cyclesOf(4, perCycle) }) })
+    r.fake.homeMode = home
+    const result = await runSmoke(config({ tasks: ['ll-money-text'], arms: SHARED }), r.deps({ only: [planned] }))
+    return { result, r }
+  }
+  const cases: Array<[string, 'ledger-relay' | 'naive-compaction', Mode, (cycle: number) => { attempt: number; mode: Mode }]> = [
+    ['naive attempt, then a restart in ledger mode', 'naive-compaction', 'naive', attempts('naive', 'ledger')],
+    ['ledger attempt, then a restart in naive mode', 'naive-compaction', 'naive', attempts('ledger', 'naive')],
+    ['the same two restarts in a trial planned as ledger', 'ledger-relay', 'ledger', attempts('ledger', 'naive')],
+  ]
+  for (const [name, planned, home, perCycle] of cases) {
+    const { result, r } = await mixed(planned, home, perCycle)
+    assert.deepEqual([result.exitCode, result.summary.halted, r.store.all.size], [1, 'arm_mode_mixed', 0], name)
+    assert.equal(result.summary.trials.find(t => t.arm === planned)!.endedBy, 'arm_mode_mixed', name)
+    assert.ok(result.measurement!.trials.every(t => t.state === 'missing'), name + ': never in the document under either arm')
+  }
+  // a run of two attempts that are both naive is one consistent naive run
+  const { result, r } = await mixed('naive-compaction', 'naive', attempts('naive', 'naive'))
+  assert.deepEqual([result.exitCode, result.summary.halted, r.store.all.size], [3, null, 1], 'stored; exit 3 only because the ledger pass is still to do')
+})
+
+test('a naive trial whose seals cannot be read cannot be attributed: unconfirmed, unstored, and a rerun re-attaches', async () => {
+  let readable = false
+  const r = rig({}, fake => ({ ...fakeBind(fake), ledger: async (arm: string, runId: string) => { if (!readable) throw new SmokeSourceError('home_database_unreadable'); return fake.ledger(arm, runId) } }))
+  r.fake.homeMode = 'naive'
+  const first = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['naive-compaction'] }))
+  assert.deepEqual([first.exitCode, first.summary.halted, r.store.all.size], [1, 'arm_mode_unconfirmed', 0])
+  readable = true
+  const second = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['naive-compaction'] }))
+  assert.deepEqual([second.summary.halted, r.fake.started.length], [null, 1], 'the same relay is read again, not started again')
+  assert.equal(r.store.all.size, 1)
+})
+
+test('the summary notes of a naive trial carry the degraded reasons and the limits the relay reported', async () => {
+  const r = rig({ scenario: () => ({ status: 'completed', cycles: cyclesOf(4, c => c >= 2 ? { summaryDegraded: c === 3 ? 'narrative_output_limited' : 'model_failed' } : {}) }) })
+  r.fake.homeMode = 'naive'
+  const result = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['naive-compaction'] }))
+  const notes = result.summary.trials.find(t => t.arm === 'naive-compaction')!.notes
+  assert.ok(notes.includes('compaction_summary_degraded:3') && notes.includes('compaction_summary_truncated:3'), notes.join('|'))
+  assert.ok(notes.includes('compaction_summary_degraded_reasons:model_failed=2,narrative_output_limited=1'), notes.join('|'))
+  assert.ok(notes.includes('compaction_summary_limit_bytes:min=4000,max=4000') && notes.includes('compaction_output_limit_tokens:min=1000,max=1000'), notes.join('|'))
+})

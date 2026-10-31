@@ -18,11 +18,14 @@ export type SmokeFact =
   | { kind: 'judge_signals'; seq: number; atMs: number; cycle: number; phase: string; signals: string[]; unknownFacts: string[] }
   | { kind: 'cap'; seq: number; atMs: number; cycle: number; reason: string }
   | { kind: 'initialized'; seq: number; atMs: number; cycle: number }
-  /** The naive-compaction arm writes this before its first model call; a ledger run never does. */
-  | { kind: 'compaction'; seq: number; atMs: number; cycle: number; mode: string }
+  /** The naive-compaction arm writes this once per executor attempt, before that attempt's first model call (`attempt` is the R1 attempt id,
+   * the same value as `relay_seals.attempt_id`); a ledger attempt never does. */
+  | { kind: 'compaction'; seq: number; atMs: number; cycle: number; mode: string; attempt: string | null; epoch: number | null }
   /** A cycle's probe does not apply to the arm: not a result, neither a pass nor a fail. */
   | { kind: 'probe_not_applicable'; seq: number; atMs: number; cycle: number; damaged: boolean }
-  | { kind: 'compaction_summary'; seq: number; atMs: number; cycle: number; truncated: boolean; degraded: boolean; inputDropped: number; inputCut: number }
+  /** Written by the naive arm after each seal. `degradedReason` is the relay's fixed code (null when intact); the limits are the machinery's, not caps of the runner. */
+  | { kind: 'compaction_summary'; seq: number; atMs: number; cycle: number; attempt: string | null; summaryBytes: number | null; summaryLimitBytes: number | null; outputLimitTokens: number | null
+      truncated: boolean; degraded: boolean; degradedReason: string | null; inputDropped: number; inputCut: number }
   | { kind: 'error'; seq: number; atMs: number; cycle: number; code: string }
 
 const record = (v: unknown): Record<string, unknown> | null => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null
@@ -87,10 +90,12 @@ export function projectEvents(events: readonly EventLike[], runId: string): Smok
       case 'call_failed_reason': out.push({ ...base, kind: 'call_failed', cycle: current, purpose: fixedCode(p.purpose) ?? 'unknown', reason: fixedCode(p.reason) ?? 'unknown' }); break
       case 'judge_signals': out.push({ ...base, kind: 'judge_signals', cycle: count(p.cycle) ?? current, phase: fixedCode(p.phase) ?? 'unknown', signals: codes(Array.isArray(p.signals) ? p.signals.map(s => record(s)?.code) : []), unknownFacts: codes(p.unknownFacts) }); break
       case 'initialized': out.push({ ...base, kind: 'initialized', cycle: 0 }); break
-      case 'compaction': out.push({ ...base, kind: 'compaction', cycle: current, mode: fixedCode(p.mode) ?? 'unknown' }); break
+      case 'compaction': out.push({ ...base, kind: 'compaction', cycle: current, mode: fixedCode(p.mode) ?? 'unknown', attempt: identifier(p.attempt), epoch: count(p.epoch) }); break
       case 'probe_not_applicable': out.push({ ...base, kind: 'probe_not_applicable', cycle: count(p.cycle) ?? current, damaged: p.damaged === true }); break
       case 'compaction_summary':
-        out.push({ ...base, kind: 'compaction_summary', cycle: count(p.cycle) ?? current, truncated: p.truncated === true, degraded: p.degraded === true, inputDropped: count(p.inputDropped) ?? 0, inputCut: count(p.inputCut) ?? 0 })
+        out.push({ ...base, kind: 'compaction_summary', cycle: count(p.cycle) ?? current, attempt: identifier(p.attempt), summaryBytes: count(p.summaryBytes), summaryLimitBytes: count(p.summaryLimitBytes),
+          outputLimitTokens: count(p.outputLimitTokens), truncated: p.truncated === true, degraded: p.degraded === true, degradedReason: fixedCode(p.degradedReason),
+          inputDropped: count(p.inputDropped) ?? 0, inputCut: count(p.inputCut) ?? 0 })
         break
       case 'cap': out.push({ ...base, kind: 'cap', cycle: current, reason: fixedCode(p.reason) ?? 'unknown' }); break
       default: break
@@ -133,13 +138,35 @@ export function canonicalText(value: unknown): string {
 }
 export const sha256Hex = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
 
-export type ArmMode = 'ledger' | 'naive' | 'unconfirmed'
-/** The arm a run really was, read from its own events and from nothing else. A naive run states it before its first model call and a
- * ledger run states nothing; markers of the naive arm without that statement, an unknown mode, or no readable events at all are not
- * evidence of either arm. */
-export function armModeOf(facts: readonly SmokeFact[]): ArmMode {
+export type ArmMode = 'ledger' | 'naive' | 'mixed' | 'unconfirmed'
+/** What armModeOf needs from the home database: the attempts that sealed a cycle (`relay_seals.attempt_id`, with the epoch of the seal). */
+export interface SealingAttempt { attemptId: string; epoch: number }
+/** The arm a run really was, read from its own events and its own seals and from nothing else.
+ *
+ * A naive attempt writes `{relay:'compaction', mode:'naive', attempt, epoch}` before its first model call; a ledger attempt writes nothing, so the
+ * proof of a naive run sits on the naive side: every attempt that sealed a cycle must have its own marker, and every `compaction_summary` must name
+ * a marked attempt. A sealing attempt without a marker is a ledger attempt inside a run that also has naive ones: `mixed`. The ledger arm's
+ * check is the inverse: no naive note of any kind, and no marker-less hint of one. Anything that cannot be read (no events, an unknown mode, a
+ * marker without an attempt id, `sealing` null because the home database was not read) is `unconfirmed`, never a guess.
+ *
+ * A ledger attempt that is interrupted before it seals anything leaves no trace in either source; the relay's README states the same limit. A
+ * naive trial additionally carries no `probe` note, which a ledger attempt would have written, so one is `mixed` too. */
+export function armModeOf(facts: readonly SmokeFact[], sealing: readonly SealingAttempt[] | null): ArmMode {
   if (!facts.length) return 'unconfirmed'
-  const stated = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction' }> => f.kind === 'compaction')
-  if (stated.length) return stated.every(f => f.mode === 'naive') ? 'naive' : 'unconfirmed'
-  return facts.some(f => f.kind === 'probe_not_applicable' || f.kind === 'compaction_summary') ? 'unconfirmed' : 'ledger'
+  const markers = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction' }> => f.kind === 'compaction')
+  const summaries = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction_summary' }> => f.kind === 'compaction_summary')
+  if (!markers.length) return summaries.length || facts.some(f => f.kind === 'probe_not_applicable') ? 'unconfirmed' : 'ledger'
+  if (markers.some(m => m.mode !== 'naive' || m.attempt === null || m.epoch === null) || sealing === null) return 'unconfirmed'
+  const marked = new Map<string, number>()
+  for (const m of markers) {
+    // An attempt marks itself once; a second, different statement for it cannot come from the executor.
+    if (marked.has(m.attempt!) && marked.get(m.attempt!) !== m.epoch) return 'unconfirmed'
+    marked.set(m.attempt!, m.epoch!)
+  }
+  if (summaries.some(s => s.attempt === null || !marked.has(s.attempt))) return 'unconfirmed'
+  for (const seal of sealing) {
+    if (!marked.has(seal.attemptId)) return 'mixed'
+    if (marked.get(seal.attemptId) !== seal.epoch) return 'unconfirmed'
+  }
+  return facts.some(f => f.kind === 'probe' || f.kind === 'probe_degraded') ? 'mixed' : 'naive'
 }
