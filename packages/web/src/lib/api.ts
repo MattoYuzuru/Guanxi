@@ -223,6 +223,7 @@ const API_ERROR_KEYS = {
   unauthenticated: 'error.api.unauthenticated',
   forbidden: 'error.api.forbidden',
   route_unmapped: 'error.api.forbidden',
+  proxied_request_refused: 'error.api.notAllowed',
 } satisfies Record<ApiError['code'], LocaleKey>
 
 /* ─────────────────────────────── Транспорт ────────────────────────────── */

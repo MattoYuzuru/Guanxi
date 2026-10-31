@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, describe, it } from 'node:test'
 import { start } from '../../src/index.ts'
+import { ROUTE_POLICIES } from '../../src/auth/route-policy.ts'
 import { RemoteBindError, type RemoteBindRequirement } from '../../src/auth/remote-guard.ts'
 import { REMOTE_BIND_EXIT_CODE, remoteBindRefusalMessage } from '../../src/auth/remote-profile.ts'
 import type { AccountsAdapter } from '../../src/auth/route-authz.ts'
@@ -21,13 +22,14 @@ const GUARD = fileURLToPath(new URL('../setup/no-ambient-key-file.mjs', import.m
 
 const OWNER: Principal = { kind: 'user', userId: 'owner-1', role: 'member', groups: [] }
 const STRANGER: Principal = { kind: 'user', userId: 'stranger-1', role: 'member', groups: [] }
+const ADMIN: Principal = { kind: 'user', userId: 'admin-1', role: 'admin', groups: [] }
 
 /** Principals by the `x-user` header; the stand-in for what Better Auth supplies in the next slice. */
 const accounts: AccountsAdapter = {
   nodeOwnerId: 'owner-1',
   principal: (context) => {
     const user = context.req.header('x-user')
-    return user === 'owner' ? OWNER : user === 'stranger' ? STRANGER : { kind: 'anonymous' }
+    return user === 'owner' ? OWNER : user === 'stranger' ? STRANGER : user === 'admin' ? ADMIN : { kind: 'anonymous' }
   },
 }
 
@@ -226,6 +228,19 @@ describe('remote bind acceptance with the full profile', () => {
       assert.equal((await httpsGet(server.port, '/api/settings', { ...host, 'x-user': 'owner' })).status, 200)
       assert.equal((await httpsGet(server.port, '/api/threads', { ...host, 'x-user': 'owner' })).status, 200)
 
+      // The admin role administers the node but is not the owner: no settings, no filesystem browser.
+      assert.equal((await httpsGet(server.port, '/api/settings', { ...host, 'x-user': 'admin' })).status, 403)
+      assert.equal((await httpsGet(server.port, '/api/workspaces/browse?path=/', { ...host, 'x-user': 'admin' })).status, 403)
+      assert.equal((await httpsGet(server.port, '/api/threads', { ...host, 'x-user': 'admin' })).status, 403)
+
+      // Health detail (hardware, Ollama) is for the owner and the admin role; any other user gets liveness.
+      const memberHealth = await httpsGet(server.port, '/api/health', { ...host, 'x-user': 'stranger' })
+      assert.deepEqual(JSON.parse(memberHealth.body), { ok: true })
+      for (const user of ['owner', 'admin']) {
+        const detail = JSON.parse((await httpsGet(server.port, '/api/health', { ...host, 'x-user': user })).body) as Record<string, unknown>
+        assert.ok('hardware' in detail && 'ollama' in detail && 'appVersion' in detail, `${user} sees the full report`)
+      }
+
       // The signed node API is authenticated by its own signature, not by a user principal.
       const unsigned = await httpsGet(server.port, '/api/federation/handshake', host)
       assert.equal(unsigned.status, 401)
@@ -237,6 +252,45 @@ describe('remote bind acceptance with the full profile', () => {
       await server.close()
     }
     assert.ok(readdirSync(dataDir).length > 0)
+  })
+
+  it('H1: HEAD and unknown methods get the same decision as GET on every route of the real server', { timeout: 120_000 }, async () => {
+    const server = await start({
+      port: 0, host: '127.0.0.1', dataDir: join(root, 'data-head'), webDir: root, devOrigins: [],
+      federation: nodeCredential(),
+      remote: { tls: { certPath: tls.certPath, keyPath: tls.keyPath, hostname: TLS_TEST_HOSTNAME }, allowedRoots: [join(root, 'srv')], accounts },
+    })
+    try {
+      const origin = `https://${TLS_TEST_HOSTNAME}:${server.port}`
+      const probe = async (method: string, path: string, user?: string) =>
+        (await server.app.request(`${origin}${path}`, { method, headers: user ? { 'x-user': user } : {} })).status
+      const concrete = (pattern: string) => pattern.replace(/:\w+(\{[^}]*\})?/gu, 'r1')
+      let swept = 0
+      for (const [key, policy] of ROUTE_POLICIES) {
+        if (!key.startsWith('GET ')) continue
+        const path = concrete(key.slice(4))
+        for (const user of [undefined, 'stranger']) {
+          const get = await probe('GET', path, user)
+          const head = await probe('HEAD', path, user)
+          assert.equal(head, get, `HEAD ${path} as ${user ?? 'anonymous'}`)
+          if (user === undefined && policy.kind !== 'public' && policy.kind !== 'node-signed') {
+            assert.equal(head, 401, `anonymous HEAD ${path}`)
+          }
+        }
+        swept++
+      }
+      assert.ok(swept >= 60, `only ${swept} GET rows swept`)
+      // Unknown methods and OPTIONS run no handler and reveal nothing.
+      for (const method of ['OPTIONS', 'PURGE']) {
+        assert.equal(await probe(method, '/api/settings'), 404, method)
+        assert.equal(await probe(method, '/api/workspaces/browse?path=/etc'), 404, method)
+      }
+      // The reviewer's oracle: an unauthenticated HEAD must not tell /etc from a missing path.
+      assert.equal(await probe('HEAD', '/api/workspaces/browse?path=/etc'), 401)
+      assert.equal(await probe('HEAD', '/api/workspaces/browse?path=/nonexistent-guanxi-path'), 401)
+    } finally {
+      await server.close()
+    }
   })
 
   it('a loopback bind with a profile also serves HTTPS with accounts, not the implicit owner', { timeout: 60_000 }, async () => {

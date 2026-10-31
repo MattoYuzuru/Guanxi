@@ -68,7 +68,7 @@ import { federationListener } from './ms1-live/listener.ts'
 import { Ms1LiveError, type Ms1LiveSettings } from './ms1-live/config.ts'
 import { runBoundedStop } from './ms1-live/stop.ts'
 import { admitBind, type RemoteProfileOptions } from './auth/remote-profile.ts'
-import { assertRoutesMapped } from './auth/route-policy.ts'
+import { assertRoutesMapped, type RoutePolicy } from './auth/route-policy.ts'
 
 export { RemoteBindError, assertBindAllowed } from './auth/remote-guard.ts'
 export type { RemoteBindConfig, RemoteBindRequirement } from './auth/remote-guard.ts'
@@ -195,6 +195,8 @@ export interface StartOptions {
    * principals from the accounts adapter. Absent, the node is single-owner and loopback-only.
    */
   remote?: RemoteProfileOptions
+  /** Test seam: the route policy table checked at boot and enforced per request. Defaults to the sealed `ROUTE_POLICIES`. */
+  routePolicies?: ReadonlyMap<string, RoutePolicy>
   /** Trusted node-local installed CLIs; no executable paths or account identity arrive over HTTP. */
   externalAgents?: ExternalPolicy
   /** T0-only proved runtime counter and owned-checkout adapter; neither comes from HTTP. */
@@ -489,7 +491,11 @@ export async function start(options: StartOptions = {}) {
   const server = createApp(context, {
     // A remote node is reached by its canonical TLS hostname; the bind address (for example 0.0.0.0) is not a Host header.
     host: tls ? tls.hostname : host, port: () => actualPort,
-    ...(options.remote ? { authz: { accounts: options.remote.accounts, ...(options.federation ? { nodeId: options.federation.identity.id } : {}) } } : {}),
+    authz: {
+      ...(options.remote ? { accounts: options.remote.accounts } : {}),
+      ...(options.remote && options.federation ? { nodeId: options.federation.identity.id } : {}),
+      ...(options.routePolicies ? { policies: options.routePolicies } : {}),
+    },
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
     layouts: options.federation ? () => {
@@ -547,7 +553,7 @@ export async function start(options: StartOptions = {}) {
     context.db.close()
   }
   // Every /api/ endpoint must have a declared authorization policy; a new route cannot ship unguarded.
-  try { assertRoutesMapped(server.routes) } catch (error) { await abortStart(); throw error }
+  try { assertRoutesMapped(server.routes, options.routePolicies) } catch (error) { await abortStart(); throw error }
   let instance!: ReturnType<typeof serve>
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {

@@ -201,7 +201,7 @@ describe('R3: the person audience answers loopback peers only', () => {
     }
   })
 
-  it('a server listening on 0.0.0.0 refuses the inspector through a private address (the reviewer case)', { timeout: 30_000 }, async () => {
+  it('a server listening on 0.0.0.0 refuses the inspector through a private address (the reviewer case)', { timeout: 30_000 }, async (t) => {
     const { networkInterfaces, tmpdir } = await import('node:os')
     const { mkdtemp, rm } = await import('node:fs/promises')
     const { join } = await import('node:path')
@@ -231,9 +231,18 @@ describe('R3: the person audience answers loopback peers only', () => {
       assert.equal(local.status, 200)
       assert.ok(local.body.includes('network reasoning'), 'local access keeps working')
       if (lan) {
-        const remote = await httpsGet(server.port, '/api/sessions/network-test/events', { host: `${lan.address}:${server.port}` }, lan.address)
+        // Over the LAN address with an allowed Host header: the Host allowlist passes, so only the socket peer decides.
+        const remote = await httpsGet(server.port, '/api/sessions/network-test/events', { host: `127.0.0.1:${server.port}` }, lan.address)
         assert.equal(remote.status, 403)
+        assert.match(remote.body, /loopback_only/u)
         assert.equal(remote.body.includes('network reasoning'), false)
+        // A LAN request that names its own address is stopped even earlier, by the Host allowlist.
+        const named = await httpsGet(server.port, '/api/sessions/network-test/events', { host: `${lan.address}:${server.port}` }, lan.address)
+        assert.equal(named.status, 403)
+        assert.equal(named.body.includes('network reasoning'), false)
+      } else {
+        // No non-internal IPv4 interface on this machine: the LAN case cannot run, and the test says so.
+        t.diagnostic('no LAN interface: the private-address assertions were skipped')
       }
     } finally {
       await server.close()

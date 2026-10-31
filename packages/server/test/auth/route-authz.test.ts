@@ -70,7 +70,7 @@ function concretePath(pattern: string): string {
 }
 
 const LEVEL: Record<Action, number> = {
-  'session.read': 1, 'session.prompt': 2, 'session.stop': 2, 'session.share': 3, 'session.delete': 3,
+  'session.read': 1, 'session.prompt': 2, 'session.stop': 2, 'session.share': 3, 'session.update': 3, 'session.delete': 3,
   'project.read': 1, 'project.write': 2, 'project.share': 3, 'project.delete': 3,
   'connection.use': 2, 'connection.read': 1, 'connection.manage': 3,
   'run.read': 1, 'run.cancel': 2,
@@ -83,6 +83,7 @@ function expectedStatus(policy: RoutePolicy, role: Role): 200 | 401 | 403 {
   if (role === 'anonymous') return 401
   if (policy.kind === 'authenticated') return role === 'link' ? 403 : 200
   if (policy.kind === 'account') return role === 'owner' ? 200 : 403
+  if (policy.ownerOnly) return role === 'owner' ? 200 : 403
   if (policy.resource === 'node') return role === 'owner' || role === 'admin' ? 200 : 403
   if (policy.idParam === undefined) return role === 'owner' ? 200 : 403
   const held: Record<Role, number> = { owner: 3, admin: 0, editor: 2, viewer: 1, stranger: 0, anonymous: 0, link: 1 }
@@ -117,6 +118,13 @@ describe('route authorization matrix (roles x route policy map)', () => {
           const body = apiErrorSchema.parse(await response.json())
           if (body.code !== (want === 401 ? 'unauthenticated' : 'forbidden')) failures.push(`${key} as ${role}: code ${body.code}`)
         }
+        if (method === 'GET') {
+          // Hono serves HEAD through the GET handler: HEAD must meet exactly the same decision.
+          const headBefore = hits.length
+          const head = await app.request(concretePath(pattern), { method: 'HEAD', headers: { 'x-role': role } })
+          if (head.status !== want) failures.push(`${key} HEAD as ${role}: ${head.status}, want ${want}`)
+          if (hits.length - headBefore !== (want === 200 ? 1 : 0)) failures.push(`${key} HEAD as ${role}: handler reached ${hits.length - headBefore} times`)
+        }
       }
     }
     assert.deepEqual(failures, [])
@@ -130,9 +138,12 @@ describe('route authorization matrix (roles x route policy map)', () => {
     assert.equal(await as('admin', 'GET', '/api/threads/r1'), 403)
     assert.equal(await as('admin', 'GET', '/api/projects'), 403)
     assert.equal(await as('admin', 'GET', '/api/connections'), 403)
-    assert.equal(await as('admin', 'PUT', '/api/settings'), 200)
-    assert.equal(await as('admin', 'POST', '/api/models/r1/pull'), 200)
+    // Node operations that touch no data stay with the admin role; settings and pull are owner-only (M4).
+    assert.equal(await as('admin', 'POST', '/api/models/r1/stop'), 200)
+    assert.equal(await as('admin', 'PUT', '/api/settings'), 403)
+    assert.equal(await as('admin', 'POST', '/api/models/r1/pull'), 403)
     assert.equal(await as('stranger', 'PUT', '/api/settings'), 403)
+    assert.equal(await as('stranger', 'POST', '/api/models/r1/stop'), 403)
   })
 
   it('refuses a collection or create route to a shared editor: roots carry no grants', async () => {
@@ -158,6 +169,153 @@ describe('route authorization matrix (roles x route policy map)', () => {
     // but may not read a thread called "models".
     assert.equal((await app.request('/api/threads/models', { headers: { 'x-role': 'stranger' } })).status, 200)
     assert.equal((await app.request('/api/threads/r2', { headers: { 'x-role': 'stranger' } })).status, 403)
+  })
+})
+
+describe('review decisions', () => {
+  const status = async (app: Hono, role: Role, method: string, path: string) =>
+    (await app.request(path, { method, headers: { 'x-role': role } })).status
+
+  it('M4: settings, workspaces, relay, model import and pull are owner-only, even for the admin role', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    const rows: Array<[string, string]> = [
+      ['GET', '/api/settings'], ['PUT', '/api/settings'],
+      ['GET', '/api/workspaces'], ['GET', '/api/workspaces/browse'], ['POST', '/api/workspaces'], ['GET', '/api/workspaces/r1'], ['DELETE', '/api/workspaces/r1'],
+      ['POST', '/api/relay'],
+      ['POST', '/api/models/imports/ollama-reference/start'], ['POST', '/api/models/imports/hugging-face-gguf/start'],
+      ['POST', '/api/models/discovery/hugging-face/download'], ['POST', '/api/models/r1/pull'],
+      ['POST', '/api/ui-catalog/components/r1/review'],
+    ]
+    for (const [method, path] of rows) {
+      assert.equal(await status(app, 'admin', method, path), 403, `admin ${method} ${path}`)
+      assert.equal(await status(app, 'owner', method, path), 200, `owner ${method} ${path}`)
+    }
+    // Node operations that do not reach the filesystem stay available to the admin role.
+    assert.equal(await status(app, 'admin', 'POST', '/api/models/r1/stop'), 200)
+  })
+
+  it('M2: reasoning and event streams are owner-only: no editor, viewer, link or admin', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    const rows = [
+      '/api/sessions/r1/events', '/api/sessions/r1/spans', '/api/sessions/r1/stream', '/api/sessions/r1/export',
+      '/api/threads/r1/reasoning-artifacts', '/api/threads/r1/reasoning-artifacts/r1',
+    ]
+    for (const path of rows) {
+      for (const role of ['editor', 'viewer', 'link', 'admin', 'stranger'] as const) {
+        assert.equal(await status(app, role, 'GET', path), 403, `${role} ${path}`)
+      }
+      assert.equal(await status(app, 'owner', 'GET', path), 200, path)
+    }
+    // Plain session reads are unchanged: a viewer still reads the session itself.
+    assert.equal(await status(app, 'viewer', 'GET', '/api/sessions/r1'), 200)
+  })
+
+  it('M3: listing a connection\'s models spends the owner key, so it needs connection.use', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    assert.equal(await status(app, 'viewer', 'GET', '/api/connections/r1/models'), 403)
+    assert.equal(await status(app, 'link', 'GET', '/api/connections/r1/models'), 403)
+    assert.equal(await status(app, 'editor', 'GET', '/api/connections/r1/models'), 200)
+    assert.equal(await status(app, 'owner', 'GET', '/api/connections/r1/models'), 200)
+  })
+
+  it('L1: session metadata changes need session.update, which only the owner holds', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    for (const [method, path] of [['PATCH', '/api/threads/r1'], ['PATCH', '/api/threads/r1/retention'], ['POST', '/api/threads/r1/restore'], ['POST', '/api/threads/r1/session-leave'], ['PATCH', '/api/quick-runs/r1/retention'], ['POST', '/api/agent/r1/leave'], ['PATCH', '/api/agent/r1/retention']] as const) {
+      assert.equal(await status(app, 'editor', method, path), 403, `editor ${method} ${path}`)
+      assert.equal(await status(app, 'owner', method, path), 200, `owner ${method} ${path}`)
+    }
+    const policy = ROUTE_POLICIES.get('PATCH /api/threads/:id')
+    assert.ok(policy?.kind === 'authorize' && policy.action === 'session.update')
+  })
+
+  it('L5: the policy table cannot be changed at run time', () => {
+    const policies = ROUTE_POLICIES as Map<string, RoutePolicy>
+    assert.throws(() => policies.delete('GET /api/health'), /sealed/u)
+    assert.throws(() => policies.set('GET /api/ghost', { kind: 'public' }), /sealed/u)
+    assert.throws(() => policies.clear(), /sealed/u)
+    assert.ok(policies.has('GET /api/health'))
+    const entry = policies.get('GET /api/settings') as { ownerOnly?: boolean }
+    assert.throws(() => { entry.ownerOnly = false })
+    assert.equal(entry.ownerOnly, true)
+  })
+})
+
+describe('H1: no HTTP method skips the hook', () => {
+  it('answers OPTIONS and an unknown method like a method nobody registered, and refuses HEAD like GET', async () => {
+    const { app, hits } = stubApp({ accounts: adapter() })
+    for (const method of ['OPTIONS', 'PURGE']) {
+      for (const role of ['anonymous', 'owner'] as const) {
+        const response = await app.request('/api/settings', { method, headers: { 'x-role': role } })
+        assert.equal(response.status, 404, `${method} as ${role}`)
+      }
+    }
+    assert.equal(hits.length, 0)
+    const anonymousHead = await app.request('/api/settings', { method: 'HEAD', headers: { 'x-role': 'anonymous' } })
+    assert.equal(anonymousHead.status, 401)
+    assert.equal(hits.length, 0)
+    const strangerHead = await app.request('/api/workspaces/browse?path=/etc', { method: 'HEAD', headers: { 'x-role': 'stranger' } })
+    assert.equal(strangerHead.status, 403, 'no filesystem existence oracle for a non-owner')
+    assert.equal(hits.length, 0)
+  })
+
+  it('a stray handler that matches under /api/ never runs when no governed endpoint matched', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    let ran = 0
+    // The shapes a lookup could miss: a wildcard GET and a family-wide ALL route.
+    app.get('/api/*', (context) => { ran++; return context.text('leak') })
+    app.all('/api/sessions/*', (context) => { ran++; return context.text('leak') })
+    // A stray GET under /api/ is itself a governed, unmapped endpoint (refused); the family-wide ALL
+    // route is exempt as middleware, yet no request reaches it unless a governed endpoint matched first.
+    for (const [method, path, expected] of [['GET', '/api/never/registered', 403], ['POST', '/api/sessions/r1/unknown', 404], ['GET', '/api/sessions/r1/unknown', 403]] as const) {
+      const response = await app.request(path, { method, headers: { 'x-role': 'anonymous' } })
+      assert.equal(response.status, expected, `${method} ${path}`)
+      assert.equal((await response.text()).includes('leak'), false)
+    }
+    assert.equal(ran, 0)
+  })
+})
+
+describe('M1: the implicit owner is a loopback socket peer without proxy headers', () => {
+  const peer = (remoteAddress: string | undefined) => ({ incoming: { socket: { remoteAddress } } })
+
+  it('admits loopback peers and requests with no socket at all (in-process)', async () => {
+    const { app } = stubApp()
+    for (const address of ['127.0.0.1', '127.8.9.10', '::1', '::ffff:127.0.0.1']) {
+      assert.equal((await app.request('/api/settings', {}, peer(address))).status, 200, address)
+    }
+    assert.equal((await app.request('/api/settings')).status, 200, 'no socket: the embedding host itself')
+  })
+
+  it('refuses every non-loopback peer, and a socket without an address, with loopback_only', async () => {
+    const { app, hits } = stubApp()
+    for (const address of ['192.168.1.20', '10.0.0.5', '::ffff:192.168.1.20', 'fe80::1', '8.8.8.8', undefined]) {
+      for (const path of ['/api/settings', '/api/health', '/api/federation/handshake']) {
+        const response = await app.request(path, {}, peer(address))
+        assert.equal(response.status, 403, `${address} ${path}`)
+        const body = apiErrorSchema.parse(await response.json())
+        assert.equal(body.code, 'loopback_only')
+        assert.deepEqual(body.details, { reason: 'non_loopback_peer' })
+      }
+    }
+    assert.equal(hits.length, 0)
+  })
+
+  it('refuses proxy headers even from a loopback peer: a same-host reverse proxy is not the owner', async () => {
+    const { app, hits } = stubApp()
+    for (const header of ['X-Forwarded-For', 'Forwarded', 'X-Real-IP']) {
+      for (const bindings of [peer('127.0.0.1'), peer('::1'), undefined]) {
+        const response = await app.request('/api/settings', { headers: { [header]: '203.0.113.9' } }, bindings)
+        assert.equal(response.status, 403, `${header} ${bindings?.incoming.socket.remoteAddress}`)
+        assert.equal(apiErrorSchema.parse(await response.json()).code, 'proxied_request_refused')
+      }
+    }
+    assert.equal(hits.length, 0)
+  })
+
+  it('does not apply to remote mode, where the accounts adapter decides', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    const response = await app.request('/api/health', { headers: { 'x-role': 'stranger', 'x-forwarded-for': '203.0.113.9' } }, peer('203.0.113.9'))
+    assert.equal(response.status, 200)
   })
 })
 

@@ -50,24 +50,36 @@ describe('route policy map against the booted server', () => {
   })
 
   it('refuses to boot when a route has no policy, and names it', { timeout: 60_000 }, async () => {
-    const policies = ROUTE_POLICIES as Map<string, unknown>
     const key = 'GET /api/health'
-    const saved = policies.get(key)
-    assert.ok(saved)
-    policies.delete(key)
-    try {
-      const outcome = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
-        .then((server) => ({ server }), (error: unknown) => ({ error }))
-      // A boot that wrongly succeeds is closed first so the failure is an assertion, not a hung process.
-      if ('server' in outcome) await outcome.server.close()
-      assert.ok('error' in outcome, 'the boot must refuse an unmapped route')
-      assert.ok(outcome.error instanceof RouteAuthzError)
-      assert.deepEqual(outcome.error.routes, [key])
-    } finally {
-      policies.set(key, saved)
-    }
+    const without = new Map(ROUTE_POLICIES)
+    without.delete(key)
+    const outcome = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [], routePolicies: without })
+      .then((server) => ({ server }), (error: unknown) => ({ error }))
+    // A boot that wrongly succeeds is closed first so the failure is an assertion, not a hung process.
+    if ('server' in outcome) await outcome.server.close()
+    assert.ok('error' in outcome, 'the boot must refuse an unmapped route')
+    assert.ok(outcome.error instanceof RouteAuthzError)
+    assert.deepEqual(outcome.error.routes, [key])
     // The failed boot released the data directory: the next boot succeeds.
     const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
     await server.close()
+  })
+
+  it('M1: over a real socket a proxied request is not the owner, and unknown methods run nothing', { timeout: 60_000 }, async () => {
+    const server = await start({ port: 0, host: '127.0.0.1', dataDir, webDir: dataDir, devOrigins: [] })
+    try {
+      const base = `http://127.0.0.1:${server.port}`
+      assert.equal((await fetch(`${base}/api/settings`)).status, 200)
+      for (const header of ['X-Forwarded-For', 'Forwarded', 'X-Real-IP']) {
+        const proxied = await fetch(`${base}/api/settings`, { headers: { [header]: '203.0.113.9' } })
+        assert.equal(proxied.status, 403, header)
+        assert.equal(((await proxied.json()) as { code: string }).code, 'proxied_request_refused')
+      }
+      // The owner's own HEAD is served; an unknown method is a 404, not a handler.
+      assert.equal((await fetch(`${base}/api/settings`, { method: 'HEAD' })).status, 200)
+      assert.equal((await fetch(`${base}/api/settings`, { method: 'PURGE' })).status, 404)
+    } finally {
+      await server.close()
+    }
   })
 })

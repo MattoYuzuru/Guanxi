@@ -8,10 +8,10 @@
  */
 import { layoutsRoutes } from './layouts/routes.ts'
 import type { ReplicatedLayouts } from './layouts/replication.ts'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import { hostAllowlist, type HostAllowlistOptions } from './http/host-allowlist.ts'
-import { approvalBody, updateSettingsBody } from '@guanxi/contract'
+import { approvalBody, minimalHealthSchema, updateSettingsBody } from '@guanxi/contract'
 import type { AppContext } from './context.ts'
 import { getOllamaStatus } from './ollama/status.ts'
 import { fail } from './http/errors.ts'
@@ -30,7 +30,7 @@ import { UiCatalogReviewService } from './ui-catalog/service.ts'
 import { unavailableSigner } from './ui-catalog/signer.ts'
 import { sessionLogRoutes } from './session-log/routes.ts'
 import type { OllamaStatusOptions } from './ollama/status.ts'
-import { routeAuthz, type RouteAuthzOptions } from './auth/route-authz.ts'
+import { routeAuthz, type AuthzContext, type RouteAuthzOptions } from './auth/route-authz.ts'
 
 export interface CreateAppOptions extends HostAllowlistOptions {
   /** Разрешить обращения с dev-сервера Vite. */
@@ -74,7 +74,10 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
    */
   server.use('/api/*', routeAuthz(options.authz))
 
-  server.get('/api/health', async (context) => {
+  server.get('/api/health', async (context: Context<{ Variables: { authz?: AuthzContext } }>) => {
+    // Hardware and Ollama detail are for the node owner and the admin role; any other signed-in user gets liveness only.
+    if (context.get('authz')?.operator !== true) return context.json(minimalHealthSchema.parse({ ok: true }))
+
     const observedAt = new Date().toISOString()
     const client = app.ollama()
     const ollama = await getOllamaStatus(client, options.ollamaStatus)

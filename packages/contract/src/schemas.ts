@@ -3326,6 +3326,13 @@ export const healthSchema = z.object({
 })
 export type Health = z.infer<typeof healthSchema>
 
+/**
+ * What `/api/health` answers a signed-in user who is not an admin: liveness only. Hardware and
+ * Ollama detail stay with the owner and the admin role.
+ */
+export const minimalHealthSchema = z.object({ ok: z.boolean() })
+export type MinimalHealth = z.infer<typeof minimalHealthSchema>
+
 /* ─────────────────────────────── Ошибки ──────────────────────────────────── */
 
 export const apiErrorSchema = z.object({
@@ -3376,6 +3383,7 @@ export const apiErrorSchema = z.object({
     'unauthenticated',
     'forbidden',
     'route_unmapped',
+    'proxied_request_refused',
   ]),
   message: z.string(),
   details: z.record(z.unknown()).nullable(),

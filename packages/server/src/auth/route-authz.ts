@@ -5,17 +5,21 @@
  * for the request, looks it up in the route policy map, resolves the principal and resource and
  * asks `can()`. Handlers carry no ad hoc checks; a route without a declared policy is refused.
  *
- * Local mode (no accounts adapter) makes the implicit owner the principal, so a single-owner
- * loopback node behaves as it did before the hook existed. Remote mode takes the principal, the
- * authoritative resource projection and the grants from an {@link AccountsAdapter}; Better Auth
- * is that adapter in the next slice.
+ * Local mode (no accounts adapter) makes the implicit owner the principal, but only for a request
+ * whose socket peer is loopback and that carries no proxy headers, so a single-owner loopback node
+ * behaves as it did before the hook existed and a same-host reverse proxy cannot turn internet
+ * traffic into the owner (see the auth README, "Trust boundary"). Remote mode takes the principal,
+ * the authoritative resource projection and the grants from an {@link AccountsAdapter}; Better
+ * Auth is that adapter in the next slice.
  */
+import { getConnInfo } from '@hono/node-server/conninfo'
 import type { Context, MiddlewareHandler, Next } from 'hono'
 import { matchedRoutes } from 'hono/route'
 import { TrieRouter } from 'hono/router/trie-router'
 import { can } from './policy.ts'
 import {
   ROOT_RESOURCE_ID,
+  ROUTE_POLICIES,
   isGovernedEndpoint,
   policyFor,
   type RoutePolicy,
@@ -52,12 +56,22 @@ export interface RouteAuthzOptions {
   accounts?: AccountsAdapter
   nodeId?: string
   now?: () => number
+  /** Test seam: the policy table. Defaults to the sealed {@link ROUTE_POLICIES}. */
+  policies?: ReadonlyMap<string, RoutePolicy>
 }
 
 /** What the hook leaves on the request context for handlers. */
 export interface AuthzContext {
   principal: Principal
+  /** True for a `user` principal that is the node owner or has the server `admin` role. */
+  operator: boolean
 }
+
+/** Proxy headers a same-host reverse proxy adds. A local-mode node refuses any request that carries one. */
+export const PROXY_HEADERS = ['x-forwarded-for', 'forwarded', 'x-real-ip'] as const
+
+/** The body of an unknown API path, as the fallback route answers it. */
+export const API_NOT_FOUND_BODY = { code: 'internal_error', message: 'API-маршрут не найден', details: null } as const
 
 const ERROR_MESSAGES = {
   unauthenticated: 'Authentication is required',
@@ -72,6 +86,35 @@ type Outcome = Response | void | Promise<Response | void>
 function refuse(context: Context, code: Refusal): Response {
   const status = code === 'unauthenticated' ? 401 : 403
   return context.json({ code, message: ERROR_MESSAGES[code], details: null }, status)
+}
+
+type Peer = 'loopback' | 'remote' | 'none'
+
+/**
+ * The socket peer of the request. `none` means there is no socket at all (an in-process
+ * `app.request()` call by the embedding host); a socket without an address is `remote`.
+ */
+function peerOf(context: Context): Peer {
+  let address: string | undefined
+  try {
+    address = getConnInfo(context).remote.address
+  } catch {
+    return 'none'
+  }
+  if (!address) return 'remote'
+  const plain = address.toLowerCase().replace(/^::ffff:/u, '')
+  return plain === '::1' || /^127(\.\d{1,3}){3}$/u.test(plain) ? 'loopback' : 'remote'
+}
+
+/** Local mode only: the refusal for a non-loopback peer or a proxied request, or `null`. */
+function localRefusal(context: Context): Response | null {
+  if (peerOf(context) === 'remote') {
+    return context.json({ code: 'loopback_only', message: 'This node answers requests from this machine only', details: { reason: 'non_loopback_peer' } }, 403)
+  }
+  if (PROXY_HEADERS.some((name) => context.req.header(name) !== undefined)) {
+    return context.json({ code: 'proxied_request_refused', message: 'A request carrying proxy headers cannot act as the local owner', details: { reason: 'forwarded_headers' } }, 403)
+  }
+  return null
 }
 
 const extractors = new Map<string, TrieRouter<true>>()
@@ -110,6 +153,7 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
   const nodeOwnerId = accounts?.nodeOwnerId ?? LOCAL_OWNER_ID
   const nodeId = options.nodeId ?? LOCAL_NODE_ID
   const now = options.now ?? Date.now
+  const policies = options.policies ?? ROUTE_POLICIES
 
   /** The decision is synchronous unless the accounts adapter itself is asynchronous. */
   function decide(
@@ -124,8 +168,12 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
     if (policy.kind === 'account') {
       return principal.kind === 'user' && principal.userId === nodeOwnerId ? null : 'forbidden'
     }
-    const check = (resource: Resource, grants: readonly Grant[]): Refusal | null =>
-      can(principal, policy.action, resource, [...grants], now()).allowed ? null : 'forbidden'
+    const check = (resource: Resource, grants: readonly Grant[]): Refusal | null => {
+      if (!can(principal, policy.action, resource, [...grants], now()).allowed) return 'forbidden'
+      // `ownerOnly`: a grant or the admin role is not enough, the principal must own the resource.
+      if (policy.ownerOnly && !(principal.kind === 'user' && principal.userId === resource.ownerUserId)) return 'forbidden'
+      return null
+    }
 
     if (policy.resource === 'node') return check({ type: 'node', id: nodeId, ownerUserId: nodeOwnerId }, [])
     if (policy.idParam === undefined) {
@@ -142,21 +190,30 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
   }
 
   const handler = (context: Context, next: Next): Outcome => {
-    const method = context.req.method
+    // Hono serves HEAD through the GET handler while `req.method` stays `HEAD`: look up as GET.
+    const method = context.req.method === 'HEAD' ? 'GET' : context.req.method
     // Hono runs matched handlers in registration order and an endpoint handler answers without
     // calling `next()`, so the first matched endpoint is the one that will respond. A static route
     // registered before a parameterized one (`/threads/trash` before `/threads/:id`) shadows it.
     const route = matchedRoutes(context).find(
       (candidate) => isGovernedEndpoint(candidate) && (candidate.method === method || candidate.method === 'ALL'),
     )
-    if (route === undefined) return next()
+    // Fail closed: no governed endpoint for this method means nothing under /api/ may run, whatever
+    // else (a wildcard, a stray `ALL` route) matched. The answer is the unknown-path 404, which
+    // reveals nothing about which paths exist.
+    if (route === undefined) return context.json(API_NOT_FOUND_BODY, 404)
 
-    const policy = policyFor(route.method, route.path)
+    const policy = policyFor(route.method, route.path, policies)
     if (!policy) return refuse(context, 'route_unmapped')
+    if (!accounts) {
+      const refusal = localRefusal(context)
+      if (refusal) return refusal
+    }
 
     const finish = (refusal: Refusal | null, principal: Principal): Outcome => {
       if (refusal) return refuse(context, refusal)
-      context.set('authz', { principal } satisfies AuthzContext)
+      const operator = principal.kind === 'user' && (principal.role === 'admin' || principal.userId === nodeOwnerId)
+      context.set('authz', { principal, operator } satisfies AuthzContext)
       return next()
     }
     const needsPrincipal = policy.kind !== 'public' && policy.kind !== 'node-signed'
