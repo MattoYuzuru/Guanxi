@@ -99,7 +99,9 @@ test('queued prompts are visible/removable, are consumed once, and cancel aborts
   f.agents().stop(sessionId)
   assert.equal((await f.agents().wait(sessionId)).status, 'cancelled')
 })
-test('legacy progress refuses a newer v3 queue snapshot instead of returning older pending work', { timeout: 30000 }, async t => {
+// Q0 refused every v3 snapshot here as an interim guard. Q1 reads it: the property that survives is
+// that the newer snapshot, never the older v1 queue, defines the pending work.
+test('legacy progress follows the newest queue snapshot and never resurrects an older v1 queue', { timeout: 30000 }, async t => {
   const f = await fixture(t)
   const { sessionId } = await f.agents().create(f.input)
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
@@ -111,10 +113,10 @@ test('legacy progress refuses a newer v3 queue snapshot instead of returning old
     type: 'agent.queue',
     data: { items: [{ id: 'keep-b', kind: 'inline', text: 'keep B' }] },
   }, { eventVersion: SESSION_EVENT_VERSION_3 })
-  assert.throws(
-    () => f.agents().progress(sessionId),
-    error => error instanceof NativeAgentError && error.code === 'agent_unavailable',
-    'a newer valid snapshot must be refused, never replaced by the preceding v1 queue',
+  assert.deepEqual(
+    f.agents().progress(sessionId).queue,
+    [{ id: 'keep-b', text: 'keep B' }],
+    'the newer inline-only snapshot defines the queue; the preceding v1 item old-a is not pending',
   )
   handle.close()
 })

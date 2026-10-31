@@ -14,7 +14,7 @@ export const nativeAgentPlugin = definePlugin<{ db: Db; host: NativeHost; dataDi
     const agents = new NativeAgents(config.host, ctx.service<SessionLog>('session.log'), ctx.service<Connections>('connections.registry'),
       ctx.service<EgressScrubber>('egress.scrubber'), config.dataDir, config.nodePorts, undefined, { db: config.db, runs: ctx.service<DurableRunsService>('runs.durable').store }, ctx.optionalService<ProjectIndexService>('project.index'))
     ctx.provide(NATIVE_AGENT_SERVICE, Object.freeze({
-      create: agents.create.bind(agents), deleteSession: agents.deleteSession.bind(agents), setRetention: agents.setRetention.bind(agents), leaveSession: agents.leaveSession.bind(agents), prompt: agents.prompt.bind(agents), progress: agents.progress.bind(agents),
+      create: agents.create.bind(agents), deleteSession: agents.deleteSession.bind(agents), setRetention: agents.setRetention.bind(agents), leaveSession: agents.leaveSession.bind(agents), prompt: agents.prompt.bind(agents), progress: agents.progress.bind(agents), progressV2: agents.progressV2.bind(agents),
       result: agents.result.bind(agents), wait: agents.wait.bind(agents), stop: agents.stop.bind(agents),
       queue: agents.queue.bind(agents), removeQueued: agents.removeQueued.bind(agents),
       sideChatRespond: agents.sideChatRespond.bind(agents), sideChatSave: agents.sideChatSave.bind(agents), sideChatSend: agents.sideChatSend.bind(agents),
@@ -23,4 +23,4 @@ export const nativeAgentPlugin = definePlugin<{ db: Db; host: NativeHost; dataDi
     ctx.effect(() => () => agents.close(), 'native.close')
   },
 })
-export type NativeAgentService = Pick<NativeAgents, 'leaveSession' | 'setRetention' | 'deleteSession' | 'create' | 'prompt' | 'progress' | 'result' | 'wait' | 'stop' | 'queue' | 'removeQueued' | 'setRoots' | 'projects' | 'sideChatRespond' | 'sideChatSave' | 'sideChatSend'> & { shutdown(): Promise<void> }
+export type NativeAgentService = Pick<NativeAgents, 'leaveSession' | 'setRetention' | 'deleteSession' | 'create' | 'prompt' | 'progress' | 'progressV2' | 'result' | 'wait' | 'stop' | 'queue' | 'removeQueued' | 'setRoots' | 'projects' | 'sideChatRespond' | 'sideChatSave' | 'sideChatSend'> & { shutdown(): Promise<void> }

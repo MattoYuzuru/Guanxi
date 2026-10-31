@@ -120,3 +120,13 @@ export const nativeProgressVersionUnsupportedSchema = z
   })
   .strict()
 export type NativeProgressVersionUnsupported = z.infer<typeof nativeProgressVersionUnsupportedSchema>
+
+/**
+ * Restricted-reader floor (Q1): while the latest pending queue snapshot is v3,
+ * a node that still produces v1 refuses both add and remove with HTTP 409.
+ * The body is content-free.
+ */
+export const nativeQueueProducerUnavailableSchema = z
+  .object({ code: z.literal('native_queue_producer_unavailable') })
+  .strict()
+export type NativeQueueProducerUnavailable = z.infer<typeof nativeQueueProducerUnavailableSchema>
