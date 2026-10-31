@@ -42,13 +42,12 @@ Response shapes: `401 unauthenticated`, `403 forbidden`, `403 route_unmapped`, a
   authorized against the per-type root resource (owner: node owner, no grants), because stores
   carry no `owner_user_id` yet. Members therefore see nothing but explicit grants on ids and
   `authenticated` node information.
-- **No `session.update`/`project.update` action exists.** Owner-level session metadata changes
-  (PATCH thread, retention, restore, leave, agent leave/retention) use `session.delete`, the
-  weakest owner-only session action. Needs a dedicated action in the policy core.
+- **Session metadata uses `session.update`** (PATCH thread, retention, restore, leave, agent
+  leave/retention), added to the core in the review round. No `project.update` exists; project
+  metadata uses `project.write`.
 - **`account` kind** (layouts, notifications, voice glossary, recipes, attachments, vault,
   approvals) passes only the node owner's account because those stores are single-account.
-- **Reasoning artifacts** use `session.read` (viewers can read them). Product decision pending
-  against D-113 export rules; owner-only would need a new action.
+- **Reasoning and event streams are owner-only** (review M2); see the review section.
 - **First matched endpoint decides.** Endpoint handlers never call `next()` (checked by grep);
   evaluating every matched pattern would wrongly deny `GET /api/threads/models` as a thread id.
 - **`ms1Live` rejects `remote`** (`option_conflict`); the MS1 pairing stays loopback-only and its
@@ -119,7 +118,7 @@ Residuals:
   registered (`/api/workspaces`, `/api/agent/projects/:id/roots`).
 - Per-route loopback guards (`localGuard`, session inspector, UI catalog review) still refuse
   remote peers with `loopback_only`; each family needs a decision when accounts land.
-- Dedicated session/project update actions and the reasoning-artifact policy (see above).
+- A `session.read_reasoning` decision (viewer or editor access to reasoning); until then owner-only.
 - Permission snapshot API and web projection; web handling of `401` (sign-in prompt).
 - TLS is configured through `StartOptions` only; there is no env or CLI flag, so no operator can
   run a remote node from the command line yet (by design until accounts exist).
@@ -136,3 +135,55 @@ check, an `AccountsAdapter` backed by it, the account/grant stores wired into
 edits outside the lane's own paths: `packages/contract` (error codes), `packages/web`
 (`api.ts`, `locale.ts`), `packages/cli/src/bin.ts`, and the setup of
 `packages/server/test/session-log-cross-review.test.ts`.
+
+## Review findings and fixes
+
+Independent security review of the branch. The code and test fixes are in `4178c54d`
+(`fix(auth): review fixes`); the documentation follows in the next commit.
+
+| Finding | Fix | Proof |
+| --- | --- | --- |
+| H1 `HEAD` skipped the hook (`req.method` stays `HEAD` while Hono serves the GET handler), and any request with no governed match proceeded: unauthenticated `HEAD /api/settings` 200 and a filesystem existence oracle on `/api/workspaces/browse` | The lookup treats `HEAD` as `GET`. If no governed endpoint matches the method, the hook answers the unknown-path `404` itself and calls nothing behind it (OPTIONS, unknown methods, stray wildcard or `ALL` routes). | The matrix runs `HEAD` for every GET row and role (same status, same handler count). A sweep of every GET row of the booted remote server with `HEAD` as anonymous and stranger (HEAD status equals GET, anonymous 401, at least 60 rows). The `/etc` versus missing-path oracle test. OPTIONS and `PURGE` give 404. A no-fallback test where a family `ALL` route and `GET *` must not run. Mutations: HEAD lookup removed (matrix and HEAD test red); `next()` instead of the 404 (no-fallback test red) |
+| M1 implicit owner on any request | Local mode grants the owner only when the socket peer is loopback (127.0.0.0/8, `::1`, `::ffff:127.x`). A non-loopback peer or an address-less socket answers `403 loopback_only` (`details.reason: non_loopback_peer`, so the inspector and UI-catalog tests keep their bodies). `X-Forwarded-For`, `Forwarded` or `X-Real-IP` answers `403 proxied_request_refused` (new contract code, web copy `error.api.notAllowed`). A request with no socket at all (in-process `app.request()`) is the embedding host and stays the owner: hundreds of existing tests call that way. README "Trust boundary of local mode". | Stub tests for each loopback spelling, six non-loopback peers on three routes, three proxy headers on three peer shapes, remote mode unaffected. A real-socket test (`fetch` with each proxy header: 403; plain: 200). Mutation: refusal disabled, both tests red |
+| M2 reasoning is person-audience | New policy flag `ownerOnly` (the principal must own the resource on top of `can()`) on `/api/sessions/:id/events`, `spans`, `stream`, `export` and `/api/threads/:id/reasoning-artifacts[/:artifactId]` | Editor, viewer, link, admin and stranger refused, owner allowed; plain `GET /api/sessions/:id` is still readable by a viewer |
+| M3 connection models spend the owner key | `GET /api/connections/:id/models` needs `connection.use` | Viewer and link refused; editor with a direct grant and owner allowed |
+| M4 node operations ahead of allowed-root enforcement | `ownerOnly` on `/api/settings`, `/api/workspaces*`, `POST /api/relay`, model import (Ollama reference, GGUF), Hugging Face discovery and download, `pull`, UI-catalog review. Warm, prewarm, stop, probes, capability overrides and model delete stay with the admin role | Admin refused and owner allowed on every named row (stub and real server). Mutation: `ownerOnly` check disabled, four tests red |
+| L1 `session.update` | Added to the core (types, policy, owner only); policy-matrix expectations and the cell count updated from 850 to 900 (expanded, nothing removed) | Matrix, D-155 and route tests |
+| L2 `NON_ENDPOINT_ALL_ROUTES` exempts by path | Resolved by construction, not by a boot count: an exempt `ALL` route is reached only after a governed endpoint matched and was authorized (unknown paths get the hook's 404), so a non-middleware `ALL` hidden under an exempt path cannot be reached by an unauthorized caller or an unknown path. A boot assertion on registration counts would be brittle because the counts depend on options (CORS, federation). | The no-fallback test above |
+| L3 health detail | `/api/health` returns `{ ok }` to a signed-in user who is neither the node owner nor an admin; the contract gains `minimalHealthSchema`. The web client still parses the full shape (residual below). | Remote test: stranger gets `{ok:true}`; owner and admin get hardware, Ollama and version |
+| L4 SSE authorized at connect only | Not fixed; listed as a residual | |
+| L5 mutable `ROUTE_POLICIES` | A sealed map (`set`, `delete`, `clear` throw; entries frozen). Tests no longer mutate it: `StartOptions.routePolicies` is a test seam that supplies the table to enforce and to check at boot | Sealed-map test; the boot test passes a table without one row |
+| L6 LAN-peer test proved the Host allowlist, not the peer check | `session-log-cross-review.test.ts` now sends `Host: 127.0.0.1:<port>` over the LAN address and asserts `403 loopback_only` with no content, plus the named-host case; without a LAN interface it records a diagnostic instead of passing silently | The LAN assertions ran on this machine (no diagnostic emitted) |
+
+No assertion was weakened. Every changed existing assertion is an expansion forced by a requested
+policy change: `policy-matrix` gains `session.update` and 18 actions, and the D-155 route test now
+expects the admin role refused on settings and pull and allowed on `stop`.
+
+New residuals from the review: SSE and other long-lived streams are authorized at connect only (a
+grant revoked mid-stream is not re-checked); a non-operator web session needs handling of the
+minimal health shape; the local-mode trust boundary treats a socket-less in-process call as the
+owner; reasoning access for viewers and editors needs a `session.read_reasoning` decision.
+
+One existing test needed a setup change because M1 makes `Forwarded` a refused proxy header:
+`connections/host-allowlist.test.ts` N8 sent `X-Forwarded-Host` and `Forwarded` together and expected
+`200` for an allowed Host. It now asserts the original property with `X-Forwarded-Host` alone (forbidden
+Host `403`, allowed Host `200`, the header ignored in both directions) and a second request that adds
+`Forwarded` and expects `403 proxied_request_refused` for the allowed Host (not `host_denied`).
+
+### Result lines after the review fixes
+
+```bash
+node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test packages/server/test/auth/*.test.ts packages/server/test/session-log-cross-review.test.ts
+# tests 84 / pass 84 / fail 0
+agent-dev run --cwd <worktree> --node 26 --resource heavy --lock-timeout 3600 -- node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test <77 route, boot and auth files>
+# tests 878 / suites 89 / pass 878 / fail 0 / skipped 0   (the first run found only the N8 test above)
+npm exec --workspace @guanxi/web -- vitest run test/unit test/component/localization.test.tsx   # 21 files, 136 tests pass
+node --test packages/contract/test/*.test.ts                                                    # 4 pass
+npx tsc --noEmit -p packages/{server,contract,cli,web}                                          # exit 0, no output
+npx markdownlint-cli2 <auth README, plan, handoff, ADR-0027>                                     # 0 errors
+node scripts/check-doc-links.mjs                                                                 # 0 problems
+```
+
+New tests in the review round: 16 in `route-authz.test.ts` (27 total), 2 in `remote-boot.test.ts`
+(the HEAD sweep, a health case folded into the acceptance test), 1 in `route-boot.test.ts`, and one
+web case folded into the existing error-copy test.

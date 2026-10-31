@@ -39,6 +39,7 @@ resource type, except `account.invite` and `account.ban`, which are global.
 | `session.prompt` | session | no | yes | yes | Payer follows D-154/D-190. |
 | `session.stop` | session | no | yes | yes | Stop the active turn or run. |
 | `session.share` | session | no | no | yes | Manage grants. |
+| `session.update` | session | no | no | yes | Title, model, retention, restore, leave. |
 | `session.delete` | session | no | no | yes | Permanent deletion. |
 | `project.read` | project | yes | yes | yes | Metadata and configuration. |
 | `project.write` | project | no | yes | yes | Metadata, roots and configuration. |
@@ -193,28 +194,61 @@ the local node (owner: the node owner). This is deliberate while stores have no 
 everything the API lists or creates belongs to the node owner, and a member must not list or write
 into it. The `admin` role still gets only `node.admin` (D-155).
 
+`ownerOnly` rows additionally require the principal to own the resource, so neither a grant nor the
+`admin` role passes. They cover: the reasoning and event streams of a session (`/api/sessions/:id/events`,
+`spans`, `stream`, `export`, and a thread's `reasoning-artifacts`), because reasoning is person-audience
+until a `session.read_reasoning` decision exists; and the node operations that reach the filesystem or
+the owner's configuration (`/api/settings`, `/api/workspaces*`, `POST /api/relay`, model import, pull and
+Hugging Face download/discovery, UI-catalog review) until allowed roots are enforced. Other node rows
+(`warm`, `stop`, capability overrides, model delete) stay with the `admin` role. Listing a connection's
+models needs `connection.use` because it spends the owner's key.
+
 Refusals use the shared API error shape (`apiErrorSchema`): `401 unauthenticated` for an anonymous
 principal, `403 forbidden` when `can()` or the kind refuses, `403 route_unmapped` when a matched
 endpoint has no policy. A foreign and a missing resource answer identically (no existence oracle);
 the reason `can()` gave is not returned.
 
-**Fail closed.** A matched `/api/` endpoint without a policy is refused before its handler runs,
-including `ALL` routes that are not one of the known middleware or fallback patterns
-(`NON_ENDPOINT_ALL_ROUTES`). `start()` also runs `assertRoutesMapped(app.routes)` after the last
-route is mounted and aborts boot with `RouteAuthzError` (`routes_unmapped`) listing the patterns.
-Adding a route therefore means adding a line to `route-policy.ts`.
+**Fail closed.** The hook looks the request up by method, with `HEAD` treated as `GET` (Hono serves HEAD
+through the GET handler). If no governed endpoint matches the method, the hook itself answers the
+unknown-path `404` and calls nothing behind it, so a stray wildcard or `ALL` route, `OPTIONS` or an unknown
+method can never run a handler. A matched endpoint without a policy is refused before its handler runs,
+including `ALL` routes that are not one of the known middleware patterns (`NON_ENDPOINT_ALL_ROUTES`).
+Those exempt patterns are reachable only after a governed endpoint was matched and authorized, so a
+non-middleware `ALL` route hidden under them cannot be reached by an unauthorized caller or an unknown path.
+`start()` also runs `assertRoutesMapped(app.routes)` after the last route is mounted and aborts boot with
+`RouteAuthzError` (`routes_unmapped`) listing the patterns. Adding a route therefore means adding a line to
+`route-policy.ts`. `ROUTE_POLICIES` is a sealed map: `set`, `delete` and `clear` throw.
 
 **Modes.**
 
 - *Local owner (default).* No accounts adapter: the principal is `LOCAL_OWNER_PRINCIPAL`
-  (`local`, role `admin`) for every request that passed the Host allowlist, so every declared
-  policy admits it and behaviour is as before the hook. Loopback itself is guaranteed by the boot
-  bind guard and by the existing per-route peer guards (`loopback_only`), which still answer with
-  their own bodies.
+  (`local`, role `admin`), so every declared policy admits it and behaviour is as before the hook,
+  under the trust boundary below.
 - *Remote.* `start({ remote })` passes an `AccountsAdapter`: `nodeOwnerId`, `principal(context)`,
   and optional `resource(type, id)` (the authoritative projection; default: owned by the node
   owner) and `grants(resource)` (including grants inherited from the project; default none).
   Better Auth implements it in the next slice.
+
+### Trust boundary of local mode
+
+The implicit owner is granted only when **both** hold:
+
+1. the socket peer (`getConnInfo(c).remote.address`) is loopback: `127.0.0.0/8`, `::1` or an
+   IPv4-mapped `127.x`. A non-loopback peer, or a socket with no address, answers `403 loopback_only`
+   (`details.reason: non_loopback_peer`);
+2. the request carries none of `X-Forwarded-For`, `Forwarded` or `X-Real-IP`. Otherwise it answers
+   `403 proxied_request_refused`. A reverse proxy on the same host connects from loopback, so without this
+   rule it would turn internet traffic into the owner. Local mode is therefore incompatible with a
+   fronting proxy by design: expose a node through the remote security profile instead.
+
+A request with **no socket at all** (an in-process `app.request()` by the embedding host or a test) has no
+network peer and is treated as the owner; a real listener always supplies a socket. The existing per-route
+guards (`loopback_only` on the inspector, UI catalog, notifications, voice, work) remain as a second layer.
+The Host allowlist is a third, against DNS rebinding. None of this applies in remote mode, where the accounts
+adapter authenticates every request.
+
+`GET /api/health` returns `{ ok }` only to a signed-in user who is neither the node owner nor an admin; the
+hardware and Ollama report is for the owner and the admin role.
 
 ## Remote bind at boot
 

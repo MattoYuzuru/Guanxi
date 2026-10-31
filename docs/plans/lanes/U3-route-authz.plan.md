@@ -98,9 +98,9 @@ Method `ALL` rows are middleware or fallbacks, not endpoints.
 
 | Method | Path | Kind | Resource | Action | Role |
 | --- | --- | --- | --- | --- | --- |
-| GET | /api/health | authenticated | | | any user |
-| GET | /api/settings | authorize | node | node.admin | owner/admin |
-| PUT | /api/settings | authorize | node | node.admin | owner/admin |
+| GET | /api/health | authenticated | | | any user (full report: owner and admin only) |
+| GET | /api/settings | authorize | node | node.admin | owner only (node.admin) |
+| PUT | /api/settings | authorize | node | node.admin | owner only (node.admin) |
 | GET | /api/feature-flags | authenticated | | | any user |
 | GET | /api/runtime | authenticated | | | any user |
 | POST | /api/runtime/estimated-parallel-admission | authenticated | | | any user |
@@ -112,7 +112,7 @@ Method `ALL` rows are middleware or fallbacks, not endpoints.
 | PUT | /api/layouts/geometry | account | | | account |
 | GET | /api/ui-catalog/review-capability | authenticated | | | any user |
 | GET | /api/ui-catalog/components/:id/review | authenticated | | | any user |
-| POST | /api/ui-catalog/components/:id/review | authorize | node | node.admin | owner/admin |
+| POST | /api/ui-catalog/components/:id/review | authorize | node | node.admin | owner only (node.admin) |
 
 ### Models and workspaces (node resources)
 
@@ -122,13 +122,13 @@ Method `ALL` rows are middleware or fallbacks, not endpoints.
 | GET | /api/models/catalog | authenticated | | | any user |
 | GET | /api/models/running | authenticated | | | any user |
 | GET | /api/models/:name{.+} | authenticated | | | any user |
-| POST | /api/models/imports/ollama-reference/preview | authorize | node | node.admin | owner/admin |
-| POST | /api/models/imports/ollama-reference/start | authorize | node | node.admin | owner/admin |
-| POST | /api/models/discovery/hugging-face/search | authorize | node | node.admin | owner/admin |
-| POST | /api/models/discovery/hugging-face/repository | authorize | node | node.admin | owner/admin |
-| POST | /api/models/discovery/hugging-face/selection | authorize | node | node.admin | owner/admin |
-| POST | /api/models/discovery/hugging-face/download | authorize | node | node.admin | owner/admin |
-| POST | /api/models/imports/hugging-face-gguf/start | authorize | node | node.admin | owner/admin |
+| POST | /api/models/imports/ollama-reference/preview | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/models/imports/ollama-reference/start | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/models/discovery/hugging-face/search | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/models/discovery/hugging-face/repository | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/models/discovery/hugging-face/selection | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/models/discovery/hugging-face/download | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/models/imports/hugging-face-gguf/start | authorize | node | node.admin | owner only (node.admin) |
 | POST | /api/models/:name{.+}/capability-overrides | authorize | node | node.admin | owner/admin |
 | DELETE | /api/models/:name{.+}/capability-overrides | authorize | node | node.admin | owner/admin |
 | DELETE | /api/models/:name{.+} | authorize | node | node.admin | owner/admin |
@@ -136,18 +136,18 @@ Method `ALL` rows are middleware or fallbacks, not endpoints.
 | POST | /api/models/:name{.+}/prewarm | authorize | node | node.admin | owner/admin |
 | POST | /api/models/:name{.+}/probes/completion | authorize | node | node.admin | owner/admin |
 | POST | /api/models/:name{.+}/stop | authorize | node | node.admin | owner/admin |
-| POST | /api/models/:name{.+}/pull | authorize | node | node.admin | owner/admin |
-| GET | /api/workspaces | authorize | node | node.admin | owner/admin |
-| GET | /api/workspaces/browse | authorize | node | node.admin | owner/admin |
-| POST | /api/workspaces | authorize | node | node.admin | owner/admin |
-| GET | /api/workspaces/:id | authorize | node | node.admin | owner/admin |
-| DELETE | /api/workspaces/:id | authorize | node | node.admin | owner/admin |
+| POST | /api/models/:name{.+}/pull | authorize | node | node.admin | owner only (node.admin) |
+| GET | /api/workspaces | authorize | node | node.admin | owner only (node.admin) |
+| GET | /api/workspaces/browse | authorize | node | node.admin | owner only (node.admin) |
+| POST | /api/workspaces | authorize | node | node.admin | owner only (node.admin) |
+| GET | /api/workspaces/:id | authorize | node | node.admin | owner only (node.admin) |
+| DELETE | /api/workspaces/:id | authorize | node | node.admin | owner only (node.admin) |
 
 ### Threads (chat sessions), quick runs, jobs
 
-`session.delete` is the weakest owner-only session action. No `session.update` action exists, so
-owner-level metadata changes (retention, restore, leave, patch) use it; adding a dedicated action
-belongs to the policy core and is a residual.
+Owner-level metadata changes (retention, restore, leave, patch) use `session.update`, added to the
+policy core in the review round; `owner only` rows additionally require the principal to own the
+resource (no grant, no admin role).
 
 | Method | Path | Kind | Resource | Action | Role |
 | --- | --- | --- | --- | --- | --- |
@@ -156,13 +156,13 @@ belongs to the policy core and is a residual.
 | POST | /api/threads | authorize | session (root) | session.prompt | owner |
 | GET | /api/threads/trash | authorize | session (root) | session.read | owner |
 | GET | /api/threads/:id/retention | authorize | session `id` | session.read | viewer |
-| PATCH | /api/threads/:id/retention | authorize | session `id` | session.delete | owner |
-| POST | /api/threads/:id/restore | authorize | session `id` | session.delete | owner |
-| POST | /api/threads/:id/session-leave | authorize | session `id` | session.delete | owner |
-| GET | /api/threads/:id/reasoning-artifacts | authorize | session `id` | session.read | viewer |
-| GET | /api/threads/:id/reasoning-artifacts/:artifactId | authorize | session `id` | session.read | viewer |
+| PATCH | /api/threads/:id/retention | authorize | session `id` | session.update | owner |
+| POST | /api/threads/:id/restore | authorize | session `id` | session.update | owner |
+| POST | /api/threads/:id/session-leave | authorize | session `id` | session.update | owner |
+| GET | /api/threads/:id/reasoning-artifacts | authorize | session `id` | session.read | owner only |
+| GET | /api/threads/:id/reasoning-artifacts/:artifactId | authorize | session `id` | session.read | owner only |
 | GET | /api/threads/:id | authorize | session `id` | session.read | viewer |
-| PATCH | /api/threads/:id | authorize | session `id` | session.delete | owner |
+| PATCH | /api/threads/:id | authorize | session `id` | session.update | owner |
 | DELETE | /api/threads/:id | authorize | session `id` | session.delete | owner |
 | GET | /api/threads/:id/context | authorize | session `id` | session.read | viewer |
 | POST | /api/threads/:id/stop | authorize | session `id` | session.stop | editor |
@@ -170,7 +170,7 @@ belongs to the policy core and is a residual.
 | POST | /api/threads/:id/compact | authorize | session `id` | session.prompt | editor |
 | GET | /api/quick-runs | authorize | session (root) | session.read | owner |
 | POST | /api/quick-runs | authorize | session (root) | session.prompt | owner |
-| PATCH | /api/quick-runs/:id/retention | authorize | session `id` | session.delete | owner |
+| PATCH | /api/quick-runs/:id/retention | authorize | session `id` | session.update | owner |
 | GET | /api/quick-runs/:id | authorize | session `id` | session.read | viewer |
 | POST | /api/jobs | authorize | session (root) | session.prompt | owner |
 | GET | /api/jobs/:jobId | authorize | run `jobId` | run.read | viewer |
@@ -185,10 +185,10 @@ belongs to the policy core and is a residual.
 | GET | /api/sessions/list/page | authorize | session (root) | session.read | owner |
 | GET | /api/sessions/search | authorize | session (root) | session.read | owner |
 | GET | /api/sessions/:sessionId | authorize | session `sessionId` | session.read | viewer |
-| GET | /api/sessions/:sessionId/events | authorize | session `sessionId` | session.read | viewer |
-| GET | /api/sessions/:sessionId/spans | authorize | session `sessionId` | session.read | viewer |
-| GET | /api/sessions/:sessionId/export | authorize | session `sessionId` | session.read | viewer |
-| GET | /api/sessions/:sessionId/stream | authorize | session `sessionId` | session.read | viewer |
+| GET | /api/sessions/:sessionId/events | authorize | session `sessionId` | session.read | owner only |
+| GET | /api/sessions/:sessionId/spans | authorize | session `sessionId` | session.read | owner only |
+| GET | /api/sessions/:sessionId/export | authorize | session `sessionId` | session.read | owner only |
+| GET | /api/sessions/:sessionId/stream | authorize | session `sessionId` | session.read | owner only |
 
 ### Projects, recipes, attachments, work ledger
 
@@ -234,7 +234,7 @@ belongs to the policy core and is a residual.
 | POST | /api/connections/vault/unlock | account | | | account |
 | POST | /api/connections/vault/lock | account | | | account |
 | PUT | /api/connections/:id/secret | authorize | connection `id` | connection.manage | owner |
-| GET | /api/connections/:id/models | authorize | connection `id` | connection.read | viewer |
+| GET | /api/connections/:id/models | authorize | connection `id` | connection.use | editor |
 | POST | /api/connections/:id/probe | authorize | connection `id` | connection.manage | owner |
 
 ### Native agent, relay
@@ -244,8 +244,8 @@ belongs to the policy core and is a residual.
 | GET | /api/agent/projects | authorize | project (root) | project.read | owner |
 | POST | /api/agent | authorize | session (root) | session.prompt | owner |
 | PATCH | /api/agent/projects/:id/roots | authorize | project `id` | project.write | editor |
-| POST | /api/agent/:id/leave | authorize | session `id` | session.delete | owner |
-| PATCH | /api/agent/:id/retention | authorize | session `id` | session.delete | owner |
+| POST | /api/agent/:id/leave | authorize | session `id` | session.update | owner |
+| PATCH | /api/agent/:id/retention | authorize | session `id` | session.update | owner |
 | DELETE | /api/agent/:id | authorize | session `id` | session.delete | owner |
 | GET | /api/agent/:id | authorize | session `id` | session.read | viewer |
 | GET | /api/agent/:id/result | authorize | session `id` | session.read | viewer |
@@ -256,7 +256,7 @@ belongs to the policy core and is a residual.
 | POST | /api/agent/:id/side-chat/save | authorize | session `id` | session.prompt | editor |
 | POST | /api/agent/:id/side-chat/send | authorize | session `id` | session.prompt | editor |
 | DELETE | /api/agent/:id/queue/:item | authorize | session `id` | session.prompt | editor |
-| POST | /api/relay | authorize | node | node.admin | owner/admin |
+| POST | /api/relay | authorize | node | node.admin | owner only (node.admin) |
 | GET | /api/relay/starts/:key | authorize | run `key` | run.read | viewer |
 | GET | /api/relay/starts/:key/result | authorize | run `key` | run.read | viewer |
 | POST | /api/relay/starts/:key/stop | authorize | run `key` | run.cancel | editor |

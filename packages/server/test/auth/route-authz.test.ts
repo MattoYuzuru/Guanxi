@@ -275,6 +275,25 @@ describe('H1: no HTTP method skips the hook', () => {
   })
 })
 
+describe('H1: nothing runs behind the hook without a governed endpoint', () => {
+  it('answers 404 itself when only an exempt family ALL route and a wildcard match', async () => {
+    // No fallback route here: whatever matches after the hook must not be reached.
+    for (const accounts of [adapter(), undefined]) {
+      const app = new Hono()
+      app.use('/api/*', routeAuthz(accounts ? { accounts } : {}))
+      let ran = 0
+      app.all('/api/sessions/*', (context) => { ran++; return context.text('leak') })
+      app.get('*', (context) => { ran++; return context.text('leak') })
+      for (const [method, path] of [['POST', '/api/sessions/r1/unknown'], ['GET', '/api/nothing'], ['PURGE', '/api/sessions/x']]) {
+        const response = await app.request(path!, { method, headers: { 'x-role': 'anonymous' } })
+        assert.equal(response.status, 404, `${method} ${path}`)
+        assert.deepEqual(await response.json(), { code: 'internal_error', message: 'API-маршрут не найден', details: null })
+      }
+      assert.equal(ran, 0)
+    }
+  })
+})
+
 describe('M1: the implicit owner is a loopback socket peer without proxy headers', () => {
   const peer = (remoteAddress: string | undefined) => ({ incoming: { socket: { remoteAddress } } })
 

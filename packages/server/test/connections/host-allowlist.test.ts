@@ -49,9 +49,16 @@ test('N8: forwarded host headers neither authorize a forbidden Host nor deny an 
     ['evil.example:4387', '127.0.0.1:4387', 403],
     ['127.0.0.1:4387', 'evil.example:4387', 200],
   ] as const) {
-    const response = await app.request('http://localhost/api/settings', { headers: {
+    // `X-Forwarded-Host` alone: the Host allowlist ignores it in both directions.
+    const response = await app.request('http://localhost/api/settings', { headers: { Host: host, 'X-Forwarded-Host': forwarded } })
+    assert.equal(response.status, expected)
+    // `Forwarded` is also a proxy header (U3 trust boundary): a local node refuses it as a proxied request,
+    // and that refusal is not the Host guard denying an allowed Host.
+    const proxied = await app.request('http://localhost/api/settings', { headers: {
       Host: host, 'X-Forwarded-Host': forwarded, Forwarded: `host=${forwarded}`,
     } })
-    assert.equal(response.status, expected)
+    assert.equal(proxied.status, 403)
+    const body = (await proxied.json()) as { code: string }
+    assert.equal(body.code, expected === 403 ? 'host_denied' : 'proxied_request_refused')
   }
 })

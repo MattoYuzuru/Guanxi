@@ -8,6 +8,7 @@ const BODIES = {
   unauthenticated: { code: 'unauthenticated', message: 'Authentication is required', details: null },
   forbidden: { code: 'forbidden', message: 'This account may not perform that operation', details: null },
   route_unmapped: { code: 'route_unmapped', message: 'This route has no authorization policy', details: null },
+  proxied_request_refused: { code: 'proxied_request_refused', message: 'A request carrying proxy headers cannot act as the local owner', details: { reason: 'forwarded_headers' } },
 } as const
 
 describe('authorization errors on the wire', () => {
