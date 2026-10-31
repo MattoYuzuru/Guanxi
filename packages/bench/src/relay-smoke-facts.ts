@@ -17,6 +17,12 @@ export type SmokeFact =
   | { kind: 'call_done'; seq: number; atMs: number; cycle: number; messageId: string }
   | { kind: 'judge_signals'; seq: number; atMs: number; cycle: number; phase: string; signals: string[]; unknownFacts: string[] }
   | { kind: 'cap'; seq: number; atMs: number; cycle: number; reason: string }
+  | { kind: 'initialized'; seq: number; atMs: number; cycle: number }
+  /** The naive-compaction arm writes this before its first model call; a ledger run never does. */
+  | { kind: 'compaction'; seq: number; atMs: number; cycle: number; mode: string }
+  /** A cycle's probe does not apply to the arm: not a result, neither a pass nor a fail. */
+  | { kind: 'probe_not_applicable'; seq: number; atMs: number; cycle: number; damaged: boolean }
+  | { kind: 'compaction_summary'; seq: number; atMs: number; cycle: number; truncated: boolean; degraded: boolean; inputDropped: number; inputCut: number }
   | { kind: 'error'; seq: number; atMs: number; cycle: number; code: string }
 
 const record = (v: unknown): Record<string, unknown> | null => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null
@@ -80,6 +86,12 @@ export function projectEvents(events: readonly EventLike[], runId: string): Smok
       case 'call_retry': out.push({ ...base, kind: 'call_retry', cycle: current, purpose: fixedCode(p.purpose) ?? 'unknown', reason: fixedCode(p.reason) ?? 'unknown' }); break
       case 'call_failed_reason': out.push({ ...base, kind: 'call_failed', cycle: current, purpose: fixedCode(p.purpose) ?? 'unknown', reason: fixedCode(p.reason) ?? 'unknown' }); break
       case 'judge_signals': out.push({ ...base, kind: 'judge_signals', cycle: count(p.cycle) ?? current, phase: fixedCode(p.phase) ?? 'unknown', signals: codes(Array.isArray(p.signals) ? p.signals.map(s => record(s)?.code) : []), unknownFacts: codes(p.unknownFacts) }); break
+      case 'initialized': out.push({ ...base, kind: 'initialized', cycle: 0 }); break
+      case 'compaction': out.push({ ...base, kind: 'compaction', cycle: current, mode: fixedCode(p.mode) ?? 'unknown' }); break
+      case 'probe_not_applicable': out.push({ ...base, kind: 'probe_not_applicable', cycle: count(p.cycle) ?? current, damaged: p.damaged === true }); break
+      case 'compaction_summary':
+        out.push({ ...base, kind: 'compaction_summary', cycle: count(p.cycle) ?? current, truncated: p.truncated === true, degraded: p.degraded === true, inputDropped: count(p.inputDropped) ?? 0, inputCut: count(p.inputCut) ?? 0 })
+        break
       case 'cap': out.push({ ...base, kind: 'cap', cycle: current, reason: fixedCode(p.reason) ?? 'unknown' }); break
       default: break
     }
@@ -120,3 +132,14 @@ export function canonicalText(value: unknown): string {
   return JSON.stringify(value)
 }
 export const sha256Hex = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
+
+export type ArmMode = 'ledger' | 'naive' | 'unconfirmed'
+/** The arm a run really was, read from its own events and from nothing else. A naive run states it before its first model call and a
+ * ledger run states nothing; markers of the naive arm without that statement, an unknown mode, or no readable events at all are not
+ * evidence of either arm. */
+export function armModeOf(facts: readonly SmokeFact[]): ArmMode {
+  if (!facts.length) return 'unconfirmed'
+  const stated = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction' }> => f.kind === 'compaction')
+  if (stated.length) return stated.every(f => f.mode === 'naive') ? 'naive' : 'unconfirmed'
+  return facts.some(f => f.kind === 'probe_not_applicable' || f.kind === 'compaction_summary') ? 'unconfirmed' : 'ledger'
+}

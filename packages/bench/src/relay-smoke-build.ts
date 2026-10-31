@@ -54,6 +54,8 @@ export interface TrialObservation {
   endedBy: 'terminal' | 'deadline' | 'aborted' | 'start_failed'
   /** Memory only, never stored: the relay for this key could not be confirmed terminal or stopped, so nothing may start after it. */
   unsettled?: true
+  /** Memory only, never stored: the run's own events do not confirm the arm it was planned as. Never relabelled. */
+  modeProblem?: 'arm_mode_mismatch' | 'arm_mode_unconfirmed'
 }
 export interface ArmProfile { id: string; kind: string; ledgerHandoff: boolean; deadEndGuard: boolean }
 export interface BuildContext { horizon: number; book: EvidenceBook; arm: ArmProfile }
@@ -175,7 +177,8 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
     // probes: the relay records only whole-answer correctness, so no critical-field occasion exists.
     let probes: Group<unknown>
     const probeFacts = inCycle.filter((f): f is Extract<SmokeFact, { kind: 'probe' }> => f.kind === 'probe').sort((a, b) => a.retry - b.retry)
-    if (!probeFacts.length && k > 1) probes = { state: 'unknown', reason: 'unavailable' }
+    // An arm whose probes do not apply says so per cycle (`probe_not_applicable`): that is unsupported, not a lost fact, and never a result.
+    if (!probeFacts.length && k > 1) probes = { state: 'unknown', reason: inCycle.some(f => f.kind === 'probe_not_applicable') ? 'unsupported' : 'unavailable' }
     else {
       const occasions = probeFacts.length ? [{ id: 'p-whole', scope: 'whole_answer' as const, field: null }] : []
       probes = {
@@ -231,6 +234,16 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
     cycles.push({ ordinal: k, state: 'observed', attempt, receiptRef, startedAtMs: start, endedAtMs: end, items, probes, context, guards, integrity })
   }
 
+  const summaries = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction_summary' }> => f.kind === 'compaction_summary')
+  if (summaries.length) {
+    // Harness events of the summary, reported beside the document, never folded into runtime truncation.
+    notes.push(`compaction_summaries:${summaries.length}`)
+    const truncated = summaries.filter(f => f.truncated).length; const degraded = summaries.filter(f => f.degraded).length
+    const dropped = summaries.reduce((n, f) => n + f.inputDropped, 0); const cut = summaries.reduce((n, f) => n + f.inputCut, 0)
+    if (truncated) notes.push(`compaction_summary_truncated:${truncated}`)
+    if (degraded) notes.push(`compaction_summary_degraded:${degraded}`)
+    if (dropped || cut) notes.push(`compaction_input_loss:dropped=${dropped},cut=${cut}`)
+  }
   const outcome: SmokeOutcome = outcomeOf(obs.status, obs.statusError, facts, obs.endedBy)
   if (ledger) {
     const touched = new Set((ledger.final?.evidence ?? ledger.seals[ledger.seals.length - 1]?.evidence ?? []).map(x => x.item))

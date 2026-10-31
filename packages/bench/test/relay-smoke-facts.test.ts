@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canonicalText, outcomeOf, projectEvents, type EventLike, type SmokeFact } from '../src/relay-smoke-facts.ts'
+import { armModeOf, canonicalText, outcomeOf, projectEvents, type EventLike, type SmokeFact } from '../src/relay-smoke-facts.ts'
 import { T0, failure } from './relay-smoke-helpers.ts'
 
 const RUN = 'run-1'
@@ -86,4 +86,30 @@ test('the outcome table', () => {
   assert.equal(outcomeOf('running', null, none, 'terminal'), 'unknown')
   assert.equal(outcomeOf('running', null, none, 'deadline'), 'cancelled', 'a deadline is the runner stopping the trial, not a model failure')
   assert.equal(outcomeOf('completed', null, none, 'aborted'), 'cancelled')
+})
+
+test('the naive-compaction notes parse into facts: the arm statement, per-cycle probe non-results and summary losses', () => {
+  const facts = projectEvents([
+    store('initialized', { revision: 'r', hash: 'h' }),
+    flat('compaction', { mode: 'naive' }),
+    store('cycle_begin', { cycle: 1 }),
+    store('cycle_begin', { cycle: 2 }),
+    flat('probe_not_applicable', { mode: 'naive', cycle: 2, reason: 'ledger_facts_not_shown', damaged: false }),
+    flat('compaction_summary', { mode: 'naive', cycle: 2, summaryBytes: 900, handoffLimitBytes: 4000, truncated: true, degraded: false, inputDropped: 3, inputCut: 1 }),
+  ], RUN)
+  assert.deepEqual(facts.map(f => f.kind), ['initialized', 'compaction', 'cycle_begin', 'cycle_begin', 'probe_not_applicable', 'compaction_summary'])
+  assert.deepEqual(facts.filter(f => f.kind === 'probe'), [], 'a non-applicable probe is never a probe result')
+  const summary = facts.find(f => f.kind === 'compaction_summary') as Extract<SmokeFact, { kind: 'compaction_summary' }>
+  assert.deepEqual([summary.cycle, summary.truncated, summary.degraded, summary.inputDropped, summary.inputCut], [2, true, false, 3, 1])
+  assert.equal(armModeOf(facts), 'naive')
+})
+
+test('the arm of a run is read from its own events and from nothing else', () => {
+  const run = (...events: EventLike[]) => armModeOf(projectEvents(events, RUN))
+  assert.equal(run(store('initialized', { revision: 'r' }), store('cycle_begin', { cycle: 1 })), 'ledger', 'no naive marker is a ledger run')
+  assert.equal(run(store('initialized', {}), flat('compaction', { mode: 'naive' })), 'naive')
+  assert.equal(run(), 'unconfirmed', 'no readable events confirm nothing')
+  assert.equal(run(ev('agent.note', { text: canonicalText({ relay: 'compaction', mode: 'something_else' }) }), store('cycle_begin', { cycle: 1 })), 'unconfirmed', 'an unknown mode is not a ledger run')
+  assert.equal(run(store('cycle_begin', { cycle: 2 }), flat('probe_not_applicable', { mode: 'naive', cycle: 2 })), 'unconfirmed', 'naive markers without the arm statement')
+  assert.equal(run(store('cycle_begin', { cycle: 2 }), flat('compaction_summary', { mode: 'naive', cycle: 2 })), 'unconfirmed')
 })

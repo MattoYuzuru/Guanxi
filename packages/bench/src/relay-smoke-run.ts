@@ -7,7 +7,7 @@ import {
   EvidenceBook, assembleMeasurement, buildTrialSlot, missingTrial, type ArmProfile, type TrialObservation,
 } from './relay-smoke-build.ts'
 import { SMOKE_BASE_COMMIT, SMOKE_TASK_IDS, smokeDigests, smokePlan } from './relay-smoke-corpus.ts'
-import { projectEvents, sha256Hex, type EventLike } from './relay-smoke-facts.ts'
+import { armModeOf, projectEvents, sha256Hex, type EventLike } from './relay-smoke-facts.ts'
 import { SmokeSourceError, isDefinitiveStartRefusal, loopbackOrigin, type RelaySource } from './relay-smoke-source.ts'
 import { checkRelayMeasurement, type RelayMeasurementInput, type RelayPlan, type RelayIssue, type RelayTrialSlot } from './relay-protocol.ts'
 import { reduceRelayMeasurement, type RelayMeasurementReport } from './relay-measurement.ts'
@@ -262,6 +262,14 @@ export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: stri
     deps.log?.({ event: 'trial_unsettled', task, arm: arm.id, seed, status: status.status })
     return { ...observation, unsettled: true }
   }
+  // The arm is confirmed from the run's own events, never from the pass order or the configuration: a naive trial must show the
+  // compaction note, a ledger trial none of the naive markers. A disagreement is a failure, not a relabel, and is not stored.
+  const mode = armModeOf(facts)
+  if (mode !== (arm.kind === 'naive_compaction' ? 'naive' : 'ledger')) {
+    const modeProblem = mode === 'unconfirmed' ? 'arm_mode_unconfirmed' : 'arm_mode_mismatch'
+    deps.log?.({ event: 'trial_mode_problem', task, arm: arm.id, seed, code: modeProblem })
+    return { ...observation, modeProblem }
+  }
   deps.store.save(observation)
   deps.log?.({ event: 'trial_done', task, arm: arm.id, seed, status: status.status, endedBy })
   return observation
@@ -280,7 +288,7 @@ export interface SmokeSummary {
   expectedTrials: number
   incomplete: number
   /** Set when a relay could not be confirmed stopped; nothing was started after it. */
-  halted: 'relay_state_unknown' | null
+  halted: 'relay_state_unknown' | 'arm_mode_mismatch' | 'arm_mode_unconfirmed' | null
   document: { valid: boolean; issues: RelayIssue[] }
 }
 export interface SmokeResult { measurement: RelayMeasurementInput | null; report: RelayMeasurementReport | null; summary: SmokeSummary; exitCode: 0 | 1 | 3 }
@@ -307,14 +315,15 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     const obs = await runTrial(config, arm, task, seed, deps)
     observed.set(mapKey, obs)
     if (obs.unsettled) halted = 'relay_state_unknown'
+    else if (obs.modeProblem) halted = obs.modeProblem
   }
   let incomplete = 0
   const origin = deps.source.kind === 'http' ? 'recorded_observation' : 'synthetic_fixture'
   for (const task of tasks) for (const arm of planned) for (const seed of config.seeds) {
     const obs = observed.get(JSON.stringify([task, arm.id, seed]))
-    if (!obs || obs.unsettled) {
+    if (!obs || obs.unsettled || obs.modeProblem) {
       slots.push(missingTrial(task, arm.id, seed, 'not_collected')); incomplete++
-      rows.push({ task, arm: arm.id, seed, key: trialKey(config.experimentId, task, arm.id, seed, config.keySalt), endedBy: obs ? 'unsettled' : 'not_run', status: obs?.status ?? null, cycles: 0, ledgerRead: false, ledgerError: null, notes: [] })
+      rows.push({ task, arm: arm.id, seed, key: trialKey(config.experimentId, task, arm.id, seed, config.keySalt), endedBy: obs?.modeProblem ?? (obs ? 'unsettled' : 'not_run'), status: obs?.status ?? null, cycles: 0, ledgerRead: false, ledgerError: null, notes: [] })
       continue
     }
     const built = buildTrialSlot({ horizon: config.horizon, book, arm: arm.profile }, obs, plan)
@@ -334,5 +343,5 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     document: { valid: checked.ok, issues: checked.ok ? [] : [...checked.issues] },
   }
   if (!checked.ok) return { measurement: null, report: null, summary, exitCode: 1 }
-  return { measurement: raw, report: reduceRelayMeasurement(raw), summary, exitCode: incomplete ? 3 : 0 }
+  return { measurement: raw, report: reduceRelayMeasurement(raw), summary, exitCode: halted === 'arm_mode_mismatch' || halted === 'arm_mode_unconfirmed' ? 1 : incomplete ? 3 : 0 }
 }

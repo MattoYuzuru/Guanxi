@@ -47,8 +47,9 @@ plans through the owner API of a home node, records cycles, whole-answer probes,
 item outcomes into a `guanxi.b3.measurement/v1` document, validates it with `validateRelayMeasurement` and reduces it
 with `reduceRelayMeasurement`. It is a separate runner, not a CLI mode of the B3-a validator. The reading is descriptive
 (D-219): every criterion stays `unevaluated`, `realEvidenceCredit` stays 0, and anything the relay does not record is
-`unknown`, never imputed. The naive-compaction arm needs a relay mode that does not exist; it is declared unsupported
-until a server lane adds it (design in the plan). Arms can run one per pass against the same output directory.
+`unknown`, never imputed. The naive-compaction arm is a node-wide relay mode (`home.relayCompaction`, server lane B3-c); it runs as a second pass of the
+same home against the same output directory, and each trial's arm is confirmed from its own events (a mismatch fails the run,
+it never relabels).
 
 ## Commands
 

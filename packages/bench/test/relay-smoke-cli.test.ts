@@ -243,3 +243,17 @@ test('the entry point works when reached through a symlink', () => {
     assert.equal(JSON.parse(result.stdout).ok, true)
   } finally { h.cleanup() }
 })
+
+test('a pass run in the wrong node mode exits 1 with the halt named', async () => {
+  const h = harness()
+  try {
+    h.fake.homeMode = 'ledger'
+    const shared = h.file('shared.json', { ...CONFIG, arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }] })
+    const out = join(h.dir, 'wrong')
+    assert.equal(await runCli(['run', '--config', shared, '--out', out, '--arms', 'naive-compaction'], h.io()), 1)
+    const result = h.stdout()
+    assert.equal(result.ok, false)
+    assert.equal(JSON.parse(readFileSync(join(out, 'summary.json'), 'utf8')).halted, 'arm_mode_mismatch')
+    assert.equal(readdirSync(join(out, 'observations')).length, 0)
+  } finally { h.cleanup() }
+})

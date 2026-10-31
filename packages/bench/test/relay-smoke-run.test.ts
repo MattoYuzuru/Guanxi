@@ -281,3 +281,51 @@ test('configuration is strict and loopback only', () => {
   assert.deepEqual(resolveArms(own).map(a => [a.id, a.planned, a.url]), [['a', true, 'http://127.0.0.1:4551'], ['b', true, 'http://127.0.0.1:4651']])
   assert.deepEqual(resolveArms(own).map(a => [a.profile.ledgerHandoff, a.profile.deadEndGuard]), [[true, true], [false, false]])
 })
+
+test('the arm is confirmed from the run own events: a naive trial on a ledger node is a failure, never a relabel', async () => {
+  const r = rig()
+  r.fake.homeMode = 'ledger'
+  const cfg = config({ tasks: ['ll-money-text', 'll-rules-fx'], arms: SHARED })
+  const wrong = await runSmoke(cfg, r.deps({ only: ['naive-compaction'] }))
+  assert.equal(wrong.exitCode, 1)
+  assert.equal(wrong.summary.halted, 'arm_mode_mismatch')
+  assert.equal(wrong.summary.trials.find(t => t.arm === 'naive-compaction')!.endedBy, 'arm_mode_mismatch')
+  assert.equal(r.fake.started.length, 1, 'nothing starts after the first mismatch')
+  assert.equal(r.store.all.size, 0, 'a mismatched run is not stored under the arm it was planned as')
+  assert.ok(wrong.measurement!.trials.every(t => t.state === 'missing'), 'and it is not in the document')
+  assert.deepEqual(wrong.summary.document, { valid: true, issues: [] })
+})
+
+test('the reverse mismatch: a ledger trial on a node left in naive mode is refused too', async () => {
+  const r = rig()
+  r.fake.homeMode = 'naive'
+  const result = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['ledger-relay'] }))
+  assert.deepEqual([result.exitCode, result.summary.halted, r.store.all.size], [1, 'arm_mode_mismatch', 0])
+})
+
+test('events that cannot be read confirm nothing: the trial is unconfirmed, unstored, and the rerun re-attaches by key', async () => {
+  let broken = true
+  const r = rig({}, fake => ({ ...fakeBind(fake), events: async (arm: string, sessionId: string, after: number) => { if (broken) throw new SmokeSourceError('response_invalid'); return fake.events(arm, sessionId, after) } }))
+  const first = await runSmoke(config(), r.deps())
+  assert.deepEqual([first.exitCode, first.summary.halted, r.store.all.size], [1, 'arm_mode_unconfirmed', 0])
+  broken = false
+  const second = await runSmoke(config(), r.deps())
+  assert.deepEqual([second.exitCode, r.fake.started.length], [0, 1])
+})
+
+test('two passes against one endpoint: ledger pass, restart the home in naive mode, naive pass, one merged measurement', async () => {
+  const r = rig()
+  const cfg = config({ tasks: ['ll-money-text', 'll-rules-fx'], arms: SHARED })
+  r.fake.homeMode = 'ledger'
+  const first = await runSmoke(cfg, r.deps({ only: ['ledger-relay'] }))
+  assert.equal(first.exitCode, 3)
+  r.fake.homeMode = 'naive'   // the operator restarted the home with the naive setting
+  const second = await runSmoke(cfg, r.deps({ only: ['naive-compaction'] }))
+  assert.equal(second.exitCode, 0)
+  assert.deepEqual(second.measurement!.trials.map(t => [t.arm, t.state]), [['ledger-relay', 'observed'], ['naive-compaction', 'observed'], ['ledger-relay', 'observed'], ['naive-compaction', 'observed']])
+  const [ledger, naive] = second.report!.arms
+  assert.deepEqual([ledger!.totals.probes.wholeAnswer.expected, naive!.totals.probes.wholeAnswer.expected], [8, 0], 'probe accuracy exists only for the ledger arm')
+  assert.deepEqual([naive!.totals.probes.groupsUnknown, naive!.totals.integrity.unknown], [8, 10])
+  assert.deepEqual(second.report!.pairedRelayVsNaive.state, 'descriptive')
+  assert.ok(second.summary.trials.filter(t => t.arm === 'naive-compaction').every(t => t.notes.includes('compaction_summaries:5')))
+})

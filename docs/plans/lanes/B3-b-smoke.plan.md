@@ -188,6 +188,12 @@ server work, and it is **not small**:
   `probe` event (so critical-field accuracy becomes measurable), and a per-call record that
   carries the cycle (today the cycle is recovered from the message `step`).
 
+*Update after B3-c and the review:* the server side now exists on `lane/b3c-naive-arm` as the node-wide
+`home.relayCompaction: 'naive'`. It asks no probes (`probe_not_applicable`, so there is no probe accuracy for the arm), and
+runs as a restart-per-arm second pass of the same home rather than a second process. The runner therefore supports one arm
+per pass (`--arms`, same `--out`, one merged document) and confirms each trial's arm from the run's own events (the
+`compaction` note for naive, none for ledger); a disagreement halts the run and is never relabelled. See the runbook.
+
 ## File ownership
 
 New, all under `packages/bench`: `src/relay-smoke-corpus.ts`, `relay-smoke-facts.ts`,

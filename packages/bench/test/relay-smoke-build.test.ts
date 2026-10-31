@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { missingTrial, type LedgerObservation } from '../src/relay-smoke-build.ts'
+import type { SmokeFact } from '../src/relay-smoke-facts.ts'
 import type { RelayObservedTrial } from '../src/relay-protocol.ts'
 import { checkRelayMeasurement, relayPlanDigest } from '../src/relay-protocol.ts'
 import {
-  H, HEAD, LEDGER_ARM, T0, cycles, documentOf, done, failure, judge, ledgerOf, observation, probe, seal,
+  H, HEAD, LEDGER_ARM, T0, config, cycles, documentOf, done, failure, judge, ledgerOf, observation, probe, seal,
 } from './relay-smoke-helpers.ts'
 
+let seqNo = 10_000
 const costs = (rows: Array<[string, number]>): LedgerObservation['costs'] => rows.map(([key, inputTokens]) => ({ key, inputTokens, outputTokens: 100 }))
 const observed = (doc: ReturnType<typeof documentOf>): RelayObservedTrial => {
   const slot = doc.raw.trials[0]!
@@ -204,4 +206,21 @@ test('a seal whose ledger could not be read makes its cycle and the next one unk
   assert.ok(doc.checked.ok, JSON.stringify(doc.checked.ok ? '' : doc.checked.issues))
   assert.deepEqual(observed(doc).cycles.slice(0, 3).map(c => c.state === 'observed' ? [c.items.state, c.integrity.state] : null), [['observed', 'observed'], ['unknown', 'unknown'], ['unknown', 'observed']])
   assert.deepEqual([arm0(doc).totals.items.expected, arm0(doc).totals.items.groupsUnknown], [1, 2])
+})
+
+test('an arm whose probes do not apply is unsupported for the probe group, never a result, and summary losses are reported as notes', () => {
+  const na = (cycle: number, atMs: number): SmokeFact => ({ seq: ++seqNo, atMs, kind: 'probe_not_applicable', cycle, damaged: false })
+  const summary = (cycle: number, atMs: number, truncated: boolean): SmokeFact => ({ seq: ++seqNo, atMs, kind: 'compaction_summary', cycle, truncated, degraded: false, inputDropped: truncated ? 2 : 0, inputCut: 0 })
+  const facts = cycles(3, { probes: () => [] }).flatMap(f => f.kind === 'cycle_begin' && f.cycle > 1 ? [f, na(f.cycle, f.atMs + 5)] : f.kind === 'sealed' ? [f, summary(f.cycle, f.atMs + 1, f.cycle === 2)] : [f])
+  const doc = documentOf(observation({ arm: 'naive-compaction', facts, ledger: ledgerOf([[], [], []]) }), { id: 'naive-compaction', kind: 'naive_compaction', ledgerHandoff: false, deadEndGuard: false }, config({ arms: [{ kind: 'ledger_relay', id: 'ledger-relay', enabled: false }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }] }))
+  assert.ok(doc.checked.ok, JSON.stringify(doc.checked.ok ? '' : doc.checked.issues))
+  const groups = observed(doc).cycles.slice(0, 3).map(c => c.state === 'observed' ? (c.probes.state === 'unknown' ? c.probes.reason : 'observed') : null)
+  assert.deepEqual(groups, ['observed', 'unsupported', 'unsupported'])
+  const probes = doc.report!.arms.find(a => a.id === 'naive-compaction')!.totals.probes
+  assert.deepEqual([probes.wholeAnswer.expected, probes.wholeAnswer.firstCorrect, probes.wholeAnswer.firstIncorrect, probes.wholeAnswer.firstAttemptCorrectOverExpected], [0, 0, 0, null], 'excluded from probe accuracy')
+  assert.deepEqual(doc.built.notes, ['compaction_summaries:3', 'compaction_summary_truncated:1', 'compaction_input_loss:dropped=2,cut=0'])
+  assert.deepEqual(doc.report!.arms.find(a => a.id === 'naive-compaction')!.totals.context.truncationEvents, 0, 'a cut summary is a harness event, not runtime truncation')
+  // a cycle past the first with neither a probe nor a non-applicable note is still a lost fact
+  const lost = documentOf(observation({ facts: cycles(2, { probes: () => [] }), ledger: ledgerOf([[], []]) }))
+  assert.equal(observed(lost).cycles[1]!.state === 'observed' && (observed(lost).cycles[1] as { probes: { reason?: string } }).probes.reason, 'unavailable')
 })

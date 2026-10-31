@@ -117,8 +117,8 @@ per-cycle numbers, and an early failure is not hidden by a later success, but a 
 
    `runtime`, `adapter` and `resourceProfile` are free text that is **hashed** into the plan; the text itself never
    enters the document. `horizon` is also sent as the relay's `caps.cycles`, so a run cannot exceed the document's
-   cycle slots. Omit `arms` for the default: `ledger-relay` planned and `naive-compaction` **unsupported**
-   (see below). Omit `tasks` for all five.
+   cycle slots. Omit `arms` for the default: `ledger-relay` planned and `naive-compaction` **unsupported** until
+   it is enabled for its pass (see "Two passes"). Omit `tasks` for all five.
 4. **Preflight:** `$RS preflight --config cfg.json --repo ~/Projects/Guanxi-Test-Repo`. Every check must be `ok`: the
    fixture base commit and the 15 pinned test blobs, the endpoint (an unknown key answering `relay_not_found` proves the
    route is live), and the home database tables. Without `homeDb` the check warns that items, context and integrity
@@ -142,47 +142,58 @@ per-cycle numbers, and an early failure is not hidden by a later success, but a 
 If the outcome of a trial is `infra_error` or `cancelled`, the paired relay-versus-naive comparison drops the whole
 task from both arms; that is intended.
 
-## One arm per pass (restarting the home between arms)
+## Two passes: ledger arm, then naive arm (restart the home in between)
 
-A second home process needs its own federation pairing, so the realistic shape is one arm per pass against the same
-`--out`: run all ledger trials, restart the home in the naive mode (once the server lane exists), run the naive trials.
-Declare both arms in the configuration (they may share the endpoint and database), then:
-
-```bash
-$RS run --config cfg.json --out DIR --arms ledger-relay        # exit 3: the naive trials are still to do
-# stop the home, restart it in naive mode, same data directory or another one named in the arm entry
-$RS run --config cfg.json --out DIR --arms naive-compaction    # exit 0 once every trial is stored
-```
-
-Stored observations of the arm that is not run in this pass are read from `DIR/observations` (under the same fingerprint
-rule) and the second pass writes one measurement with both arms. Two selected arms behind one endpoint and database in a
-single pass are refused (`smoke_config_arm_endpoint`): they would label one node's data with two names. **Which mode a node
-runs in is the operator's assertion**; `summary.json` says `armIdentity: operator_asserted` and lists a short hash of each
-arm's endpoint and its harness revision (an arm entry may carry its own `harnessRevision`, so a node restarted on another
-commit is told apart in the plan digest).
-
-## The naive-compaction arm needs server work
-
-The relay has one handoff mechanism and the public start has no field to select another. The arm is therefore
-declared `unsupported` unless the configuration enables it with its own endpoint (a second home process whose relay
-implements naive compaction). The design, its code locations (`RelayLimits.compaction`, three sites in
-`executor.ts`, one ms1-live key) and why it is not small are in the
-[plan](../../docs/plans/lanes/B3-b-smoke.plan.md#the-naive-compaction-arm-flagged-not-implemented-here). With such a
-second node:
+The naive-compaction mode is a node-wide setting of the home (`home.relayCompaction: "naive"`, server lane B3-c, branch
+`lane/b3c-naive-arm`, see section 5 of [the MS1 live runbook](../../docs/operations/ms1-live-run.md) once merged). A second
+home process would need its own federation pairing, so the procedure is **one arm per pass against the same `--out`,
+restarting the same home between the passes**. Declare both arms in the configuration; they share the endpoint and the
+database:
 
 ```json
 "arms": [
   { "kind": "ledger_relay", "id": "ledger-relay" },
-  { "kind": "naive_compaction", "id": "naive-compaction", "enabled": true, "url": "http://127.0.0.1:4651", "homeDb": "/Users/<you>/ms1/home-naive/data/guanxi.db" }
+  { "kind": "naive_compaction", "id": "naive-compaction", "enabled": true }
 ]
 ```
 
-A naive arm is described as having no ledger handoff and no dead-end guard (`ledgerHandoff` and `deadEndGuard`
-default to false; the ledger arm defaults to true because only its sealed handoff carries the live dead-end notes, `selectNotes`), so its integrity facts are `unknown{unsupported}` and a repeated dead end counts as unguarded.
+```bash
+# 1. home in the default (ledger) mode
+$RS run --config cfg.json --out DIR --arms ledger-relay        # exit 3: the naive trials are still to do
+# 2. let nothing run; stop the home; set home.relayCompaction to "naive" in its ms1-live.json; start it again and re-run preflight
+# 3.
+$RS run --config cfg.json --out DIR --arms naive-compaction    # exit 0 once every trial is stored; one merged measurement
+```
+
+The second pass reads the first pass's stored observations (same fingerprint rule) and writes one `measurement.json` with
+both arms. Two selected arms behind one endpoint and database in a **single** pass are refused (`smoke_config_arm_endpoint`):
+a node has one mode at a time.
+
+**The arm is confirmed from each run's own events, not from the pass order.** A naive run writes the note
+`compaction` (mode `naive`) before its first model call, `probe_not_applicable` for every cycle after the first and
+`compaction_summary` after each seal; a ledger run writes none of them. After a trial reaches a terminal state the runner
+reads the events and compares: a trial planned as naive must show the `naive` statement, a trial planned as ledger must
+show no naive marker. A disagreement (a pass run in the wrong node mode, events that cannot be read, naive markers without
+the statement) is **a failure, never a relabel**: the trial is not stored and not in the document, no further trial
+starts, `summary.json` says `halted: arm_mode_mismatch` or `arm_mode_unconfirmed`, and the run exits `1`. Fix the mode
+(or the events) and rerun: an unconfirmed trial re-attaches to the same key, but a mismatched run already exists on the
+node under that key, so change `keySalt` (and, if a ledger pass was done under the old salt, use a new `--out` or accept
+that its trials are re-run). `summary.json` also records `armIdentity: operator_asserted`, a short hash of each arm's
+endpoint and its harness revision (an arm entry may carry its own `harnessRevision`).
+
+What the naive arm contributes to the document: item facts are read from the sealed ledgers exactly as for the ledger arm
+(the harness gates are unchanged); the probe group of every cycle after the first is `unknown{unsupported}` from the
+`probe_not_applicable` notes, so it never counts as a pass or a fail and there is no probe accuracy for this arm; integrity
+is `unknown{unsupported}` (no handoff the model saw); a repeated dead end counts as unguarded (`deadEndGuard` false). Summary
+losses (`truncated`, `degraded`, `inputDropped`, `inputCut`) are listed as `notes` per trial in `summary.json`
+(`compaction_summary_truncated:N`, `compaction_summary_degraded:N`, `compaction_input_loss:…`); they are harness events and
+are **not** added to the runtime truncation count. Run the judge (`home.judge`) the same way, or not at all, in both passes.
+The ledger arm defaults to `ledgerHandoff` and `deadEndGuard` true because only its sealed handoff carries the live
+dead-end notes (`selectNotes`); the naive arm defaults to false for both.
 
 ## Failure codes
 
-`endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
+`arm_mode_mismatch` / `arm_mode_unconfirmed` (halts, exit 1), `endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
 `runtime_meter_unavailable` / `relay_workspace_unavailable` / `relay_idempotency_conflict` /
 `relay_local_connection_required` (the relay's own refusals, see the relay README), `home_database_unreadable`,
 `smoke_config_invalid`, `smoke_config_tasks`, `smoke_config_arms`, `smoke_config_eta`, `file_unreadable`,

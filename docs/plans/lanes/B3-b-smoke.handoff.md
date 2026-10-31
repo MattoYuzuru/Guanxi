@@ -64,6 +64,8 @@ table classifies exist in `executor.ts`.
 
 ## Does the naive-compaction arm need server work? Yes
 
+*Superseded in part: the server side was built in lane B3-c; see "B3-c integration" below for how the runner now uses it.*
+
 There is no compaction policy in the relay (`rg -i naive packages/server` finds nothing) and the strict wire schema has
 no field to pick one. The smallest honest switch is a trusted-host, node-wide, default-off `RelayLimits.compaction`
 (`packages/server/src/relay/types.ts`), read in three places of `executor.ts` (work context without `strip` and
@@ -115,8 +117,8 @@ Full steps are in [RELAY_SMOKE.md](../../../packages/bench/RELAY_SMOKE.md). In s
 ## Review findings and fixes
 
 Independent review of `lane/b3b-smoke` (read-only, separate agent); fixes are in the `fix(bench): review fixes` commit that
-follows `9a1b4d26`. Corrections to the original wording above: the test count is now **83 new / 169 envelope (bench total
-252)**, and the mutation tool runs **94 cases** (21 more `b3b-*` cases, all killed by an `AssertionError`).
+follows `9a1b4d26`. Corrections to the original wording above: after the review fixes the test count was **83 new / 169 envelope (bench total
+252)** and the mutation tool ran **94 cases**; the final figures after the B3-c integration below are 91 / 169 / 260 and 101.
 
 | Finding | Fix | Proof |
 | --- | --- | --- |
@@ -148,6 +150,39 @@ Remaining residuals from the review: the pass-per-arm flow and the long start/st
 fakes and a loopback server; a configuration change of the endpoint port invalidates stored observations (intended, use a
 new `--out`); the shape pins are text pins of the server source, so a refactor that keeps the shape but changes the spelling
 fails them loudly rather than silently.
+
+## B3-c integration (naive arm as a second pass of the same home)
+
+Read from `lane/b3c-naive-arm` (not merged, not edited): home config `home.relayCompaction: 'naive'` is node-wide; a naive run writes
+`{relay:'compaction',mode:'naive'}` before its first model call, `probe_not_applicable` per cycle after the first and
+`compaction_summary` after each seal; a ledger run writes none of them. Runner changes (commit `feat(bench): naive arm as a
+second pass`):
+
+- **Both arms may share one endpoint** in separate passes (`--arms`, same `--out`, merged measurement; the earlier distinct-url
+  rule of M5 is superseded). Two arms behind one endpoint in one pass remain refused, since a node has one mode at a time.
+- **The arm is confirmed from the run's own events** (`armModeOf`): a naive trial must show the `naive` statement, a ledger trial no
+  naive marker; no readable events, an unknown mode, or naive markers without the statement are `unconfirmed`. A disagreement is
+  never relabelled: the trial is not stored and not in the document, nothing else starts, `summary.json` has
+  `halted: arm_mode_mismatch | arm_mode_unconfirmed`, exit `1`. A mismatched run exists on the node under its key, so the
+  operator changes `keySalt` after fixing the mode (runbook).
+- **`probe_not_applicable`** is a non-result fact: the probe group of that cycle is `unknown{unsupported}` (not a pass, not a fail,
+  excluded from probe accuracy; a cycle with no probe note of either kind stays `unknown{unavailable}`).
+- **`compaction_summary`** losses (`truncated`, `degraded`, `inputDropped`, `inputCut`) are per-trial `notes` in `summary.json`,
+  deliberately not added to the runtime truncation count (a cut summary is a harness event).
+- The fake relay emits the same notes (`FakeRelay.homeMode`, settable between passes) and an `initialized` note; the fake's default
+  naive scenario no longer simulates probe escalation, since the real arm asks no probes.
+- Runbook: the two-pass procedure replaces the second-endpoint example.
+
+Tests: 91 new (8 more than after review), 169 envelope, bench 260/260; tsc, eslint, `lint:md` clean; mutations 101 cases killed
+(7 new: `b3b-arm-mode-confirmed`, `-arm-mode-halts`, `-arm-mode-exit`, `-arm-needs-events`, `-arm-naive-without-statement`,
+`-arm-unknown-mode`, `-probe-not-applicable`). Two mutation sites moved with the code and were re-pointed
+(`b3b-exit-incomplete`, `b3b-halt-on-unsettled`).
+
+**Post-merge residual (not done here):** a drift test pinning the three note shapes against the merged server source. When
+`lane/b3c-naive-arm` is merged add to `relay-smoke-drift.test.ts` the same kind of text pins used for the other notes:
+`canonical({ relay: 'compaction', mode: 'naive' })`, `relay: 'probe_not_applicable', mode: 'naive', cycle:` and
+`relay: 'compaction_summary', mode: 'naive', cycle: h.cycle` in `relay/executor.ts` (strings as read on the branch today). They
+are not added now because a test reading a tree that lacks them would fail, and a skipped test would pretend to guard.
 
 ## Next slice
 

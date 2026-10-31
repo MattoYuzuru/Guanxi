@@ -36,6 +36,8 @@ export interface FakeCycle {
   sealed?: boolean
   /** The stored handoff disagrees with the stored ledger. */
   tamper?: boolean
+  /** Naive mode: the model-written summary was cut by the handoff bound. */
+  summaryTruncated?: boolean
 }
 export interface FakeScenario {
   cycles: readonly FakeCycle[]
@@ -49,16 +51,16 @@ export interface FakeScenario {
 const uuid = (n: number): string => { const h = createHash('sha256').update(`fake-${n}`).digest('hex'); return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}` }
 const note = (relay: string, payload: Record<string, unknown>, nested: boolean): string => canonicalText(nested ? { relay, data: payload } : { relay, ...payload })
 
-/** The default scenario: five cycles, one item each. The naive arm loses probes late and fails one item. */
+/** The default scenario: five cycles, one item each. The naive arm fails one item and does not finish. */
 export function defaultScenario(input: RelayStartInput, arm: string): FakeScenario {
   const naive = arm.includes('naive')
   const cycles: FakeCycle[] = input.plan.items.map((item, i) => ({
     items: [{ item: item.id, ok: !(naive && i === 3) }],
-    probe: naive && i >= 2 ? [false, i === 4 ? false : true] : [true],
+    probe: [true],
     calls: 3, inputTokens: 18_000 + i * 2_000, sealed: true,
   }))
   const failed = naive && cycles.length >= 5
-  return { cycles, status: failed ? 'input_required' : 'completed', ...(failed ? { error: 'probe_failed_twice' } : {}) }
+  return { cycles, status: failed ? 'failed' : 'completed', ...(failed ? { error: 'cap_reached' } : {}) }
 }
 
 interface Entry { arm: string; key: string; runId: string; sessionId: string; polls: number; status: RelayStartStatus['status']; error: string | null; events: EventLike[]; ledger: LedgerObservation | null; windowTokens: number }
@@ -68,6 +70,8 @@ export class FakeRelay implements RelaySource {
   readonly started: Array<{ arm: string; input: RelayStartInput }> = []
   /** Keys a stop was requested for, in order. */
   readonly stopped: string[] = []
+  /** The compaction mode the home node was started in (an operator setting, node-wide). Null derives it from the arm name. */
+  homeMode: 'ledger' | 'naive' | null = null
   private readonly entries = new Map<string, Entry>()
   private seq = 0
   private readonly clock: FakeClock
@@ -97,7 +101,7 @@ export class FakeRelay implements RelaySource {
     const scenario = (this.options.scenario ?? defaultScenario)(input, arm)
     const runId = `run-${sha256Hex(`${arm}|${input.key}`).slice(0, 12)}`
     const e: Entry = { arm, key: input.key, runId, sessionId: `ses-${runId}`, polls: 0, status: scenario.status, error: scenario.error ?? null, events: [], ledger: null, windowTokens: scenario.windowTokens ?? 32_768 }
-    this.play(e, scenario, input)
+    this.play(e, scenario, input, this.homeMode ?? (arm.includes('naive') ? 'naive' : 'ledger'))
     this.entries.set(`${arm}\u0000${input.key}`, e)
     // The request was admitted but the answer never came back (a start that outlives the client deadline).
     if (this.options.hangStart?.(arm, input.key)) throw new SmokeSourceError('timeout')
@@ -127,7 +131,7 @@ export class FakeRelay implements RelaySource {
   }
 
   /** Writes the whole run at start; the status machine reveals it as the runner polls. */
-  private play(e: Entry, scenario: FakeScenario, input: RelayStartInput): void {
+  private play(e: Entry, scenario: FakeScenario, input: RelayStartInput, mode: 'ledger' | 'naive'): void {
     const ids = input.plan.items.map(i => i.id)
     const items: Record<string, string> = Object.fromEntries(ids.map(i => [i, 'open']))
     const evidence: Array<{ item: string; head: string; ok: boolean }> = []
@@ -140,6 +144,9 @@ export class FakeRelay implements RelaySource {
     }
     const noteOf = (relay: string, payload: Record<string, unknown>, nested: boolean) => push('agent.note', { text: note(relay, payload, nested) })
     let call = 0
+    noteOf('initialized', { revision: input.plan.revision, hash: sha256Hex(`init-${e.key}`) }, true)
+    // The naive arm states itself before its first model call; a ledger run writes none of the naive notes.
+    if (mode === 'naive') noteOf('compaction', { mode: 'naive' }, false)
     scenario.cycles.forEach((spec, index) => {
       const cycle = index + 1
       this.clock.advance(step)
@@ -150,11 +157,12 @@ export class FakeRelay implements RelaySource {
       const calls = spec.calls ?? 3
       for (let n = 0; n < calls; n++) {
         const messageId = uuid(++call)
-        push('assistant.started', { messageId, model: n === 0 && cycle > 1 ? 'relay:probe' : 'relay:work', step: cycle })
+        push('assistant.started', { messageId, model: n === 0 && cycle > 1 && mode === 'ledger' ? 'relay:probe' : 'relay:work', step: cycle })
         push('assistant.message', { messageId, step: cycle, text: 'withheld' })
         costs.push({ key: messageId, inputTokens: spec.inputTokens ?? 20_000, outputTokens: 300 })
       }
-      if (cycle > 1) (spec.probe ?? [true]).forEach((correct, retry) => noteOf('probe', { retry, correct, damaged: false }, false))
+      if (cycle > 1 && mode === 'ledger') (spec.probe ?? [true]).forEach((correct, retry) => noteOf('probe', { retry, correct, damaged: false }, false))
+      if (cycle > 1 && mode === 'naive') noteOf('probe_not_applicable', { mode: 'naive', cycle, reason: 'ledger_facts_not_shown', damaged: false }, false)
       for (const gate of spec.items ?? []) {
         evidence.push({ item: gate.item, head: `${cycle}`.padStart(40, 'a'), ok: gate.ok })
         items[gate.item] = gate.ok ? 'done' : 'verification_requested'
@@ -168,6 +176,7 @@ export class FakeRelay implements RelaySource {
           bundleMatchesHandoff: true, artifactMatchesHandoff: true,
         })
         noteOf('sealed', { cycle, ledgerHash: ledgerSha, bundleHash: sha256Hex(`bundle-${cycle}`) }, true)
+        if (mode === 'naive') noteOf('compaction_summary', { mode: 'naive', cycle, summaryBytes: 900, handoffLimitBytes: 4000, truncated: spec.summaryTruncated === true, degraded: false, inputDropped: spec.summaryTruncated ? 2 : 0, inputCut: 0 }, false)
       }
     })
     if (scenario.error && !scenario.cycles.some(c => c.truncated)) push('error', { code: scenario.error, message: 'Relay execution stopped; ledger retained.' })

@@ -73,7 +73,7 @@ const cases = [
   { id: 'b3b-ledger-rehash', file: 'src/relay-smoke-source.ts', before: 'ledgerSha256: sha256Hex(canonicalText(JSON.parse(String(row.ledger)))),', after: 'ledgerSha256: handoff?.ledgerHash ?? null,', test: 'test/relay-smoke-db.test.ts' },
   { id: 'b3b-gate-output-dropped', file: 'src/relay-smoke-source.ts', before: 'evidence: ledger.evidence.map(e => ({ item: e.item, head: e.head, ok: e.ok })),', after: 'evidence: ledger.evidence as never,', test: 'test/relay-smoke-db.test.ts' },
   { id: 'b3b-cost-per-run', file: 'src/relay-smoke-source.ts', before: 'FROM run_costs WHERE run_id=?', after: 'FROM run_costs WHERE run_id!=?', test: 'test/relay-smoke-db.test.ts' },
-  { id: 'b3b-exit-incomplete', file: 'src/relay-smoke-run.ts', before: 'exitCode: incomplete ? 3 : 0', after: 'exitCode: 0', test: 'test/relay-smoke-cli.test.ts' },
+  { id: 'b3b-exit-incomplete', file: 'src/relay-smoke-run.ts', before: ': incomplete ? 3 : 0 }', after: ': 0 }', test: 'test/relay-smoke-cli.test.ts' },
   { id: 'b3b-private-files', file: 'src/relay-smoke-cli.ts', before: 'writeFileSync(path, text, { mode: 0o600 }); chmodSync(path, 0o600)', after: 'writeFileSync(path, text)', test: 'test/relay-smoke-cli.test.ts' },
   { id: 'b3b-manifest-binding', file: 'src/relay-smoke-cli.ts', before: 'files.map(([n, t]) => [n, sha256Hex(t)])', after: 'files.map(([n]) => [n, sha256Hex(n)])', test: 'test/relay-smoke-cli.test.ts' },
   { id: 'b3b-corpus-deps-closed', file: 'src/relay-smoke-corpus.ts', before: "{ id: 'll-order-balance', items: ['I03', 'I04', 'I08', 'I09', 'I10'] }", after: "{ id: 'll-order-balance', items: ['I03', 'I08', 'I09', 'I10', 'I11'] }", test: 'test/relay-smoke-corpus.test.ts' },
@@ -82,7 +82,7 @@ const cases = [
   { id: 'b3b-timeout-code', file: 'src/relay-smoke-source.ts', before: ": timeout.aborted ? 'timeout' : 'endpoint_unreachable'", after: ": 'endpoint_unreachable'", test: 'test/relay-smoke-http.test.ts' },
   { id: 'b3b-refusal-codes', file: 'src/relay-smoke-source.ts', before: "'relay_project_unavailable', 'relay_project_changed',", after: "'relay_project_changed',", test: 'test/relay-smoke-http.test.ts' },
   { id: 'b3b-reconcile-ambiguous-start', file: 'src/relay-smoke-run.ts', before: 'if (isDefinitiveStartRefusal(code)) return failed(code, startedAtMs)', after: 'return failed(code, startedAtMs)', test: 'test/relay-smoke-run.test.ts' },
-  { id: 'b3b-halt-on-unsettled', file: 'src/relay-smoke-run.ts', before: "if (obs.unsettled) halted = 'relay_state_unknown'", after: '', test: 'test/relay-smoke-run.test.ts' },
+  { id: 'b3b-halt-on-unsettled', file: 'src/relay-smoke-run.ts', before: "if (obs.unsettled) halted = 'relay_state_unknown'", after: "if (false) halted = 'relay_state_unknown'", test: 'test/relay-smoke-run.test.ts' },
   { id: 'b3b-unsettled-not-stored', file: 'src/relay-smoke-run.ts', before: 'if (!settled) {', after: 'if (false) {', test: 'test/relay-smoke-run.test.ts' },
   { id: 'b3b-stop-on-status-failures', file: 'src/relay-smoke-run.ts', before: "if (++consecutiveFailures >= config.timing.statusFailuresBeforeAbort) { await stopNow('aborted'); break }", after: "if (++consecutiveFailures >= config.timing.statusFailuresBeforeAbort) { endedBy = 'aborted'; break }", test: 'test/relay-smoke-run.test.ts' },
   { id: 'b3b-stop-on-sigint', file: 'src/relay-smoke-run.ts', before: "if (deps.signal?.aborted) { await stopNow('aborted'); break }", after: "if (deps.signal?.aborted) { endedBy = 'aborted'; break }", test: 'test/relay-smoke-run.test.ts' },
@@ -98,6 +98,13 @@ const cases = [
   { id: 'b3b-live-node-only', file: 'src/relay-smoke-source.ts', before: 'if (header[18] === 2 && !existsSync(', after: 'if (false && !existsSync(', test: 'test/relay-smoke-db.test.ts' },
   { id: 'b3b-unreadable-seal-visible', file: 'src/relay-smoke-source.ts', before: 'bundleMatchesHandoff: null, artifactMatchesHandoff: null, unreadable: true })', after: 'bundleMatchesHandoff: null, artifactMatchesHandoff: null })', test: 'test/relay-smoke-db.test.ts' },
   { id: 'b3b-unreadable-seal-unknown', file: 'src/relay-smoke-build.ts', before: " || (cycle > 1 && bySeal.get(cycle - 1)?.unreadable)", after: '', test: 'test/relay-smoke-build.test.ts' },
+  { id: 'b3b-arm-mode-confirmed', file: 'src/relay-smoke-run.ts', before: "if (mode !== (arm.kind === 'naive_compaction' ? 'naive' : 'ledger')) {", after: 'if (false) {', test: 'test/relay-smoke-run.test.ts' },
+  { id: 'b3b-arm-mode-halts', file: 'src/relay-smoke-run.ts', before: 'else if (obs.modeProblem) halted = obs.modeProblem', after: '', test: 'test/relay-smoke-run.test.ts' },
+  { id: 'b3b-arm-mode-exit', file: 'src/relay-smoke-run.ts', before: "exitCode: halted === 'arm_mode_mismatch' || halted === 'arm_mode_unconfirmed' ? 1 : incomplete ? 3 : 0", after: 'exitCode: incomplete ? 3 : 0', test: 'test/relay-smoke-run.test.ts' },
+  { id: 'b3b-arm-needs-events', file: 'src/relay-smoke-facts.ts', before: "if (!facts.length) return 'unconfirmed'", after: '', test: 'test/relay-smoke-facts.test.ts' },
+  { id: 'b3b-arm-naive-without-statement', file: 'src/relay-smoke-facts.ts', before: "return facts.some(f => f.kind === 'probe_not_applicable' || f.kind === 'compaction_summary') ? 'unconfirmed' : 'ledger'", after: "return 'ledger'", test: 'test/relay-smoke-facts.test.ts' },
+  { id: 'b3b-arm-unknown-mode', file: 'src/relay-smoke-facts.ts', before: "return stated.every(f => f.mode === 'naive') ? 'naive' : 'unconfirmed'", after: "return 'naive'", test: 'test/relay-smoke-facts.test.ts' },
+  { id: 'b3b-probe-not-applicable', file: 'src/relay-smoke-build.ts', before: "inCycle.some(f => f.kind === 'probe_not_applicable') ? 'unsupported' : 'unavailable'", after: "'unavailable'", test: 'test/relay-smoke-build.test.ts' },
 ]
 for (const mutation of cases) {
   const dir = mkdtempSync(join(tmpdir(), 'b1-mutation-'))
