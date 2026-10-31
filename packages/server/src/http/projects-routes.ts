@@ -1,3 +1,4 @@
+import { canSeeReasoning, withoutReasoning } from '../auth/reasoning.ts'
 import { chatContextWindow } from '../connections/chat.ts'
 import {
   PROJECT_PRESENTATION_VERSION,
@@ -142,7 +143,7 @@ export function projectsRoutes(app: AppContext): Hono {
       ownershipVersion: PROJECT_CHAT_OWNERSHIP_VERSION,
       project: result.project,
       thread: result.thread,
-      messages,
+      messages: canSeeReasoning(context) ? messages : withoutReasoning(messages),
       context: buildContextState({
         usedTokens:
           lastUsage?.promptTokens ??

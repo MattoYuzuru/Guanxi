@@ -67,7 +67,7 @@ type Expected = Record<ResourceType, readonly Action[]>
 
 const OWNER_EXPECTED: Expected = {
   project: ['project.read', 'project.write', 'project.share', 'project.delete'],
-  session: ['session.read', 'session.prompt', 'session.stop', 'session.share', 'session.delete'],
+  session: ['session.read', 'session.prompt', 'session.stop', 'session.share', 'session.update', 'session.delete'],
   connection: ['connection.use', 'connection.read', 'connection.manage'],
   run: ['run.read', 'run.cancel'],
   node: ['node.admin'],
@@ -169,7 +169,7 @@ test('authorization matrix: every principal, action and resource type has an exp
   }
 
   assert.equal(cells, cases.length * RESOURCE_TYPES.length * ACTIONS.length)
-  assert.equal(cells, 10 * 5 * 17)
+  assert.equal(cells, 10 * 5 * 18)
 })
 
 test('project grants inherit to sessions and runs, while session grants never leak upward', () => {
@@ -225,7 +225,7 @@ test('D-155: admins get only node/admin account capabilities and have no data ov
   const resources = buildResources()
   const admin = user('user-admin', 'admin')
   const dataActions: Action[] = [
-    'session.read', 'session.prompt', 'session.stop', 'session.share', 'session.delete',
+    'session.read', 'session.prompt', 'session.stop', 'session.share', 'session.update', 'session.delete',
     'project.read', 'project.write', 'project.share', 'project.delete',
     'connection.use', 'connection.read', 'connection.manage',
     'run.read', 'run.cancel',

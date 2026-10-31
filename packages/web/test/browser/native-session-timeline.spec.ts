@@ -11,7 +11,7 @@ const answer = 'Pinned `libvips` in the **CI image**.\n\n- Reproduced the failur
 const running = {
   ...completedProgress('s1', answer), status: 'running',
   plan: [{ text: 'Reproduce', status: 'verification_requested' }, { text: 'Pin libvips', status: 'active' }, { text: 'Open a PR', status: 'pending' }],
-  queue: [{ id: 'q1', text: 'Also check macOS' }, { id: 'q2', text: 'Update the CHANGELOG' }],
+  queue: [{ id: 'q1', kind: 'inline', text: 'Also check macOS' }, { id: 'q2', kind: 'inline', text: 'Update the CHANGELOG' }],
 }
 const events = [
   sessionEvent('s1', 1, 'prompt', 'Why does the `nightly` build fail?'),

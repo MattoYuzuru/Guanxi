@@ -85,7 +85,9 @@ export class NativeSessions {
     // Bind every later destructive step to the home generation that admitted this removal.
     const home = this.home.homeFence()
     const paths = this.paths(id)
-    const policy = this.log.readAll(id, 'remote_agent').find(e => e.type === 'agent.policy')
+    // Only the policy event is read (a SQL type filter): a stored queue snapshot that cannot be projected safely, for
+    // example after a late secret expansion, must not make a session impossible to delete.
+    const policy = this.log.read(id, { audience: 'remote_agent', types: ['agent.policy'], limit: 1 }).events[0]
     if (policy?.type !== 'agent.policy') throw new Error('session_not_found')
     // Quarantine records and their sessions remain until explicit runtime recovery.
     assertRootsClean(this.dataDir, [paths[0]!, ...policy.data.roots])

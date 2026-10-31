@@ -1,8 +1,9 @@
 /**
  * Remote-bind admission for the remote security profile (ADR-0027 decision 7).
  *
- * This module is pure: it does not start a listener and is intentionally not imported by the
- * server boot yet. Loopback stays the default; any other bind must satisfy every requirement.
+ * This module is pure: it does not start a listener or read files. `start()` reaches it through
+ * `admitBind()` in `remote-profile.ts`. Loopback stays the default; any other bind must satisfy
+ * every requirement.
  */
 import { isIP } from 'node:net'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
@@ -21,6 +22,7 @@ export type RemoteBindRequirement =
   | 'tls_hostname_required'
   | 'tls_hostname_ip_forbidden'
   | 'tls_hostname_invalid'
+  | 'tls_files_unreadable'
   | 'accounts_required'
   | 'allowed_roots_required'
   | 'allowed_roots_must_be_absolute'

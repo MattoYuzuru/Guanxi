@@ -1,12 +1,16 @@
 import { translate } from '../../lib/locale.ts'
 import { NativeProgress, NativeSessionActions } from './NativeAgentPage.tsx'
 import { NativeTimeline, type TimelineMessage } from './NativeTimeline.tsx'
-import type { AgentProgress } from '@guanxi/contract'
-const progress: AgentProgress = { sessionId: 'fixture-session', projectId: 'fixture-project', connectionId: 'fixture-connection', model: 'fixture-model', mode: 'read-only',
-  status: 'running', plan: [{ text: 'Inspect project', status: 'active' }], queue: [{ id: 'next', text: 'Check the result' }], summary: '', error: null,
+import type { AgentProgressV2 as AgentProgress } from '@guanxi/contract'
+const progress: AgentProgress = { version: 2, sessionId: 'fixture-session', projectId: 'fixture-project', connectionId: 'fixture-connection', model: 'fixture-model', mode: 'read-only',
+  status: 'running', plan: [{ text: 'Inspect project', status: 'active' }], queue: [{ id: 'next', kind: 'inline', text: 'Check the result' }], summary: '', error: null,
   observedAt: '2026-10-21T00:00:00.000Z', source: 'session.log', confidence: 'high' }
 export default { title: translate('native.progress'), component: NativeProgress, args: { progress, remove() {} } }
 export const Running = {}
+export const BoundedQueueItems = { args: { progress: { ...progress, queue: [
+  { id: 'artifact', kind: 'artifact', artifact: { artifactId: '00000000-0000-4000-8000-000000000001', checksum: `sha256:${'0'.repeat(64)}`, byteSize: 40000, mediaType: 'text/plain; charset=utf-8', excerpt: 'The first lines of a long queued prompt', excerptBytes: 39 } },
+  { id: 'legacy', kind: 'legacy-preview', excerpt: 'The first lines of an earlier long item', excerptBytes: 39, byteSize: 30000 },
+  { id: 'inline', kind: 'inline', text: 'A short item' }] } } }
 export const Empty = { args: { progress: { ...progress, plan: [], queue: [] } } }
 export const Completed = { args: { progress: { ...progress, status: 'completed', summary: translate('native.story.result'), queue: [], plan: [{ text: 'Inspect project', status: 'verification_requested' }] } } }
 export const Failed = { args: { progress: { ...progress, status: 'failed', error: 'agent_failed' } } }

@@ -8,6 +8,13 @@ authenticated API).
 extend the PWA design below with an owner-run end-to-end encrypted relay from U4. The relay
 forwards encrypted traffic; the always-on home owns sessions. This is planned, not implemented.
 
+**Implementation update (2026-11-01, lane U2-macos):** the macOS slice of decision 1 exists in
+[`packages/desktop`](../../packages/desktop/README.md): Electron thin shell, detached service started
+through the CLI entry, sandboxed renderer, unsigned DMG packaging with signing/notarization wired through
+environment variables (not run). Not implemented: the authenticated handshake (the node has no local
+authentication until U3), launchd/login item, notarized builds, auto-update, rpm/AppImage/Flatpak/NSIS.
+Status of the ADR stays `proposed`.
+
 ## Context
 
 Desktop on macOS first, then Fedora/other Linux and Windows; later iOS and Android (REQ-F4); a

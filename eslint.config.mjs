@@ -4,7 +4,7 @@ import cssParser from './packages/ui/gates/lint/css-parser.mjs'
 
 const source = ['packages/*/src/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}', 'plugins/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}', 'packages/plugins/**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}']
 export default [
-  { ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/generated/**', '**/test-results/**', '.lane-data/**', '.claude/**', '**/gates/catalog/fixtures/**'] },
+  { ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/generated/**', '**/test-results/**', '.lane-data/**', '.claude/**', 'packages/desktop/.stage/**', 'packages/desktop/release/**', '**/gates/catalog/fixtures/**'] },
   { linterOptions: { noInlineConfig: true, reportUnusedDisableDirectives: 'error' } },
   { files: ['**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'], languageOptions: { parser, parserOptions: { ecmaFeatures: { jsx: true } } } },
   {

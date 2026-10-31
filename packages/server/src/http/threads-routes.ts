@@ -46,6 +46,7 @@ import {
 } from '../runtime/resource-governor.ts'
 import { JobStoreError } from '../store/jobs.ts'
 import { ReasoningArtifactStore } from '../store/reasoning-artifacts.ts'
+import { canSeeReasoning, redactChatEvent, withoutReasoning } from '../auth/reasoning.ts'
 import { fail, notFound } from './errors.ts'
 import { lastEventId, sseResponse } from './sse.ts'
 
@@ -56,18 +57,22 @@ function deriveTitle(text: string): string {
   return trimmed.length > 0 ? trimmed : 'Новый диалог'
 }
 
-async function* compatibilityEvents(
-  app: AppContext,
+export async function* compatibilityEvents(
+  app: Pick<AppContext, 'jobService'>,
   jobId: string,
   after: number,
   signal: AbortSignal,
+  /** False for a grantee: reasoning deltas are dropped (see `auth/reasoning.ts`). */
+  reasoning = true,
 ): AsyncGenerator<ChatStreamEvent> {
   for await (const event of app.jobService.subscribe(jobId, after, signal)) {
     if (!event.output) continue
-    yield {
+    const chatEvent = {
       ...event.output.event,
       seq: event.sequence,
     } as ChatStreamEvent
+    const visible = reasoning ? chatEvent : redactChatEvent(chatEvent)
+    if (visible) yield visible
   }
 }
 
@@ -418,7 +423,7 @@ export function threadsRoutes(app: AppContext): Hono {
 
     const response = {
       thread,
-      messages,
+      messages: canSeeReasoning(context) ? messages : withoutReasoning(messages),
       context: buildContextState({
         usedTokens:
           lastUsage?.promptTokens ??
@@ -613,6 +618,7 @@ export function threadsRoutes(app: AppContext): Hono {
       result.job.id,
       lastEventId(context.req.header('Last-Event-ID')) ?? 0,
       subscriber.signal,
+      canSeeReasoning(context),
     ), {
       onAbort: () => subscriber.abort(),
       skipUntilSeq: lastEventId(context.req.header('Last-Event-ID')),

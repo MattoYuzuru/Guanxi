@@ -60,13 +60,14 @@ export const agentProgressSchema = z.object({
 }).strict()
 export type AgentProgress = z.infer<typeof agentProgressSchema>
 
-/** Explicit negotiated progress query; omitting it keeps the legacy v1 body. */
+/**
+ * Explicit negotiated progress query; omitting it keeps the legacy v1 body. Only the exact
+ * strings `1` and `2` are accepted: no numeric coercion (` 2`, `02`, `2.0`, `0x2`, an empty
+ * value) and no repeated key, which the route passes through as an array.
+ */
 export const agentProgressQuerySchema = z
   .object({
-    progressVersion: z.coerce.number().int().refine(
-      (value) => value === 1 || value === 2,
-      { message: 'progressVersion must be 1 or 2' },
-    ).default(1),
+    progressVersion: z.enum(['1', '2']).default('1').transform((value) => (value === '2' ? 2 : 1) as 1 | 2),
   })
   .strict()
 export type AgentProgressQuery = z.infer<typeof agentProgressQuerySchema>
@@ -120,3 +121,13 @@ export const nativeProgressVersionUnsupportedSchema = z
   })
   .strict()
 export type NativeProgressVersionUnsupported = z.infer<typeof nativeProgressVersionUnsupportedSchema>
+
+/**
+ * Restricted-reader floor (Q1): while the latest pending queue snapshot is v3,
+ * a node that still produces v1 refuses both add and remove with HTTP 409.
+ * The body is content-free.
+ */
+export const nativeQueueProducerUnavailableSchema = z
+  .object({ code: z.literal('native_queue_producer_unavailable') })
+  .strict()
+export type NativeQueueProducerUnavailable = z.infer<typeof nativeQueueProducerUnavailableSchema>

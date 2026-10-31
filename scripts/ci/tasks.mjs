@@ -14,6 +14,9 @@ export const tasks = [
   // The CLI bundles the web output. Keep the canonical root build's dependency order.
   { id: 'build', commands: [npm('build')] },
   { id: 'storybook', commands: [npm('build-storybook', '@guanxi/ui')] },
+  // Electron shell (U2): pure units on Linux; the Electron-launching suites on macOS, where the shell ships first (D-221).
+  { id: 'desktop', commands: [npm('build', '@guanxi/desktop'), npm('test', '@guanxi/desktop')] },
+  { id: 'desktop-electron', os: 'macos-15', commands: [npm('test:electron', '@guanxi/desktop')] },
   { id: 'mac-signer', os: 'macos-15', commands: [['node', '--import', './packages/server/test/setup/no-ambient-key-file.mjs', '--test', '--test-concurrency=1', 'packages/server/test/ui-catalog-signer-helper.test.ts', 'packages/server/test/ui-catalog-signer-install.test.ts', 'packages/server/test/ui-catalog-signer-exit-gates.test.ts']] },
 ]
 
@@ -23,6 +26,7 @@ export const coverage = {
   '@guanxi/bench': ['test', 'test:mutations'], // Mutation campaign is a separate opt-in experiment.
   guanxi: ['test', 'build'],
   '@guanxi/contract': [],
+  '@guanxi/desktop': ['test', 'test:electron', 'build'],
   '@guanxi/kernel': ['test'],
   '@guanxi/server': ['test', 'build'],
   '@guanxi/ui': ['test', 'test:gates', 'build-storybook', 'harness:build', 'tokens:build'], // Harness in browser gate; generated tokens checked by G2.
