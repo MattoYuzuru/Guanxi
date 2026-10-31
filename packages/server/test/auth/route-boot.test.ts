@@ -70,7 +70,7 @@ describe('route policy map against the booted server', () => {
     try {
       const base = `http://127.0.0.1:${server.port}`
       assert.equal((await fetch(`${base}/api/settings`)).status, 200)
-      for (const header of ['X-Forwarded-For', 'Forwarded', 'X-Real-IP']) {
+      for (const header of ['X-Forwarded-For', 'X-Forwarded-Host', 'Forwarded', 'X-Real-IP', 'Via', 'CF-Connecting-IP']) {
         const proxied = await fetch(`${base}/api/settings`, { headers: { [header]: '203.0.113.9' } })
         assert.equal(proxied.status, 403, header)
         assert.equal(((await proxied.json()) as { code: string }).code, 'proxied_request_refused')
@@ -78,6 +78,10 @@ describe('route policy map against the booted server', () => {
       // The owner's own HEAD is served; an unknown method is a 404, not a handler.
       assert.equal((await fetch(`${base}/api/settings`, { method: 'HEAD' })).status, 200)
       assert.equal((await fetch(`${base}/api/settings`, { method: 'PURGE' })).status, 404)
+      // L-A: the boot never trusts a socket-less call, so an in-process request cannot be the owner.
+      const addressless = await server.app.request(`${base}/api/settings`)
+      assert.equal(addressless.status, 403)
+      assert.deepEqual(((await addressless.json()) as { details: unknown }).details, { reason: 'no_socket' })
     } finally {
       await server.close()
     }

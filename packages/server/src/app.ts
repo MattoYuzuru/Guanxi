@@ -72,7 +72,9 @@ export function createApp(app: AppContext, options: CreateAppOptions = {}): Hono
    * keeps the listener on loopback); a remote node takes it from the accounts adapter. A route
    * without a declared policy is refused.
    */
-  server.use('/api/*', routeAuthz(options.authz))
+  // `createApp` is the embedding and test entry point: it trusts a socket-less in-process call unless told
+  // otherwise. `start()` passes `trustInProcess: false`, so a real listener never relies on it.
+  server.use('/api/*', routeAuthz({ trustInProcess: true, ...options.authz }))
 
   server.get('/api/health', async (context: Context<{ Variables: { authz?: AuthzContext } }>) => {
     // Hardware and Ollama detail are for the node owner and the admin role; any other signed-in user gets liveness only.

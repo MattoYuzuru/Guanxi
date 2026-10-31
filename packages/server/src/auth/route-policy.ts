@@ -82,8 +82,8 @@ const POLICY_ENTRIES: ReadonlyArray<readonly [string, string, RoutePolicy]> = [
   ['GET', '/api/settings', NODE_OWNER],
   ['PUT', '/api/settings', NODE_OWNER],
   ['GET', '/api/feature-flags', AUTHENTICATED],
-  ['GET', '/api/runtime', AUTHENTICATED],
-  ['POST', '/api/runtime/estimated-parallel-admission', AUTHENTICATED],
+  ['GET', '/api/runtime', NODE_ADMIN],
+  ['POST', '/api/runtime/estimated-parallel-admission', NODE_ADMIN],
   ['POST', '/api/approvals/:id', ACCOUNT],
   ['GET', '/api/layouts/context', ACCOUNT],
   ['GET', '/api/layouts', ACCOUNT],
@@ -97,7 +97,7 @@ const POLICY_ENTRIES: ReadonlyArray<readonly [string, string, RoutePolicy]> = [
   // Models and workspaces
   ['GET', '/api/models', AUTHENTICATED],
   ['GET', '/api/models/catalog', AUTHENTICATED],
-  ['GET', '/api/models/running', AUTHENTICATED],
+  ['GET', '/api/models/running', NODE_ADMIN],
   ['GET', '/api/models/:name{.+}', AUTHENTICATED],
   ['POST', '/api/models/imports/ollama-reference/preview', NODE_OWNER],
   ['POST', '/api/models/imports/ollama-reference/start', NODE_OWNER],
@@ -278,6 +278,11 @@ class SealedPolicyMap extends Map<string, RoutePolicy> {
   }
   override delete(): boolean { throw new TypeError('ROUTE_POLICIES is sealed') }
   override clear(): void { throw new TypeError('ROUTE_POLICIES is sealed') }
+}
+
+/** A sealed copy of a policy table: later changes to the original do not reach it. */
+export function sealRoutePolicies(policies: ReadonlyMap<string, RoutePolicy>): ReadonlyMap<string, RoutePolicy> {
+  return policies instanceof SealedPolicyMap ? policies : new SealedPolicyMap(policies.entries())
 }
 
 /** Every declared policy, keyed by {@link routeKey}. Sealed: set, delete and clear throw. */

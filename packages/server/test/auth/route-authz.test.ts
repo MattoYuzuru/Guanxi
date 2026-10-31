@@ -52,10 +52,10 @@ function adapter(overrides: Partial<AccountsAdapter> = {}): AccountsAdapter {
 }
 
 /** A stand-in app: the real hook in front of one stub handler per policy entry, in table order. */
-function stubApp(options: { accounts?: AccountsAdapter } = {}): { app: Hono; hits: string[] } {
+function stubApp(options: { accounts?: AccountsAdapter; trustInProcess?: boolean; policies?: ReadonlyMap<string, RoutePolicy> } = {}): { app: Hono; hits: string[] } {
   const hits: string[] = []
   const app = new Hono()
-  app.use('/api/*', routeAuthz({ ...options, now: () => NOW }))
+  app.use('/api/*', routeAuthz({ trustInProcess: true, ...options, now: () => NOW }))
   for (const key of ROUTE_POLICIES.keys()) {
     const [method, path] = key.split(' ') as [string, string]
     app.on(method, path, (context) => { hits.push(key); return context.json({ ok: true }) })
@@ -280,7 +280,7 @@ describe('H1: nothing runs behind the hook without a governed endpoint', () => {
     // No fallback route here: whatever matches after the hook must not be reached.
     for (const accounts of [adapter(), undefined]) {
       const app = new Hono()
-      app.use('/api/*', routeAuthz(accounts ? { accounts } : {}))
+      app.use('/api/*', routeAuthz(accounts ? { accounts } : { trustInProcess: true }))
       let ran = 0
       app.all('/api/sessions/*', (context) => { ran++; return context.text('leak') })
       app.get('*', (context) => { ran++; return context.text('leak') })
@@ -321,7 +321,11 @@ describe('M1: the implicit owner is a loopback socket peer without proxy headers
 
   it('refuses proxy headers even from a loopback peer: a same-host reverse proxy is not the owner', async () => {
     const { app, hits } = stubApp()
-    for (const header of ['X-Forwarded-For', 'Forwarded', 'X-Real-IP']) {
+    for (const header of [
+      'X-Forwarded-For', 'X-Forwarded-Host', 'X-Forwarded-Proto', 'X-Forwarded-Port', 'X-Forwarded-Anything',
+      'Forwarded', 'X-Real-IP', 'Via', 'X-Client-IP', 'True-Client-IP', 'X-Original-Forwarded-For',
+      'CF-Connecting-IP', 'CF-Ray', 'cf-ipcountry',
+    ]) {
       for (const bindings of [peer('127.0.0.1'), peer('::1'), undefined]) {
         const response = await app.request('/api/settings', { headers: { [header]: '203.0.113.9' } }, bindings)
         assert.equal(response.status, 403, `${header} ${bindings?.incoming.socket.remoteAddress}`)
@@ -331,10 +335,52 @@ describe('M1: the implicit owner is a loopback socket peer without proxy headers
     assert.equal(hits.length, 0)
   })
 
+  it('L-A: a request with no socket is refused unless the host opted in with trustInProcess', async () => {
+    const strict = stubApp({ trustInProcess: false })
+    for (const path of ['/api/settings', '/api/health']) {
+      const response = await strict.app.request(path)
+      assert.equal(response.status, 403, path)
+      const body = apiErrorSchema.parse(await response.json())
+      assert.equal(body.code, 'loopback_only')
+      assert.deepEqual(body.details, { reason: 'no_socket' })
+    }
+    assert.equal(strict.hits.length, 0)
+    // A real socket from loopback still passes without the opt-in.
+    assert.equal((await strict.app.request('/api/settings', {}, peer('127.0.0.1'))).status, 200)
+    // The production boot opts out: see route-boot.test.ts ("address-less").
+  })
+
   it('does not apply to remote mode, where the accounts adapter decides', async () => {
     const { app } = stubApp({ accounts: adapter() })
     const response = await app.request('/api/health', { headers: { 'x-role': 'stranger', 'x-forwarded-for': '203.0.113.9' } }, peer('203.0.113.9'))
     assert.equal(response.status, 200)
+  })
+})
+
+describe('round 2 decisions', () => {
+  const status = async (app: Hono, role: Role, method: string, path: string) =>
+    (await app.request(path, { method, headers: { 'x-role': role } })).status
+
+  it('L-C: the runtime snapshot and running models are operator-only, like the trimmed health', async () => {
+    const { app } = stubApp({ accounts: adapter() })
+    for (const [method, path] of [['GET', '/api/runtime'], ['GET', '/api/models/running'], ['POST', '/api/runtime/estimated-parallel-admission']] as const) {
+      assert.equal(await status(app, 'stranger', method, path), 403, `stranger ${method} ${path}`)
+      assert.equal(await status(app, 'link', method, path), 403, `link ${method} ${path}`)
+      assert.equal(await status(app, 'admin', method, path), 200, `admin ${method} ${path}`)
+      assert.equal(await status(app, 'owner', method, path), 200, `owner ${method} ${path}`)
+    }
+    // Information with no per-user content stays open to any signed-in user.
+    assert.equal(await status(app, 'stranger', 'GET', '/api/models'), 200)
+  })
+
+  it('L-B: a supplied policy table is copied; changing the original afterwards changes nothing', async () => {
+    const mutable = new Map(ROUTE_POLICIES)
+    const { app } = stubApp({ accounts: adapter(), policies: mutable })
+    assert.equal(await status(app, 'stranger', 'PUT', '/api/settings'), 403)
+    mutable.set('PUT /api/settings', { kind: 'public' })
+    mutable.delete('GET /api/health')
+    assert.equal(await status(app, 'stranger', 'PUT', '/api/settings'), 403, 'the weakened original must not reach the hook')
+    assert.equal(await status(app, 'stranger', 'GET', '/api/health'), 200, 'the deleted row is still mapped')
   })
 })
 
@@ -435,7 +481,7 @@ describe('local owner mode is unchanged', () => {
 
   it('exposes the owner principal to handlers', async () => {
     const app = new Hono<{ Variables: { authz: AuthzContext } }>()
-    app.use('/api/*', routeAuthz())
+    app.use('/api/*', routeAuthz({ trustInProcess: true }))
     app.get('/api/health', (context) => context.json({ principal: context.get('authz').principal }))
     const body = await (await app.request('/api/health')).json() as { principal: Principal }
     assert.deepEqual(body.principal, LOCAL_OWNER_PRINCIPAL)

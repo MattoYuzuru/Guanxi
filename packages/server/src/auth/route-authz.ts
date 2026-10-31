@@ -22,6 +22,7 @@ import {
   ROUTE_POLICIES,
   isGovernedEndpoint,
   policyFor,
+  sealRoutePolicies,
   type RoutePolicy,
 } from './route-policy.ts'
 import type { Grant, Principal, Resource, ResourceType } from './types.ts'
@@ -56,8 +57,14 @@ export interface RouteAuthzOptions {
   accounts?: AccountsAdapter
   nodeId?: string
   now?: () => number
-  /** Test seam: the policy table. Defaults to the sealed {@link ROUTE_POLICIES}. */
+  /** Test seam: the policy table. Defaults to the sealed {@link ROUTE_POLICIES}; a supplied map is copied. */
   policies?: ReadonlyMap<string, RoutePolicy>
+  /**
+   * Local mode only: treat a request with no socket at all (an in-process `app.request()`) as the
+   * owner. Default `false`: an address-less request is refused. Test helpers and embedding hosts that
+   * never expose a listener opt in; `start()` never does.
+   */
+  trustInProcess?: boolean
 }
 
 /** What the hook leaves on the request context for handlers. */
@@ -65,10 +72,31 @@ export interface AuthzContext {
   principal: Principal
   /** True for a `user` principal that is the node owner or has the server `admin` role. */
   operator: boolean
+  /**
+   * True when the matched policy named a resource and the principal owns it. Handlers use it to
+   * withhold person-audience content (reasoning) from grantees; see `canSeeReasoning`.
+   */
+  resourceOwner: boolean
 }
 
-/** Proxy headers a same-host reverse proxy adds. A local-mode node refuses any request that carries one. */
-export const PROXY_HEADERS = ['x-forwarded-for', 'forwarded', 'x-real-ip'] as const
+/**
+ * Headers a reverse proxy or CDN adds. A local-mode node refuses any request that carries one:
+ * `x-forwarded-*` (all), `forwarded`, `via`, `x-real-ip`, `x-client-ip`, `true-client-ip`,
+ * `x-original-forwarded-for` and Cloudflare's `cf-*`. A proxy that adds none cannot be detected.
+ */
+export const PROXY_HEADER_NAMES: ReadonlySet<string> = new Set([
+  'forwarded', 'via', 'x-real-ip', 'x-client-ip', 'true-client-ip', 'x-original-forwarded-for',
+])
+export const PROXY_HEADER_PREFIXES = ['x-forwarded-', 'cf-'] as const
+
+/** True when the request carries any proxy or CDN header. */
+export function hasProxyHeader(context: Context): boolean {
+  for (const name of context.req.raw.headers.keys()) {
+    const lower = name.toLowerCase()
+    if (PROXY_HEADER_NAMES.has(lower) || PROXY_HEADER_PREFIXES.some((prefix) => lower.startsWith(prefix))) return true
+  }
+  return false
+}
 
 /** The body of an unknown API path, as the fallback route answers it. */
 export const API_NOT_FOUND_BODY = { code: 'internal_error', message: 'API-маршрут не найден', details: null } as const
@@ -106,12 +134,16 @@ function peerOf(context: Context): Peer {
   return plain === '::1' || /^127(\.\d{1,3}){3}$/u.test(plain) ? 'loopback' : 'remote'
 }
 
-/** Local mode only: the refusal for a non-loopback peer or a proxied request, or `null`. */
-function localRefusal(context: Context): Response | null {
-  if (peerOf(context) === 'remote') {
+/** Local mode only: the refusal for a non-loopback peer, an address-less request or a proxied request, or `null`. */
+function localRefusal(context: Context, trustInProcess: boolean): Response | null {
+  const peer = peerOf(context)
+  if (peer === 'remote') {
     return context.json({ code: 'loopback_only', message: 'This node answers requests from this machine only', details: { reason: 'non_loopback_peer' } }, 403)
   }
-  if (PROXY_HEADERS.some((name) => context.req.header(name) !== undefined)) {
+  if (peer === 'none' && !trustInProcess) {
+    return context.json({ code: 'loopback_only', message: 'This node answers requests from this machine only', details: { reason: 'no_socket' } }, 403)
+  }
+  if (hasProxyHeader(context)) {
     return context.json({ code: 'proxied_request_refused', message: 'A request carrying proxy headers cannot act as the local owner', details: { reason: 'forwarded_headers' } }, 403)
   }
   return null
@@ -153,7 +185,9 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
   const nodeOwnerId = accounts?.nodeOwnerId ?? LOCAL_OWNER_ID
   const nodeId = options.nodeId ?? LOCAL_NODE_ID
   const now = options.now ?? Date.now
-  const policies = options.policies ?? ROUTE_POLICIES
+  // A supplied table is copied into a sealed map, so the caller cannot change it after boot.
+  const policies = options.policies ? sealRoutePolicies(options.policies) : ROUTE_POLICIES
+  const trustInProcess = options.trustInProcess === true
 
   /** The decision is synchronous unless the accounts adapter itself is asynchronous. */
   function decide(
@@ -161,6 +195,7 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
     principal: Principal,
     context: Context,
     pattern: string,
+    state: { resourceOwner: boolean },
   ): Refusal | null | Promise<Refusal | null> {
     if (policy.kind === 'public' || policy.kind === 'node-signed') return null
     if (principal.kind === 'anonymous') return 'unauthenticated'
@@ -171,7 +206,9 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
     const check = (resource: Resource, grants: readonly Grant[]): Refusal | null => {
       if (!can(principal, policy.action, resource, [...grants], now()).allowed) return 'forbidden'
       // `ownerOnly`: a grant or the admin role is not enough, the principal must own the resource.
-      if (policy.ownerOnly && !(principal.kind === 'user' && principal.userId === resource.ownerUserId)) return 'forbidden'
+      const owns = principal.kind === 'user' && principal.userId === resource.ownerUserId
+      if (policy.ownerOnly && !owns) return 'forbidden'
+      state.resourceOwner = owns
       return null
     }
 
@@ -206,14 +243,15 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
     const policy = policyFor(route.method, route.path, policies)
     if (!policy) return refuse(context, 'route_unmapped')
     if (!accounts) {
-      const refusal = localRefusal(context)
+      const refusal = localRefusal(context, trustInProcess)
       if (refusal) return refusal
     }
 
+    const state = { resourceOwner: false }
     const finish = (refusal: Refusal | null, principal: Principal): Outcome => {
       if (refusal) return refuse(context, refusal)
       const operator = principal.kind === 'user' && (principal.role === 'admin' || principal.userId === nodeOwnerId)
-      context.set('authz', { principal, operator } satisfies AuthzContext)
+      context.set('authz', { principal, operator, resourceOwner: state.resourceOwner } satisfies AuthzContext)
       return next()
     }
     const needsPrincipal = policy.kind !== 'public' && policy.kind !== 'node-signed'
@@ -224,7 +262,7 @@ export function routeAuthz(options: RouteAuthzOptions = {}): MiddlewareHandler {
         : LOCAL_OWNER_PRINCIPAL
     // No `await` before `next()` on the synchronous path: locally the hook adds no scheduling turn.
     return andThen(resolved, (principal) =>
-      andThen(decide(policy, principal, context, route.path), (refusal) => finish(refusal, principal)))
+      andThen(decide(policy, principal, context, route.path, state), (refusal) => finish(refusal, principal)))
   }
   return handler as MiddlewareHandler
 }
