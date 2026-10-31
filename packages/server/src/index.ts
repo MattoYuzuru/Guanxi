@@ -24,6 +24,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
+import { createServer as createHttpsServer } from 'node:https'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { PRODUCT_NAME } from '@guanxi/contract'
 import { createApp } from './app.ts'
@@ -66,6 +67,17 @@ import { Ms1LiveNode, type Ms1LiveHomeRelay } from './ms1-live/boot.ts'
 import { federationListener } from './ms1-live/listener.ts'
 import { Ms1LiveError, type Ms1LiveSettings } from './ms1-live/config.ts'
 import { runBoundedStop } from './ms1-live/stop.ts'
+import { admitBind, type RemoteProfileOptions } from './auth/remote-profile.ts'
+import { assertRoutesMapped } from './auth/route-policy.ts'
+
+export { RemoteBindError, assertBindAllowed } from './auth/remote-guard.ts'
+export type { RemoteBindConfig, RemoteBindRequirement } from './auth/remote-guard.ts'
+export { REMOTE_BIND_EXIT_CODE, admitBind, remoteBindRefusalMessage } from './auth/remote-profile.ts'
+export type { AdmittedTls, RemoteProfileOptions } from './auth/remote-profile.ts'
+export { LOCAL_OWNER_ID, LOCAL_OWNER_PRINCIPAL, routeAuthz } from './auth/route-authz.ts'
+export type { AccountsAdapter, AuthzContext, RouteAuthzOptions } from './auth/route-authz.ts'
+export { ROUTE_POLICIES, RouteAuthzError, assertRoutesMapped, listUnmappedRoutes } from './auth/route-policy.ts'
+export type { RoutePolicy } from './auth/route-policy.ts'
 
 export { RELEASE_BUILD } from './release.ts'
 export { JobStore, JobStoreError } from './store/jobs.ts'
@@ -176,6 +188,13 @@ export interface StartOptions {
   connectionsPolicy?: VaultPolicy
   indexSettings?: Partial<IndexSettings>
   federation?: Omit<FederationHostOptions, 'db'>
+  /**
+   * The remote security profile (ADR-0027 decision 7). A bind to anything but loopback is refused
+   * unless this carries TLS on one canonical hostname, an accounts adapter and allowed roots, and
+   * `federation` supplies the node credential. When present the node serves HTTPS and takes its
+   * principals from the accounts adapter. Absent, the node is single-owner and loopback-only.
+   */
+  remote?: RemoteProfileOptions
   /** Trusted node-local installed CLIs; no executable paths or account identity arrive over HTTP. */
   externalAgents?: ExternalPolicy
   /** T0-only proved runtime counter and owned-checkout adapter; neither comes from HTTP. */
@@ -275,17 +294,21 @@ export async function start(options: StartOptions = {}) {
   // An uncapped Full-access relay run must never be the lead's choice: the owner's ceilings are mandatory with the relay.
   if (options.leads?.relay && !options.leads.limits) throw new Error('leads.relay requires limits')
   if (options.relay && options.operationalRelay) throw new RelayError('relay_policy_invalid')
+  const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   // MS1 live mode: validated and paired before any file, database or listener exists. A bad configuration, key or option
   // mix is a boot error, never a node that silently runs without its pairing.
+  if (options.ms1Live && options.remote) throw new Ms1LiveError('option_conflict', 'remote')
   if (options.ms1Live && (options.federation || options.relay || options.operationalRelay)) throw new Ms1LiveError('option_conflict', 'federation|relay|operationalRelay')
   const live = options.ms1Live ? Ms1LiveNode.create(options.ms1Live) : null
   const refuseLive = async (code: string, field: string): Promise<never> => { await live?.close(); throw new Ms1LiveError(code, field) }
   if (live?.hasLead && (options.externalAgents || options.leads)) await refuseLive('option_conflict', 'externalAgents|leads')
   const port = options.port ?? apiPortFromEnv(process.env, live?.settings.listen.port ?? DEFAULT_PORT)
   let actualPort = port
-  const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   // The pairing's only link is a loopback port forward: the node never listens elsewhere in this mode.
   if (live && host !== '127.0.0.1') await refuseLive('listen_not_loopback', 'host')
+  // The remote bind guard runs before any file, database or listener exists: a refused bind leaves nothing behind.
+  // (The MS1 live pairing refused a non-loopback host above with its own code, and rejects `remote`.)
+  const tls = admitBind(host, options.remote, Boolean(options.federation?.identity?.id && options.federation.privateKey))
   if (live && port === live.federationPort) await refuseLive('ports_collide', 'listen')
   // A live node holds keys, pins and relay ledgers: it lives beside its configuration unless told otherwise, and never in the owner's
   // default data directory, which a lane or a rehearsal could otherwise share with a real node by accident.
@@ -464,7 +487,9 @@ export async function start(options: StartOptions = {}) {
     throw error
   }
   const server = createApp(context, {
-    host, port: () => actualPort,
+    // A remote node is reached by its canonical TLS hostname; the bind address (for example 0.0.0.0) is not a Host header.
+    host: tls ? tls.hostname : host, port: () => actualPort,
+    ...(options.remote ? { authz: { accounts: options.remote.accounts, ...(options.federation ? { nodeId: options.federation.identity.id } : {}) } } : {}),
     devOrigins: options.devOrigins ?? devOriginsFromEnv(process.env),
     uiCatalog,
     layouts: options.federation ? () => {
@@ -521,11 +546,16 @@ export async function start(options: StartOptions = {}) {
     await live?.close().catch(() => undefined)
     context.db.close()
   }
+  // Every /api/ endpoint must have a declared authorization policy; a new route cannot ship unguarded.
+  try { assertRoutesMapped(server.routes) } catch (error) { await abortStart(); throw error }
   let instance!: ReturnType<typeof serve>
   try {
     actualPort = await new Promise<number>((resolvePort, reject) => {
       const onError = (error: Error) => reject(error)
-      instance = serve({ fetch: server.fetch, port, hostname: host }, (address) => {
+      instance = serve({
+        fetch: server.fetch, port, hostname: host,
+        ...(tls ? { createServer: createHttpsServer, serverOptions: { cert: tls.cert, key: tls.key } } : {}),
+      } as Parameters<typeof serve>[0], (address) => {
         instance.off('error', onError)
         resolvePort(address.port)
       })
@@ -557,8 +587,8 @@ export async function start(options: StartOptions = {}) {
     // After both listeners are up: an executor hashes its model now, not inside the first relay's freshness window.
     if (live.role === 'executor') void live.startWarming()
   }
-  const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
-  const url = `http://${browserHost}:${actualPort}`
+  const browserHost = tls ? tls.hostname : host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
+  const url = `${tls ? 'https' : 'http'}://${browserHost}:${actualPort}`
 
   let closing: Promise<void> | null = null
   const federation = kernel.node.service<Federation>(FEDERATION_SERVICE)
@@ -627,7 +657,7 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 
-  return { url, port: actualPort, host, context, kernel, close, ms1Live: live?.view() ?? null }
+  return { url, port: actualPort, host, context, kernel, close, app: server, ms1Live: live?.view() ?? null }
 }
 
 /**

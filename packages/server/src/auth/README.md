@@ -1,12 +1,15 @@
 # Authorization core
 
-**Status:** implemented and locally validated by unit tests. Better Auth, route guards, the
-permission snapshot API and server-boot wiring are not part of U3-a.
+**Status:** implemented and locally validated by unit and boot tests. The policy core (U3-a)
+is pure; U3-route-authz wires it into the HTTP routes and the server boot. Better Auth, the
+permission snapshot API, per-account stores and allowed-root enforcement are not implemented.
 
 This directory implements the authorization model of
-[ADR-0027](../../../../docs/decisions/0027-accounts-sharing-and-access-modes.md) that a later
-authentication layer will call. It has no authentication provider, no HTTP surface and no
-dependency outside `node:` builtins.
+[ADR-0027](../../../../docs/decisions/0027-accounts-sharing-and-access-modes.md). The policy,
+grant store and remote guard (`policy.ts`, `grants.ts`, `remote-guard.ts`) have no authentication
+provider and no dependency outside `node:` builtins. `route-policy.ts`, `route-authz.ts` and
+`remote-profile.ts` connect them to Hono and to `start()`; the authentication provider plugs in
+through the `AccountsAdapter` seam.
 
 ## Principals and resources
 
@@ -146,7 +149,7 @@ possible.
 
 ## Remote-bind guard
 
-`assertBindAllowed(config)` is pure and is deliberately not wired into server boot. Loopback
+`assertBindAllowed(config)` is pure; `start()` reaches it through `admitBind()` (below). Loopback
 hosts (`127.0.0.0/8`, `::1`, `localhost`) always pass. Every other host, including `0.0.0.0`,
 `::`, LAN addresses and hostnames, must present the full remote security profile:
 
@@ -163,11 +166,83 @@ Failure throws `RemoteBindError` with `code: 'remote_bind_forbidden'` and a `mis
 lists every unmet requirement using stable codes: `tls_required`, `tls_hostname_required`,
 `tls_hostname_ip_forbidden`, `tls_hostname_invalid`, `accounts_required`,
 `allowed_roots_required`, `allowed_roots_must_be_absolute`, `allowed_roots_must_not_be_root`,
-`allowed_roots_duplicate`, `allowed_roots_nested`, `node_credential_required`.
+`allowed_roots_duplicate`, `allowed_roots_nested`, `node_credential_required`. The boot layer adds
+`tls_files_unreadable` because the guard itself reads no files.
+
+## Route authorization
+
+`createApp()` registers one hook, `routeAuthz()`, on `/api/*` before every route. Handlers carry no
+authorization checks of their own. The hook reads the first endpoint route Hono matched for the
+request, looks its registered pattern up in `ROUTE_POLICIES` (`route-policy.ts`), resolves the
+principal and calls `can()`. The map is the inventory: every route, its kind, resource and action
+are listed in [`U3-route-authz.plan.md`](../../../../docs/plans/lanes/U3-route-authz.plan.md).
+
+| Policy kind | Passes | Used for |
+| --- | --- | --- |
+| `public` | everyone | federation enrollment bootstrap (`device/code`, `device/token`) |
+| `node-signed` | everyone; the handler authenticates the node by its signature | the rest of `/api/federation` |
+| `authenticated` | any `user` principal | read-only node information: health, model catalogue, feature flags, runtime snapshot |
+| `account` | the node owner's account | data of the one account the single-account stores hold: layouts, notifications, voice glossary, recipes, attachments, vault, approvals |
+| `authorize` | `can(principal, action, resource)` | threads, sessions, projects, runs, connections, node administration |
+
+For `authorize`, `idParam` names the route parameter holding the resource id, extracted by Hono's
+own router (decoded exactly as the handler sees it). A route **without** `idParam` is a collection
+or create route and is authorized against the **root** resource of its type (`@root`), which is
+owned by the node owner, never carries grants and is therefore owner-only. Node-level routes use
+the local node (owner: the node owner). This is deliberate while stores have no `owner_user_id`:
+everything the API lists or creates belongs to the node owner, and a member must not list or write
+into it. The `admin` role still gets only `node.admin` (D-155).
+
+Refusals use the shared API error shape (`apiErrorSchema`): `401 unauthenticated` for an anonymous
+principal, `403 forbidden` when `can()` or the kind refuses, `403 route_unmapped` when a matched
+endpoint has no policy. A foreign and a missing resource answer identically (no existence oracle);
+the reason `can()` gave is not returned.
+
+**Fail closed.** A matched `/api/` endpoint without a policy is refused before its handler runs,
+including `ALL` routes that are not one of the known middleware or fallback patterns
+(`NON_ENDPOINT_ALL_ROUTES`). `start()` also runs `assertRoutesMapped(app.routes)` after the last
+route is mounted and aborts boot with `RouteAuthzError` (`routes_unmapped`) listing the patterns.
+Adding a route therefore means adding a line to `route-policy.ts`.
+
+**Modes.**
+
+- *Local owner (default).* No accounts adapter: the principal is `LOCAL_OWNER_PRINCIPAL`
+  (`local`, role `admin`) for every request that passed the Host allowlist, so every declared
+  policy admits it and behaviour is as before the hook. Loopback itself is guaranteed by the boot
+  bind guard and by the existing per-route peer guards (`loopback_only`), which still answer with
+  their own bodies.
+- *Remote.* `start({ remote })` passes an `AccountsAdapter`: `nodeOwnerId`, `principal(context)`,
+  and optional `resource(type, id)` (the authoritative projection; default: owned by the node
+  owner) and `grants(resource)` (including grants inherited from the project; default none).
+  Better Auth implements it in the next slice.
+
+## Remote bind at boot
+
+`start()` calls `admitBind(host, remote, nodeCredentialConfigured)` first, before any file,
+database or listener exists. `host` is `options.host`, then `HOST`, then `127.0.0.1`. The guard
+inputs are derived from the start options, never from loose booleans:
+
+| Guard input | Source |
+| --- | --- |
+| `tls` | `remote.tls` (certificate path, key path, canonical hostname); both files must be readable |
+| `accountsEnabled` | `remote.accounts.principal` is a function |
+| `allowedRoots` | `remote.allowedRoots` |
+| `nodeCredentialConfigured` | `federation.identity.id` and `federation.privateKey` are present |
+
+A refusal throws `RemoteBindError` (`remote_bind_forbidden`) listing every unmet requirement.
+`server/src/bin.ts` and the CLI print one line, `guanxi: refusing to listen on <host>: the remote
+security profile is incomplete (<codes>). ...`, and exit with `REMOTE_BIND_EXIT_CODE` (78,
+`EX_CONFIG`); no data directory is created and nothing listens. With a satisfied profile the
+listener is `node:https` with the supplied certificate, the Host allowlist admits the canonical
+hostname (not the bind address), the returned URL is `https://<hostname>:<port>`, and the hook
+takes its principal from the adapter. A profile on a loopback bind is allowed and behaves the same.
+`ms1Live` rejects `remote` (`option_conflict`): the MS1 pairing is loopback-only by design.
 
 ## Non-goals
 
-Better Auth and its pinned plugins, sessions/passkeys/device authorization, wiring `can` into
-routes, exposing the snapshot over HTTP or in the web client, per-account connections/vault/cost
-ledger, boot-time use of the remote guard and audit of remote execution remain for later U3
-slices. See [`U3-a.handoff.md`](../../../../docs/plans/lanes/U3-a.handoff.md).
+Better Auth and its pinned plugins, sessions/passkeys/device authorization, exposing the
+snapshot over HTTP or in the web client, per-account stores (`owner_user_id`) and per-account
+connections/vault/cost ledger, enforcement of the allowed roots when a workspace or project root
+is registered, relaxing the per-route loopback-peer guards for remote clients, and audit of remote
+execution remain for later U3 slices. See [`U3-a.handoff.md`](../../../../docs/plans/lanes/U3-a.handoff.md)
+and [`U3-route-authz.handoff.md`](../../../../docs/plans/lanes/U3-route-authz.handoff.md).
