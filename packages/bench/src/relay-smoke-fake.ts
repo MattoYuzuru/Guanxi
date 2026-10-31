@@ -40,6 +40,10 @@ export interface FakeCycle {
   summaryTruncated?: boolean
   /** Naive mode: the summary was degraded, with the relay's fixed reason code (for example `model_failed`). */
   summaryDegraded?: string
+  /** Naive mode: the stored seal of the previous cycle was damaged, so this cycle was shown the fixed `summary unavailable` text. */
+  damagedSeal?: boolean
+  /** Naive mode: the process died between the seal and its summary note. */
+  summaryMissing?: boolean
   /** The executor attempt that ran this cycle (R1 epoch; default 1). A new attempt of a naive run writes its own marker. */
   attempt?: number
   /** The mode this cycle's attempt ran in, when the node was restarted in the other mode between attempts of one run. Default: the home mode. */
@@ -172,7 +176,7 @@ export class FakeRelay implements RelaySource {
         costs.push({ key: messageId, inputTokens: spec.inputTokens ?? 20_000, outputTokens: 300 })
       }
       if (cycle > 1 && here === 'ledger') (spec.probe ?? [true]).forEach((correct, retry) => noteOf('probe', { retry, correct, damaged: false }, false))
-      if (cycle > 1 && here === 'naive') noteOf('probe_not_applicable', { mode: 'naive', cycle, reason: 'ledger_facts_not_shown', damaged: false }, false)
+      if (cycle > 1 && here === 'naive') noteOf('probe_not_applicable', { mode: 'naive', cycle, reason: 'ledger_facts_not_shown', damaged: spec.damagedSeal === true }, false)
       for (const gate of spec.items ?? []) {
         evidence.push({ item: gate.item, head: `${cycle}`.padStart(40, 'a'), ok: gate.ok })
         items[gate.item] = gate.ok ? 'done' : 'verification_requested'
@@ -186,7 +190,7 @@ export class FakeRelay implements RelaySource {
           bundleMatchesHandoff: true, artifactMatchesHandoff: true,
         })
         noteOf('sealed', { cycle, ledgerHash: ledgerSha, bundleHash: sha256Hex(`bundle-${cycle}`) }, true)
-        if (here === 'naive') {
+        if (here === 'naive' && spec.summaryMissing !== true) {
           const degraded = spec.summaryDegraded !== undefined
           noteOf('compaction_summary', { mode: 'naive', attempt: attemptId(attempt), cycle, summaryBytes: 900, summaryLimitBytes: 4000, outputLimitTokens: 1000,
             truncated: spec.summaryTruncated === true || degraded, degraded, degradedReason: degraded ? spec.summaryDegraded : null, inputDropped: spec.summaryTruncated ? 2 : 0, inputCut: 0 }, false)

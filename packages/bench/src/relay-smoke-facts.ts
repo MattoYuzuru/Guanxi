@@ -139,24 +139,31 @@ export function canonicalText(value: unknown): string {
 export const sha256Hex = (value: string | Uint8Array): string => createHash('sha256').update(value).digest('hex')
 
 export type ArmMode = 'ledger' | 'naive' | 'mixed' | 'unconfirmed'
-/** What armModeOf needs from the home database: the attempts that sealed a cycle (`relay_seals.attempt_id`, with the epoch of the seal). */
-export interface SealingAttempt { attemptId: string; epoch: number }
+/** One sealed cycle as the home database stores it (`relay_seals`): the sealing attempt and the epoch of the seal. */
+export interface SealingAttempt { attemptId: string; epoch: number; cycle: number }
+/** What armModeOf needs from the home database. `snapshot` is whether the run's own `relay_runs` row was found: a database that has the schema
+ * but no row for this run (a wrong or stale file) proves nothing about its attempts. */
+export interface SealEvidence { seals: readonly SealingAttempt[]; snapshot: boolean }
 /** The arm a run really was, read from its own events and its own seals and from nothing else.
  *
  * A naive attempt writes `{relay:'compaction', mode:'naive', attempt, epoch}` before its first model call; a ledger attempt writes nothing, so the
  * proof of a naive run sits on the naive side: every attempt that sealed a cycle must have its own marker, and every `compaction_summary` must name
  * a marked attempt. A sealing attempt without a marker is a ledger attempt inside a run that also has naive ones: `mixed`. The ledger arm's
  * check is the inverse: no naive note of any kind, and no marker-less hint of one. Anything that cannot be read (no events, an unknown mode, a
- * marker without an attempt id, `sealing` null because the home database was not read) is `unconfirmed`, never a guess.
+ * marker without an attempt id, `evidence` null because the home database was not read, a database without this run's row, or a `sealed` event
+ * with no matching `relay_seals` row) is `unconfirmed`, never a guess.
  *
- * A ledger attempt that is interrupted before it seals anything leaves no trace in either source; the relay's README states the same limit. A
- * naive trial additionally carries no `probe` note, which a ledger attempt would have written, so one is `mixed` too. */
-export function armModeOf(facts: readonly SmokeFact[], sealing: readonly SealingAttempt[] | null): ArmMode {
+ * A naive attempt never asks the ledger probe, so a `probe` or `probe_degraded` note, or a model call whose purpose is `probe` (the executor writes
+ * `assistant.started` before the call, so this survives an attempt killed in the middle of it), is a ledger attempt: `mixed`, whatever the database says.
+ * A ledger attempt that is interrupted before it seals anything or starts a probe call leaves no trace in either source; the relay's README states the same limit. */
+export function armModeOf(facts: readonly SmokeFact[], evidence: SealEvidence | null): ArmMode {
   if (!facts.length) return 'unconfirmed'
   const markers = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction' }> => f.kind === 'compaction')
   const summaries = facts.filter((f): f is Extract<SmokeFact, { kind: 'compaction_summary' }> => f.kind === 'compaction_summary')
   if (!markers.length) return summaries.length || facts.some(f => f.kind === 'probe_not_applicable') ? 'unconfirmed' : 'ledger'
-  if (markers.some(m => m.mode !== 'naive' || m.attempt === null || m.epoch === null) || sealing === null) return 'unconfirmed'
+  if (markers.some(m => m.mode !== 'naive' || m.attempt === null || m.epoch === null)) return 'unconfirmed'
+  if (facts.some(f => f.kind === 'probe' || f.kind === 'probe_degraded' || (f.kind === 'call_started' && f.purpose === 'probe'))) return 'mixed'
+  if (evidence === null || !evidence.snapshot) return 'unconfirmed'
   const marked = new Map<string, number>()
   for (const m of markers) {
     // An attempt marks itself once; a second, different statement for it cannot come from the executor.
@@ -164,9 +171,11 @@ export function armModeOf(facts: readonly SmokeFact[], sealing: readonly Sealing
     marked.set(m.attempt!, m.epoch!)
   }
   if (summaries.some(s => s.attempt === null || !marked.has(s.attempt))) return 'unconfirmed'
-  for (const seal of sealing) {
+  const stored = new Set(evidence.seals.map(s => s.cycle))
+  if (facts.some(f => f.kind === 'sealed' && !stored.has(f.cycle))) return 'unconfirmed'
+  for (const seal of evidence.seals) {
     if (!marked.has(seal.attemptId)) return 'mixed'
     if (marked.get(seal.attemptId) !== seal.epoch) return 'unconfirmed'
   }
-  return facts.some(f => f.kind === 'probe' || f.kind === 'probe_degraded') ? 'mixed' : 'naive'
+  return 'naive'
 }

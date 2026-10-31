@@ -18,9 +18,11 @@ import { fixture, reserves } from '../../server/test/relay/fixture.ts'
 import { RelayExecutor } from '../../server/src/relay/executor.ts'
 import { DEFAULT_RELAY_LIMITS, type Plan } from '../../server/src/relay/types.ts'
 import { armModeOf, projectEvents, type SmokeFact } from '../src/relay-smoke-facts.ts'
-import { HttpRelaySource } from '../src/relay-smoke-source.ts'
+import { sealEvidenceOf } from '../src/relay-smoke-run.ts'
+import { HttpRelaySource, SqliteLedgerReader } from '../src/relay-smoke-source.ts'
 import type { ArmProfile } from '../src/relay-smoke-build.ts'
 import { LEDGER_ARM, config, documentOf, observation } from './relay-smoke-helpers.ts'
+import { seed } from './relay-smoke-db-fixture.ts'
 
 const item = (id: string, dependsOn: string[]) => ({ id, title: 'item ' + id, dependsOn, acceptance: ['true'], protectedPaths: ['tests'] })
 const pair: Plan = { revision: 'r1', base: 'a'.repeat(40), goal: 'Implement the fixture task.', items: [item('I02', ['I01']), item('I01', [])], protectedPaths: ['.github'] }
@@ -54,7 +56,7 @@ async function observe(f: Fixture, homeDb: string) {
   const facts = projectEvents(page.events, f.run.id)
   const ledger = await source.ledger('node', f.run.id)
   assert.ok(ledger, 'the home database is readable while the node runs')
-  const mode = armModeOf(facts, ledger.seals.map(s => ({ attemptId: s.attemptId, epoch: s.epoch })))
+  const mode = armModeOf(facts, sealEvidenceOf(ledger))
   return { facts, ledger, mode, runId: f.run.id }
 }
 /** The fixture clock is 2027; the document's own clock must follow the events it describes. */
@@ -68,8 +70,9 @@ async function withDb<T>(body: (path: string) => Promise<T>): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), 'b3-shapes-'))
   try { return await body(join(dir, 'guanxi.db')) } finally { rmSync(dir, { recursive: true, force: true }) }
 }
-async function runOnce(path: string, options: { naive: boolean; summaries?: (n: number) => string }) {
+async function runOnce(path: string, options: { naive: boolean; summaries?: (n: number) => string; damageSeal?: boolean }) {
   const f = fixture({ path, plan: pair, actions: script(options.summaries), ...(options.naive ? { limits: { compaction: 'naive' } } : {}) })
+  if (options.damageSeal) { const sealed = f.relay.sealed.bind(f.relay); f.relay.sealed = a => { const s = sealed(a); return s && { ...s, artifactHash: 'f'.repeat(64) } } }
   await f.executor.run(f.attempt)
   assert.equal(f.store.get(f.run.id).state, 'completed')
   return f
@@ -182,6 +185,72 @@ test('a ledger attempt that probed and was stopped before it sealed leaves no ma
       assert.deepEqual(ofKind(seen.facts, 'probe').map(p => p.cycle), [Math.max(...seen.ledger.seals.map(x => x.cycle)) + 1], 'but, in the cycle after the last seal, it asked the ledger probe, which a naive attempt never does')
       assert.ok(next.id !== f.attempt.id)
       assert.equal(seen.mode, 'mixed')
+      // either trace alone is enough
+      const evidence = sealEvidenceOf(seen.ledger)
+      assert.equal(armModeOf(seen.facts.filter(x => !(x.kind === 'call_started' && x.purpose === 'probe')), evidence), 'mixed', 'the probe note alone')
+      assert.equal(armModeOf(seen.facts.filter(x => x.kind !== 'probe' && x.kind !== 'probe_degraded'), evidence), 'mixed', 'the probe call alone')
+    } finally { f.close() }
+  })
+})
+
+test('a real naive run whose stored seal was damaged says so, and the runner reports it per trial', async () => {
+  await withDb(async path => {
+    const f = await runOnce(path, { naive: true, damageSeal: true })
+    try {
+      const seen = await observe(f, path)
+      assert.equal(seen.mode, 'naive')
+      assert.deepEqual(ofKind(seen.facts, 'probe_not_applicable').map(p => p.damaged), [true])
+      assert.ok(build(seen, NAIVE_ARM, NAIVE_CONFIG()).built.notes.includes('naive_handoff_damaged:1'))
+    } finally { f.close() }
+  })
+})
+
+test('the executor announces the ledger probe call before it is made, and a naive run never makes one', async () => {
+  await withDb(async path => {
+    const f = await runOnce(path, { naive: false })
+    try {
+      const seen = await observe(f, path)
+      assert.deepEqual(ofKind(seen.facts, 'call_started').filter(c => c.purpose === 'probe').map(c => c.cycle), [2], 'a ledger orient starts a probe call')
+    } finally { f.close() }
+  })
+  await withDb(async path => {
+    const f = await runOnce(path, { naive: true })
+    try {
+      const seen = await observe(f, path)
+      assert.deepEqual(ofKind(seen.facts, 'call_started').filter(c => c.purpose === 'probe'), [])
+      assert.deepEqual([...new Set(ofKind(seen.facts, 'call_started').map(c => c.purpose))].sort(), ['narrative', 'work'])
+    } finally { f.close() }
+  })
+})
+
+test('a ledger attempt killed in the middle of its probe leaves a call but no probe note: the run is still mixed', async () => {
+  await withDb(async path => {
+    const { f } = await twoAttempts(path, 'naive', 'ledger', { secondStopsBeforeSealing: true })
+    try {
+      const seen = await observe(f, path)
+      // what a hard kill leaves: the call announcement is already in the log, the note it would have produced is not
+      const killed = seen.facts.filter(x => x.kind !== 'probe' && x.kind !== 'probe_degraded')
+      assert.ok(killed.some(x => x.kind === 'call_started' && x.purpose === 'probe'))
+      assert.equal(armModeOf(killed, sealEvidenceOf(seen.ledger)), 'mixed')
+    } finally { f.close() }
+  })
+})
+
+test('a real mixed run read through a database that holds nothing for it is unconfirmed, not naive', async () => {
+  await withDb(async path => {
+    // ledger attempt 1 seals cycle 1, then the node is restarted in naive mode and attempt 2 seals the rest
+    const { f } = await twoAttempts(path, 'ledger', 'naive')
+    try {
+      const real = await observe(f, path)
+      assert.equal(real.mode, 'mixed')
+      // the same events against a file with the relay schema but no rows for this run (a wrong or stale home database)
+      const stalePath = join(path, '..', 'stale.db'); seed(stalePath).close()
+      const stale = new SqliteLedgerReader(stalePath).read(f.run.id)
+      assert.deepEqual([stale.seals.length, stale.final], [0, null])
+      // the ledger attempt's probe traces are removed so that only the seals can tell (the probe rule is pinned above)
+      const sealsOnly = real.facts.filter(x => x.kind !== 'probe' && x.kind !== 'probe_degraded' && !(x.kind === 'call_started' && x.purpose === 'probe'))
+      assert.equal(armModeOf(sealsOnly, sealEvidenceOf(real.ledger)), 'mixed', 'the first attempt sealed cycles and wrote no marker')
+      assert.equal(armModeOf(sealsOnly, sealEvidenceOf(stale)), 'unconfirmed', 'the same events against a database without the run are not naive')
     } finally { f.close() }
   })
 })

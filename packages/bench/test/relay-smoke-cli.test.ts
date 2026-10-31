@@ -257,7 +257,25 @@ test('a pass run in the wrong node mode exits 1 with the halt named', async () =
     assert.equal(await runCli(['run', '--config', shared, '--out', out, '--arms', 'naive-compaction'], h.io()), 1)
     const result = h.stdout()
     assert.equal(result.ok, false)
+    assert.equal(result.halted, 'arm_mode_mismatch', 'the stdout summary names the halt, not only summary.json')
     assert.equal(JSON.parse(readFileSync(join(out, 'summary.json'), 'utf8')).halted, 'arm_mode_mismatch')
     assert.equal(readdirSync(join(out, 'observations')).length, 0)
+  } finally { h.cleanup() }
+})
+
+test('the manifest binds only the observations the document includes, not files left by another selection', async () => {
+  const h = harness()
+  try {
+    const cfg = h.file('one.json', { ...CONFIG, arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }] })
+    const out = join(h.dir, 'out')
+    assert.equal(await runCli(['run', '--config', cfg, '--out', out, '--tasks', 'll-money-text'], h.io()), 0)
+    h.out.length = 0
+    // the second selection does not contain the first task: its stored file stays on disk, outside this summary
+    assert.equal(await runCli(['run', '--config', cfg, '--out', out, '--tasks', 'll-rules-fx'], h.io()), 0)
+    assert.equal(readdirSync(join(out, 'observations')).length, 2)
+    const summary = JSON.parse(readFileSync(join(out, 'summary.json'), 'utf8')) as { trials: Array<{ key: string }> }
+    const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8')) as { files: Array<[string, string]> }
+    assert.deepEqual(manifest.files.filter(([n]) => n.startsWith('observations/')).map(([n]) => n), summary.trials.map(t => `observations/${t.key}.json`).sort())
+    assert.equal(manifest.files.length, 3 + 1)
   } finally { h.cleanup() }
 })

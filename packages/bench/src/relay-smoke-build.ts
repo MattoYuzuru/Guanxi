@@ -259,6 +259,15 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
     const output = range(summaries.map(f => f.outputLimitTokens)); if (output) notes.push(`compaction_output_limit_tokens:${output}`)
     if (dropped || cut) notes.push(`compaction_input_loss:dropped=${dropped},cut=${cut}`)
   }
+  // A damaged stored seal is not repaired in the naive arm: the next cycle was shown the fixed "summary unavailable" text. Reported, never silent.
+  const damaged = facts.filter(f => f.kind === 'probe_not_applicable' && f.damaged).length
+  if (damaged) notes.push(`naive_handoff_damaged:${damaged}`)
+  if (arm.kind === 'naive_compaction') {
+    // The summary note is written after the seal, so a process that died between them leaves a sealed cycle without one; either way the loss is not silent.
+    const summarised = new Set(summaries.map(f => f.cycle))
+    const missing = [...new Set(facts.filter(f => f.kind === 'sealed').map(f => f.cycle))].filter(c => !summarised.has(c)).sort((a, b) => a - b)
+    if (missing.length) notes.push(`compaction_summary_missing:${missing.join(',')}`)
+  }
   const outcome: SmokeOutcome = outcomeOf(obs.status, obs.statusError, facts, obs.endedBy)
   if (ledger) {
     const touched = new Set((ledger.final?.evidence ?? ledger.seals[ledger.seals.length - 1]?.evidence ?? []).map(x => x.item))

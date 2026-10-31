@@ -199,13 +199,18 @@ test('a stored observation is reused only under the same configuration fingerpri
   await runSmoke(config(), r.deps())
   for (const patch of [{ start: { projectId: 'other', connectionId: 'connection-1', model: 'model-1' } }, { caps: { tokens: 5, moneyMicros: 0, wallMs: null } }, { horizon: 7 },
     { stratum: { provider: 'fake', model: 'fake-model', revision: 'r2', quantization: { kind: 'not_applicable' }, runtime: 'rt', adapter: 'ad', resourceProfile: 'rp', windowTokens: 32768, tokenCountConvention: 'conv' } },
-    { endpoint: { url: 'http://127.0.0.1:4999' } }, { arms: [{ kind: 'ledger_relay', id: 'ledger-relay', harnessRevision: 'b'.repeat(40) }] }]) {
+    { endpoint: { url: 'http://127.0.0.1:4999' } }]) {
     await assert.rejects(runSmoke(config(patch), r.deps()), { message: 'smoke_config_observation_mismatch' }, JSON.stringify(Object.keys(patch)))
   }
   assert.equal(r.fake.started.length, 1)
   // timing and the task or seed selection are not part of what a trial measures
   assert.equal((await runSmoke(config({ timing: { pollMs: 7 }, tasks: ['ll-money-text', 'll-rules-fx'] }), r.deps())).exitCode, 0)
   assert.equal(r.fake.started.length, 2)
+  // another revision of the home is not the same trial: it has its own start key, so it starts its own run instead of colliding with (or re-attaching to) the old one
+  const before = r.store.all.size
+  await runSmoke(config({ arms: [{ kind: 'ledger_relay', id: 'ledger-relay', harnessRevision: 'b'.repeat(40) }] }), r.deps())
+  assert.deepEqual([r.fake.started.length, r.store.all.size], [3, before + 1])
+  assert.notEqual(r.fake.started[2]!.input.key, r.fake.started[0]!.input.key)
 })
 
 test('a transient read failure is not final: the next run reads the events and the database again, without starting anything', async () => {
@@ -378,4 +383,89 @@ test('the summary notes of a naive trial carry the degraded reasons and the limi
   assert.ok(notes.includes('compaction_summary_degraded:3') && notes.includes('compaction_summary_truncated:3'), notes.join('|'))
   assert.ok(notes.includes('compaction_summary_degraded_reasons:model_failed=2,narrative_output_limited=1'), notes.join('|'))
   assert.ok(notes.includes('compaction_summary_limit_bytes:min=4000,max=4000') && notes.includes('compaction_output_limit_tokens:min=1000,max=1000'), notes.join('|'))
+})
+
+test('a home database that holds nothing for the run cannot turn a mixed run into a naive one: unconfirmed, unstored', async () => {
+  const stale = (fake: FakeRelay): RelaySource => ({ ...fakeBind(fake), ledger: async () => ({ seals: [], final: null, costs: [] }) })
+  // a ledger attempt sealed cycle 1 (it has not probed yet), then the node was restarted in naive mode: attempt 1 has no marker
+  const scenario = (): FakeScenario => ({ status: 'completed', cycles: cyclesOf(4, c => ({ attempt: c <= 1 ? 1 : 2, mode: c <= 1 ? 'ledger' : 'naive' })) })
+  const r = rig({ scenario }, stale)
+  r.fake.homeMode = 'naive'
+  const result = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['naive-compaction'] }))
+  assert.deepEqual([result.exitCode, result.summary.halted, r.store.all.size], [1, 'arm_mode_unconfirmed', 0])
+  // the same run with the right database is what it is: mixed
+  const right = rig({ scenario })
+  right.fake.homeMode = 'naive'
+  assert.equal((await runSmoke(config({ arms: SHARED }), right.deps({ only: ['naive-compaction'] }))).summary.halted, 'arm_mode_mixed')
+})
+
+test('the start key follows the harness revision and the arm own salt, so a new --out at another revision starts its own runs', async () => {
+  const base = trialKey('exp', 't', 'a', 0, '', 'a'.repeat(40))
+  assert.notEqual(trialKey('exp', 't', 'a', 0, '', 'b'.repeat(40)), base)
+  assert.equal(trialKey('exp', 't', 'a', 0, '', 'a'.repeat(40)), base)
+  const keys = async (revision: string, naiveSalt?: string) => {
+    const r = rig()
+    r.fake.homeMode = 'ledger'
+    const cfg = config({ harnessRevision: revision, arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true, ...(naiveSalt ? { keySalt: naiveSalt } : {}) }] })
+    await runSmoke(cfg, r.deps({ only: ['ledger-relay'] }))
+    return r.fake.started.map(s => s.input.key)
+  }
+  const [a] = await keys('a'.repeat(40)), [b] = await keys('b'.repeat(40))
+  assert.notEqual(a, b, 'the same experiment, salt and task at another revision is another key')
+  // per-arm salt: changing the naive arm salt re-keys the naive arm only
+  const naiveKeys = async (naiveSalt: string) => {
+    const r = rig()
+    const cfg = config({ keySalt: 'z', arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true, keySalt: naiveSalt }] })
+    r.fake.homeMode = 'ledger'; await runSmoke(cfg, r.deps({ only: ['ledger-relay'] }))
+    r.fake.homeMode = 'naive'; await runSmoke(cfg, r.deps({ only: ['naive-compaction'] }))
+    return Object.fromEntries(r.fake.started.map(s => [s.arm, s.input.key]))
+  }
+  const one = await naiveKeys('n1'), two = await naiveKeys('n2')
+  assert.equal(one['ledger-relay'], two['ledger-relay'], 'the ledger arm trials are not orphaned by the naive arm salt')
+  assert.notEqual(one['naive-compaction'], two['naive-compaction'])
+  const cfg = (naiveSalt: string) => resolveArms(config({ keySalt: 'z', arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true, keySalt: naiveSalt }] }))
+  assert.deepEqual(cfg('n1').map(x => x.keySalt), ['z', 'n1'])
+  assert.deepEqual(resolveArms(config({ keySalt: 'z' })).map(x => x.keySalt), ['z', 'z'], 'without its own salt an arm uses the configured one')
+})
+
+test('a refreshed observation is held to the arm rule: facts re-read after a transient failure that show the other arm are refused, not stored over', async () => {
+  let broken = true
+  let marker = false
+  const r = rig({}, fake => ({
+    ...fakeBind(fake),
+    ledger: async (arm: string, runId: string) => { if (broken) throw new SmokeSourceError('home_database_unreadable'); return fake.ledger(arm, runId) },
+    events: async (arm: string, sessionId: string, after: number) => {
+      const page = await fake.events(arm, sessionId, after)
+      if (!marker || page.hasMore) return page
+      const extra = { seq: 99_999, type: 'agent.note', createdAt: new Date(T0 + 1e7).toISOString(), jobId: [...r.store.all.values()][0]!.runId, data: { text: JSON.stringify({ relay: 'compaction', mode: 'naive', attempt: 'att-x', epoch: 1 }) } }
+      return { ...page, events: [...page.events, extra] }
+    },
+  }))
+  r.fake.homeMode = 'ledger'
+  const first = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['ledger-relay'] }))
+  assert.equal(first.summary.trials.find(t => t.arm === 'ledger-relay')!.ledgerError, 'home_database_unreadable')
+  const stored = JSON.stringify([...r.store.all.values()])
+  broken = false; marker = true
+  const second = await runSmoke(config({ arms: SHARED }), r.deps({ only: ['ledger-relay'] }))
+  assert.ok(second.summary.halted !== null && second.summary.halted !== 'relay_state_unknown', String(second.summary.halted))
+  assert.equal(second.exitCode, 1)
+  assert.equal(JSON.stringify([...r.store.all.values()]), stored, 'the stored record is untouched')
+})
+
+test('a window that differs between trials, a damaged naive seal and a sealed cycle without its summary note are all reported per trial', async () => {
+  const scenario = (_input: unknown, arm: string): FakeScenario => ({
+    status: 'completed', windowTokens: arm === 'naive-compaction' ? 16_384 : 32_768,
+    cycles: cyclesOf(4, c => arm === 'naive-compaction' ? { ...(c === 3 ? { damagedSeal: true } : {}), ...(c === 2 ? { summaryMissing: true } : {}) } : {}),
+  })
+  const r = rig({ scenario })
+  const cfg = config({ arms: SHARED })
+  r.fake.homeMode = 'ledger'
+  await runSmoke(cfg, r.deps({ only: ['ledger-relay'] }))
+  r.fake.homeMode = 'naive'
+  const result = await runSmoke(cfg, r.deps({ only: ['naive-compaction'] }))
+  assert.equal(result.summary.halted, null)
+  const naive = result.summary.trials.find(t => t.arm === 'naive-compaction')!.notes
+  assert.ok(naive.includes('naive_handoff_damaged:1'), naive.join('|'))
+  assert.ok(naive.includes('compaction_summary_missing:2'), naive.join('|'))
+  assert.ok(naive.includes('window_tokens_differ_between_trials:16384/32768') && result.summary.trials.find(t => t.arm === 'ledger-relay')!.notes.includes('window_tokens_differ_between_trials:16384/32768'))
 })
