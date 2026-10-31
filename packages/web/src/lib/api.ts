@@ -220,6 +220,9 @@ const API_ERROR_KEYS = {
   review_conflict: 'error.api.conflict',
   layout_conflict: 'error.api.conflict',
   approval_signer_unavailable: 'error.api.unavailable',
+  unauthenticated: 'error.api.unauthenticated',
+  forbidden: 'error.api.forbidden',
+  route_unmapped: 'error.api.forbidden',
 } satisfies Record<ApiError['code'], LocaleKey>
 
 /* ─────────────────────────────── Транспорт ────────────────────────────── */
