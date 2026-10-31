@@ -4,11 +4,12 @@
 // Nothing here holds a credential. Signing and notarization are opt-in through environment variables and
 // fail loudly when asked for without the material they need; a plain `npm run package:mac` produces an
 // UNSIGNED local DMG. Linux (U6) adds its section next to `mac`; Windows is not built (D-221).
-import { PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
+import { PRODUCT_ENV_PREFIX, PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
 
 /** A reverse-DNS bundle id the owner has not chosen yet. A signed build refuses it (see below). */
 export const PLACEHOLDER_APP_ID = 'invalid.placeholder.guanxi.desktop'
 
+const V = (suffix) => `${PRODUCT_ENV_PREFIX}_DESKTOP_${suffix}`
 const truthy = (value) => value === '1' || value === 'true'
 const present = (value) => typeof value === 'string' && value.length > 0
 
@@ -21,21 +22,21 @@ export function notarizationCredentials(env) {
 }
 
 export function createConfig(env = process.env) {
-  const sign = truthy(env.GUANXI_DESKTOP_SIGN)
-  const notarize = truthy(env.GUANXI_DESKTOP_NOTARIZE)
-  const appId = present(env.GUANXI_DESKTOP_APP_ID) ? env.GUANXI_DESKTOP_APP_ID : PLACEHOLDER_APP_ID
+  const sign = truthy(env[V('SIGN')])
+  const notarize = truthy(env[V('NOTARIZE')])
+  const appId = present(env[V('APP_ID')]) ? env[V('APP_ID')] : PLACEHOLDER_APP_ID
 
-  if (notarize && !sign) throw new Error('GUANXI_DESKTOP_NOTARIZE=1 needs GUANXI_DESKTOP_SIGN=1: only a signed build can be notarized')
+  if (notarize && !sign) throw new Error(`${V('NOTARIZE')}=1 needs ${V('SIGN')}=1: only a signed build can be notarized`)
   if (sign) {
     if (!present(env.CSC_LINK) && !present(env.CSC_NAME)) {
-      throw new Error('GUANXI_DESKTOP_SIGN=1 needs a Developer ID Application certificate: set CSC_LINK (+ CSC_KEY_PASSWORD) or CSC_NAME')
+      throw new Error(`${V('SIGN')}=1 needs a Developer ID Application certificate: set CSC_LINK (+ CSC_KEY_PASSWORD) or CSC_NAME`)
     }
     if (appId === PLACEHOLDER_APP_ID) {
-      throw new Error('A signed build needs the real bundle id: set GUANXI_DESKTOP_APP_ID (it cannot change after the first release without losing Keychain and privacy grants)')
+      throw new Error(`A signed build needs the real bundle id: set ${V('APP_ID')} (it cannot change after the first release without losing Keychain and privacy grants)`)
     }
   }
   if (notarize && notarizationCredentials(env) === null) {
-    throw new Error('GUANXI_DESKTOP_NOTARIZE=1 needs APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER, or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID, or APPLE_KEYCHAIN + APPLE_KEYCHAIN_PROFILE')
+    throw new Error(`${V('NOTARIZE')}=1 needs APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER, or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID, or APPLE_KEYCHAIN + APPLE_KEYCHAIN_PROFILE`)
   }
 
   return {
@@ -47,16 +48,18 @@ export function createConfig(env = process.env) {
     // bundled by esbuild (devDependency), so no node_modules ship in the asar.
     files: ['dist/**/*', '!dist/**/*.map', 'package.json'],
     asar: true,
-    // The service (CLI bundle + web UI + production node_modules) is staged by scripts/stage-service.mjs.
+    // The service (Node.js + CLI bundle + web UI + production node_modules) is staged by scripts/stage-service.mjs.
     // electron-builder never copies the ROOT node_modules of a file set, so the set is rooted one level up
     // (`.stage`) and the node_modules of the service are a sub-directory of it.
     extraResources: [{ from: '.stage', to: '.', filter: ['service/**/*'] }],
     npmRebuild: false,
     // Auto-update is a design note in this slice (src/updater.ts): no publish target, no update feed.
     publish: null,
-    // RunAsNode stays on: the service runs under the app binary (Decision 2). Everything else is closed.
+    // Every fuse is closed. RunAsNode is off because the service runs on its own pinned Node.js
+    // (Resources/service/node), never on the app binary: with it on, anything that can exec the app could run
+    // JavaScript under the app's signed identity (and with its Keychain access).
     electronFuses: {
-      runAsNode: true,
+      runAsNode: false,
       enableCookieEncryption: true,
       enableNodeOptionsEnvironmentVariable: false,
       enableNodeCliInspectArguments: false,

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { alive, closeAllShells, freePort, killQuietly, launchShell, makeSandbox, readServiceManifest, waitFor } from './harness.ts'
+import { alive, closeAllShells, freePort, processGroup, killQuietly, launchShell, makeSandbox, readServiceManifest, waitFor } from './harness.ts'
 import type { Sandbox } from './harness.ts'
 
 interface RunState {
@@ -53,11 +53,20 @@ describe('service lifetime (exit gate: closing the window during a run does not 
     assert.equal(manifest.port, port)
     assert.ok(alive(servicePid))
 
+    // Detachment, not just survival: the service leads a process group of its own, so a signal sent to the shell's
+    // group (a terminal Ctrl-C, a launcher killing the app tree) cannot reach it.
+    const shellPid = await app.evaluate(() => process.pid)
+    assert.notEqual(processGroup(servicePid), processGroup(shellPid), 'the service shares the shell’s process group')
+    assert.equal(processGroup(servicePid), String(servicePid), 'the service leads its own process group')
+
     // The child got the node's own settings, loopback host and no Electron or Node-option inheritance.
-    const startup = JSON.parse(readFileSync(join(sandbox.dataDir, 'fake-service-args.json'), 'utf8')) as { args: string[]; electronRunAsNode: string | null; nodeOptions: string | null }
+    const startup = JSON.parse(readFileSync(join(sandbox.dataDir, 'fake-service-args.json'), 'utf8')) as { args: string[]; electronVersion: string | null; leakedKeys: string[]; toolLeakedKeys: string[] }
     assert.deepEqual(startup.args, ['--port', String(port), '--host', '127.0.0.1', '--data-dir', sandbox.dataDir, '--no-open'])
-    assert.equal(startup.electronRunAsNode, '1')
-    assert.equal(startup.nodeOptions, null)
+    // The service runs on a real Node, not on the Electron binary, and neither it nor a tool it starts (the node's
+    // bash tool passes `...process.env`) sees any Electron, NODE_OPTIONS, HOST or shell-setting variable.
+    assert.equal(startup.electronVersion, null, 'the service is not running on Electron')
+    assert.deepEqual(startup.leakedKeys, [])
+    assert.deepEqual(startup.toolLeakedKeys, [])
 
     // Start the "run" and watch it advance.
     const started = await fetch(`${origin}/api/test/run`, { method: 'POST' })
@@ -109,12 +118,14 @@ describe('service lifetime (exit gate: closing the window during a run does not 
     // Direct check of the policy: quitting twice above never signalled the process; an explicit stop does.
     const { stopService } = await import('../../src/service/stop.ts')
     const { servicePaths, isProcessAlive } = await import('../../src/service/launcher.ts')
+    const { commandOf } = await import('../../src/service/owner.ts')
     const { probeService } = await import('../../src/service/probe.ts')
     const result = await stopService({
       paths: servicePaths(sandbox.dataDir),
       probe: (p) => probeService(`http://127.0.0.1:${p}`, { timeoutMs: 2000 }),
       kill: (pid, signal) => process.kill(pid, signal),
       alive: isProcessAlive,
+      commandOf,
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       now: () => Date.now(),
       timeoutMs: 5000,

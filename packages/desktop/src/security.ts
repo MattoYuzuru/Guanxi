@@ -34,7 +34,8 @@ export function isExternallyOpenable(url: string): boolean {
   return parsed !== null && (parsed.protocol === 'https:' || parsed.protocol === 'http:' || parsed.protocol === 'mailto:')
 }
 
-export type NavigationKind = 'navigate' | 'redirect'
+/** `subframe`: a frame inside the window; like `redirect` it is never handed to the system browser. */
+export type NavigationKind = 'navigate' | 'redirect' | 'subframe'
 export type NavigationDecision =
   | { action: 'allow' }
   | { action: 'deny' }
@@ -75,7 +76,48 @@ export function allowRequest(url: string, origin: string): boolean {
   return parsed.protocol === 'data:' || parsed.protocol === 'blob:' || parsed.protocol === 'devtools:'
 }
 
-/** Permissions the renderer may hold. None today: voice (V1) grants the microphone deliberately. */
-export function allowPermission(_permission: string): boolean {
-  return false
+export interface PermissionRequest {
+  permission: string
+  /** The URL (or origin) of the frame that asks. */
+  requestingUrl: string
+  isMainFrame: boolean
+}
+
+/**
+ * Permissions the renderer may hold, decided per request. Allowed, for the top frame of the service origin only:
+ * - `clipboard-sanitized-write`: every copy button in the UI (`navigator.clipboard.writeText`) needs it;
+ *   it only ever writes plain text on a user gesture. `clipboard-read` stays denied.
+ * - `fullscreen`: the UI may present a pane full screen; it exposes nothing.
+ * Denied on purpose: `notifications` (the notification center, NC1, owns OS delivery through the shell, not
+ * through the Web Notification API), `media` (voice, V1, will grant the microphone deliberately), geolocation,
+ * midi, hid, usb, serial and everything else.
+ */
+export function allowPermission(request: PermissionRequest, origin: string): boolean {
+  if (request.permission !== 'clipboard-sanitized-write' && request.permission !== 'fullscreen') return false
+  return request.isMainFrame && isSameOrigin(request.requestingUrl, origin)
+}
+
+/**
+ * The CSP added to every response of the service origin. It is defense in depth beside the request filter:
+ * the node's pages may load from and connect to the node only. Inline script and style stay allowed because
+ * the built `index.html` carries an inline theme bootstrap and the UI sets inline styles; tightening that
+ * needs a nonce or hash from the web build (residual, see the hand-off).
+ */
+export function contentSecurityPolicy(origin: string): string {
+  const socket = origin.replace(/^http/, 'ws')
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src 'self' ${socket}`,
+    "media-src 'self' blob: data:",
+    "worker-src 'self' blob:",
+    "frame-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+  ].join('; ')
 }

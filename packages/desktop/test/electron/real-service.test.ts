@@ -45,6 +45,19 @@ describe('the real node service under the shell', () => {
     assert.equal(health.application.source, 'application_http')
   })
 
+  it('the real UI loads under the shell’s CSP and request filter: no refused resource, no CSP violation, the app mounts', async () => {
+    const refused: string[] = []
+    page.on('console', (message) => {
+      if (/Content Security Policy|Refused to|violates the following/i.test(message.text())) refused.push(message.text())
+    })
+    page.on('requestfailed', (request) => refused.push(`request failed: ${request.url()}`))
+    await page.reload()
+    await page.waitForSelector('#root > *', { timeout: 60_000 })
+    // Give lazy chunks, fonts and workers a moment to be requested before judging.
+    await new Promise((resolve) => setTimeout(resolve, 3_000))
+    assert.deepEqual(refused, [])
+  })
+
   it('the service survives closing the window and quitting the app', async () => {
     assert.ok(alive(pid))
     await app.evaluate(({ BrowserWindow }) => {

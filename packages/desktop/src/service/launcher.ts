@@ -13,6 +13,11 @@ export interface SpawnedService {
   /** Resolves when the child exits while the shell is still alive; never rejects. */
   exited: Promise<ExitInfo>
   kill(signal?: NodeJS.Signals): void
+  /**
+   * SIGTERM to the service's process group, then SIGKILL after a grace period. Resolves true once the child has
+   * exited, false if it is still alive after both (the caller must not claim it is stopped).
+   */
+  terminate(graceMs?: number, killMs?: number): Promise<boolean>
 }
 
 /** Thrown when the executable cannot start at all (missing binary, no permission). */
@@ -123,6 +128,19 @@ export function spawnDetachedService(command: ServiceCommand, paths: ServicePath
         child.once('exit', (code, signal) => done({ code, signal }))
       })
       child.unref()
+      const signalGroup = (signal: NodeJS.Signals) => {
+        // The child leads its own group (detached), so -pid reaches whatever it spawned too.
+        for (const target of [-pid, pid]) {
+          try {
+            process.kill(target, signal)
+            return
+          } catch {
+            // try the next target; an already-gone child is fine
+          }
+        }
+      }
+      const exitedWithin = (ms: number) =>
+        Promise.race([exited.then(() => true), new Promise<boolean>((done) => setTimeout(() => done(false), ms))])
       resolve({
         pid,
         exited,
@@ -132,6 +150,12 @@ export function spawnDetachedService(command: ServiceCommand, paths: ServicePath
           } catch {
             // already gone
           }
+        },
+        terminate: async (graceMs = 3_000, killMs = 2_000) => {
+          signalGroup('SIGTERM')
+          if (await exitedWithin(graceMs)) return true
+          signalGroup('SIGKILL')
+          return exitedWithin(killMs)
         },
       })
     })

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -66,6 +67,10 @@ export function shellEnvironment(options: LaunchOptions): Record<string, string>
   env['GUANXI_API_PORT'] = String(options.port)
   env['GUANXI_DATA_DIR'] = options.sandbox.dataDir
   env['GUANXI_DESKTOP_TEST_HIDDEN'] = '1'
+  // The service runs on a real Node (the one running these tests), as the packaged app runs its staged one.
+  env['GUANXI_DESKTOP_NODE'] = process.execPath
+  // A hostile or stray Electron variable in the shell's environment must not reach the service or its tools.
+  env['ELECTRON_FAKE_LEAK'] = '1'
   if (options.lang) env['GUANXI_DESKTOP_LOCALE'] = options.lang
   env['GUANXI_DESKTOP_HEALTH_TIMEOUT_MS'] = '20000'
   env['GUANXI_DESKTOP_PROBE_TIMEOUT_MS'] = '2000'
@@ -100,6 +105,10 @@ export async function launchShell(options: LaunchOptions): Promise<Launched> {
 export interface ServiceFacts {
   pid: number
   port: number
+}
+
+export function processGroup(pid: number): string {
+  return execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim()
 }
 
 export function readServiceManifest(sandbox: Sandbox): ServiceFacts | null {

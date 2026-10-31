@@ -51,11 +51,15 @@ const states: ShellState[] = [
   { kind: 'failure', failure: { code: 'service_missing', entry: '/x/bin.js' } },
   { kind: 'failure', failure: { code: 'service_missing', entry: '/x/bin.js', detail: 'spawn ENOENT' } },
   { kind: 'failure', failure: { code: 'port_busy', port: 4441 } },
-  { kind: 'failure', failure: { code: 'health_timeout', port: 4441, timeoutMs: 30_000, startedByShell: true } },
-  { kind: 'failure', failure: { code: 'health_timeout', port: 4441, timeoutMs: 5_000, startedByShell: false } },
+  { kind: 'failure', failure: { code: 'health_timeout', port: 4441, timeoutMs: 30_000, startedByShell: true, stopped: true } },
+  { kind: 'failure', failure: { code: 'health_timeout', port: 4441, timeoutMs: 5_000, startedByShell: false, stopped: true } },
   { kind: 'failure', failure: { code: 'service_exited', exitCode: 3, signal: null, logPath: '/d/service.log' } },
   { kind: 'failure', failure: { code: 'service_exited', exitCode: null, signal: 'SIGKILL', logPath: '/d/service.log' } },
   { kind: 'failure', failure: { code: 'ui_missing', port: 4441 } },
+  { kind: 'load_failed' },
+  { kind: 'failure', failure: { code: 'port_owned_by_other_user', port: 4441 } },
+  { kind: 'failure', failure: { code: 'port_unverified', port: 4441 } },
+  { kind: 'failure', failure: { code: 'health_timeout', port: 4441, timeoutMs: 30_000, startedByShell: true, stopped: false, pid: 4242 } },
 ]
 
 describe('status screens', () => {
@@ -82,6 +86,11 @@ describe('status screens', () => {
     assert.match(text(states[7]!), /30 seconds/)
     assert.match(text(states[9]!), /exit code 3.*\/d\/service\.log/s)
     assert.match(text(states[10]!), /SIGKILL/)
+    assert.match(text(states[13]!), /another user/)
+    assert.match(text(states[14]!), /lsof/)
+    assert.match(text(states[15]!), /could not be stopped \(process 4242\)/)
+    // The advice for a Dock-launched app: close the other program, reopen; the variable is for a terminal start.
+    assert.match(text(states[6]!), /Close that program and open Guanxi again.*from a terminal with GUANXI_API_PORT/s)
   })
 
   it('errors are announced (role=alert); progress is polite status', () => {

@@ -1,4 +1,5 @@
 import type { HandshakeFailure } from './service/handshake.ts'
+import { API_PORT_ENV } from './config.ts'
 import { translate } from './messages.ts'
 import type { MessageKey, ShellLocale } from './messages.ts'
 
@@ -6,6 +7,7 @@ export type ShellState =
   | { kind: 'checking' }
   | { kind: 'starting' }
   | { kind: 'stopped' }
+  | { kind: 'load_failed' }
   | { kind: 'failure'; failure: HandshakeFailure }
   | { kind: 'config_invalid'; variable: string; value: string }
 
@@ -28,7 +30,7 @@ export interface StatusDescription {
 export function describeState(state: ShellState, context: StatusContext): StatusDescription {
   const { locale, product, port } = context
   const t = (key: MessageKey, values: Record<string, string | number> = {}) =>
-    translate(locale, key, { product, port, ...values })
+    translate(locale, key, { product, port, portVariable: API_PORT_ENV, ...values })
   const footer = t('status.footer')
 
   if (state.kind === 'checking') {
@@ -39,6 +41,9 @@ export function describeState(state: ShellState, context: StatusContext): Status
   }
   if (state.kind === 'stopped') {
     return { id: 'stopped', severity: 'progress', title: t('status.stopped.title'), body: t('status.stopped.body'), detail: null, footer: null }
+  }
+  if (state.kind === 'load_failed') {
+    return { id: 'load_failed', severity: 'error', title: t('status.load_failed.title'), body: t('status.load_failed.body'), detail: null, footer }
   }
   if (state.kind === 'config_invalid') {
     return {
@@ -57,12 +62,16 @@ export function describeState(state: ShellState, context: StatusContext): Status
       }
     case 'port_busy':
       return { id: failure.code, severity: 'error', title: t('status.port_busy.title'), body: t('status.port_busy.body'), detail: null, footer }
+    case 'port_owned_by_other_user':
+      return { id: failure.code, severity: 'error', title: t('status.port_owned_by_other_user.title'), body: t('status.port_owned_by_other_user.body'), detail: null, footer }
+    case 'port_unverified':
+      return { id: failure.code, severity: 'error', title: t('status.port_unverified.title'), body: t('status.port_unverified.body'), detail: null, footer }
     case 'health_timeout': {
-      const variant = failure.startedByShell ? 'started' : 'attached'
+      const variant = !failure.startedByShell ? 'attached' : failure.stopped ? 'started' : 'unstopped'
       const seconds = Math.max(1, Math.round(failure.timeoutMs / 1000))
       return {
         id: failure.code, severity: 'error', title: t(`status.health_timeout.${variant}.title`),
-        body: t(`status.health_timeout.${variant}.body`, { seconds }), detail: null, footer,
+        body: t(`status.health_timeout.${variant}.body`, { seconds, pid: failure.pid ?? '' }), detail: null, footer,
       }
     }
     case 'service_exited':

@@ -125,7 +125,7 @@ describe('handshake failure states are visible and localized', () => {
     assert.equal(screen.state, 'port_busy')
     assert.equal(screen.lang, 'ru')
     assert.match(screen.title, new RegExp(`Порт ${port} занят`))
-    assert.match(screen.text, /не Guanxi/)
+    assert.match(screen.text, /вместо службы Guanxi отвечает другая программа/)
     assert.doesNotMatch(screen.text, /is in use/)
   })
 

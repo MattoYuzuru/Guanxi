@@ -1,8 +1,12 @@
 import { join, resolve } from 'node:path'
+import { envName } from './env.ts'
 
 /** The node's own variables (packages/server/src/config/listen-env.ts); the shell never invents another port knob. */
-export const API_PORT_ENV = 'GUANXI_API_PORT'
-export const DATA_DIR_ENV = 'GUANXI_DATA_DIR'
+export const API_PORT_ENV = envName('API_PORT')
+export const DATA_DIR_ENV = envName('DATA_DIR')
+export const HEALTH_TIMEOUT_ENV = envName('DESKTOP_HEALTH_TIMEOUT_MS')
+export const PROBE_TIMEOUT_ENV = envName('DESKTOP_PROBE_TIMEOUT_MS')
+export const POLL_INTERVAL_ENV = envName('DESKTOP_POLL_INTERVAL_MS')
 export const DEFAULT_API_PORT = 4310
 /** Loopback only (AGENTS.md): the shell has no setting that points the window at another host. */
 export const SERVICE_HOST = '127.0.0.1'
@@ -58,8 +62,8 @@ export function resolveConfig(
     port,
     origin: `http://${SERVICE_HOST}:${port}`,
     dataDir,
-    healthTimeoutMs: parsePositiveMs('GUANXI_DESKTOP_HEALTH_TIMEOUT_MS', env['GUANXI_DESKTOP_HEALTH_TIMEOUT_MS'], 30_000),
-    probeTimeoutMs: parsePositiveMs('GUANXI_DESKTOP_PROBE_TIMEOUT_MS', env['GUANXI_DESKTOP_PROBE_TIMEOUT_MS'], 5_000),
-    pollIntervalMs: parsePositiveMs('GUANXI_DESKTOP_POLL_INTERVAL_MS', env['GUANXI_DESKTOP_POLL_INTERVAL_MS'], 250),
+    healthTimeoutMs: parsePositiveMs(HEALTH_TIMEOUT_ENV, env[HEALTH_TIMEOUT_ENV], 30_000),
+    probeTimeoutMs: parsePositiveMs(PROBE_TIMEOUT_ENV, env[PROBE_TIMEOUT_ENV], 5_000),
+    pollIntervalMs: parsePositiveMs(POLL_INTERVAL_ENV, env[POLL_INTERVAL_ENV], 250),
   }
 }

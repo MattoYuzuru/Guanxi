@@ -12,7 +12,7 @@ const ALLOWED = new Set([
 // Packages whose metadata is missing or non-SPDX but whose license was checked by hand.
 const REVIEWED = new Map([
   // WTFPL (permissive, no conditions). Build-time only: electron-builder -> builder-util -> sanitize-filename.
-  // It is never bundled into the shipped app (U2-macos, docs/plans/lanes/U2-macos.handoff.md; owner may veto).
+  // It is never bundled into the shipped app. Owner decision pending: docs/plans/OPEN_QUESTIONS.md Q-247; ADR-0016 is not amended here.
   ['truncate-utf8-bytes@1.0.2', 'WTFPL, dev tooling only'],
 ])
 const DENIED_PACKAGES = new Set(['dockview-enterprise'])

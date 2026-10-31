@@ -75,13 +75,17 @@ describe('navigation and external-link lock', () => {
     assert.deepEqual(await opened(), [])
   })
 
-  it('a script navigating the window to another origin is stopped', async () => {
+  // Corrected behaviour (review L1): an external open needs a recent real user gesture, so a script that navigates
+  // or opens on its own is stopped and opens nothing. This test used to expect the scripted URL to reach the
+  // system browser; it now asserts that it does not, and the click-driven cases below still do.
+  it('a script navigating the window to another origin is stopped and opens nothing without a user gesture', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2_200)) // let any earlier click's activation lapse
     await page.evaluate(() => {
       window.location.href = 'https://example.com/scripted'
     })
-    await waitFor('the external open', async () => (await opened()).length > 0 || null)
+    await new Promise((resolve) => setTimeout(resolve, 600))
     assert.equal(page.url(), `${origin}/`)
-    assert.deepEqual(await opened(), ['https://example.com/scripted'])
+    assert.deepEqual(await opened(), [])
   })
 
   it('a server redirect to another origin is stopped and never reaches it', async () => {
@@ -104,10 +108,14 @@ describe('navigation and external-link lock', () => {
     assert.equal(await page.evaluate(() => (window as { __pwned?: number }).__pwned), undefined)
   })
 
-  it('window.open to another origin goes to the system browser, not a window', async () => {
+  it('window.open to another origin: a click opens the system browser (no window); the same call from a script does not', async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2_200))
     await page.evaluate(() => void window.open('https://example.com/popup'))
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    assert.deepEqual(await opened(), [], 'no gesture, no open')
+    await page.click('#open-ext')
     await waitFor('the external open', async () => (await opened()).length > 0 || null)
-    assert.deepEqual(await opened(), ['https://example.com/popup'])
+    assert.deepEqual(await opened(), ['https://example.com/from-click'])
     assert.equal(await windowCount(), 1)
   })
 
@@ -155,7 +163,9 @@ describe('navigation and external-link lock', () => {
     assert.equal(outcome['fetch'], 'blocked')
     assert.equal(outcome['image'], 'blocked')
     assert.equal(outcome['socket'], 'blocked')
-    assert.notEqual(outcome['frame'], 'loaded')
+    // A frame the CSP (frame-src 'self') blocks still fires `load` on its element, with an error document. What
+    // matters is that no frame holds the remote origin and that the remote was never contacted (checked below).
+    assert.ok(page.frames().every((frame) => !frame.url().startsWith(remoteOrigin)), `a frame shows the remote origin: ${page.frames().map((frame) => frame.url()).join(', ')}`)
     assert.deepEqual(remote.hits, [], `remote was contacted: ${remote.hits.join(', ')}`)
   })
 

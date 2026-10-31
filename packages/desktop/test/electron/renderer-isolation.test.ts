@@ -51,6 +51,17 @@ describe('renderer isolation (exit gate: the renderer has no Node access)', () =
     })
   })
 
+  // Review L6: with contextIsolation on, the page's main world has no Node even if nodeIntegration were on; the
+  // preload's isolated world is where that setting would show. Probe that world (Electron's preload world id is 999).
+  it('has no Node globals in the preload’s isolated world either (nodeIntegration and sandbox are really off)', async () => {
+    const probe = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.webContents.executeJavaScriptInIsolatedWorld(999, [
+        { code: 'JSON.stringify({ require: typeof require, module: typeof module, Buffer: typeof Buffer, global: typeof global, __dirname: typeof __dirname })' },
+      ]),
+    )
+    assert.deepEqual(JSON.parse(String(probe)), { require: 'undefined', module: 'undefined', Buffer: 'undefined', global: 'undefined', __dirname: 'undefined' })
+  })
+
   it('cannot import a Node built-in', async () => {
     const outcome = await page.evaluate(async () => {
       try {

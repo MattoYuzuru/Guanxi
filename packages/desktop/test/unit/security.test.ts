@@ -4,6 +4,7 @@ import {
   SECURE_WEB_PREFERENCES,
   allowPermission,
   allowRequest,
+  contentSecurityPolicy,
   decideNavigation,
   decideWindowOpen,
   isExternallyOpenable,
@@ -56,6 +57,11 @@ describe('decideNavigation', () => {
     }
   })
 
+  it('a subframe navigation is never handed to the system browser', () => {
+    assert.deepEqual(decideNavigation('https://example.com/x', origin, 'subframe'), { action: 'deny' })
+    assert.deepEqual(decideNavigation(`${origin}/x`, origin, 'subframe'), { action: 'allow' })
+  })
+
   it('a look-alike origin is not the service: another port or host is "remote", never allowed in the window', () => {
     for (const url of ['http://127.0.0.1:4442/', 'http://localhost:4441/', 'http://127.0.0.1:4441@evil.test/']) {
       assert.notDeepEqual(decideNavigation(url, origin), { action: 'allow' }, url)
@@ -86,7 +92,48 @@ describe('allowRequest (no remote content)', () => {
 })
 
 describe('allowPermission', () => {
-  it('grants nothing', () => {
-    for (const permission of ['media', 'geolocation', 'notifications', 'clipboard-read', 'openExternal', 'midi', 'hid']) assert.equal(allowPermission(permission), false)
+  const ask = (permission: string, requestingUrl = `${origin}/`, isMainFrame = true) => allowPermission({ permission, requestingUrl, isMainFrame }, origin)
+
+  it('grants the clipboard write (every copy button) and fullscreen to the top frame of the service origin', () => {
+    assert.equal(ask('clipboard-sanitized-write'), true)
+    assert.equal(ask('fullscreen'), true)
+    assert.equal(ask('clipboard-sanitized-write', `${origin}/projects/1`), true)
+  })
+
+  it('does not grant them to a subframe, another origin or the shell’s own status page', () => {
+    for (const permission of ['clipboard-sanitized-write', 'fullscreen']) {
+      assert.equal(ask(permission, `${origin}/`, false), false)
+      assert.equal(ask(permission, 'https://example.com/'), false)
+      assert.equal(ask(permission, 'http://127.0.0.1:4442/'), false)
+      assert.equal(ask(permission, 'data:text/html,x'), false)
+      assert.equal(ask(permission, ''), false)
+    }
+  })
+
+  it('denies everything else, for the service origin too: reading the clipboard, notifications (NC1 owns delivery), media, geolocation, devices', () => {
+    for (const permission of ['clipboard-read', 'notifications', 'media', 'geolocation', 'openExternal', 'midi', 'midiSysex', 'hid', 'usb', 'serial', 'idle-detection', 'display-capture', 'persistent-storage']) {
+      assert.equal(ask(permission), false, permission)
+    }
+  })
+})
+
+describe('contentSecurityPolicy', () => {
+  const policy = contentSecurityPolicy(origin)
+  const directive = (name: string) => policy.split('; ').find((part) => part.startsWith(`${name} `))
+
+  it('lets the node’s pages load and connect to the node only', () => {
+    assert.equal(directive('default-src'), "default-src 'self'")
+    assert.equal(directive('connect-src'), "connect-src 'self' ws://127.0.0.1:4441")
+    assert.equal(directive('object-src'), "object-src 'none'")
+    assert.equal(directive('base-uri'), "base-uri 'self'")
+    assert.equal(directive('form-action'), "form-action 'self'")
+    assert.doesNotMatch(policy, /https?:\/\/|\*/, 'no remote source and no wildcard')
+  })
+
+  it('keeps what the UI needs: workers and previews from blob:, inline theme bootstrap, data: fonts and images', () => {
+    assert.match(directive('worker-src') ?? '', /blob:/)
+    assert.match(directive('script-src') ?? '', /'unsafe-inline'/)
+    assert.match(directive('img-src') ?? '', /data: blob:/)
+    assert.match(directive('font-src') ?? '', /data:/)
   })
 })

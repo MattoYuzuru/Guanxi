@@ -32,9 +32,9 @@ describe('electron-builder configuration', () => {
     assert.deepEqual(granted, ['com.apple.security.cs.allow-jit', 'com.apple.security.cs.allow-unsigned-executable-memory'])
   })
 
-  it('fuses: closed except RunAsNode, which the service needs (documented trade-off)', () => {
+  it('fuses: every one closed, RunAsNode included (the service runs on its own staged Node.js)', () => {
     const fuses = createConfig({}).electronFuses
-    assert.equal(fuses.runAsNode, true)
+    assert.equal(fuses.runAsNode, false)
     assert.equal(fuses.enableNodeOptionsEnvironmentVariable, false)
     assert.equal(fuses.enableNodeCliInspectArguments, false)
     assert.equal(fuses.onlyLoadAppFromAsar, true)
