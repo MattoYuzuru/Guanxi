@@ -164,7 +164,7 @@ export async function installSessionFeaturesApi(page: Page, fixture: SessionFeat
 
 export function completedProgress(sessionId: string, summary = 'Fixture response') {
   return {
-    sessionId, projectId: 'p', connectionId: FIXTURE_CONNECTION, model: 'fixture', mode: 'read-only', status: 'completed',
+    version: 2, sessionId, projectId: 'p', connectionId: FIXTURE_CONNECTION, model: 'fixture', mode: 'read-only', status: 'completed',
     plan: [{ text: 'Fixture item', status: 'verification_requested' }], queue: [], summary, error: null,
     source: 'session.log', confidence: 'high', observedAt: '2026-10-21T00:00:00.000Z',
   }

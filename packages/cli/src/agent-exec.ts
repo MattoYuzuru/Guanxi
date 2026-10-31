@@ -1,4 +1,7 @@
-import { agentExecResultSchema, agentProgressSchema, type AgentExecResult } from '@guanxi/contract'
+import { agentExecResultSchema, agentProgressV2Schema, type AgentExecResult } from '@guanxi/contract'
+
+/** Both polls ask for the negotiated progress body: a pending artifact queue item has no v1 form. */
+const PROGRESS = '?progressVersion=2'
 
 /** Stable single-record stdout protocol; diagnostics never echo inputs or provider errors. */
 export async function agentExec(args: string[], transport: typeof fetch = fetch, signal?: AbortSignal): Promise<AgentExecResult> {
@@ -31,7 +34,7 @@ export async function agentExec(args: string[], transport: typeof fetch = fetch,
       ...(values['--context-tokens'] ? { contextTokens: Number(values['--context-tokens']) } : {}) }) as { sessionId: string }
     if (typeof created.sessionId !== 'string') throw new Error('invalid_result')
     sessionId = created.sessionId
-    while (agentProgressSchema.parse(await request(`/${encodeURIComponent(sessionId)}`)).status === 'running') {
+    while (agentProgressV2Schema.parse(await request(`/${encodeURIComponent(sessionId)}${PROGRESS}`)).status === 'running') {
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => { signal?.removeEventListener('abort', aborted); resolve() }, 200)
         const aborted = () => { clearTimeout(timer); reject(new Error('cancelled')) }
@@ -47,9 +50,9 @@ export async function agentExec(args: string[], transport: typeof fetch = fetch,
         if (!stopped.ok) throw new Error('stop_failed')
         const deadline = AbortSignal.timeout(5000)
         for (;;) {
-          const response = await transport(new URL(`/api/agent/${encodeURIComponent(sessionId)}`, endpoint), { signal: deadline, redirect: 'error' })
+          const response = await transport(new URL(`/api/agent/${encodeURIComponent(sessionId)}${PROGRESS}`, endpoint), { signal: deadline, redirect: 'error' })
           if (!response.ok) throw new Error('status_failed')
-          if (agentProgressSchema.parse(await response.json()).status !== 'running') {
+          if (agentProgressV2Schema.parse(await response.json()).status !== 'running') {
             const final = await transport(new URL(`/api/agent/${encodeURIComponent(sessionId)}/result`, endpoint), { signal: deadline, redirect: 'error' })
             if (!final.ok) throw new Error('result_failed')
             return agentExecResultSchema.parse(await final.json())

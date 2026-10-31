@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { agentExec, agentExecExitCode } from '../src/agent-exec.ts'
 const sessionId = '11111111-1111-4111-8111-111111111111'
-const progress = { sessionId, projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only', status: 'completed',
+const progress = { version: 2, sessionId, projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only', status: 'completed',
   plan: [], queue: [], summary: 'fixture answer', error: null, observedAt: '2026-10-21T00:00:00.000Z', source: 'session.log', confidence: 'high' }
 
 test('exec --json emits the versioned stable success/failure schema snapshot', async () => {
@@ -52,4 +52,59 @@ test('abort after an uncertain creation response never claims confirmed cancella
   }, abort.signal)
   assert.equal(calls, 1)
   assert.deepEqual(result, { version: 1, sessionId: null, status: 'interrupted', text: '', error: 'cancellation_unconfirmed' })
+})
+
+const queued = [
+  { id: 'q1', kind: 'artifact', artifact: { artifactId: '22222222-2222-4222-8222-222222222222', checksum: `sha256:${'a'.repeat(64)}`, byteSize: 20000, mediaType: 'text/plain; charset=utf-8', excerpt: 'bounded excerpt', excerptBytes: 15 } },
+  { id: 'q2', kind: 'legacy-preview', excerpt: 'legacy excerpt', excerptBytes: 14, byteSize: 20000 },
+  { id: 'q3', kind: 'inline', text: 'small' },
+]
+const args = ['--json', '--project', 'p', '--connection', 'c', '--model', 'fixture', '--prompt', 'fixture prompt text']
+
+test('Q17: the normal poll requests progress2, parses every queue branch and echoes no input', async () => {
+  const polls: string[] = []
+  let running = 1
+  const result = await agentExec(args, async (url, init) => {
+    const target = new URL(String(url))
+    if (init?.method === 'POST') return Response.json({ sessionId })
+    if (target.pathname.endsWith('/result')) return Response.json({ version: 1, sessionId, status: 'completed', text: 'fixture answer', error: null })
+    polls.push(target.pathname + target.search)
+    return Response.json({ ...progress, status: running-- > 0 ? 'running' : 'completed', queue: queued })
+  })
+  assert.deepEqual(polls, [`/api/agent/${sessionId}?progressVersion=2`, `/api/agent/${sessionId}?progressVersion=2`])
+  assert.deepEqual(result, { version: 1, sessionId, status: 'completed', text: 'fixture answer', error: null })
+  assert.equal(JSON.stringify(result).includes('bounded excerpt'), false)
+  assert.equal(agentExecExitCode(result), 0)
+})
+
+test('Q17: the cancellation confirmation poll also requests progress2 and stays confirmed or explicitly unconfirmed', async () => {
+  const run = async (confirm: boolean) => {
+    const abort = new AbortController()
+    const polls: string[] = []
+    let stopped = false
+    const result = await agentExec(args, async (url, init) => {
+      const target = new URL(String(url))
+      if (init?.method === 'POST' && target.pathname.endsWith('/stop')) { stopped = true; return Response.json({ ok: true }) }
+      if (init?.method === 'POST') return Response.json({ sessionId })
+      if (target.pathname.endsWith('/result')) return Response.json({ version: 1, sessionId, status: 'cancelled', text: '', error: null })
+      polls.push(target.pathname + target.search)
+      if (!stopped) { queueMicrotask(() => abort.abort()); return Response.json({ ...progress, status: 'running', queue: queued }) }
+      return confirm ? Response.json({ ...progress, status: 'cancelled', queue: queued }) : Response.json({ ...progress, version: 1, status: 'cancelled', queue: [] })
+    }, abort.signal)
+    return { result, polls }
+  }
+  const confirmed = await run(true)
+  assert.equal(confirmed.polls.length >= 2, true)
+  assert.equal(confirmed.polls.every(path => path.endsWith('?progressVersion=2')), true)
+  assert.deepEqual(confirmed.result, { version: 1, sessionId, status: 'cancelled', text: '', error: null })
+  assert.equal(agentExecExitCode(confirmed.result), 130)
+  // A body that is not progress2 can never confirm a cancellation.
+  const unconfirmed = await run(false)
+  assert.deepEqual(unconfirmed.result, { version: 1, sessionId, status: 'interrupted', text: '', error: 'cancellation_unconfirmed' })
+})
+
+test('a pre-progress2 node answers the legacy body and the client fails closed', async () => {
+  const legacy = { ...progress, version: undefined, queue: [{ id: 'q', text: 'legacy text' }] }
+  const result = await agentExec(args, async (_url, init) => init?.method === 'POST' ? Response.json({ sessionId }) : Response.json(legacy))
+  assert.deepEqual(result, { version: 1, sessionId, status: 'failed', text: '', error: 'agent_exec_failed' })
 })

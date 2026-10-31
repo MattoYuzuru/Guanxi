@@ -1,16 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import './native-session.css'
-import type { AgentProgress } from '@guanxi/contract'
+import type { AgentProgressV2 as AgentProgress } from '@guanxi/contract'
 import { Badge, Button, Composer, Icon, IconButton, Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@guanxi/ui'
 import { replaceEqualDeep } from '../../lib/stable.ts'
 import { DEFAULT_ASYNC_RETRY, retryDelay } from '../../lib/useAsync.ts'
 import { Link, paths, navigate } from '../../lib/router.tsx'
-import { formatDateTime } from '../../lib/format.ts'
+import { formatBytes, formatDateTime } from '../../lib/format.ts'
 import { translate as t } from '../../lib/locale.ts'
 import { useLocale } from '../../lib/locale-context.tsx'
 import { NewSessionScreen } from '../new-session/NewSessionScreen.tsx'
 import { SideChatPanel } from '../side-chat/SideChatPanel.tsx'
-import { nativeApi } from './api.ts'
+import { AgentRequestError, nativeApi } from './api.ts'
 import { clearCurrentProject, publishCurrentProject } from '../../lib/current-project.ts'
 import { rememberProject } from '../new-session/recent.ts'
 import { NativeTimeline, useSessionHeading, useSessionTimeline } from './NativeTimeline.tsx'
@@ -51,11 +51,24 @@ export function NativeProgress({ progress, remove }: { progress: AgentProgress; 
     </section>
     {progress.queue.length > 0 && <section className="native-section" aria-labelledby={queueId}>
       <h2 id={queueId} className="native-section-title">{t('native.queue')}</h2>
-      <ul className="native-list">{progress.queue.map(item => <li key={item.id}><span>{item.text}</span>
+      <ul className="native-list">{progress.queue.map(item => <li key={item.id} data-queue-item-kind={item.kind}><QueueItemBody item={item} />
         <IconButton size="sm" label={t('native.remove')} icon={<Icon name="close" />} onClick={() => remove(item.id)} /></li>)}</ul>
     </section>}
     <p className="native-progress-source">{t('native.source', { time: formatDateTime(progress.observedAt) })}</p>
   </section>
+}
+/**
+ * One queue row: the complete text of an inline item, or a bounded preview that says so. A preview
+ * is never presented as the full input, and the full text of an artifact is never fetched here.
+ */
+function QueueItemBody({ item }: { item: AgentProgress['queue'][number] }) {
+  if (item.kind === 'inline') return <span>{item.text}</span>
+  const shown = item.kind === 'artifact' ? item.artifact.excerptBytes : item.excerptBytes
+  const total = item.kind === 'artifact' ? item.artifact.byteSize : item.byteSize
+  return <span className="native-queue-body">
+    <span>{item.kind === 'artifact' ? item.artifact.excerpt : item.excerpt}</span>
+    <span className="native-muted">{t(item.kind === 'artifact' ? 'native.queue.artifactDetail' : 'native.queue.legacyDetail', { shown: formatBytes(shown), total: formatBytes(total) })}</span>
+  </span>
 }
 export function NativeSessionActions({ progress, busy, remove, retain, leave }: {
   progress: AgentProgress; busy: boolean; remove(): void; retain(mode: 'keep' | 'ttl' | 'session'): void; leave(): void
@@ -103,7 +116,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
   useEffect(() => { heading.current?.focus() }, [])
   const [prompt, setPrompt] = useState('')
   const [progress, setProgress] = useState<AgentProgress | null>(null)
-  const [offline, setOffline] = useState(false), [actionError, setActionError] = useState(false)
+  const [offline, setOffline] = useState(false), [actionError, setActionError] = useState<boolean | 'queue'>(false)
   const [busy, setBusy] = useState(false), [revision, setRevision] = useState(0)
   const [sideOpen, setSideOpen] = useState(false)
   const panelId = useId(), toggle = useRef<HTMLButtonElement>(null), aside = useRef<HTMLElement>(null)
@@ -145,7 +158,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
   const closeSide = () => { setSideOpen(false); requestAnimationFrame(() => toggle.current?.focus()) }
   const mutate = async (action: () => Promise<unknown>) => {
     setBusy(true); setActionError(false)
-    try { await action(); setRevision(r => r + 1) } catch { setActionError(true) } finally { setBusy(false) }
+    try { await action(); setRevision(r => r + 1) } catch (error) { setActionError(error instanceof AgentRequestError && error.code === 'native_queue_producer_unavailable' ? 'queue' : true) } finally { setBusy(false) }
   }
   const send = () => { void mutate(async () => { await nativeApi.prompt(sessionId, prompt); setPrompt('') }) }
   const firstPrompt = messages?.find(message => message.role === 'user')?.text.split('\n')[0]
@@ -183,7 +196,7 @@ function NativeSessionPage({ sessionId }: { sessionId: string }) {
         </header>
         <div className="native-session-scroll">
           <div className="native-session-column">
-            {actionError && <p role="alert" className="native-session-note">{t('native.error')}</p>}
+            {actionError && <p role="alert" className="native-session-note">{t(actionError === 'queue' ? 'native.queue.unavailable' : 'native.error')}</p>}
             {progress && <NativeTimeline sessionId={sessionId} messages={messages} summary={progress.summary} observedAt={progress.observedAt} />}
             {progress && <NativeProgress progress={progress} remove={id => void mutate(() => nativeApi.remove(progress.sessionId, id))} />}
             {!progress && !offline && <p className="native-muted" role="status">{t('native.timeline.loading')}</p>}
