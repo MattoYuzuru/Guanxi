@@ -40,7 +40,9 @@ export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins:
   app.delete('/:id', async c => c.json(deleteNativeSessionResponseSchema.parse(await service().deleteSession(c.req.param('id')))))
   // Unversioned and `progressVersion=1` keep the legacy body (or a typed 406 when a pending item is artifact-backed).
   app.get('/:id', c => {
-    const { progressVersion } = agentProgressQuerySchema.parse(c.req.query())
+    // `queries()` keeps repeated keys as arrays, which the exact-string schema rejects.
+    const query = Object.fromEntries(Object.entries(c.req.queries()).map(([key, values]) => [key, values.length === 1 ? values[0] : values]))
+    const { progressVersion } = agentProgressQuerySchema.parse(query)
     return c.json(progressVersion === 2 ? service().progressV2(c.req.param('id')) : service().progress(c.req.param('id')))
   })
   app.get('/:id/result', c => c.json(service().result(c.req.param('id'))))

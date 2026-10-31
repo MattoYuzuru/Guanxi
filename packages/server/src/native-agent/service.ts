@@ -24,7 +24,7 @@ import type { Attempt } from '../runs/types.ts'
 import type { Db } from '../store/db.ts'
 import { NativeSessions } from './sessions.ts'
 import type { AppContext } from '../context.ts'
-import type { AppendOptions, AppendResult, SessionEventInput, SessionHandle, SessionLog } from '../session-log/log.ts'
+import { SessionLogError, type AppendOptions, type AppendResult, type SessionEventInput, type SessionHandle, type SessionLog } from '../session-log/log.ts'
 import { SessionInputError, SessionInputStore, inputMediaTypeFor, isInlineInput, utf8Excerpt } from '../session-log/input-artifacts.ts'
 import { NativeAppendQueue } from './append-queue.ts'
 import { ArtifactQueueError, blocksV1Producer, legacyQueueOf, queueStateOf, queueV2Of, type ExecutableQueueItem, type QueueState } from './queue-state.ts'
@@ -48,6 +48,16 @@ export class NativeAgentError extends Error {
 /** The legacy progress body cannot describe an artifact-backed queue item: ask for progress2. */
 export class NativeProgressVersionError extends NativeAgentError {
   constructor() { super('native_progress_version_unsupported') }
+}
+/** The content-free failure codes a queued turn's preparation records on its own attempt. */
+const PREPARATION_REPORTS = {
+  input_artifact_unavailable: 'Session input artifact unavailable',
+  egress_unavailable: 'Egress scrubber unavailable',
+  stored_data_invalid: 'Stored session data is unreadable',
+} as const
+function preparationFailureCode(error: unknown): keyof typeof PREPARATION_REPORTS | null {
+  const code = error instanceof NativeAgentError ? error.code : null
+  return code !== null && code in PREPARATION_REPORTS ? code as keyof typeof PREPARATION_REPORTS : null
 }
 /** What a queued turn's preparation hands to `execute`: the verified input and the final dispatch check. */
 interface PreparedTurn { prompt: string; history: AgentMessage[]; verify(): void }
@@ -225,9 +235,20 @@ export class NativeAgents {
     if (!project) throw new NativeAgentError('project_not_found')
     return project
   }
+  /**
+   * The log read, with a stored snapshot that cannot be projected safely (for example a late
+   * secret registration that expands a v3 inline item past its bound) reported as a typed
+   * content-free error instead of a raw log error. The stored input stays untouched.
+   */
+  private readLog(id: string) {
+    try { return this.log.readAll(id, 'remote_agent') } catch (error) {
+      if (error instanceof SessionLogError && error.code === 'stored_data_invalid') throw new NativeAgentError('stored_data_invalid')
+      throw error
+    }
+  }
   private events(id: string) {
     this.ready()
-    const events = this.log.readAll(id, 'remote_agent')
+    const events = this.readLog(id)
     if (!events.some(e => e.type === 'agent.policy')) throw new NativeAgentError('session_not_found')
     return events
   }
@@ -326,7 +347,6 @@ export class NativeAgents {
     if (!text.trim()) throw new NativeAgentError('validation_failed')
     const active = this.active.get(id)
     if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
-    if (userActivity) this.sessions.touch(id)
     const pending = active.queue
     // Read and append the projection inside the same FIFO operation: a snapshot
     // taken before enqueue is stale as soon as a concurrent queue() or
@@ -343,6 +363,8 @@ export class NativeAgents {
         // Q1 restricted-reader floor: this node still writes v1 snapshots, which cannot carry a pending
         // v3 item. Refuse before anything is written, read or replaced.
         if (blocksV1Producer(current)) return { error: new NativeAgentError('native_queue_producer_unavailable') }
+        // Retention counts only an accepted-for-evaluation user call, never a refused one.
+        if (userActivity) this.sessions.touch(id)
         duplicate = itemId !== undefined && (current.pending.some(item => item.id === itemId) || this.hasPrompt(id, itemId))
       } catch (error) { return { error } }
       if (duplicate) return { status: 'duplicate' as const }
@@ -353,14 +375,16 @@ export class NativeAgents {
     return outcome.status
   }
   private hasPrompt(id: string, messageId: string): boolean {
-    return this.log.readAll(id, 'remote_agent').some(event => event.type === 'prompt' && event.data.messageId === messageId)
+    return this.readLog(id).some(event => event.type === 'prompt' && event.data.messageId === messageId)
   }
   async removeQueued(id: string, item: string) {
     const active = this.active.get(id)
     if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
     const pending = active.queue
     const outcome = await pending.enqueue(() => {
-      const current = queueStateOf(this.events(id))
+      // Like queue(): a failed read is returned, never thrown, because a throw inside the FIFO aborts the main turn.
+      let current: QueueState
+      try { current = queueStateOf(this.events(id)) } catch (error) { return { error } }
       // Refused even for an id that is not pending: the node cannot write a snapshot over v3 work.
       if (blocksV1Producer(current)) return { error: new NativeAgentError('native_queue_producer_unavailable') }
       pending.appendNow({ type: 'agent.queue', data: { items: this.v1Items({ ...current, pending: current.pending.filter(i => i.id !== item) }) } })
@@ -382,8 +406,10 @@ export class NativeAgents {
       return { events, input }
     } catch (error) { throw this.sideChatFailure(error) }
   }
-  private sideChatFailure(error: unknown): SideChatError {
+  private sideChatFailure(error: unknown): SideChatError | NativeAgentError {
     if (error instanceof SideChatError) return error
+    // The Q1 floor keeps its own typed 409 body on every route that reaches the queue.
+    if (error instanceof NativeAgentError && error.code === 'native_queue_producer_unavailable') return error
     const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : error instanceof Error ? error.message : ''
     if (code === 'session_not_found') return new SideChatError('session_not_found')
     if (code === 'session_expired') return new SideChatError('session_unavailable')
@@ -419,7 +445,8 @@ export class NativeAgents {
     if (encodedBytes > SIDE_CHAT_SAVE_MAX_BYTES) throw new SideChatError('too_large', { bytes: encodedBytes, boundBytes: SIDE_CHAT_SAVE_MAX_BYTES })
     const options = { idempotencyKey: `side-chat-save:${request.operationId}` }
     try {
-      const queue = this.active.get(id)?.queue ?? null
+      const owner = this.active.get(id)
+      const queue = owner?.queue ?? owner?.preparing ?? null
       let result: AppendResult
       if (queue !== null) {
         // Through the running turn's FIFO so the append cannot interleave with its own. The
@@ -557,10 +584,10 @@ export class NativeAgents {
         if (abort.signal.aborted || state !== 'completed') break
         // The prior turn is complete and its FIFO drained. Choose the next item from fresh events.
         // Mutation admission stays closed (`active.queue` is null) until that turn's preparation ends.
-        let selected: ExecutableQueueItem | undefined, unreadable = false
-        try { selected = queueStateOf(this.events(id)).pending[0] } catch { unreadable = true }
+        let selected: ExecutableQueueItem | undefined, unreadable: unknown
+        try { selected = queueStateOf(this.events(id)).pending[0] } catch (error) { unreadable = error ?? new NativeAgentError('stored_data_invalid') }
         next = undefined; queuedId = undefined; prepare = undefined; history = []
-        if (selected === undefined && !unreadable) break
+        if (selected === undefined && unreadable === undefined) break
         // Nothing has started yet: an unavailable session simply does not continue.
         try { this.sessions.assertAvailable(id) } catch { break }
         // Allocate the next R1 run/attempt first. Every await after this point is owned by it, so a
@@ -569,7 +596,9 @@ export class NativeAgents {
         active.handle = this.fencedHandle(rawHandle, active.attempt)
         next = ''
         queuedId = selected?.id
-        prepare = selected === undefined ? async () => { throw new NativeAgentError('input_artifact_unavailable') }
+        // An unreadable log at selection time is this attempt's own accurate failure (never reported as a
+        // missing input); the stored events and the pending input are left untouched.
+        prepare = selected === undefined ? async () => { throw unreadable }
           : this.queuedTurn(id, input, active, active.attempt, selected)
       }
     })().catch(() => {
@@ -585,7 +614,8 @@ export class NativeAgents {
    * store (session, id, checksum, size, media type and exact digest), decoded
    * as strict UTF-8 and scrubbed with the current registry. An excerpt or a
    * guessed path is never executed. Nothing here appends a prompt marker or
-   * reaches a provider: the caller does that only after `verify()` passes.
+   * reaches a provider: `execute` calls `verify()` synchronously on return, so no
+   * await separates the last check from the first dispatch step.
    */
   private queuedTurn(id: string, input: NativeAgentInput, active: Active, attempt: Attempt, item: ExecutableQueueItem): PrepareTurn {
     return async () => {
@@ -596,14 +626,15 @@ export class NativeAgents {
         if (this.active.get(id) !== active || active.attempt !== attempt) throw new NativeAgentError('writer_fenced')
         this.runs.checkExecution(attempt)
       }
-      verify()
       const model = selectedModel(this.connections, input)
+      // Nothing awaits between the allocation of this attempt and the read, so the first check is the
+      // one after it: a held read must not be followed by a replay or a dispatch for a lost owner.
       const prompt = item.kind === 'inline'
         ? this.scrubber.scrub(item.text)
         : this.scrubber.scrub(await this.readInputText(id, item.artifact, active.abort.signal))
       verify()
       const history = await this.replay(id, this.events(id), model.api, model.provider, model.id)
-      verify()
+      // The caller runs `verify()` synchronously on return, before anything else can happen.
       return { prompt, history, verify }
     }
   }
@@ -630,7 +661,6 @@ export class NativeAgents {
     // A queued turn keeps mutation admission closed while it prepares; stop and failure recording
     // reach it through `preparing`. A direct turn has nothing to prepare and opens at once.
     if (prepare) active.preparing = created; else active.queue = created
-    let verifyDispatch: (() => void) | null = null
     const tools = nativeTools({
       policy, log: this.log, handle, scrubber: this.scrubber,
       queue: async text => { await this.queue(id, text, false) },
@@ -649,19 +679,6 @@ export class NativeAgents {
     signal.addEventListener('abort', stop, { once: true })
     try {
       await created.append({ type: 'agent.state', data: { status: 'running', error: null } })
-      if (prepare) {
-        try {
-          const prepared = await prepare()
-          prompt = prepared.prompt; history = prepared.history; verifyDispatch = prepared.verify
-        } catch (error) {
-          // Unreadable input is this attempt's own content-free failure; an abort, a lost fence or a
-          // lost session fall through to the ordinary truthful terminal below.
-          if (error instanceof NativeAgentError && error.code === 'input_artifact_unavailable' && !signal.aborted) await created.fail(error.code)
-          throw error
-        }
-        active.preparing = null
-        active.queue = created
-      }
       const model = selectedModel(this.connections, input)
       const images: import('@earendil-works/pi-ai').ImageContent[] = []
       for (const attachment of policy.attachmentMetadata ?? []) {
@@ -669,6 +686,23 @@ export class NativeAgents {
         if (!model.input.includes('image')) throw new NativeAgentError('image_not_supported')
         const file = await open(attachment.path, 'r')
         try { images.push({ type: 'image', data: (await file.readFile()).toString('base64'), mimeType: attachment.mediaType }) } finally { await file.close() }
+      }
+      if (prepare) {
+        try {
+          const prepared = await prepare()
+          // Synchronously on return: abort, availability, active identity, home and attempt fence. Nothing
+          // awaits between this check, the prompt append and the provider call.
+          prepared.verify()
+          prompt = prepared.prompt; history = prepared.history
+        } catch (error) {
+          // Unreadable input or an unreadable log is this attempt's own content-free failure; an abort, a
+          // lost fence or a lost session fall through to the ordinary truthful terminal below.
+          const code = preparationFailureCode(error)
+          if (code !== null && !signal.aborted) await created.fail(code)
+          throw error
+        }
+        active.preparing = null
+        active.queue = created
       }
       agent = new Agent({ initialState: { model, systemPrompt: orientation(policy), tools,
         ...(history.length ? { messages: [{ role: 'system', content: orientation(policy), toolsAdded: tools.map(({ name, description, parameters }) => ({ name, description, parameters })), timestamp: Date.now() }, ...history] } : {}) },
@@ -705,9 +739,7 @@ export class NativeAgents {
         }
         return undefined
       })
-      // Synchronously before the first prompt append and provider call: abort, availability, active
-      // identity, home and attempt fence are all rechecked.
-      if (verifyDispatch) verifyDispatch(); else signal.throwIfAborted()
+      signal.throwIfAborted()
       await agent.prompt(this.runs.checkExecution(attempt) === 'wrapping_up' ? 'Wrap up and report only. Do not call tools.' : prompt, images)
       if (agent.state.errorMessage) throw new Error('model_failed')
       if (cleanupUnconfirmed) throw new Error('cleanup_unconfirmed')
@@ -856,8 +888,8 @@ export class NativeAgents {
     const fenced = ['writer_fenced', 'closed', 'session_not_found'].includes(code)
     const budget = ['budget_exhausted', 'report_budget_exhausted', 'quota_exhausted'].includes(code)
     if (fenced || budget) return
-    const reported = code === 'input_artifact_unavailable'
-      ? { code: 'input_artifact_unavailable', message: 'Session input artifact unavailable' }
+    const reported = code in PREPARATION_REPORTS
+      ? { code, message: PREPARATION_REPORTS[code as keyof typeof PREPARATION_REPORTS] }
       : { code: 'input_artifact_storage_failed', message: 'Session input artifact storage failed' }
     if (!aborted) {
       queue.appendNow({ type: 'error', data: reported })
@@ -916,7 +948,7 @@ export class NativeAgents {
   private async readInputText(sessionId: string, reference: SessionInputArtifactRef, signal?: AbortSignal): Promise<string> {
     try {
       const bytes = await this.inputArtifacts.read(sessionId, reference, { signal })
-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
     } catch {
       throw new NativeAgentError('input_artifact_unavailable')
     }

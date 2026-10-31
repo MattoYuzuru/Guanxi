@@ -27,7 +27,7 @@ export function NativeProgress({ progress, remove }: { progress: AgentProgress; 
   const active = progress.plan.find(item => item.status === 'active')
   const planId = useId(), queueId = useId()
   return <section aria-label={t('native.progress')} className="native-progress">
-    {progress.error && <p role="alert" className="native-progress-alert">{t(progress.error === 'cleanup_unconfirmed' ? 'native.cleanup_unconfirmed' : progress.error === 'process_restarted' ? 'native.process_restarted' : 'native.sessionError')}</p>}
+    {progress.error && <p role="alert" className="native-progress-alert">{t(progress.error === 'cleanup_unconfirmed' || progress.error === 'process_restarted' || progress.error === 'input_artifact_unavailable' || progress.error === 'stored_data_invalid' ? `native.${progress.error}` : 'native.sessionError')}</p>}
     {progress.shellUnavailable && <p role="alert" className="native-progress-alert">{t(`native.${progress.shellUnavailable}`)}</p>}
     <p role="status" aria-live="polite" className="native-progress-state" data-status={progress.status}>
       {progress.status === 'running' ? <><Icon name="runtime" size={14} aria-hidden="true" /><span>{active ? active.text : t('native.running')}</span></> : t(`native.${progress.status}`)}

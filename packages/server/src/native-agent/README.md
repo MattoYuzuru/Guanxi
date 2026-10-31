@@ -190,8 +190,8 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   including a v3 queue and a legacy oversized inline entry, keep the exact legacy shape.
   `?progressVersion=2` returns the strict v2 body: `inline`, `artifact` (stored excerpt only)
   and `legacy-preview` (an oversized legacy v1 inline entry: bounded excerpt of the complete
-  scrubbed text plus its exact byte size). Neither opens a blob. The query is strict; other
-  values or keys return 400. `GET /:id/result` and the CLI `agentExecResult.version = 1` do
+  scrubbed text plus its exact byte size). Neither opens a blob. The query is strict: only the
+  exact strings `1` and `2` are accepted, with no repeated key (anything else returns 400). `GET /:id/result` and the CLI `agentExecResult.version = 1` do
   not depend on the queue.
 - After a completed turn drains, the next item is chosen from fresh events. Its R1 run and
   attempt are allocated first and own every later step; `active.queue` stays closed to
@@ -199,19 +199,39 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   `SessionInputStore.read` (session, id, checksum, size, media type, exact digest), decoded as
   strict UTF-8 and scrubbed with the current registry; an inline legacy item is scrubbed
   afresh. Abort, session availability, active identity and the R1 fence are rechecked after
-  every await and synchronously before the prompt append and provider call. The durable
-  `prompt` keeps the queue id as `messageId` with `origin: queued`.
+  every await and synchronously on return from preparation, before the prompt append and the
+  provider call (nothing awaits in between). The text keeps a leading byte order mark, so it
+  equals the verified bytes. The durable `prompt` keeps the queue id as `messageId` with
+  `origin: queued`.
 - An unreadable input (missing, tampered, wrong size/checksum/session, invalid UTF-8) writes one
-  content-free `error` (`input_artifact_unavailable`) and the failed terminal on the new
-  attempt: no prompt marker, provider or tool call, the selected id stays pending and the next
+  content-free `error` (`input_artifact_unavailable`; an unreadable log or an unready scrubber
+  records `stored_data_invalid` or `egress_unavailable` instead) and the failed terminal on the
+  new attempt: no prompt marker, provider or tool call, the selected id stays pending and the next
   item is never skipped to. Stop during preparation records its intervention on the
   preparation attempt and cancels it; a deposed owner writes nothing.
 - **Restricted floor.** While the latest snapshot is v3 and still has a pending item, add and
-  remove (including the agent's `queue` tool, `POST /prompts` while running and duplicate
-  removal) refuse with HTTP 409 `{code:'native_queue_producer_unavailable'}`, decided inside
-  the queue FIFO before anything is written or read. Side-chat Send reports the existing
-  `agent_unavailable`. Once every v3 item is consumed the next mutation writes a v1 snapshot as
-  before. Q2 replaces this restriction with a v3-producing add/remove.
+  remove (`POST /queue`, `DELETE /queue/:item` including duplicate removal, `POST /prompts`
+  while a turn runs, and side-chat Send) refuse with HTTP 409
+  `{code:'native_queue_producer_unavailable'}`, decided inside the queue FIFO before anything
+  is written or read, before the duplicate-id check and before retention is touched. The agent's
+  own `queue` tool is not an HTTP route: the refusal is a tool error result carrying the same
+  code, and the turn continues. Once every v3 item is consumed the next mutation writes a v1
+  snapshot as before. Add/remove during the preparation of a queued turn return `session_not_running`
+  (HTTP 503), because mutation admission is closed until preparation ends. Q2 replaces this
+  restriction with a v3-producing add/remove.
+- **Availability residuals (named, not closed).** (1) *Stuck head:* a v3 artifact head that is
+  broken (deleted, tampered or otherwise unreadable) fails every later turn that reaches it, and
+  it cannot be removed until Q2 because removal is refused. The session keeps its truthful
+  failed state and the web client explains it; the stored input is untouched and is never skipped.
+  (2) *Late secret expansion:* a v3 inline item that a later secret registration expands past
+  16 KiB makes every log read refuse (design section 6: content-free fail closed, no truncation).
+  progress, progress2, result, prompt and a stop of an idle session then return the typed
+  `stored_data_invalid` (HTTP 503, no content); stop of an *active* turn still works. A turn in
+  flight completes, the transition records a failed preparation attempt with the same code,
+  `wait()` rejects with it, and nothing is dispatched. The stored events are preserved.
+  (3) If R1 cannot allocate the next attempt between turns, no owner exists to write a record, so
+  the failure is not visible in the log; the session shows its last completed run with the item
+  still pending.
 
 This is the restricted reader rollback floor (Q0+Q1): progress2, verified consumption, result and
 stop work over v3 state; v3-state mutations wait for Q2. It is not an artifactization claim:
