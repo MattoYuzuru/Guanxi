@@ -153,14 +153,20 @@ fails them loudly rather than silently.
 
 ## B3-c integration (naive arm as a second pass of the same home)
 
-Read from `lane/b3c-naive-arm` (not merged, not edited): home config `home.relayCompaction: 'naive'` is node-wide; a naive run writes
+*Superseded in part by [B3-integration](B3-integration.handoff.md): the marker-only rule and the note shapes described here are the
+first version. The arm rule that is now applied (marker on every sealing attempt, `arm_mode_mixed`, the probe-call rule, the database
+vouching for the run) and the shapes the runner reads (`attempt`, `epoch`, `summaryLimitBytes`, `outputLimitTokens`, `degradedReason`)
+are in that hand-off and in the runbook.*
+
+Read from `lane/b3c-naive-arm` (at that time not merged, not edited): home config `home.relayCompaction: 'naive'` is node-wide; a naive run writes
 `{relay:'compaction',mode:'naive'}` before its first model call, `probe_not_applicable` per cycle after the first and
 `compaction_summary` after each seal; a ledger run writes none of them. Runner changes (commit `feat(bench): naive arm as a
 second pass`):
 
 - **Both arms may share one endpoint** in separate passes (`--arms`, same `--out`, merged measurement; the earlier distinct-url
   rule of M5 is superseded). Two arms behind one endpoint in one pass remain refused, since a node has one mode at a time.
-- **The arm is confirmed from the run's own events** (`armModeOf`): a naive trial must show the `naive` statement, a ledger trial no
+- **The arm is confirmed from the run's own events** (`armModeOf`; first version, a single marker: see the note above for the rule
+  now applied): a naive trial must show the `naive` statement, a ledger trial no
   naive marker; no readable events, an unknown mode, or naive markers without the statement are `unconfirmed`. A disagreement is
   never relabelled: the trial is not stored and not in the document, nothing else starts, `summary.json` has
   `halted: arm_mode_mismatch | arm_mode_unconfirmed`, exit `1`. A mismatched run exists on the node under its key, so the
@@ -178,12 +184,11 @@ Tests: 91 new (8 more than after review), 169 envelope, bench 260/260; tsc, esli
 `-arm-unknown-mode`, `-probe-not-applicable`). Two mutation sites moved with the code and were re-pointed
 (`b3b-exit-incomplete`, `b3b-halt-on-unsettled`).
 
-**Post-merge residual (not done here):** a drift test pinning the three note shapes against the merged server source. When
-`lane/b3c-naive-arm` is merged add to `relay-smoke-drift.test.ts` the same kind of text pins used for the other notes:
-`canonical({ relay: 'compaction', mode: 'naive' })`, `relay: 'probe_not_applicable', mode: 'naive', cycle:` and
-`relay: 'compaction_summary', mode: 'naive', cycle: h.cycle` in `relay/executor.ts` (strings as read on the branch today). They
-are not added now because a test reading a tree that lacks them would fail, and a skipped test would pretend to guard.
+**Post-merge residual - closed by B3-integration:** the three note shapes are no longer pinned by source text. B3-integration drives the
+merged server's real `RelayExecutor` with its own test fixture and feeds the result through the runner
+(`test/relay-smoke-server-shapes.test.ts`), which also caught that the shapes had changed after this section was written.
 
 ## Next slice
 
-B3-c (server, suggested): the naive-compaction relay mode and per-field probe results, then run the two-arm smoke.
+Superseded: B3-c is merged and B3-integration is done. The next slice is the pilot in both passes on the Fedora node (see
+[B3-integration](B3-integration.handoff.md)), then per-field probe results if the relay records them.
