@@ -1,6 +1,6 @@
-# Next agent prompt — wave 7: MS1 residuals, B3 smoke cohort, MS2
+# Next agent prompt — wave 8: MS2 track, B3 smoke cohort
 
-**Status:** active continuation · **Updated:** 2026-10-31 (wave 7 lanes merged)
+**Status:** active continuation · **Updated:** 2026-11-01 (wave 8 lanes merged)
 
 Read [AGENTS](../../AGENTS.md), the [CI protocol](../operations/ci.md), [WORKFLOW](WORKFLOW.md), the newest owner decisions
 ([2026-10-31](../decisions/2026-10-31-owner-decisions.md), D-219–D-220) and [PHASE_STATUS](PHASE_STATUS.md). Work is on
@@ -16,11 +16,12 @@ Read [AGENTS](../../AGENTS.md), the [CI protocol](../operations/ci.md), [WORKFLO
 - Every delegated author and reviewer is a Sonnet 5.5 agent in its own worktree (D-220); the lead integrates, verifies and
   owns the PR.
 
-## Done on `lead/wave7` (see PHASE_STATUS, wave 7)
+## Done
 
-MS1 relay residuals, the opt-in lead project view, the B3-b smoke runner, the B3-c naive arm and their integration — all
-independently reviewed with fixes in separate commits. Hosted CI for the wave 7 PR is the lead's to finish
-(`npm run ci:finish -- <PR> --wait`); check the PR description for the run URL.
+Wave 7 is on `main` (PR MattoYuzuru/Guanxi#3). Wave 8 on `lead/wave8`: U2 macOS shell (first slice), U3 route authorization
+and boot bind gate, K4 queue-v3 Q1 — see PHASE_STATUS. Desktop order: macOS, then Linux/Fedora, Windows last (D-221).
+Owner questions open: Q-246 (local-owner secret), Q-247 (bundled LGPL `libffmpeg` and Node), Q-248 (WTFPL build tool); a
+signed macOS release also needs the Apple Developer Program (D-156).
 
 ## Real B3 smoke cohort (needs the Fedora pair)
 
@@ -32,12 +33,10 @@ same commit; pilot `ll-money-text` in the ledger pass (~75 min), then the full l
 
 ## Next (MS2 track, in this order unless the owner reorders)
 
-1. K4 queue-v3 Q1/Q2 (restricted reader, producer) — unblocks native-agent work in P1 and C1.
-2. U3: wire `can()` into routes and the remote bind at boot (Better Auth after that).
-3. P1: kernel boot wiring and the K4 sandbox wrapper for MCP.
-4. U2 macOS desktop shell (not started) and the UI residuals of round 4 (key hints not localised, workspace side panels,
-   fleet map D-209, palette approval) — see `lanes/UI-round4.handoff.md` and `lanes/K3-connections-ui.handoff.md`.
-5. WG1 board UI and `work.query`, WG2 plugin packaging and credentials UI, C1 browser host, V1 owner eval recordings.
-
-Accepted residual: runs sealed before the strip changes resume once through the degraded probe path. A `sk-ant-usr` lead's
-own spend is outside `moneyMicros` (runbook section 7).
+1. K4 queue-v3 Q2 (v3 producer, lift the restriction) — a separate author/reviewer round per the queue-v3 plan.
+2. U2-b: launchd agent and login item, tray, a real signed and notarized build once Q-247 and the Apple account are settled,
+   auto-update; then U6 Linux with a Fedora rpm (D-221).
+3. U3-b: Better Auth accounts adapter, grants in resource lookups, per-account stores; Q-246.
+4. P1: kernel boot wiring and the K4 sandbox wrapper for MCP.
+5. UI round 4 residuals (key hints, side panels, fleet map D-209, palette approval), WG1 board and `work.query`, WG2
+   packaging, C1 browser host, V1 owner eval recordings.

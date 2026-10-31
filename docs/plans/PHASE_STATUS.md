@@ -1,10 +1,33 @@
 # Stage status
 
 **Status:** implemented tracker · **Updated:** 2026-10-31
-**Current stage:** wave 7 (branch `lead/wave7`) — MS1 closed on the D-214 evidence; the B3 gate moved to MS2 with a smoke
-cohort now (D-219); Sonnet-only workers (D-220). Wave 6 (`lead/ms1-close`) merged into `main` as `c2f9a5d4` (PR
-MattoYuzuru/Guanxi#2, hosted gate green: run 40111090144, PR head `7f2d9f8d`, tested merge `1be83b9e`). The 22 merged lane
-clones in `Guanxi-lanes` and the merged branches were removed on 2026-10-31.
+**Current stage:** wave 8 (branch `lead/wave8`, 2026-11-01) — MS2 track. Wave 7 merged into `main` as `a1ba986b` (PR
+MattoYuzuru/Guanxi#3, hosted gate green: run 41209344464). MS1 closed 2026-10-31 (D-214, D-219); desktop platform order macOS →
+Linux/Fedora → Windows (D-221).
+
+## Wave 8 (2026-11-01)
+
+Three lanes, each by a Sonnet 5.5 author with separate Sonnet 5.5 reviews (two rounds each) and fixes in separate commits:
+
+- **U2 macOS desktop, first slice** ([hand-off](lanes/U2-macos.handoff.md), `packages/desktop`): Electron shell that attaches
+  to or starts the node as a detached service on a pinned official Node.js 26.9.0 (digest-verified, `RunAsNode` fuse off),
+  sandboxed renderer with one preload function, navigation locked to the loopback origin, gesture-gated external links, CSP,
+  listener ownership checks (`lsof` uid/pid) before attach and stop, localized failure screens with automatic recovery,
+  unsigned arm64 DMG; signing/notarization env-driven and not run. Exit gates tested: window close and app quit leave the
+  service and a run alive (detached process group); the renderer has no Node access. Owner questions Q-247/Q-248 (bundled
+  LGPL `libffmpeg`, WTFPL build tool) gate a distributed DMG; a signed release needs the Apple Developer Program (D-156).
+- **U3 route authorization** ([hand-off](lanes/U3-route-authz.handoff.md)): one fail-closed `can()` hook over 165 routes
+  (HEAD as GET, unmapped → refused, boot check), local owner only for a loopback socket peer, proxy headers refused,
+  reasoning owner-only at the source, owner-only filesystem/exec/settings routes, minimal health for non-operators, and the
+  remote bind refused at boot (exit 78) without TLS, accounts, credentials and roots. Q-246 (local-owner secret) proposed.
+- **K4 queue-v3 Q1** ([hand-off](lanes/K4-queue-v3-Q1.handoff.md)): native reader and progress2 over v3 state, verified
+  full-byte consumption with owner/fence checks up to dispatch, typed content-free failures, the restricted-reader rollback
+  floor (v3 mutations refused with 409 until Q2).
+
+Evidence — **new:** desktop 163 unit + 43 Electron tests; auth 56+ new tests (auth suite 89, route-reasoning 9); Q1 63 new
+server tests plus CLI/web cases. **Regression envelope (local, focused):** affected server set 895; native-agent 92 + Q0 14;
+web unit + localization 136; browser specs for native agent 20. Not run: signing/notarization, a mounted DMG, hosted desktop
+tasks (first run on the wave PR), a real agent run through the window.
 
 ## Wave 7 (2026-10-31)
 
@@ -310,7 +333,7 @@ decision was made.
 | V1 Dictation | backend core and glossary editor UI integrated (matcher, store, eval metrics, whisper.cpp adapter with D-157 consent, REST, `/settings/voice/glossary`) | owner eval recordings, more STT adapters, `voice.flag_term` remain; exit gate needs owner recordings |
 | WG1 Work ledger | core integrated (evidence-derived status, strip, query, export); REST via MS2 | `project` mode stays off until the WL A/B; board UI, `work.query` agent tool remain |
 | WG2 Tracker sync | core integrated (GitHub/Jira adapters on fixtures, business-field protection, rate limits) | plugin packaging per P1, credentials UI, polling scheduler, live fixtures remain |
-| U3 Accounts | authorization core integrated (`can()`, grants, remote-bind guard; D-155, D-190) | Better Auth, wiring `can()` into routes, remote bind at boot remain |
+| U3 Accounts | authorization core integrated (`can()`, grants, remote-bind guard; D-155, D-190); route wiring and boot bind gate integrated (wave 8) | Better Auth, wiring `can()` into routes, remote bind at boot remain |
 | P1 Plugin platform | cores integrated (skills/AGENTS.md loading, T1 plugin manager with crash recovery, MCP client) | K4 sandbox wrapper for MCP, kernel boot wiring, agent tools, UI remain |
 | C1 Agent browser | policy core integrated (origin policy, site grants) | playwright-core browser host, streamed pane, cookie scrubber, injection tests remain |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |
