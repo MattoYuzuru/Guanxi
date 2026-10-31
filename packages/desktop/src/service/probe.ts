@@ -33,7 +33,9 @@ async function attempt<T>(run: (signal: AbortSignal) => Promise<T>, timeoutMs: n
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    return { tag: 'value', value: await run(controller.signal) }
+    const value = await run(controller.signal)
+    // A read cut short by the timeout must not be mistaken for an answer of the wrong shape.
+    return controller.signal.aborted ? { tag: 'hung' } : { tag: 'value', value }
   } catch (error) {
     if (controller.signal.aborted) return { tag: 'hung' }
     const code = (error as { cause?: { code?: string }; code?: string } | null)
@@ -70,8 +72,9 @@ export async function probeService(
   const health = await attempt(async (signal) => {
     const response = await doFetch(`${origin}/api/health`, { signal, headers: { accept: 'application/json' } })
     if (!response.ok) return null
+    const text = await readText(response)
     try {
-      const parsed: unknown = JSON.parse(await readText(response))
+      const parsed: unknown = JSON.parse(text)
       return isHealthDocument(parsed) ? parsed.appVersion : null
     } catch {
       return null

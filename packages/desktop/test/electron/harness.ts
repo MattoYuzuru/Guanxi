@@ -111,6 +111,8 @@ export function readServiceManifest(sandbox: Sandbox): ServiceFacts | null {
 }
 
 export function alive(pid: number): boolean {
+  // pid 0 would address this process group, and 1 is init: neither is ever "the service".
+  if (!Number.isInteger(pid) || pid <= 1) return false
   try {
     process.kill(pid, 0)
     return true
@@ -130,7 +132,7 @@ export async function waitFor<T>(label: string, read: () => Promise<T | null | f
 }
 
 export async function killQuietly(pid: number | undefined): Promise<void> {
-  if (pid === undefined || !alive(pid)) return
+  if (pid === undefined || pid <= 1 || !alive(pid)) return
   try {
     process.kill(pid, 'SIGTERM')
   } catch {

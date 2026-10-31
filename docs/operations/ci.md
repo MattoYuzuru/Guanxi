@@ -74,8 +74,8 @@ The source is [the workflow](../../.github/workflows/full-gate.yml) and
 [task inventory](../../scripts/ci/tasks.mjs). PRs check their integration merge ref with full
 history, not only the feature head. The matrix covers root `npm test` leaves, static/type/doc
 checks, root builds (web before CLI), Storybook, both browser gates, three bounded core shards
-and macOS signer tests. Browser tests keep one worker per isolated shard; broad Node core
-tests use two file workers per shard to reduce timing-fixture starvation. The current twelve
+the Electron shell (units on Linux, the Electron-launching suites on macOS) and macOS signer tests. Browser tests keep one worker per isolated shard; broad Node core
+tests use two file workers per shard to reduce timing-fixture starvation. The current fourteen
 tasks may start concurrently on isolated runners; account runner capacity still applies. Matrix fail-fast is
 off so one run reports independent failures together. Newer runs supersede older runs for
 the same PR only. Main pushes run quick checks; manual dispatch runs the full matrix but

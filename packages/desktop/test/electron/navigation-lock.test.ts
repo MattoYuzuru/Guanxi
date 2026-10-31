@@ -4,6 +4,8 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { closeAllShells, freePort, killQuietly, launchShell, listenCounting, makeSandbox, readServiceManifest, waitFor } from './harness.ts'
 import type { Sandbox } from './harness.ts'
 
+type Preferences = { getLastWebPreferences(): Record<string, unknown> }
+
 describe('navigation and external-link lock', () => {
   let sandbox: Sandbox
   let app: ElectronApplication
@@ -119,7 +121,7 @@ describe('navigation and external-link lock', () => {
     assert.deepEqual(await child.evaluate(() => (window as { __probe?: unknown }).__probe), { typeofRequire: 'undefined', typeofProcess: 'undefined' })
     const prefs = await app.evaluate(({ BrowserWindow }) => {
       const all = BrowserWindow.getAllWindows()
-      const p = all[all.length - 1]!.webContents.getLastWebPreferences()
+      const p = (all[all.length - 1]!.webContents as unknown as Preferences).getLastWebPreferences()
       return { sandbox: p.sandbox, nodeIntegration: p.nodeIntegration, contextIsolation: p.contextIsolation }
     })
     assert.deepEqual(prefs, { sandbox: true, nodeIntegration: false, contextIsolation: true })

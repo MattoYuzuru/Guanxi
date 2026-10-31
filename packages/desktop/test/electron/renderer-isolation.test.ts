@@ -4,6 +4,8 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { closeAllShells, freePort, killQuietly, launchShell, makeSandbox, readServiceManifest } from './harness.ts'
 import type { Sandbox } from './harness.ts'
 
+type Preferences = { getLastWebPreferences(): Record<string, unknown> }
+
 describe('renderer isolation (exit gate: the renderer has no Node access)', () => {
   let sandbox: Sandbox
   let app: ElectronApplication
@@ -91,7 +93,7 @@ describe('renderer isolation (exit gate: the renderer has no Node access)', () =
 
   it('creates the window with sandbox, context isolation and no Node integration', async () => {
     const preferences = await app.evaluate(({ BrowserWindow }) => {
-      const prefs = BrowserWindow.getAllWindows()[0]!.webContents.getLastWebPreferences()
+      const prefs = (BrowserWindow.getAllWindows()[0]!.webContents as unknown as Preferences).getLastWebPreferences()
       return {
         contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, sandbox: prefs.sandbox,
         webSecurity: prefs.webSecurity, webviewTag: prefs.webviewTag,
