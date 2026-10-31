@@ -414,12 +414,13 @@ default, and the public start cannot select it.
 
 `RelayLimits.compaction` (`'ledger'` | `'naive'`, absent means `ledger`) is a trusted-host, node-wide setting. A home sets it
 through `home.relayCompaction` in the ms1-live configuration (see [MS1 live run](../../../../docs/operations/ms1-live-run.md));
-`ledger` and absence are byte-for-byte the relay described above (the tests compare prompts, events and the ledger of an explicit
-`ledger` run with the default). With `naive` the executor changes only what the model is shown at a cycle boundary:
+`ledger` and absence are the relay described above: the tests compare the prompts, events and ledger of an explicit `ledger` run with
+the default, and `default-path-pin.test.ts` pins a digest of the default path's prompts and event shapes (recorded on the base commit
+before the arm existed), so a change to the default rendering fails a test. With `naive` the executor changes only what the model is shown at a cycle boundary:
 
 | Site | Ledger (default) | Naive |
 | --- | --- | --- |
-| first cycle | strip, goal | the strip as it stood at cycle start (the task statement), frozen, and the goal |
+| first cycle (and a resumed attempt that has no seal) | live strip, goal | a **task statement** derived from the plan alone (`{initial:true, current, queued, blocked, title, acceptance}`: every item open, no status, no tool hint) and the goal; it does not follow the ledger, so an item that passed its gate still reads as the initial task, as it would in any compaction baseline's first prompt |
 | later cycles | live strip, goal, narrative (notes in the handoff) | the goal and the stored **summary** only |
 | boundary | `Write a fresh bounded handoff narrative…` from strip, notes and the last 3 turns | `Summarize the work so far…` over what the cycle was shown (its head, which for cycle 2 and later is the previous summary, and every turn) |
 | `work.query`, `notes.search` | offered and served | not offered; a call is refused with `tool_denied` |
@@ -429,11 +430,15 @@ Unchanged on purpose, so the comparison differs only in what the model sees: the
 turns fall off first, a drop or cut ends the cycle and is reported as `context_dropped`); the checkpoint-if-dirty, `validate`, final
 gates, `countProgress`, judge samples, ETA and caps; the cost ledger (the summary call is a `narrative` call, so its tokens land in
 the same rows); `store.seal`, the ledger snapshot, the bundle and `validateHandoff` (the durable seal still carries the ledger and
-strip for fencing and integrity checks, and notes are still stored, but the model never sees any of them).
+strip for fencing and integrity checks, and notes are still stored, but the model never sees any of them). Other harness-sourced
+text that reaches the ledger arm through notes or the handoff is also not shown: for example the `open_issue` warning that the harness
+checkpointed uncommitted work at the end of the previous cycle. The naive model learns of such a checkpoint only from the repository.
 
 The summary is bounded by the handoff machinery itself: the whole handoff must fit 15% of W, and `make()` cuts the text with the
-visible `[use paging]` suffix. A summary that the output reserve cuts, or a failed call, seals `degraded` with a fixed text that
-does not mention the ledger tools. A damaged seal is not repaired from the ledger (the arm has none to show): the next cycle gets a
+visible `[use paging]` suffix. The summary request states both limits (`Your reply is cut at <reserves.turn> tokens, and the stored
+summary at <n> bytes`, where `n` is the room the 15% bound leaves after the handoff's framing), so the model can size its reply; both
+numbers are reported with the summary. A summary that the output reserve cuts, or a failed call, seals `degraded` with a fixed text that
+does not mention the ledger tools, and the note says why (`degradedReason`, the relay's fixed code, or `handoff_fallback`). A damaged seal is not repaired from the ledger (the arm has none to show): the next cycle gets a
 fixed "summary unavailable" text. Nothing is capped silently: every cut and loss is a note.
 
 **Probes in this arm.** The five probes (ledger hash, head, revision, next item, its status) are facts of the ledger strip. The arm
@@ -447,13 +452,20 @@ must not subtract either.
 
 | Note | When |
 | --- | --- |
-| `{relay:'compaction', mode:'naive'}` | once per executor attempt, before the first model call |
-| `{relay:'compaction_summary', mode:'naive', cycle, summaryBytes, handoffLimitBytes, truncated, degraded, inputDropped, inputCut}` | after each seal |
+| `{relay:'compaction', mode:'naive', attempt, epoch}` | once per executor attempt, before that attempt's first model call |
+| `{relay:'compaction_summary', mode:'naive', attempt, cycle, summaryBytes, summaryLimitBytes, outputLimitTokens, truncated, degraded, degradedReason, inputDropped, inputCut}` | after each seal; `truncated` is also true when the harness fallback replaced the summary (`degradedReason: 'handoff_fallback'`) |
 | `{relay:'probe_not_applicable', mode:'naive', cycle, reason:'ledger_facts_not_shown', damaged}` | each cycle after the first |
 
 A trial is a naive trial exactly when its session carries the first note; it is written by the same flag that changes behaviour,
 before any model call, so it needs no operator configuration to interpret. A runner should also check the note against the arm it
 planned and mark a mismatch invalid. A ledger trial has none of these notes.
+
+**A run whose attempts disagree is invalid for the bench.** The mode is node-wide config, so a restart can change it between attempts
+of one run. A ledger attempt writes nothing, so the check is on the naive side: every attempt that sealed a cycle (`relay_seals.attempt_id`)
+must have its own `compaction` marker, and every `compaction_summary` must name a marked attempt. Naive then ledger leaves a sealing
+attempt without a marker; ledger then naive leaves earlier seals without one. Either way the trial cannot be attributed to one arm.
+`home.relayCompaction: "naive"` together with `home.lead` is refused by the configuration (`config_compaction_with_lead`), and a
+programmatic `relayHost.limits.compaction` that is not one of the two modes refuses at boot (`relay_compaction_invalid`).
 
 Not covered (the arm is a baseline, not a model of any product): observation masking and the single-large-window arm; a second
 summary model; per-field probe results. The `note` and `propose` actions stay available (their results are stored and never shown).

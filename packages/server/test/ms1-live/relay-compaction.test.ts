@@ -46,3 +46,21 @@ test('the home reaches the relay start host with the default limits unless the m
   assert.equal((await limits('naive')).structuredOutput, true, 'the other limits are untouched')
   assert.equal((await limits('naive', { limits: { gateTimeoutMs: 1234 } })).gateTimeoutMs, 1234)
 })
+
+test('a naive home refuses a lead: the node-wide arm must not change a lead\'s delegations', () => {
+  const lead = { adapter: 'claude-code', bridge: '/opt/bridge', bridgeVersion: '1.2.3', claudeExecutable: '/opt/claude',
+    limits: { maxCaps: { cycles: 1, tokens: 1, moneyMicros: 0, wallMs: 1 }, maxDeadlineMs: 1 } }
+  assert.doesNotThrow(() => parseMs1LiveConfig(home({ lead }), '/etc/x/ms1-live.json'))
+  assert.doesNotThrow(() => parseMs1LiveConfig(home({ relayCompaction: 'ledger', lead }), '/etc/x/ms1-live.json'))
+  assert.throws(() => parseMs1LiveConfig(home({ relayCompaction: 'naive', lead }), '/etc/x/ms1-live.json'),
+    (error: unknown) => error instanceof Ms1LiveError && error.code === 'config_compaction_with_lead' && error.field === 'home.relayCompaction')
+})
+
+test('a programmatic relayHost limit with an unknown compaction mode refuses at boot, not at the first start', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'ms1-compaction-boot-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  // If a mutant lets the boot through, the listener is closed so the test fails instead of hanging.
+  const outcome = await start({ port: await freePort(), host: '127.0.0.1', dataDir: join(root, 'data'), webDir: root, devOrigins: [], relayHost: { limits: { compaction: 'summary' } } } as never)
+    .then(server => server.close().then(() => 'started'), (error: unknown) => error)
+  assert.ok(outcome instanceof Error && /relay_compaction_invalid/.test(outcome.message), String(outcome))
+})

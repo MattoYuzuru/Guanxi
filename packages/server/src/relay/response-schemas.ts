@@ -63,7 +63,8 @@ export function workPrompt(tools: readonly RelayToolSpec[]): string {
 export const PROBE_PROMPT = 'Answer these five critical ledger probes as JSON. ledgerHash, head, revision: the handoff ledgerHash, ledger.head and ledger.revision. nextItem: the handoff strip\'s "current" value (not "queued"), or null when it is null. nextStatus: the handoff strip\'s "currentStatus" value for that item, or null when nextItem is null. All fields are required; do not execute work.'
 
 /** B3 naive-compaction arm only (`RelayLimits.compaction === 'naive'`). The summary is written by the relay's own model over what the cycle was shown. */
-export const NAIVE_SUMMARY_PROMPT = 'Summarize the work so far so that a fresh context can continue it: the task and its items (ids and acceptance), what is done, what remains, files and commands that matter, and open problems. Do not invent progress. Reply with plain text only.'
+export const naiveSummaryPrompt = (outputTokens: number, summaryBytes: number): string => 'Summarize the work so far so that a fresh context can continue it: the task and its items (ids and acceptance), what is done, what remains, files and commands that matter, and open problems. Do not invent progress. Reply with plain text only. '
+  + `Your reply is cut at ${outputTokens} tokens, and the stored summary at ${summaryBytes} bytes, whichever comes first: stay well inside both.`
 /** Shown when the summary could not be written, and when a stored seal fails its integrity check. */
 export const NAIVE_DEGRADED_SUMMARY = 'The summary of the previous context could not be written. Continue the plan from the repository state.'
 export const NAIVE_UNAVAILABLE_SUMMARY = 'The summary of the previous context is unavailable. Continue the plan from the repository state.'

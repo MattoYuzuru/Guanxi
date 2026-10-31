@@ -171,6 +171,8 @@ export const ms1LiveConfigSchema = z.object({
   if (value.role === 'executor' && !value.executor) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['executor'], message: 'section_required' })
   if (value.role === 'home' && value.executor) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['executor'], message: 'section_not_for_role' })
   if (value.role === 'executor' && value.home) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['home'], message: 'section_not_for_role' })
+  // A node-wide benchmark arm must not silently change a lead's delegations.
+  if (value.home?.relayCompaction === 'naive' && value.home.lead) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['home', 'relayCompaction'], message: 'compaction_with_lead' })
   if (value.link.safetyMs >= value.link.holderTtlMs / 2) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['link', 'safetyMs'], message: 'safety_too_large' })
 })
 export type Ms1LiveFile = z.infer<typeof ms1LiveConfigSchema>

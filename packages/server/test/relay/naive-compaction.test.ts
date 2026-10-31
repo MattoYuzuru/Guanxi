@@ -68,8 +68,14 @@ test('naive: the second cycle is shown the goal and the summary and nothing of t
   try {
     await f.executor.run(f.attempt)
     assert.equal(f.relay.read(f.run.id).cycle, 2); assert.equal(f.store.get(f.run.id).state, 'completed')
-    const [first] = work(f.prompts)!, later = work(secondCycle(f.prompts))
-    assert.ok(first!.includes('"currentStatus":"open"') && first!.includes('"current":"a"'), 'the first cycle is shown the task statement: the strip at cycle start')
+    const firstCycle = work(f.prompts).slice(0, work(f.prompts).length - work(secondCycle(f.prompts)).length), later = work(secondCycle(f.prompts))
+    assert.ok(firstCycle.length >= 2, 'the first cycle has a prompt before and one after its verify')
+    for (const prompt of firstCycle) {
+      assert.ok(prompt.includes('"initial":true') && prompt.includes('"current":"a"') && prompt.includes('Implement the fixture task.'), 'the first cycle is shown the task statement, labelled initial')
+      assert.equal(prompt.includes('"current":"b"'), false, 'and it does not follow the ledger after item a passes its gate')
+      for (const live of ['currentStatus', 'verification_requested']) assert.equal(prompt.includes(live), false, live)
+    }
+    assert.ok(firstCycle[1]!.includes('"action":"verify"'), 'the second prompt is the one after the verify turn')
     assert.ok(later.length >= 2)
     for (const prompt of later) {
       assert.ok(prompt.includes(SUMMARY) && prompt.includes('Implement the fixture task.'), 'the summary and the plan goal')
@@ -80,7 +86,10 @@ test('naive: the second cycle is shown the goal and the summary and nothing of t
     // One summary per boundary, written over what the cycle was shown: the first over the strip and the turns, the second over the first summary.
     const summaries = f.prompts.filter(isSummary)
     assert.equal(summaries.length, 2); assert.equal(f.prompts.filter(p => p.startsWith('Write a fresh')).length, 0)
-    assert.ok(summaries[0]!.includes('"currentStatus":"open"') && summaries[0]!.includes('"action":"verify"'))
+    assert.ok(summaries[0]!.includes('"initial":true') && summaries[0]!.includes('"action":"verify"') && !summaries[0]!.includes('currentStatus'))
+    // The refused tool is named nowhere the naive model reads, in any cycle: a hint to it would be charged to the arm as an error.
+    for (const prompt of f.prompts) assert.equal(prompt.includes('work.query') || prompt.includes('notes.search'), false, prompt.slice(0, 40))
+    assert.equal(f.relay.read(f.run.id).errors, 0)
     assert.ok(summaries[1]!.includes(SUMMARY) && summaries[1]!.includes('Implement the fixture task.') && !summaries[1]!.includes('currentStatus'))
     // The five probes are ledger facts the arm is never shown: they are not asked at all.
     assert.equal(f.prompts.filter(p => p.startsWith('Answer these five')).length, 0)
@@ -118,12 +127,14 @@ test('naive: the mode is recorded once per attempt, per sealed cycle and per ski
   const f = fixture({ plan: pair, actions: script(), limits: { compaction: 'naive' } })
   try {
     await f.executor.run(f.attempt)
-    assert.deepEqual(relayNotes(f, 'compaction'), [{ relay: 'compaction', mode: 'naive' }])
+    assert.deepEqual(relayNotes(f, 'compaction'), [{ relay: 'compaction', mode: 'naive', attempt: f.attempt.id, epoch: f.attempt.epoch }])
     const marker = notes(f).findIndex(text => text.includes('"relay":"compaction"')), firstModelCall = events(f).findIndex(e => e.type === 'assistant.started')
     assert.ok(marker >= 0 && firstModelCall >= 0 && events(f).findIndex(e => e.type === 'agent.note' && String(e.data.text).includes('"relay":"compaction"')) < firstModelCall, 'written before the first model call')
     const summaries = relayNotes(f, 'compaction_summary')
     assert.deepEqual(summaries.map(s => [s.cycle, s.mode, s.truncated, s.degraded, s.inputDropped, s.inputCut]), [[1, 'naive', false, false, 0, 0], [2, 'naive', false, false, 0, 0]])
-    assert.equal(summaries[0]!.summaryBytes, Buffer.byteLength(SUMMARY)); assert.equal(summaries[0]!.handoffLimitBytes, thresholds(window, reserves).handoff)
+    assert.equal(summaries[0]!.summaryBytes, Buffer.byteLength(SUMMARY)); assert.equal(summaries[0]!.attempt, f.attempt.id)
+    assert.equal(summaries[0]!.outputLimitTokens, reserves.turn); assert.equal(summaries[0]!.degradedReason, null)
+    assert.ok(Number(summaries[0]!.summaryLimitBytes) > 0 && Number(summaries[0]!.summaryLimitBytes) < thresholds(window, reserves).handoff, 'the summary room is the handoff bound minus its framing')
     assert.deepEqual(relayNotes(f, 'probe_not_applicable'), [{ relay: 'probe_not_applicable', mode: 'naive', cycle: 2, reason: 'ledger_facts_not_shown', damaged: false }])
     assert.deepEqual(relayNotes(f, 'probe'), [], 'a skipped probe is never a pass or a fail')
     const sealed = f.relay.sealed(f.attempt)!
@@ -140,7 +151,8 @@ test('naive: a summary longer than the handoff bound is cut visibly and reported
     await f.executor.run(f.attempt)
     const [cut, whole] = relayNotes(f, 'compaction_summary')
     assert.equal(cut!.truncated, true); assert.equal(whole!.truncated, false)
-    assert.ok(Number(cut!.summaryBytes) <= Number(cut!.handoffLimitBytes), 'inside the same 15% handoff bound the ledger handoff uses')
+    assert.ok(Number(cut!.summaryBytes) <= Number(cut!.summaryLimitBytes), 'inside the room the same 15% handoff bound leaves')
+    assert.ok(Number(cut!.summaryLimitBytes) - Number(cut!.summaryBytes) < 20, 'and it uses that room: the cut text is as long as the bound allows')
     const seen = work(secondCycle(f.prompts))[0]!
     assert.ok(seen.includes('[use paging]') && seen.includes('LLLL') && !seen.includes(long), 'the next cycle sees the cut text, marked as cut')
   } finally { f.close() }
@@ -202,4 +214,118 @@ test('naive: a damaged stored seal is not repaired from the ledger; the next cyc
 
 test('compaction accepts only the two named modes', () => {
   assert.throws(() => fixture({ limits: { compaction: 'summary' as never } }), (error: unknown) => error instanceof RelayError && error.code === 'relay_compaction_invalid')
+})
+
+test('naive: the summary request states the output ceiling and the storage room, and the note reports the same numbers', async () => {
+  const f = fixture({ plan: pair, actions: script(), limits: { compaction: 'naive' } })
+  try {
+    await f.executor.run(f.attempt)
+    const reported = relayNotes(f, 'compaction_summary'), asked = f.prompts.filter(isSummary)
+    assert.equal(asked.length, 2); assert.equal(reported.length, 2)
+    asked.forEach((prompt, i) => assert.ok(prompt.includes(`Your reply is cut at ${reserves.turn} tokens, and the stored summary at ${reported[i]!.summaryLimitBytes} bytes`), prompt.slice(0, 600)))
+  } finally { f.close() }
+})
+
+test('naive: a degraded summary says why, with the relay\'s fixed code', async () => {
+  const reasons = async (mutate: (f: ReturnType<typeof fixture>) => void, actions = script()) => {
+    const f = fixture({ plan: pair, actions, limits: { compaction: 'naive' } })
+    try {
+      mutate(f)
+      await f.executor.run(f.attempt)
+      return relayNotes(f, 'compaction_summary').map(n => [n.degraded, n.degradedReason])
+    } finally { f.close() }
+  }
+  const limited = (f: ReturnType<typeof fixture>) => {
+    const original = f.model.call.bind(f.model)
+    f.model.call = async (prompt, options) => { const reply = await original(prompt, options); return isSummary(prompt) ? { ...reply, outputLimited: true } : reply }
+  }
+  assert.deepEqual((await reasons(() => {}, script(n => { if (n === 1) throw new Error('fixture unavailable'); return SUMMARY }))).at(0), [true, 'model_failed'])
+  assert.deepEqual((await reasons(limited)).at(0), [true, 'narrative_output_limited'], 'a reply the output reserve cut is not a summary')
+  assert.deepEqual((await reasons(() => {})).at(0), [false, null])
+})
+
+test('naive: a summary replaced by the harness fallback is reported as lost, not as intact', async () => {
+  const { RelayError } = await import('../../src/relay/types.ts')
+  const f = fixture({ plan: pair, actions: script(), limits: { compaction: 'naive' } })
+  try {
+    const seal = f.relay.seal.bind(f.relay)
+    let refused = 0
+    f.relay.seal = (...args: Parameters<typeof seal>) => { if (refused++ < 2) throw new RelayError('handoff_size'); return seal(...args) }
+    await f.executor.run(f.attempt)
+    const [lost] = relayNotes(f, 'compaction_summary')
+    assert.deepEqual([lost!.truncated, lost!.degraded, lost!.degradedReason, lost!.summaryBytes], [true, true, 'handoff_fallback', 0])
+    assert.ok(work(secondCycle(f.prompts))[0]!.includes(NAIVE_UNAVAILABLE_SUMMARY), 'the next cycle is told the summary is unavailable')
+  } finally { f.close() }
+})
+
+/** A second attempt on the same run, as after a stop or a restart: a new executor, a recovered ledger. */
+async function resume(f: ReturnType<typeof fixture>, limits: object) {
+  const next = f.store.decide(f.run.id)
+  f.relay.recover(next)
+  const { RelayExecutor } = await import('../../src/relay/executor.ts')
+  const { DEFAULT_RELAY_LIMITS } = await import('../../src/relay/types.ts')
+  const executor = new RelayExecutor(f.relay, f.model, f.workspace, f.executor.reserves, f.scrubber, { ...DEFAULT_RELAY_LIMITS, ...limits })
+  return { next, executor }
+}
+
+test('naive: every attempt writes its own marker before that attempt\'s first model call, and a run whose attempts disagree is detectable', async () => {
+  const sealers = (f: ReturnType<typeof fixture>) => (f.db.prepare('SELECT DISTINCT attempt_id FROM relay_seals WHERE run_id=?').all(f.run.id) as Array<{ attempt_id: string }>).map(r => r.attempt_id)
+  /** The rule a bench runner applies: every attempt that sealed a cycle has a marker, and every summary note names a marked attempt. */
+  const consistent = (f: ReturnType<typeof fixture>) => {
+    const marked = new Set(relayNotes(f, 'compaction').map(n => n.attempt))
+    return sealers(f).every(id => marked.has(id)) && relayNotes(f, 'compaction_summary').every(n => marked.has(n.attempt))
+  }
+  const stopAtSecondWork = (f: { executor: { stop(): void } }) => { let n = 0; return async (prompt: string) => { if (isSummary(prompt)) return SUMMARY; if (++n === 2) f.executor.stop(); return canonical({ action: 'handoff' }) } }
+  const first = async (limits: object) => {
+    const holder: { executor: { stop(): void } } = { executor: { stop() {} } }
+    const f = fixture({ plan: pair, actions: stopAtSecondWork(holder), limits: { compaction: 'naive' } })
+    holder.executor = f.executor
+    await f.executor.run(f.attempt)
+    assert.equal(f.store.get(f.run.id).state, 'input_required'); assert.ok(f.relay.sealed(f.attempt))
+    const before = f.prompts.length
+    const { next, executor } = await resume(f, limits)
+    await executor.run(next)
+    return { f, next, before }
+  }
+  const pure = await first({ compaction: 'naive' })
+  try {
+    const markers = relayNotes(pure.f, 'compaction')
+    assert.deepEqual(markers.map(m => m.attempt), [pure.f.attempt.id, pure.next.id])
+    assert.deepEqual(markers.map(m => m.epoch), [pure.f.attempt.epoch, pure.next.epoch])
+    const log = events(pure.f), second = log.findIndex((e, i) => i > 0 && e.type === 'agent.note' && String(e.data.text).includes('"relay":"compaction"') && String(e.data.text).includes(pure.next.id))
+    assert.ok(second > 0)
+    assert.equal(log.slice(0, second).filter(e => e.type === 'assistant.started').length, pure.before, 'the second marker precedes every model call of the second attempt')
+    assert.ok(log.slice(second).some(e => e.type === 'assistant.started'), 'and the second attempt did call the model')
+    assert.equal(consistent(pure.f), true)
+  } finally { pure.f.close() }
+  const mixed = await first({})
+  try {
+    assert.equal(relayNotes(mixed.f, 'compaction').length, 1, 'a ledger attempt writes no marker')
+    assert.ok(sealers(mixed.f).includes(mixed.next.id), 'the ledger attempt sealed a cycle')
+    assert.equal(consistent(mixed.f), false, 'naive then ledger is detectable: a sealing attempt has no marker')
+  } finally { mixed.f.close() }
+})
+
+test('naive: a resumed attempt with no seal is shown the task statement, not the progress the ledger has recorded', async () => {
+  let n = 0
+  const holder: { executor: { stop(): void } } = { executor: { stop() {} } }
+  const f = fixture({ plan: pair, limits: { compaction: 'naive' }, actions: async prompt => {
+    if (isSummary(prompt)) return SUMMARY
+    n++
+    if (n === 2) holder.executor.stop()
+    return canonical(n === 1 ? { action: 'verify', item: 'a' } : n === 2 ? { action: 'tool', name: 'file_read', args: { output: 'x' } } : { action: 'handoff' })
+  } })
+  holder.executor = f.executor
+  try {
+    await f.executor.run(f.attempt)
+    assert.equal(f.relay.sealed(f.attempt), null, 'stopped inside the first cycle: nothing sealed')
+    assert.equal(f.relay.read(f.run.id).items.a, 'done', 'the ledger has recorded the progress')
+    const before = f.prompts.length
+    const { next, executor } = await resume(f, { compaction: 'naive' })
+    n = 100
+    await executor.run(next)
+    const firstResumed = f.prompts.slice(before).find(p => p.startsWith('Execute'))!
+    assert.ok(firstResumed.includes('"initial":true') && firstResumed.includes('"current":"a"'), firstResumed.slice(-400))
+    for (const live of ['"current":"b"', 'currentStatus', 'work.query']) assert.equal(firstResumed.includes(live), false, live)
+  } finally { f.close() }
 })
