@@ -10,6 +10,8 @@ export interface ToolGrantContext { runId: string; attemptId: string; wakeSeq: n
  * never receives a result and consumes no further tokens. Revocation closes the socket. */
 export type ToolResult = { kind: 'result'; text: string; isError?: boolean } | { kind: 'hold' }
 export type ToolHandler = (input: unknown, context: ToolGrantContext) => Promise<ToolResult>
+/** A tool a grant carries besides `guanxi_delegate`: its listing and its handler. Per grant, so a turn sees only what its lead may use. */
+export interface ExtraTool { definition: { name: string; description: string; inputSchema: Record<string, unknown> }; handler: ToolHandler }
 export interface ToolGrant { readonly header: { name: string; value: string }; revoke(): void }
 
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05']
@@ -48,7 +50,7 @@ const TOOL = {
   inputSchema: LEAD_DELEGATE_JSON_SCHEMA,
 }
 
-interface Grant { context: ToolGrantContext; handler: ToolHandler; held: Set<ServerResponse>; revoked: boolean }
+interface Grant { context: ToolGrantContext; handler: ToolHandler; extra: ReadonlyMap<string, ExtraTool>; held: Set<ServerResponse>; revoked: boolean }
 const digest = (token: string) => createHash('sha256').update(token).digest('hex')
 
 /** Loopback-only MCP endpoint (Streamable HTTP, JSON responses, no server push). A grant is one
@@ -67,10 +69,11 @@ export class LeadToolServer {
   }
   /** The owner's allow-list is data for the description only; `validateExecutor` still refuses a brief. */
   setExecutors(executors: readonly LeadExecutor[] = []): void { this.executors = executors }
-  private tool() {
-    if (!this.executors.length) return TOOL
-    return { ...TOOL, description: `${TOOL.description} Allowed executors on this node: ${
-      this.executors.map(executor => `connectionId=${executor.connectionId} model=${executor.model}`).join('; ')}` }
+  private tools(grant: Grant) {
+    let description: string = TOOL.description
+    if (this.executors.length) description += ` Allowed executors on this node: ${this.executors.map(executor => `connectionId=${executor.connectionId} model=${executor.model}`).join('; ')}`
+    if (grant.extra.size) description += ` Before planning you can read the project's committed files with ${[...grant.extra.keys()].join(', ')} (read-only); the commit they report is a valid plan.base.`
+    return [{ ...TOOL, description }, ...[...grant.extra.values()].map(tool => tool.definition)]
   }
 
   /** Starts listening on first use and returns the endpoint URL. */
@@ -96,9 +99,9 @@ export class LeadToolServer {
     const bound = this.server?.address()
     return bound && typeof bound === 'object' ? { address: bound.address, port: bound.port } : null
   }
-  grant(context: ToolGrantContext, handler: ToolHandler): ToolGrant {
+  grant(context: ToolGrantContext, handler: ToolHandler, extra: readonly ExtraTool[] = []): ToolGrant {
     const token = randomBytes(32).toString('base64url')
-    const grant: Grant = { context: { ...context }, handler, held: new Set(), revoked: false }
+    const grant: Grant = { context: { ...context }, handler, extra: new Map(extra.map(tool => [tool.definition.name, tool])), held: new Set(), revoked: false }
     this.grants.set(digest(token), grant)
     return {
       header: { name: 'Authorization', value: `Bearer ${token}` },
@@ -164,11 +167,12 @@ export class LeadToolServer {
             capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'guanxi-lead', version: '0.1.0' } } })
         }
         case 'ping': return this.reply(response, 200, { jsonrpc: '2.0', id: body.id, result: {} })
-        case 'tools/list': return this.reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { tools: [this.tool()] } })
+        case 'tools/list': return this.reply(response, 200, { jsonrpc: '2.0', id: body.id, result: { tools: this.tools(grant) } })
         case 'tools/call': {
-          if (params.name !== LEAD_DELEGATE_TOOL) return this.rpcError(response, body.id, -32602, 'unknown_tool')
+          const extra = typeof params.name === 'string' ? grant.extra.get(params.name) : undefined
+          if (params.name !== LEAD_DELEGATE_TOOL && !extra) return this.rpcError(response, body.id, -32602, 'unknown_tool')
           let outcome: ToolResult
-          try { outcome = await grant.handler(params.arguments, grant.context) } catch { outcome = { kind: 'result', text: 'lead_tool_failed', isError: true } }
+          try { outcome = await (extra?.handler ?? grant.handler)(params.arguments, grant.context) } catch { outcome = { kind: 'result', text: 'lead_tool_failed', isError: true } }
           if (grant.revoked || response.destroyed) { response.destroy(); return }
           if (outcome.kind === 'hold') {
             grant.held.add(response)

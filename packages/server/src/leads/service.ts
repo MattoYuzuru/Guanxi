@@ -10,10 +10,17 @@ import { TERMINAL_RUN_STATES, type Attempt, type PromiseRecord, type Wake } from
 import { typedWakeFailure } from './failure.ts'
 import { buildWakePacket, DEFAULT_PACKET_TOKENS, renderWakePacket } from './packet.ts'
 import { LeadStore, type LeadDelegation, type LeadSession } from './store.ts'
-import { LeadToolServer, type ToolResult } from './tool-server.ts'
+import { PROJECT_VIEW_TOOLS, ProjectView, ProjectViewError, type ProjectViewPolicy, type ProjectViewSummary } from './project-view.ts'
+import { LeadToolServer, type ExtraTool, type ToolGrantContext, type ToolResult } from './tool-server.ts'
 import { LeadError, canonical, code, digestOf, leadInvariant, type ChildReporter, type LeadLimits, type ChildStarter, type LeadNotice,
   type LeadOutcome, type LeadTurnResult } from './types.ts'
 
+/** The lead's read-only view of its project's committed files (MS1 finding 2). Opt-in; the node serves it on the lead's own tool server. */
+export interface LeadProjectViewOptions {
+  /** Source roots of a project, as the relay start resolves them (the first one is read). Never taken from tool input. */
+  roots(projectId: string, signal: AbortSignal): Promise<readonly string[]>
+  policy?: Partial<ProjectViewPolicy>
+}
 export interface LeadServiceOptions {
   db: Db
   runs: RunStore
@@ -27,6 +34,8 @@ export interface LeadServiceOptions {
   executors?: readonly { connectionId: string; model: string }[]
   /** Owner ceilings on caps, deadline and detach; without them the lead's brief is taken as given. */
   limits?: LeadLimits
+  /** Absent: the lead has no project tools. */
+  projectView?: LeadProjectViewOptions
   /** D-142: the lead connection's billing fact, shown as data with its source and age. */
   billing?: (ownerAccountId: string, connectionId: string) => unknown
   notify?: (notice: LeadNotice) => void
@@ -95,6 +104,7 @@ export class LeadService {
   private readonly runs: RunStore
   private readonly scrubber: EgressScrubber
   private readonly tools: LeadToolServer
+  private readonly view: ProjectView | null
   private readonly ownsTools: boolean
   private readonly live = new Map<string, Live>()
   private readonly tasks = new Set<Promise<unknown>>()
@@ -120,6 +130,7 @@ export class LeadService {
     // An injected server may already name the host's executors; no list means "leave it as it is", not "reset it".
     if (options.executors !== undefined) this.tools.setExecutors(options.executors)
     this.ownsTools = options.tools === undefined
+    this.view = options.projectView ? new ProjectView({ scrubber: options.scrubber, ...(options.projectView.policy ? { policy: options.projectView.policy } : {}) }) : null
   }
   /** The task this service would store for `prompt`; the CLI refuses to start a second lead with the same one. */
   normalizeTask(prompt: string): string { return normalizeTask(prompt, this.scrubber) }
@@ -217,7 +228,8 @@ export class LeadService {
     this.live.set(runId, live)
     const result = (async (): Promise<LeadTurnResult> => {
       const session = this.store.session(runId)!
-      const grant = this.tools.grant({ runId, attemptId: attempt.id, wakeSeq: turn.wakeSeq }, input => this.delegateCall(runId, turn, session, input))
+      const grant = this.tools.grant({ runId, attemptId: attempt.id, wakeSeq: turn.wakeSeq }, input => this.delegateCall(runId, turn, session, input),
+        this.projectTools(turn, live))
       // The agent holds the token only after its session request was written, so the scrubber may know it from then on:
       // an agent that repeats its own configuration cannot put the capability into the session log. Registering earlier
       // would redact the Authorization header of that very request.
@@ -297,6 +309,45 @@ export class LeadService {
     if (!limits.allowDetach && brief.onDeadline === 'detach') return 'onDeadline'
     return null
   }
+  // ---- the lead's project view -------------------------------------------------------------
+
+  /** The three read-only project tools of one turn, or none when the host configured no view. One call runs at a time per turn. */
+  private projectTools(turn: Turn, live: Live): ExtraTool[] {
+    const view = this.view
+    if (!view) return []
+    let queue: Promise<unknown> = Promise.resolve()
+    return PROJECT_VIEW_TOOLS.map(definition => ({ definition, handler: (input: unknown, context: ToolGrantContext) => {
+      const call = queue.then(() => this.projectCall(view, definition.name, turn, live, context, input))
+      queue = call.catch(() => undefined)
+      return call
+    } }))
+  }
+  /** Serves one project-view call and records it. The project comes from the stored lead session, never from the input. An unaudited read is
+   * never served: if the note cannot be written (fenced out, stale lease) the lead gets that code instead of the content. */
+  private async projectCall(view: ProjectView, tool: string, turn: Turn, live: Live, context: ToolGrantContext, input: unknown): Promise<ToolResult> {
+    const refuse = (text: string): ToolResult => ({ kind: 'result', isError: true, text: this.scrubber.scrub(text) })
+    const session = this.store.session(context.runId)
+    if (!session || context.runId !== turn.attempt.run_id || context.attemptId !== turn.attempt.id) return refuse('lead_not_found')
+    let outcome: { ok: true; text: string; summary: ProjectViewSummary } | { ok: false; error: ProjectViewError }
+    try {
+      const roots = await this.o.projectView!.roots(session.project_id, live.cancel.signal)
+      const root = roots[0]
+      if (!root) throw new ProjectViewError('project_view_unavailable')
+      const result = await view.run(tool, root, input)
+      outcome = { ok: true, text: result.text, summary: result.summary }
+    } catch (error) {
+      // Only a fixed code leaves: an OS message, a path or a library error stays behind the generic one.
+      outcome = { ok: false, error: error instanceof ProjectViewError ? error : new ProjectViewError('project_view_unavailable') }
+    }
+    const summary = outcome.ok ? outcome.summary : null
+    try {
+      this.runs.mutate(turn.attempt, (_db, emit) => this.note(emit, { action: 'project_view', tool, outcome: outcome.ok ? 'ok' : outcome.error.code,
+        path: summary?.path ?? null, commit: summary?.commit ?? null, bytes: summary?.bytes ?? 0, truncated: summary?.truncated ?? false,
+        withheld: summary?.withheld ?? 0, ...(summary?.queryChars === undefined ? {} : { queryChars: summary.queryChars }) }))
+    } catch (error) { return refuse(code(error)) }
+    return outcome.ok ? { kind: 'result', text: outcome.text } : refuse(outcome.error.text)
+  }
+
   private async delegateCall(runId: string, turn: Turn, session: LeadSession, raw: unknown): Promise<ToolResult> {
     const refuse = (text: string): ToolResult => ({ kind: 'result', isError: true, text: this.scrubber.scrub(text) })
     if (turn.delegating) return refuse('delegation_already_requested')
