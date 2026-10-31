@@ -18,6 +18,9 @@ export interface RelayLimits {
   /** Ask the runtime to decode probes, work actions and judge verdicts under a JSON Schema (llama-server `json_schema`). Turn it off only for a
    * runtime that rejects the grammar; the replies are then validated exactly as before. */
   structuredOutput: boolean
+  /** B3 benchmark arm, never a product setting and not on the wire: `naive` shows the next cycle a model-written summary of the previous context
+   * instead of the ledger strip, notes and ledger queries. Absent or `ledger` is the relay as ADR-0020 describes it. Trusted host only. */
+  compaction?: 'ledger' | 'naive'
 }
 export const DEFAULT_RELAY_LIMITS: RelayLimits = { gateTimeoutMs: 120_000, goalBytes: 512, pageBytes: 2048, invalidActions: 3, structuredOutput: true,
   transientRetryMs: [5_000, 15_000, 30_000, 60_000, 120_000, 240_000] }

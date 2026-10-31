@@ -74,6 +74,9 @@ const homeSchema = z.object({
   /** R2-json: decode probes, work actions and judge verdicts under a JSON Schema (llama-server `json_schema`). Turn it off only if the executor's
    * llama-server rejects the grammar; replies are then validated as before and the model's unconstrained output format decides the run. */
   structuredOutput: z.boolean().default(true),
+  /** B3 benchmark arm, not a product setting: `naive` makes this home's relays show the next cycle a model-written summary instead of the ledger
+   * strip (see `relay/README.md`). Absent is the ledger relay. Run the arm as its own home process so a trial is attributable. */
+  relayCompaction: z.enum(['ledger', 'naive']).optional(),
   /** R3: the judge of every relay this home starts. Absent means no judge (as before). `signals` is the deterministic J0/J1 layer, read
    * from the relay ledger; `cascade` adds J2 samples taken by the executor's own model through the pairing (one model, one
    * connection: there is no J3, which needs a second model). Judge samples are real calls on the executor's single slot and are
