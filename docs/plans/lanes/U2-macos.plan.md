@@ -56,15 +56,23 @@ probing (`existing.ts`), static web serving and loopback default instead of embe
 Electron main (which would tie runs to the shell's lifetime and move SQLite/secrets into the shell process,
 against the AGENTS.md invariant that the node owns them).
 
-- **Packaged app:** `process.execPath` with `ELECTRON_RUN_AS_NODE=1` against
-  `Resources/service/bin.js`. Verified on this Mac with Electron 44.9.0: its Node is v24.22.0, has
-  `node:sqlite`, runs `.ts` files natively. No system Node is required on the user's Mac. Consequence: the
-  Electron fuse `RunAsNode` stays **enabled**. Residual risk: anything that can exec the app binary as the
-  user can run arbitrary JS with the app's entitlements; it already runs as the user. The follow-up that
-  removes it is bundling a dedicated Node binary for the service (recorded in the hand-off).
-- **Development checkout:** `node packages/cli/src/bin.ts` with the `node` on `PATH`
-  (`GUANXI_DESKTOP_SERVICE_ENTRY` may point elsewhere; honoured only when the app is not packaged, so an
-  installed app cannot be redirected through the environment).
+- **Packaged app:** a pinned official Node.js (26.9.0, the version CI runs; SHA-256 pinned in
+  `scripts/stage-service.mjs`) at `Resources/service/node/bin/node` running `Resources/service/bin.js`. No
+  system Node is required on the user's Mac, and the `RunAsNode` Electron fuse is **off**.
+  *History (review M1, 2026-11-01):* the first cut ran the service as `Electron` with `ELECTRON_RUN_AS_NODE=1`
+  and kept the fuse on. That is wrong for two reasons. (1) Impact: the fuse is not only "something already
+  running as the user"; code run through the app binary executes under the app's **signed code identity**, and
+  the Keychain ACL of items the app creates trusts that identity, so any process that can exec the binary could
+  read them. (2) The node itself forks and spawns `process.execPath` for its sandbox, index and storage helpers
+  (`native-agent/sandbox.ts` forks with an explicit environment, `store/pinned-directory.ts` spawns it), which
+  under Electron would start the GUI instead of a script; deleting `ELECTRON_RUN_AS_NODE` from the service's
+  environment, as first proposed, would break the helpers that currently work only because the variable
+  leaks. A real Node fixes both. This is a **blocking item** that was done in this slice, not left as a follow-up.
+- **Development checkout:** the `node` on `PATH` runs `packages/cli/src/bin.ts` (`<PREFIX>_DESKTOP_SERVICE_ENTRY`
+  and `<PREFIX>_DESKTOP_NODE` may point elsewhere; honoured only when the app is not packaged, so an installed
+  app cannot be redirected through the environment). The child's environment drops every `ELECTRON_*`
+  variable, `NODE_OPTIONS`, `HOST`, `PORT` and the shell's own settings, because the service starts the user's
+  tools with it.
 - Port and data directory use the node's own variables: `GUANXI_API_PORT` (default 4310) and
   `GUANXI_DATA_DIR` (default `~/.guanxi`). The shell passes them explicitly as flags too. Lane runs
   therefore use the lane exports and never touch `~/.guanxi`.
@@ -83,8 +91,16 @@ resolve config (port, dataDir, locale)
 ```
 
 Identity check: `GET /api/health` must be JSON with `ok === true`, a string `appVersion` and
-`application.source === 'application_http'`; `GET /` must be the UI document (`<title>Guanxi</title>` and
-`id="root"`, the same test as `packages/cli/src/existing.ts`). **This is shape-based, not authenticated.**
+`application.source === 'application_http'`; `GET /` must be the UI document (`<div id="root">`; not the
+title, which the built page sets only at runtime, so `packages/cli/src/existing.ts` cannot use it either). **The
+shape is not authentication.** Ownership is checked too (review M2) before the shell attaches, both in the
+handshake and in the recovery path: `lsof -nP -iTCP:<port> -sTCP:LISTEN -Fpu` must show listeners that all
+belong to this user (`port_owned_by_other_user` otherwise, which also covers a listener this user cannot see;
+`port_unverified` when the lookup fails); a service the shell started must be the very pid of the manifest
+(`port_busy` otherwise), and a service started in this handshake must be the child that was spawned. Manifests
+that name a dead pid, or a pid whose command line (`ps -p <pid> -o command=`) no longer contains the manifest's
+entry, are stale and removed (review M3), and the stop action signals nothing it cannot match the same way.
+**A same-user process that imitates the node is still indistinguishable** until local authentication exists.
 ADR-0026 asks for an "authenticated handshake"; the node has no local authentication today
 (`packages/server/src/app.ts`: loopback "let everything through"), so a hostile local process that squats
 the port and imitates the health shape cannot be told apart. The renderer is sandboxed and the shell
@@ -92,9 +108,13 @@ exposes no secrets to it, which bounds the damage to a spoofed UI; real authenti
 (per-installation credential in the keychain). Recorded as a residual, not claimed.
 
 Failure states are screens in the window, never silent: starting, `service_missing`, `port_busy`,
-`health_timeout`, `service_exited`, `ui_missing`. Each has a localized title, explanation, the port and
-the log path where relevant, and a retry link. Strings are locale keys in the shell's own catalogue
-(English source and fallback, curated Russian), selected by `app.getLocale()`.
+`health_timeout`, `service_exited`, `ui_missing`, `port_owned_by_other_user`, `port_unverified`, and `load_failed`
+(the interface was lost after a good handshake: `did-fail-load` or `render-process-gone`). Each has a localized
+title and explanation, the port and the log path where relevant, and **no button** (D-203: no Retry controls):
+the shell re-checks every 3 s and View > Reconnect (Cmd-R) runs the full handshake. A child that never became
+healthy is ended with SIGTERM and then SIGKILL on its process group, and the screen says "stopped" only once the
+child is confirmed gone. Strings are locale keys in the shell's own catalogue (English source and fallback,
+curated Russian), selected from the system's preferred languages.
 
 ## Decision 4 — renderer security
 
@@ -107,18 +127,26 @@ the log path where relevant, and a retry link. Strings are locale keys in the sh
 - Navigation lock (applied to every `webContents` through `web-contents-created`, so popouts and
   iframes are covered): `will-navigate`, `will-redirect` and `will-frame-navigate` allow only the
   service origin `http://127.0.0.1:<port>` (and the shell's own `data:` status page when main loads it).
-  `setWindowOpenHandler` denies by default; `http(s)` URLs on another origin go to the system browser
-  via `shell.openExternal` (http, https and mailto only); a same-origin `window.open` is allowed as a child
+  `setWindowOpenHandler` denies by default; `http(s)` and `mailto:` URLs on another origin go to the system
+  browser via `shell.openExternal` only for a main-frame navigation or `window.open` that follows a real user
+  gesture (Electron's `input-event`: mouse, key, touch; one gesture opens one link), at most three per ten
+  seconds (review L1); a script that navigates or opens on its own opens nothing. A same-origin `window.open` is allowed as a child
   window with the same hardened preferences because the web UI's workspace popouts
   (`/workspace-popout.html`) need it. `will-attach-webview` is denied.
 - Session: `webRequest.onBeforeRequest` cancels every request that is not same-origin loopback
   (`http`/`ws` to the service origin) or a local `data:`/`blob:` URL, so remote content cannot load into
-  the window even from content the node serves (for example images in a model's markdown). Permission
-  requests (camera, microphone, geolocation, notifications, ...) are denied for now; voice (V1) will
-  grant the microphone deliberately.
+  the window even from content the node serves (for example images in a model's markdown). Every response of the
+  service origin also gets a Content-Security-Policy header (`default-src 'self'`, connect to the node's
+  origin and its WebSocket only, workers and previews from `blob:`, `object-src 'none'`; inline script and style
+  stay allowed because the built `index.html` has an inline theme bootstrap, so a nonce or hash from the web
+  build is a later tightening). Permissions (review H1): the top frame of the service origin gets
+  `clipboard-sanitized-write` (every copy button) and `fullscreen`; everything else is denied, deliberately
+  including `notifications` (the notification center, NC1, delivers OS notifications through the shell, not the
+  Web Notification API), `clipboard-read`, and media (voice, V1, will grant the microphone deliberately).
 - Fuses are set in the packaging step (`@electron/fuses` through electron-builder `electronFuses`):
   `EnableNodeCliInspectArguments` off, `OnlyLoadAppFromAsar` on, `EnableEmbeddedAsarIntegrityValidation`
-  on, `GrantFileProtocolExtraPrivileges` off; `RunAsNode` stays on (Decision 2).
+  on, `GrantFileProtocolExtraPrivileges` off, `EnableNodeOptionsEnvironmentVariable` off and **`RunAsNode` off**
+  (Decision 2).
 
 ## Decision 5 — platform isolation (D-221)
 
@@ -191,6 +219,5 @@ lead's separate action (this lane does no self-review).
 
 ## Next slice
 
-U2-b: launchd agent with login item, tray/menu-bar presence, a dedicated Node runtime for the service
-(drops `RunAsNode`), real notarized build with the owner's credentials, auto-update implementation, and
+U2-b: launchd agent with login item, tray/menu-bar presence, real notarized build with the owner's credentials, auto-update implementation, and
 the service-update-waits-for-idle API. U6 then adds `linux.ts` and rpm.
