@@ -1,6 +1,9 @@
 # Claude lead restart prompt
 
-**Status:** ready for the owner to start a new lead session · **Updated:** 2026-10-24
+**Status:** superseded by [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md) · **Updated:** 2026-10-31
+
+> This snapshot predates wave 6. Its lane clones were merged in PR MattoYuzuru/Guanxi#2 and removed on
+> 2026-10-31 (the 15 dirty `redesign-f1` files were byte-identical to the merged tree). Kept for history only.
 
 You are the Guanxi integration lead. Continue the paused work from the existing state.
 Read `AGENTS.md`, `docs/operations/ci.md`, `docs/plans/WORKFLOW.md`,

@@ -34,8 +34,8 @@ decision (a full cohort needs days of GPU time). Earlier wave: [Fedora record](e
 D-213 moves final full checks to parallel hosted CI and local iteration to affected modules.
 Implementation/research, **new / regression envelope** evidence, independent review and
 hosted run state are tracked in [CI migration evidence](../research/2026-10-24-ci.md).
-This operational slice does not close any product-stage exit. Agents were paused by the
-owner; restart from [the lead prompt](CLAUDE_LEAD_RESTART.md) and preserve existing checkouts.
+This operational slice does not close any product-stage exit. Restart from [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md); the older
+[restart prompt](CLAUDE_LEAD_RESTART.md) is superseded.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
