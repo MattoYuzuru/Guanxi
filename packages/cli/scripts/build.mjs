@@ -24,7 +24,9 @@ await build({
   format: 'esm',
   external: ['web-tree-sitter', 'ignore'],
   sourcemap: true,
-  banner: { js: '#!/usr/bin/env node' },
+  // Bundled CommonJS dependencies (undici, ...) call require() on Node built-ins; an ES module has none, so
+  // give the bundle one (otherwise `node dist/bin.js` fails at load: "Dynamic require of node:assert").
+  banner: { js: "#!/usr/bin/env node\nimport { createRequire as __guanxiCreateRequire } from 'node:module'\nconst require = __guanxiCreateRequire(import.meta.url)" },
   // Release builds never write component approvals (D-138); see packages/server/src/index.ts.
   define: { __GUANXI_RELEASE_BUILD__: 'true' },
 })
