@@ -198,17 +198,23 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   add/remove (`session_not_running`) until preparation ends. An artifact is read through
   `SessionInputStore.read` (session, id, checksum, size, media type, exact digest), decoded as
   strict UTF-8 and scrubbed with the current registry; an inline legacy item is scrubbed
-  afresh. Abort, session availability, active identity and the R1 fence are rechecked after
-  every await and synchronously on return from preparation, before the prompt append and the
-  provider call (nothing awaits in between). The text keeps a leading byte order mark, so it
-  equals the verified bytes. The durable `prompt` keeps the queue id as `messageId` with
+  afresh. Abort, session availability, active identity and the R1 fence are checked
+  synchronously at the top of preparation (image staging has already awaited), again after the
+  artifact read (so a lost owner never starts the history replay, whose store reads also carry
+  the abort signal) and synchronously on return from preparation. Nothing awaits between that
+  last check, the prompt append and the provider call; images are staged before preparation
+  for exactly that reason. The `closed` and active-identity clauses of the check are defense in
+  depth: close aborts every turn first and no reachable state replaces the owner. The text
+  keeps a leading byte order mark, so it equals the verified bytes. The durable `prompt` keeps the queue id as `messageId` with
   `origin: queued`.
 - An unreadable input (missing, tampered, wrong size/checksum/session, invalid UTF-8) writes one
   content-free `error` (`input_artifact_unavailable`; an unreadable log or an unready scrubber
   records `stored_data_invalid` or `egress_unavailable` instead) and the failed terminal on the
   new attempt: no prompt marker, provider or tool call, the selected id stays pending and the next
-  item is never skipped to. Stop during preparation records its intervention on the
-  preparation attempt and cancels it; a deposed owner writes nothing.
+  item is never skipped to. If the owner was lost while the input was failing (stop, close, leave,
+  a deposed fence), that is the recorded truth instead: the ordinary cancelled or failed terminal
+  with no `input_artifact_unavailable` claim. Stop during preparation records its intervention on
+  the preparation attempt and cancels it; a deposed owner writes nothing.
 - **Restricted floor.** While the latest snapshot is v3 and still has a pending item, add and
   remove (`POST /queue`, `DELETE /queue/:item` including duplicate removal, `POST /prompts`
   while a turn runs, and side-chat Send) refuse with HTTP 409
@@ -229,7 +235,7 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   `stored_data_invalid` (HTTP 503, no content); stop of an *active* turn still works. A turn in
   flight completes, the transition records a failed preparation attempt with the same code,
   `wait()` rejects with it, and nothing is dispatched. The stored events are preserved.
-  (3) If R1 cannot allocate the next attempt between turns, no owner exists to write a record, so
+  Deleting such a session still works: removal reads only the policy event. (3) If R1 cannot allocate the next attempt between turns, no owner exists to write a record, so
   the failure is not visible in the log; the session shows its last completed run with the item
   still pending.
 
@@ -368,7 +374,8 @@ routes below and `packages/contract/src/side-chat.ts`. Tests: `test/native-agent
   `operation_conflict` (a long text, stored as an artifact, is compared by its stored checksum, not by the excerpt).
   The answer (`queued`, `started`, `already_sent`) is what `prompt()` actually did, not what an earlier check saw.
   Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
-  retryable `session_busy`, and a request that lands between turns gets `session_busy`. The pre-checks inside the
+  retryable `session_busy`, and a request that lands between turns, or while a queued turn is still
+  preparing its input, gets `session_busy` (HTTP 409, not 503). The pre-checks inside the
   FIFO return their errors instead of throwing, so they cannot abort the main turn. Origin is recorded as `queued`.
 - **Not covered.** Legacy Chat Jobs have no side-chat route (the web panel is mounted on native sessions only);
   the answer is not streamed; the opened-in-browser transcript is not durable by design.

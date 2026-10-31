@@ -57,11 +57,16 @@ const PREPARATION_REPORTS = {
 } as const
 function preparationFailureCode(error: unknown): keyof typeof PREPARATION_REPORTS | null {
   const code = error instanceof NativeAgentError ? error.code : null
-  return code !== null && code in PREPARATION_REPORTS ? code as keyof typeof PREPARATION_REPORTS : null
+  return code !== null && Object.hasOwn(PREPARATION_REPORTS, code) ? code as keyof typeof PREPARATION_REPORTS : null
 }
-/** What a queued turn's preparation hands to `execute`: the verified input and the final dispatch check. */
-interface PreparedTurn { prompt: string; history: AgentMessage[]; verify(): void }
-type PrepareTurn = () => Promise<PreparedTurn>
+/** What a queued turn's preparation hands to `execute`: the verified input and history. */
+interface PreparedTurn { prompt: string; history: AgentMessage[] }
+/**
+ * `verify` is the owner check (abort, availability, active identity, home and attempt fence). `execute` calls
+ * it synchronously on return from `prepare`, and again after a preparation failure to tell a lost owner
+ * (recorded as the ordinary cancelled or failed terminal) from a genuinely unreadable input.
+ */
+interface PrepareTurn { prepare(): Promise<PreparedTurn>; verify(): void }
 interface Active {
   policy: SandboxPolicy; handle: SessionHandle; abort: AbortController; settled: Promise<void>; attempt: Attempt
   /** Open for queue mutations while a turn runs. Null between turns and while a queued turn prepares. */
@@ -471,7 +476,7 @@ export class NativeAgents {
     const answer = (delivery: SideChatSendResponse['delivery'], duplicate: boolean): SideChatSendResponse => ({ operationId: request.operationId, messageId, delivery, duplicate })
     // The receipt is the durable log, never process memory: a recorded prompt (consumed) or a pending queue item.
     const receipt = () => {
-      const prompt = this.log.readAll(id, 'remote_agent').find(event => event.type === 'prompt' && event.data.messageId === messageId)
+      const prompt = this.readLog(id).find(event => event.type === 'prompt' && event.data.messageId === messageId)
       if (prompt?.type === 'prompt') {
         // Short prompts are stored inline and compared exactly; long ones are stored as an artifact, so the
         // stored checksum of the full scrubbed text is compared, never a bounded excerpt.
@@ -598,7 +603,8 @@ export class NativeAgents {
         queuedId = selected?.id
         // An unreadable log at selection time is this attempt's own accurate failure (never reported as a
         // missing input); the stored events and the pending input are left untouched.
-        prepare = selected === undefined ? async () => { throw unreadable }
+        prepare = selected === undefined
+          ? { prepare: async () => { throw unreadable }, verify: this.ownerCheck(id, active, active.attempt) }
           : this.queuedTurn(id, input, active, active.attempt, selected)
       }
     })().catch(() => {
@@ -617,25 +623,36 @@ export class NativeAgents {
    * reaches a provider: `execute` calls `verify()` synchronously on return, so no
    * await separates the last check from the first dispatch step.
    */
+  private ownerCheck(id: string, active: Active, attempt: Attempt): () => void {
+    return () => {
+      active.abort.signal.throwIfAborted()
+      // `closed` is defense in depth: close() aborts every active turn first, so the signal above fires first.
+      if (this.closed) throw new NativeAgentError('agent_unavailable')
+      this.sessions.assertAvailable(id)
+      // Identity is defense in depth as well: `active` is replaced only after the turn settles and
+      // `active.attempt` only between turns, so no reachable state fails this clause today. It guards a
+      // future refactor that lets a second owner exist.
+      if (this.active.get(id) !== active || active.attempt !== attempt) throw new NativeAgentError('writer_fenced')
+      this.runs.checkExecution(attempt)
+    }
+  }
   private queuedTurn(id: string, input: NativeAgentInput, active: Active, attempt: Attempt, item: ExecutableQueueItem): PrepareTurn {
-    return async () => {
-      const verify = () => {
-        active.abort.signal.throwIfAborted()
-        if (this.closed) throw new NativeAgentError('agent_unavailable')
-        this.sessions.assertAvailable(id)
-        if (this.active.get(id) !== active || active.attempt !== attempt) throw new NativeAgentError('writer_fenced')
-        this.runs.checkExecution(attempt)
-      }
-      const model = selectedModel(this.connections, input)
-      // Nothing awaits between the allocation of this attempt and the read, so the first check is the
-      // one after it: a held read must not be followed by a replay or a dispatch for a lost owner.
-      const prompt = item.kind === 'inline'
-        ? this.scrubber.scrub(item.text)
-        : this.scrubber.scrub(await this.readInputText(id, item.artifact, active.abort.signal))
-      verify()
-      const history = await this.replay(id, this.events(id), model.api, model.provider, model.id)
-      // The caller runs `verify()` synchronously on return, before anything else can happen.
-      return { prompt, history, verify }
+    const verify = this.ownerCheck(id, active, attempt)
+    return {
+      verify,
+      prepare: async () => {
+        // Synchronous: image staging in `execute` awaited before this call, so a lost owner must not start a read.
+        verify()
+        const model = selectedModel(this.connections, input)
+        const prompt = item.kind === 'inline'
+          ? this.scrubber.scrub(item.text)
+          : this.scrubber.scrub(await this.readInputText(id, item.artifact, active.abort.signal))
+        // A held read must not be followed by a replay for a lost owner.
+        verify()
+        const history = await this.replay(id, this.events(id), model.api, model.provider, model.id, active.abort.signal)
+        // `execute` runs `verify()` synchronously on return, before anything else can happen.
+        return { prompt, history }
+      },
     }
   }
 
@@ -689,16 +706,19 @@ export class NativeAgents {
       }
       if (prepare) {
         try {
-          const prepared = await prepare()
+          const prepared = await prepare.prepare()
           // Synchronously on return: abort, availability, active identity, home and attempt fence. Nothing
           // awaits between this check, the prompt append and the provider call.
-          prepared.verify()
+          prepare.verify()
           prompt = prepared.prompt; history = prepared.history
         } catch (error) {
-          // Unreadable input or an unreadable log is this attempt's own content-free failure; an abort, a
-          // lost fence or a lost session fall through to the ordinary truthful terminal below.
+          // Unreadable input or an unreadable log is this attempt's own content-free failure. If the owner was
+          // lost (stop, close, leave, a deposed fence) that is the truth to record instead: it falls through to
+          // the ordinary cancelled or failed terminal below and never claims a missing input.
           const code = preparationFailureCode(error)
-          if (code !== null && !signal.aborted) await created.fail(code)
+          let ownerLost = false
+          try { prepare.verify() } catch { ownerLost = true }
+          if (code !== null && !ownerLost) await created.fail(code)
           throw error
         }
         active.preparing = null
@@ -888,7 +908,7 @@ export class NativeAgents {
     const fenced = ['writer_fenced', 'closed', 'session_not_found'].includes(code)
     const budget = ['budget_exhausted', 'report_budget_exhausted', 'quota_exhausted'].includes(code)
     if (fenced || budget) return
-    const reported = code in PREPARATION_REPORTS
+    const reported = Object.hasOwn(PREPARATION_REPORTS, code)
       ? { code, message: PREPARATION_REPORTS[code as keyof typeof PREPARATION_REPORTS] }
       : { code: 'input_artifact_storage_failed', message: 'Session input artifact storage failed' }
     if (!aborted) {
@@ -915,6 +935,7 @@ export class NativeAgents {
     api: AssistantMessage['api'],
     provider: AssistantMessage['provider'],
     model: string,
+    signal?: AbortSignal,
   ): Promise<AgentMessage[]> {
     const messages: AgentMessage[] = []
     for (const event of events) {
@@ -922,7 +943,7 @@ export class NativeAgents {
       if (event.type === 'prompt') {
         const text = event.version === 1
           ? event.data.text
-          : this.scrubber.scrub(await this.readInputText(sessionId, event.data.artifact))
+          : this.scrubber.scrub(await this.readInputText(sessionId, event.data.artifact, signal))
         messages.push({ role: 'user', content: text, timestamp })
       }
       if (event.type === 'assistant.message') messages.push({ role: 'assistant', content: [{ type: 'text', text: event.data.text }], api, provider, model, usage: emptyUsage(), stopReason: 'stop', timestamp })
@@ -931,7 +952,7 @@ export class NativeAgents {
         if (last?.role === 'assistant') {
           const argumentsValue = event.version === 1
             ? event.data.arguments
-            : this.parseInputArguments(await this.readInputText(sessionId, event.data.artifact))
+            : this.parseInputArguments(await this.readInputText(sessionId, event.data.artifact, signal))
           last.content.push({ type: 'toolCall', id: event.data.toolCallId, name: event.data.name, arguments: argumentsValue as import('@earendil-works/pi-ai').JsonObject })
           last.stopReason = 'toolUse'
         }
