@@ -100,7 +100,7 @@ carry file text; a search records the length of its query, not the query.
 | `packages/server/src/leads/tool-server.ts` | per-grant extra tools; `tools/list` and `tools/call` dispatch |
 | `packages/server/src/leads/service.ts` | `projectView` option, grant wiring, audit note |
 | `packages/server/src/leads/plugin.ts` | type only (option flows through `LeadPluginConfig`) |
-| `packages/server/src/index.ts` | shared `observeProject`; `leads` gets the view by default (`projectView: false` opts out) |
+| `packages/server/src/index.ts` | shared `observeProject`; `leads.projectView` opt-in (see the review amendments) |
 | `packages/server/src/indexing/snapshot.ts` | export `blocked` as the shared secret-name rule (shared edit) |
 | `packages/server/test/leads/project-view.test.ts` | new: unit + integration tests |
 | `packages/server/src/leads/README.md`, `docs/operations/ms1-live-run.md` | current-state docs |
@@ -120,3 +120,18 @@ enabled; one lead turn end to end through the K5 fixture agent and the HTTP tool
 
 Commands: `node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test` on the new file plus
 `tool-server.test.ts`, `lifecycle.test.ts`, `limits.test.ts`; `npx tsc --noEmit -p packages/server`.
+
+## Review amendments (2026-10-31)
+
+The independent security review changed the design before integration:
+
+- **Opt-in, not default-on (M3, lead default, 2026-10-31).** The view exists only through explicit owner configuration:
+  `home.lead.projectView: true` (MS1 live) or `leads.projectView: true | { policy, roots }` in `start()`. Both the enabled and the
+  default-disabled path are tested through `start()`.
+- **Search never opens hidden paths (H1).** A search lists blobs with `ls-tree -r -z`, drops every path the name policy hides, and reads
+  the rest through one `cat-file --batch`, matching over the scrubbed text of each whole blob. `git grep` is gone (which also removes the
+  repository-config influence of M2, the unbounded line buffering of M1 and the per-line scrub of L2). The search reports no count of hidden
+  paths, only a constant note.
+- **Cursors (L5)** `<commit>:<offset>` keep a continuation on the first page's commit. **Bounds (L4)** for path length, search text and scan bytes
+  come from the policy and are reported. **Exactly one root (L1)**. **Own codes (L3)** `project_view_timeout` and `project_view_output_limit`.
+  **Wider name policy (M4)**. Audit-note volume (L6) is a listed residual.
