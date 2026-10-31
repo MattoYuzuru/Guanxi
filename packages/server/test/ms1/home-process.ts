@@ -207,7 +207,7 @@ async function main() {
     child: relayStartsChildStarter(starts, { consent: 'full-access', domains: [], pollMs, runs: {
       get: id => runs.get(id), renew: attempt => runs.renew(attempt),
       complete: (attempt, outcome) => { fault(`mirror:complete:${outcome}:before`); runs.complete(attempt, outcome); fault(`mirror:complete:${outcome}:after`) } } }),
-    reporter: relayStartsChildReporter(starts, relayStore),
+    reporter: relayStartsChildReporter(starts, relayStore, kernel.sessionLog!),
     validateExecutor: executor => {
       if (executor.connectionId !== executorConnection || executor.model !== cfg.model) throw Object.assign(new Error('executor_not_allowed'), { code: 'executor_not_allowed' })
     },

@@ -1,7 +1,8 @@
 # Layout and screens
 
 **Status:** accepted direction (D-131–D-137, D-139; shell, modes and composer revised by
-D-202–D-207); built in stages U1, NC1, C1 and the UI-redesign lane · **Updated:** 2026-10-23
+D-202–D-207; session view and Developer mode revised by owner feedback 2026-10-23); built in
+stages U1, NC1, C1, the UI-redesign lane and UI round 4 · **Updated:** 2026-10-24
 
 Evidence: [01 harness UI patterns](../research/2026-10-20-design/01-harness-ui-patterns.md) §5,
 [04 agent browser and layout](../research/2026-10-20-design/04-agent-browser-and-layout.md) §§6–8.
@@ -26,12 +27,12 @@ Every surface declares these states, built once as patterns and reused everywher
 
 The window is the chrome tone; the main surface is a white pane floating on it (D-200).
 
-- **Navigation sidebar** — New, Projects, Models, Settings (icon and label; icon only in the rail),
+- **Navigation sidebar** — New, Projects, Models, Connections, Settings (icon and label; icon only in the rail),
   then plugin entries, then the session list (grouped by pinned, today, yesterday, earlier; status
   dots for running, waiting for you, hibernating, finished and error, with status and provenance
   as the row's description; a quiet mark for finished-unseen; pin on hover). It sits on the chrome,
   not on glass. The user can move it left or right, collapse it to a rail or hide it from the
-  sidebar menu in the strip or the customisation popover; the four core entries always exist and
+  sidebar menu in the strip or the customisation popover; the core entries always exist and
   stay reachable from the command palette (D-131). The list refreshes by itself; no Refresh button
   and no "fetched at" caption (D-203).
 - **Status strip** (top, one row, borderless; D-202): the sidebar menu, the brand mark and the page
@@ -58,9 +59,19 @@ The window is the chrome tone; the main surface is a white pane floating on it (
 - **Blocks** are plugin contributions (built-in blocks are core plugins). Each block has a
   compact **card** for rails and a full **pane**; it declares the modes it belongs to, its
   default zone, whether several instances may exist and whether it keeps running while hidden.
-- **The user owns the layout:** drag, or use "Move block to…" from the block menu, the command
-  palette or the keyboard (F6 cycles zones); float, pop out, hide, add, reset. Moves are announced
-  to screen readers.
+- **One session view (round 4, owner feedback 2026-10-23):** a chat opened from the sidebar is the
+  full-width timeline (`/chat/<id>`, or `/projects/<p>/chats/<id>`), never the docking layout.
+  Side panels (Context, Plan, Artifacts, Browser, Sub-agents, Terminal, Processes, Environment,
+  Changes, Files) open from one borderless **Panels and layout** icon menu in the session header
+  (checkable rows with icons) as one rounded pane beside the timeline — over it below the header
+  in a narrow session, a sheet on a phone. The header's context value toggles the Context panel.
+  The menu links to the free arrangement (`/workspace/<id>`), a kept public route.
+- **The user owns the free arrangement:** drag, or use "Move a panel…" from the panels menu, a
+  pane's move icon, the command palette or the keyboard (Alt+Shift+M; F6 cycles zones); float, pop
+  out, hide, add, reset. Moves are announced to screen readers. There is no toolbar row: panel
+  visibility, add block, compact density (a switch), save scope and named layouts (radio rows),
+  save, save as (a name dialog), move and reset live in the same header menu; a pane header is its
+  title and two icon actions (move, hide).
 - **Layouts** are saved documents: an account default per mode, optional per-project overrides,
   several named layouts, window geometry kept per device (D-131).
 - **Density** presets change spacing and type, never block positions.
@@ -75,8 +86,9 @@ in the customisation popover.
 
 ## 5. Blocks
 
-Visible by default (D-133): Context, Changes, Plan, Processes, Environment, Files, Terminal,
-Artifacts, Browser, Sub-agents. One click away: Quota and cost, Connectors, Board, Notifications,
+In the free arrangement's built-in layout (D-133): Context, Changes, Plan, Processes, Environment,
+Files, Terminal, Artifacts, Browser, Sub-agents. The default session view shows none of them until
+the user checks one in the panels menu (round 4). One click away: Quota and cost, Connectors, Board, Notifications,
 Status, Activity.
 
 | Block | Card | Pane | Notable states |
@@ -115,7 +127,7 @@ limit agents, not the user's own actions.
 | M2 | Model workbench | Every parameter with recommended values; media preview and editor. |
 | C1 | Connections | Keys, subscription agents and services with health, balances, windows and limits; secrets shown only as references; the **Browser** page lists site grants with source, last use and live-sync indicator (ADR-0035). |
 | T1 | Settings | General, Appearance (theme, density, transparency, motion, fonts per role), Voice and glossary, Notifications (channels, quiet hours), Machines, Accounts, Plugins, Developer. |
-| T2 | Developer area | Visible only with the developer-area switch on (D-137; not a product mode): live component catalog with every state, theme, density, contrast and transparency regime; approvals; token inspector; slot map; plugin inspector; event-log tail; feature flags. |
+| T2 | Design system area | Settings → Design system, always available (D-137's developer-area switch superseded by owner feedback 2026-10-23): live component catalog with every state, theme, density, contrast and transparency regime; approvals; token inspector; slot map; plugin inspector; event-log tail; feature flags. |
 
 ## 7. Implementation status (U1 session features, 2026-10-23)
 
@@ -170,5 +182,25 @@ limit agents, not the user's own actions.
   right; trace, chat info and new chat as icon buttons; per-message details behind an info icon.
 - **Phone (under 640 px of shell width):** the navigation is a drawer over an inert page, the status strip is one row
   with a single overflow control for the status items, and touch screens show no ⌘K keycaps.
-- Not built in this lane: the fleet map (D-209) and provider models in the picker (D-208, the picker's suggestion list
-  is generic).
+- Not built in this lane: the fleet map (D-209).
+
+## 10. Implementation status (K3 connections UI, 2026-10-24)
+
+- **C1 Connections** is implemented at `/connections` (`packages/web/src/features/connections`) and linked from the
+  shell navigation and Settings. It is catalog-driven: `providerCategoryOrder` becomes a desktop rail and a phone
+  segmented control, and `providerCatalog` cards show the product label, a monogram, connection count, key hint and
+  docs link. A provider with no connection offers Add key or Connect; a connected provider lists each connection with
+  its origin, model count once observed, and borderless test, rotate, models and remove actions. Removal confirms in
+  a dialog and calls `DELETE /api/connections/:id`; the server refuses with `connection_in_use` while a model call is
+  active. Add/rotate uses a dialog with a password field, show/hide, typed inline errors and a key that is cleared
+  before the request. A read-only base-URL field appears only for catalog entries whose policy is not `none`, because
+  custom API roots remain a trusted key-file import (D-208). Models open in a popover with search and a typed,
+  auto-recovering error state.
+- **E1 New session** replaces the connection chips and bare Model ID field with a popover: connections are grouped by
+  catalog category, choosing one lists `GET /api/connections/:id/models`, the list is searchable and keyboard
+  navigable, the current model is marked, and "Other model ID…" is the only typed fallback. The trigger shows the
+  connection and model as two spans, never a middle-dot string. The last explicit choice is recalled from the
+  central-prefixed browser store. A local runtime still requires the context field.
+- Not verified in this slice: the browser gate, visual snapshots, live Ollama or provider keys and the phone layout
+  in a real browser. `packages/web/test/browser/connections.spec.ts` still exercises the retired Settings-embedded
+  form and is not updated.

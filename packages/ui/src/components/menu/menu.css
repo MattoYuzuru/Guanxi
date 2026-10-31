@@ -88,3 +88,65 @@
     color: HighlightText;
   }
 }
+
+/* Checkable rows (round 4, the 1.png pattern): icon, label with an optional quiet second line,
+   then a trailing check mark or an inline switch at the row's end. */
+.gx-menu-checkable {
+  min-height: var(--row-height);
+  padding-block: var(--spacing-4);
+}
+
+.gx-menu-item-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.gx-menu-item-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gx-menu-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gx-menu-item-description {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-12);
+}
+
+/* The check keeps its slot when unchecked, so labels never shift as items toggle. */
+.gx-menu-check {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--spacing-12);
+  color: var(--color-text-accent);
+  visibility: hidden;
+}
+
+.gx-menu-check[data-checked] {
+  visibility: visible;
+}
+
+.gx-menu-item .gx-menu-check svg {
+  color: currentColor;
+}
+
+.gx-menu-switch {
+  margin-left: auto;
+}
+
+/* The row is the target; the drawn switch has no extended hit area of its own. */
+.gx-menu-switch::after {
+  content: none;
+}
+
+.gx-menu-item-end + .gx-menu-check,
+.gx-menu-item-end + .gx-menu-switch {
+  margin-left: var(--spacing-8);
+}

@@ -243,15 +243,15 @@ test('keyboard: ask with Enter, reach every action by Tab, and the discard confi
   expect(await prompt.inputValue()).toBe('')
   const names: string[] = []
   await panel(page).getByRole('button', { name: 'Send to main, message 1' }).focus()
-  for (let step = 0; step < 5; step++) {
+  for (let step = 0; step < 6; step++) {
     names.push(await page.evaluate(() => {
       const element = document.activeElement as HTMLInputElement | null
       return (element?.getAttribute('aria-label') ?? element?.labels?.[0]?.textContent ?? element?.textContent ?? '').trim()
     }))
     await page.keyboard.press('Tab')
   }
-  // The disabled Ask button (empty draft) is skipped; Save and Discard follow the composer.
-  expect(names).toEqual(['Send to main, message 1', 'Send to main, message 2', 'Ask about this session', 'Save to session log', 'Discard'])
+  // The shared composer keeps a blocked Ask focusable (aria-disabled, D-207); Save and Discard follow it.
+  expect(names).toEqual(['Send to main, message 1', 'Send to main, message 2', 'Ask about this session', 'Ask', 'Save to session log', 'Discard'])
   await panel(page).getByRole('button', { name: 'Discard', exact: true }).focus()
   await page.keyboard.press('Enter')
   await expect(panel(page).getByRole('button', { name: 'Keep' })).toBeFocused()

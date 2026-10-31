@@ -104,12 +104,64 @@ test('dotenv file import is idempotent, rotates, preserves retired scrubbing and
   assert.equal(f.vault.unlocked('local'), true)
 })
 
-test('parallel same-file imports create exactly one connection and endpoint changes get a separate identity', async t => {
+test('parallel same-file imports create one connection; an endpoint change with the same key reuses it', async t => {
   const { service } = await setup(t), value = canary()
   const results = await Promise.all([0, 1].map(() => service.importKeys('local', [{ provider: 'openai', value }])))
   assert.deepEqual(results.map(result => result.imported[0]!.action), ['created', 'unchanged'])
-  await imported(service, value, 'https://api.example.invalid/v1')
+  const endpoint = 'https://api.example.invalid/v1'
+  const id = await imported(service, value, endpoint)
+  assert.equal(service.snapshot('local').connections.length, 1)
+  assert.equal(service.store.get('local', id).baseUrl, endpoint)
+  const other = await imported(service, canary(), 'https://other.example.invalid/v1')
+  assert.notEqual(other, id)
   assert.equal(service.snapshot('local').connections.length, 2)
+})
+
+test('reimporting the same OpenAI key with an endpoint reuses one connection; a different key stays separate', async t => {
+  const f = await setup(t), key = 'sk-test-' + 'x'.repeat(40), otherKey = 'sk-test-' + 'y'.repeat(40)
+  const first = await f.service.importKeys('local', [{ provider: 'openai', value: key }])
+  const id = first.imported[0]!.connectionId
+  assert.equal(f.service.snapshot('local').connections.length, 1)
+  const withEndpoint = await f.service.importKeys('local', [{ provider: 'openai', value: key, baseUrl: 'https://api.example.invalid/v1' }])
+  assert.deepEqual(withEndpoint.imported, [{ connectionId: id, provider: 'openai', action: 'unchanged' }])
+  assert.equal(f.service.snapshot('local').connections.length, 1)
+  assert.equal(f.store.get('local', id).baseUrl, 'https://api.example.invalid/v1')
+  // A different secret without an endpoint is still a separate identity, not a rotation of the rooted one.
+  const different = await f.service.importKeys('local', [{ provider: 'openai', value: otherKey }])
+  const otherId = different.imported[0]!.connectionId
+  assert.notEqual(otherId, id)
+  assert.equal(f.store.get('local', otherId).baseUrl, undefined)
+  assert.equal(f.service.snapshot('local').connections.length, 2)
+  const otherRooted = await f.service.importKeys('local', [{ provider: 'openai', value: otherKey, baseUrl: 'https://other.example.invalid/v1' }])
+  assert.equal(otherRooted.imported[0]!.connectionId, otherId)
+  assert.equal(f.store.get('local', otherId).baseUrl, 'https://other.example.invalid/v1')
+  // The reverse same-secret import removes the endpoint but keeps the original identity.
+  const withoutEndpoint = await f.service.importKeys('local', [{ provider: 'openai', value: key }])
+  assert.equal(withoutEndpoint.imported[0]!.connectionId, id)
+  assert.equal(f.store.get('local', id).baseUrl, undefined)
+  assert.equal(f.service.snapshot('local').connections.length, 2)
+})
+
+test('a legacy openai (dotenv) row is renamed and marked by a later import', async t => {
+  const f = await setup(t), key = canary()
+  const legacy = f.store.create('local', { name: 'openai (dotenv)', kind: 'model_api', provider: 'openai', auth: 'api_key' })
+  await f.vault.unlock('local')
+  f.store.setSecret('local', legacy.id, f.vault.put('local', key))
+  const result = await f.service.importKeys('local', [{ provider: 'openai', family: 'OPENAI_API_KEY', value: key }])
+  assert.deepEqual(result.imported, [{ connectionId: legacy.id, provider: 'openai', action: 'unchanged' }])
+  const row = f.store.get('local', legacy.id)
+  assert.equal(row.name, 'OpenAI')
+  assert.equal(row.facts.origin?.value, 'provider_key_import')
+  assert.equal(f.service.snapshot('local').connections.length, 1)
+})
+
+test('imported connections use catalog labels and a compatible endpoint names its host', async t => {
+  const f = await setup(t), file = join(f.dir, 'labels.env')
+  await writeFile(file, `DEEPSEEK_API_KEY=${canary()}\nOPENAI_COMPAT_API_KEY=${canary()}\nOPENAI_COMPAT_API_URL=https://api.example.invalid/v1\n`)
+  const result = await importProviderKeysFile(f.service, 'local', file)
+  const rows = result.imported.map(item => f.store.get('local', item.connectionId))
+  assert.deepEqual(rows.map(row => row.name).sort(), ['DeepSeek', 'OpenAI-compatible (api.example.invalid)'])
+  assert.ok(rows.every(row => row.facts.origin?.value === 'provider_key_import'))
 })
 
 test('failed file reads and invalid endpoint errors never include file contents or canaries', async t => {
@@ -141,7 +193,26 @@ test('custom connection discovers models with explicit credentials, refuses redi
   assert.deepEqual(calls, [{ url: 'https://api.example.invalid/v1/models', redirect: 'error', auth: `Bearer ${value}` }])
   await f.service.chatModels('local', id)
   assert.equal(calls.length, 1)
+  const listed = await f.service.models('local', id)
+  assert.deepEqual(listed.map(model => model.id), ['owner-model'])
+  assert.equal(listed[0]!.facts['endpoint.discovery']!.value, 'current')
+  assert.equal(listed[0]!.facts['endpoint.discovery']!.source, 'api.example.invalid')
   assert.equal(f.service.snapshot('local').connections[0]!.baseUrl, 'https://api.example.invalid')
+})
+
+test('a re-import that moves the root invalidates the discovered models cache', async t => {
+  const calls: string[] = [], key = canary()
+  const f = await setup(t, undefined, async url => {
+    calls.push(String(url))
+    return Response.json({ data: [{ id: new URL(String(url)).hostname === 'one.example.invalid' ? 'one-model' : 'two-model' }] })
+  })
+  const id = await imported(f.service, key, 'https://one.example.invalid/v1')
+  assert.deepEqual((await f.service.chatModels('local', id)).models, ['one-model'])
+  assert.equal(calls.length, 1)
+  const moved = await f.service.importKeys('local', [{ provider: 'openai', family: 'OPENAI_API_KEY', value: key, baseUrl: 'https://two.example.invalid/v1' }])
+  assert.equal(moved.imported[0]!.connectionId, id)
+  assert.deepEqual((await f.service.chatModels('local', id)).models, ['two-model'])
+  assert.deepEqual(calls, ['https://one.example.invalid/v1/models', 'https://two.example.invalid/v1/models'])
 })
 
 test('custom discovery failure is explicitly unknown and locked/service/keyless connections are absent from picker', async t => {
@@ -615,7 +686,44 @@ test('one file imports official OpenAI and a separate compatible endpoint withou
   assert.equal(rows[0]!.baseUrl, undefined)
   assert.equal(rows[1]!.baseUrl, 'https://api.example.invalid/v1')
   assert.notEqual(rows[0]!.id, rows[1]!.id)
+  assert.deepEqual(rows.map(row => row.name), ['OpenAI', 'OpenAI-compatible (api.example.invalid)'])
   assert.deepEqual((await importProviderKeysFile(f.service, 'local', file)).imported.map(item => item.action), ['unchanged', 'unchanged'])
+})
+
+test('one key under both OpenAI names keeps two stable connections across repeated imports', async t => {
+  const f = await setup(t), file = join(f.dir, 'same-key-both-names.env'), key = canary(), root = 'https://api.example.invalid/v1'
+  await writeFile(file, `OPENAI_API_KEY=${key}\n`)
+  const official = (await importProviderKeysFile(f.service, 'local', file)).imported[0]!.connectionId
+  await writeFile(file, `OPENAI_API_KEY=${key}\nOPENAI_COMPAT_API_KEY=${key}\nOPENAI_COMPAT_API_URL=${root}\n`)
+  let compat = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const imported = await importProviderKeysFile(f.service, 'local', file)
+    assert.equal(imported.imported.length, 2)
+    assert.equal(f.service.snapshot('local').connections.length, 2, `connection count after import ${attempt + 1}`)
+    const officialRow = f.store.get('local', official)
+    const compatRow = f.store.get('local', imported.imported[1]!.connectionId)
+    assert.equal(officialRow.baseUrl, undefined)
+    assert.equal(officialRow.name, 'OpenAI')
+    assert.equal(compatRow.baseUrl, root)
+    assert.equal(compatRow.name, 'OpenAI-compatible (api.example.invalid)')
+    assert.notEqual(compatRow.id, official)
+    if (compat) assert.equal(compatRow.id, compat)
+    compat = compatRow.id
+  }
+})
+
+test('official and compatible entries with the same key and root stay two rows', async t => {
+  const f = await setup(t), file = join(f.dir, 'same-key-same-root.env'), key = canary(), root = 'https://api.example.invalid/v1'
+  await writeFile(file, `OPENAI_API_KEY=${key}\nOPENAI_API_URL=${root}\nOPENAI_COMPAT_API_KEY=${key}\nOPENAI_COMPAT_API_URL=${root}\n`)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const result = await importProviderKeysFile(f.service, 'local', file)
+    assert.equal(result.imported.length, 2)
+    assert.equal(new Set(result.imported.map(item => item.connectionId)).size, 2)
+    assert.equal(f.service.snapshot('local').connections.length, 2)
+    assert.deepEqual(f.store.db.prepare('SELECT family FROM dotenv_imports ORDER BY family').all().map(row => row.family),
+      ['OPENAI_API_KEY', 'OPENAI_COMPAT_API_KEY'])
+    assert.equal(f.store.db.prepare('SELECT count(DISTINCT endpoint) AS n FROM dotenv_imports').get()!.n, 1)
+  }
 })
 
 test('boot survives provider import failure and logs only a fixed code with models unavailable', async t => {

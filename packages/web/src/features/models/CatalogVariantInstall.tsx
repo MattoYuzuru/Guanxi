@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useId, useCallback, useEffect, useRef, useState } from 'react'
 import type { CatalogModel, CatalogVariant, PullStreamEvent } from '@guanxi/contract'
 import { Button, Meter, Modal, cx } from '../../components/ui.tsx'
 import { api, streamOllamaReferencePull } from '../../lib/api.ts'
@@ -46,6 +46,9 @@ export function CatalogVariantInstall({
   onToggleCompare?: (variant: CatalogVariant) => void
   onPullActiveChange?: (active: boolean) => void
 }) {
+  // Element ids come from useId: the view can mount more than once (P3).
+  const idBase = useId()
+  const ids = { catalogVariantConfirmDescription: `${idBase}-catalog-variant-confirm-description` }
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null)
   const [state, setState] = useState<FlowState>({ kind: 'idle' })
   const installRef = useRef<HTMLButtonElement>(null)
@@ -297,7 +300,7 @@ export function CatalogVariantInstall({
         open={state.kind !== 'idle'}
         onClose={close}
         title={translate('models.catalogVariant.title')}
-        describedBy={state.kind === 'confirming' ? 'catalog-variant-confirm-description' : undefined}
+        describedBy={state.kind === 'confirming' ? ids.catalogVariantConfirmDescription : undefined}
         returnFocusRef={installRef}
         dismissable={!active}
         closeLabel={translate('models.catalogVariant.close')}
@@ -342,7 +345,7 @@ export function CatalogVariantInstall({
       >
         {state.kind === 'confirming' && modalVariant ? (
           <div className="space-y-3">
-            <p id="catalog-variant-confirm-description" className="text-xs text-secondary">
+            <p id={ids.catalogVariantConfirmDescription} className="text-xs text-secondary">
               {translate('models.catalogVariant.confirm.warning')}
             </p>
             <VariantFacts variant={modalVariant} detailed />

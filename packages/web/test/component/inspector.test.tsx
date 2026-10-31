@@ -154,6 +154,21 @@ describe('inspector page', () => {
     expect(screen.getByRole('link', { name: 'Export JSON without reasoning' }).getAttribute('href')).toBe(`/api/sessions/${SESSION_ID}/export?exportVersion=3`)
   })
 
+  it('opens at the event a deep link names: that row is current and focused (P3)', async () => {
+    setActiveLocale('en')
+    mockApi({ pageSize: 4 })
+    const target = sessionTrace()[2]!
+    window.history.replaceState(null, '', `/inspector/${SESSION_ID}?event=${target.seq}`)
+    try {
+      render(<InspectorPage sessionId={SESSION_ID} />)
+      const timeline = await screen.findByRole('list', { name: 'Session events in order' })
+      const current = within(timeline).getAllByRole('listitem').filter(row => row.getAttribute('aria-current') === 'true')
+      expect(current).toHaveLength(1)
+      expect(current[0]!.id).toBe(`inspector-event-${target.seq}`)
+      await waitFor(() => expect(document.activeElement).toBe(current[0]))
+    } finally { window.history.replaceState(null, '', '/') }
+  })
+
   it('renders durable run events once across persisted/live overlap and reload', async () => {
     setActiveLocale('en')
     const base = sessionTrace()

@@ -31,7 +31,7 @@ Boundaries worth knowing:
 - The executor serves under the federation identity's account; the home looks its connection up under the local owner.
 - Scopes are exactly `attempts` plus `replicas` (the executor's relay-run pin is a replica-stream binding), trust `owner_device`, no
   admin right, on both identities: a peer file with more is refused.
-- `home.lead.auth: "api_key"` or `"oauth_token"` pays the lead from the K3 vault (an Anthropic API key, or the `claude setup-token` subscription
+- `home.lead.auth: "api_key"` or `"oauth_token"` pays the lead from the K3 vault (an Anthropic API key, `sk-ant-api…` or `sk-ant-usr…`, or the `claude setup-token` subscription
   token): `providerKeysFile` is imported at boot (the `providerKeysFile` option and the command's `GUANXI_PROVIDER_KEYS_FILE` come first), the
   connection that holds it is resolved (or named by `connection`; one not imported from that file is refused), and any failure is an
   `Ms1LiveError` before the lead exists. See the [runbook](../../../../docs/operations/ms1-live-run.md) section 7.

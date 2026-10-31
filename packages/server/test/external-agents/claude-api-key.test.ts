@@ -268,3 +268,19 @@ test('a settings path that is a dangling symlink still refuses the launch (lstat
   await assert.rejects(f.service().run(input), /claude_settings_present/)
   await neverLaunched(f)
 })
+
+test('a lead turn allows its own node tool server and nothing else; a turn without one allows nothing', async t => {
+  const f = await apiFixture(t)
+  await f.scenario('claude-code', { lead: {} })
+  const turn = { ...leadTurn(null), mcpServers: [{ type: 'http' as const, name: 'guanxi', url: 'http://127.0.0.1:9/mcp', headers: [{ name: 'Authorization', value: 'Bearer test-only' }] }] }
+  await f.service().run({ ...input, lead: turn })
+  const options = (await f.trace('claude-code')).find(frame => frame.method === 'session/new')!.params._meta.claudeCode.options
+  assert.deepEqual(options.allowedTools, ['mcp__guanxi'])
+  assert.deepEqual(options.settings.permissions, { defaultMode: 'default', allow: ['mcp__guanxi'] })
+  assert.equal(options.settings.env.ANTHROPIC_BASE_URL, 'https://api.anthropic.com')
+  const plain = await apiFixture(t)
+  await plain.service().run(input)
+  const settings = (await plain.trace('claude-code')).find(frame => frame.method === 'session/new')!.params._meta.claudeCode.options
+  assert.equal(settings.allowedTools, undefined)
+  assert.deepEqual(settings.settings.permissions, { defaultMode: 'default' })
+})

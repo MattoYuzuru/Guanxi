@@ -1,7 +1,7 @@
 /** Operator-only live smoke. Never included in automated tests. */
 import { randomUUID } from 'node:crypto'
 import { start } from '../src/index.ts'
-import { chatModelsResponse, parseChatModelSelection, threadSchema, connectionSnapshotSchema } from '@guanxi/contract'
+import { chatModelsResponse, parseChatModelSelection, providerCatalog, threadSchema, connectionSnapshotSchema } from '@guanxi/contract'
 
 let node: Awaited<ReturnType<typeof start>> | undefined
 try {
@@ -18,7 +18,8 @@ try {
     return response.json()
   }
   const groups = chatModelsResponse.parse(await json('/api/threads/models')).groups
-  const group = groups.find(item => item.label === `${provider} (dotenv)`)
+  const label = providerCatalog.find(item => item.provider === provider)?.label ?? provider
+  const group = groups.find(item => item.label === label)
   const model = group?.models.find(item => item.modelId === 'deepseek-chat') ?? group?.models[0]
   if (!model) throw new Error('Imported provider has no usable model')
   const thread = threadSchema.parse(await json('/api/threads', { mode: 'chat', model: model.selection }))

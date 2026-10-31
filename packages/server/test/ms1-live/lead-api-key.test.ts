@@ -25,6 +25,7 @@ const home = (leadOverrides: Record<string, unknown> = {}) => ({ version: 1, rol
 const refused = (raw: unknown, code: string, field: string) => assert.throws(() => parseMs1LiveConfig(raw, '/etc/x/ms1-live.json'),
   (error: unknown) => error instanceof Ms1LiveError && error.code === code && error.field === field, `${code} at ${field}`)
 const fakeKey = () => `sk-ant-api03-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
+const fakeUserKey = () => `sk-ant-usr01-FAKE${Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`
 // The owner's own key file may be named in this process's environment: no test here may read it, and none may reach the OS keychain.
 let ambientKeyFile: string | undefined
 before(() => { ambientKeyFile = process.env['GUANXI_PROVIDER_KEYS_FILE']; delete process.env['GUANXI_PROVIDER_KEYS_FILE'] })
@@ -36,8 +37,8 @@ const keychain = async (): Promise<VaultKeychain> => ({ key: () => { keychainRea
 test('config: the lead pays by subscription unless told otherwise, and the API-key options belong to api_key only', () => {
   const sub = parseMs1LiveConfig(home(), '/etc/x/ms1-live.json').home!.lead!
   assert.deepEqual([sub.auth, sub.connection, sub.providerKeysFile, sub.effort], ['subscription', undefined, undefined, undefined])
-  const api = parseMs1LiveConfig(home({ auth: 'api_key', connection: 'anthropic (dotenv)', providerKeysFile: '/Users/x/keys.env', effort: 'medium' }), '/etc/x/ms1-live.json').home!.lead!
-  assert.deepEqual([api.auth, api.connection, api.providerKeysFile, api.effort], ['api_key', 'anthropic (dotenv)', '/Users/x/keys.env', 'medium'])
+  const api = parseMs1LiveConfig(home({ auth: 'api_key', connection: 'Anthropic', providerKeysFile: '/Users/x/keys.env', effort: 'medium' }), '/etc/x/ms1-live.json').home!.lead!
+  assert.deepEqual([api.auth, api.connection, api.providerKeysFile, api.effort], ['api_key', 'Anthropic', '/Users/x/keys.env', 'medium'])
   refused(home({ connection: 'x' }), 'config_key_mode_only', 'home.lead.connection')
   refused(home({ auth: 'subscription', providerKeysFile: '/x/keys.env' }), 'config_key_mode_only', 'home.lead.providerKeysFile')
   refused(home({ auth: 'api_key', providerKeysFile: 'keys.env' }), 'config_path_not_absolute', 'home.lead.providerKeysFile')
@@ -123,8 +124,8 @@ test('start imports the key into the node\'s vault, wires K5 to that connection 
   const first = await boot(w.settings())
   const connections = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
   const rows = connections.snapshot('local').connections
-  assert.deepEqual(rows.map(row => row.name).sort(), ['anthropic (dotenv)', 'ms1-executor'], 'no subscription connection is created')
-  const paying = rows.find(row => row.name === 'anthropic (dotenv)')!
+  assert.deepEqual(rows.map(row => row.name).sort(), ['Anthropic', 'Ollama', 'ms1-executor'], 'no subscription connection is created')
+  const paying = rows.find(row => row.name === 'Anthropic')!
   assert.deepEqual([paying.kind, paying.provider, paying.auth], ['model_api', 'anthropic', 'api_key'])
   assert.equal(first.ms1Live!.leadConnectionId, paying.id)
   const external = first.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
@@ -173,7 +174,7 @@ test('start refuses, by code and field and without a value, when the lead\'s key
   const run = (settings: Ms1LiveSettings) => start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
   const first = await run(w.settings())
   const connections = first.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!
-  const imported = connections.snapshot('local').connections.find(row => row.name === 'anthropic (dotenv)')!
+  const imported = connections.snapshot('local').connections.find(row => row.name === 'Anthropic')!
   const second = connections.create('local', { name: 'second-anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   await connections.saveSecret('local', second.id, fakeKey())
   await first.close()
@@ -218,14 +219,44 @@ test('a key file that was imported pays for the lead: a named older connection, 
   const imported = first.ms1Live!.leadConnectionId
   const older = connections.create('local', { name: 'older-anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
   await connections.saveSecret('local', older.id, fakeKey())
+  // A manual row with the configured catalog name must not make the imported row ambiguous.
+  const duplicate = connections.create('local', { name: 'Anthropic', kind: 'model_api', provider: 'anthropic', auth: 'api_key' })
+  await connections.saveSecret('local', duplicate.id, fakeKey())
   await first.close()
   const outcome = async (connection?: string) => run(w.settings(config => { if (connection) config.home.lead.connection = connection })).then(async server => { const id = server.ms1Live!.leadConnectionId; await server.close(); return id }, error => error)
+  // With no file this boot, the stored imported row still wins over a manual row of the same name.
+  const stored = async (connection: string) => run(w.settings(config => { delete config.home.lead.providerKeysFile; config.home.lead.connection = connection }))
+    .then(async server => { const id = server.ms1Live!.leadConnectionId; await server.close(); return id }, error => error)
   // Two connections hold keys, but the file just imported belongs to one of them: it pays, without naming it.
   assert.equal(await outcome(), imported)
-  assert.equal(await outcome('anthropic (dotenv)'), imported)
+  assert.equal(await outcome('Anthropic'), imported)
+  assert.equal(await stored('Anthropic'), imported)
   // Naming another connection while a file was imported would pay with a key this boot did not import.
   const refused = await outcome('older-anthropic')
   assert.ok(refused instanceof Ms1LiveError && refused.code === 'lead_connection_not_imported' && refused.field === 'home.lead.connection', `got ${refused instanceof Error ? refused.message : refused}`)
+})
+
+test('legacy dotenv labels resolve to the imported lead connection in both auth modes', async t => {
+  const w = await pair(t)
+  const boot = (settings: Ms1LiveSettings, dataDir: string) => start({ port: 0, host: '127.0.0.1', dataDir, webDir: w.root, devOrigins: [], ms1Live: settings, connectionsKeychain: keychain })
+  // API key: an older config still names `anthropic (dotenv)`.
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${fakeKey()}\n`)
+  const apiDir = join(w.root, 'api-data')
+  const api = await boot(w.settings(), apiDir)
+  const apiId = api.ms1Live!.leadConnectionId
+  await api.close()
+  const legacyApi = await boot(w.settings(config => { delete config.home.lead.providerKeysFile; config.home.lead.connection = 'anthropic (dotenv)' }), apiDir)
+  assert.equal(legacyApi.ms1Live!.leadConnectionId, apiId)
+  await legacyApi.close()
+  // Subscription token: an older config still names `claude-code (dotenv)`.
+  writeKeys(w.keyFile, `CLAUDE_CODE_OAUTH_TOKEN=${fakeToken()}\n`)
+  const tokenDir = join(w.root, 'token-data')
+  const token = await boot(w.settings(asToken), tokenDir)
+  const tokenId = token.ms1Live!.leadConnectionId
+  await token.close()
+  const legacyToken = await boot(w.settings(config => { asToken(config); delete config.home.lead.providerKeysFile; config.home.lead.connection = 'claude-code (dotenv)' }), tokenDir)
+  assert.equal(legacyToken.ms1Live!.leadConnectionId, tokenId)
+  await legacyToken.close()
 })
 
 test('start reads the key file from the same environment the command was given as doctor does, not from the process\'s own', async t => {
@@ -279,6 +310,30 @@ test('oauth_token: doctor explains the mode, accepts the token under either name
   assert.equal(mismatch?.code, 'lead_key_invalid')
 })
 
+test('doctor accepts a user API key (sk-ant-usr) in api_key mode and names only its family; oauth_token mode refuses it as an API key', async t => {
+  const w = await pair(t)
+  const tail = 'usrTailCanary'.repeat(8)
+  const key = `sk-ant-usr01-${tail}`
+  writeKeys(w.keyFile, `ANTHROPIC_API_KEY=${key}\n`)
+  const run = async (auth: 'api_key' | 'oauth_token') => {
+    w.settings(config => { config.home.lead.auth = auth })
+    const result = await cli(['doctor', '--config', join(w.home, 'ms1-live.json'), '--json'], { HOME: w.root })
+    assert.equal(result.out.includes(key), false, 'no key value in the report')
+    assert.equal(result.out.includes('usrTailCanary'), false, 'nothing beyond the family prefix')
+    assert.equal(result.err.includes(key), false, 'no key value on stderr')
+    assert.equal(result.err.includes('usrTailCanary'), false, 'nothing beyond the family prefix on stderr')
+    const checks = (JSON.parse(result.out) as { checks: Array<{ id: string; status: string; code?: string; summary: string; fix?: string }> }).checks
+    return checks.find(check => check.id === 'lead_key')!
+  }
+  const accepted = await run('api_key')
+  assert.equal(accepted.status, 'ok')
+  assert.match(accepted.summary, /sk-ant-usr/)
+  const wrongFamily = await run('oauth_token')
+  assert.equal(wrongFamily.code, 'lead_key_wrong_family')
+  assert.match(wrongFamily.summary, /sk-ant-usr/)
+  assert.match(wrongFamily.fix!, /Set home\.lead\.auth to "api_key"/)
+})
+
 test('oauth_token: start imports the token as a Claude Code connection only, wires K5 to it, and the token is in no file this node wrote', async t => {
   const w = await pair(t)
   const token = fakeToken()
@@ -287,9 +342,9 @@ test('oauth_token: start imports the token as a Claude Code connection only, wir
     writeKeys(w.keyFile, text)
     const server = await boot(w.settings(asToken))
     const rows = server.kernel.node.service<Connections>(CONNECTIONS_SERVICE)!.snapshot('local').connections
-    assert.deepEqual(rows.map(row => [row.name, row.kind, row.provider, row.auth]).sort(), [['claude-code (dotenv)', 'agent', 'claude-code', 'cli_login'], ['ms1-executor', 'local_runtime', 'ollama', 'none']],
+    assert.deepEqual(rows.map(row => [row.name, row.kind, row.provider, row.auth]).sort(), [['Claude Code', 'agent', 'claude-code', 'cli_login'], ['Ollama', 'local_runtime', 'ollama', 'none'], ['ms1-executor', 'local_runtime', 'ollama', 'none']],
       'no Anthropic API connection and no subscription-login connection: the token is not an API key')
-    const paying = rows.find(row => row.name === 'claude-code (dotenv)')!
+    const paying = rows.find(row => row.name === 'Claude Code')!
     assert.ok(paying.secretRef); assert.equal(server.ms1Live!.leadConnectionId, paying.id)
     const external = server.kernel.node.service<ExternalAgentService>(EXTERNAL_AGENT_SERVICE)!
     assert.deepEqual(external.capabilities('local').map(c => [c.adapter, c.connectionId]), [['claude-code', paying.id]])
@@ -338,10 +393,13 @@ test('after start the vault is unlocked for the lead, and a vault that cannot be
   assert.ok(outcome instanceof Ms1LiveError && outcome.code === 'lead_vault_locked', `got ${outcome instanceof Error ? `${outcome.name}: ${outcome.message}` : outcome}`)
 })
 
-test('end to end through the start command\'s lead set-up: the fixture agent receives the key from the vault, the lead turn completes, and no announced event or file holds it', async t => {
-  for (const mode of ['api_key', 'oauth_token'] as const) {
+test('end to end through the start command\'s lead set-up: the fixture agent receives the key (either API key family or a token) from the vault, the lead turn completes, and no announced event or file holds it', async t => {
+  for (const { mode, secret } of [
+    { mode: 'api_key' as const, secret: fakeKey() },
+    { mode: 'api_key' as const, secret: fakeUserKey() },
+    { mode: 'oauth_token' as const, secret: fakeToken() },
+  ]) {
     const w = await pair(t)
-    const secret = mode === 'api_key' ? fakeKey() : fakeToken()
     writeKeys(w.keyFile, mode === 'api_key' ? `ANTHROPIC_API_KEY=${secret}\n` : `CLAUDE_CODE_OAUTH_TOKEN=${secret}\n`)
     // The fixture agent stands in for both the ACP bridge and the CLI (it answers `auth status` like 2.1.287 does for the variable it is given).
     const agentDir = join(w.root, 'agent')
@@ -395,7 +453,7 @@ test('doctor names the failing variable and the family it saw (a label, never ch
   let check = await run(`ANTHROPIC_API_KEY=sk-ant-zzz-${tail}\n`, 'oauth_token')
   assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>/)
   check = await run(`ANTHROPIC_API_KEY=sk-ant-zzz-${tail}\n`, 'api_key')
-  assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>, not sk-ant-api/)
+  assert.equal(check.code, 'lead_key_invalid'); assert.match(check.summary, /ANTHROPIC_API_KEY starts with sk-ant-<other>, not an Anthropic API key/); assert.match(check.summary, /sk-ant-api\.\.\. or sk-ant-usr\.\.\./)
   check = await run(`ANTHROPIC_API_KEY=plain-${tail}\n`, 'api_key')
   assert.match(check.summary, /starts with not sk-ant/)
   check = await run(`CLAUDE_CODE_OAUTH_TOKEN=sk-ant-api03-${tail}\n`, 'oauth_token')
@@ -416,6 +474,7 @@ test('doctor names the failing variable and the family it saw (a label, never ch
 test('refusal summaries say what each mode needs', () => {
   const text = (code: string) => describeConfigError(new Ms1LiveError(code, 'home.lead.connection'))
   assert.match(text('lead_key_missing'), /api_key:.*ANTHROPIC_API_KEY.*oauth_token:.*CLAUDE_CODE_OAUTH_TOKEN/)
+  assert.match(text('lead_key_missing'), /sk-ant-api\.\.\. or sk-ant-usr\.\.\./)
   assert.match(text('lead_connection_ambiguous'), /oauth_token: Claude Code token connections/)
   assert.match(text('lead_connection_invalid'), /oauth_token needs a Claude Code connection/)
 })

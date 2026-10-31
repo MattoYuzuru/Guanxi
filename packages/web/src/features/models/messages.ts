@@ -3,6 +3,7 @@
  * node's reason code; the node's own Russian `summary` is never rendered (D-202, D-208 prep).
  */
 export const modelsEnglish = {
+  'models.facts.about': 'About {fact}',
   'fit.reason.cloud': 'Runs in the Ollama cloud; no local memory is used',
   'fit.reason.loaded_partial_gpu': 'Only {gpuPercent}% is on the accelerator; the CPU runs the rest, so it is slow',
   'fit.reason.loaded_on_accelerator': 'Loaded fully on the accelerator, using {size}',
@@ -14,6 +15,8 @@ export const modelsEnglish = {
   'fit.reason.vendor_requires': 'The vendor asks for {required} of accelerator memory',
   'fit.reason.insufficient_data': 'Not enough model data to estimate the memory it needs',
   'models.facts.label': 'Model facts',
+  'models.details': 'Model details',
+  'models.details.capabilities': 'Capabilities',
   'models.facts.family': 'Family',
   'models.facts.parameters': 'Parameters',
   'models.facts.quantization': 'Quantization',
@@ -55,6 +58,7 @@ export const modelsEnglish = {
 } as const
 
 export const modelsRussian: Record<keyof typeof modelsEnglish, string> = {
+  'models.facts.about': 'Что значит: {fact}',
   'fit.reason.cloud': 'Считается в облаке Ollama, локальная память не расходуется',
   'fit.reason.loaded_partial_gpu': 'На ускорителе только {gpuPercent}%, остальное считает CPU — будет медленно',
   'fit.reason.loaded_on_accelerator': 'Загружена целиком на ускоритель, занимает {size}',
@@ -66,6 +70,8 @@ export const modelsRussian: Record<keyof typeof modelsEnglish, string> = {
   'fit.reason.vendor_requires': 'По данным вендора нужно {required} видеопамяти',
   'fit.reason.insufficient_data': 'Недостаточно данных о модели, чтобы оценить требования к памяти',
   'models.facts.label': 'Сведения о модели',
+  'models.details': 'Подробности о модели',
+  'models.details.capabilities': 'Возможности',
   'models.facts.family': 'Семейство',
   'models.facts.parameters': 'Параметры',
   'models.facts.quantization': 'Квантование',

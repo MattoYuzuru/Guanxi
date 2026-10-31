@@ -1,8 +1,12 @@
 @reference '../../styles/tailwind-reference.css';
 
-/* A recessed track; the selected segment is a raised white chip (concentric 8 / 6 px radii). */
+/* A recessed track; the selected segment is a raised white chip (concentric 8 / 6 px radii).
+   Segments are grid columns of one size: every segment is as wide as the widest label plus its
+   padding, so a shrink-wrapped control never squeezes a long label (visual pass 2). */
 .gx-segmented {
-  display: inline-flex;
+  display: inline-grid;
+  grid-auto-columns: minmax(max-content, 1fr);
+  grid-auto-flow: column;
   align-items: stretch;
   gap: var(--spacing-2);
   box-sizing: border-box;
@@ -13,14 +17,13 @@
 
 .gx-segmented-item {
   display: inline-flex;
-  flex: 1 1 0;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-6);
   box-sizing: border-box;
   min-width: var(--target-minimum);
   min-height: var(--target-minimum);
-  padding-inline: var(--spacing-8);
+  padding-inline: var(--spacing-12);
   border: 0;
   border-radius: var(--border-radius-inline);
   background-color: transparent;

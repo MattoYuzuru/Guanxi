@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { WAKE_ACCEPTED, wakePrompt } from '../../src/leads/service.ts'
 import { HOUR, brief, leadFixture } from './helpers.ts'
 
 type Fixture = Awaited<ReturnType<typeof leadFixture>>
@@ -7,6 +8,17 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch
 const lifecycle = (f: Fixture, runId: string) => f.kernel.sessionLog!.readAll(runId, 'person').filter(e => e.type === 'run.lifecycle').map(e => e.data as { runId: string; action: string; state: string; wakeSeq: number | null })
 const ledger = (f: Fixture, runId: string) => ({ totals: f.runs().costs(runId), rows: Number(f.db.prepare('SELECT COUNT(*) AS n FROM run_costs WHERE run_id=?').get(runId)!.n) })
 const resumedPrompts = async (f: Fixture) => (await f.events()).filter(e => e.event === 'prompt' && String(e.text).includes('guanxi.wake/v1'))
+
+test('a lead that never delegated is not told its delegation was accepted', async t => {
+  const f = await leadFixture(t, { lead: { briefs: [] } })
+  const { first } = f.start()
+  assert.equal((await first).outcome, 'completed')
+  const prompts = (await f.events()).filter(e => e.event === 'prompt')
+  assert.equal(prompts.length, 1)
+  assert.equal(String(prompts[0]!.text).includes(WAKE_ACCEPTED), false)
+  const packet = 'guanxi.wake/v1 wake=1 kind=resolution run=lead-1'
+  assert.equal(wakePrompt(packet, false), packet, 'no accepted delegation means no fixed sentence')
+})
 
 test('delegate, hibernate and wake: one wake, one resumed turn by session/load, ledger unchanged while asleep', async t => {
   const f = await leadFixture(t)
@@ -59,6 +71,8 @@ test('delegate, hibernate and wake: one wake, one resumed turn by session/load, 
   assert.equal(events.filter(e => e.event === 'session_new').length, 1)
   assert.equal(events.filter(e => e.event === 'session_load').length, 1)
   assert.equal((await resumedPrompts(f)).length, 1)
+  const loadedPrompt = String((await resumedPrompts(f))[0]!.text)
+  assert.ok(loadedPrompt.startsWith(`${WAKE_ACCEPTED}\nguanxi.wake/v1`), 'the loaded turn is told the delegation was accepted before the packet')
   assert.equal(events.filter(e => e.event === 'turn_end' && e.stopReason === 'end_turn').length, 1)
   const actions = lifecycle(f, runId).filter(a => a.runId === runId).map(a => a.action)
   assert.equal(actions.filter(a => a === 'delegated').length, 1)
@@ -97,6 +111,8 @@ test('an agent without loadSession gets a new session seeded with the lead hando
   assert.equal(events.filter(e => e.event === 'session_load').length, 0)
   const resumed = await resumedPrompts(f)
   assert.equal(resumed.length, 1)
+  const seededText = String(resumed[0]!.text)
+  assert.ok(seededText.indexOf(`${WAKE_ACCEPTED}\nguanxi.wake/v1`) > seededText.indexOf('Lead handoff:'), 'the seeded turn is told the delegation was accepted before the packet')
   assert.match(String(resumed[0]!.text), /Lead handoff:\nTask: Fix the failing tests carefully/)
   assert.match(String(resumed[0]!.text), /Delegated objective: Make the fixture tests pass/)
   assert.match(String(resumed[0]!.text), /Your last words before hibernating:\nplanning delegation/)
@@ -149,7 +165,9 @@ test('an escalation wakes the lead without resolving the promise, and the comple
   assert.equal(run.promises(runId)[0]!.outcome, null, 'an escalation never resolves the promise')
   assert.equal(run.get(runId).state, 'waiting_children', 'the lead yields again because its child is still pending')
   assert.equal((await resumedPrompts(f)).length, 1)
-  assert.match(String((await resumedPrompts(f))[0]!.text), /kind=escalation[\s\S]*outcome: pending/)
+  const escalationPrompt = String((await resumedPrompts(f))[0]!.text)
+  assert.match(escalationPrompt, /kind=escalation[\s\S]*outcome: pending/)
+  assert.equal(escalationPrompt.includes(WAKE_ACCEPTED), false, 'an escalation is not a resolution of work that ran')
   f.children.complete()
   f.lead().pump()
   await f.lead().idle()
@@ -159,6 +177,35 @@ test('an escalation wakes the lead without resolving the promise, and the comple
   assert.equal(run.promises(runId).filter(p => p.outcome === 'completed').length, 1)
   assert.equal((await resumedPrompts(f)).length, 2)
   assert.equal(lifecycle(f, runId).filter(a => a.runId === runId && a.action === 'resolved').length, 1)
+})
+
+test('a resolution wake for a child that never started does not say the work ran', async t => {
+  const f = await leadFixture(t)
+  // Stop the first child start before R1 records its attempt: the lead still promised the child, and its resolution
+  // is a real wake whose packet says zero attempts. (A normal child always has one by the time it can resolve.)
+  const runs = f.runs(), realStart = runs.start.bind(runs)
+  let unstarted = false
+  runs.start = ((runId: string) => {
+    if (!unstarted && runs.get(runId).state === 'submitted') {
+      unstarted = true
+      return { id: 'unstarted-child-attempt', run_id: runId, ordinal: 1, wake_seq: null, state: 'delivered', epoch: 1, token: 1, first_model_at: null }
+    }
+    return realStart(runId)
+  }) as typeof runs.start
+  const { runId, first } = f.start()
+  assert.equal((await first).outcome, 'hibernated')
+  runs.start = realStart
+  const child = runs.promises(runId)[0]!.child_id
+  assert.equal(f.children.launches.length, 1, 'the child starter ran, but no attempt was durably started')
+  assert.equal(runs.attempts(child).length, 0)
+  runs.cancel(child)
+  f.lead().pump()
+  await f.lead().idle()
+  assert.deepEqual(runs.wakes(runId).map(w => w.kind), ['resolution'])
+  const prompts = await resumedPrompts(f)
+  assert.equal(prompts.length, 1)
+  assert.match(String(prompts[0]!.text), /kind=resolution/)
+  assert.equal(String(prompts[0]!.text).includes(WAKE_ACCEPTED), false, 'a child cancelled before its start never ran')
 })
 
 test('a deadline wakes the lead although the child never finishes, with the wrap-up report requested', async t => {
@@ -212,6 +259,19 @@ test('an invalid brief is answered as a tool error and the lead keeps working wi
   const answer = (await f.events()).find(e => e.event === 'tool_answer')!
   assert.equal(answer.isError, true)
   assert.match(String(answer.text), /^invalid_brief: /)
+})
+
+test('an acceptance command that is not argv (one spaced string, or JSON text) is refused before anything hibernates', async t => {
+  for (const acceptance of [['node --test test/a.test.mjs'], ['["node","--test","test/a.test.mjs"]']]) {
+    const plan = { ...brief().plan, items: [{ ...brief().plan.items[0]!, acceptance }] }
+    const f = await leadFixture(t, { lead: { briefs: [brief({ plan })] } })
+    const { runId, first } = f.start()
+    assert.equal((await first).outcome, 'completed')
+    assert.equal(f.runs().promises(runId).length, 0)
+    const answer = (await f.events()).find(e => e.event === 'tool_answer')!
+    assert.equal(answer.isError, true)
+    assert.match(String(answer.text), /^invalid_brief: plan\.items\.t1\.acceptance must be an argv array/)
+  }
 })
 
 test('canceling a hibernating lead cancels the child chain once and stops its executor once', async t => {

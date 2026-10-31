@@ -103,3 +103,17 @@
     outline: var(--border-width-regular) solid Highlight;
   }
 }
+
+/* In a labelled list (a phone overflow sheet) the label is text beside the icon. */
+.gx-icon-button[data-labelled] {
+  justify-content: flex-start;
+  gap: var(--spacing-8);
+  width: auto;
+  padding-inline: var(--spacing-8);
+}
+
+.gx-icon-button-label {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-regular);
+}

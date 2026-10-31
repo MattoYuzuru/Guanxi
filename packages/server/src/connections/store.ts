@@ -9,6 +9,17 @@ import {
 } from '@guanxi/contract'
 import type { EgressScrubber } from '../egress/types.ts'
 
+/** A pre-merge lane build used version 4 for `removed_connections`; that data directory is never repaired. */
+export const LANE_DATA_DIR_INCOMPATIBLE = 'lane_data_dir_incompatible'
+export class LaneDataDirError extends Error {
+  readonly code = LANE_DATA_DIR_INCOMPATIBLE
+  constructor(path: string) {
+    super(`The data directory ${dirname(path)} was written by a pre-merge K3 lane build: k3_migrations has version 4 ` +
+      'but dotenv_imports has no family column. Discard this lane-only data directory; there is no repair.')
+    this.name = 'LaneDataDirError'
+  }
+}
+
 /** A separate database keeps K3 migrations independent of K2 and legacy user_version. */
 export class ConnectionStore {
   readonly db: DatabaseSync
@@ -46,18 +57,82 @@ export class ConnectionStore {
           connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,endpoint));
           INSERT INTO k3_migrations VALUES(3);`)
       }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=4').get()) {
+        // Append the dotenv name family to the identity. Legacy rows had one openai
+        // identity for both names; treat them as the official OPENAI_API_KEY family.
+        this.db.exec(`
+          CREATE TABLE dotenv_imports_v4(account_id TEXT NOT NULL, provider TEXT NOT NULL, family TEXT NOT NULL, endpoint TEXT NOT NULL,
+            connection_id TEXT NOT NULL REFERENCES connections(id), PRIMARY KEY(account_id,provider,family,endpoint));
+          INSERT INTO dotenv_imports_v4(account_id,provider,family,endpoint,connection_id)
+            SELECT account_id, provider, CASE WHEN provider='openai' THEN 'OPENAI_API_KEY' ELSE provider END, endpoint, connection_id
+            FROM dotenv_imports;
+          DROP TABLE dotenv_imports;
+          ALTER TABLE dotenv_imports_v4 RENAME TO dotenv_imports;
+          INSERT INTO k3_migrations VALUES(4);`)
+      }
+      // A lane build recorded version 4 for its own table. Migrations are append-only, so version 4
+      // cannot run again and the missing column would fail every later import: refuse instead of repairing.
+      if (this.db.prepare('SELECT version FROM k3_migrations WHERE version=4').get()) {
+        const columns = this.db.prepare('PRAGMA table_info(dotenv_imports)').all() as { name?: unknown }[]
+        if (!columns.some(column => column.name === 'family')) throw new LaneDataDirError(path)
+      }
+      if (!this.db.prepare('SELECT version FROM k3_migrations WHERE version=5').get()) {
+        // A separate table keeps the connection row (and the append-only cost ledger) intact while
+        // hiding the connection from every snapshot and picker. The vault record stays for redaction.
+        this.db.exec(`CREATE TABLE IF NOT EXISTS removed_connections(connection_id TEXT PRIMARY KEY REFERENCES connections(id),
+          account_id TEXT NOT NULL, removed_at TEXT NOT NULL);
+          CREATE INDEX IF NOT EXISTS removed_connections_account ON removed_connections(account_id);
+          INSERT INTO k3_migrations VALUES(5);`)
+      }
       this.db.exec('COMMIT')
     } catch (error) { this.db.exec('ROLLBACK'); this.db.close(); throw error }
     for (const file of [path, `${path}-wal`, `${path}-shm`]) chmodSync(file, 0o600)
   }
   list(accountId: string): Connection[] {
-    return this.db.prepare('SELECT data FROM connections WHERE account_id=? ORDER BY rowid').all(accountId)
+    return this.db.prepare(`SELECT data FROM connections WHERE account_id=?
+      AND id NOT IN (SELECT connection_id FROM removed_connections WHERE account_id=?) ORDER BY rowid`).all(accountId, accountId)
       .map(row => connectionSchema.parse(JSON.parse(String(row.data))))
   }
   get(accountId: string, id: string): Connection {
-    const row = this.db.prepare('SELECT data FROM connections WHERE account_id=? AND id=?').get(accountId, id)
+    const row = this.db.prepare(`SELECT data FROM connections WHERE account_id=? AND id=?
+      AND id NOT IN (SELECT connection_id FROM removed_connections WHERE account_id=?)`).get(accountId, id, accountId)
     if (!row) throw new ConnectionError('connection_not_found', 'Connection not found')
     return connectionSchema.parse(JSON.parse(String(row.data)))
+  }
+  /** The marked auto row including its removal state; `list()` alone cannot tell a removed row from no row. */
+  findAutoLocalOllama(accountId: string): { connection: Connection; removed: boolean } | undefined {
+    const rows = this.db.prepare(`SELECT connections.data,
+        CASE WHEN removed_connections.connection_id IS NULL THEN 0 ELSE 1 END AS removed
+      FROM connections LEFT JOIN removed_connections
+        ON removed_connections.connection_id=connections.id AND removed_connections.account_id=connections.account_id
+      WHERE connections.account_id=? ORDER BY connections.rowid`).all(accountId)
+    for (const row of rows) {
+      const connection = connectionSchema.parse(JSON.parse(String(row.data)))
+      if (connection.kind === 'local_runtime' && connection.provider === 'ollama' &&
+        connection.facts.origin?.value === 'local_runtime_auto') return { connection, removed: Number(row.removed) === 1 }
+    }
+  }
+  /** Soft removal: the row and its cost ledger survive, but the connection leaves every list and picker.
+   * The dotenv mapping is dropped so a later import creates a new connection; vault records remain so the
+   * scrubber still redacts historical output. */
+  remove(accountId: string, id: string): { id: string } {
+    const row = this.get(accountId, id)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('INSERT OR REPLACE INTO removed_connections VALUES(?,?,?)')
+        .run(id, accountId, new Date().toISOString())
+      this.db.prepare('DELETE FROM dotenv_imports WHERE account_id=? AND connection_id=?').run(accountId, id)
+      // The node-key copy exists only for unattended dispatch; a removed connection must not keep it.
+      this.db.prepare('DELETE FROM vault_node_secrets WHERE account_id=? AND connection_id=?').run(accountId, id)
+      const safe = connectionSchema.parse(this.scrubber.scrub({ ...row, secretRef: null }))
+      this.db.prepare('UPDATE connections SET data=? WHERE id=? AND account_id=?')
+        .run(JSON.stringify(safe), id, accountId)
+      this.db.exec('COMMIT')
+      return { id }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
   create(accountId: string, input: CreateConnection, endpoint?: { baseUrl: string; allowPrivate?: boolean }): Connection {
     const data = createConnectionSchema.parse(input)
@@ -82,6 +157,20 @@ export class ConnectionStore {
     if (!row.baseUrl) throw new ConnectionError('validation_failed', 'Custom endpoint required')
     return this.write({ ...row, allowPrivate })
   }
+  /** Trusted import only: replace or clear an owner-pinned API root and its network consent. */
+  setImportedEndpoint(accountId: string, id: string,
+    endpoint: { baseUrl?: string; allowPrivate?: boolean }, name?: string): Connection {
+    const row = this.get(accountId, id)
+    const next: Connection = { ...row, ...(name === undefined ? {} : { name }) }
+    if (endpoint.baseUrl === undefined) {
+      delete next.baseUrl
+      delete next.allowPrivate
+    } else {
+      next.baseUrl = endpoint.baseUrl
+      next.allowPrivate = endpoint.allowPrivate ?? false
+    }
+    return this.write(next)
+  }
   setUnattended(accountId: string, id: string, unattended: boolean): Connection {
     return this.write({ ...this.get(accountId, id), unattended })
   }
@@ -101,9 +190,16 @@ export class ConnectionStore {
     if (JSON.stringify({ ...existing, id: '' }) !== JSON.stringify({ ...row, id: '' })) throw new Error('Conflicting usage receipt')
     return existing
   }
-  costs(accountId: string): ConnectionCost[] {
+  /** Every append-only receipt, including spend on connections hidden from the public projection. */
+  receipts(accountId: string): ConnectionCost[] {
     return this.db.prepare('SELECT data FROM costs WHERE account_id=? ORDER BY rowid').all(accountId)
       .map(row => connectionCostSchema.parse(JSON.parse(String(row.data))))
+  }
+  /** Public cost projection: a removed connection's history stays in the ledger but leaves the snapshot. */
+  costs(accountId: string): ConnectionCost[] {
+    const removed = new Set(this.db.prepare('SELECT connection_id FROM removed_connections WHERE account_id=?')
+      .all(accountId).map(row => String(row.connection_id)))
+    return this.receipts(accountId).filter(cost => !removed.has(cost.connectionId))
   }
   close() { this.db.close() }
 }

@@ -123,8 +123,9 @@ describe('no-artificial-context-cap UI', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(listModels).toHaveBeenLastCalledWith(CUSTOM_CONTEXT, expect.any(AbortSignal)))
     expect(view.container.textContent).toContain('Preset-значения — только подсказки')
-    expect(screen.getByText('Профиль ускорителя').parentElement?.getAttribute('title'))
-      .toContain('Этот adapter не сообщает число devices')
+    // Round 4: the hardware facts are icon status items; the accelerator detail sits in its popover.
+    fireEvent.click(screen.getByRole('button', { name: /^Профиль ускорителя/u }))
+    expect((await screen.findByRole('dialog')).textContent).toContain('Этот adapter не сообщает число devices')
   })
 
   it('requests one custom Model Profile fit and explains sourced maximum without clamping', async () => {

@@ -4,7 +4,7 @@
  */
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { completedProgress, createSessionFeaturesFixture, installSessionFeaturesApi, nativeSession } from './fixtures/session-features-api.ts'
+import { completedProgress, createSessionFeaturesFixture, installSessionFeaturesApi, nativeSession, sessionEvent } from './fixtures/session-features-api.ts'
 
 test.use({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true })
 
@@ -15,6 +15,36 @@ async function open(page: Page, theme: 'light' | 'dark' = 'light') {
   await page.goto('/agent/s1')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 }
+
+test('D-207 on a phone: the composer stays docked and the status bar stays in view through a long timeline (P2)', async ({ page }) => {
+  const events = Array.from({ length: 40 }, (_, index) => sessionEvent('s1', index + 1, index % 2 === 0 ? 'prompt' : 'assistant.message',
+    `${index % 2 === 0 ? 'Question' : 'Answer'} ${index + 1}: ${'a line of text that wraps on a phone '.repeat(3)}`))
+  const running = { ...completedProgress('s1'), status: 'running' as const }
+  const fixture = createSessionFeaturesFixture({ sessions: [nativeSession('s1', 'Fix the nightly build', 'working', 40)], progress: { s1: running }, events: { s1: events }, titles: { s1: 'Fix the nightly build' } })
+  await installSessionFeaturesApi(page, fixture)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/agent/s1')
+  await expect(page.getByText(/^Answer 40:/u)).toBeAttached()
+  const inView = async (selector: string) => {
+    const box = await page.locator(selector).first().boundingBox()
+    expect(box, selector).not.toBeNull()
+    return box!.y >= 0 && box!.y + box!.height <= 860 + 0.5
+  }
+  const composer = page.getByRole('textbox', { name: /Queue prompt|Ask the agent|What should/u })
+  for (const where of ['top', 'bottom'] as const) {
+    // Scroll the timeline the way a finger would: whatever scrolls, the page or the timeline.
+    await page.mouse.move(200, 400)
+    await page.mouse.wheel(0, where === 'bottom' ? 20_000 : -20_000)
+    await page.evaluate((to) => { for (const node of document.querySelectorAll('*')) { const element = node as HTMLElement; if (element.scrollHeight > element.clientHeight + 1) element.scrollTop = to === 'bottom' ? element.scrollHeight : 0 } window.scrollTo(0, to === 'bottom' ? document.body.scrollHeight : 0) }, where)
+    await expect(composer).toBeVisible()
+    expect(await inView('[data-slot="app-shell-status"]'), `status bar after scrolling to the ${where}`).toBe(true)
+    const box = await composer.boundingBox()
+    expect(box!.y + box!.height, `composer after scrolling to the ${where}`).toBeLessThanOrEqual(860)
+    expect(box!.y).toBeGreaterThan(430)
+  }
+  // The document itself does not scroll: the timeline scrolls inside the pane.
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true)
+})
 
 test('the phone strip is one row: navigation toggle, breadcrumb, one overflow and the search icon', async ({ page }) => {
   await open(page)
@@ -34,6 +64,11 @@ test('the phone strip is one row: navigation toggle, breadcrumb, one overflow an
   const overflow = page.locator('[data-slot="app-shell-overflow"]')
   await expect(overflow).toBeVisible()
   for (const name of [/^This device/u, /^Memory/u, /^Runtime/u, /^Customise$/u]) await expect(overflow.getByRole('button', { name })).toHaveCount(1)
+  // No hover on a touch screen: each item shows its label as text, and no tooltip appears (P3).
+  for (const label of ['This device', 'Memory', 'Runtime', 'Customise']) await expect(overflow.getByText(label, { exact: true })).toBeVisible()
+  await overflow.getByRole('button', { name: /^Memory/u }).hover()
+  await page.waitForTimeout(700)
+  await expect(page.locator('[data-slot="tooltip-content"]:visible')).toHaveCount(0)
   const box = await overflow.boundingBox()
   expect(box!.x).toBeGreaterThanOrEqual(0)
   expect(box!.x + box!.width).toBeLessThanOrEqual(400)

@@ -146,8 +146,9 @@ test('degraded Ollama keeps the shell and bundled catalog accessible on a narrow
   await openNavigation(page)
   const navigation = page.getByRole('navigation', { name: 'Главная навигация' })
   await expect(navigation).toBeVisible()
-  await expect(navigation.getByRole('link')).toHaveCount(4)
+  await expect(navigation.getByRole('link')).toHaveCount(5)
   await expect(page.getByRole('link', { name: 'Новая сессия' })).toBeVisible()
+  await expect(navigation.getByRole('link', { name: 'Подключения' })).toBeVisible()
   await closeNavigation(page)
   await openStatusOverflow(page)
   // D-202: the degraded Ollama is the runtime status item, named in text (not only by colour).

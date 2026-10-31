@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const connectionKindSchema = z.enum(['agent', 'model_api', 'local_runtime', 'service'])
+export const connectionAuthSchema = z.enum(['api_key', 'cli_login', 'none'])
 export const connectionProviderSchema = z.enum([
   'claude-code', 'codex', 'copilot', 'anthropic', 'openai', 'google',
   'openrouter', 'deepseek', 'ollama', 'brave', 'tavily', 'openai-stt',
@@ -33,7 +34,7 @@ export const createConnectionSchema = z.object({
   name: z.string().trim().min(1).max(160),
   kind: connectionKindSchema,
   provider: connectionProviderSchema,
-  auth: z.enum(['api_key', 'cli_login', 'none']),
+  auth: connectionAuthSchema,
   unattended: z.boolean().default(false),
 }).strict().superRefine((value, ctx) => {
   const agents = ['claude-code', 'codex', 'copilot']
@@ -50,7 +51,7 @@ export const createConnectionSchema = z.object({
 export const connectionSchema = z.object({
   id: z.string().uuid(), accountId: z.string().min(1), name: z.string(),
   kind: connectionKindSchema, provider: connectionProviderSchema,
-  auth: z.enum(['api_key', 'cli_login', 'none']), unattended: z.boolean(),
+  auth: connectionAuthSchema, unattended: z.boolean(),
   baseUrl: connectionBaseUrlSchema.optional(),
   allowPrivate: z.boolean().optional(),
   secretRef: secretReferenceSchema.nullable(),
@@ -59,6 +60,8 @@ export const connectionSchema = z.object({
 }).strict()
 export const updateConnectionSchema = z.object({ unattended: z.boolean() }).strict()
 export const connectionSecretInputSchema = z.object({ value: z.string().min(8).max(16384) }).strict()
+/** Removal keeps the ledger row; the response names exactly what left the visible snapshot. */
+export const deleteConnectionResponseSchema = z.object({ id: z.string().uuid() }).strict()
 export const connectionCostSchema = z.object({
   id: z.string().uuid(), connectionId: z.string().uuid(), accountId: z.string(),
   runId: z.string().min(1), requestId: z.string().min(1),
@@ -81,7 +84,7 @@ export type ConnectionSnapshot = z.infer<typeof connectionSnapshotSchema>
 
 /** Stable recovery categories; raw provider/keychain errors never cross the wire. */
 export const connectionErrorCodeSchema = z.enum([
-  'connection_not_found', 'vault_locked', 'policy_denied', 'egress_unavailable',
+  'connection_not_found', 'connection_in_use', 'vault_locked', 'policy_denied', 'egress_unavailable',
   'internal_error', 'validation_failed', 'quota_exhausted', 'provider_failed',
 ])
 export const connectionErrorSchema = z.object({ code: connectionErrorCodeSchema }).strict()
@@ -90,6 +93,13 @@ export type ConnectionErrorCode = z.infer<typeof connectionErrorCodeSchema>
 export const MAX_DISCOVERED_MODELS = 1024
 export const MAX_PROVIDER_MODEL_ID = 256
 export const providerModelIdSchema = z.string().min(1).max(MAX_PROVIDER_MODEL_ID)
+/** One model an owner connection can run, with only scrubbed, referenced facts. */
+export const connectionModelSchema = z.object({
+  id: providerModelIdSchema,
+  facts: z.record(connectionFactSchema),
+}).strict()
+export const connectionModelsSchema = z.array(connectionModelSchema).max(MAX_DISCOVERED_MODELS)
+export type ConnectionModel = z.infer<typeof connectionModelSchema>
 /** Generic picker data; selection is opaque to clients and persists as Thread.model. */
 export const chatModelSelection = (connectionId: string, modelId: string): string =>
   `k3:${connectionId}:${encodeURIComponent(modelId)}`
@@ -106,3 +116,6 @@ export const chatModelsResponse = z.object({ groups: z.array(z.object({
   }).strict()).max(MAX_DISCOVERED_MODELS),
 }).strict()) }).strict()
 export type ChatModelsResponse = z.infer<typeof chatModelsResponse>
+
+// Provider catalog lives in a leaf module; the runtime enums above are re-exported with this index.
+export * from './catalog.ts'

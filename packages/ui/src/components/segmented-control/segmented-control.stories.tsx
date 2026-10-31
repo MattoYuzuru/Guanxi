@@ -42,3 +42,23 @@ export const FocusVisibleState: Story<Props> = {
 }
 
 export const DisabledState: Story<Props> = { name: 'disabled', render: () => <Demo disabled /> }
+
+/** Labels of different lengths: every segment takes the widest label's width, with padding kept. */
+function Uneven() {
+  const t = useUiText()
+  const [value, setValue] = useState<'session' | 'last' | 'none'>('session')
+  return (
+    <SegmentedControl
+      label={t('story.segmented.contextLabel')}
+      value={value}
+      onValueChange={setValue}
+      options={[
+        { value: 'session', label: t('story.segmented.wholeSession') },
+        { value: 'last', label: t('story.segmented.lastTurns') },
+        { value: 'none', label: t('story.segmented.noContext') },
+      ]}
+    />
+  )
+}
+
+export const UnevenState: Story<Props> = { name: 'uneven', render: () => <Uneven /> }

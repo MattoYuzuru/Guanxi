@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises'
 import { z } from 'zod'
 import type { Connection, ConnectionFact } from '@guanxi/contract'
 import type { Connections } from '../connections/service.ts'
+import { ConnectionError } from '../connections/errors.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { SessionLog, SessionHandle } from '../session-log/log.ts'
 import { AcpClient } from './acp.ts'
@@ -197,12 +198,23 @@ export class ExternalAgents {
   }
   capabilities(owner: string) {
     this.ready()
-    return this.scrubber.scrub(this.policy.installations.filter(i => i.ownerAccountId === owner).map(i => ({
-      connectionId: i.connectionId, nodeId: i.nodeId, adapter: i.adapter, version: i.version,
-      declaration: { value: ADAPTERS[i.adapter], source: ADAPTERS[i.adapter].source,
-        observedAt: this.connections.store.get(i.ownerAccountId, i.connectionId).facts.adapter_version?.observedAt ?? null, confidence: 'medium' },
-      concurrencyPolicy: { value: i.concurrency ?? 1, source: 'node_operator_policy', observedAt: this.configuredAt, confidence: 'high' },
-    })))
+    const available = []
+    for (const install of this.policy.installations) {
+      if (install.ownerAccountId !== owner) continue
+      let row: Connection
+      try { row = this.connections.store.get(install.ownerAccountId, install.connectionId) }
+      catch (error) {
+        // A removed connection leaves its K5 installation and project-role bindings behind.
+        // Skip that unavailable installation; one stale binding must not hide every other one.
+        if (error instanceof ConnectionError && error.code === 'connection_not_found') continue
+        throw error
+      }
+      available.push({ connectionId: install.connectionId, nodeId: install.nodeId, adapter: install.adapter, version: install.version,
+        declaration: { value: ADAPTERS[install.adapter], source: ADAPTERS[install.adapter].source,
+          observedAt: row.facts.adapter_version?.observedAt ?? null, confidence: 'medium' },
+        concurrencyPolicy: { value: install.concurrency ?? 1, source: 'node_operator_policy', observedAt: this.configuredAt, confidence: 'high' } })
+    }
+    return this.scrubber.scrub(available)
   }
   /** Paths/argv for the owner to sign in with the unmodified CLI on this node.
    * These are configuration locations only; no file contents or inherited credentials.
@@ -282,8 +294,9 @@ export class ExternalAgents {
       env.CLAUDE_CODE_OAUTH_TOKEN = key
       env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = '1'
     } else if (this.claudeApiKeyMode(install, row)) {
-      // The one place the key enters a child: its launch environment. K3 already refused a non-`sk-ant-api` key (an OAuth token
-      // would silently switch the SDK to subscription bearer auth) and registered the value with the scrubber.
+      // The one place the key enters a child: its launch environment. K3 already refused any value that is not an Anthropic
+      // API key family (`sk-ant-api...` or `sk-ant-usr...`); an OAuth token would silently switch the SDK to subscription bearer
+      // auth. K3 registered the value with the scrubber.
       if (row.kind !== 'model_api' || row.provider !== 'anthropic' || row.baseUrl) throw new ExternalAgentError('claude_api_connection_required')
       if (!key) throw new ExternalAgentError('claude_api_key_required')
       env.ANTHROPIC_API_KEY = key

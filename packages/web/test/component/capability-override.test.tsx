@@ -408,7 +408,9 @@ describe('installed capability overrides', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Assert this capability yourself?',
     })
-    expect(dialog.getAttribute('aria-describedby')).toBe('capability-override-confirmation')
+    const described = document.getElementById(dialog.getAttribute('aria-describedby')!)
+    expect(described).not.toBeNull()
+    expect(dialog.contains(described)).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Assert capability' }))
     expect(await screen.findByText('Your assertion was recorded.')).toBeTruthy()
   })
@@ -600,10 +602,10 @@ describe('installed capability overrides', () => {
   it('associates the visible label with the capability control', () => {
     renderOverrides()
     const select = screen.getByRole('combobox', { name: 'Какую capability утвердить' })
-    const label = document.querySelector('label[for="capability-override-draft"]')
+    const label = document.querySelector(`label[for="${CSS.escape(select.id)}"]`)
     // A visible `htmlFor` label must resolve to this control, not to nothing.
     expect(label).not.toBeNull()
-    expect(select.id).toBe('capability-override-draft')
+    expect(select.id).not.toBe('')
     expect((label as HTMLLabelElement).control).toBe(select)
   })
 

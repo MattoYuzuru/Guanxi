@@ -1,5 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Button } from '../button/button.tsx'
+import { Icon } from '../icon/icon.tsx'
+import { IconButton } from '../icon-button/icon-button.tsx'
 import { Input } from '../input/input.tsx'
 import { Textarea } from '../textarea/textarea.tsx'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../menu/menu.tsx'
@@ -12,7 +14,9 @@ import './workspace-chrome.css'
 type Choice = { id: string; label: string }
 type Base = { children?: ReactNode }
 export type WorkspaceChromeProps = Base & (
-  | { kind: 'pane'; id: string; title: string; moveLabel: string; hideLabel: string; onMove: () => void; onHide: () => void; canMove?: boolean; description?: string; draft?: { label: string; value: string; onChange: (value: string) => void } }
+  | { kind: 'pane'; id: string; title: string; moveLabel: string; hideLabel: string; onMove: () => void; onHide: () => void; canMove?: boolean; description?: string; draft?: { label: string; value: string; onChange: (value: string) => void }
+    /** No header: the block brings its own (the session timeline); the dock tab already names it. */
+    chromeless?: boolean }
   | { kind: 'toolbar'; busy?: boolean; label: string; fields: { label: string; value: string; choices: Choice[]; onChange: (id: string) => void }[]; name: { label: string; value: string; onChange: (name: string) => void }; actions: { label: string; onClick: () => void; disabled?: boolean }[] }
   | { kind: 'mover'; modal?: boolean; open: boolean; title: string; description: string; blockLabel: string; zoneLabel: string; cancelLabel: string; moveLabel: string; blocks: Choice[]; zones: Choice[]; block: string; zone: string; onBlock: (id: string) => void; onZone: (id: string) => void; onClose: () => void; onMove: () => void }
   | { kind: 'phone'; label: string; blocks: Choice[]; selected: string; onSelect: (id: string) => void }
@@ -29,8 +33,12 @@ function ChoiceMenu({ label, value, choices, onChange, disabled }: { disabled?: 
 export function WorkspaceChrome(props: WorkspaceChromeProps) {
   const tabs = useRef<HTMLDivElement>(null)
   const [dialogContainer, setDialogContainer] = useState<HTMLDivElement | null>(null)
-  if (props.kind === 'pane') return <section className="gx-workspace-pane" data-block={props.id} aria-label={props.title} tabIndex={-1}>
-    <header className="gx-workspace-pane-header"><h2>{props.title}</h2><Menu><MenuTrigger render={<Button variant="ghost" />} aria-label={`${props.moveLabel} ${props.title}`}>{props.moveLabel}</MenuTrigger><MenuContent><MenuItem disabled={props.canMove === false} onClick={props.onMove}>{props.moveLabel}</MenuItem><MenuItem onClick={props.onHide}>{props.hideLabel}</MenuItem></MenuContent></Menu></header>
+  // A pane header is the title and two borderless icon actions (round 4); the labels name the block.
+  if (props.kind === 'pane') return <section className="gx-workspace-pane" data-block={props.id} data-chromeless={props.chromeless || undefined} aria-label={props.title} tabIndex={-1}>
+    {!props.chromeless && <header className="gx-workspace-pane-header"><h2>{props.title}</h2><div className="gx-workspace-pane-actions">
+      {props.canMove !== false && <IconButton size="sm" label={props.moveLabel} icon={<Icon name="move" />} onClick={props.onMove} />}
+      <IconButton size="sm" label={props.hideLabel} icon={<Icon name="close" />} onClick={props.onHide} />
+    </div></header>}
     <div className="gx-workspace-pane-body">{props.description && <p className="gx-workspace-description">{props.description}</p>}{props.children}{props.draft && <label className="gx-workspace-field"><span>{props.draft.label}</span><Textarea aria-label={props.draft.label} value={props.draft.value} onChange={event => props.draft?.onChange(event.target.value)} /></label>}</div>
   </section>
   if (props.kind === 'toolbar') return <div className="gx-workspace-toolbar" role="group" aria-label={props.label}>
@@ -55,10 +63,7 @@ export function WorkspaceChrome(props: WorkspaceChromeProps) {
   if (props.loading) return <div className="gx-workspace-loading" aria-busy="true">
     <span role="status" aria-label={props.title} className="gx-sr-only">{props.title}</span>
     <div data-slot="workspace-loading-geometry" aria-hidden="true" className="gx-workspace-loading-geometry">
-      {/* One placeholder per toolbar control (the experience-mode field left with D-204). */}
-      <div className="gx-workspace-toolbar">{Array.from({ length: 10 }, (_, index) => index === 5
-        ? <div key={index} className="gx-workspace-field"><span className="gx-workspace-loading-label">{'\u00a0'}</span><span className="gx-workspace-loading-control" /></div>
-        : <span key={index} className="gx-workspace-loading-control" />)}</div>
+      {/* Layout actions live in the session header's menu (round 4): no toolbar row is reserved. */}
       <div className="gx-workspace-loading-content" />
     </div>
   </div>

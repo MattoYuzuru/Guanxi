@@ -18,6 +18,10 @@ import { paneRegistry } from './renderers.ts'
 import { blockNames, type BuiltInBlock } from './blocks.ts'
 import { WorkspaceLayout, type WorkspaceLayoutHandle } from './WorkspaceLayout/index.tsx'
 import { workspaceFailure, workspaceStep, type WorkspaceFailure } from './failure.ts'
+import { WorkspaceControlsContext, type WorkspaceLayoutControls } from './controls.ts'
+import { useSessionContext } from '../session/session-context.ts'
+import { ContextPanel } from '../context/ContextPanel.tsx'
+import { SessionPanelsMenu } from '../session/SessionPanelsMenu.tsx'
 import './workspace.css'
 
 const WORKSPACE_RECOVERY = { baseMs: 10_000, maxMs: 60_000 } as const
@@ -63,6 +67,8 @@ export const WORKSPACE_MODE: ExperienceMode = 'developer'
 export function Workspace({ children, account, project, safeMode = false }: WorkspaceProps) {
   const { locale, setLocale } = useLocale()
   const { resolved: theme } = useTheme()
+  const [menuHosts, setMenuHosts] = useState(0)
+  const registerMenu = useCallback(() => { setMenuHosts(count => count + 1); return () => setMenuHosts(count => count - 1) }, [])
   const phone = usePhone()
   const [device] = useState(deviceId)
   const [nodeAccount, setNodeAccount] = useState(account ?? 'local')
@@ -216,18 +222,18 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     } catch (error) { if (epoch === selectionEpoch.current) setSaveError(workspaceFailure(error, 'save-workspace')) }
     finally { if (epoch === selectionEpoch.current) { operationBusy.current = false; setSwitching(false) } }
   }
-  async function save(asNew = false, previousAttempt?: SaveAttempt) {
+  async function save(asNew = false, previousAttempt?: SaveAttempt, nameOverride?: string) {
     if (!doc || operationBusy.current) return
     operationBusy.current = true
     setSaving(true)
     if (!previousAttempt) setSaveError(null)
-    retryOperation.current = () => { void save(asNew, previousAttempt) }
+    retryOperation.current = () => { void save(asNew, previousAttempt, nameOverride) }
     try {
       const captured = previousAttempt ? undefined : await workspaceStep('snapshot-layout', () => ({ current: snapshot(), local: engine.current?.snapshot().geometry ?? geometry }))
       const attempt: SaveAttempt = previousAttempt ?? await workspaceStep('prepare-layout-save', () => {
         const { current, local } = captured!
         const scope = layoutScopeForSave(query(mode), saveScopes[mode] ?? layoutSaveScope(current.scope))
-        const updated: LayoutDocument = { ...current, scope, id: asNew ? crypto.randomUUID() : current.id, name: name.trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
+        const updated: LayoutDocument = { ...current, scope, id: asNew ? crypto.randomUUID() : current.id, name: (nameOverride ?? name).trim() || current.name, rev: current.rev + 1, updatedAt: new Date().toISOString(), updatedBy: { device } }
         const sameScope = layoutScopeKey(current.scope) === layoutScopeKey(scope)
         return { document: updated, geometry: local, basedOn: asNew || !sameScope ? undefined : layoutClock(current) } satisfies SaveAttempt
       })
@@ -243,6 +249,7 @@ export function Workspace({ children, account, project, safeMode = false }: Work
         if (won) {
           // Preserve edits made while the request was in flight, while advancing their base clock.
           setDocuments(previous => ({ ...previous, [updated.scope.mode]: { ...previous[updated.scope.mode]!, scope: result.document.scope, id: result.document.id, name: result.document.name, rev: result.document.rev, updatedAt: result.document.updatedAt, updatedBy: result.document.updatedBy } }))
+          setName(result.document.name)
           geometryCache.current.set(`${scopeKey}#${result.document.id}`, local)
         }
         attempt.applied = true
@@ -414,30 +421,62 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     const name = contribution?.id.split('/')[1] as BuiltInBlock | undefined
     const Renderer = contribution && 'component' in contribution.pane ? paneRegistry.get(contribution.pane.component) : undefined
     const unavailable = !contribution || !contribution.modes.includes(mode) || (safeMode && !builtIn) || (!builtIn && !Renderer)
-    if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspaceLayout.safePlaceholder' : 'workspaceLayout.placeholder')} />
-    if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
+    const labels = paneLabels(title(id))
+    if (unavailable) return <WorkspaceChrome kind="pane" id={id} title={title(id)} {...labels} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)} description={translate(safeMode ? 'workspaceLayout.safePlaceholder' : 'workspaceLayout.placeholder')} />
+    if (Renderer && !builtIn) return <WorkspaceChrome kind="pane" id={id} title={title(id)} {...labels} canMove={!phone} onMove={() => openMove(id)} onHide={() => hide(id)}><Renderer instanceId={id} params={doc.blocks[id]!.params} /></WorkspaceChrome>
     return <BuiltInPane id={id} name={name!} title={title(id)} onMove={() => openMove(id)} onHide={() => hide(id)} canMove={!phone}>{name === 'chat' ? children : null}</BuiltInPane>
   }
-  return <UiLocaleProvider locale={locale}><div className="workspace" aria-busy={loading || undefined} data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
+  const busy = loading || saving || switching
+  // The session header carries the menu only while the session block is on screen: not hidden, not
+  // behind another phone tab. Otherwise the workspace's own bar shows it (review P1).
+  const isSession = (id: string) => doc.blocks[id]?.contribution === 'guanxi.core/chat'
+  const sessionOnScreen = coreChatReady && (phone ? isSession(selectedId) : visible.some(isSession))
+  const layoutLabel = (row: LayoutDocument) => row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName')
+    : row.id.startsWith('default-') && (row.name === 'developer' || row.name === 'visual') ? translate('workspaceLayout.defaultName') : row.name
+  // The session header's panels menu replaces the toolbar row (round 4, owner feedback 2026-10-23).
+  const controls: WorkspaceLayoutControls = {
+    busy, phone,
+    // The session block is a row too: hidden from its dock tab, it comes back from this menu (review P1).
+    blocks: Object.keys(doc.blocks)
+      .sort((a, b) => doc.blocks[a]!.priority - doc.blocks[b]!.priority || a.localeCompare(b))
+      .map(id => ({ id, label: title(id), hidden: doc.hidden.includes(id) })),
+    addable: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')
+      && entry.key !== 'guanxi.core/chat' && (entry.value.multiInstance || !Object.values(doc.blocks).some(block => block.contribution === entry.key)))
+      // A second instance of a block already shown reads "Another Terminal", not a duplicate row name.
+      .map(entry => {
+        const label = translate(entry.value.title as LocaleKey)
+        return { id: entry.key, label: Object.values(doc.blocks).some(block => block.contribution === entry.key) ? translate('session.layout.addAnother', { block: label }) : label }
+      }),
+    setVisible: (id, next) => { if (next) show(id); else hide(id) },
+    add: addBlock,
+    density: doc.density,
+    setDensity: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next } })),
+    scope: saveScopes[mode] ?? layoutSaveScope(doc.scope),
+    scopes: layoutSaveScopes(query(mode)).map(id => ({ id, label: translate(`workspaceLayout.scope.${id}`) })),
+    setScope: next => setSaveScopes(previous => ({ ...previous, [mode]: next as LayoutSaveScope })),
+    layout: `${layoutScopeKey(doc.scope)}#${doc.id}`,
+    layouts: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: layoutLabel(row) })),
+    activate: id => {
+      const next = list.documents.find(row => `${layoutScopeKey(row.scope)}#${row.id}` === id && row.scope.mode === mode)
+      if (next) void activateDocument(next, true)
+    },
+    name: layoutLabel(doc),
+    save: () => { void save() },
+    // The new name becomes the layout's name only once the node confirms the save (review P2).
+    saveAs: next => { void save(true, undefined, next) },
+    // Renaming in place was the toolbar name field plus Save; it is one menu item now (review 6).
+    rename: next => { void save(false, undefined, next) },
+    reset,
+    move: () => openMove(),
+    registerMenu,
+  }
+  return <UiLocaleProvider locale={locale}><WorkspaceControlsContext.Provider value={controls}><div className="workspace" aria-busy={loading || undefined} data-theme={theme} data-density={doc.density} data-mode={mode} onKeyDown={event => {
     if (event.defaultPrevented) return
     if (event.key === 'F6') { event.preventDefault(); engine.current?.cycleZone(event.shiftKey) }
     if (event.altKey && event.shiftKey && event.key.toLowerCase() === 'm' && !phone) { event.preventDefault(); openMove() }
   }}>
-    <WorkspaceChrome kind="toolbar" label={translate('workspaceLayout.title')} busy={loading || saving || switching} fields={[
-      { label: translate('workspaceLayout.density'), value: doc.density, choices: (['compact', 'comfortable'] as const).map(id => ({ id, label: translate(`workspaceLayout.${id}`) })), onChange: next => setDocuments(previous => ({ ...previous, [mode]: { ...doc, density: next as LayoutDocument['density'] } })) },
-      { label: translate('workspaceLayout.saveScope'), value: saveScopes[mode] ?? layoutSaveScope(doc.scope), choices: layoutSaveScopes(query(mode)).map(id => ({ id, label: translate(`workspaceLayout.scope.${id}`) })), onChange: next => setSaveScopes(previous => ({ ...previous, [mode]: next as LayoutSaveScope })) },
-      { label: translate('workspaceLayout.layout'), value: `${layoutScopeKey(doc.scope)}#${doc.id}`, choices: list.documents.filter(row => row.scope.mode === mode).map(row => ({ id: `${layoutScopeKey(row.scope)}#${row.id}`, label: row.name === 'Recovered layout' ? translate('workspaceLayout.recoveredName') : row.name })), onChange: id => {
-        const next = list.documents.find(row => `${layoutScopeKey(row.scope)}#${row.id}` === id && row.scope.mode === mode)
-        if (next) void activateDocument(next, true)
-      } },
-      { label: translate('workspaceLayout.add'), value: '', choices: contributions.filter(entry => entry.value.modes.includes(mode) && (!safeMode || entry.pluginId === 'guanxi.core')).map(entry => ({ id: entry.key, label: translate(entry.value.title as LocaleKey) })), onChange: addBlock },
-      { label: translate('workspaceLayout.hidden'), value: '', choices: doc.hidden.map(id => ({ id, label: title(id) })), onChange: show },
-    ]} name={{ label: translate('workspaceLayout.layout'), value: name, onChange: setName }} actions={[
-      { label: translate('workspaceLayout.save'), onClick: () => { void save() }, disabled: saving },
-      { label: translate('workspaceLayout.saveAs'), onClick: () => { void save(true) }, disabled: saving },
-      { label: translate('workspaceLayout.move'), onClick: () => openMove(), disabled: phone },
-      { label: translate('workspaceLayout.reset'), onClick: reset },
-    ]} />
+    {/* The session header carries the panels menu; when no session block shows, the menu stays reachable here. */}
+    {(menuHosts === 0 || !sessionOnScreen) && <div className="workspace-bar"><SessionPanelsMenu layout={controls} fallback /></div>}
     {loadError && loadErrorState(loadError)}
     {saveError && actionErrorState(saveError, () => retryOperation.current(), saving || switching)}
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="workspace-announcement"><span key={announcementRevision}>{announcement}</span></p>
@@ -455,12 +494,24 @@ export function Workspace({ children, account, project, safeMode = false }: Work
     </div>
     {moving !== null && <PortalContainerProvider container={paneHosts.current.get(moving)?.ownerDocument.body ?? null}><WorkspaceChrome kind="mover" open={moving !== null} title={translate('workspaceLayout.moveTitle')} description={translate('workspaceLayout.move')} blockLabel={translate('workspaceLayout.block')} zoneLabel={translate('workspaceLayout.destination')} cancelLabel={translate('workspaceLayout.cancel')} moveLabel={translate('workspaceLayout.move')} blocks={choices.filter(choice => visible.includes(choice.id))} zones={zoneOrder.map(id => ({ id, label: translate(`workspaceLayout.zone.${id}`) }))} block={moving ?? ''} zone={destination} onBlock={setMoving} onZone={id => setDestination(id as WorkspaceZone)} onClose={() => { const id = moving; setMoving(null); requestAnimationFrame(() => { if (returnFocus.current?.isConnected) returnFocus.current.focus(); else if (id) engine.current?.focus(id) }) }} onMove={() => { void move() }} /></PortalContainerProvider>}
     {Object.keys(doc.blocks).map(id => createPortal(<PortalContainerProvider container={paneHosts.current.get(id)!}>{renderPane(id)}{paneHosts.current.get(id)!.ownerDocument !== document && <p className="sr-only" aria-live="polite" aria-atomic="true"><span key={announcementRevision}>{announcement}</span></p>}</PortalContainerProvider>, paneHosts.current.get(id)!, id))}
-  </div></UiLocaleProvider>
+  </div></WorkspaceControlsContext.Provider></UiLocaleProvider>
+}
+
+/** Pane actions are icons named with the block ("Move Terminal…"), never text buttons (round 4). */
+function paneLabels(block: string) {
+  return { moveLabel: translate('workspaceLayout.movePanel', { block }), hideLabel: translate('workspaceLayout.hidePanel', { block }) }
 }
 
 function BuiltInPane({ id, name, title, onMove, onHide, canMove, children }: { id: string; name: BuiltInBlock; title: string; onMove: () => void; onHide: () => void; canMove: boolean; children?: ReactNode }) {
   const [draft, setDraft] = useState('')
   const hasDraft = name === 'terminal' || name === 'browser'
   const known = blockNames.includes(name)
-  return <WorkspaceChrome kind="pane" id={id} title={title} moveLabel={translate('workspaceLayout.move')} hideLabel={translate('workspaceLayout.hide')} onMove={onMove} onHide={onHide} canMove={canMove} description={name !== 'chat' && known ? translate(`workspaceLayout.empty.${name}`) : undefined} draft={hasDraft ? { label: translate(name === 'terminal' ? 'workspaceLayout.draft' : 'workspaceLayout.preview'), value: draft, onChange: setDraft } : undefined}>{children}</WorkspaceChrome>
+  const session = useSessionContext()
+  // The session timeline brings its own header; its dock tab already names it.
+  if (name === 'chat') return <WorkspaceChrome kind="pane" id={id} title={title} {...paneLabels(title)} onMove={onMove} onHide={onHide} canMove={canMove} chromeless>{children}</WorkspaceChrome>
+  // The Context block shows the open session's context panel when there is one.
+  if (name === 'context' && session) return <WorkspaceChrome kind="pane" id={id} title={title} {...paneLabels(title)} onMove={onMove} onHide={onHide} canMove={canMove}>
+    <ContextPanel context={session.context} usage={session.usage} compacting={session.compacting} onCompact={session.onCompact} disabled={session.disabled} />
+  </WorkspaceChrome>
+  return <WorkspaceChrome kind="pane" id={id} title={title} {...paneLabels(title)} onMove={onMove} onHide={onHide} canMove={canMove} description={known ? translate(`workspaceLayout.empty.${name}`) : undefined} draft={hasDraft ? { label: translate(name === 'terminal' ? 'workspaceLayout.draft' : 'workspaceLayout.preview'), value: draft, onChange: setDraft } : undefined}>{children}</WorkspaceChrome>
 }

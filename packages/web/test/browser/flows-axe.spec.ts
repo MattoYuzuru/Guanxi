@@ -1,6 +1,6 @@
 /**
  * G14 on the app flows COMPONENTS_AND_CATALOG §5 names: no serious or critical axe violation on
- * the Settings screen (with the Developer section and its catalog link on) and in the
+ * the Settings screen (with the Design system section and its catalog link) and in the
  * new-session flow (the empty chat screen, then the new dialog with its composer). Each flow
  * also has a seeded violation, an unnamed icon-only button injected into it, which the scan
  * must report, so a scan that silently checks nothing fails.
@@ -87,10 +87,8 @@ async function injectUnnamedIconButton(page: Page, selector: string): Promise<vo
 
 async function openSettings(page: Page): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  await page.addInitScript(() => localStorage.setItem('guanxi.developerMode', 'on'))
   await mockSettingsApi(page)
   await page.goto('/settings')
-  await expect(page.getByRole('switch', { name: 'Developer mode' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByRole('link', { name: 'Open the component catalog' })).toBeVisible()
 }
 
@@ -101,12 +99,12 @@ async function openNewSession(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'Создать диалог' })).toBeVisible()
 }
 
-test('G14 Settings with the Developer section has no serious or critical axe violation', async ({ page }) => {
+test('G14 Settings with the Design system section has no serious or critical axe violation', async ({ page }) => {
   await openSettings(page)
   expect(await seriousViolations(page)).toEqual([])
 })
 
-test('G14 seeded: an unnamed icon button in the Developer section is reported', async ({ page }) => {
+test('G14 seeded: an unnamed icon button in the Design system section is reported', async ({ page }) => {
   await openSettings(page)
   const section = page.getByRole('link', { name: 'Open the component catalog' }).locator('xpath=ancestor::section[1]')
   await expect(section).toHaveCount(1)
@@ -122,7 +120,9 @@ test('G14 new-session flow has no serious or critical axe violation', async ({ p
   await expect(page).toHaveURL(/\/chat\/thread-p0-e-full$/)
   await expect(page.getByRole('textbox', { name: 'Сообщение' })).toBeVisible()
 
-  // Both responsive ContextPanels are in the DOM; only one is visible at a given viewport.
+  // Round 4: the Context panel opens beside the timeline from the header's context value.
+  await page.getByTestId('session-context').click()
+  await expect(page.getByTestId('session-panels')).toBeVisible()
   // The fixture reports a cache miss, so the hit row is the inactive one. It used to dim its
   // label and duration with `opacity-45`; the semantic secondary text token replaced that, so
   // this fails against the old contrast implementation even before axe runs.
@@ -136,7 +136,14 @@ test('G14 new-session flow has no serious or critical axe violation', async ({ p
   expect(await inactive.evaluate((row) => getComputedStyle(row).color))
     .not.toBe(await active.evaluate((row) => getComputedStyle(row).color))
 
-  expect(await seriousViolations(page), 'new dialog with composer').toEqual([])
+  expect(await seriousViolations(page), 'new dialog with composer and the Context panel').toEqual([])
+  // The panels menu open is part of the flow too.
+  await page.getByRole('button', { name: 'Панели и раскладка', exact: true }).click()
+  await expect(page.getByTestId('session-panels-menu')).toBeVisible()
+  // Scoped to the menu: Base UI's focus guards around an open non-modal popup are aria-hidden
+  // tabbable spans by design and are reported page-wide for every open menu.
+  const menuScan = await new AxeBuilder({ page }).include('[data-testid="session-panels-menu"]').analyze()
+  expect(menuScan.violations.filter((violation) => violation.impact === 'serious' || violation.impact === 'critical').map((violation) => violation.id), 'panels menu open').toEqual([])
 })
 
 test('G14 seeded: an unnamed icon button in the new-session flow is reported', async ({ page }) => {

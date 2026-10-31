@@ -8,6 +8,7 @@ import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import type { ComponentProps, ReactNode } from 'react'
 import { useUiText } from '../../i18n/context.tsx'
 import { cx } from '../../lib/cx.ts'
+import { useVisibleLabels } from '../../lib/visible-labels.tsx'
 import { Icon, type IconName } from '../icon/icon.tsx'
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../popover/popover.tsx'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../tooltip/tooltip.tsx'
@@ -67,9 +68,31 @@ export function StatusItem({
   const showBadge = badge === true || (typeof badge === 'number' && badge > 0)
   const base = value !== undefined && typeof value === 'string' ? `${label}: ${value}` : tone === 'unknown' ? `${label}: ${t('ui.status.unknownValue')}` : label
   const name = stale && staleLabel ? `${base} (${staleLabel})` : base
+  // In a labelled list (a phone overflow sheet) the label is text beside the icon; no tooltip.
+  const labelled = useVisibleLabels()
+  const content = (
+    <>
+      <span className="gx-status-item-glyph" aria-hidden="true">
+        <Icon name={icon} size={16} />
+        {tone === 'unknown' || stale ? <span className="gx-status-item-unknown" /> : null}
+      </span>
+      {labelled ? <span className="gx-status-item-label" data-slot="status-item-label" aria-hidden="true">{label}</span> : null}
+      {value !== undefined ? <span className="gx-status-item-value">{value}</span>
+        : labelled && tone === 'unknown' ? <span className="gx-status-item-value" data-tone="unknown">{t('ui.status.unknownValue')}</span> : null}
+      {showBadge ? (
+        <span className="gx-icon-button-badge" data-tone={tone === 'danger' || tone === 'warning' ? tone : undefined} aria-hidden="true">
+          {badgeText}
+        </span>
+      ) : null}
+    </>
+  )
   return (
     <div data-slot="status-item" data-tone={tone} data-stale={stale || undefined} className={cx('gx-status-item', className)} {...props}>
       <Popover open={open} onOpenChange={onOpenChange}>
+        {labelled ? (
+          <PopoverTrigger render={<ButtonPrimitive data-variant="ghost" data-size="md" data-labelled="" aria-label={name}
+            className="gx-button gx-status-item-trigger gx-focusable" />}>{content}</PopoverTrigger>
+        ) : (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -85,19 +108,11 @@ export function StatusItem({
               />
             }
           >
-            <span className="gx-status-item-glyph" aria-hidden="true">
-              <Icon name={icon} size={16} />
-              {tone === 'unknown' || stale ? <span className="gx-status-item-unknown" /> : null}
-            </span>
-            {value !== undefined ? <span className="gx-status-item-value">{value}</span> : null}
-            {showBadge ? (
-              <span className="gx-icon-button-badge" data-tone={tone === 'danger' || tone === 'warning' ? tone : undefined} aria-hidden="true">
-                {badgeText}
-              </span>
-            ) : null}
+            {content}
           </TooltipTrigger>
           <TooltipContent side={side}>{label}</TooltipContent>
         </Tooltip>
+        )}
         <PopoverContent side={side} align={align} className="gx-status-item-popover" data-size={wide ? 'wide' : undefined} data-scrollable={wide || undefined} tabIndex={wide ? 0 : undefined}>
           <PopoverTitle>{title ?? label}</PopoverTitle>
           {tone === 'unknown' && children === undefined ? (

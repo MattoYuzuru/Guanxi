@@ -1,0 +1,107 @@
+/* Session view (round 4): the chat session on the native session's geometry, a header that never
+   overlaps, and side panels as one rounded pane beside the timeline. Tokens only. */
+@reference '../../../../ui/src/styles/tailwind-reference.css';
+
+.session-view {
+  /* Header on top; below it the timeline column and any side panels (round 4). */
+  flex-direction: column;
+}
+
+.session-view .native-session-main {
+  /* The timeline brings its own scroll region; the column owns the dock. */
+  overflow: hidden;
+}
+
+/* Header: the title takes only the room left and truncates; the context value and the icon
+   actions never shrink. */
+.session-header {
+  gap: var(--spacing-6);
+}
+
+.session-heading {
+  flex: 1 1 0;
+  min-width: var(--spacing-64);
+}
+
+.session-context {
+  flex: none;
+  padding-inline: var(--spacing-6);
+}
+
+.session-context[aria-pressed='true'] {
+  background-color: var(--color-background-accent-subtle);
+}
+
+/* Side panels: one rounded pane floating beside the timeline. Scoped to the session view so the
+   overrides of the native side-chat geometry never depend on stylesheet order. */
+.session-view .session-panels {
+  margin: var(--spacing-8) var(--spacing-8) var(--spacing-8) 0;
+  overflow: hidden;
+  border: var(--border-width-regular) solid var(--color-border-secondary);
+  border-radius: var(--border-radius-panel);
+  background-color: var(--color-background-secondary);
+}
+
+.session-panels-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--spacing-8);
+  min-height: var(--control-height);
+  padding: var(--spacing-4) var(--spacing-4) var(--spacing-4) var(--spacing-12);
+  border-bottom: var(--border-width-regular) solid var(--color-border-secondary);
+}
+
+.session-panels-icon {
+  flex: none;
+  color: var(--color-text-secondary);
+}
+
+.session-panels-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-panels-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.session-panels-body:not([data-panel='context']) {
+  padding: var(--spacing-12);
+}
+
+.session-panels-empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-13);
+  line-height: var(--font-line-height-prose);
+}
+
+/* A medium session (720–1023 px) keeps the panel beside the timeline, narrower. */
+@container (max-width: 1023px) {
+  .session-view .session-panels {
+    position: static;
+    width: var(--layout-container-xs);
+  }
+}
+
+/* A narrow session (under 720 px, measured on the pane) shows the panels as a modal full-screen
+   sheet on the document body (review 3); it is outside the session, so it is styled on its own. */
+.session-panels.session-panels-sheet {
+  position: fixed;
+  z-index: var(--layer-dialog);
+  inset: 0;
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}

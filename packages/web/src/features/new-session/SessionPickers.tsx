@@ -1,9 +1,12 @@
-import type { AccessMode, Connection, Project, Workspace } from '@guanxi/contract'
+import { providerCategoryOrder, type AccessMode, type Connection, type Project, type Workspace } from '@guanxi/contract'
 import {
   Button, Icon, IconButton, Input, Menu, type IconName, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTitle, PopoverTrigger, Textarea,
 } from '@guanxi/ui'
-import { useId, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { translate as t } from '../../lib/locale.ts'
+import { useAsync } from '../../lib/useAsync.ts'
+import { connectionApi, ConnectionRequestError } from '../connections/api.ts'
+import { connectionCategory, connectionLabel } from '../connections/labels.ts'
 
 /** One labelled control with its hint and error wired through `aria-describedby`. */
 export function FormField({ label, hint, error, children }: {
@@ -67,48 +70,147 @@ export function PermissionMenu({ mode, onChange }: { mode: AccessMode; onChange:
 }
 
 /**
- * Model, connection and context at the composer's lower right (D-207). The suggestion list is a
- * generic `ModelSuggestion[]`, so a provider-model source (D-208) can feed it without changes here.
+ * Connection and model at the composer's lower right (D-207, D-218). Connections are grouped by
+ * the catalog category; choosing one lists the models the node reports for it. Arrow keys move
+ * through the model list, Enter chooses, Escape closes. A typed ID is a fallback, not the default.
  */
-export interface ModelSuggestion { id: string; label: string; detail?: string }
-
-export function ModelPicker({ connections, connectionId, onConnection, model, onModel, suggestions, contextRequired, context, onContext, contextInvalid }: {
+export function ModelPicker({ connections, connectionId, onConnection, model, onModel, onChoice,
+  contextRequired, context, onContext, contextInvalid }: {
   connections: Connection[]
   connectionId: string
   onConnection: (id: string) => void
   model: string
   onModel: (model: string) => void
-  suggestions: ModelSuggestion[]
+  /** Records an explicit choice for the next session; a typed fallback may call it on start. */
+  onChoice?: (connectionId: string, model: string) => void
   contextRequired: boolean
   context: string
   onContext: (value: string) => void
   contextInvalid: boolean
 }) {
-  const summary = model.trim() ? model.trim() : t('newSession.model.choose')
-  return <Popover>
-    <PopoverTrigger render={<PickerButton icon="models" aria-label={model.trim() ? t('newSession.model.current', { model: model.trim() }) : t('newSession.model.choose')} />}>
-      {summary}
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [custom, setCustom] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const active = connections.find(connection => connection.id === connectionId)
+  const activeLabel = active ? connectionLabel(active) : ''
+  // Keep the answer bound to the connection that asked: a switch must not show the previous
+  // connection's IDs while the next read is still in flight.
+  const models = useAsync(async signal => ({ connectionId,
+    models: connectionId ? await connectionApi.models(connectionId, signal) : [] }), [connectionId])
+  const groups = providerCategoryOrder.map(category => ({ category,
+    connections: connections.filter(connection => connectionCategory(connection) === category) }))
+    .filter(group => group.connections.length > 0)
+  const query = search.trim().toLocaleLowerCase()
+  const catalog = models.data?.connectionId === connectionId ? models.data.models : null
+  const filtered = (catalog ?? []).filter(item => item.id.toLocaleLowerCase().includes(query))
+  const selectedIndex = filtered.findIndex(item => item.id === model.trim())
+  const errorCode = models.error instanceof ConnectionRequestError ? models.error.code : null
+
+  useEffect(() => { setSearch(''); setCustom(false) }, [connectionId])
+
+  const chooseConnection = (id: string) => {
+    if (id !== connectionId) { onConnection(id); onModel('') }
+  }
+  const chooseModel = (value: string) => {
+    onModel(value)
+    onChoice?.(connectionId, value)
+    if (!contextRequired) setOpen(false)
+  }
+  const typeModel = (value: string) => {
+    onModel(value)
+  }
+  const triggerLabel = active && model.trim()
+    ? t('newSession.model.currentChoice', { connection: activeLabel, model: model.trim() })
+    : active ? t('newSession.model.currentConnection', { connection: activeLabel }) : t('newSession.model.choose')
+
+  const move = (event: KeyboardEvent<HTMLUListElement>) => {
+    const available = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [])
+    if (available.length === 0) return
+    const current = available.indexOf(document.activeElement as HTMLButtonElement)
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      available[(current + step + available.length) % available.length]?.focus()
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      available[event.key === 'Home' ? 0 : available.length - 1]?.focus()
+    } else if (event.key === 'Enter' && current >= 0) {
+      event.preventDefault()
+      const value = available[current]?.dataset.model
+      if (value) chooseModel(value)
+    }
+  }
+
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger render={<PickerButton icon="models" aria-label={triggerLabel} />}>
+      <span className="new-session-choice-connection">{active ? activeLabel : t('newSession.model.choose')}</span>
+      {active && model.trim() ? <span className="new-session-choice-model">{model.trim()}</span> : null}
     </PopoverTrigger>
-    <PopoverContent side="top" align="end" className="w-sm">
+    <PopoverContent side="top" align="end" className="new-session-model-popover w-md" initialFocus={searchRef}>
       <PopoverTitle>{t('newSession.model.label')}</PopoverTitle>
-      <div className="flex flex-col gap-3 pt-1">
-        <div role="group" aria-label={t('newSession.model.connection')} className="flex flex-col gap-1">
+      <div className="flex flex-col gap-3 pt-1" onKeyDown={event => {
+        if (event.key === 'Escape') { event.stopPropagation(); setOpen(false) }
+      }}>
+        <div role="group" aria-label={t('newSession.model.connection')} className="flex flex-col gap-2">
           <span className="text-12 font-label text-secondary">{t('newSession.model.connection')}</span>
-          <div className="flex flex-wrap gap-1">
-            {connections.map(item => <Button key={item.id} size="sm" variant={item.id === connectionId ? 'primary' : 'secondary'}
-              aria-pressed={item.id === connectionId} onClick={() => onConnection(item.id)}>{item.name}</Button>)}
-          </div>
+          {groups.map(group => <div key={group.category} className="flex flex-col gap-1">
+            <span className="text-12 text-muted">{t(`connections.category.${group.category}`)}</span>
+            <div className="flex flex-wrap gap-1">
+              {group.connections.map(connection => <Button key={connection.id} size="sm"
+                variant={connection.id === connectionId ? 'primary' : 'secondary'}
+                aria-pressed={connection.id === connectionId} onClick={() => chooseConnection(connection.id)}>
+                {connectionLabel(connection)}
+              </Button>)}
+            </div>
+          </div>)}
         </div>
-        {suggestions.length > 0 && <div role="group" aria-label={t('newSession.model.installed')} className="flex flex-col gap-1">
-          <span className="text-12 font-label text-secondary">{t('newSession.model.installed')}</span>
-          <div className="flex flex-wrap gap-1">
-            {suggestions.map(item => <Button key={item.id} size="sm" variant={item.id === model.trim() ? 'primary' : 'ghost'}
-              aria-pressed={item.id === model.trim()} onClick={() => onModel(item.id)}><span className="font-mono">{item.label}</span></Button>)}
-          </div>
+
+        {active && <div className="flex min-w-0 flex-col gap-2" role="group" aria-label={t('newSession.model.installed')}>
+          <FormField label={t('newSession.model.search')}>
+            {({ id, describedBy }) => <Input ref={searchRef} id={id} aria-describedby={describedBy} type="search"
+              autoComplete="off" value={search} onChange={event => setSearch(event.target.value)}
+              onKeyDown={event => {
+                // Enter belongs to the option the user moved to; a search-only Enter commits nothing, whatever the query.
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  listRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus()
+                }
+              }} />}
+          </FormField>
+          {catalog === null && models.error === null && <p role="status" className="m-0 text-12 text-secondary">{t('newSession.model.loading')}</p>}
+          {models.error !== null && <p role="alert" className="m-0 text-12 text-danger">
+            {t('newSession.model.error')} {errorCode ? t(`connections.error.${errorCode}`) : ''}
+          </p>}
+          {catalog !== null && filtered.length === 0 && <p className="m-0 text-12 text-muted">
+            {query ? t('newSession.model.noMatch') : t('newSession.model.empty')}
+          </p>}
+          {filtered.length > 0 && <ul ref={listRef} aria-label={t('newSession.model.installed')} role="listbox"
+            onKeyDown={move} className="new-session-model-list m-0 flex max-h-64 flex-col gap-1 overflow-y-auto p-0">
+            {filtered.map((item, index) => {
+              const selected = item.id === model.trim()
+              return <li key={item.id} role="none">
+                <Button type="button" variant={selected ? 'secondary' : 'ghost'} size="sm" role="option"
+                  aria-selected={selected} data-model={item.id}
+                  tabIndex={index === (selectedIndex >= 0 ? selectedIndex : 0) ? 0 : -1}
+                  className="w-full justify-start text-left" onClick={() => chooseModel(item.id)}>
+                  <span className="min-w-0 flex-1 break-all font-mono">{item.id}</span>
+                  {selected ? <Icon name="check" /> : null}
+                </Button>
+              </li>
+            })}
+          </ul>}
+          {!custom && <Button variant="ghost" size="sm" className="w-fit" onClick={() => setCustom(true)}>
+            {t('newSession.model.other')}
+          </Button>}
+          {custom && <FormField label={t('newSession.model.id')} hint={t('newSession.model.hint')}>
+            {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={model}
+              autoComplete="off" spellCheck={false} className="font-mono"
+              onChange={event => typeModel(event.target.value)} />}
+          </FormField>}
         </div>}
-        <FormField label={t('newSession.model.id')} hint={t('newSession.model.hint')}>
-          {({ id, describedBy }) => <Input id={id} aria-describedby={describedBy} value={model} onChange={event => onModel(event.target.value)} className="font-mono" />}
-        </FormField>
+
         {contextRequired && <FormField label={t('newSession.context.label')} error={contextInvalid ? t('newSession.context.invalid') : undefined}>
           {({ id, describedBy, invalid }) => <Input id={id} aria-describedby={describedBy} invalid={invalid} inputMode="numeric" value={context} onChange={event => onContext(event.target.value)} />}
         </FormField>}

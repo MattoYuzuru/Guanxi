@@ -133,4 +133,21 @@ describe('persisted turn projection', () => {
       'The final response state could not be saved.',
     )
   })
+
+  it('prints no status badge, cache caption or completion line for a completed answer; the details popover holds them (round 4)', async () => {
+    const usage = { promptTokens: 1840, evalTokens: 212, promptEvalDurationMs: 410, evalDurationMs: 5200, loadDurationMs: 0, totalDurationMs: 5610, tokensPerSecond: 40.8, cacheHit: true, cachedTokens: 1600 }
+    const { container } = render(<MessageView message={assistant({ content: 'The answer', turnStatus: 'completed', stopReason: 'stop', usage })} />)
+    expect(screen.queryByText('завершён')).toBeNull()
+    expect(screen.queryByText('KV-кэш')).toBeNull()
+    const announced = screen.getByRole('status')
+    expect(announced.className).toContain('sr-only')
+    expect(announced.textContent).toBe('завершён, Причина остановки: остановка provider')
+    expect([...container.querySelectorAll('[data-slot="badge"], .badge')].map(node => node.textContent)).toEqual([])
+    const { fireEvent } = await import('@testing-library/react')
+    fireEvent.click(screen.getByRole('button', { name: 'Подробности сообщения' }))
+    const details = await screen.findByRole('dialog')
+    expect(within(details).getByText('завершён')).toBeTruthy()
+    expect(within(details).getByText('остановка provider')).toBeTruthy()
+    expect(within(details).getByText('KV-кэш')).toBeTruthy()
+  })
 })

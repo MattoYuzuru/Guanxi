@@ -21,6 +21,8 @@ import { identity, SimNode } from '../federation/harness.ts'
 import { reply, startFakeLlama, type FakeLlamaState } from '../fixtures/fake-llama-server.ts'
 
 export const keys = (id: string) => identity(id, { scopes: ['config', 'replicas', 'commands', 'telemetry', 'attempts'] })
+/** The shape undici gives a dropped loopback link: a bare `fetch failed` carrying the network cause. */
+export const networkFailure = () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) })
 export function deferred<T = void>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 export async function until(predicate: () => boolean | Promise<boolean>, ms = 20000) {
   for (const end = Date.now() + ms; Date.now() < end;) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)) }
@@ -134,5 +136,5 @@ export async function remoteFixture(t: { after(fn: () => unknown): void }, o: Re
   const pinKey = (runId: string) => `relay:${runId}`
   return { home, target, hg, tg, clock, fake, llama, remote, source, h, tc, homeConnection, targetConnection, forgePinAck, pinKey, relay, completions, costs, homeCtx,
     seen, sent, rules, probes, overrides, afters, channel: (from: 'home' | 'target') => from === 'home' ? channel(home, target) : channel(target, home), dir, modelPath,
-    refusePin() { rules.push(path => { if (path === '/attempts/runtime/pin') throw new Error('fixture refuses the pin') }) } }
+    refusePin() { rules.push(path => { if (path === '/attempts/runtime/pin') throw networkFailure() }) } }
 }

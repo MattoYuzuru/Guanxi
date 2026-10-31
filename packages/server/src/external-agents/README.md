@@ -166,7 +166,7 @@ mid-turn leaves the holder occupied and may leave an orphan agent group (see the
 without a secret is the subscription *login* path above. Two vault modes need no sign-in:
 
 - **API key (D-211).** A K3 `model_api`/`anthropic`/`api_key` connection (for example the dotenv import's). The vault key is injected as
-  `ANTHROPIC_API_KEY`; K3 refuses `sk-ant-oat` tokens as API keys; a connection pinned to another API root, or of another provider, is
+  `ANTHROPIC_API_KEY`; K3 accepts only the Anthropic API key families (`sk-ant-api…`, `sk-ant-usr…`) and refuses `sk-ant-oat` tokens as API keys; a connection pinned to another API root, or of another provider, is
   `claude_api_connection_required`. `auth status` must report `loggedIn`, `authMethod: "api_key"` and `apiKeySource: "ANTHROPIC_API_KEY"`
   (else `claude_api_key_not_in_effect`). Facts: `api_key_login`, `billing = api_usage`.
 - **Subscription token (D-212).** A K3 `agent`/`cli_login` connection that holds the owner's `claude setup-token` token (`sk-ant-oat…`),

@@ -1,0 +1,14 @@
+# Owner decisions — MS1 exit by fault scenarios, user API key, worker models
+
+**Status:** accepted · **Date:** 2026-10-24 · **Decisions:** D-214–D-218
+
+Given by the owner in Russian (voice-dictated) to the new Claude lead session on 2026-10-24.
+D-213 (hosted final CI) is unchanged.
+
+| ID | Decision |
+| --- | --- |
+| D-214 | **The MS1 exit is about failure behaviour, not duration.** The ≥ 6-hour requirement of the MS1 exit gate is replaced: a bounded real run (tens of minutes to a few hours) is enough when it covers the edge cases that a long run would meet — a dropped node link during a call, an executor restart, a home restart while the lead hibernates, and the cost-ledger and single-wake assertions across them. Reasoning (owner): "if it holds for 30 minutes it holds for 6 hours; the edge cases are what matters." A long unattended run stays possible but is not an exit condition. Supersedes the duration clause of the MS1 row in [ROADMAP](../plans/ROADMAP.md) and of D-106's exit wording where they conflict. |
+| D-215 | **The MS1 lead may use the owner's Anthropic user API key** (`sk-ant-usr…`, from the monthly API credit of the owner's Max subscription), stored in the project `.env` under `ANTHROPIC_API_KEY`. Guanxi treats this family exactly like a Console API key (`sk-ant-api…`): `home.lead.auth: "api_key"`, the key only enters the official Claude Code process environment (D-211). The lead is Sonnet 5.5 at medium effort (D-210, unchanged). `sk-ant-oat…` keeps its D-212 route. |
+| D-216 | **Worker allocation for this lead session:** code is written by DeepSeek Harness workers (V4.1 Flash, max effort; at most 4 at once); independent reviews by Opus 5.5 at medium effort (at most 2 at once); the MS1 lead and "smart" model calls use Sonnet 5.5 medium. The UI round keeps one dedicated Opus 5.5 frontend author (owner allocation of 2026-10-23). |
+| D-217 | **The Developer/Visual split is withdrawn from the UI.** The owner rejected it on 2026-10-23 ("давай просто это реально уберем"); the interface is visual from the start, and layout tools live behind one icon menu. This supersedes the "developer-area switch (D-137) stays" default recorded in the UI-redesign plan; D-137's catalog stays reachable from Settings. |
+| D-218 | **Keys and connections live in the app, not in a dotenv file.** The project dotenv file is only the owner's test convenience for agents. The product needs one connections centre with a catalog by category (LLM APIs, local runtimes, agent subscriptions, search engine APIs, speech, later others), where the owner adds, rotates and removes keys, sees each connection's models, and every model picker draws from it — in the spirit of DeepSeek Harness's settings with a more carefully designed UI. A local Ollama runtime must be selectable as a connection with its installed models. The developer preview no longer imports the dotenv file automatically. |

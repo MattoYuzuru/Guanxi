@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import { useImperativeHandle } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../../src/features/workspace/Workspace.tsx'
@@ -7,19 +7,24 @@ import type { LayoutDocument } from '@guanxi/contract'
 import { api } from '../../src/lib/api.ts'
 import { setActiveLocale } from '../../src/lib/locale.ts'
 import { WORKSPACE_MODE } from '../../src/features/workspace/Workspace.tsx'
+import { useWorkspaceControls, type WorkspaceLayoutControls } from '../../src/features/workspace/controls.ts'
+import { builtInBlocks } from '../../src/features/workspace/blocks.ts'
 import { workspaceEnglish, workspaceRussian } from '../../src/features/workspace/messages.ts'
 import { glossaryEntries as GLOSSARY } from '../../src/lib/glossary.ts'
 
-const control = vi.hoisted(() => ({ failSnapshot: false }))
+const control = vi.hoisted(() => ({ failSnapshot: false, entries: [] as unknown[] }))
 vi.mock('../../src/lib/locale-context.tsx', () => ({ useLocale: () => ({ locale: 'en', setLocale() {} }) }))
 vi.mock('../../src/lib/theme.tsx', () => ({ useTheme: () => ({ resolved: 'light' }) }))
 vi.mock('../../src/kernel/runtime.ts', () => {
-  const entries: unknown[] = []
-  return { webKernelReady: Promise.resolve(), webKernel: { slots: { list: () => entries, subscribe: () => () => {} } } }
+  return { webKernelReady: Promise.resolve(), webKernel: { slots: { list: () => control.entries, subscribe: () => () => {} } } }
 })
+/** The built-in blocks as kernel slot entries, so the session block renders its children. */
+function withBuiltInBlocks() {
+  control.entries = builtInBlocks.map(block => ({ key: block.id, value: block, pluginId: 'guanxi.core' }))
+}
 vi.mock('../../src/lib/api.ts', async importOriginal => {
   const actual = await importOriginal<typeof import('../../src/lib/api.ts')>()
-  return { ...actual, api: { ...actual.api, layoutContext: vi.fn(), layouts: vi.fn(), layoutGeometry: vi.fn(), saveLayout: vi.fn() } }
+  return { ...actual, api: { ...actual.api, layoutContext: vi.fn(), layouts: vi.fn(), layoutGeometry: vi.fn(), saveLayout: vi.fn(), saveLayoutGeometry: vi.fn() } }
 })
 vi.mock('../../src/features/workspace/WorkspaceLayout/index.tsx', () => ({
   WorkspaceLayout: ({ handleRef, document }: { handleRef: React.Ref<WorkspaceLayoutHandle>; document: LayoutDocument }) => {
@@ -34,6 +39,7 @@ vi.mock('../../src/features/workspace/WorkspaceLayout/index.tsx', () => ({
 beforeEach(() => {
   setActiveLocale('en')
   control.failSnapshot = false
+  control.entries = []
   vi.mocked(api.layoutContext).mockReset().mockResolvedValue({ account: 'local', replication: false })
   vi.mocked(api.layouts).mockReset().mockResolvedValue({ documents: [], active: [] })
   vi.mocked(api.layoutGeometry).mockReset().mockResolvedValue({ geometry: {} })
@@ -43,15 +49,72 @@ afterEach(() => { vi.useRealTimers() })
 
 describe('Workspace actual failure boundaries with a controlled docking adapter', () => {
   it('captures a rejected actual snapshot locally without issuing a layout PUT or exposing its message', async () => {
-    render(<Workspace><p>Chat content</p></Workspace>)
+    let controls: WorkspaceLayoutControls | null = null
+    function Capture() { controls = useWorkspaceControls(); return null }
+    withBuiltInBlocks()
+    render(<Workspace><Capture /></Workspace>)
     await screen.findByTestId('adapter-boundary')
     control.failSnapshot = true
-    fireEvent.click(screen.getByRole('button', { name: 'Save layout' }))
+    // The save action lives in the session header's panels menu (round 4); the session reads it from context.
+    act(() => controls!.save())
     const error = await screen.findByRole('alert')
     expect(error.querySelector('.gx-error-state-source')?.textContent).toBe('snapshot-layout')
     expect(error.textContent).toContain('could not be prepared in this browser')
     expect(error.textContent).not.toContain('private-snapshot-sentinel')
     expect(api.saveLayout).not.toHaveBeenCalled()
+  })
+
+  it('renders no toolbar of bordered layout buttons; the actions reach the session through context (round 4)', async () => {
+    let controls: WorkspaceLayoutControls | null = null
+    function Capture() { controls = useWorkspaceControls(); return null }
+    withBuiltInBlocks()
+    render(<Workspace><Capture /></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    expect(document.querySelectorAll('.gx-workspace-toolbar')).toHaveLength(0)
+    expect(screen.queryAllByRole('group', { name: 'Session workspace' })).toHaveLength(0)
+    for (const name of ['Comfortable', 'This device', 'Named layout', 'Add block', 'Hidden blocks', 'Save layout', 'Save as new layout', 'Move block to…', 'Reset layout'])
+      expect(screen.queryAllByRole('button', { name })).toHaveLength(0)
+    expect(screen.queryAllByRole('textbox', { name: 'Named layout' })).toHaveLength(0)
+    expect(controls).not.toBeNull()
+    // The session block is a row too, so a block hidden from its dock tab comes back from the menu.
+    expect(controls!.blocks.map(block => block.id)).toContain('guanxi.core/chat')
+    expect(controls!.name).toBe('Default layout')
+    // A second instance never repeats a panel row's name.
+    expect(controls!.addable.map(entry => entry.label)).toEqual(['Another Terminal', 'Another Browser'])
+  })
+
+  it('renames the active layout in place: same id, new name (round 4 review 6)', async () => {
+    let controls: WorkspaceLayoutControls | null = null
+    function Capture() { controls = useWorkspaceControls(); return null }
+    withBuiltInBlocks()
+    vi.mocked(api.saveLayout).mockImplementation(async document => ({ document, recovered: [] }))
+    vi.mocked(api.saveLayoutGeometry).mockResolvedValue({ geometry: {} })
+    render(<Workspace><Capture /></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    await act(async () => controls!.rename('Focus layout'))
+    await waitFor(() => expect(api.saveLayout).toHaveBeenCalledTimes(1))
+    const saved = vi.mocked(api.saveLayout).mock.calls[0]![0]
+    expect(saved.id).toBe('default-developer')
+    expect(saved.name).toBe('Focus layout')
+    await waitFor(() => expect(controls!.name).toBe('Focus layout'))
+  })
+
+  it('keeps the layout name when a Save as fails, so a later Save never renames the original (review P2)', async () => {
+    let controls: WorkspaceLayoutControls | null = null
+    function Capture() { controls = useWorkspaceControls(); return null }
+    withBuiltInBlocks()
+    vi.mocked(api.saveLayout).mockRejectedValueOnce(new Error('offline'))
+    vi.mocked(api.saveLayoutGeometry).mockResolvedValue({ geometry: {} })
+    render(<Workspace><Capture /></Workspace>)
+    await screen.findByTestId('adapter-boundary')
+    act(() => controls!.saveAs('Renamed copy'))
+    await screen.findByRole('alert')
+    vi.mocked(api.saveLayout).mockImplementation(async document => ({ document, recovered: [] }))
+    await act(async () => controls!.save())
+    await waitFor(() => expect(api.saveLayout).toHaveBeenCalledTimes(2))
+    const saved = vi.mocked(api.saveLayout).mock.calls[1]![0]
+    expect(saved.name).toBe('developer')
+    expect(saved.id).toBe('default-developer')
   })
 
   it('one interface (D-204): reads layouts for the one pinned mode once and never switches mode (P2)', async () => {

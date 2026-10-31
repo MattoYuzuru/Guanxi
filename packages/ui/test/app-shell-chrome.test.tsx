@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AppShellChrome,
   Button,
+  Icon,
+  IconButton,
+  StatusItem,
   type AppShellChromeProps,
   type AppShellSide,
   type AppShellVisibility,
@@ -250,6 +253,26 @@ describe('AppShellChrome on a phone-width shell (visual pass, item 4)', () => {
     fireEvent.click(within(await screen.findByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Projects' }))
     await waitFor(() => expect(screen.queryByRole('navigation', { name: 'Main' })).toBeNull())
     void navigation
+  })
+
+  it('labels every status item and control in the phone overflow, with no hover tooltip (P3)', async () => {
+    narrow(400)
+    render(<AppShellChrome side="left" visibility="expanded" sidebarLabel={workspace} labels={{ ...labels, navigation: 'Open navigation', more: 'Status and settings' }}
+      status={<span>Node connected</span>}
+      actions={<><StatusItem icon="memory-unified" label="Memory" value="16.8 GB">facts</StatusItem><StatusItem icon="quota" label="Quota" tone="unknown" /><IconButton label="Customise" icon={<Icon name="customise" />} /></>}
+      sidebar={<nav aria-label="Main" />} onSide={() => {}} onVisibility={() => {}} onOpenPalette={() => {}}>
+      <p>Main</p>
+    </AppShellChrome>)
+    fireEvent.click(screen.getByRole('button', { name: 'Status and settings' }))
+    const overflow = await screen.findByRole('dialog', { name: 'Status and settings' })
+    const memory = within(overflow).getByRole('button', { name: 'Memory: 16.8 GB' })
+    expect(memory.querySelector('[data-slot="status-item-label"]')?.textContent).toBe('Memory')
+    expect(memory.textContent).toContain('16.8 GB')
+    expect(within(overflow).getByRole('button', { name: /^Quota/u }).querySelector('[data-slot="status-item-label"]')?.textContent).toBe('Quota')
+    expect(within(overflow).getByRole('button', { name: 'Customise' }).textContent).toBe('Customise')
+    fireEvent.pointerEnter(memory); fireEvent.focus(memory)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(document.querySelectorAll('[data-slot="tooltip-content"]')).toHaveLength(0)
   })
 
   it('stays the desktop layout when the shell is wide', () => {

@@ -7,7 +7,7 @@ test('the delegation brief accepts the ADR-0021 lead fields and applies the defa
   const { onDeadline, onCancel, ...rest } = brief()
   const parsed = leadDelegateInputSchema.parse(rest)
   assert.deepEqual([parsed.onDeadline, parsed.onCancel], ['wrap_up', 'cancel'])
-  assert.equal(parsed.plan.items[0]!.acceptance[0], 'npm test')
+  assert.deepEqual(parsed.plan.items[0]!.acceptance, ['npm', 'test'])
   assert.ok(onDeadline && onCancel)
 })
 

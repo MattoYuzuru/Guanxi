@@ -137,28 +137,6 @@
   border: 1px solid var(--border);
 }
 
-/* ───────────────────────────── Карусель ───────────────────────────── */
-
-.embla-viewport {
-  overflow: hidden;
-  /* Скролл трекпадом ловим сами, браузерный горизонтальный скролл не нужен. */
-  touch-action: pan-y pinch-zoom;
-}
-
-.embla-container {
-  display: flex;
-  gap: 14px;
-  align-items: stretch;
-  will-change: transform;
-  backface-visibility: hidden;
-}
-
-.embla-slide {
-  flex: 0 0 auto;
-  min-width: 0;
-  /* transform ставит JS покадрово — transition тут дал бы двойное сглаживание. */
-}
-
 /* ──────────────────────── Markdown in messages (D-200) ─────────────────────── */
 
 .md {

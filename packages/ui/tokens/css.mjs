@@ -7,6 +7,10 @@ export function renderCSS(contexts, declarations, diff) {
   const block = (selector, tokens) => `${selector} {\n${declarations(tokens)}\n}\n`
   const theme = (name, selector) => block(selector, contexts[`${name}/compact/full`].filter(t => themedNames.has(t.name)))
   let css = header + '@import "../fonts/fonts.css";\n' + block(':root', defaults)
+  // Environment tokens (FOUNDATIONS §3): the device's safe-area insets, 0 where there are none.
+  // DTCG dimensions are px or rem only, so the pipeline emits these from a fixed list; product CSS
+  // reads them as var(--safe-area-inset-*) and never writes env() itself.
+  css += `:root {\n${['top', 'right', 'bottom', 'left'].map(side => `  --safe-area-inset-${side}: env(safe-area-inset-${side}, 0px);`).join('\n')}\n}\n`
   for (const name of themes) css += theme(name, `[data-theme="${name}"]${name === 'dark' ? ', :root.dark:not([data-theme])' : ''}`)
 
   const densityNames = new Set(['font.text.size', 'control.height', 'row.height', 'panel.padding', 'pane.gap'])

@@ -17,6 +17,8 @@ import { Badge, Button, Meter, Stat, cx } from '../../components/ui.tsx'
 import { errorMessage } from '../../lib/api.ts'
 import { formatDuration, formatPercent, formatTokens, formatTokensPerSecond } from '../../lib/format.ts'
 import { translate } from '../../lib/locale.ts'
+import { Icon } from '@guanxi/ui'
+import './context.css'
 
 /** Замер с целевого железа — им объясняем, почему кэш важен. */
 const CACHE_MISS_REFERENCE_MS = 41_800
@@ -368,32 +370,37 @@ function PhaseSegment({
 }
 
 /** Компактная строка контекста для узких мест (шапка треда). */
+/** The long wording of a context readout, for a screen reader or a tooltip. */
+export function contextDescription(context: ContextState): string {
+  if (context.providerContext) return context.allocatedTokens === null ? translate('context.provider.unknown') : translate('context.provider.limit', { tokens: formatTokens(context.allocatedTokens) })
+  return translate('context.chip.title', { used: formatTokens(context.usedTokens), allocated: formatTokens(context.allocatedTokens ?? 0) })
+}
+
+/** The short value: the provider's window in tokens, or the share of the local window in use. */
+export function contextValue(context: ContextState): string {
+  if (context.providerContext) return context.allocatedTokens === null ? translate('context.chip.unknown') : formatTokens(context.allocatedTokens)
+  return formatPercent(context.percent ?? 0)
+}
+
+/** Warning colours start where the window is nearly full; below that the value stays quiet. */
+export function contextTone(context: ContextState): 'danger' | 'warning' | undefined {
+  if (context.providerContext) return undefined
+  return (context.percent ?? 0) >= 90 ? 'danger' : (context.percent ?? 0) >= 70 ? 'warning' : undefined
+}
+
+/**
+ * A compact context readout (round 4): the context icon and one emphasised value; the long wording
+ * is for assistive technology (and the header control's tooltip), never a visible sentence.
+ */
 export function ContextChip({ context }: { context: ContextState | null }) {
   if (!context) return null
-  if (context.providerContext) return <span title={context.providerContext.source}>{context.allocatedTokens === null ? translate('context.provider.unknown') : translate('context.provider.limit', { tokens: formatTokens(context.allocatedTokens) })}</span>
-
-  const tone =
-    (context.percent ?? 0) >= 90
-      ? 'var(--color-fit-red)'
-      : (context.percent ?? 0) >= 70
-        ? 'var(--color-fit-yellow)'
-        : 'var(--fg-muted)'
-
   return (
-    <span
-      className="flex items-center gap-1.5 font-mono text-2xs tabular-nums"
-      style={{ color: tone }}
-      title={translate('context.chip.title', {
-        used: formatTokens(context.usedTokens),
-        allocated: formatTokens(context.allocatedTokens ?? 0),
-      })}
-    >
-      <span
-        className="inline-block h-1.5 w-1.5 rounded-full"
-        style={{ background: context.cacheHit ? 'var(--color-fit-green)' : 'var(--color-fit-yellow)' }}
-        title={context.cacheHit ? translate('context.cache.hitTitle') : translate('context.cache.missTitle')}
-      />
-      {formatPercent(context.percent ?? 0)}
+    <span className="context-chip" data-tone={contextTone(context)}>
+      <Icon name="context" size={14} />
+      <span className="context-chip-value" aria-hidden="true">{contextValue(context)}</span>
+      {/* A fresh chat has no cache yet: no hit or miss dot before the first tokens. */}
+      {!context.providerContext && context.usedTokens > 0 && <span className="context-chip-cache" data-hit={context.cacheHit || undefined} aria-hidden="true" />}
+      <span className="sr-only">{contextDescription(context)}{context.providerContext ? '' : ` ${context.cacheHit ? translate('context.cache.hitTitle') : translate('context.cache.missTitle')}`}</span>
     </span>
   )
 }

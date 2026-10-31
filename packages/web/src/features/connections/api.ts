@@ -1,4 +1,7 @@
-import { connectionSnapshotSchema, connectionErrorSchema, type ConnectionErrorCode, type CreateConnection } from '@guanxi/contract'
+import {
+  connectionBalanceSchema, connectionErrorSchema, connectionModelsSchema, connectionSchema, connectionSnapshotSchema,
+  deleteConnectionResponseSchema, type ConnectionErrorCode, type CreateConnection,
+} from '@guanxi/contract'
 export class ConnectionRequestError extends Error {
   readonly code: ConnectionErrorCode
   constructor(code: ConnectionErrorCode) { super(code); this.code = code }
@@ -16,10 +19,13 @@ async function request(path: string, method: string, body?: unknown, signal?: Ab
 }
 export const connectionApi = {
   list: async (signal?: AbortSignal) => connectionSnapshotSchema.parse(await request('', 'GET', undefined, signal)),
-  create: (input: CreateConnection) => request('', 'POST', input),
+  create: async (input: CreateConnection) => connectionSchema.parse(await request('', 'POST', input)),
+  remove: async (id: string) => deleteConnectionResponseSchema.parse(await request(`/${encodeURIComponent(id)}`, 'DELETE')),
   unattended: (id: string, value: boolean) => request(`/${encodeURIComponent(id)}`, 'PATCH', { unattended: value }),
   unlock: () => request('/vault/unlock', 'POST', {}),
   lock: () => request('/vault/lock', 'POST', {}),
   secret: (id: string, value: string) => request(`/${encodeURIComponent(id)}/secret`, 'PUT', { value }),
-  probe: (id: string) => request(`/${encodeURIComponent(id)}/probe`, 'POST', {}),
+  models: async (id: string, signal?: AbortSignal) => connectionModelsSchema.parse(
+    await request(`/${encodeURIComponent(id)}/models`, 'GET', undefined, signal)),
+  probe: async (id: string) => connectionBalanceSchema.parse(await request(`/${encodeURIComponent(id)}/probe`, 'POST', {})),
 }

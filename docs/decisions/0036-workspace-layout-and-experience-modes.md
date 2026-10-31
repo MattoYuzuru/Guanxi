@@ -2,7 +2,9 @@
 
 **Status:** accepted direction (owner decisions D-131–D-133); proposed design; the two experience
 modes are superseded by D-204 (2026-10-23: one interface; the stored per-mode documents remain
-readable, the product uses one) · **Date:** 2026-10-20
+readable, the product uses one); the docking workspace is no longer the default chat view and its
+toolbar moved into the session header's panels menu (owner feedback 2026-10-23, UI round 4) ·
+**Date:** 2026-10-20
 **Extends:** [ADR-0022](0022-plugin-trust-tiers-ui-slots-and-design-tokens.md) (slots),
 [ADR-0026](0026-clients-desktop-web-mobile.md) (clients).
 

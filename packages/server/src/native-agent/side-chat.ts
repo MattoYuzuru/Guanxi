@@ -118,7 +118,9 @@ export async function runSideChat(run: SideChatRun): Promise<SideChatRespondResp
   const rendered = renderSessionContext(run.events, request.context)
   const connection = run.connections.snapshot('local').connections.find(item => item.id === input.connectionId)
   if (!connection) throw new SideChatError('connection_unavailable')
-  assertWithinBudget(run.budget, run.connections.snapshot('local').costs, run.sessionId)
+  // Budgets cover every receipt of the session, including a connection the owner has since
+  // removed from the public projection: removing a connection must not reset its spend.
+  assertWithinBudget(run.budget, run.connections.store.receipts('local'), run.sessionId)
   const systemPrompt = rendered.facts.include === 'none' ? INSTRUCTIONS
     : `${INSTRUCTIONS}${rendered.facts.excerpted > 0 ? `\n${EXCERPT_NOTE}` : ''}\n<session_transcript upToSeq="${rendered.facts.upToSeq}">\n${escapeTranscript(rendered.text)}\n</session_transcript>`
   // A byte is at least one token, so total bytes <= bound proves the whole request fits; a larger

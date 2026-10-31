@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { Composer, domainIconNames, Icon, iconNames, Kbd, SegmentedControl, StatusItem } from '../src/index.ts'
+import { Composer, domainIconNames, Icon, IconButton, iconNames, Kbd, Menu, MenuCheckboxItem, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger, SegmentedControl, StatusItem, WorkspaceChrome } from '../src/index.ts'
 
 describe('Icon', () => {
   it('is decorative by default and named when labelled', () => {
@@ -135,5 +135,64 @@ describe('status strip value slot (P3)', () => {
     expect(rule).toMatch(/min-width:\s*var\(--layout-status-value\)/u)
     expect(rule).toMatch(/font-variant-numeric:\s*tabular-nums/u)
     expect(rule).toMatch(/text-align:\s*(start|left)/u)
+  })
+})
+
+describe('Menu checkable rows (round 4, the 1.png pattern)', () => {
+  function Settings() {
+    const [panel, setPanel] = useState(false)
+    const [awake, setAwake] = useState(true)
+    return <Menu open modal={false}>
+      <MenuTrigger render={<IconButton label="Panels" icon={<Icon name="panels" />} />} />
+      <MenuContent>
+        <MenuCheckboxItem icon={<Icon name="terminal" />} end="5" checked={panel} onCheckedChange={setPanel}>Terminal</MenuCheckboxItem>
+        <MenuCheckboxItem indicator="switch" description="Only for this session" checked={awake} onCheckedChange={setAwake}>Keep awake</MenuCheckboxItem>
+        <MenuRadioGroup value="device"><MenuRadioItem value="device">This device</MenuRadioItem><MenuRadioItem value="account">Account</MenuRadioItem></MenuRadioGroup>
+      </MenuContent>
+    </Menu>
+  }
+
+  it('exposes checkbox and radio rows with their state on the row, not on the drawn indicator', () => {
+    render(<Settings />)
+    const terminal = screen.getByRole('menuitemcheckbox', { name: /Terminal/u })
+    expect(terminal.getAttribute('aria-checked')).toBe('false')
+    // The check keeps its slot while unchecked, so labels never shift as rows toggle.
+    const check = terminal.querySelector('.gx-menu-check')
+    expect(check).not.toBeNull()
+    expect(terminal.querySelector('.gx-menu-item-icon svg')?.getAttribute('aria-hidden')).toBe('true')
+    expect(terminal.querySelector('.gx-menu-item-end')?.textContent).toBe('5')
+    fireEvent.click(terminal)
+    expect(screen.getByRole('menuitemcheckbox', { name: /Terminal/u }).getAttribute('aria-checked')).toBe('true')
+    const awake = screen.getByRole('menuitemcheckbox', { name: /Keep awake/u })
+    expect(awake.getAttribute('aria-checked')).toBe('true')
+    const track = awake.querySelector('.gx-menu-switch')!
+    expect(track.getAttribute('aria-hidden')).toBe('true')
+    expect(track.hasAttribute('data-checked')).toBe(true)
+    expect(awake.querySelectorAll('[role="switch"], button')).toHaveLength(0)
+    expect(awake.querySelector('.gx-menu-item-description')?.textContent).toBe('Only for this session')
+    fireEvent.click(awake)
+    expect(screen.getByRole('menuitemcheckbox', { name: /Keep awake/u }).querySelector('.gx-menu-switch')!.hasAttribute('data-checked')).toBe(false)
+    expect(screen.getByRole('menuitemradio', { name: 'This device' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('menuitemradio', { name: 'Account' }).getAttribute('aria-checked')).toBe('false')
+  })
+})
+
+describe('WorkspaceChrome pane header (round 4)', () => {
+  it('offers move and hide as named icons, never text buttons, and drops the header when chromeless', () => {
+    const onMove = vi.fn(), onHide = vi.fn()
+    const { rerender } = render(<WorkspaceChrome kind="pane" id="core.terminal" title="Terminal" moveLabel="Move Terminal…" hideLabel="Hide Terminal" onMove={onMove} onHide={onHide} />)
+    const header = document.querySelector('.gx-workspace-pane-header')!
+    const buttons = [...header.querySelectorAll('button')]
+    expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual(['Move Terminal…', 'Hide Terminal'])
+    for (const button of buttons) expect(button.textContent?.trim()).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: 'Move Terminal…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Terminal' }))
+    expect(onMove).toHaveBeenCalledTimes(1)
+    expect(onHide).toHaveBeenCalledTimes(1)
+    rerender(<WorkspaceChrome kind="pane" id="core.terminal" title="Terminal" moveLabel="Move Terminal…" hideLabel="Hide Terminal" onMove={onMove} onHide={onHide} canMove={false} />)
+    expect(screen.queryByRole('button', { name: 'Move Terminal…' })).toBeNull()
+    rerender(<WorkspaceChrome kind="pane" id="core.chat" title="Chat" moveLabel="Move Chat…" hideLabel="Hide Chat" onMove={onMove} onHide={onHide} chromeless><p>Session</p></WorkspaceChrome>)
+    expect(document.querySelector('.gx-workspace-pane-header')).toBeNull()
+    expect(screen.getByText('Session')).toBeTruthy()
   })
 })

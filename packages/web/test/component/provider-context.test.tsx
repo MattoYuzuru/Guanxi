@@ -16,3 +16,17 @@ for (const limit of [null, 128_000]) it(`shows provider context ${limit ?? 'unkn
   expect(document.body.textContent).not.toContain('4096')
   expect(compact).not.toHaveBeenCalled()
 })
+
+it('reads an unknown provider window as a word, and shows no cache dot before any tokens (round 4 review nits)', () => {
+  const unknown: ContextState = { usedTokens: 0, allocatedTokens: null, percent: null, cacheHit: false, cachedTokens: 0, compactable: false, estimatedRepefillMs: 0,
+    providerContext: { value: null, source: 'provider.fixture', observedAt: '2026-10-23T10:00:00.000Z', confidence: 'unknown' } }
+  const { container, unmount } = render(<ContextChip context={unknown} />)
+  expect(container.querySelector('.context-chip-value')?.textContent).toBe('неизвестно')
+  unmount()
+  const fresh: ContextState = { usedTokens: 0, allocatedTokens: 8192, percent: 0, cacheHit: false, cachedTokens: 0, compactable: false, estimatedRepefillMs: 0 }
+  const view = render(<ContextChip context={fresh} />)
+  expect(view.container.querySelectorAll('.context-chip-cache')).toHaveLength(0)
+  view.unmount()
+  const used: ContextState = { ...fresh, usedTokens: 120, percent: 1.5 }
+  expect(render(<ContextChip context={used} />).container.querySelectorAll('.context-chip-cache')).toHaveLength(1)
+})

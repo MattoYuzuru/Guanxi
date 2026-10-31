@@ -52,3 +52,8 @@ Colour changes use `--motion-duration-fast`. The tooltip follows Tooltip motion.
 - Do pick the Lucide icon that names the action, at 18 px.
 - Don't draw a Guanxi logo in an icon slot.
 - Don't omit the label; the type system and G14 reject it.
+
+## In a labelled list
+
+Inside a phone overflow sheet an IconButton shows its label as text beside the icon and has no
+tooltip. The accessible name does not change.
