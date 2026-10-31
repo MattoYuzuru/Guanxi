@@ -1,7 +1,7 @@
 # External leads: delegation, hibernation and wake (LW)
 
 **Status:** implemented as a trusted opt-in kernel service; fixture-validated, no real vendor CLI,
-account, network or model · **Updated:** 2026-10-24 · Plan: [LW plan](../../../../docs/plans/lanes/LW.plan.md)
+account, network or model · **Updated:** 2026-10-31 · Plan: [LW plan](../../../../docs/plans/lanes/LW.plan.md)
 
 `guanxi.external-leads` provides `lead.external`. A lead is an ACP v1 agent run by K5
 ([external agents](../external-agents/README.md)) that decides to delegate through one tool,
@@ -52,6 +52,48 @@ Identity, roots, network, judges and wake policy are node-owned and refused if s
 `executors`, `tools/list` appends `Allowed executors on this node: connectionId=<id> model=<model>` for each entry,
 so the lead no longer guesses; MS1 passes the single executor its `validateExecutor` allows. The validation itself
 is unchanged.
+
+## Project view (LP-lead-project-view)
+
+The lead runs in an empty private directory, so the node serves the project it delegates. Three read-only tools join
+`guanxi_delegate` on the same per-turn tool server (`mcp__guanxi`, the one server the lead pre-allows); they appear in `tools/list`
+only when the host configured a view, and `guanxi_delegate`'s description then names them. `start({ leads })` configures it by default
+from the same project resolution the relay start uses (`roots[0]` of the project's bound workspaces); `leads.projectView: false` turns it off
+and `leads.projectView: { policy }` overrides the bounds. The plan facts in the lead's prompt stay: the view adds to them.
+
+| Tool | Input | Result |
+| --- | --- | --- |
+| `guanxi_project_tree` | `path?`, `ref?`, `recursive?`, `offset?`, `limit?` | `commit`, `entries` (`path`, `type` file/dir/symlink/submodule, `size`), `total`, `withheld`, `more`, `nextOffset`, `bounds` |
+| `guanxi_project_read` | `path`, `ref?`, `offset?`, `limit?` | `commit`, `size`, `totalBytes`, `text`, `more`, `nextOffset` (a byte position in the scrubbed text), `redacted`, `bounds` |
+| `guanxi_project_search` | `text` (one line, literal, case-sensitive), `path?`, `ref?`, `offset?`, `limit?` | `commit`, `matches` (`path`, `line`, clipped `text`), `withheld`, `more`, `nextOffset`, `bounds` |
+
+- **What it reads.** Git objects of the project's source repository at `ref` (`HEAD` or a full commit id), never its working tree:
+  untracked, ignored and uncommitted files, and symlinks on disk, are out of reach by construction. No hook, filter or config runs
+  (the relay's `gitEnv`/`gitFlags`, absolute binary, argv, hard timeout). Every result names its `commit`, which is a valid
+  `plan.base`: the relay clones the same commit for the executor. A project root that is not a repository top level is
+  `project_view_unavailable`. The project always comes from the stored lead session, never from tool input.
+- **Policy, reported.** `ProjectViewPolicy` defaults: 200 tree entries per page (at most 2 000), 16 KiB per read page (at most 64 KiB),
+  files up to 4 MiB, 100 search matches per page (at most 500), 400 characters per search line, 256 KiB per result, 15 s per git
+  process. Every result carries the `bounds` in force; a request above a maximum is clamped and the bound shows it; a cut result has
+  `more: true` and `nextOffset`; a bigger file answers `file_too_large: size N bytes, limit M`; a clipped search line ends with
+  `…[line clipped, N more characters]`. One project call runs at a time per turn.
+- **Refusals** are fixed codes returned as the tool text with `isError`, like `guanxi_delegate`: `invalid_input: <field>: <issue>`,
+  `path_invalid` (absolute, `..`, `.`, empty segment, backslash, NUL, `~`), `path_denied`, `not_found`, `not_a_file`,
+  `not_a_directory`, `symlink_denied`, `binary_file`, `file_too_large`, `invalid_offset`, `page_too_small`, `result_too_large`,
+  `ref_invalid`, `ref_not_found`, `project_view_unavailable`, `project_view_timeout`, `lead_not_found` (a call that belongs to no live
+  lead turn). Messages from the OS or git never reach the lead.
+- **Secrets.** A name rule decides `path_denied` for any path segment (case-insensitive) in read, tree and search alike: the index
+  scanner's rule (dotenv files, `.git`, `node_modules`, shared from `indexing/snapshot.ts`) plus credential names (`.ssh`, `.aws`, `.gnupg`, `.kube`,
+  `.docker`, `.npmrc`, `.pypirc`, `.netrc`, `.pgpass`, `.htpasswd`, `.git-credentials`, `id_rsa*`/`id_dsa*`/`id_ecdsa*`/`id_ed25519*`,
+  `credentials*`, `client_secret*.json`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.kdbx`, `*.tfstate`, `*.tfvars`).
+  Denied entries are omitted from listings and counted in `withheld`, never named, and are not searched. A symlink is listed as a
+  `symlink` without its target and never followed. The name rule is not a classifier: a secret inside an ordinary source file is
+  redacted only when its value is registered with the egress scrubber, which scrubs the whole file before it is paged (a secret that
+  straddles a page boundary is still redacted), and every path, entry and search line.
+- **Audit.** Each call, refused ones included, is one `agent.note` `{lead: {action: 'project_view', tool, outcome, path, commit, bytes,
+  truncated, withheld}}` in the lead run's session log, written under the attempt's fence before the result is returned: if it cannot
+  be written (stale lease, fenced out) the lead receives that code and no content. The note carries no file text and, for a search,
+  only the length of the query.
 
 ## Resume (ADR-0019 decision 9)
 
@@ -174,6 +216,9 @@ Removing the plugin keeps the tables. Rollback: stop the node, unload the plugin
 
 ## Evidence and limits
 
+`test/leads/project-view.test.ts` covers the project view over real repositories (traversal, symlinks, secret names, scrubbing across
+pages, bounds and cursors, audit, an unknown task) and through the loopback tool server with the fixture agent;
+`test/ms1-live/lead-project-view.test.ts` does the same through the production boot.
 `test/leads/*` use the K5 fixture ACP agent over real child processes and real HTTP, a fake child executor and
 injected clocks (up to 24 h of simulated time), plus a `SIGKILL` worker that kills the process at every
 transaction boundary of delegation, resolution/wake/acknowledgement and cancel with a scripted agent.
