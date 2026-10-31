@@ -4,10 +4,10 @@
 import { relayStartInputSchema, type RelayStartInput, type RelayStartStatus } from '@guanxi/contract'
 import { z } from 'zod'
 import {
-  EvidenceBook, assembleMeasurement, buildTrialSlot, missingTrial, type ArmProfile, type TrialObservation,
+  EvidenceBook, assembleMeasurement, buildTrialSlot, missingTrial, type ArmProfile, type ModeProblem, type TrialObservation,
 } from './relay-smoke-build.ts'
 import { SMOKE_BASE_COMMIT, SMOKE_TASK_IDS, smokeDigests, smokePlan } from './relay-smoke-corpus.ts'
-import { armModeOf, projectEvents, sha256Hex, type EventLike } from './relay-smoke-facts.ts'
+import { armModeOf, projectEvents, sha256Hex, type EventLike, type SealEvidence } from './relay-smoke-facts.ts'
 import { SmokeSourceError, isDefinitiveStartRefusal, loopbackOrigin, type RelaySource } from './relay-smoke-source.ts'
 import { checkRelayMeasurement, type RelayMeasurementInput, type RelayPlan, type RelayIssue, type RelayTrialSlot } from './relay-protocol.ts'
 import { reduceRelayMeasurement, type RelayMeasurementReport } from './relay-measurement.ts'
@@ -22,6 +22,8 @@ const armSchema = z.object({
   url: z.string().optional(), homeDb: z.string().min(1).optional(),
   /** The git commit this arm's relay runs, when it differs from `harnessRevision` (a node restarted in another mode). */
   harnessRevision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
+  /** Replaces the configuration's `keySalt` for this arm only, so changing it to re-run one arm's trials does not orphan the other arm's. */
+  keySalt: z.string().regex(/^[A-Za-z0-9]{0,16}$/).optional(),
   /** Describes the arm honestly: does a sealed ledger handoff exist, and is a repeated dead end a guarded one. */
   ledgerHandoff: z.boolean().optional(), deadEndGuard: z.boolean().optional(),
 }).strict()
@@ -30,7 +32,7 @@ export const smokeConfigSchema = z.object({
   experimentId: id,
   /** Git commit of the home checkout under test; part of every arm's harness digest. */
   harnessRevision: z.string().regex(/^[a-f0-9]{40}$/),
-  /** Added to every start key; change it to re-run trials that ended cancelled. */
+  /** Added to every start key (unless the arm sets its own); change it to re-run trials that ended cancelled or were refused for their mode. */
   keySalt: z.string().regex(/^[A-Za-z0-9]{0,16}$/).default(''),
   endpoint: z.object({ url: z.string(), homeDb: z.string().min(1).optional() }).strict(),
   start: z.object({ projectId: z.string().min(1), connectionId: z.string().min(1), model: z.string().min(1), domains: z.array(z.string()).default([]) }).strict(),
@@ -54,7 +56,7 @@ export const smokeConfigSchema = z.object({
 }).strict()
 export type SmokeConfig = z.infer<typeof smokeConfigSchema>
 
-export interface ResolvedArm { id: string; kind: 'ledger_relay' | 'naive_compaction'; planned: boolean; profile: ArmProfile; url: string; homeDb: string | undefined; harnessRevision: string }
+export interface ResolvedArm { id: string; kind: 'ledger_relay' | 'naive_compaction'; planned: boolean; profile: ArmProfile; url: string; homeDb: string | undefined; harnessRevision: string; keySalt: string }
 export function resolveArms(config: SmokeConfig): ResolvedArm[] {
   const entries = config.arms ?? [{ kind: 'ledger_relay' as const, id: 'ledger-relay' }, { kind: 'naive_compaction' as const, id: 'naive-compaction' }]
   if (new Set(entries.map(a => a.id)).size !== entries.length || new Set(entries.map(a => a.kind)).size !== entries.length) throw new Error('smoke_config_arms')
@@ -68,7 +70,7 @@ export function resolveArms(config: SmokeConfig): ResolvedArm[] {
       // Defaults describe the arms as designed: only the ledger relay seals a handoff with the live (unexpired) dead-end notes
       // (`selectNotes` in relay/handoff.ts), which is the guard a repeated dead end is counted against.
       profile: { id: a.id, kind: a.kind, ledgerHandoff: a.ledgerHandoff ?? !naive, deadEndGuard: a.deadEndGuard ?? !naive },
-      url, homeDb: a.homeDb ?? (a.url === undefined ? config.endpoint.homeDb : undefined), harnessRevision: a.harnessRevision ?? config.harnessRevision,
+      url, homeDb: a.homeDb ?? (a.url === undefined ? config.endpoint.homeDb : undefined), harnessRevision: a.harnessRevision ?? config.harnessRevision, keySalt: a.keySalt ?? config.keySalt,
     }
   })
 }
@@ -111,9 +113,11 @@ export function buildSmokePlan(config: SmokeConfig, book: EvidenceBook): RelayPl
   }
 }
 
-/** Idempotent start key: the same trial always maps to the same key, so a rerun re-attaches to the same run. */
-export const trialKey = (experimentId: string, task: string, arm: string, seed: number, salt = ''): string =>
-  'b3s-' + digest(['guanxi.b3.smoke.key/v1', experimentId, task, arm, seed, salt]).slice(0, 16)
+/** Idempotent start key: the same trial always maps to the same key, so a rerun re-attaches to the same run. The harness revision is part of it: a new
+ * `--out` with the same experiment and salt but another revision of the home must start a run of that revision, not re-attach to an older one. */
+export const trialKey = (experimentId: string, task: string, arm: string, seed: number, salt = '', harnessRevision = ''): string =>
+  'b3s-' + digest(['guanxi.b3.smoke.key/v1', experimentId, task, arm, seed, salt, harnessRevision]).slice(0, 16)
+const keyOf = (config: SmokeConfig, arm: ResolvedArm, task: string, seed: number): string => trialKey(config.experimentId, task, arm.id, seed, arm.keySalt, arm.harnessRevision)
 
 export interface ObservationStore { load(key: string): TrialObservation | null; save(observation: TrialObservation): void }
 export const memoryStore = (): ObservationStore & { all: Map<string, TrialObservation> } => {
@@ -123,7 +127,7 @@ export const memoryStore = (): ObservationStore & { all: Map<string, TrialObserv
 
 const factSchema = z.object({ kind: z.string(), seq: z.number().int(), atMs: z.number().int(), cycle: z.number().int() }).passthrough()
 const gateSchema = z.object({ item: z.string(), head: z.string(), ok: z.boolean() }).strict()
-const sealSchema = z.object({ cycle: z.number().int(), epoch: z.number().int(), head: z.string(), items: z.record(z.string(), z.string()),
+const sealSchema = z.object({ cycle: z.number().int(), epoch: z.number().int(), attemptId: z.string().min(1), head: z.string(), items: z.record(z.string(), z.string()),
   evidence: z.array(gateSchema), ledgerSha256: z.string().nullable(), handoffLedgerSha256: z.string().nullable(),
   bundleSha256: z.string().nullable(), bundleMatchesHandoff: z.boolean().nullable(), artifactMatchesHandoff: z.boolean().nullable(), unreadable: z.literal(true).optional() }).strict()
 /** The stored shape of a trial observation. A file that does not match is refused, never trusted. */
@@ -158,7 +162,7 @@ export function trialFingerprint(config: SmokeConfig, arm: ResolvedArm, task: st
 const endpointOf = (arm: ResolvedArm): string => sha256Hex(`${arm.url}\u0000${arm.homeDb ?? ''}`).slice(0, 12)
 
 function loadCached(config: SmokeConfig, arm: ResolvedArm, task: string, seed: number, deps: RunDeps): TrialObservation | null {
-  const cached = deps.store.load(trialKey(config.experimentId, task, arm.id, seed, config.keySalt))
+  const cached = deps.store.load(keyOf(config, arm, task, seed))
   if (!cached) return null
   if (cached.fingerprint !== trialFingerprint(config, arm, task, seed)) throw new Error('smoke_config_observation_mismatch')
   return cached
@@ -183,12 +187,22 @@ async function collect(deps: RunDeps, arm: string, status: RelayStartStatus): Pr
   return { facts: status.runId ? projectEvents(events, status.runId) : [], ledger, ledgerError }
 }
 
+/** What the arm check takes from the home database: the stored seals, and whether the run's own `relay_runs` row was there at all. */
+export const sealEvidenceOf = (ledger: TrialObservation['ledger']): SealEvidence | null =>
+  ledger ? { seals: ledger.seals.map(s => ({ attemptId: s.attemptId, epoch: s.epoch, cycle: s.cycle })), snapshot: ledger.final !== null } : null
+/** Null when the run is the arm the trial was planned as; otherwise the fixed code of what its events and the home database's seals say instead. */
+function modeProblemOf(arm: ResolvedArm, facts: TrialObservation['facts'], ledger: TrialObservation['ledger']): ModeProblem | null {
+  const mode = armModeOf(facts, sealEvidenceOf(ledger))
+  if (mode === (arm.kind === 'naive_compaction' ? 'naive' : 'ledger')) return null
+  return mode === 'unconfirmed' ? 'arm_mode_unconfirmed' : mode === 'mixed' ? 'arm_mode_mixed' : 'arm_mode_mismatch'
+}
+
 /** Runs (or resumes) one trial. Never throws for a relay or endpoint failure.
  * A stored observation is final, except that a transient read failure of the events or the home database is retried.
  * An observation is stored only when the relay for its key is confirmed terminal or stopped; otherwise it is returned
  * `unsettled`, unstored, so that nothing starts after it and a rerun re-attaches to the same key. */
 export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: string, seed: number, deps: RunDeps): Promise<TrialObservation> {
-  const key = trialKey(config.experimentId, task, arm.id, seed, config.keySalt)
+  const key = keyOf(config, arm, task, seed)
   const fingerprint = trialFingerprint(config, arm, task, seed)
   const cached = loadCached(config, arm, task, seed, deps)
   if (cached) {
@@ -198,6 +212,9 @@ export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: stri
       const status = await deps.source.status(arm.id, key)
       const again = await collect(deps, arm.id, status)
       const refreshed: TrialObservation = { ...cached, facts: again.facts.length ? again.facts : cached.facts, ledger: again.ledger ?? cached.ledger, ledgerError: again.ledgerError }
+      // Facts re-read from the node are held to the same arm rule as a first read: a refresh never stores a record the rule would have refused.
+      const problem = modeProblemOf(arm, refreshed.facts, refreshed.ledger)
+      if (problem) { deps.log?.({ event: 'trial_mode_problem', task, arm: arm.id, seed, code: problem }); return { ...refreshed, modeProblem: problem } }
       deps.store.save(refreshed)
       return refreshed
     } catch { return cached }
@@ -264,9 +281,8 @@ export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: stri
   }
   // The arm is confirmed from the run's own events, never from the pass order or the configuration: a naive trial must show the
   // compaction note, a ledger trial none of the naive markers. A disagreement is a failure, not a relabel, and is not stored.
-  const mode = armModeOf(facts)
-  if (mode !== (arm.kind === 'naive_compaction' ? 'naive' : 'ledger')) {
-    const modeProblem = mode === 'unconfirmed' ? 'arm_mode_unconfirmed' : 'arm_mode_mismatch'
+  const modeProblem = modeProblemOf(arm, facts, ledger)
+  if (modeProblem) {
     deps.log?.({ event: 'trial_mode_problem', task, arm: arm.id, seed, code: modeProblem })
     return { ...observation, modeProblem }
   }
@@ -288,7 +304,7 @@ export interface SmokeSummary {
   expectedTrials: number
   incomplete: number
   /** Set when a relay could not be confirmed stopped; nothing was started after it. */
-  halted: 'relay_state_unknown' | 'arm_mode_mismatch' | 'arm_mode_unconfirmed' | null
+  halted: 'relay_state_unknown' | ModeProblem | null
   document: { valid: boolean; issues: RelayIssue[] }
 }
 export interface SmokeResult { measurement: RelayMeasurementInput | null; report: RelayMeasurementReport | null; summary: SmokeSummary; exitCode: 0 | 1 | 3 }
@@ -323,7 +339,7 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     const obs = observed.get(JSON.stringify([task, arm.id, seed]))
     if (!obs || obs.unsettled || obs.modeProblem) {
       slots.push(missingTrial(task, arm.id, seed, 'not_collected')); incomplete++
-      rows.push({ task, arm: arm.id, seed, key: trialKey(config.experimentId, task, arm.id, seed, config.keySalt), endedBy: obs?.modeProblem ?? (obs ? 'unsettled' : 'not_run'), status: obs?.status ?? null, cycles: 0, ledgerRead: false, ledgerError: null, notes: [] })
+      rows.push({ task, arm: arm.id, seed, key: keyOf(config, arm, task, seed), endedBy: obs?.modeProblem ?? (obs ? 'unsettled' : 'not_run'), status: obs?.status ?? null, cycles: 0, ledgerRead: false, ledgerError: null, notes: [] })
       continue
     }
     const built = buildTrialSlot({ horizon: config.horizon, book, arm: arm.profile }, obs, plan)
@@ -332,6 +348,10 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     rows.push({ task, arm: arm.id, seed, key: obs.key, endedBy: obs.endedBy, status: obs.status, cycles: built.slot.state === 'observed' ? built.slot.cycles.filter(c => c.state === 'observed').length : 0,
       ledgerRead: obs.ledger !== null, ledgerError: obs.ledgerError ?? null, notes: built.notes })
   }
+  // The loaded window is observed per trial. A node restarted between passes can come back with another one, which would make the arms
+  // incomparable without any single trial looking wrong; the document's own per-sample window check cannot see across trials.
+  const windows = [...new Set([...observed.values()].filter(o => !o.unsettled && !o.modeProblem && o.windowTokens !== null).map(o => o.windowTokens!))].sort((a, b) => a - b)
+  if (windows.length > 1) for (const row of rows) if (row.status !== null) row.notes.push(`window_tokens_differ_between_trials:${windows.join('/')}`)
   let latest = deps.now()
   for (const o of observed.values()) { latest = Math.max(latest, o.finishedAtMs ?? 0); for (const f of o.facts) if (f.atMs > latest) latest = f.atMs }
   const raw = assembleMeasurement({ plan, origin, trials: slots, book, recordedAtMs: latest, analysisAsOfMs: latest })
@@ -343,5 +363,5 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
     document: { valid: checked.ok, issues: checked.ok ? [] : [...checked.issues] },
   }
   if (!checked.ok) return { measurement: null, report: null, summary, exitCode: 1 }
-  return { measurement: raw, report: reduceRelayMeasurement(raw), summary, exitCode: halted === 'arm_mode_mismatch' || halted === 'arm_mode_unconfirmed' ? 1 : incomplete ? 3 : 0 }
+  return { measurement: raw, report: reduceRelayMeasurement(raw), summary, exitCode: halted === 'arm_mode_mismatch' || halted === 'arm_mode_mixed' || halted === 'arm_mode_unconfirmed' ? 1 : incomplete ? 3 : 0 }
 }

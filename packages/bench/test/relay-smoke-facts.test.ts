@@ -91,25 +91,94 @@ test('the outcome table', () => {
 test('the naive-compaction notes parse into facts: the arm statement, per-cycle probe non-results and summary losses', () => {
   const facts = projectEvents([
     store('initialized', { revision: 'r', hash: 'h' }),
-    flat('compaction', { mode: 'naive' }),
+    flat('compaction', { mode: 'naive', attempt: ATT1, epoch: 1 }),
     store('cycle_begin', { cycle: 1 }),
     store('cycle_begin', { cycle: 2 }),
     flat('probe_not_applicable', { mode: 'naive', cycle: 2, reason: 'ledger_facts_not_shown', damaged: false }),
-    flat('compaction_summary', { mode: 'naive', cycle: 2, summaryBytes: 900, handoffLimitBytes: 4000, truncated: true, degraded: false, inputDropped: 3, inputCut: 1 }),
+    flat('compaction_summary', { mode: 'naive', attempt: ATT1, cycle: 2, summaryBytes: 900, summaryLimitBytes: 4000, outputLimitTokens: 1000, truncated: true, degraded: true, degradedReason: 'narrative_output_limited', inputDropped: 3, inputCut: 1 }),
   ], RUN)
   assert.deepEqual(facts.map(f => f.kind), ['initialized', 'compaction', 'cycle_begin', 'cycle_begin', 'probe_not_applicable', 'compaction_summary'])
   assert.deepEqual(facts.filter(f => f.kind === 'probe'), [], 'a non-applicable probe is never a probe result')
+  const marker = facts.find(f => f.kind === 'compaction') as Extract<SmokeFact, { kind: 'compaction' }>
+  assert.deepEqual([marker.mode, marker.attempt, marker.epoch], ['naive', ATT1, 1])
   const summary = facts.find(f => f.kind === 'compaction_summary') as Extract<SmokeFact, { kind: 'compaction_summary' }>
-  assert.deepEqual([summary.cycle, summary.truncated, summary.degraded, summary.inputDropped, summary.inputCut], [2, true, false, 3, 1])
-  assert.equal(armModeOf(facts), 'naive')
+  assert.deepEqual([summary.cycle, summary.attempt, summary.truncated, summary.degraded, summary.degradedReason, summary.inputDropped, summary.inputCut], [2, ATT1, true, true, 'narrative_output_limited', 3, 1])
+  assert.deepEqual([summary.summaryBytes, summary.summaryLimitBytes, summary.outputLimitTokens], [900, 4000, 1000])
+  assert.equal(armModeOf(facts, evidence([{ attemptId: ATT1, epoch: 1 }])), 'naive')
 })
 
+test('a note field of the wrong type or shape is dropped, never coerced into a fact value', () => {
+  const [marker, summary] = projectEvents([
+    flat('compaction', { mode: 'naive', attempt: 'not an id!', epoch: -1 }),
+    flat('compaction_summary', { mode: 'naive', attempt: 7, cycle: 1, summaryBytes: '900', summaryLimitBytes: -1, outputLimitTokens: 1.5, degraded: 'yes', degradedReason: 'Has Spaces' }),
+  ], RUN) as [Extract<SmokeFact, { kind: 'compaction' }>, Extract<SmokeFact, { kind: 'compaction_summary' }>]
+  assert.deepEqual([marker.attempt, marker.epoch], [null, null])
+  assert.deepEqual([summary.attempt, summary.summaryBytes, summary.summaryLimitBytes, summary.outputLimitTokens, summary.degraded, summary.degradedReason], [null, null, null, null, false, null])
+})
+
+const ATT1 = 'f0000000-0000-4000-8000-000000000001', ATT2 = 'f0000000-0000-4000-8000-000000000002'
+const marker = (attempt: string | null, epoch: number | null) => flat('compaction', { mode: 'naive', ...(attempt ? { attempt } : {}), ...(epoch !== null ? { epoch } : {}) })
+/** The home database's view of a run: the given attempts sealed cycles 1, 2, ... in order, and the run's own row exists (unless `snapshot` is false). */
+const evidence = (seals: Array<{ attemptId: string; epoch: number }> | null, snapshot = true) => seals === null ? null : { seals: seals.map((s, i) => ({ ...s, cycle: i + 1 })), snapshot }
+const sealing = (...attempts: Array<[string, number]>) => attempts.map(([attemptId, epoch]) => ({ attemptId, epoch }))
+
 test('the arm of a run is read from its own events and from nothing else', () => {
-  const run = (...events: EventLike[]) => armModeOf(projectEvents(events, RUN))
-  assert.equal(run(store('initialized', { revision: 'r' }), store('cycle_begin', { cycle: 1 })), 'ledger', 'no naive marker is a ledger run')
-  assert.equal(run(store('initialized', {}), flat('compaction', { mode: 'naive' })), 'naive')
-  assert.equal(run(), 'unconfirmed', 'no readable events confirm nothing')
-  assert.equal(run(ev('agent.note', { text: canonicalText({ relay: 'compaction', mode: 'something_else' }) }), store('cycle_begin', { cycle: 1 })), 'unconfirmed', 'an unknown mode is not a ledger run')
-  assert.equal(run(store('cycle_begin', { cycle: 2 }), flat('probe_not_applicable', { mode: 'naive', cycle: 2 })), 'unconfirmed', 'naive markers without the arm statement')
-  assert.equal(run(store('cycle_begin', { cycle: 2 }), flat('compaction_summary', { mode: 'naive', cycle: 2 })), 'unconfirmed')
+  const run = (seals: Array<{ attemptId: string; epoch: number }> | null, ...events: EventLike[]) => armModeOf(projectEvents(events, RUN), evidence(seals))
+  assert.equal(run([], store('initialized', { revision: 'r' }), store('cycle_begin', { cycle: 1 })), 'ledger', 'no naive marker is a ledger run')
+  assert.equal(run(sealing([ATT1, 1]), store('initialized', {}), marker(ATT1, 1)), 'naive')
+  assert.equal(run([], store('initialized', {}), marker(ATT1, 1)), 'naive', 'a naive run that sealed nothing yet is still naive')
+  assert.equal(run([]), 'unconfirmed', 'no readable events confirm nothing')
+  assert.equal(run([], ev('agent.note', { text: canonicalText({ relay: 'compaction', mode: 'something_else', attempt: ATT1, epoch: 1 }) }), store('cycle_begin', { cycle: 1 })), 'unconfirmed', 'an unknown mode is not a ledger run')
+  assert.equal(run([], store('cycle_begin', { cycle: 2 }), flat('probe_not_applicable', { mode: 'naive', cycle: 2 })), 'unconfirmed', 'naive markers without the arm statement')
+  assert.equal(run([], store('cycle_begin', { cycle: 2 }), flat('compaction_summary', { mode: 'naive', attempt: ATT1, cycle: 2 })), 'unconfirmed')
+})
+
+test('a naive run must carry the marker on every attempt that sealed a cycle: a sealing attempt without one is a mixed run, never relabelled', () => {
+  const run = (seals: Array<{ attemptId: string; epoch: number }> | null, ...events: EventLike[]) => armModeOf(projectEvents(events, RUN), evidence(seals))
+  const begin = store('cycle_begin', { cycle: 1 })
+  // naive attempt 1, then a restart in ledger mode: attempt 2 sealed and wrote no marker
+  assert.equal(run(sealing([ATT1, 1], [ATT2, 2]), marker(ATT1, 1), begin), 'mixed')
+  // ledger attempt 1 sealed, then a restart in naive mode: attempt 1 has no marker
+  assert.equal(run(sealing([ATT1, 1], [ATT2, 2]), begin, marker(ATT2, 2)), 'mixed')
+  // both attempts marked is a consistent naive run
+  assert.equal(run(sealing([ATT1, 1], [ATT2, 2]), marker(ATT1, 1), begin, marker(ATT2, 2)), 'naive')
+  // a ledger attempt writes `probe` notes, which a naive attempt never does
+  assert.equal(run(sealing([ATT1, 1]), marker(ATT1, 1), begin, flat('probe', { retry: 0, correct: true, damaged: false })), 'mixed')
+  assert.equal(run(sealing([ATT1, 1]), marker(ATT1, 1), begin, flat('probe_degraded', { cycle: 1 })), 'mixed')
+  // a summary that names an attempt nobody marked, or none
+  assert.equal(run(sealing([ATT1, 1]), marker(ATT1, 1), flat('compaction_summary', { mode: 'naive', attempt: ATT2, cycle: 1 })), 'unconfirmed')
+  assert.equal(run(sealing([ATT1, 1]), marker(ATT1, 1), flat('compaction_summary', { mode: 'naive', cycle: 1 })), 'unconfirmed')
+  // a marker that cannot be tied to an attempt, or that disagrees with the seal about the epoch
+  assert.equal(run(sealing([ATT1, 1]), marker(null, 1)), 'unconfirmed')
+  assert.equal(run(sealing([ATT1, 1]), marker(ATT1, null)), 'unconfirmed')
+  assert.equal(run(sealing([ATT1, 2]), marker(ATT1, 1)), 'unconfirmed')
+  assert.equal(run(sealing([ATT1, 2]), marker(ATT1, 1), marker(ATT1, 2)), 'unconfirmed', 'one attempt states itself once, and a later statement does not overwrite the first')
+  // the seals could not be read: a naive run cannot be attributed
+  assert.equal(run(null, marker(ATT1, 1), begin), 'unconfirmed')
+  // a ledger run has nothing to check against: its seals are irrelevant, and a null database does not make it naive
+  assert.equal(run(null, begin), 'ledger')
+})
+
+test('a database that cannot vouch for the run proves nothing: no row for the run, or a sealed event with no stored seal, is unconfirmed', () => {
+  const sealedAt = (cycle: number) => store('sealed', { cycle, ledgerHash: 'h', bundleHash: 'b' })
+  // naive attempt 1 sealed cycle 1; attempt 2 ran in ledger mode (no marker) and sealed cycle 2
+  const events = () => projectEvents([marker(ATT1, 1), store('cycle_begin', { cycle: 1 }), sealedAt(1), store('cycle_begin', { cycle: 2 }), sealedAt(2)], RUN)
+  assert.equal(armModeOf(events(), evidence([{ attemptId: ATT1, epoch: 1 }, { attemptId: ATT2, epoch: 2 }])), 'mixed', 'with the right seals this is a mixed run')
+  // ... and a wrong or stale file with the right schema and no rows for the run must not turn it into a naive one
+  assert.equal(armModeOf(events(), evidence([], false)), 'unconfirmed', 'no relay_runs row for the run')
+  assert.equal(armModeOf(events(), evidence([])), 'unconfirmed', 'sealed events whose seals the database does not hold')
+  assert.equal(armModeOf(events(), evidence([{ attemptId: ATT1, epoch: 1 }])), 'unconfirmed', 'one of the two seals is missing')
+  // a naive run that has not sealed anything needs only the run row
+  const early = () => projectEvents([marker(ATT1, 1), store('cycle_begin', { cycle: 1 })], RUN)
+  assert.equal(armModeOf(early(), evidence([])), 'naive')
+  assert.equal(armModeOf(early(), evidence([], false)), 'unconfirmed')
+})
+
+test('a model call whose purpose is probe is a ledger attempt even when it was killed before it wrote the probe note', () => {
+  const call = (purpose: string) => ev('assistant.started', { messageId: 'm-1', model: `relay:${purpose}`, step: 2 })
+  const mode = (...events: EventLike[]) => armModeOf(projectEvents(events, RUN), evidence([{ attemptId: ATT1, epoch: 1 }]))
+  assert.equal(mode(marker(ATT1, 1), store('cycle_begin', { cycle: 1 }), call('work')), 'naive', 'work and narrative calls are the naive arm own')
+  assert.equal(mode(marker(ATT1, 1), store('cycle_begin', { cycle: 1 }), call('narrative')), 'naive')
+  assert.equal(mode(marker(ATT1, 1), store('cycle_begin', { cycle: 1 }), call('probe')), 'mixed')
+  assert.equal(armModeOf(projectEvents([marker(ATT1, 1), call('probe')], RUN), null), 'mixed', 'whatever the database says')
 })

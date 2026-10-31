@@ -84,8 +84,10 @@ function persist(out: string, result: SmokeResult, store: ObservationStore | nul
   files.push(['summary.json', json(result.summary)])
   for (const [name, text] of files) writePrivate(join(out, name), text)
   // The manifest lets a reader check that the sidecar files are the ones the summary was produced from.
+  // Only observations that the document includes: a stored file of another selection (a pilot's task, an older configuration) is not covered by this summary.
+  const included = new Set(result.summary.trials.map(t => `${t.key}.json`))
   const obsDir = join(out, 'observations')
-  const sidecars = store && existsSync(obsDir) ? readdirSync(obsDir).sort().map(f => [`observations/${f}`, sha256Hex(readFileSync(join(obsDir, f)))]) : []
+  const sidecars = store && existsSync(obsDir) ? readdirSync(obsDir).filter(f => included.has(f)).sort().map(f => [`observations/${f}`, sha256Hex(readFileSync(join(obsDir, f)))]) : []
   writePrivate(join(out, 'manifest.json'), json({ format: 'guanxi.b3.smoke-manifest/v1', files: [...files.map(([n, t]) => [n, sha256Hex(t)]), ...sidecars] }))
 }
 
@@ -115,6 +117,9 @@ async function preflight(config: SmokeConfig, repo: string | undefined, io: CliI
         const missing = new SqliteLedgerReader(arm.homeDb).check()
         checks.push({ name: `home_database:${arm.id}`, ok: missing.length === 0, ...(missing.length ? { code: `missing_tables:${missing.join(',')}` } : {}) })
       } catch (error) { checks.push({ name: `home_database:${arm.id}`, ok: false, code: error instanceof SmokeSourceError ? error.code : 'home_database_unreadable' }) }
+    } else if (arm.kind === 'naive_compaction') {
+      // The naive arm is attributed from the run's events and its sealing attempts (relay_seals.attempt_id): without the database no trial can be confirmed.
+      checks.push({ name: `home_database:${arm.id}`, ok: false, code: 'naive_arm_needs_home_database' })
     } else checks.push({ name: `home_database:${arm.id}`, ok: true, code: 'not_configured_items_context_integrity_unknown' })
   }
   return { ok: checks.every(c => c.ok), checks }
@@ -159,7 +164,7 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
         const result = await runSmoke(config, { source, now: io.now ?? Date.now, sleep: io.sleep ?? sleepReal, store, ...(v['--arms'] !== undefined ? { only: v['--arms'].split(',').filter(Boolean) } : {}), ...(io.signal ? { signal: io.signal } : {}), log: line => io.err(JSON.stringify(line)) })
         persist(out, result, store)
         io.out(json({ ok: result.exitCode !== 1, exitCode: result.exitCode, out, planSha256: result.summary.planSha256, origin: result.summary.origin,
-          expectedTrials: result.summary.expectedTrials, incomplete: result.summary.incomplete, document: result.summary.document, gate: 'measurement_only',
+          expectedTrials: result.summary.expectedTrials, incomplete: result.summary.incomplete, halted: result.summary.halted, document: result.summary.document, gate: 'measurement_only',
           unresolved: result.report?.unresolved ?? [] }))
         return result.exitCode
       }

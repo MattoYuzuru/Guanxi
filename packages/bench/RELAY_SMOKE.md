@@ -53,7 +53,7 @@ stdout is exactly one JSON document; progress is JSON lines on stderr. Errors ar
 | --- | --- |
 | `0` | every planned trial reached a terminal observation and the document validates |
 | `3` | the document validates but some planned trials are missing or were cancelled (interrupt, deadline, failed start, a relay that could not be accounted for). A `run` against a dead endpoint ends here: every start fails, every slot is `missing`, the document is still valid |
-| `1` | `run`: the assembled document does not validate; `preflight`: a check failed; `report`: the document does not validate |
+| `1` | `run`: the assembled document does not validate, or an arm-mode halt (`halted` in `summary.json` and on stdout: `arm_mode_mismatch`, `arm_mode_mixed`, `arm_mode_unconfirmed`); `preflight`: a check failed; `report`: the document does not validate |
 | `2` | usage or configuration: bad arguments, an unreadable or unparsable file (including a `report` input that is not JSON), a non-loopback URL, a stale (`smoke_config_observation_mismatch`) or malformed (`smoke_config_observation_invalid`) observation directory, two arms behind one endpoint in one pass (`smoke_config_arm_endpoint`) |
 
 ## How a trial is accounted for
@@ -68,10 +68,13 @@ stdout is exactly one JSON document; progress is JSON lines on stderr. Errors ar
   (`halted: relay_state_unknown` in `summary.json`, exit `3`), and a rerun with the same `--out` re-attaches to the same key.
 - **Stored means settled.** An observation is written only when the relay for its key is terminal or confirmed stopped.
   Interrupt, deadline and repeated status failures all try to stop the relay first.
-- **Fingerprints.** Each stored observation carries a fingerprint of what it measured (stratum, horizon, project and
+- **Fingerprints and keys.** Each stored observation carries a fingerprint of what it measured (stratum, horizon, project and
   connection, caps, the arm's kind, profile, endpoint, database and harness revision, the task plan, the seed). A changed
   configuration over an old `--out` is refused with `smoke_config_observation_mismatch`; use a new directory (or
-  `keySalt` to redo a cancelled trial).
+  `keySalt` to redo a cancelled trial). The relay start key is derived from the experiment id, task, arm, seed, the salt **and
+  the arm's harness revision**, so a new `--out` with the same experiment and salt but another revision of the home starts its
+  own runs instead of re-attaching to (and storing) the older revision's finished ones. The same revision, salt and experiment
+  give the same key on purpose: that is how a rerun re-attaches.
 - **Transient read failures** (events, home database) are recorded and retried on the next run without starting anything.
 
 ## Item results are first-attempt-biased by construction
@@ -128,10 +131,12 @@ per-cycle numbers, and an early failure is not hidden by a later success, but a 
    (10 items in 2 h 29 min): about 75 minutes per task per arm. A full ledger-arm cohort is about 6.5 hours; both arms
    about 13 hours. The executor has a single slot: do not run `preflight --completion`, a lead or any other relay
    meanwhile. Keep `caffeinate` on the home.
-6. **Run:** the same command without `--tasks`, a new `--out`. Ctrl-C (SIGINT) stops the active relay and writes a valid
+6. **Run:** the same command without `--tasks`, **the same `--out`** as the pilot (its stored trial is final and counts; with a
+   new `--out` and an unchanged experiment id, salt and revision the key is the same, so the runner re-attaches to the pilot's
+   finished run and stores it again, it does not start a new one; change `experimentId` or `keySalt` for that). Ctrl-C (SIGINT) stops the active relay and writes a valid
    document with what exists (exit `3`). Running the same command again with the same `--out` re-attaches: stored
    trials are final (even cancelled ones), unstarted ones run. To redo a cancelled trial, change `keySalt` in the
-   configuration and use a new `--out`.
+   configuration (an arm entry may carry its own `keySalt`, which re-keys that arm only) and use a new `--out`.
 7. **Read the result:** `summary.json` (per trial: ended-by, status, cycles, whether the database was read, notes such as
    `items_never_assessed:I05`), `report.json` (the reducer output; start with `coverage`, `arms[].trials.outcomes`,
    `arms[].totals.items`, `.probes.wholeAnswer`, `.context.truncationEvents`, `.integrity`, `.guards`, and
@@ -145,7 +150,7 @@ task from both arms; that is intended.
 ## Two passes: ledger arm, then naive arm (restart the home in between)
 
 The naive-compaction mode is a node-wide setting of the home (`home.relayCompaction: "naive"`, server lane B3-c, branch
-`lane/b3c-naive-arm`, see section 5 of [the MS1 live runbook](../../docs/operations/ms1-live-run.md) once merged). A second
+merged in `lead/wave7`, see section 5 of [the MS1 live runbook](../../docs/operations/ms1-live-run.md)). A second
 home process would need its own federation pairing, so the procedure is **one arm per pass against the same `--out`,
 restarting the same home between the passes**. Declare both arms in the configuration; they share the endpoint and the
 database:
@@ -169,31 +174,59 @@ The second pass reads the first pass's stored observations (same fingerprint rul
 both arms. Two selected arms behind one endpoint and database in a **single** pass are refused (`smoke_config_arm_endpoint`):
 a node has one mode at a time.
 
-**The arm is confirmed from each run's own events, not from the pass order.** A naive run writes the note
-`compaction` (mode `naive`) before its first model call, `probe_not_applicable` for every cycle after the first and
-`compaction_summary` after each seal; a ledger run writes none of them. After a trial reaches a terminal state the runner
-reads the events and compares: a trial planned as naive must show the `naive` statement, a trial planned as ledger must
-show no naive marker. A disagreement (a pass run in the wrong node mode, events that cannot be read, naive markers without
-the statement) is **a failure, never a relabel**: the trial is not stored and not in the document, no further trial
-starts, `summary.json` says `halted: arm_mode_mismatch` or `arm_mode_unconfirmed`, and the run exits `1`. Fix the mode
-(or the events) and rerun: an unconfirmed trial re-attaches to the same key, but a mismatched run already exists on the
-node under that key, so change `keySalt` (and, if a ledger pass was done under the old salt, use a new `--out` or accept
-that its trials are re-run). `summary.json` also records `armIdentity: operator_asserted`, a short hash of each arm's
-endpoint and its harness revision (an arm entry may carry its own `harnessRevision`).
+**The arm is confirmed from each run's own record, not from the pass order.** A naive attempt writes the note
+`compaction` (`mode: naive`, the R1 `attempt` id and its `epoch`) before its first model call, once per executor attempt;
+it also writes `compaction_summary` after each seal and `probe_not_applicable` for every cycle after the first. A ledger
+attempt writes none of them, so the proof sits on the naive side. After a trial reaches a terminal state the runner reads
+the events and the sealing attempts (`relay_seals.attempt_id`, from the home database) and applies these rules:
+
+- **naive trial:** every attempt that sealed a cycle has its own marker (else `mixed`), every `compaction_summary` names a marked
+  attempt, the marker epoch equals the seal epoch, and there is **no sign of the ledger probe**: no `probe` or `probe_degraded`
+  note, and no model call whose purpose is `probe` (the executor records the call before making it, so an attempt killed in the
+  middle of its probe still leaves the call) - any of these is a ledger attempt, `mixed`, whatever the database says. The home
+  database must also vouch for the run: its `relay_runs` row must exist and every `sealed` event must have its `relay_seals` row,
+  otherwise the trial is `unconfirmed` (a wrong or stale database file with the right schema reads as empty and would otherwise
+  make the seal check vacuous);
+- **ledger trial:** no naive marker and none of the other naive notes;
+- **cannot be read** (no events, an unknown mode, a marker without an attempt id, the home database not readable): not confirmed.
+  The same rule is applied again when an observation is refreshed after a transient read failure.
+
+A disagreement is **a failure, never a relabel**: the trial is not stored and not in the document, no further trial starts,
+`summary.json` and the `run` output say `halted` with one of `arm_mode_mismatch` (the other arm's record), `arm_mode_mixed`
+(attempts of both modes in one run, as after a node restart in the other mode between attempts) or `arm_mode_unconfirmed`, and
+the run exits `1`. A naive arm therefore needs `homeDb` (preflight fails with `naive_arm_needs_home_database` without it). Fix the
+mode (or the database) and rerun: an unconfirmed trial re-attaches to the same key, but a mismatched or mixed run already
+exists on the node under that key, so change the salt of the arm that was wrong (`keySalt` on its entry in `arms`, which
+leaves the other arm's stored trials alone; a top-level `keySalt` re-keys both). The cases no record shows are a ledger attempt
+that was killed before it sealed anything **and** before it started its first probe call (a first cycle, or a stop between the
+seal and the next probe). `summary.json` also records `armIdentity: operator_asserted`, a short hash of each arm's endpoint and
+its harness revision (an arm entry may carry its own `harnessRevision`).
+
+**The mode is only known after a trial ends.** The node does not report its compaction mode, and the marker is written by the
+attempt itself, so a pass started on a node in the wrong mode finds out after its first trial (about 75 minutes of the
+trial, then the halt). Start each pass with the pilot task and read the first result before leaving it running.
 
 What the naive arm contributes to the document: item facts are read from the sealed ledgers exactly as for the ledger arm
 (the harness gates are unchanged); the probe group of every cycle after the first is `unknown{unsupported}` from the
 `probe_not_applicable` notes, so it never counts as a pass or a fail and there is no probe accuracy for this arm; integrity
 is `unknown{unsupported}` (no handoff the model saw); a repeated dead end counts as unguarded (`deadEndGuard` false). Summary
-losses (`truncated`, `degraded`, `inputDropped`, `inputCut`) are listed as `notes` per trial in `summary.json`
-(`compaction_summary_truncated:N`, `compaction_summary_degraded:N`, `compaction_input_loss:…`); they are harness events and
-are **not** added to the runtime truncation count. Run the judge (`home.judge`) the same way, or not at all, in both passes.
+losses (`truncated`, `degraded`, `inputDropped`, `inputCut`) and the limits the relay reported are listed as `notes` per trial in
+`summary.json`: `compaction_summaries:N`, `compaction_summary_truncated:N`, `compaction_summary_degraded:N`,
+`compaction_summary_degraded_reasons:<code>=N,…` (the relay's fixed `degradedReason`, e.g. `model_failed`,
+`narrative_output_limited`, `handoff_fallback`), `compaction_summary_limit_bytes:min=…,max=…` (`summaryLimitBytes`, the room
+the 15% handoff bound leaves for the summary), `compaction_output_limit_tokens:min=…,max=…` (`outputLimitTokens`, the reply
+reserve) and `compaction_input_loss:dropped=…,cut=…`. Two more notes name what would otherwise be silent: `naive_handoff_damaged:N` (the stored
+seal was damaged, and the next cycle was shown the fixed "summary unavailable" text instead of a summary) and
+`compaction_summary_missing:<cycles>` (a sealed cycle has no `compaction_summary` note; the note is written after the seal, so a
+process that died in between leaves this, and it is reported rather than treated as a mode failure). `window_tokens_differ_between_trials:A/B`
+appears on every observed trial when the loaded window of the trials is not the same (a node restarted between the passes with another
+context size). They are harness events and are **not** added to the runtime truncation count. Run the judge (`home.judge`) the same way, or not at all, in both passes.
 The ledger arm defaults to `ledgerHandoff` and `deadEndGuard` true because only its sealed handoff carries the live
 dead-end notes (`selectNotes`); the naive arm defaults to false for both.
 
 ## Failure codes
 
-`arm_mode_mismatch` / `arm_mode_unconfirmed` (halts, exit 1), `endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
+`arm_mode_mismatch` / `arm_mode_mixed` / `arm_mode_unconfirmed` (halts, exit 1), `endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
 `runtime_meter_unavailable` / `relay_workspace_unavailable` / `relay_idempotency_conflict` /
 `relay_local_connection_required` (the relay's own refusals, see the relay README), `home_database_unreadable`,
 `smoke_config_invalid`, `smoke_config_tasks`, `smoke_config_arms`, `smoke_config_eta`, `file_unreadable`,

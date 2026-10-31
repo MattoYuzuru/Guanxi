@@ -11,6 +11,8 @@ export interface SealObservation {
   cycle: number
   /** R1 epoch of the attempt that sealed the cycle. */
   epoch: number
+  /** The R1 attempt that sealed the cycle (`relay_seals.attempt_id`); the naive arm's marker names the same value. */
+  attemptId: string
   head: string
   items: Record<string, string>
   /** Cumulative gate evidence of the ledger at the seal; outputs are never kept. */
@@ -32,6 +34,8 @@ export interface LedgerObservation {
   /** One row per recorded model call, keyed by the call's message id. */
   costs: ReadonlyArray<{ key: string; inputTokens: number; outputTokens: number }>
 }
+/** Fixed codes of an arm the run's own record does not confirm. `mixed`: attempts of both modes in one run (a restart changed the node mode). */
+export type ModeProblem = 'arm_mode_mismatch' | 'arm_mode_mixed' | 'arm_mode_unconfirmed'
 export interface TrialObservation {
   version: 1
   task: string
@@ -55,7 +59,7 @@ export interface TrialObservation {
   /** Memory only, never stored: the relay for this key could not be confirmed terminal or stopped, so nothing may start after it. */
   unsettled?: true
   /** Memory only, never stored: the run's own events do not confirm the arm it was planned as. Never relabelled. */
-  modeProblem?: 'arm_mode_mismatch' | 'arm_mode_unconfirmed'
+  modeProblem?: ModeProblem
 }
 export interface ArmProfile { id: string; kind: string; ledgerHandoff: boolean; deadEndGuard: boolean }
 export interface BuildContext { horizon: number; book: EvidenceBook; arm: ArmProfile }
@@ -242,7 +246,27 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
     const dropped = summaries.reduce((n, f) => n + f.inputDropped, 0); const cut = summaries.reduce((n, f) => n + f.inputCut, 0)
     if (truncated) notes.push(`compaction_summary_truncated:${truncated}`)
     if (degraded) notes.push(`compaction_summary_degraded:${degraded}`)
+    // Why a summary was degraded: the relay's fixed code per summary (`unknown` when a degraded note carries none), counted per code.
+    const reasons = new Map<string, number>()
+    for (const f of summaries) if (f.degraded) reasons.set(f.degradedReason ?? 'unknown', (reasons.get(f.degradedReason ?? 'unknown') ?? 0) + 1)
+    if (reasons.size) notes.push(`compaction_summary_degraded_reasons:${[...reasons].sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => `${k}=${v}`).join(',')}`)
+    // The limits the machinery applied to the summary (the room left by the handoff bound, and the reply reserve in tokens), as a range over the trial.
+    const range = (values: ReadonlyArray<number | null>): string | null => {
+      const known = values.filter((v): v is number => v !== null)
+      return known.length ? `min=${Math.min(...known)},max=${Math.max(...known)}` : null
+    }
+    const room = range(summaries.map(f => f.summaryLimitBytes)); if (room) notes.push(`compaction_summary_limit_bytes:${room}`)
+    const output = range(summaries.map(f => f.outputLimitTokens)); if (output) notes.push(`compaction_output_limit_tokens:${output}`)
     if (dropped || cut) notes.push(`compaction_input_loss:dropped=${dropped},cut=${cut}`)
+  }
+  // A damaged stored seal is not repaired in the naive arm: the next cycle was shown the fixed "summary unavailable" text. Reported, never silent.
+  const damaged = facts.filter(f => f.kind === 'probe_not_applicable' && f.damaged).length
+  if (damaged) notes.push(`naive_handoff_damaged:${damaged}`)
+  if (arm.kind === 'naive_compaction') {
+    // The summary note is written after the seal, so a process that died between them leaves a sealed cycle without one; either way the loss is not silent.
+    const summarised = new Set(summaries.map(f => f.cycle))
+    const missing = [...new Set(facts.filter(f => f.kind === 'sealed').map(f => f.cycle))].filter(c => !summarised.has(c)).sort((a, b) => a - b)
+    if (missing.length) notes.push(`compaction_summary_missing:${missing.join(',')}`)
   }
   const outcome: SmokeOutcome = outcomeOf(obs.status, obs.statusError, facts, obs.endedBy)
   if (ledger) {

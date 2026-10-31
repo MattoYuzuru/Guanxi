@@ -149,12 +149,16 @@ test('preflight checks the endpoint, the fixture repository and the home databas
     const live = { ...h.fake, kind: 'fake' as const, status: async () => { throw new SmokeSourceError('relay_not_found') } }
     assert.equal(await runCli(['preflight', '--config', cfg], h.io({ source: () => live as never })), 1)
     const failed = h.stdout()
-    assert.deepEqual(failed.checks.filter((c: { ok: boolean }) => !c.ok).map((c: { name: string; code: string }) => [c.name, c.code]), [['home_database:ledger-relay', 'home_database_unreadable']])
+    assert.deepEqual(failed.checks.filter((c: { ok: boolean }) => !c.ok).map((c: { name: string; code: string }) => [c.name, c.code]), [['home_database:ledger-relay', 'home_database_unreadable'], ['home_database:naive-compaction', 'naive_arm_needs_home_database']], 'the naive arm has its own url here, so it does not inherit the database')
     // a reachable endpoint without a configured database is fine, but says what becomes unknown
     h.out.length = 0
-    const ok = h.file('cfg2.json', CONFIG)
+    const ok = h.file('cfg2.json', { ...CONFIG, arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }] })
     assert.equal(await runCli(['preflight', '--config', ok], h.io({ source: () => live as never })), 0)
     assert.ok(h.stdout().checks.some((c: { code?: string }) => c.code === 'not_configured_items_context_integrity_unknown'))
+    // ... but a planned naive arm without one cannot be attributed to its arm, so preflight refuses it
+    h.out.length = 0
+    assert.equal(await runCli(['preflight', '--config', h.file('cfg3.json', CONFIG)], h.io({ source: () => live as never })), 1)
+    assert.deepEqual(h.stdout().checks.filter((c: { ok: boolean }) => !c.ok).map((c: { name: string; code: string }) => [c.name, c.code]), [['home_database:naive-compaction', 'naive_arm_needs_home_database']])
     // an unreachable endpoint fails with its code
     h.out.length = 0
     const down = { ...live, status: async () => { throw new SmokeSourceError('endpoint_unreachable') } }
@@ -253,7 +257,25 @@ test('a pass run in the wrong node mode exits 1 with the halt named', async () =
     assert.equal(await runCli(['run', '--config', shared, '--out', out, '--arms', 'naive-compaction'], h.io()), 1)
     const result = h.stdout()
     assert.equal(result.ok, false)
+    assert.equal(result.halted, 'arm_mode_mismatch', 'the stdout summary names the halt, not only summary.json')
     assert.equal(JSON.parse(readFileSync(join(out, 'summary.json'), 'utf8')).halted, 'arm_mode_mismatch')
     assert.equal(readdirSync(join(out, 'observations')).length, 0)
+  } finally { h.cleanup() }
+})
+
+test('the manifest binds only the observations the document includes, not files left by another selection', async () => {
+  const h = harness()
+  try {
+    const cfg = h.file('one.json', { ...CONFIG, arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }] })
+    const out = join(h.dir, 'out')
+    assert.equal(await runCli(['run', '--config', cfg, '--out', out, '--tasks', 'll-money-text'], h.io()), 0)
+    h.out.length = 0
+    // the second selection does not contain the first task: its stored file stays on disk, outside this summary
+    assert.equal(await runCli(['run', '--config', cfg, '--out', out, '--tasks', 'll-rules-fx'], h.io()), 0)
+    assert.equal(readdirSync(join(out, 'observations')).length, 2)
+    const summary = JSON.parse(readFileSync(join(out, 'summary.json'), 'utf8')) as { trials: Array<{ key: string }> }
+    const manifest = JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8')) as { files: Array<[string, string]> }
+    assert.deepEqual(manifest.files.filter(([n]) => n.startsWith('observations/')).map(([n]) => n), summary.trials.map(t => `observations/${t.key}.json`).sort())
+    assert.equal(manifest.files.length, 3 + 1)
   } finally { h.cleanup() }
 })
