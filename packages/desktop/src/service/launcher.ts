@@ -96,7 +96,13 @@ export function isProcessAlive(pid: number): boolean {
  * Nothing here ties the child to a window or to the app; closing the window, quitting the app or
  * crashing the shell never signals it.
  */
-export function spawnDetachedService(command: ServiceCommand, paths: ServicePaths): Promise<SpawnedService> {
+export function spawnDetachedService(
+  command: ServiceCommand,
+  paths: ServicePaths,
+  /** Test seam for the signal call. */
+  io: { kill?: (pid: number, signal: NodeJS.Signals) => void } = {},
+): Promise<SpawnedService> {
+  const sendSignal = io.kill ?? ((pid: number, signal: NodeJS.Signals) => void process.kill(pid, signal))
   prepareServiceDirectory(paths)
   const fd = openSync(paths.log, 'a', 0o600)
   return new Promise((resolve, reject) => {
@@ -128,15 +134,26 @@ export function spawnDetachedService(command: ServiceCommand, paths: ServicePath
         child.once('exit', (code, signal) => done({ code, signal }))
       })
       child.unref()
+      // Once the child is reaped its pid belongs to the OS again and may be handed to an unrelated process: from then
+      // on nothing is signalled, neither the group nor the pid.
+      let reaped = false
+      void exited.then(() => {
+        reaped = true
+      })
       const signalGroup = (signal: NodeJS.Signals) => {
+        if (reaped) return
         // The child leads its own group (detached), so -pid reaches whatever it spawned too.
-        for (const target of [-pid, pid]) {
-          try {
-            process.kill(target, signal)
-            return
-          } catch {
-            // try the next target; an already-gone child is fine
-          }
+        try {
+          sendSignal(-pid, signal)
+          return
+        } catch {
+          // no such group (or not ours): fall back to the pid, but only while it is still our child
+        }
+        if (reaped) return
+        try {
+          sendSignal(pid, signal)
+        } catch {
+          // already gone
         }
       }
       const exitedWithin = (ms: number) =>
@@ -145,8 +162,9 @@ export function spawnDetachedService(command: ServiceCommand, paths: ServicePath
         pid,
         exited,
         kill: (signal = 'SIGTERM') => {
+          if (reaped) return
           try {
-            process.kill(pid, signal)
+            sendSignal(pid, signal)
           } catch {
             // already gone
           }

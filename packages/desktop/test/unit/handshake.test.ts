@@ -28,7 +28,7 @@ interface World {
 interface Options {
   /** Listeners the OS reports; `'child'` means "the process we spawned, owned by this user". */
   listeners?: Listener[] | null | 'child'
-  expected?: number | null
+  expected?: number | null | 'unverified'
   stubborn?: boolean
   overrides?: Partial<HandshakeDeps>
 }
@@ -175,6 +175,12 @@ describe('ensureService: who owns the port (an answer shaped like Guanxi is not 
   it('a service the shell started must be the manifest pid: a same-user squatter beside it is refused', async () => {
     const w = world([READY], { listeners: [{ pid: 7777, uid: ME }], expected: 5150 })
     assert.deepEqual(await ensureService(w.deps), { ok: false, code: 'port_busy', port: 4441 })
+  })
+
+  it('a failed ps (manifest kept, "unverified") means no attach: the owner of the port cannot be tied to our service', async () => {
+    const w = world([READY], { listeners: [{ pid: 5150, uid: ME }], expected: 'unverified' })
+    assert.deepEqual(await ensureService(w.deps), { ok: false, code: 'port_unverified', port: 4441 })
+    assert.deepEqual(w.forgotten, [], 'the manifest is kept')
   })
 
   it('a service the shell started and that is still the manifest pid is attached', async () => {

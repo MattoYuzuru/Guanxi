@@ -41,8 +41,11 @@ export interface HandshakeDeps extends OwnerDeps {
   config: DesktopConfig
   logPath: string
   probe(): Promise<ProbeResult>
-  /** Pid of the service the shell started earlier on this port while it is still that service; stale manifests are removed. */
-  expectedPid(): Promise<number | null>
+  /**
+   * Pid of the service the shell started earlier on this port while it is still that service; stale manifests are
+   * removed. `'unverified'`: `ps` failed, so the manifest was kept and nothing can be attached to safely.
+   */
+  expectedPid(): Promise<number | null | 'unverified'>
   /** Removes the manifest: called whenever a process this handshake started is not (or no longer) the service. */
   forgetManifest(): void
   /** Throws ServiceMissingError when the entry does not exist. */
@@ -62,7 +65,8 @@ function failed(failure: HandshakeFailure): HandshakeResult {
 }
 
 /** The owner check, before any attach: a Guanxi-shaped answer from the wrong owner is a failure screen. */
-export async function verifyOwner(deps: OwnerDeps, expectedPid: number | null): Promise<OwnerVerdict> {
+export async function verifyOwner(deps: OwnerDeps, expectedPid: number | null | 'unverified'): Promise<OwnerVerdict> {
+  if (expectedPid === 'unverified') return { ok: false, code: 'port_unverified' }
   return judgeOwner(await deps.listeners(), deps.selfUid, expectedPid)
 }
 
@@ -76,7 +80,7 @@ export async function ensureService(deps: HandshakeDeps): Promise<HandshakeResul
   if (first.kind === 'ready') {
     const verdict = await verifyOwner(deps, expected)
     if (!verdict.ok) return failed({ code: verdict.code, port: config.port })
-    return { ok: true, origin: config.origin, attached: true, version: first.version, pid: expected }
+    return { ok: true, origin: config.origin, attached: true, version: first.version, pid: expected as number | null }
   }
   if (first.kind === 'ui_missing') return failed({ code: 'ui_missing', port: config.port })
   if (first.kind === 'foreign') return failed({ code: 'port_busy', port: config.port })

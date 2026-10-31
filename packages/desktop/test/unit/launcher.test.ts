@@ -85,6 +85,30 @@ describe('terminate (SIGTERM, then SIGKILL, on the service process group)', () =
     assert.equal(isProcessAlive(child.pid), false)
   })
 
+  it('never signals a reaped child’s pid (the OS may have given it to someone else)', async () => {
+    const calls: Array<[number, string]> = []
+    const child = await spawnDetachedService({ ...sleeper(), args: ['-e', 'process.exit(0)'] }, servicePaths(join(dir, 'data')), { kill: (pid, signal) => void calls.push([pid, signal]) })
+    await child.exited
+    await new Promise((r) => setTimeout(r, 20))
+    assert.equal(await child.terminate(200, 200), true, 'an exited child counts as stopped')
+    child.kill()
+    assert.deepEqual(calls, [])
+  })
+
+  it('falls back from the group to the pid only while the child is still ours', async () => {
+    const calls: Array<[number, string]> = []
+    const child = await spawnDetachedService(sleeper(), servicePaths(join(dir, 'data')), {
+      kill: (pid, signal) => {
+        calls.push([pid, signal])
+        if (pid < 0) throw Object.assign(new Error('no such group'), { code: 'ESRCH' })
+        process.kill(pid, signal)
+      },
+    })
+    children.push(child)
+    assert.equal(await child.terminate(2000, 1000), true)
+    assert.deepEqual(calls.map(([pid]) => (pid < 0 ? 'group' : 'pid')), ['group', 'pid'])
+  })
+
   it('reaches what the child started (its process group), not only the child', async () => {
     const paths = servicePaths(join(dir, 'data'))
     const pidFile = join(dir, 'grandchild.pid')
@@ -125,7 +149,8 @@ describe('stopService (explicit user action only)', () => {
     probe: async () => ({ kind: 'ready', version: '1' }),
     kill: () => undefined,
     alive: () => true,
-    commandOf: async () => '/app/node /app/service/bin.js --port 4441',
+    processInfo: async () => ({ state: 'found', command: '/app/node /app/service/bin.js --port 4441', startedAt: new Date('2026-11-01T01:19:23.000Z') }),
+    listeners: async () => [{ pid: 4242, uid: 501 }],
     sleep: async () => undefined,
     now: (() => { let t = 0; return () => (t += 100) })(),
     timeoutMs: 1000,
@@ -142,7 +167,7 @@ describe('stopService (explicit user action only)', () => {
   it('stops the manifest pid only while its port still answers as Guanxi', async () => {
     const paths = servicePaths(join(dir, 'data'))
     mkdirSync(paths.directory, { recursive: true })
-    writeManifest(paths, { pid: 4242, port: 4441, startedAt: 'x', entry: '/app/service/bin.js' })
+    writeManifest(paths, { pid: 4242, port: 4441, startedAt: '2026-11-01T01:19:22.000Z', entry: '/app/service/bin.js' })
     const killed: Array<[number, string]> = []
     let alive = true
     const result = await stopService(deps(paths, { kill: (pid, signal) => { killed.push([pid, signal]); alive = false }, alive: () => alive }))
@@ -155,7 +180,7 @@ describe('stopService (explicit user action only)', () => {
     const paths = servicePaths(join(dir, 'data'))
     mkdirSync(paths.directory, { recursive: true })
     for (const scenario of [{ alive: () => false }, { probe: async () => ({ kind: 'closed' as const }) }, { probe: async () => ({ kind: 'foreign' as const }) }]) {
-      writeManifest(paths, { pid: 4242, port: 4441, startedAt: 'x', entry: '/app/service/bin.js' })
+      writeManifest(paths, { pid: 4242, port: 4441, startedAt: '2026-11-01T01:19:22.000Z', entry: '/app/service/bin.js' })
       const killed: number[] = []
       const result = await stopService(deps(paths, { ...scenario, kill: (pid) => void killed.push(pid) }))
       assert.equal(result.ok, false)
@@ -163,23 +188,57 @@ describe('stopService (explicit user action only)', () => {
     }
   })
 
-  it('never signals a pid whose command line is not the manifest entry (pid reuse); the stale manifest is removed', async () => {
+  const manifest = { pid: 4242, port: 4441, startedAt: '2026-11-01T01:19:22.000Z', entry: '/app/service/bin.js' }
+  const found = (command: string, startedAt = '2026-11-01T01:19:23.000Z') => async () => ({ state: 'found' as const, command, startedAt: new Date(startedAt) })
+
+  it('never signals a pid that is not the described service (pid reuse); the stale manifest is removed', async () => {
     const paths = servicePaths(join(dir, 'data'))
     mkdirSync(paths.directory, { recursive: true })
-    for (const commandOf of [async () => '/usr/bin/vim notes.txt', async () => null]) {
-      writeManifest(paths, { pid: 4242, port: 4441, startedAt: 'x', entry: '/app/service/bin.js' })
+    const reused = [
+      found('/usr/bin/vim notes.txt'),
+      found('/other/node /app/service/bin.js.bak --port 4441'), // a longer path is not the entry
+      found('/app/node /app/service/bin.js --port 5555'), // same program, another port
+      found('/app/node /app/service/bin.js --port 4441', '2026-11-01T05:00:00.000Z'), // same program, started hours later
+      async () => ({ state: 'gone' as const }),
+    ]
+    for (const processInfo of reused) {
+      writeManifest(paths, manifest)
       const killed: number[] = []
-      const result = await stopService(deps(paths, { commandOf, kill: (pid) => void killed.push(pid) }))
+      const result = await stopService(deps(paths, { processInfo, kill: (pid) => void killed.push(pid) }))
       assert.deepEqual(result, { ok: false, reason: 'not_running' })
       assert.deepEqual(killed, [])
       assert.equal(readManifest(paths), null)
     }
   })
 
+  it('a failed or timed-out ps is "unverified": nothing is signalled and the manifest is KEPT', async () => {
+    const paths = servicePaths(join(dir, 'data'))
+    mkdirSync(paths.directory, { recursive: true })
+    writeManifest(paths, manifest)
+    const killed: number[] = []
+    const result = await stopService(deps(paths, { processInfo: async () => ({ state: 'unknown' }), kill: (pid) => void killed.push(pid) }))
+    assert.deepEqual(result, { ok: false, reason: 'unverified' })
+    assert.deepEqual(killed, [])
+    assert.deepEqual(readManifest(paths), manifest)
+  })
+
+  it('the port’s listener must be the manifest pid: another listener, no listener or a failed lsof signals nothing and keeps the manifest', async () => {
+    const paths = servicePaths(join(dir, 'data'))
+    mkdirSync(paths.directory, { recursive: true })
+    for (const listeners of [async () => [{ pid: 9999, uid: 501 }], async () => [{ pid: 4242, uid: 501 }, { pid: 9999, uid: 501 }], async () => [], async () => null]) {
+      writeManifest(paths, manifest)
+      const killed: number[] = []
+      const result = await stopService(deps(paths, { listeners, kill: (pid) => void killed.push(pid) }))
+      assert.deepEqual(result, { ok: false, reason: 'unverified' })
+      assert.deepEqual(killed, [])
+      assert.deepEqual(readManifest(paths), manifest)
+    }
+  })
+
   it('an EPERM from the system is a reported result, not an exception', async () => {
     const paths = servicePaths(join(dir, 'data'))
     mkdirSync(paths.directory, { recursive: true })
-    writeManifest(paths, { pid: 4242, port: 4441, startedAt: 'x', entry: '/app/service/bin.js' })
+    writeManifest(paths, { pid: 4242, port: 4441, startedAt: '2026-11-01T01:19:22.000Z', entry: '/app/service/bin.js' })
     const eperm = Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
     assert.deepEqual(await stopService(deps(paths, { kill: () => { throw eperm } })), { ok: false, reason: 'not_permitted', pid: 4242 })
     assert.notEqual(readManifest(paths), null)
@@ -191,7 +250,7 @@ describe('stopService (explicit user action only)', () => {
   it('reports a service that does not stop in time instead of claiming success', async () => {
     const paths = servicePaths(join(dir, 'data'))
     mkdirSync(paths.directory, { recursive: true })
-    writeManifest(paths, { pid: 4242, port: 4441, startedAt: 'x', entry: '/app/service/bin.js' })
+    writeManifest(paths, { pid: 4242, port: 4441, startedAt: '2026-11-01T01:19:22.000Z', entry: '/app/service/bin.js' })
     assert.deepEqual(await stopService(deps(paths)), { ok: false, reason: 'not_stopped', pid: 4242 })
     assert.notEqual(readManifest(paths), null)
   })

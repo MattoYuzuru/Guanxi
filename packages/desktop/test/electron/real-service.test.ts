@@ -7,8 +7,8 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { alive, closeAllShells, freePort, killQuietly, launchShell, makeSandbox, readServiceManifest, repoRoot, waitFor } from './harness.ts'
 import type { Sandbox } from './harness.ts'
 
-// The same exit gate with the real node: the CLI entry of this checkout (packages/cli/src/bin.ts), run by
-// Electron's own Node, serving the built web UI. No model is involved, so what is proved is process
+// The same exit gate with the real node: the CLI entry of this checkout (packages/cli/src/bin.ts), run by the
+// Node.js that runs these tests (never the Electron binary), serving the built web UI. No model is involved, so what is proved is process
 // lifetime and the health document of the real service, not a model run.
 describe('the real node service under the shell', () => {
   let sandbox: Sandbox

@@ -130,6 +130,11 @@ describe('contentSecurityPolicy', () => {
     assert.doesNotMatch(policy, /https?:\/\/|\*/, 'no remote source and no wildcard')
   })
 
+  it('script-src is exactly self plus inline, and no directive allows eval or wasm eval', () => {
+    assert.equal(directive('script-src'), "script-src 'self' 'unsafe-inline'")
+    assert.doesNotMatch(policy, /unsafe-eval|wasm-unsafe-eval/)
+  })
+
   it('keeps what the UI needs: workers and previews from blob:, inline theme bootstrap, data: fonts and images', () => {
     assert.match(directive('worker-src') ?? '', /blob:/)
     assert.match(directive('script-src') ?? '', /'unsafe-inline'/)

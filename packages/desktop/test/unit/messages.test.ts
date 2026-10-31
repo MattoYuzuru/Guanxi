@@ -87,8 +87,9 @@ describe('status screens', () => {
     assert.match(text(states[9]!), /exit code 3.*\/d\/service\.log/s)
     assert.match(text(states[10]!), /SIGKILL/)
     assert.match(text(states[13]!), /another user/)
-    assert.match(text(states[14]!), /lsof/)
+    assert.match(text(states[14]!), /failed or timed out/)
     assert.match(text(states[15]!), /could not be stopped \(process 4242\)/)
+    assert.match(text(states[12]!), /Reconnect \(Cmd-R\)/)
     // The advice for a Dock-launched app: close the other program, reopen; the variable is for a terminal start.
     assert.match(text(states[6]!), /Close that program and open Guanxi again.*from a terminal with GUANXI_API_PORT/s)
   })

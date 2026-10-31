@@ -5,6 +5,8 @@
 // fail loudly when asked for without the material they need; a plain `npm run package:mac` produces an
 // UNSIGNED local DMG. Linux (U6) adds its section next to `mac`; Windows is not built (D-221).
 import { PRODUCT_ENV_PREFIX, PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
+import { resolve } from 'node:path'
+import { MAC_ARCH } from './packaging/targets.mjs'
 
 /** A reverse-DNS bundle id the owner has not chosen yet. A signed build refuses it (see below). */
 export const PLACEHOLDER_APP_ID = 'invalid.placeholder.guanxi.desktop'
@@ -53,6 +55,11 @@ export function createConfig(env = process.env) {
     // (`.stage`) and the node_modules of the service are a sub-directory of it.
     extraResources: [{ from: '.stage', to: '.', filter: ['service/**/*'] }],
     npmRebuild: false,
+    // afterPack: the service arrived intact and its bundled Node runs at the pinned version. afterSign (signed builds
+    // only): every nested binary carries the app's Team ID and exactly its entitlements. The first signed build is
+    // the first time that check meets real signatures.
+    afterPack: resolve(import.meta.dirname, 'scripts/after-pack.mjs'),
+    afterSign: resolve(import.meta.dirname, 'scripts/after-sign.mjs'),
     // Auto-update is a design note in this slice (src/updater.ts): no publish target, no update feed.
     publish: null,
     // Every fuse is closed. RunAsNode is off because the service runs on its own pinned Node.js
@@ -73,8 +80,8 @@ export function createConfig(env = process.env) {
     mac: {
       category: 'public.app-category.developer-tools',
       target: [
-        { target: 'dmg', arch: ['arm64'] },
-        { target: 'zip', arch: ['arm64'] },
+        { target: 'dmg', arch: [MAC_ARCH] },
+        { target: 'zip', arch: [MAC_ARCH] },
       ],
       minimumSystemVersion: '13.0',
       hardenedRuntime: true,

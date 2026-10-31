@@ -118,14 +118,15 @@ describe('service lifetime (exit gate: closing the window during a run does not 
     // Direct check of the policy: quitting twice above never signalled the process; an explicit stop does.
     const { stopService } = await import('../../src/service/stop.ts')
     const { servicePaths, isProcessAlive } = await import('../../src/service/launcher.ts')
-    const { commandOf } = await import('../../src/service/owner.ts')
+    const { lookupListeners, processInfo } = await import('../../src/service/owner.ts')
     const { probeService } = await import('../../src/service/probe.ts')
     const result = await stopService({
       paths: servicePaths(sandbox.dataDir),
       probe: (p) => probeService(`http://127.0.0.1:${p}`, { timeoutMs: 2000 }),
       kill: (pid, signal) => process.kill(pid, signal),
       alive: isProcessAlive,
-      commandOf,
+      processInfo,
+      listeners: lookupListeners,
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       now: () => Date.now(),
       timeoutMs: 5000,

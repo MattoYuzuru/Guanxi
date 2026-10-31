@@ -10,11 +10,12 @@ import { translate } from './messages.ts'
 import type { MessageKey, ShellLocale } from './messages.ts'
 import { pickLocale } from './messages.ts'
 import { platformFor } from './platform/index.ts'
+import { createBackoff } from './recovery.ts'
 import { envName } from './env.ts'
 import { ensureService, verifyOwner } from './service/handshake.ts'
 import { isProcessAlive, removeManifest, servicePaths, spawnDetachedService, writeManifest } from './service/launcher.ts'
 import { locateService } from './service/locate.ts'
-import { commandOf, liveManifestPid, lookupListeners } from './service/owner.ts'
+import { liveManifestPid, lookupListeners, processInfo } from './service/owner.ts'
 import { probeService } from './service/probe.ts'
 import { stopService } from './service/stop.ts'
 import { describeState, renderStatusPage, statusPageUrl } from './status-page.ts'
@@ -59,14 +60,17 @@ const isExecutable = (path: string) => {
   }
 }
 const ownerDeps = { listeners: () => lookupListeners(config.port), selfUid }
-const expectedPid = () => liveManifestPid(config.port, { paths, alive: isProcessAlive, commandOf })
+const expectedPid = () => liveManifestPid(config.port, { paths, alive: isProcessAlive, processInfo })
 
 let window: BrowserWindow | null = null
 let shown: ShellState['kind'] | 'service' = 'checking'
 /** A function, not a comparison: `shown` changes across awaits and TypeScript cannot see that. */
 const showingService = () => shown === 'service'
 let handshakeRunning = false
-let recoveryTimer: ReturnType<typeof setInterval> | null = null
+let recoveryTimer: ReturnType<typeof setTimeout> | null = null
+let recoveryDelay = RECOVERY_INTERVAL_MS
+let recoveryBusy = false
+const crashBackoff = createBackoff({ baseMs: RECOVERY_INTERVAL_MS, maxMs: 60_000, resetAfterMs: 5 * 60_000, now: Date.now })
 
 function showState(state: ShellState): void {
   if (window === null || window.isDestroyed()) return
@@ -82,24 +86,46 @@ function showService(): void {
 }
 
 function stopRecovery(): void {
-  if (recoveryTimer !== null) clearInterval(recoveryTimer)
+  if (recoveryTimer !== null) clearTimeout(recoveryTimer)
   recoveryTimer = null
 }
 
-/** Attach-only recovery: a service that appears later (started by the CLI, or after the user freed the port) is picked up. */
-function startRecovery(): void {
+/**
+ * Attach-only recovery: a service that appears later (started by the CLI, or after the user freed the port) is
+ * picked up. One attempt at a time (a slow probe never overlaps the next tick), and the delay grows when the
+ * renderer keeps crashing (see `crashBackoff`).
+ */
+function startRecovery(delayMs: number = RECOVERY_INTERVAL_MS): void {
   stopRecovery()
-  recoveryTimer = setInterval(() => {
-    if (handshakeRunning || showingService()) return
-    void (async () => {
-      const result = await probeService(config.origin, { timeoutMs: config.probeTimeoutMs })
-      if (result.kind !== 'ready' || handshakeRunning || showingService()) return
-      // Same rule as the handshake: a Guanxi-shaped answer is attached to only when its owner is right.
-      if (!(await verifyOwner(ownerDeps, await expectedPid())).ok) return
-      stopRecovery()
+  recoveryDelay = delayMs
+  scheduleRecoveryTick()
+}
+
+function scheduleRecoveryTick(): void {
+  if (recoveryTimer !== null) return
+  recoveryTimer = setTimeout(() => {
+    recoveryTimer = null
+    void recoveryTick()
+  }, recoveryDelay)
+}
+
+async function recoveryTick(): Promise<void> {
+  if (showingService()) return
+  if (handshakeRunning || recoveryBusy) return scheduleRecoveryTick()
+  recoveryBusy = true
+  try {
+    const result = await probeService(config.origin, { timeoutMs: config.probeTimeoutMs })
+    // Same rule as the handshake: a Guanxi-shaped answer is attached to only when its owner is right.
+    if (result.kind === 'ready' && !handshakeRunning && !showingService() && (await verifyOwner(ownerDeps, await expectedPid())).ok) {
       showService()
-    })().catch(() => undefined)
-  }, RECOVERY_INTERVAL_MS)
+      return
+    }
+  } catch {
+    // a failed probe is just "not yet"
+  } finally {
+    recoveryBusy = false
+  }
+  if (!showingService()) scheduleRecoveryTick()
 }
 
 async function connect(): Promise<void> {
@@ -167,7 +193,8 @@ async function stopFromMenu(): Promise<void> {
     probe: (port) => probeService(`http://${config.host}:${port}`, { timeoutMs: config.probeTimeoutMs }),
     kill: (pid, signal) => process.kill(pid, signal),
     alive: isProcessAlive,
-    commandOf,
+    processInfo,
+    listeners: lookupListeners,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: () => Date.now(),
     timeoutMs: 10_000,
@@ -178,7 +205,7 @@ async function stopFromMenu(): Promise<void> {
       ? label('stop.not_stopped', { pid: result.pid })
       : result.reason === 'not_permitted'
         ? label('stop.not_permitted', { pid: result.pid })
-        : label(result.reason === 'not_managed' ? 'stop.not_managed' : 'stop.not_running')
+        : label(result.reason === 'not_managed' ? 'stop.not_managed' : result.reason === 'unverified' ? 'stop.unverified' : 'stop.not_running')
   if (result.ok) {
     showState({ kind: 'stopped' })
     startRecovery()
@@ -199,18 +226,18 @@ function openWindow(): void {
   window.webContents.on('did-fail-load', (_event, errorCode, _description, validatedURL, isMainFrame) => {
     // -3 aborted (a newer navigation), -20 blocked by our own filter: neither means the interface is lost.
     if (!isMainFrame || errorCode === -3 || errorCode === -20 || validatedURL.startsWith('data:')) return
-    interfaceLost()
+    interfaceLost(crashBackoff.base())
   })
   window.webContents.on('render-process-gone', (_event, details) => {
-    if (details.reason !== 'clean-exit') interfaceLost()
+    if (details.reason !== 'clean-exit') interfaceLost(crashBackoff.failure())
   })
   void connect()
 }
 
-function interfaceLost(): void {
+function interfaceLost(retryAfterMs: number): void {
   if (handshakeRunning) return
   showState({ kind: 'load_failed' })
-  startRecovery()
+  startRecovery(retryAfterMs)
 }
 
 if (!app.requestSingleInstanceLock()) {
