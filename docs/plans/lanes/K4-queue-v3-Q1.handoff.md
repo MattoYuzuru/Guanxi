@@ -1,8 +1,9 @@
 # K4 queue v3 Q1 handoff
 
 **Status:** Q1 implemented by its author and its independent review findings fixed (see
-"Review findings and fixes"); scoped checks pass. The review found no Critical or High issue. No
-re-review of the fixes and no hosted CI yet. Q2 is not started. Date: 2026-11-01.
+"Review findings and fixes" and "Review round 2"); scoped checks pass. The review found no Critical or High issue and
+the focused re-review of the first fixes found none either; round 2 itself has not been re-reviewed
+and no hosted CI has run. Q2 is not started. Date: 2026-11-01.
 
 - Worktree: `/Users/yuzuru/Projects/Guanxi/.claude/worktrees/agent-a7420ea54d5e47359`
 - Branch: `lane/k4-queue-q1`, from `lead/wave8` `2b8cf843`. Ports 5242/4442, data `.lane-data`.
@@ -72,7 +73,7 @@ with the lane ports and data dir. Results after the review fixes (HEAD):
 
 | Command (suites included) | Result |
 | --- | --- |
-| Server: `queue-v3-reader` (20 new), `queue-v3-review` (17 new), `native-agent/{agent,input-artifacts,crash,review,side-chat,lifecycle,tool-errors,port-wiring}` (92 envelope), Q0 `session-log-queue-v3-{contract,projection}` (14 envelope) | 143 tests, 143 pass, 0 skipped |
+| Server: `queue-v3-reader` (20 new), `queue-v3-review` (17 new), `queue-v3-round2` (6 new), `native-agent/{agent,input-artifacts,crash,review,side-chat,lifecycle,tool-errors,port-wiring}` (92 envelope), Q0 `session-log-queue-v3-{contract,projection}` (14 envelope) | 149 tests, 149 pass, 0 skipped (after round 2); `cleanup`, `migration`, `outputs` (4 envelope, delete path) also pass |
 | `packages/cli/test/agent-exec.test.ts` (3 new, 4 envelope) | 7 pass |
 | `vitest run test/component/native-agent.test.tsx test/component/side-chat.test.tsx` (native: 7 new, 29 envelope; side-chat: 29 envelope) | 65 pass |
 | `agent-dev ... --resource heavy` `test:browser`: `native-agent`, `native-session-timeline`, `side-chat`, `phone-shell` specs (20 envelope) | 20 passed, receipt `check-pgjj1_li` |
@@ -92,7 +93,7 @@ non-reusable.
 
 ## Counts
 
-- **New in Q1 (cumulative):** server 37 (20 `queue-v3-reader`, 17 `queue-v3-review`), CLI 3, web
+- **New in Q1 (cumulative):** server 43 (20 `queue-v3-reader`, 17 `queue-v3-review`, 6 `queue-v3-round2`), CLI 3, web
   component 7 cases (5 original + 2 for the new failure messages), plus the shared helper module
   `queue-v3-support.ts`.
 - **Changed expectations, none weakened:** `agent.test.ts` "legacy progress ..." (Q0 interim guard
@@ -113,11 +114,11 @@ then the new and old queue tests rerun.
 | --- | --- | --- |
 | M1 stuck head | Named as an availability residual here and in the native README. `input_artifact_unavailable` (and `stored_data_invalid`) now have their own EN/RU web explanation instead of the generic session error | component test, EN and RU, asserts the specific text, "you can still stop", and that the generic text is absent |
 | M2 late expansion over 16 KiB | `NativeAgents.readLog` maps the log's `stored_data_invalid` to the typed content-free `NativeAgentError('stored_data_invalid')` for every native read (progress, progress2, result, wait, prompt, mutations, idle stop). Residual named per design section 6 | native test: no prompt marker, zero extra requests, one `error` `stored_data_invalid` on its own attempt, stored payload byte-preserved, `wait()` and HTTP 503 typed; raw-log mapping removed: fails |
-| M3 unpinned rechecks | Preparation reordered: image staging moves before preparation; the one `verify()` now runs synchronously on return from `prepare()`, so no await separates it from the prompt append; the redundant checks before the read and after replay are removed (no await precedes the first, and replay is followed directly by the synchronous check); the check after the read stays and guards the replay | 6 cases: stop, leave and a deposed fence during a held read and during a held replay (the seed prompt is an artifact so replay really reads): zero extra requests, zero prompt marker, item pending, zero head delta for the fence, replay read count 1 after a held read. Final `verify()` made a no-op: the leave-during-replay case fails. Check after the read removed: leave and fence during a held read fail. The image-await case is moot because that await no longer exists |
+| M3 unpinned rechecks | *Superseded in part by review round 2 below.* Preparation reordered: image staging moves before preparation; the single `verify()` runs synchronously on return from `prepare()`, so no await separates it from the prompt append; the check after the artifact read stays and guards the replay. The check after replay was removed as redundant for dispatch safety (the synchronous check follows it with no await). The check before the read was removed in this round and **restored in round 2** | 6 cases: stop, leave and a deposed fence during a held read and during a held replay (the seed prompt is an artifact so replay really reads): zero extra requests, zero prompt marker, item pending, zero head delta for the fence, replay read count 1 after a held read. Final `verify()` made a no-op: the leave-during-replay case fails. Check after the read removed: leave and fence during a held read fail |
 | M4 restart during preparation | none needed; promoted to a test | hold the read, `restart(..., true)`, release: zero head delta, zero extra requests, item pending, then one explicit turn consumes it exactly once |
 | M5 tool path, default 2, preview scrub | README corrected: the agent `queue` tool refusal is a tool error result with the typed code, not an HTTP 409 | tool case: error result, turn completes, one `agent.queue` event. Duplicate: same operation id is refused, never `duplicate` (order swapped: fails). Preview: the read projection already scrubs a v1 snapshot, so through the public API `const text = item.text` is an equivalent mutation. A pure `queueV2Of` test with a scrub that expands a secret straddling the cut pins the function (mutation fails) and a native case pins the public result |
 | L1 touch order | `sessions.touch` moved after the restriction check, inside the FIFO read block | refused add leaves `last_user_activity_at` alone, accepted add changes it (touch moved before the check: fails) |
-| L2 side-chat Send | the shared typed 409 `native_queue_producer_unavailable` (route-level); 503 `session_not_running` during preparation documented in the README | HTTP case and the changed `queue-v3-reader` case (pass-through removed: both fail) |
+| L2 side-chat Send | the shared typed 409 `native_queue_producer_unavailable` for a restricted queue (route-level). Send *during a queued turn's preparation* is 409 `session_busy` (the existing mapping of `session_not_running`), not 503; the 503 `session_not_running` applies to the direct queue routes and is documented in the README | HTTP case and the changed `queue-v3-reader` case (pass-through removed: both fail); the preparation case is pinned in round 2 |
 | L3 BOM | `TextDecoder(..., { ignoreBOM: true })` | request contains the BOM, the durable prompt checksum equals the sha-256 of the exact bytes (decoder reverted: fails) |
 | L4 strict query | contract schema accepts only the exact strings `1`/`2`; the route passes repeated keys as arrays | `02`, a leading-space 2, `2.0`, `0x2`, empty, repeated keys, `true` all 400; coerce restored: fails. Q0's own assertions still pass unchanged |
 | L5 removeQueued read | the read inside the FIFO is returned, not thrown | a turn survives a refused read and its terminal is `completed` (throw restored: fails) |
@@ -130,6 +131,22 @@ Behavior changes a reader should know: an unreadable stored log now surfaces as 
 `stored_data_invalid` (HTTP 503) where it used to be a raw log error (also 503); `progressVersion=02`
 and similar spellings that the Q1 round accepted are now 400; side-chat Send onto a restricted
 queue is 409 where it was 503.
+
+## Review round 2
+
+Focused re-review of the fix commits found no Critical or High issue and judged the dispatch
+path sound. Fixes are in the round-2 production commit and `queue-v3-round2.test.ts` (6 cases,
+new; the suites to rerun are `queue-v3-*` and `agent`).
+
+| Finding | Fix | Test and mutation result |
+| --- | --- | --- |
+| M1 image staging order unpinned | none needed in code (the order is already staging, then `prepare()`, then the synchronous check); pinned by tests | leave and a deposed fence while a queued turn blocks on its image attachment (a FIFO replaces the staged file): zero requests, no prompt marker, zero reads of the queued artifact, zero head delta for the fence. Image block moved between the check and `agent.prompt`: fails (the case times out instead of asserting, since the blocked writer waits for a reader; it still fails) |
+| M2 verify at the top, owner truth after a failure | a synchronous `verify()` is restored at the top of `prepare()`. `PrepareTurn` is now `{ prepare, verify }`; after a failed preparation `execute` re-runs the owner check, and a lost owner (stop, close, leave, a deposed fence) is **not** recorded as `input_artifact_unavailable`: it falls to the ordinary cancelled or failed terminal. README and the M3 row above corrected | a missing blob whose read is held while the session is left: failed terminal `agent_failed`, zero `error` events (classification by the abort flag only: fails). Top check removed: both image cases fail (the artifact read starts) |
+| L1 `closed` and identity clauses | stated as defense in depth in the code and README: `close()` aborts every turn first, and no reachable state replaces `active` or `active.attempt` while a turn owns them. No test can reach them without a second owner | none (named) |
+| L2 delete and the receipt lookup | session removal reads only the `agent.policy` event with a SQL type filter, so a stored queue that cannot be projected no longer blocks deletion; the side-chat Send receipt lookup uses `readLog`. The receipt lookup is unreachable with an unreadable log (the session check before it fails first), so it has no distinguishing test | deleting a late-expanded session succeeds and removes all rows (whole-log read restored: fails) |
+| L3 `Object.hasOwn` | both `in` checks replaced | not distinguishable through the public API (an own code such as `toString` cannot be produced); defensive |
+| L4 hand-off L2 row | corrected above; README side-chat section says Send during preparation is 409 `session_busy` | HTTP case: 409 `{code:'session_busy'}` |
+| L5 abort signal in replay | `replay()` takes the signal and passes it to both history reads | stop during a held replay settles within 1.5 s with the read still held (signal removed: fails) |
 
 ## Defaults used
 
