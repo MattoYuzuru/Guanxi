@@ -135,3 +135,5 @@ The independent security review changed the design before integration:
 - **Cursors (L5)** `<commit>:<offset>` keep a continuation on the first page's commit. **Bounds (L4)** for path length, search text and scan bytes
   come from the policy and are reported. **Exactly one root (L1)**. **Own codes (L3)** `project_view_timeout` and `project_view_output_limit`.
   **Wider name policy (M4)**. Audit-note volume (L6) is a listed residual.
+
+**Round 2 (same day):** `GIT_NO_LAZY_FETCH=1` for every git call; hidden paths leave no figure in any search output; cancellation and shutdown kill running git processes; the scan budget (64 MiB) is applied while listing; the name policy gained token, VPN and CLI credential names. See the hand-off, "Review round 2".

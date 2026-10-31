@@ -115,8 +115,8 @@ None for the author; the review above is the lead's.
 - Read cursors are byte positions in the scrubbed text; if a secret is registered or rotated between two pages of one file, the offsets of
   the later pages can move (the page is still scrubbed). Search `line` counts lines of the scrubbed text, so a redacted multi-line
   region shifts later line numbers relative to the raw file.
-- A search scrubs every allowed blob it scans (at most `maxScanBytes`, 256 MiB, and each blob at most `maxFileBytes`, 4 MiB) synchronously on
-  the event loop; a very large repository can hold the node busy for up to the git timeout per process. Nothing is cached between calls.
+- A search scrubs each scanned blob (at most `maxFileBytes`, 4 MiB) synchronously; the whole scan is bounded by `maxScanBytes` (64 MiB) and the
+  process is paused for the event loop about every 8 MiB. Nothing is cached between calls, so a repeated search repeats the work.
 - Audit notes are not coalesced (review L6): one small note per call; a lead that makes thousands of calls writes thousands of notes.
 - The name policy hides a directory called `secrets`/`secret` and `*.asc` documents (review M4 asked for both).
 - No UI and no web client use the audit notes yet; they sit in the lead run's session log like `delegation_intent`.
@@ -130,3 +130,55 @@ None for the author; the review above is the lead's.
 Re-review of the fix commits after `38af9b17` (search rewrite, cursors, denylist), then the original scope: `ef87b0fc..HEAD` (security focus: path and ref handling, git argv, scrub-before-page, audit-before-serve),
 then fold into the wave 7 candidate and `npm run ci:finish`. A live check with the real lead on `Guanxi-Test-Repo` shows whether
 the lead's plan quality improves with the view.
+
+## Review round 2
+
+Second independent review of the fix commits (coordinator, 2026-10-31): no Critical or High. Fixes are in `bcc7c166` (source),
+`2ed7fdd6` (tests) and the docs commit that follows this section.
+
+| Finding | Fix | Evidence |
+| --- | --- | --- |
+| M1 promisor remotes: a missing blob of a partial clone ran `core.sshCommand` (and would have fetched) | `GIT_NO_LAZY_FETCH=1` in every git call. With it git prints size `BAD` for a missing blob, which the listing parser now accepts as "size unknown": the tree shows the file without a size, `read` answers `project_view_unavailable`, a search skips it as not text. Header (lines 9-20) and README now list exactly what is overridden and say the repository's `.git/config` is still read by git. The relay's `gitEnv` is **not** changed (see residuals) | partial-clone fixture (`--filter=blob:none`, `remote.origin.url=ssh://…`, `core.sshCommand=touch MARK; false #`): no marker, fixed answers; a **control** in the same test shows the marker is created when lazy fetching is allowed. Mutation: lazy fetch allowed, `BAD` unparsable and `BAD` read as empty are each killed |
+| M2 size/kind/count oracle survived a mutation | the H1 coverage is now a table of hidden variants (above `maxFileBytes`, empty, binary, symlink, five more hidden files, a record over the path bound, all together) whose **whole normalised search output** must equal the output of the same repository without hidden files; the policy has a small `maxFileBytes` and `maxPathBytes` so every figure is exercised | mutations: hidden check moved after the size/kind counting (the reviewer's) and hidden empty file counted are both killed |
+| L1 unparsable record counted into `skippedNotText` | counted in no search figure. The tree's `withheld` (existence of a hidden name, nothing about content, size or kind) is **accepted and documented** in the README as the lead's decision; an unparsable record in a tree is counted there too | the long-path variant above; the `L1/L4` test's expectation changed from `skippedNotText: 1` to `0` (corrected behaviour); mutation: unparsable record counted is killed |
+| L2 hardening untested | fake `git` writes its pid and the test asserts the process is gone after timeout, abort and close; a fake `cat-file --batch` wrapper rewrites the real output: split at every byte (must read the same), size disagreeing with `ls-tree`, a missing object, trailing bytes, a truncated stream, no header newline, a corrupted frame terminator (all `project_view_unavailable`). The config-overrides test is kept (it asserts behaviour) and joined by the promisor test, where an override does matter | mutations: frame terminator check removed is killed; see residuals for the size-header check |
+| L3 cancellation | `ProjectView.run/tree/read/search` take an `AbortSignal` (`live.cancel.signal` from `service.ts`); abort kills the process and answers `project_view_cancelled`; `ProjectView.close()` (called by `LeadService.close`) aborts a lifetime signal that ends every running process and refuses later calls | unit: abort, already-aborted signal, close, call after close; service: cancelling the lead and shutting the service down while a project call runs (fake `git` that sleeps; the process is gone within the wait, not at the 15 s timeout); mutations: abort ignored, `close` no-op, service passes no signal are killed |
+| L4 `files[]` stored beyond the budget | the budget is applied while listing: once the blobs kept would exceed `maxScanBytes`, nothing more is stored and the rest is only counted in `unscanned` | exact figures (4 scanned, 6 unscanned of 10); mutation killed |
+| L5 default scan budget, synchronous scrubbing | default `maxScanBytes` 64 MiB; the stream sink may return a promise, and the scan pauses the process for a `setImmediate` about every 8 MiB of blobs. README wording fixed (scrubbing is synchronous per blob, at most `maxFileBytes`) | default asserted in test and in `bounds`; 10.5 MB search issues more `setImmediate` pauses than a tiny one; mutations `no yield` and `256 MiB default` killed |
+| L8 config and `start()` tests | `home.lead.projectView`: absent/true/false parse, `'true'`, `1`, `0`, `null`, `{}`, `[]` are refused by field. `start({ leads })` with `projectView` absent, `false`, `true`, `{}`, `{ policy }` (and an invalid policy refused at boot). The lead service now exposes `projectView: boolean` on its host service so the test can observe it | `test/ms1-live/config.test.ts`, `test/leads/boot.test.ts` |
+| L7 name policy | added `.token`, `*.token`, `.firebase*`, `*.ovpn` and the path rule `.config/gh/hosts.yml` | class test; two mutations killed |
+
+### Commands and results (round 2)
+
+```text
+npx tsc --noEmit -p packages/server                                  exit 0
+npx eslint <changed ts files>                                         exit 0, no output
+npx markdownlint-cli2 <4 changed md>; node scripts/check-doc-links.mjs   0 errors; checked 317 files, 827 links, 0 problems
+node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test \
+  leads/project-view leads/tool-server lifecycle limits boot children resilience store packet contract stale-holder relay-mirror
+                                                                     tests 144 / pass 144 / fail 0
+... --test ms1-live/lead ms1-live/lead-project-view ms1-live/config ms1-live/boot indexing/index indexing/service
+                                                                     tests 82 / pass 82 / fail 0
+... --test ms1/rehearsal                                             tests 25 / pass 25 / fail 0
+```
+
+**New / regression envelope (whole slice):** 41 new (37 in `project-view.test.ts`, 2 in `lead-project-view.test.ts`, 1 in `leads/boot.test.ts`,
+1 in `ms1-live/config.test.ts`) / 210 envelope (unchanged).
+
+**Mutation checks, round 2:** 17 mutations on the new code. 14 were killed at once; `junk after a frame accepted` survived and was killed
+after a test was added (the extra-bytes lie was also caught by the header check; a corrupted terminator in the middle of the stream
+kills it). Two stay alive: `frame size not checked` and `service close leaves the view`.
+They are redundant guards, not test gaps: a wrong size header is always caught a byte later by the strict frame terminator check,
+and `LeadService.close` aborts every live turn's signal, which already kills the process before `ProjectView.close()` runs. Both guards
+stay as defence in depth.
+
+A test harness note: a fixed 300 ms timeout against a freshly created shell script flaked when twelve test files ran in parallel (the
+script had not started yet); that case now uses 1.5 s.
+
+### Residuals added or changed
+
+- **Relay `gitEnv` has no `GIT_NO_LAZY_FETCH`.** The relay's owned-checkout clone and its workspace git calls would still lazy-fetch from a
+  partial-clone source or checkout. Setting it there changes what a relay does on such a project (the clone of a partial source could stop
+  working), so it was not done here; it belongs to a relay slice with its own test.
+- The tree's `withheld` reveals that a hidden name exists (decided acceptable). A visible path too long to parse is invisible to a search.
+- `ProjectView.close()` is not independently observable through the service (see above).

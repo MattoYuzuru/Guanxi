@@ -70,9 +70,14 @@ resolution the relay start uses (the project's single bound workspace). The plan
 
 - **What it reads.** Git objects of the project's source repository at `ref` (`HEAD` or a full commit id), never its working tree:
   untracked, ignored and uncommitted files, and symlinks on disk, are out of reach by construction. Only object plumbing runs
-  (`rev-parse`, `ls-tree -z`, `cat-file`), never `grep`, `diff` or `status`, with the relay's `gitEnv`/`gitFlags`, explicit
-  overrides of submodule recursion and the attributes file, an absolute binary, argv, and a hard timeout. No hook, filter, textconv
-  or fsmonitor command from the repository's own configuration runs (a test sets them and proves it). Every result names its
+  (`rev-parse`, `ls-tree -z`, `cat-file`), never `grep`, `diff`, `status` or `show`, with an absolute binary, argv, a hard timeout
+  and a kill on lead cancellation or node shutdown (`project_view_cancelled`). What is overridden, exactly: the relay's `gitEnv`/`gitFlags`
+  (no system or global config, hooks path, fsmonitor and external protocols off, replace objects ignored), `GIT_NO_LAZY_FETCH=1`,
+  `GIT_LITERAL_PATHSPECS=1`, and `-c` settings for submodule recursion, the attributes file and the untracked cache. The repository's own
+  `.git/config` is still read by git; those commands do not consult filters, textconv, hooks or attributes, and a test sets such commands
+  and proves none runs. **Partial clones:** a blob the repository does not hold is an error (`project_view_unavailable`), never a fetch and
+  never the repository-configured transport command (`core.sshCommand` and the like); the tree shows such a file without a size. The relay's
+  own `gitEnv` does not set `GIT_NO_LAZY_FETCH`; that is a residual of the relay checkout, not of this view. Every result names its
   `commit`, which is a valid `plan.base`: the relay clones the same commit for the executor. A project root that is not the top
   level of a repository, and anything but exactly one root, is `project_view_unavailable`. The project always comes from the stored
   lead session, never from tool input.
@@ -80,28 +85,34 @@ resolution the relay start uses (the project's single bound workspace). The plan
   `HEAD` moves, so a listing or search neither skips nor repeats entries. It cannot be combined with `ref` or `offset`.
 - **Policy, reported.** `ProjectViewPolicy` defaults: 200 tree entries per page (at most 2 000), 16 KiB per read page (at most 64 KiB),
   files up to 4 MiB, 100 search matches per page (at most 500), 400 characters per search line, 256 KiB per result, 15 s per git
-  process, 4 096 bytes per path, 1 000 characters of search text, 256 MiB of blobs read by one search. Every result carries the
+  process, 4 096 bytes per path, 1 000 characters of search text, 64 MiB of blobs read by one search. Every result carries the
   `bounds` in force; a request above a maximum is clamped and the bound shows it; a cut result has `more: true` and a cursor; a bigger
   file answers `file_too_large: size N bytes, limit M`; a clipped search line is cut around the match and carries
   `…[line clipped, N more characters]`. One project call runs at a time per turn.
 - **Search.** It reads each allowed blob of the commit through one `cat-file --batch`, scrubs the whole blob and matches lines of the
   scrubbed text, so a registered secret (also a multi-line one) can be neither found nor leaked line by line, and `line` counts lines of
-  the scrubbed text. Blobs above `maxFileBytes` are never requested (a 300 MB line is never buffered); a pending record is capped, and `scan`
-  reports `files`, `skippedTooLarge`, `skippedNotText`, `unscanned` and `complete`.
+  the scrubbed text. Blobs above `maxFileBytes` are never requested (a 300 MB line is never buffered); a pending record is capped; the scan budget
+  (`maxScanBytes`, 64 MiB) is applied while listing, so blobs beyond it are only counted, not stored; and after about 8 MiB of blobs
+  the process is paused so the event loop gets a turn (scrubbing one blob, at most `maxFileBytes`, is synchronous). `scan` reports
+  `files`, `skippedTooLarge`, `skippedNotText` (visible files only: symlinks, submodules, empty, binary or unreadable), `unscanned` and
+  `complete`. A listing record too long to parse is counted in no search figure.
 - **Refusals** are fixed codes returned as the tool text with `isError`, like `guanxi_delegate`: `invalid_input: <field>: <issue>`,
   `path_invalid` (absolute, `..`, `.`, empty segment, backslash, control character, `~`, over the path bound), `path_denied`,
   `not_found`, `not_a_file`, `not_a_directory`, `symlink_denied`, `binary_file`, `file_too_large`, `invalid_offset`, `page_too_small`,
   `result_too_large`, `ref_invalid`, `ref_not_found`, `project_view_unavailable`, `project_view_timeout`, `project_view_output_limit`
-  (a git process printed past its bound), `lead_not_found` (a call that belongs to no live lead turn). Messages from the OS or git never
+  (a git process printed past its bound), `project_view_cancelled` (the lead was cancelled or the node is closing), `lead_not_found` (a call that belongs to no live lead turn). Messages from the OS or git never
   reach the lead.
 - **Secrets.** A name rule decides `path_denied` for any path segment (case-insensitive) in read, tree and search alike: the index
   scanner's rule (dotenv files, `.git`, `node_modules`, shared from `indexing/snapshot.ts`) plus credential names: `.ssh`, `.aws`,
   `.gnupg`, `.kube`, `kubeconfig`, `.docker`, `.dockercfg`, `.azure`, `.gcloud`, `.npmrc`, `.yarnrc.yml`, `.pypirc`, `.netrc`, `.pgpass`,
   `.htpasswd`, `.git-credentials`, `.s3cfg`, `.boto`, `.terraformrc`, `.vault*`, `id_rsa*`/`id_dsa*`/`id_ecdsa*`/`id_ed25519*`, `credentials*`,
   `client_secret*.json`, `*service-account*.json`, `secret(s).<data format>`, `*.secret(s)`, a `secret(s)` directory, `*.tfstate*`, `*.tfvars*`
+  `.firebase*`, `.token`/`*.token`, `*.ovpn`, `.config/gh/hosts.yml`
   and the key extensions `pem key p8 p12 pfx ppk jks jceks keystore kdbx gpg asc pgp`. Hidden paths are omitted from tree
-  listings and counted in the tree's `withheld`; they are **never opened by a search**, which reports nothing about them (only the
-  constant `note`), because any count or match derived from their content would be an oracle on a committed secret. A symlink is listed
+  listings and counted in the tree's `withheld` (a decision, 2026-10-31: that count says a hidden name exists, nothing about its content,
+  size or kind, and an entry whose listing record is too long to parse is counted there too); they are **never opened by a search**, which reports nothing about them (only the
+  constant `note`; its size, kind and count figures never include a hidden path), because any count or match derived from their content would be
+  an oracle on a committed secret. A symlink is listed
   as a `symlink` without its target and never followed. The name rule is not a classifier: a secret inside an ordinary source file is
   redacted only when its value is registered with the egress scrubber, which scrubs the whole file before it is paged or searched, and every
   path, entry and search line.
