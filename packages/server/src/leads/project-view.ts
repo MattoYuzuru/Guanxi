@@ -66,7 +66,6 @@ const MAX_PATH = 4_096
 /** A project-relative path: `''` is the root. Anything that is not a plain relative path is `path_invalid`; a denied name is `path_denied`. */
 export function viewPath(raw: string | undefined, allowRoot: boolean): string {
   if (raw === undefined) { if (!allowRoot) fail('path_invalid'); return '' }
-  // eslint-disable-next-line no-control-regex
   if (raw.length > MAX_PATH || /[\u0000-\u001f\u007f\\]/.test(raw) || raw.startsWith('/') || raw.startsWith('~')) return fail('path_invalid')
   const trimmed = raw.endsWith('/') ? raw.slice(0, -1) : raw
   if (trimmed === '' || trimmed === '.') { if (!allowRoot) fail('path_invalid'); return '' }
@@ -317,7 +316,6 @@ export class ProjectView {
   async search(rootPath: string, raw: unknown): Promise<ProjectViewResult> {
     const input = parse(searchInput, raw)
     // A newline would make `git grep -F` search for several patterns at once.
-    // eslint-disable-next-line no-control-regex
     if (/[\u0000\r\n]/.test(input.text)) fail('invalid_input', 'text: must be a single line')
     const path = viewPath(input.path, true)
     const { root, commit } = await this.open(rootPath, input.ref)
