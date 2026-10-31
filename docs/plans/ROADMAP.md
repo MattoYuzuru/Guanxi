@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** proposed structure (the owner asked for a dependency graph; stage contents follow
-their ADRs) · **Updated:** 2026-10-20 (owner answers D-141–D-182 linked per stage)
+their ADRs) · **Updated:** 2026-10-31 (B3 moved from MS1 to MS2, D-219)
 **Supersedes:** the legacy Phase 0–9 roadmap in
 [`docs/legacy/alamo/plans/ROADMAP.md`](../legacy/alamo/plans/ROADMAP.md) (Phases 0–3 are
 implemented in the legacy code and are ported, not repeated).
@@ -26,7 +26,7 @@ flowchart LR
   K3 --> F4
   K4 --> B1[B1 Bench base] --> B2[B2 Private bench + gate]
   B1 & R3 --> B3[B3 Relay benchmark]
-  K5 & R3 & F2 & B3 --> MS1{{MS1 Delegate to local}}
+  K5 & R3 & F2 --> MS1{{MS1 Delegate to local}}
 ```
 
 The full graph with every track is [`roadmap.mmd`](roadmap.mmd), the canonical render. An
@@ -45,8 +45,8 @@ UI built in a stage before U1 is interim (legacy components) and is migrated by 
 
 ## Critical path to the north star (MS1)
 
-`S0 → K1 → K2 → {R1, K4 (needs K3)} → R2 → R3 → B3 → MS1`, with `F1 → F2`, `K5` and `B1`
-joining before MS1.
+`S0 → K1 → K2 → {R1, K4 (needs K3)} → R2 → R3 → MS1`, with `F1 → F2` and `K5` joining before
+MS1. B1 → B3 now gates MS2 (D-219); MS1 closed on the D-214 fault-run evidence.
 
 DS1 starts right after S0, in parallel with K1. Parallel lanes after K1: **(a)** K2 → R1 → F1;
 **(b)** K3; **(c)** U1 once DS1 is done. After K4: **(d)** B1; **(e)** K5; **(f)** P1 (also needs
@@ -681,8 +681,8 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 | Milestone | Requires | Exit gate |
 | --- | --- | --- |
-| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2, B3 | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; instead of a ≥ 6-hour duration (superseded by D-214) the real run survives the injected edge cases — a dropped node link during a call, an executor restart, and (in a separate run) a home restart while the lead hibernates, which must end `interrupted` with one honest wake; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake; the B3 gate holds. Lead billing per D-142 (Q-202). |
-| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1, DS2 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold. |
+| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2 (B3 moved to MS2 by D-219) | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; instead of a ≥ 6-hour duration (superseded by D-214) the real run survives the injected edge cases — a dropped node link during a call, an executor restart, and (in a separate run) a home restart while the lead hibernates, which must end `interrupted` with one honest wake; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake. The B3 gate moved to MS2 (D-219). Lead billing per D-142 (Q-202). |
+| **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1, DS2, B3 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold, including the full B3 relay-benchmark cohort (D-219). |
 | **MS3 Fleet and media** | F4, F5, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
 | **MS5 Everywhere** | U5, U6, C3, P2 | Native phone apps, Linux and Windows desktops, the full computer-use ladder and untrusted plugins all pass their stage gates. |

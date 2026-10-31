@@ -30,6 +30,10 @@ export const leadDelegateInputSchema = z.object({
 export type LeadDelegateInput = z.infer<typeof leadDelegateInputSchema>
 
 export const LEAD_DELEGATE_TOOL = 'guanxi_delegate'
+/** The lead's read-only view of the delegated project's committed files, served by the node on the same per-turn tool server. */
+export const LEAD_PROJECT_TREE_TOOL = 'guanxi_project_tree'
+export const LEAD_PROJECT_READ_TOOL = 'guanxi_project_read'
+export const LEAD_PROJECT_SEARCH_TOOL = 'guanxi_project_search'
 export const LEAD_WAKE_FORMAT = 'guanxi.wake/v1'
 export const leadWakeKindSchema = z.enum(['resolution', 'escalation', 'quota'])
 export const leadWakeOutcomeSchema = z.enum(['completed', 'failed', 'canceled', 'deadline', 'pending'])

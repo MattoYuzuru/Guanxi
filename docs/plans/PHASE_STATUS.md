@@ -1,7 +1,40 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-24
-**Current stage:** wave 6 — MS1 fault runs with the real Claude Code lead (2026-10-24, D-214–D-218).
+**Status:** implemented tracker · **Updated:** 2026-10-31
+**Current stage:** wave 7 (branch `lead/wave7`) — MS1 closed on the D-214 evidence; the B3 gate moved to MS2 with a smoke
+cohort now (D-219); Sonnet-only workers (D-220). Wave 6 (`lead/ms1-close`) merged into `main` as `c2f9a5d4` (PR
+MattoYuzuru/Guanxi#2, hosted gate green: run 40111090144, PR head `7f2d9f8d`, tested merge `1be83b9e`). The 22 merged lane
+clones in `Guanxi-lanes` and the merged branches were removed on 2026-10-31.
+
+## Wave 7 (2026-10-31)
+
+Four lanes, each by a Sonnet 5.5 author with a separate Sonnet 5.5 review (`sde-agent:implementation-reviewer`) and fixes in
+separate commits:
+
+- **MS1 relay residuals** ([hand-off](lanes/MS1-relay-residuals.handoff.md)): a composed `cd <checkout>` that fails exits 125
+  with a per-call marker line and is an infrastructure failure (`cwd_unavailable`), not a red gate; the relay `shell` tool's
+  fixed-command branch returns a non-zero exit with scrubbed, bounded output instead of `tool_failed`.
+- **Lead project view** ([hand-off](lanes/LP-lead-project-view.handoff.md)): opt-in (`home.lead.projectView` /
+  `leads.projectView`, default off — lead default 2026-10-31) read-only `guanxi_project_tree|read|search` on the lead's
+  `mcp__guanxi` server over committed git objects only; hidden-name policy applied before any blob is read, whole-blob
+  scrubbing, no oracle about hidden files in search, `GIT_NO_LAZY_FETCH`, bounded and cancellable. Two review rounds.
+- **B3-b smoke runner** ([hand-off](lanes/B3-b-smoke.handoff.md), [runbook](../../packages/bench/RELAY_SMOKE.md)): five
+  `ledger-lite` tasks from `Guanxi-Test-Repo`, an owner-API runner with resume, stop-before-next and fingerprints, emitting
+  `guanxi.b3.measurement/v1` for the B3-a validator; descriptive only.
+- **B3-c naive arm** ([hand-off](lanes/B3-c-naive-arm.handoff.md)) and **B3 integration**
+  ([hand-off](lanes/B3-integration.handoff.md)): a default-off, bench-only `home.relayCompaction: "naive"` relay mode
+  (refused together with `home.lead`), recorded per attempt; arms run as restart-per-arm passes; the runner confirms each
+  trial's arm from the run's own notes and the home database, refusing mixed or unconfirmed runs; drift pinned by driving
+  the real relay executor.
+
+Evidence — **new:** relay residuals 8 tests; project view 41 tests (+ mutation sets of 25, 20 and 17); B3-c 22 tests with a
+default-path digest pin; bench 112 new tests (281 total) and 128 mutation cases plus 19 server-shape mutants.
+**Regression envelope (local, focused):** relay + native-agent 432; leads/ms1-live/indexing/rehearsal 210; relay + ms1-live +
+llama-server 532; bench 169. Not run: a real model, the Fedora node, the macOS container path. The real B3 smoke cohort
+(ledger pass, then naive pass) is the next step on the Fedora pair.
+
+## Wave 6 (2026-10-24, merged)
+
 Branch `lead/ms1-close` (integration candidate) adds, each independently reviewed by Opus 5.5 with fixes in separate
 commits: **MS1 lead/relay hardening** from eleven defects found on real runs (user API key family `sk-ant-usr`, the lead's own
 MCP tool pre-allowed, finished-lead restart, zero money cap, bounded transient call retries for link drops and restarts,
@@ -13,8 +46,7 @@ session view, layout and panels behind one icon menu, Developer/Visual split wit
 round-3 fixes). **Real evidence** ([MS1 fault runs](evidence/ms1-fault-runs-2026-10-24.md)): E1 link drop, E2 executor
 restart, E3 runtime restart survived on the Fedora executor; E4 home restart ends with one honest wake; zero lead tokens
 while asleep; exactly one wake in every run; run **A7 closed all ten `ledger-lite` items** with the lead asleep for 2 h 29 min at zero lead tokens and E1–E3 injected,
-reproduced 93/93 in a clean checkout. The MS1 exit of D-214 is met **except the B3 benchmark gate**, which awaits an owner
-decision (a full cohort needs days of GPU time). Earlier wave: [Fedora record](evidence/fedora-real-runtime-2026-10-23.md).
+reproduced 93/93 in a clean checkout. The MS1 exit of D-214 is met; the B3 gate moved to MS2 (D-219, 2026-10-31). Earlier wave: [Fedora record](evidence/fedora-real-runtime-2026-10-23.md).
 
 ## Wave 6 evidence (2026-10-24)
 
@@ -34,8 +66,8 @@ decision (a full cohort needs days of GPU time). Earlier wave: [Fedora record](e
 D-213 moves final full checks to parallel hosted CI and local iteration to affected modules.
 Implementation/research, **new / regression envelope** evidence, independent review and
 hosted run state are tracked in [CI migration evidence](../research/2026-10-24-ci.md).
-This operational slice does not close any product-stage exit. Agents were paused by the
-owner; restart from [the lead prompt](CLAUDE_LEAD_RESTART.md) and preserve existing checkouts.
+This operational slice does not close any product-stage exit. Restart from [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md); the older
+[restart prompt](CLAUDE_LEAD_RESTART.md) is superseded.
 
 Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decisions in
 [decisions/](../decisions/README.md). Statuses: `not started`, `in progress`, `blocked`,
@@ -274,7 +306,7 @@ decision was made.
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
 | R3 Judge + ETA | ETA/signals and opt-in cascade integrated; replay (R3-b) and ETA calibration (R3-c) scorers integrated 2026-10-23 | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md); gates evaluate only on recorded corpora; a privacy-reviewed observation journal is needed to record real runs; night J3 wake rate remains |
 | F2 Remote attempts | offers, renewable dispatch, remote cost ledger (F2-c) and relay inference on another node (F2-d) integrated 2026-10-23 | [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md); fixture-validated only; real two-host run, TLS between hosts, residency lease, toolful remote steps and a remote-relay judge remain |
-| B3 Relay benchmark | offline evidence validator integrated (B3-a); no measurement | [B3-a hand-off](lanes/B3-a.handoff.md); every gate stays `unevaluated` until a real cohort runs on a non-Mac node (D-194) |
+| B3 Relay benchmark | offline evidence validator integrated (B3-a); no measurement; now an MS2 gate with a smoke cohort first (D-219) | [B3-a hand-off](lanes/B3-a.handoff.md); every gate stays `unevaluated` until a real cohort runs on a non-Mac node (D-194) |
 | V1 Dictation | backend core and glossary editor UI integrated (matcher, store, eval metrics, whisper.cpp adapter with D-157 consent, REST, `/settings/voice/glossary`) | owner eval recordings, more STT adapters, `voice.flag_term` remain; exit gate needs owner recordings |
 | WG1 Work ledger | core integrated (evidence-derived status, strip, query, export); REST via MS2 | `project` mode stays off until the WL A/B; board UI, `work.query` agent tool remain |
 | WG2 Tracker sync | core integrated (GitHub/Jira adapters on fixtures, business-field protection, rate limits) | plugin packaging per P1, credentials UI, polling scheduler, live fixtures remain |

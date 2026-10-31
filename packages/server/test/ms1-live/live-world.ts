@@ -325,9 +325,9 @@ export class LiveWorld {
     this.leadConnection = this.home.find('started')!['leadConnectionId'] ?? ''
   }
   /** Restart the home so that it starts the lead once (`--lead-prompt-file`/`--project`): the project must exist first. */
-  async restartHomeWithLead(brief: unknown, prompt = 'Make the fixture project green') {
+  async restartHomeWithLead(brief: unknown, prompt = 'Make the fixture project green', lead: Record<string, unknown> = {}) {
     await this.home.stop()
-    this.writeScenario(brief)
+    this.writeScenario(brief, lead)
     const file = join(this.dir, 'lead-prompt.txt')
     writeFileSync(file, prompt)
     this.home.spawn(['--lead-prompt-file', file, '--project', this.projectId])
@@ -343,10 +343,10 @@ export class LiveWorld {
     chmodSync(executable, 0o700)
     copyFileSync(new URL('fixtures/claude-code-0.94.0.json', FIXTURES), join(agentDir, 'tape.json'))
   }
-  writeScenario(brief: unknown) {
+  writeScenario(brief: unknown, lead: Record<string, unknown> = {}) {
     const tape = JSON.parse(readFileSync(new URL('fixtures/claude-code-0.94.0.json', FIXTURES), 'utf8'))
     writeFileSync(join(this.homeDir, 'claude-code', 'scenario.json'), JSON.stringify({ tape, lead: { loadSession: true, briefs: [brief],
-      usagePerTurn: { inputTokens: 1000, outputTokens: 200, amount: 0.5 }, resumeDelayMs: 1500 } }))
+      usagePerTurn: { inputTokens: 1000, outputTokens: 200, amount: 0.5 }, resumeDelayMs: 1500, ...lead } }))
   }
   agentEvents(): Array<Record<string, any>> {
     try { return readFileSync(join(this.homeDir, 'claude-code', 'lead-events.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) } catch { return [] }

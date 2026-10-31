@@ -36,6 +36,21 @@ that a referenced seal or run exists, and a caller's `recorded_observation` labe
 There is no CLI, no IO and no clock. Real cohort, effective-length calibration, measurement on
 the D-194 node and gate evaluation remain unimplemented.
 
+## B3-b smoke cohort runner
+
+**Status:** implemented and fixture-validated offline (fake relay, loopback server, database built from the server's
+own table text); never run on the Fedora node. Operator runbook and details: [RELAY_SMOKE.md](RELAY_SMOKE.md); plan:
+[B3-b plan](../../docs/plans/lanes/B3-b-smoke.plan.md).
+
+`src/relay-smoke-cli.ts` (`plan`, `preflight`, `run`, `report`, `fixture`) executes a task × arm cohort of `ledger-lite`
+plans through the owner API of a home node, records cycles, whole-answer probes, truncation, dead-end repeats and
+item outcomes into a `guanxi.b3.measurement/v1` document, validates it with `validateRelayMeasurement` and reduces it
+with `reduceRelayMeasurement`. It is a separate runner, not a CLI mode of the B3-a validator. The reading is descriptive
+(D-219): every criterion stays `unevaluated`, `realEvidenceCredit` stays 0, and anything the relay does not record is
+`unknown`, never imputed. The naive-compaction arm is a node-wide relay mode (`home.relayCompaction`, server lane B3-c); it runs as a second pass of the
+same home against the same output directory, and each trial's arm is confirmed from its own events (a mismatch fails the run,
+it never relabels).
+
 ## Commands
 
 Run from the repository root, with the lane's web/API ports and private data directory:

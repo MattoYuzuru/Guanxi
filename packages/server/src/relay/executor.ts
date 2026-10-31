@@ -8,10 +8,10 @@ import type { RelayModel, Reply } from './model.ts'
 import type { RelayWorkspace } from './workspace.ts'
 import { DEFAULT_RELAY_LIMITS, invariant, RelayError, TRANSIENT_CALL_REASONS, type Ledger, type Handoff, type RelayLimits, type Reserves, type WindowObservation, type Thresholds } from './types.ts'
 import { boundary, bounded, request, requestAsync, thresholds, upperTokens, wallDeadline, type AsyncMeasure, type Measure, type RequestParts, type RequestResult } from './budget.ts'
-import { canonical, hash, strip, byteHash, selectNotes, probes, validateHandoff } from './handoff.ts'
+import { canonical, hash, strip, byteHash, selectNotes, probes, taskStatement, validateHandoff } from './handoff.ts'
 import { parseModelJson } from './model-json.ts'
 import type { JsonSchema } from './json-schema.ts'
-import { actionResponseSchema, actionSchema, GENERIC_TOOLS, LOCAL_TOOLS, probeResponseSchema, PROBE_PROMPT, workPrompt, type RelayToolSpec } from './response-schemas.ts'
+import { actionResponseSchema, actionSchema, GENERIC_TOOLS, LOCAL_TOOLS, NAIVE_DEGRADED_SUMMARY, naiveSummaryPrompt, NAIVE_UNAVAILABLE_SUMMARY, probeResponseSchema, PROBE_PROMPT, workPrompt, type RelayToolSpec } from './response-schemas.ts'
 import { etaInputSchema, type EtaInput } from './eta.ts'
 import { evaluateJudgeSignals, type JudgeObservation, type JudgeSignalPolicy } from './judge-signals.ts'
 import { JudgeJournalStore, lazyJournal } from './judge-journal.ts'
@@ -28,11 +28,18 @@ export class RelayExecutor {
   readonly tools: readonly RelayToolSpec[]
   private readonly workText: string
   private readonly schemas?: { readonly action: JsonSchema; readonly probe: JsonSchema }
+  /** B3 naive-compaction arm (`limits.compaction === 'naive'`): the next cycle is shown a model-written summary instead of the ledger. Off by default. */
+  private readonly naive: boolean
+  /** The context head the current naive cycle was shown; the boundary summary is written over exactly this and the cycle's turns. */
+  private head: readonly string[] = []
   readonly store: RelayStore; readonly model: RelayModel; readonly workspace: RelayWorkspace; readonly reserves: Reserves; readonly scrubber: EgressScrubber; readonly limits: RelayLimits
   constructor(store: RelayStore, model: RelayModel, workspace: RelayWorkspace, reserves: Reserves, scrubber: EgressScrubber, limits: RelayLimits = DEFAULT_RELAY_LIMITS, eta?: EtaInput, judgeSignals?: RelayJudgeInput, cascade?: RelayCascadeInput) {
     this.store = store; this.model = model; this.workspace = workspace; this.reserves = reserves; this.scrubber = scrubber; this.limits = limits
     this.eta = eta ? etaInputSchema.parse(eta) : undefined
-    this.tools = Object.freeze([...LOCAL_TOOLS, ...(workspace.tools?.() ?? GENERIC_TOOLS)])
+    invariant(limits.compaction === undefined || limits.compaction === 'ledger' || limits.compaction === 'naive', 'relay_compaction_invalid')
+    this.naive = limits.compaction === 'naive'
+    // The naive arm has no ledger to query: the two executor-answered tools are not offered (and `tool` refuses them).
+    this.tools = Object.freeze([...(this.naive ? [] : LOCAL_TOOLS), ...(workspace.tools?.() ?? GENERIC_TOOLS)])
     this.workText = workPrompt(this.tools)
     // Decoding under a grammar never changes the prompt, so every count and bound below is unchanged by it.
     if (limits.structuredOutput !== false) this.schemas = Object.freeze({ action: actionResponseSchema(this.tools), probe: probeResponseSchema() })
@@ -270,18 +277,42 @@ export class RelayExecutor {
     if (exhausted) { this.wrap(a, exhausted); throw new RelayError('cap_reached') }
     return reply
   }
-  private make(a: Attempt, l: Ledger, bundle: Uint8Array, narrative: string, degraded: boolean, max: number): Handoff {
-    const h: Handoff = { format: 'guanxi.handoff/v1', runId: a.run_id, cycle: l.cycle, attemptId: a.id, epoch: a.epoch, token: a.token,
+  /** The handoff before notes and narrative are chosen: everything whose size does not depend on them. */
+  private frame(a: Attempt, l: Ledger, bundleHash: string, degraded: boolean): Handoff {
+    return { format: 'guanxi.handoff/v1', runId: a.run_id, cycle: l.cycle, attemptId: a.id, epoch: a.epoch, token: a.token,
       ledgerHash: hash(l), ledger: { ref: `run:${a.run_id}/cycles/${l.cycle}/ledger`, strip: strip(l), head: l.head, revision: l.plan.revision },
-      notes: [], narrative: '', degraded, bundleHash: byteHash(bundle) }
+      notes: [], narrative: '', degraded, bundleHash }
+  }
+  /** Naive arm: the bytes the summary may take in a sealed handoff, by the same arithmetic `make` applies (no notes, so only the empty list is deducted). */
+  private room(h: Handoff, max: number): number {
+    return Math.max(0, Math.max(0, max - Buffer.byteLength(canonical({ ...h, notes: [], narrative: '' })) - 80) - Buffer.byteLength(canonical([])))
+  }
+  private make(a: Attempt, l: Ledger, bundle: Uint8Array, narrative: string, degraded: boolean, max: number): Handoff {
+    const h = this.frame(a, l, byteHash(bundle), degraded)
     // JSON and Markdown both have a <=15% window bound; leave space for their framing.
     const available = Math.max(0, max - Buffer.byteLength(canonical(h)) - 80)
-    h.notes = selectNotes(this.store.notes(a.run_id), l, this.store.clock(), Math.floor(available / 2), 3)
+    // The naive arm shows no notes; its whole handoff budget after the framing is the summary.
+    h.notes = this.naive ? [] : selectNotes(this.store.notes(a.run_id), l, this.store.clock(), Math.floor(available / 2), 3)
     h.narrative = bounded(this.scrubber.scrub(narrative), Math.max(0, available - Buffer.byteLength(canonical(h.notes))))
     validateHandoff(h, l, bundle, max)
     return h
   }
+  /** Naive arm only. The next cycle's context is the stored summary. The five critical probes (ledger hash, head, revision, next item and its
+   * status) are ledger facts the arm is never shown, so they are not asked: a probe the context cannot answer measures nothing and would
+   * cost a model call each cycle. The cycle records `probe_not_applicable` instead, never a `probe` result, so it can be neither a pass nor a fail. */
+  private orientNaive(a: Attempt, t: Thresholds): string {
+    const sealed = this.store.sealed(a)
+    if (!sealed) return ''
+    let damaged = false
+    try { invariant(hash(sealed.handoff) === sealed.artifactHash, 'handoff_corrupt'); validateHandoff(sealed.handoff, sealed.ledger, sealed.bundle, t.handoff) } catch { damaged = true }
+    // A damaged seal is not repaired from the ledger here: the arm has no ledger to show.
+    const summary = (damaged ? '' : sealed.handoff.narrative) || NAIVE_UNAVAILABLE_SUMMARY
+    this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'probe_not_applicable', mode: 'naive', cycle: this.store.read(a.run_id).cycle,
+      reason: 'ledger_facts_not_shown', damaged }) } })
+    return summary
+  }
   private async orient(a: Attempt, w: WindowObservation, t: Thresholds, signal: AbortSignal, measure: Measure | AsyncMeasure): Promise<string> {
+    if (this.naive) return this.orientNaive(a, t)
     const sealed = this.store.sealed(a)
     if (!sealed) return ''
     let h = sealed.handoff
@@ -411,19 +442,25 @@ export class RelayExecutor {
         unobserved: judged.unobserved
       }
     )
-    let narrative = '', degraded = false
+    let narrative = '', degraded = false, loss = { dropped: 0, cut: 0 }, degradedReason: string | null = null
     try {
       const ledger = this.store.read(a.run_id)
-      const notes = selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
+      const notes = this.naive ? [] : selectNotes(this.store.notes(a.run_id), ledger, this.store.clock(), Math.floor(t.H / 8), 3)
       await this.fresh(a, w, signal)
-      const context = await this.pack('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
-        { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
+      // The naive arm summarises what the cycle was shown (its head and every turn); the ledger arm writes a narrative from the ledger.
+      const context = this.naive
+        ? await this.pack(naiveSummaryPrompt(this.reserves.turn, this.room(this.frame(a, ledger, '0'.repeat(64), false), t.handoff)), { head: this.head, turns: this.turns }, measure, t.H)
+        : await this.pack('Write a fresh bounded handoff narrative from this evidence: current work, next 1-3 actions, hypothesis and watch-outs. Do not invent progress. No prior narrative is supplied.',
+          { head: [canonical({ strip: strip(ledger), head: ledger.head, notes })], turns: this.turns.slice(-3) }, measure, t.H)
+      loss = { dropped: context.dropped, cut: context.cut }
       if (context.dropped || context.cut) this.dropped(a, ledger.cycle, context.dropped, context.cut)
       narrative = (await this.call(a, 'narrative', context.text, w, t, signal)).text
     } catch (e) {
       if (e instanceof RelayError && ['cap_reached', 'truncation_protocol', 'window_changed'].includes(e.code)) throw e
-      degraded = true; narrative = 'Continue from the authoritative ledger and evidence; query work.query and notes.search.'
+      degraded = true; degradedReason = this.failureReason(e)
+      narrative = this.naive ? NAIVE_DEGRADED_SUMMARY : 'Continue from the authoritative ledger and evidence; query work.query and notes.search.'
     }
+    const written = narrative
     this.store.transition(a, 'handoff_validate')
     const bundle = await this.workspace.bundle(l.plan.base)
     const current = this.store.read(a.run_id)
@@ -433,6 +470,7 @@ export class RelayExecutor {
         const ledger = this.store.read(a.run_id); ledger.state = 'sealed'
         const h = this.make(a, ledger, bundle, narrative, degraded, t.handoff)
         this.store.seal(a, h, bundle, t.handoff)
+        this.summarized(a, h, written, t.handoff, loss, degradedReason)
         return
       } catch (e) {
         if (!(e instanceof RelayError) || !e.code.startsWith('handoff_')) throw e
@@ -443,12 +481,23 @@ export class RelayExecutor {
           const ledger = this.store.read(a.run_id); ledger.state = 'sealed'
           const h = this.make(a, ledger, bundle, narrative, true, t.handoff)
           this.store.transition(a, 'handoff_validate'); this.store.seal(a, h, bundle, t.handoff)
+          this.summarized(a, h, written, t.handoff, loss, 'handoff_fallback')
           return
         }
       }
     }
   }
+  /** Naive arm: report what the sealed summary is, so a cut or a loss is never silent. `written` is the model's reply before the handoff bound (or the
+   * fixed degraded text); a summary replaced by the harness fallback therefore reads `truncated`, with `degradedReason: 'handoff_fallback'`. */
+  private summarized(a: Attempt, h: Handoff, written: string, max: number, loss: { dropped: number; cut: number }, degradedReason: string | null): void {
+    if (!this.naive) return
+    this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'compaction_summary', mode: 'naive', attempt: a.id, cycle: h.cycle,
+      summaryBytes: Buffer.byteLength(h.narrative), summaryLimitBytes: this.room(h, max), outputLimitTokens: this.reserves.turn,
+      truncated: h.narrative !== this.scrubber.scrub(written), degraded: h.degraded, degradedReason: h.degraded ? degradedReason ?? 'unknown' : null,
+      inputDropped: loss.dropped, inputCut: loss.cut }) } })
+  }
   private async tool(a: Attempt, name: string, args: Record<string, unknown>, signal: AbortSignal, t: Thresholds): Promise<string> {
+    if (this.naive && (name === 'work.query' || name === 'notes.search')) throw new RelayError('tool_denied')
     if (name === 'work.query' || name === 'notes.search') {
       const text = name === 'work.query' ? canonical(this.store.read(a.run_id)) : canonical(this.store.notes(a.run_id).filter(n => n.text.includes(String(args.query ?? ''))))
       const offset = Number(args.offset ?? 0)
@@ -471,6 +520,8 @@ export class RelayExecutor {
     try {
       this.cascade?.bind(a)
       if (this.store.runs.get(a.run_id).state === 'wrapping_up') return this.store.read(a.run_id)
+      // The arm is part of the run's durable record, written before the first model call by the same flag that changes behaviour.
+      if (this.naive) this.store.emit(a, { type: 'agent.note', data: { text: canonical({ relay: 'compaction', mode: 'naive', attempt: a.id, epoch: a.epoch }) } })
       while (true) {
         signal.throwIfAborted()
         const current = this.store.read(a.run_id)
@@ -496,12 +547,18 @@ export class RelayExecutor {
         )
         const narrative = await this.orient(a, w, t, signal, measure)
         this.store.transition(a, 'work'); this.turns = []
+        // Naive arm: nothing live from the ledger. A cycle with no stored summary (the first, or a resumed attempt that has no seal yet) is shown
+        // the task statement derived from the plan alone; every later one the goal and the stored summary only.
+        if (this.naive) {
+          const plan = this.store.read(a.run_id).plan, goal = bounded(plan.goal, this.limits.goalBytes)
+          this.head = narrative ? [goal, narrative] : [taskStatement(plan), goal]
+        }
         let invalidActions = 0
         while (true) {
           signal.throwIfAborted()
           const l = this.store.read(a.run_id)
           await this.fresh(a, w, signal)
-          const context = await this.pack(this.workText, { head: [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
+          const context = await this.pack(this.workText, { head: this.naive ? this.head : [strip(l), bounded(l.plan.goal, this.limits.goalBytes), narrative], turns: this.turns }, measure, t.H)
           const used = await measure(context.text)
           if (context.dropped || context.cut) {
             this.dropped(a, l.cycle, context.dropped, context.cut)

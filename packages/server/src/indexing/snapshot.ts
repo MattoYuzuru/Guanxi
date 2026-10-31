@@ -9,7 +9,8 @@ import type { IndexSettings, TreeSnapshot } from './types.ts'
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex')
 export const inside = (root: string, path: string) => path === root || path.startsWith(root + sep)
 export const languageOf = (path: string): string => ({ '.ts': 'typescript', '.tsx': 'tsx', '.js': 'javascript', '.jsx': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript', '.py': 'python', '.go': 'go', '.rs': 'rust', '.java': 'java', '.c': 'c', '.h': 'c', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.md': 'markdown', '.mdx': 'markdown' })[extname(path).toLowerCase()] ?? 'file'
-const blocked = (path: string) => path.split('/').some(p => p.toLowerCase().startsWith('.env') || p === '.git' || p === 'node_modules')
+/** The scanner's name rule for files no tool reads or lists (dotenv files, `.git`, `node_modules`); the lead's project view reuses it. */
+export const blocked = (path: string) => path.split('/').some(p => p.toLowerCase().startsWith('.env') || p === '.git' || p === 'node_modules')
 export type AllowContent = (text: string) => Promise<boolean>
 const gitEnv = (home: string) => ({ PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_OPTIONAL_LOCKS: '0' })
 

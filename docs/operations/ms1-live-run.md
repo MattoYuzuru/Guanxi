@@ -86,6 +86,7 @@ this document runs and the node boots exactly as before.
 | `home.reserves` | ADR-0020 reserves in tokens of one window; `preflight` checks them against the observed window |
 | `home.checkoutRoot` | optional; default `<data dir>/relay-checkouts` |
 | `home.structuredOutput` | optional, default `true`: every probe, work step and judge verdict is decoded under a JSON Schema (`json_schema` on the executor's `/completion`; federation 1.6, so both nodes must run this commit). `preflight` fails with `peer_protocol_old` if the executor declares an older federation minor. Set `false` only if the executor's llama-server rejects the grammar |
+| `home.relayCompaction` | optional, absent means the ledger relay. `"naive"` is the **B3 benchmark arm** (a model-written summary replaces the ledger strip at a cycle boundary, see the relay README), not a product setting; node-wide, so every relay this home starts runs in it. Switch it only by restarting the home (section 5, "Running the benchmark arms") |
 | `home.lead` | optional: the Claude Code lead (section 7); its binary paths must be absolute |
 | `home.judge` | optional: the R3 judge of every relay this home starts (section 5); absent means no judge |
 | `executor.llamaServer.baseUrl` | the attached llama-server, on the executor's loopback |
@@ -171,6 +172,21 @@ the home.
 Each model call is a child run on the home (`rc-*`) with one `remote-dispatch:` cost row holding the executor's evaluated tokens.
 The relay run keeps its own cap accounting; never add the two.
 
+### Running the benchmark arms (B3)
+
+The compaction arm is a property of the **home process**, not of a start. There is one pairing (one `peer.url`, one pinned peer
+identity), so the arms run as sequential passes of the same home, never as a second home:
+
+1. Leave `home.relayCompaction` out (or `"ledger"`). Start the pair as in section 4 and run every ledger-arm trial.
+2. Stop the home (section 6; wait for it to exit, no relay may be running), set `"home.relayCompaction": "naive"`, and start the
+   home again with the same data directory, the same executor and the same commit. Run every naive-arm trial. Do not change anything else.
+3. For further passes switch back the same way. The executor needs no change and need not restart.
+
+Each trial's arm is read from its own run: a naive run's session carries `{relay:'compaction', mode:'naive'}` before its first model
+call, and a ledger run carries none of the `compaction*` notes; do not infer the arm from the configuration file or the pass. A run
+that was in flight at a restart ends `interrupted` (section 6), so finish or cancel before switching. The naive arm asks no probes;
+see the relay README.
+
 ## 6. Stop
 
 1. Cancel what runs: `curl -s -X POST $H/api/relay/starts/<key>/stop -H 'content-type: application/json' -d '{}'` (cancels, unpins
@@ -205,6 +221,13 @@ path of the ACP bridge), `bridgeVersion` (exact), `claudeExecutable` (your unmod
   the vendor's own default applies (a `settings.json` `effortLevel` in the private config directory is the vendor's mechanism and
   keeps working in subscription mode; Guanxi never writes it).
 
+- **Project view (opt-in).** The lead's working directory is empty. With `"projectView": true` in `home.lead` (default `false`: the lead
+  then has `guanxi_delegate` alone) the node serves it the project's committed files read-only through `guanxi_project_tree`,
+  `guanxi_project_read` and `guanxi_project_search` on the same tool server as `guanxi_delegate`. They read the project's repository
+  (exactly one bound workspace, a repository top level) at `HEAD` or a commit id, never the working tree, never open secret-named
+  files, scrub what they return, and each result names the `commit` to use as `plan.base`; every call is audited in the lead run's
+  session log. Your lead prompt may say so, but the tool descriptions already do, and the facts in the prompt remain the plan's source of truth. See
+  [the leads README](../../packages/server/src/leads/README.md#project-view-lp-lead-project-view).
 - **Bridge.** K5 does not run `claude`; it runs the ACP bridge, `https://github.com/agentclientprotocol/claude-agent-acp`
   (npm package `@agentclientprotocol/claude-agent-acp`), with no arguments, and gives it `CLAUDE_CODE_EXECUTABLE` pointing at your
   CLI. It is an operator-installed separate process, never a Guanxi dependency. Install it outside the repository with an exact

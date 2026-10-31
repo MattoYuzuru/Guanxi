@@ -5,7 +5,7 @@ import type { SessionEventType } from '@guanxi/contract'
 import { querySessionLog } from '../session-log/query-tool.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
-import { sandboxCommand, quote, type SandboxPolicy } from './sandbox.ts'
+import { sandboxCommand, quote, type SandboxPolicy, type CommandResult } from './sandbox.ts'
 import type { ProjectIndexService } from '../indexing/plugin.ts'
 import { directSymbols } from '../indexing/lsp.ts'
 import { boundMap } from '../indexing/engine.ts'
@@ -14,6 +14,7 @@ import { ResourceGovernor } from '../runtime/resource-governor.ts'
 import { type MapResult } from '../indexing/types.ts'
 import { dirname, relative, sep, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
+import { randomBytes } from 'node:crypto'
 import { NativeOutputs } from './outputs.ts'
 
 export interface NativeToolContext {
@@ -37,6 +38,25 @@ export interface NativeToolContext {
   awaitToolCall?(toolCallId: string, signal?: AbortSignal): Promise<void>
   /** Abort the turn after a missing/rejected durable acknowledgment. */
   abortTurn?(): void
+}
+/** Exit code of a command line whose `cd` failed. 125 is the infrastructure code the container guard already uses for its own
+ * `cd "$HOME"`: it is neither the command's status (a failed `cd X && cmd` exits 1, which a red test or a missing file also does)
+ * nor the shell's 126/127. */
+export const CWD_FAILED_EXIT = 125
+/** The fixed code of a failed `cd`; a per-call random suffix follows it on the stderr line. */
+const CWD_MARKER = 'cwd_unavailable'
+/** `command` run in `directory`, and the way to read its result. The command does not run when the directory cannot be entered.
+ *
+ * The failure is `failed(result)`: exit 125 **and** a stderr line that is exactly this call's marker line. The suffix is random per
+ * call, so a command that prints `cwd_unavailable` (or a prefix of the line) and exits 125 keeps its own result; the line is compared
+ * whole and anywhere in stderr, so a wrapper that writes its own stderr first (a sandbox or guard warning) does not hide the failure.
+ * The line is in the command text, so a command that reads its parent's arguments could still forge it: that only damages its own verdict. */
+export function inDirectory(directory: string, command: string): { line: string; failed(result: Pick<CommandResult, 'code' | 'stderr'>): boolean } {
+  const marker = `${CWD_MARKER}:${randomBytes(16).toString('hex')}`
+  return {
+    line: `cd ${quote(directory)} 2>/dev/null || { echo ${marker} >&2; exit ${CWD_FAILED_EXIT}; }; ${command}`,
+    failed: result => result.code === CWD_FAILED_EXIT && result.stderr.split('\n').some(row => row === marker),
+  }
 }
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const { policy, handle, scrubber } = ctx
@@ -77,9 +97,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const run = async (command: string, signal?: AbortSignal, accepted: readonly number[] | null = [0], fixed = true, cwd?: string) => {
     // The sandbox starts every command in HOME/TMPDIR=scratch. A caller with one unit of work (the relay
     // checkout) names it here, exactly as the gate command names its own clean checkout.
-    const line = cwd ? `cd ${quote(cwd)} && ${command}` : command
-    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, line, signal, 120_000, fixed, scrubber)
+    const entered = cwd ? inDirectory(cwd, command) : undefined
+    const result = await (ctx.executeCommand ?? sandboxCommand)(policy, entered?.line ?? command, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
+    // The command never started: say so with a fixed code rather than hand the model a plausible exit.
+    if (entered?.failed(clean)) throw new Error(CWD_MARKER)
     if (clean.code === null || (accepted !== null && !accepted.includes(clean.code))) throw new Error('tool_failed')
     return JSON.stringify(clean)
   }
@@ -170,7 +192,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, ctx.cwd ? null : [0], false, ctx.cwd)
       const [program, ...args] = a.command!.split(/ +/)
       const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
-      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s, [0], true, ctx.cwd)
+      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s, ctx.cwd ? null : [0], true, ctx.cwd)
     }),
     tool('search', 'Search literal text with FTS5 and Node grep fallback. Result includes checked-out commit, index age, coverage and explicit truncation. Ignored, .env and registered-secret files are excluded.', { path: Type.String(), text: Type.String() }, async (a, s) => indexed('search', a.path!, a.text, undefined, s)),
     tool('repo_map', 'repo.map: repository files and cached tree-sitter symbols. budget is a positive token upper bound measured as UTF-8 bytes for the complete JSON result, including provenance. Small budgets may be refused. Wire alias repo_map.', { path: Type.String(), budget: Type.String() }, async (a, s) => indexed('map', a.path!, undefined, Number(a.budget), s)),

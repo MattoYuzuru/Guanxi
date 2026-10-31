@@ -77,6 +77,7 @@ export class RelayStarts {
     connections: Connections, scrubber: EgressScrubber, store: RelayStore,
     host: RelayStartHost) {
     this.db = db; this.runs = runs; this.log = log; this.connections = connections; this.scrubber = scrubber; this.store = store
+    invariant(host.limits?.compaction === undefined || host.limits.compaction === 'ledger' || host.limits.compaction === 'naive', 'relay_compaction_invalid')
     this.host = { ...host, ...(host.reserves ? { reserves: immutable(relayReservesSchema.parse(host.reserves)) } : {}),
       limits: { ...DEFAULT_RELAY_LIMITS, ...host.limits } }
     this.clock = host.clock ?? Date.now
