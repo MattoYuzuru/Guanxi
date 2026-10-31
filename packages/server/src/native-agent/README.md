@@ -234,7 +234,7 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   still pending.
 
 This is the restricted reader rollback floor (Q0+Q1): progress2, verified consumption, result and
-stop work over v3 state; v3-state mutations wait for Q2. It is not an artifactization claim:
+stop work over v3 state, subject to the availability residuals named above; v3-state mutations wait for Q2. It is not an artifactization claim:
 normal native production still writes v1, so a pre-Q0 max-2 reader keeps reading Q1-written
 data, while a stored v3 event stops it at `requiredVersion: 3`. A client built for progress2
 against a pre-Q1 node is unsupported (the node ignores the query and answers the legacy body,

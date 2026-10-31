@@ -58,7 +58,8 @@ representation and the readers, and deliberately no native behavior:
    write, no blob read and no state replacement, including duplicate removal. v1-only
    behavior is exact.
 7. **Rollback floor.** Q0+Q1 is the *restricted reader rollback floor*: progress2, verified
-   consumption, result and stop work over v3 state; v3-state queue mutations wait for Q2. The
+   consumption, result and stop work over v3 state (subject to the stuck-head and late-expansion
+   availability residuals recorded in the hand-off); v3-state queue mutations wait for Q2. The
    native producer still emits v1, asserted by test.
 
 Non-goals: producing v3 or any artifact queue item, any upload/download endpoint, FTS for
