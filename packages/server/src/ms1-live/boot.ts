@@ -35,7 +35,7 @@ export interface Ms1LiveHomeRelay {
 }
 export interface Ms1LiveLeadWiring {
   externalAgents: ExternalPolicy
-  leads: Omit<LeadPluginConfig, 'db' | 'child'> & { alwaysOn: true; child?: undefined
+  leads: Omit<LeadPluginConfig, 'db' | 'child' | 'projectView'> & { alwaysOn: true; child?: undefined; projectView?: true
     relay: { consent: 'full-access'; domains?: readonly string[]; pollMs?: number }
     validateExecutor: NonNullable<LeadPluginConfig['validateExecutor']>; limits: NonNullable<LeadPluginConfig['limits']> }
 }
@@ -291,6 +291,7 @@ export class Ms1LiveNode {
           billingAccount: lead.billingAccount, executable: lead.bridge, version: lead.bridgeVersion, claudeExecutable: lead.claudeExecutable,
           ...(lead.effort ? { claudeEffort: lead.effort } : {}) }] },
       leads: { alwaysOn: true, executors: [{ connectionId: allowed, model }],
+        ...(lead.projectView ? { projectView: true as const } : {}),
         relay: { consent: 'full-access', domains: lead.domains, ...(lead.pollMs ? { pollMs: lead.pollMs } : {}) },
         // The only executor a lead may name is the one this pairing serves: one connection, one model.
         validateExecutor: executor => {

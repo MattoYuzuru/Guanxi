@@ -331,7 +331,8 @@ export class LeadService {
     let outcome: { ok: true; text: string; summary: ProjectViewSummary } | { ok: false; error: ProjectViewError }
     try {
       const roots = await this.o.projectView!.roots(session.project_id, live.cancel.signal)
-      const root = roots[0]
+      // The relay works on exactly one root; so does the view. None or several is not a project it can show.
+      const root = roots.length === 1 ? roots[0] : undefined
       if (!root) throw new ProjectViewError('project_view_unavailable')
       const result = await view.run(tool, root, input)
       outcome = { ok: true, text: result.text, summary: result.summary }

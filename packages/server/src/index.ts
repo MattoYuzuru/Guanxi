@@ -184,9 +184,9 @@ export interface StartOptions {
    * executor. `alwaysOn: true` is the host's explicit assertion that this node stays awake while leads
    * sleep (ADR-0019 decision 5); nothing here proves or arranges power. Not reachable over HTTP. */
   leads?: Omit<LeadPluginConfig, 'db' | 'child' | 'projectView'> & { alwaysOn: true;
-    /** The lead's read-only view of the delegated project's committed files. On by default; `false` gives the lead no project tools.
-     * An object overrides the policy (`policy`) or the root resolution (`roots`). */
-    projectView?: false | Partial<NonNullable<LeadPluginConfig['projectView']>> } & (
+    /** Opt-in (lead default, 2026-10-31): `true` gives the lead a read-only view of the delegated project's committed files; absent or `false`
+     * gives it no project tools. An object also overrides the policy (`policy`) or the root resolution (`roots`). */
+    projectView?: boolean | Partial<NonNullable<LeadPluginConfig['projectView']>> } & (
     { child: ChildStarter; relay?: undefined } |
     /** Delegated plans run through this node's public relay start; consent and domains are owner choices
      * the lead can never make for itself. */
@@ -448,8 +448,8 @@ export async function start(options: StartOptions = {}) {
       const runs = kernel.node.service<DurableRunsService>(DURABLE_RUNS_SERVICE)
       if (relayPolicy && (!relayService || !runs)) throw new Error('leads.relay requires the relay service')
       await kernel.node.plugin(createLeadPlugin({ ...lead, db,
-        // The lead reads the project it delegates through the node (read-only, committed files); `projectView: false` turns it off.
-        ...(projectView === false ? {} : { projectView: { roots: async (id, signal) => (await observeProject(id, signal)).roots, ...projectView } }),
+        // Opt-in: the lead reads the project it delegates through the node (read-only, committed files) only when the host asks for it.
+        ...(projectView ? { projectView: { roots: async (id, signal) => (await observeProject(id, signal)).roots, ...(projectView === true ? {} : projectView) } } : {}),
         child: child ?? relayStartsChildStarter(relayService!.publicStarts, { ...relayPolicy!, runs: runs!.store }),
         ...(lead.reporter || !relayPolicy ? {} : { reporter: relayStartsChildReporter(relayService!.publicStarts, relayService!, kernel.sessionLog ?? undefined) }) }))
     }
