@@ -3,14 +3,14 @@
 // to stderr as JSON. Exit codes: 0 every planned trial reached a terminal observation and the document validates,
 // 3 the document validates but some planned trials are missing or were cancelled, 1 failure, 2 usage or configuration.
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { TrialObservation } from './relay-smoke-build.ts'
 import { SMOKE_BASE_COMMIT, SMOKE_TASK_IDS, smokeDigests, smokePlan, smokeVerifierBlobs } from './relay-smoke-corpus.ts'
 import { FakeClock, FakeRelay } from './relay-smoke-fake.ts'
 import { sha256Hex } from './relay-smoke-facts.ts'
-import { parseSmokeConfig, resolveArms, runSmoke, type ObservationStore, type SmokeConfig, type SmokeResult } from './relay-smoke-run.ts'
+import { parseSmokeConfig, resolveArms, runSmoke, trialObservationSchema, type ObservationStore, type SmokeConfig, type SmokeResult } from './relay-smoke-run.ts'
 import { HttpRelaySource, SmokeSourceError, SqliteLedgerReader, type RelaySource } from './relay-smoke-source.ts'
 import { checkRelayMeasurement } from './relay-protocol.ts'
 import { reduceRelayMeasurement } from './relay-measurement.ts'
@@ -57,11 +57,18 @@ export function fileStore(out: string): ObservationStore {
     load(key) {
       const path = join(dir, `${key}.json`)
       if (!existsSync(path)) return null
-      try { return JSON.parse(readFileSync(path, 'utf8')) as TrialObservation } catch { return null }
+      // A file that is not a well-formed observation of this key is refused, not skipped: skipping would silently re-run (or mix) a trial.
+      try {
+        const parsed = trialObservationSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
+        if (parsed.key !== key) throw new Error('key')
+        return parsed as TrialObservation
+      } catch { throw new Error('smoke_config_observation_invalid') }
     },
     save(o) { writePrivate(join(dir, `${o.key}.json`), json(o)) },
   }
 }
+const httpSource = (config: SmokeConfig, arms: ReturnType<typeof resolveArms>) => new HttpRelaySource(Object.fromEntries(arms.map(a => [a.id, { url: a.url, homeDb: a.homeDb }])),
+  { startTimeoutMs: config.timing.startTimeoutMs, stopTimeoutMs: config.timing.stopTimeoutMs })
 const applyOverrides = (config: SmokeConfig, v: Record<string, string>): SmokeConfig => {
   const next: SmokeConfig = { ...config }
   if (v['--tasks'] !== undefined) next.tasks = v['--tasks'].split(',').filter(Boolean)
@@ -96,7 +103,7 @@ async function preflight(config: SmokeConfig, repo: string | undefined, io: CliI
   }
   const arms = resolveArms(config).filter(a => a.planned)
   checks.push({ name: 'arms_planned', ok: arms.length > 0, ...(arms.length ? {} : { code: 'no_arm_planned' }) })
-  const source = io.source ? io.source(config) : new HttpRelaySource(Object.fromEntries(arms.map(a => [a.id, { url: a.url, homeDb: a.homeDb }])))
+  const source = io.source ? io.source(config) : httpSource(config, arms)
   for (const arm of arms) {
     try { await source.status(arm.id, 'b3s-preflight', io.signal); checks.push({ name: `endpoint:${arm.id}`, ok: true }) } catch (error) {
       // An unknown key answers 404 relay_not_found: the route is live, which is all this check wants.
@@ -118,7 +125,7 @@ const fixtureConfig = (): SmokeConfig => parseSmokeConfig(JSON.stringify({
   start: { projectId: 'fixture-project', connectionId: 'fixture-connection', model: 'fixture-model' },
   stratum: { provider: 'fixture', model: 'fixture-model', revision: 'rev-1', quantization: { kind: 'not_applicable' }, runtime: 'fake runtime', adapter: 'fake adapter', resourceProfile: 'fake profile', windowTokens: 32768, tokenCountConvention: 'fixture-count-v1' },
   horizon: 8, caps: { tokens: null, moneyMicros: 0, wallMs: null },
-  arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }],
+  arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true, url: 'http://127.0.0.1:4651' }],
 }))
 
 /** Runs one command and returns the process exit code. Never throws; failures are fixed codes on stdout. */
@@ -143,13 +150,13 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
         return result.ok ? 0 : 1
       }
       case 'run': {
-        const v = flags(rest, ['--config', '--out', '--tasks', '--seeds'])
+        const v = flags(rest, ['--config', '--out', '--tasks', '--seeds', '--arms'])
         const out = resolve(required(v, '--out'))
         const config = applyOverrides(parseSmokeConfig(readText(required(v, '--config'))), v)
         const planned = resolveArms(config).filter(a => a.planned)
-        const source = io.source ? io.source(config) : new HttpRelaySource(Object.fromEntries(planned.map(a => [a.id, { url: a.url, homeDb: a.homeDb }])))
+        const source = io.source ? io.source(config) : httpSource(config, planned)
         const store = fileStore(out)
-        const result = await runSmoke(config, { source, now: io.now ?? Date.now, sleep: io.sleep ?? sleepReal, store, ...(io.signal ? { signal: io.signal } : {}), log: line => io.err(JSON.stringify(line)) })
+        const result = await runSmoke(config, { source, now: io.now ?? Date.now, sleep: io.sleep ?? sleepReal, store, ...(v['--arms'] !== undefined ? { only: v['--arms'].split(',').filter(Boolean) } : {}), ...(io.signal ? { signal: io.signal } : {}), log: line => io.err(JSON.stringify(line)) })
         persist(out, result, store)
         io.out(json({ ok: result.exitCode !== 1, exitCode: result.exitCode, out, planSha256: result.summary.planSha256, origin: result.summary.origin,
           expectedTrials: result.summary.expectedTrials, incomplete: result.summary.incomplete, document: result.summary.document, gate: 'measurement_only',
@@ -184,7 +191,9 @@ export async function runCli(args: string[], io: CliIo): Promise<number> {
   }
 }
 
-const isMain = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+// Compare real paths: the entry may be reached through a symlink (the module URL is already resolved, argv[1] is not).
+const sameFile = (a: string, b: string): boolean => { try { return realpathSync(a) === realpathSync(b) } catch { return false } }
+const isMain = process.argv[1] !== undefined && sameFile(process.argv[1], fileURLToPath(import.meta.url))
 if (isMain) {
   const abort = new AbortController()
   const stop = () => abort.abort()

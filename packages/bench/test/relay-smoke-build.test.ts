@@ -196,3 +196,12 @@ test('the plan digest binds the document: an edited plan is refused', () => {
   assert.ok(!checked.ok)
   assert.equal(checked.ok ? '' : checked.issues[0]!.rule, 'plan_digest')
 })
+
+test('a seal whose ledger could not be read makes its cycle and the next one unknown instead of shifting items between cycles', () => {
+  const ledger = ledgerOf([[{ item: 'I01', ok: true }], [{ item: 'I02', ok: true }], [{ item: 'I03', ok: true }]])
+  ledger.seals[1] = { ...seal(2, []), head: '', unreadable: true, ledgerSha256: null, handoffLedgerSha256: null, bundleSha256: null }
+  const doc = documentOf(observation({ facts: cycles(3), ledger }))
+  assert.ok(doc.checked.ok, JSON.stringify(doc.checked.ok ? '' : doc.checked.issues))
+  assert.deepEqual(observed(doc).cycles.slice(0, 3).map(c => c.state === 'observed' ? [c.items.state, c.integrity.state] : null), [['observed', 'observed'], ['unknown', 'unknown'], ['unknown', 'observed']])
+  assert.deepEqual([arm0(doc).totals.items.expected, arm0(doc).totals.items.groupsUnknown], [1, 2])
+})

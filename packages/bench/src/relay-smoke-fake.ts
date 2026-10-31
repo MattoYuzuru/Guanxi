@@ -66,10 +66,12 @@ interface Entry { arm: string; key: string; runId: string; sessionId: string; po
 export class FakeRelay implements RelaySource {
   readonly kind = 'fake' as const
   readonly started: Array<{ arm: string; input: RelayStartInput }> = []
+  /** Keys a stop was requested for, in order. */
+  readonly stopped: string[] = []
   private readonly entries = new Map<string, Entry>()
   private seq = 0
   private readonly clock: FakeClock
-  private readonly options: { scenario?: (input: RelayStartInput, arm: string) => FakeScenario; pollsBeforeDone?: number; cycleMs?: number; failStart?: (arm: string, key: string) => string | null }
+  private readonly options: { scenario?: (input: RelayStartInput, arm: string) => FakeScenario; pollsBeforeDone?: number; cycleMs?: number; failStart?: (arm: string, key: string) => string | null; hangStart?: (arm: string, key: string) => boolean; failStop?: (arm: string, key: string) => boolean }
   constructor(clock: FakeClock, options: FakeRelay['options'] = {}) { this.clock = clock; this.options = options }
 
   private entry(arm: string, key: string): Entry {
@@ -97,6 +99,8 @@ export class FakeRelay implements RelaySource {
     const e: Entry = { arm, key: input.key, runId, sessionId: `ses-${runId}`, polls: 0, status: scenario.status, error: scenario.error ?? null, events: [], ledger: null, windowTokens: scenario.windowTokens ?? 32_768 }
     this.play(e, scenario, input)
     this.entries.set(`${arm}\u0000${input.key}`, e)
+    // The request was admitted but the answer never came back (a start that outlives the client deadline).
+    if (this.options.hangStart?.(arm, input.key)) throw new SmokeSourceError('timeout')
     return this.view(e)
   }
   async status(arm: string, key: string): Promise<RelayStartStatus> {
@@ -105,6 +109,8 @@ export class FakeRelay implements RelaySource {
     return this.view(e)
   }
   async stop(arm: string, key: string): Promise<RelayStartStatus> {
+    this.stopped.push(key)
+    if (this.options.failStop?.(arm, key)) throw new SmokeSourceError('endpoint_unreachable')
     const e = this.entry(arm, key)
     if (e.polls < (this.options.pollsBeforeDone ?? 1)) { e.status = 'canceled'; e.error = null; e.polls = Number.MAX_SAFE_INTEGER }
     return this.view(e)

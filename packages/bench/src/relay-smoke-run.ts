@@ -8,7 +8,7 @@ import {
 } from './relay-smoke-build.ts'
 import { SMOKE_BASE_COMMIT, SMOKE_TASK_IDS, smokeDigests, smokePlan } from './relay-smoke-corpus.ts'
 import { projectEvents, sha256Hex, type EventLike } from './relay-smoke-facts.ts'
-import { SmokeSourceError, loopbackOrigin, type RelaySource } from './relay-smoke-source.ts'
+import { SmokeSourceError, isDefinitiveStartRefusal, loopbackOrigin, type RelaySource } from './relay-smoke-source.ts'
 import { checkRelayMeasurement, type RelayMeasurementInput, type RelayPlan, type RelayIssue, type RelayTrialSlot } from './relay-protocol.ts'
 import { reduceRelayMeasurement, type RelayMeasurementReport } from './relay-measurement.ts'
 
@@ -20,6 +20,8 @@ const armSchema = z.object({
   /** A naive-compaction arm needs a relay that implements it (docs/plans/lanes/B3-b-smoke.plan.md); it is off unless enabled here. */
   enabled: z.boolean().optional(),
   url: z.string().optional(), homeDb: z.string().min(1).optional(),
+  /** The git commit this arm's relay runs, when it differs from `harnessRevision` (a node restarted in another mode). */
+  harnessRevision: z.string().regex(/^[a-f0-9]{40}$/).optional(),
   /** Describes the arm honestly: does a sealed ledger handoff exist, and is a repeated dead end a guarded one. */
   ledgerHandoff: z.boolean().optional(), deadEndGuard: z.boolean().optional(),
 }).strict()
@@ -44,11 +46,15 @@ export const smokeConfigSchema = z.object({
   tasks: z.array(id).min(1).optional(),
   seeds: z.array(z.number().int().nonnegative().safe()).min(1).max(16).default([0]),
   arms: z.array(armSchema).min(1).max(2).optional(),
-  timing: z.object({ pollMs: posint.default(5_000), trialDeadlineMs: posint.default(6 * 3_600_000), statusFailuresBeforeAbort: posint.default(5) }).strict().default({}),
+  timing: z.object({
+    pollMs: posint.default(5_000), trialDeadlineMs: posint.default(6 * 3_600_000), statusFailuresBeforeAbort: posint.default(5),
+    /** `POST /api/relay` waits for the relay to be prepared (the first GGUF hash can take minutes), so this must exceed `link.requestTimeoutMs`. */
+    startTimeoutMs: posint.default(20 * 60_000), stopTimeoutMs: posint.default(5 * 60_000),
+  }).strict().default({}),
 }).strict()
 export type SmokeConfig = z.infer<typeof smokeConfigSchema>
 
-export interface ResolvedArm { id: string; kind: 'ledger_relay' | 'naive_compaction'; planned: boolean; profile: ArmProfile; url: string; homeDb: string | undefined }
+export interface ResolvedArm { id: string; kind: 'ledger_relay' | 'naive_compaction'; planned: boolean; profile: ArmProfile; url: string; homeDb: string | undefined; harnessRevision: string }
 export function resolveArms(config: SmokeConfig): ResolvedArm[] {
   const entries = config.arms ?? [{ kind: 'ledger_relay' as const, id: 'ledger-relay' }, { kind: 'naive_compaction' as const, id: 'naive-compaction' }]
   if (new Set(entries.map(a => a.id)).size !== entries.length || new Set(entries.map(a => a.kind)).size !== entries.length) throw new Error('smoke_config_arms')
@@ -59,8 +65,10 @@ export function resolveArms(config: SmokeConfig): ResolvedArm[] {
       id: a.id, kind: a.kind,
       // The ledger arm runs unless disabled. A naive arm runs only when explicitly enabled (it needs a relay that implements it).
       planned: a.enabled ?? !naive,
+      // Defaults describe the arms as designed: only the ledger relay seals a handoff with the live (unexpired) dead-end notes
+      // (`selectNotes` in relay/handoff.ts), which is the guard a repeated dead end is counted against.
       profile: { id: a.id, kind: a.kind, ledgerHandoff: a.ledgerHandoff ?? !naive, deadEndGuard: a.deadEndGuard ?? !naive },
-      url, homeDb: a.homeDb ?? (a.url === undefined ? config.endpoint.homeDb : undefined),
+      url, homeDb: a.homeDb ?? (a.url === undefined ? config.endpoint.homeDb : undefined), harnessRevision: a.harnessRevision ?? config.harnessRevision,
     }
   })
 }
@@ -96,7 +104,7 @@ export function buildSmokePlan(config: SmokeConfig, book: EvidenceBook): RelayPl
     ...smokeDigests(tasks), sourceCommit: SMOKE_BASE_COMMIT,
     tasks, seeds: [...config.seeds],
     arms: resolveArms(config).map(a => ({
-      id: a.id, kind: a.kind, harnessSha256: digest(['guanxi.b3.smoke.harness/v1', a.kind, config.harnessRevision, a.profile.ledgerHandoff, a.profile.deadEndGuard]),
+      id: a.id, kind: a.kind, harnessSha256: digest(['guanxi.b3.smoke.harness/v1', a.kind, a.harnessRevision, a.profile.ledgerHandoff, a.profile.deadEndGuard]),
       availability: a.planned ? { state: 'planned' as const } : { state: 'unsupported' as const, reason: 'unsupported' as const, ref: book.add('arm_declaration', null, null, null, null, null) },
     })),
     horizon: config.horizon, eta: { selectionCycle: config.etaSelectionCycle, cohortId: `${config.experimentId}-eta` },
@@ -112,16 +120,49 @@ export const memoryStore = (): ObservationStore & { all: Map<string, TrialObserv
   const all = new Map<string, TrialObservation>()
   return { all, load: key => all.get(key) ?? null, save: o => { all.set(o.key, structuredClone(o)) } }
 }
+
+const factSchema = z.object({ kind: z.string(), seq: z.number().int(), atMs: z.number().int(), cycle: z.number().int() }).passthrough()
+const gateSchema = z.object({ item: z.string(), head: z.string(), ok: z.boolean() }).strict()
+const sealSchema = z.object({ cycle: z.number().int(), epoch: z.number().int(), head: z.string(), items: z.record(z.string(), z.string()),
+  evidence: z.array(gateSchema), ledgerSha256: z.string().nullable(), handoffLedgerSha256: z.string().nullable(),
+  bundleSha256: z.string().nullable(), bundleMatchesHandoff: z.boolean().nullable(), artifactMatchesHandoff: z.boolean().nullable(), unreadable: z.literal(true).optional() }).strict()
+/** The stored shape of a trial observation. A file that does not match is refused, never trusted. */
+export const trialObservationSchema = z.object({
+  version: z.literal(1), task: z.string(), arm: z.string(), seed: z.number().int().nonnegative(), key: z.string(), fingerprint: z.string(),
+  runId: z.string().nullable(), startedAtMs: z.number().int().nullable(), finishedAtMs: z.number().int().nullable(),
+  status: z.enum(['preparing', 'running', 'wrapping_up', 'input_required', 'completed', 'canceled', 'interrupted', 'failed']).nullable(),
+  statusError: z.string().nullable(), windowTokens: z.number().int().nullable(), facts: z.array(factSchema),
+  ledger: z.object({ seals: z.array(sealSchema),
+    final: z.object({ cycle: z.number().int(), head: z.string(), items: z.record(z.string(), z.string()), evidence: z.array(gateSchema) }).strict().nullable(),
+    costs: z.array(z.object({ key: z.string(), inputTokens: z.number().int(), outputTokens: z.number().int() }).strict()) }).strict().nullable(),
+  ledgerError: z.string().nullable(), endedBy: z.enum(['terminal', 'deadline', 'aborted', 'start_failed']),
+}).strict()
 export interface RunDeps {
   source: RelaySource
   now: () => number
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>
   store: ObservationStore
   signal?: AbortSignal
+  /** Run only these arms in this pass; the others are read from the store. Needed when one node serves one arm at a time. */
+  only?: readonly string[]
   /** Fixed-code progress lines; never content. */
   log?: (line: Record<string, unknown>) => void
 }
 const NON_TERMINAL: ReadonlySet<RelayStartStatus['status']> = new Set(['preparing', 'running', 'wrapping_up'])
+
+/** Everything that decides what a trial measures. A stored observation is reused only under the same fingerprint. */
+export function trialFingerprint(config: SmokeConfig, arm: ResolvedArm, task: string, seed: number): string {
+  return digest(['guanxi.b3.smoke.fingerprint/v1', config.experimentId, config.stratum, config.horizon, config.start, config.caps,
+    arm.id, arm.kind, arm.profile, arm.url, arm.homeDb ?? null, arm.harnessRevision, digest(smokePlan(task)), seed])
+}
+const endpointOf = (arm: ResolvedArm): string => sha256Hex(`${arm.url}\u0000${arm.homeDb ?? ''}`).slice(0, 12)
+
+function loadCached(config: SmokeConfig, arm: ResolvedArm, task: string, seed: number, deps: RunDeps): TrialObservation | null {
+  const cached = deps.store.load(trialKey(config.experimentId, task, arm.id, seed, config.keySalt))
+  if (!cached) return null
+  if (cached.fingerprint !== trialFingerprint(config, arm, task, seed)) throw new Error('smoke_config_observation_mismatch')
+  return cached
+}
 
 async function collect(deps: RunDeps, arm: string, status: RelayStartStatus): Promise<{ facts: TrialObservation['facts']; ledger: TrialObservation['ledger']; ledgerError: string | null }> {
   const events: EventLike[] = []
@@ -142,13 +183,26 @@ async function collect(deps: RunDeps, arm: string, status: RelayStartStatus): Pr
   return { facts: status.runId ? projectEvents(events, status.runId) : [], ledger, ledgerError }
 }
 
-/** Runs (or resumes) one trial and returns its stored observation. Never throws for a relay or endpoint failure. */
+/** Runs (or resumes) one trial. Never throws for a relay or endpoint failure.
+ * A stored observation is final, except that a transient read failure of the events or the home database is retried.
+ * An observation is stored only when the relay for its key is confirmed terminal or stopped; otherwise it is returned
+ * `unsettled`, unstored, so that nothing starts after it and a rerun re-attaches to the same key. */
 export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: string, seed: number, deps: RunDeps): Promise<TrialObservation> {
   const key = trialKey(config.experimentId, task, arm.id, seed, config.keySalt)
-  const cached = deps.store.load(key)
-  // A start that failed is never stored, so a rerun tries it again; every stored observation (even a cancelled one) is final.
-  if (cached) { deps.log?.({ event: 'trial_resumed', task, arm: arm.id, seed }); return cached }
-  const base = { version: 1 as const, task, arm: arm.id, seed, key }
+  const fingerprint = trialFingerprint(config, arm, task, seed)
+  const cached = loadCached(config, arm, task, seed, deps)
+  if (cached) {
+    deps.log?.({ event: 'trial_resumed', task, arm: arm.id, seed })
+    if (!cached.ledgerError || !cached.runId) return cached
+    try {
+      const status = await deps.source.status(arm.id, key)
+      const again = await collect(deps, arm.id, status)
+      const refreshed: TrialObservation = { ...cached, facts: again.facts.length ? again.facts : cached.facts, ledger: again.ledger ?? cached.ledger, ledgerError: again.ledgerError }
+      deps.store.save(refreshed)
+      return refreshed
+    } catch { return cached }
+  }
+  const base = { version: 1 as const, task, arm: arm.id, seed, key, fingerprint }
   const failed = (code: string, startedAtMs: number | null): TrialObservation => ({ ...base, runId: null, startedAtMs, finishedAtMs: deps.now(), status: null, statusError: code,
     windowTokens: null, facts: [], ledger: null, ledgerError: null, endedBy: 'start_failed' })
   const input: RelayStartInput = relayStartInputSchema.parse({
@@ -156,33 +210,58 @@ export async function runTrial(config: SmokeConfig, arm: ResolvedArm, task: stri
     plan: smokePlan(task), caps: { cycles: config.horizon, tokens: config.caps.tokens, moneyMicros: config.caps.moneyMicros, wallMs: config.caps.wallMs },
   })
   const startedAtMs = deps.now()
+  const stopRelay = async (): Promise<RelayStartStatus | null> => { try { return await deps.source.stop(arm.id, key) } catch { return null } }
   let status: RelayStartStatus
   try { status = await deps.source.start(arm.id, input, deps.signal) } catch (error) {
     const code = error instanceof SmokeSourceError ? error.code : 'start_failed'
     deps.log?.({ event: 'trial_start_failed', task, arm: arm.id, seed, code })
-    return failed(code, startedAtMs)
+    // A relay that answered and refused is not running. A timeout, a dropped connection or an unreadable answer is different:
+    // the start may have been admitted and still be preparing. Find out by key before anything else starts on the single slot.
+    if (isDefinitiveStartRefusal(code)) return failed(code, startedAtMs)
+    let found: RelayStartStatus | null = null
+    let unknown = true
+    for (let attempt = 0; attempt < config.timing.statusFailuresBeforeAbort && unknown; attempt++) {
+      try { found = await deps.source.status(arm.id, key); unknown = false } catch (e) {
+        if (e instanceof SmokeSourceError && e.code === 'relay_not_found') { unknown = false; break }
+        try { await deps.sleep(config.timing.pollMs) } catch { /* cleanup is not interruptible */ }
+      }
+    }
+    if (unknown) {
+      const stopped = await stopRelay()
+      if (stopped) found = stopped
+      else return { ...failed('relay_state_unknown', startedAtMs), unsettled: true }
+    }
+    if (!found) return failed(code, startedAtMs)
+    status = found
   }
   deps.log?.({ event: 'trial_started', task, arm: arm.id, seed })
   let endedBy: TrialObservation['endedBy'] = 'terminal'
   let consecutiveFailures = 0
   let lastError: string | null = null
+  const stopNow = async (reason: 'aborted' | 'deadline') => {
+    endedBy = reason
+    const stopped = await stopRelay()
+    if (stopped) status = stopped
+  }
   while (NON_TERMINAL.has(status.status)) {
-    const stopReason = deps.signal?.aborted ? 'aborted' : deps.now() - startedAtMs >= config.timing.trialDeadlineMs ? 'deadline' : null
-    if (stopReason) {
-      endedBy = stopReason
-      try { status = await deps.source.stop(arm.id, key) } catch { /* the observation below says what the relay reports */ }
-      break
-    }
-    try { await deps.sleep(config.timing.pollMs, deps.signal) } catch { endedBy = 'aborted'; try { status = await deps.source.stop(arm.id, key) } catch { /* see above */ } break }
+    if (deps.signal?.aborted) { await stopNow('aborted'); break }
+    if (deps.now() - startedAtMs >= config.timing.trialDeadlineMs) { await stopNow('deadline'); break }
+    try { await deps.sleep(config.timing.pollMs, deps.signal) } catch { await stopNow('aborted'); break }
     try { status = await deps.source.status(arm.id, key, deps.signal); consecutiveFailures = 0 } catch (error) {
       lastError = error instanceof SmokeSourceError ? error.code : 'status_failed'
-      if (++consecutiveFailures >= config.timing.statusFailuresBeforeAbort) { endedBy = 'aborted'; break }
+      if (++consecutiveFailures >= config.timing.statusFailuresBeforeAbort) { await stopNow('aborted'); break }
     }
   }
+  // Settled: the relay ended by itself, or our stop returned a terminal status.
+  const settled = !NON_TERMINAL.has(status.status)
   let facts: TrialObservation['facts'] = [], ledger: TrialObservation['ledger'] = null, ledgerError: string | null = null
   try { ({ facts, ledger, ledgerError } = await collect(deps, arm.id, status)) } catch (error) { ledgerError = error instanceof SmokeSourceError ? error.code : 'events_unreadable' }
   const observation: TrialObservation = { ...base, runId: status.runId, startedAtMs, finishedAtMs: deps.now(), status: status.status, statusError: status.error ?? lastError,
     windowTokens: status.runtime?.contextTokens ?? null, facts, ledger, ledgerError, endedBy }
+  if (!settled) {
+    deps.log?.({ event: 'trial_unsettled', task, arm: arm.id, seed, status: status.status })
+    return { ...observation, unsettled: true }
+  }
   deps.store.save(observation)
   deps.log?.({ event: 'trial_done', task, arm: arm.id, seed, status: status.status, endedBy })
   return observation
@@ -194,33 +273,50 @@ export interface SmokeSummary {
   origin: 'synthetic_fixture' | 'recorded_observation'
   gate: 'measurement_only'
   planSha256: string
-  arms: Array<{ id: string; kind: string; availability: 'planned' | 'unsupported' }>
+  /** Which arm a trial belongs to is what the operator configured (endpoint, harness revision); the tool cannot verify the mode a node runs in. */
+  armIdentity: 'operator_asserted'
+  arms: Array<{ id: string; kind: string; availability: 'planned' | 'unsupported'; endpoint: string; harnessRevision: string }>
   trials: Array<{ task: string; arm: string; seed: number; key: string; endedBy: string; status: string | null; cycles: number; ledgerRead: boolean; ledgerError: string | null; notes: string[] }>
   expectedTrials: number
   incomplete: number
+  /** Set when a relay could not be confirmed stopped; nothing was started after it. */
+  halted: 'relay_state_unknown' | null
   document: { valid: boolean; issues: RelayIssue[] }
 }
 export interface SmokeResult { measurement: RelayMeasurementInput | null; report: RelayMeasurementReport | null; summary: SmokeSummary; exitCode: 0 | 1 | 3 }
 
-/** Runs every planned trial, assembles the document, validates it and reduces it. */
+/** Runs every selected planned trial (the others come from the store), assembles the document, validates it and reduces it. */
 export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<SmokeResult> {
   const arms = resolveArms(config)
   const book = new EvidenceBook()
   const plan = buildSmokePlan(config, book)
   const planned = arms.filter(a => a.planned)
+  if (deps.only && deps.only.some(id => !planned.some(a => a.id === id))) throw new Error('smoke_config_arms')
+  const selected = planned.filter(a => !deps.only || deps.only.includes(a.id))
+  // Two arms behind one endpoint would label one node's data with two names. Run them as separate passes against the same store instead.
+  if (new Set(selected.map(endpointOf)).size < selected.length) throw new Error('smoke_config_arm_endpoint')
   const tasks = plan.tasks
   const observed = new Map<string, TrialObservation>()
   const slots: RelayTrialSlot[] = []
   const rows: SmokeSummary['trials'] = []
+  let halted: SmokeSummary['halted'] = null
   for (const task of tasks) for (const seed of config.seeds) for (const arm of planned) {
-    if (deps.signal?.aborted) break
-    observed.set(JSON.stringify([task, arm.id, seed]), await runTrial(config, arm, task, seed, deps))
+    const mapKey = JSON.stringify([task, arm.id, seed])
+    if (!selected.includes(arm)) { const cached = loadCached(config, arm, task, seed, deps); if (cached) observed.set(mapKey, cached); continue }
+    if (deps.signal?.aborted || halted) continue
+    const obs = await runTrial(config, arm, task, seed, deps)
+    observed.set(mapKey, obs)
+    if (obs.unsettled) halted = 'relay_state_unknown'
   }
   let incomplete = 0
   const origin = deps.source.kind === 'http' ? 'recorded_observation' : 'synthetic_fixture'
   for (const task of tasks) for (const arm of planned) for (const seed of config.seeds) {
     const obs = observed.get(JSON.stringify([task, arm.id, seed]))
-    if (!obs) { slots.push(missingTrial(task, arm.id, seed, 'not_collected')); incomplete++; rows.push({ task, arm: arm.id, seed, key: trialKey(config.experimentId, task, arm.id, seed, config.keySalt), endedBy: 'not_run', status: null, cycles: 0, ledgerRead: false, ledgerError: null, notes: [] }); continue }
+    if (!obs || obs.unsettled) {
+      slots.push(missingTrial(task, arm.id, seed, 'not_collected')); incomplete++
+      rows.push({ task, arm: arm.id, seed, key: trialKey(config.experimentId, task, arm.id, seed, config.keySalt), endedBy: obs ? 'unsettled' : 'not_run', status: obs?.status ?? null, cycles: 0, ledgerRead: false, ledgerError: null, notes: [] })
+      continue
+    }
     const built = buildTrialSlot({ horizon: config.horizon, book, arm: arm.profile }, obs, plan)
     slots.push(built.slot)
     if (obs.endedBy !== 'terminal') incomplete++
@@ -232,9 +328,9 @@ export async function runSmoke(config: SmokeConfig, deps: RunDeps): Promise<Smok
   const raw = assembleMeasurement({ plan, origin, trials: slots, book, recordedAtMs: latest, analysisAsOfMs: latest })
   const checked = checkRelayMeasurement(raw)
   const summary: SmokeSummary = {
-    format: 'guanxi.b3.smoke-summary/v1', experimentId: config.experimentId, origin, gate: 'measurement_only', planSha256: raw.planSha256,
-    arms: arms.map(a => ({ id: a.id, kind: a.kind, availability: a.planned ? 'planned' : 'unsupported' })), trials: rows,
-    expectedTrials: tasks.length * config.seeds.length * planned.length, incomplete,
+    format: 'guanxi.b3.smoke-summary/v1', experimentId: config.experimentId, origin, gate: 'measurement_only', planSha256: raw.planSha256, armIdentity: 'operator_asserted',
+    arms: arms.map(a => ({ id: a.id, kind: a.kind, availability: a.planned ? 'planned' : 'unsupported', endpoint: endpointOf(a), harnessRevision: a.harnessRevision })), trials: rows,
+    expectedTrials: tasks.length * config.seeds.length * planned.length, incomplete, halted,
     document: { valid: checked.ok, issues: checked.ok ? [] : [...checked.issues] },
   }
   if (!checked.ok) return { measurement: null, report: null, summary, exitCode: 1 }

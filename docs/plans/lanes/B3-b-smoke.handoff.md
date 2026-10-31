@@ -33,7 +33,7 @@ them as libraries. The report keeps `gate: measurement_only`; the runner prints 
 
 | Command | Result |
 | --- | --- |
-| `node --test test/relay-smoke-*.test.ts` (in `packages/bench`) | 61 tests, 61 pass, 0 fail, 0 skipped |
+| `node --test test/relay-smoke-*.test.ts` (in `packages/bench`) | 61 tests, 61 pass, 0 fail, 0 skipped (before review; 83 after, see below) |
 | bench envelope, all other test files (B3-a relay tests included) | 169 tests, 169 pass |
 | `node --test 'test/*.test.ts'` | 230 tests, 230 pass |
 | `npx tsc --noEmit -p packages/bench` | exit 0 |
@@ -111,6 +111,43 @@ Full steps are in [RELAY_SMOKE.md](../../../packages/bench/RELAY_SMOKE.md). In s
   reader loudly (`home_database_unreadable`), and the drift test fails first.
 - Throughput: one executor slot, trials strictly sequential; a cohort of five tasks and one arm is a working day, both arms two.
 - Independent review of this lane (read-only, separate agent) is the lead's.
+
+## Review findings and fixes
+
+Independent review of `lane/b3b-smoke` (read-only, separate agent); fixes are in the `fix(bench): review fixes` commit that
+follows `9a1b4d26`. Corrections to the original wording above: the test count is now **83 new / 169 envelope (bench total
+252)**, and the mutation tool runs **94 cases** (21 more `b3b-*` cases, all killed by an `AssertionError`).
+
+| Finding | Fix | Proof |
+| --- | --- | --- |
+| H1 start POST blocks until `prepare()`; 30 s timeout left a relay running while the next trial started | start deadline `timing.startTimeoutMs` (20 min), stop `stopTimeoutMs` (5 min), ordinary 30 s; a start failure without a relay answer is reconciled by key (`status`, then `stop`); only a fixed relay refusal (`isDefinitiveStartRefusal`) or an unknown key is a failed start; an unaccounted-for relay halts the run (`halted: relay_state_unknown`, exit 3) and is re-attached by a rerun | `hangStart` fake: admitted-but-silent start is observed, not duplicated; status failing then stop; stop failing halts and starts nothing more; never-admitted start is missing and retried; HTTP slow-start test; mutations `b3b-start-deadline`, `-stop-deadline`, `-reconcile-ambiguous-start`, `-halt-on-unsettled` |
+| M1 status failures left the relay running and stored the trial as final | `stop` is attempted (long, non-aborted signal) before the trial is given up; an observation is stored only when the relay is terminal or confirmed stopped, otherwise it is unsettled, unstored, and halts | **The old test "an endpoint that keeps failing ends the trial as aborted…" pinned the wrong behaviour (it only counted status calls and `endedBy`). It was replaced, not weakened:** it still asserts 3 status calls and `endedBy: aborted`, and now also asserts the stop, the stopped state, and (second test) that an unstoppable relay is not stored and a rerun re-attaches. Mutations `b3b-stop-on-status-failures`, `-unsettled-not-stored` |
+| M2 reader read-only open not pinned; WAL side effects with the node down | `open()` is public and is the only path; a test writes through it and fails; WAL-mode database without `-shm` is refused (`home_node_not_running`) and leaves no files; documented in the runbook | `relay-smoke-db.test.ts`; mutations `b3b-reader-open-read-only`, `b3b-live-node-only` |
+| M3 nothing asserted `stop` on SIGINT or deadline | `FakeRelay.stopped`; both tests assert the exact key | mutations `b3b-stop-on-sigint`, `b3b-stop-on-deadline` |
+| M4 `isMain` failed through a symlink (silent exit 0) | real-path comparison | spawn test through a symlink asserts non-empty JSON; mutation `b3b-main-through-symlink` |
+| M5 an enabled naive arm without its own endpoint labelled ledger data as naive | two selected arms behind one endpoint and database are refused (`smoke_config_arm_endpoint`); one arm per pass is supported (`--arms`, same `--out`, merged document); `summary.json` carries `armIdentity: operator_asserted`, a hash of each arm's endpoint and its harness revision; arm entries may set their own `harnessRevision` | run, CLI and pass tests; mutation `b3b-shared-endpoint` |
+| M6 cached observations reused after config changes | every observation stores a fingerprint (stratum, horizon, start, caps, arm kind/profile/endpoint/database/harness revision, task plan, seed); mismatch is `smoke_config_observation_mismatch` (exit 2); timing and task/seed selection are not part of it | run and CLI tests per field; mutations `b3b-fingerprint-checked`, `-fingerprint-start`, `-fingerprint-harness` |
+| L1 request conformance | the real `relayStartRoutes` are mounted on a loopback socket with a stub service and driven by `HttpRelaySource` (JSON content type, strict stop body, 404 mapping); the events query is parsed with the contract's `sessionEventsQuery` (`limit` 500) | drift and HTTP tests |
+| L2 codes and timeout | all codes of `relayStartCode` plus the route guards are kept; a deadline is `timeout`, not `endpoint_unreachable` | HTTP tests; mutations `b3b-timeout-code`, `b3b-refusal-codes` |
+| L3 shapes pinned, silent `continue` | text pins of the ledger evidence row, handoff hashes, note and event shapes and the cost key against the server source (not a type check: the shapes are TypeScript types); an unreadable seal is kept with `unreadable: true`, so its cycle and the next are `unknown` instead of shifting items | drift test; builder and database tests; mutations `b3b-unreadable-seal-visible`, `-unreadable-seal-unknown` |
+| L4 exit codes | runbook table matches the code (`report` non-JSON = 2, invalid = 1; `run` on a dead endpoint = 3) | CLI tests (existing) |
+| L5 item-result convention | stated in the runbook | docs |
+| L6 `deadEndGuard` default | derived and commented: only the ledger arm's sealed handoff carries live dead-end notes (`selectNotes`); explicit override stays | runbook |
+| L7 `fileStore.load` validation, transient `ledgerError` | strict zod schema, refusal `smoke_config_observation_invalid` (exit 2); a stored `ledgerError` is re-read on the next run without starting anything | CLI and run tests; mutations `b3b-observation-schema`, `b3b-reread-transient` |
+| `--arms` in the plan but not the CLI | implemented | CLI pass test |
+
+One existing assertion changed for a reason other than the above: the CLI preflight test expected a failing database check for
+both arms because both inherited the endpoint's database; the naive arm of the shared test configuration now has its own
+`url` (required by M5), so only the ledger arm's check is expected to fail.
+
+Gates after the fixes (same environment): `node --test test/relay-smoke-*.test.ts` 83/83; whole bench 252/252 (169 envelope
+unchanged); `npx tsc --noEmit -p packages/bench` exit 0; `npx eslint packages/bench` exit 0; `node packages/bench/tools/mutations.ts`
+exit 0 with 94 cases killed; `npm run lint:md` 0 errors.
+
+Remaining residuals from the review: the pass-per-arm flow and the long start/stop deadlines have only been exercised against
+fakes and a loopback server; a configuration change of the endpoint port invalidates stored observations (intended, use a
+new `--out`); the shape pins are text pins of the server source, so a refactor that keeps the shape but changes the spelling
+fails them loudly rather than silently.
 
 ## Next slice
 

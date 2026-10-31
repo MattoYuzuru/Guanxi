@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -14,7 +14,7 @@ const CONFIG = {
   version: 1, experimentId: 'cli-test', harnessRevision: 'a'.repeat(40), endpoint: { url: 'http://127.0.0.1:4551' }, start: { projectId: 'p', connectionId: 'c', model: 'm' },
   stratum: { provider: 'fake', model: 'fake-model', revision: 'r1', quantization: { kind: 'not_applicable' }, runtime: 'rt', adapter: 'ad', resourceProfile: 'rp', windowTokens: 32768, tokenCountConvention: 'conv' },
   horizon: 7, caps: { tokens: null, moneyMicros: 0, wallMs: null }, tasks: ['ll-money-text', 'll-rules-fx'], seeds: [0],
-  arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }],
+  arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true, url: 'http://127.0.0.1:4651' }],
 }
 function harness() {
   const dir = mkdtempSync(join(tmpdir(), 'b3b-cli-'))
@@ -149,7 +149,7 @@ test('preflight checks the endpoint, the fixture repository and the home databas
     const live = { ...h.fake, kind: 'fake' as const, status: async () => { throw new SmokeSourceError('relay_not_found') } }
     assert.equal(await runCli(['preflight', '--config', cfg], h.io({ source: () => live as never })), 1)
     const failed = h.stdout()
-    assert.deepEqual(failed.checks.filter((c: { ok: boolean }) => !c.ok).map((c: { name: string; code: string }) => [c.name, c.code]), [['home_database:ledger-relay', 'home_database_unreadable'], ['home_database:naive-compaction', 'home_database_unreadable']])
+    assert.deepEqual(failed.checks.filter((c: { ok: boolean }) => !c.ok).map((c: { name: string; code: string }) => [c.name, c.code]), [['home_database:ledger-relay', 'home_database_unreadable']])
     // a reachable endpoint without a configured database is fine, but says what becomes unknown
     h.out.length = 0
     const ok = h.file('cfg2.json', CONFIG)
@@ -181,5 +181,65 @@ test('the real process prints one JSON document on stdout and sets the exit code
     const bad = spawnSync(process.execPath, [entry, 'frobnicate'], { encoding: 'utf8' })
     assert.equal(bad.status, 2)
     assert.deepEqual(JSON.parse(bad.stdout), { ok: false, code: 'usage' })
+  } finally { h.cleanup() }
+})
+
+test('a corrupt or foreign observation file is refused with a fixed code, not skipped', async () => {
+  const h = harness()
+  try {
+    const out = join(h.dir, 'run'); const cfg = h.file('cfg.json', CONFIG)
+    assert.equal(await runCli(['run', '--config', cfg, '--out', out], h.io()), 0); h.out.length = 0
+    const files = readdirSync(join(out, 'observations'))
+    const target = join(out, 'observations', files[0]!)
+    const good = readFileSync(target, 'utf8')
+    for (const bad of ['{not json', JSON.stringify({ ...JSON.parse(good), version: 2 }), JSON.stringify({ ...JSON.parse(good), key: 'b3s-0000000000000000' }), JSON.stringify({ ...JSON.parse(good), facts: 'x' }), JSON.stringify({ ...JSON.parse(good), extra: 1 })]) {
+      writeFileSync(target, bad); h.out.length = 0
+      assert.equal(await runCli(['run', '--config', cfg, '--out', out], h.io()), 2)
+      assert.deepEqual(JSON.parse(h.out.join('')), { ok: false, code: 'smoke_config_observation_invalid' })
+    }
+    assert.equal(h.fake.started.length, 4, 'nothing was started again')
+  } finally { h.cleanup() }
+})
+
+test('a changed configuration over an old output directory is refused with a fixed code', async () => {
+  const h = harness()
+  try {
+    const out = join(h.dir, 'run')
+    assert.equal(await runCli(['run', '--config', h.file('a.json', CONFIG), '--out', out], h.io()), 0); h.out.length = 0
+    assert.equal(await runCli(['run', '--config', h.file('b.json', { ...CONFIG, start: { ...CONFIG.start, model: 'other-model' } }), '--out', out], h.io()), 2)
+    assert.deepEqual(JSON.parse(h.out.join('')), { ok: false, code: 'smoke_config_observation_mismatch' })
+  } finally { h.cleanup() }
+})
+
+test('--arms runs one arm per pass against the same output directory and the passes merge into one document', async () => {
+  const h = harness()
+  try {
+    const shared = h.file('shared.json', { ...CONFIG, arms: [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }] })
+    const out = join(h.dir, 'passes')
+    assert.equal(await runCli(['run', '--config', shared, '--out', out], h.io()), 2, 'two arms behind one endpoint in one pass')
+    assert.deepEqual(JSON.parse(h.out.join('')), { ok: false, code: 'smoke_config_arm_endpoint' }); h.out.length = 0
+    assert.equal(await runCli(['run', '--config', shared, '--out', out, '--arms', 'ledger-relay'], h.io()), 3)
+    assert.equal(h.stdout().expectedTrials, 4); h.out.length = 0
+    assert.equal(await runCli(['run', '--config', shared, '--out', out, '--arms', 'naive-compaction'], h.io()), 0)
+    const done = h.stdout()
+    assert.deepEqual([done.exitCode, done.incomplete], [0, 0])
+    const measurement = JSON.parse(readFileSync(join(out, 'measurement.json'), 'utf8'))
+    assert.ok(measurement.trials.every((t: { state: string }) => t.state === 'observed'))
+    assert.equal(h.fake.started.length, 4)
+    const summary = JSON.parse(readFileSync(join(out, 'summary.json'), 'utf8'))
+    assert.equal(summary.armIdentity, 'operator_asserted')
+  } finally { h.cleanup() }
+})
+
+test('the entry point works when reached through a symlink', () => {
+  const h = harness()
+  try {
+    const entry = join(import.meta.dirname, '..', 'src', 'relay-smoke-cli.ts')
+    const link = join(h.dir, 'linked-cli.ts')
+    symlinkSync(entry, link)
+    const result = spawnSync(process.execPath, [link, 'plan'], { encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(result.stdout.trim().length > 0, 'a silent exit with empty output is the failure to avoid')
+    assert.equal(JSON.parse(result.stdout).ok, true)
   } finally { h.cleanup() }
 })

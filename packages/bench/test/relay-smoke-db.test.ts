@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -8,6 +8,7 @@ import { HOME_DB_OPEN_OPTIONS, HttpRelaySource, SqliteLedgerReader } from '../sr
 import { memoryStore, runSmoke } from '../src/relay-smoke-run.ts'
 import { canonicalText } from '../src/relay-smoke-facts.ts'
 import { insertCost, insertSeal, seed } from './relay-smoke-db-fixture.ts'
+import { canonicalText as canon } from '../src/relay-smoke-facts.ts'
 import { config } from './relay-smoke-helpers.ts'
 import { ARM, serve } from './relay-smoke-rig.ts'
 
@@ -98,4 +99,46 @@ test('end to end: the HTTP source plus a real database file give items, context 
     assert.deepEqual([totals.context.expected, totals.context.observed], [15, 15])
     assert.deepEqual([totals.items.groupsUnknown, totals.items.expected, totals.items.passed], [0, 1, 1], 'the stored ledger lists one gate (I01) in every seal, so only the first cycle opens an opportunity')
   } finally { await rig.close(); rmSync(dir, { recursive: true, force: true }) }
+})
+
+test("the reader's own open() is read-only: a write through it fails", () => {
+  const dir = tmp()
+  try {
+    const path = join(dir, 'guanxi.db')
+    seed(path).close()
+    const db = new SqliteLedgerReader(path).open()
+    try { assert.throws(() => db.exec('CREATE TABLE intruder(a)'), /readonly|read-only/i) } finally { db.close() }
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a WAL database whose node is not running is refused instead of letting the reader create its -wal/-shm files', () => {
+  const dir = tmp()
+  try {
+    const path = join(dir, 'guanxi.db')
+    const db = seed(path)
+    db.exec('PRAGMA journal_mode = WAL')
+    insertSeal(db, 'run-a', 1, 1)
+    // the writer is open, as the live node is: its -shm exists and the read works
+    assert.ok(existsSync(`${path}-shm`))
+    assert.equal(new SqliteLedgerReader(path).read('run-a').seals.length, 1)
+    db.close()
+    assert.ok(!existsSync(`${path}-shm`), 'closing the last connection removes the shared-memory file')
+    assert.throws(() => new SqliteLedgerReader(path).read('run-a'), { code: 'home_node_not_running' })
+    assert.throws(() => new SqliteLedgerReader(path).check(), { code: 'home_node_not_running' })
+    assert.ok(!existsSync(`${path}-shm`) && !existsSync(`${path}-wal`), 'the refused read left no files behind')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a seal whose ledger has an unexpected shape stays visible as unreadable, never silently dropped', () => {
+  const dir = tmp()
+  try {
+    const path = join(dir, 'guanxi.db')
+    const db = seed(path)
+    insertSeal(db, 'run-a', 1, 1)
+    db.prepare('INSERT INTO relay_seals VALUES (?,?,?,?,?,?,?,?,?,?)').run('run-a', 2, 'attempt-x', 1, 1, canon({ cycle: 2, head: 'h', items: {}, evidence: [{ item: 'I01' }] }), canon({}), 'x', 'm', new Uint8Array([1]))
+    db.close()
+    const seals = new SqliteLedgerReader(path).read('run-a').seals
+    assert.deepEqual(seals.map(s => [s.cycle, s.unreadable === true]), [[1, false], [2, true]])
+    assert.deepEqual([seals[1]!.ledgerSha256, seals[1]!.evidence.length], [null, 0])
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })

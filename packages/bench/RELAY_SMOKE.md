@@ -42,15 +42,45 @@ the cycles that really happen. No `SPEC.md` text is stored in this repository.
 RS="node packages/bench/src/relay-smoke-cli.ts"
 $RS plan [--config cfg.json]            # tasks, digests, planned/unsupported arms, expected trials
 $RS preflight --config cfg.json [--repo ~/Projects/Guanxi-Test-Repo]
-$RS run --config cfg.json --out DIR [--tasks a,b] [--seeds 0,1]
+$RS run --config cfg.json --out DIR [--tasks a,b] [--seeds 0,1] [--arms ledger-relay]
 $RS report --measurement DIR/measurement.json
 $RS fixture --out DIR                    # the same pipeline on the built-in fake relay; offline self-test
 ```
 
-stdout is exactly one JSON document; progress is JSON lines on stderr. Exit codes: `0` every planned trial reached a
-terminal observation and the document validates; `3` the document validates but some trials are missing or were
-cancelled (interrupt, deadline, failed start); `1` failure (the document does not validate, or `preflight`/`report`
-found a problem); `2` usage or configuration. Errors are fixed codes, never echoed input.
+stdout is exactly one JSON document; progress is JSON lines on stderr. Errors are fixed codes, never echoed input.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | every planned trial reached a terminal observation and the document validates |
+| `3` | the document validates but some planned trials are missing or were cancelled (interrupt, deadline, failed start, a relay that could not be accounted for). A `run` against a dead endpoint ends here: every start fails, every slot is `missing`, the document is still valid |
+| `1` | `run`: the assembled document does not validate; `preflight`: a check failed; `report`: the document does not validate |
+| `2` | usage or configuration: bad arguments, an unreadable or unparsable file (including a `report` input that is not JSON), a non-loopback URL, a stale (`smoke_config_observation_mismatch`) or malformed (`smoke_config_observation_invalid`) observation directory, two arms behind one endpoint in one pass (`smoke_config_arm_endpoint`) |
+
+## How a trial is accounted for
+
+- **Start.** `POST /api/relay` answers only after the relay is prepared, and the first observation of a model hashes the
+  whole GGUF (minutes; the MS1 runbook allows 15). The start deadline is `timing.startTimeoutMs` (default 20 minutes) and
+  the stop deadline `timing.stopTimeoutMs` (5 minutes); ordinary requests use 30 seconds.
+- **A start that fails without a relay answer** (timeout, dropped connection, unreadable reply) is **not** treated as "not
+  started": the runner asks for the status of the key (the relay registers a key while it prepares), and if that cannot be
+  answered it stops the key. Only a relay that answered with a fixed refusal, or a key the relay does not know, counts as a
+  failed start. If a relay cannot be shown to be terminal or stopped, the trial is not stored, **no further trial starts**
+  (`halted: relay_state_unknown` in `summary.json`, exit `3`), and a rerun with the same `--out` re-attaches to the same key.
+- **Stored means settled.** An observation is written only when the relay for its key is terminal or confirmed stopped.
+  Interrupt, deadline and repeated status failures all try to stop the relay first.
+- **Fingerprints.** Each stored observation carries a fingerprint of what it measured (stratum, horizon, project and
+  connection, caps, the arm's kind, profile, endpoint, database and harness revision, the task plan, the seed). A changed
+  configuration over an old `--out` is refused with `smoke_config_observation_mismatch`; use a new directory (or
+  `keySalt` to redo a cancelled trial).
+- **Transient read failures** (events, home database) are recorded and retried on the next run without starting anything.
+
+## Item results are first-attempt-biased by construction
+
+For each item the opportunity is the first cycle in which the item has gate evidence, and its result is the last gate of
+that item in **that** cycle. An item that fails in its first cycle and passes in the next is recorded `failed` once and is
+never counted again (B3-a allows one opportunity per item per trial). A later pass therefore does not appear in the
+per-cycle numbers, and an early failure is not hidden by a later success, but a failure *within* a cycle followed by a pass
+*in the same cycle* shows only the pass. These are descriptive conventions for the smoke, not the gate estimand.
 
 ## Running it for real (the lead, against the Fedora node)
 
@@ -92,7 +122,8 @@ found a problem); `2` usage or configuration. Errors are fixed codes, never echo
 4. **Preflight:** `$RS preflight --config cfg.json --repo ~/Projects/Guanxi-Test-Repo`. Every check must be `ok`: the
    fixture base commit and the 15 pinned test blobs, the endpoint (an unknown key answering `relay_not_found` proves the
    route is live), and the home database tables. Without `homeDb` the check warns that items, context and integrity
-   will be unknown.
+   will be unknown. **The home node must be running**: its database is in WAL mode, and opening it with the node down
+   would make the reader create `-wal`/`-shm` files next to it, so the reader refuses with `home_node_not_running`.
 5. **Pilot one task:** `$RS run --config cfg.json --out ~/ms1/b3-smoke/pilot --tasks ll-money-text`. Budget from A7
    (10 items in 2 h 29 min): about 75 minutes per task per arm. A full ledger-arm cohort is about 6.5 hours; both arms
    about 13 hours. The executor has a single slot: do not run `preflight --completion`, a lead or any other relay
@@ -111,6 +142,25 @@ found a problem); `2` usage or configuration. Errors are fixed codes, never echo
 If the outcome of a trial is `infra_error` or `cancelled`, the paired relay-versus-naive comparison drops the whole
 task from both arms; that is intended.
 
+## One arm per pass (restarting the home between arms)
+
+A second home process needs its own federation pairing, so the realistic shape is one arm per pass against the same
+`--out`: run all ledger trials, restart the home in the naive mode (once the server lane exists), run the naive trials.
+Declare both arms in the configuration (they may share the endpoint and database), then:
+
+```bash
+$RS run --config cfg.json --out DIR --arms ledger-relay        # exit 3: the naive trials are still to do
+# stop the home, restart it in naive mode, same data directory or another one named in the arm entry
+$RS run --config cfg.json --out DIR --arms naive-compaction    # exit 0 once every trial is stored
+```
+
+Stored observations of the arm that is not run in this pass are read from `DIR/observations` (under the same fingerprint
+rule) and the second pass writes one measurement with both arms. Two selected arms behind one endpoint and database in a
+single pass are refused (`smoke_config_arm_endpoint`): they would label one node's data with two names. **Which mode a node
+runs in is the operator's assertion**; `summary.json` says `armIdentity: operator_asserted` and lists a short hash of each
+arm's endpoint and its harness revision (an arm entry may carry its own `harnessRevision`, so a node restarted on another
+commit is told apart in the plan digest).
+
 ## The naive-compaction arm needs server work
 
 The relay has one handoff mechanism and the public start has no field to select another. The arm is therefore
@@ -128,11 +178,11 @@ second node:
 ```
 
 A naive arm is described as having no ledger handoff and no dead-end guard (`ledgerHandoff` and `deadEndGuard`
-default to false), so its integrity facts are `unknown{unsupported}` and a repeated dead end counts as unguarded.
+default to false; the ledger arm defaults to true because only its sealed handoff carries the live dead-end notes, `selectNotes`), so its integrity facts are `unknown{unsupported}` and a repeated dead end counts as unguarded.
 
 ## Failure codes
 
-`endpoint_invalid` (not loopback http), `endpoint_unreachable`, `relay_http_failed`, `response_invalid`,
+`endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
 `runtime_meter_unavailable` / `relay_workspace_unavailable` / `relay_idempotency_conflict` /
 `relay_local_connection_required` (the relay's own refusals, see the relay README), `home_database_unreadable`,
 `smoke_config_invalid`, `smoke_config_tasks`, `smoke_config_arms`, `smoke_config_eta`, `file_unreadable`,

@@ -6,7 +6,8 @@ import { SmokeSourceError } from '../src/relay-smoke-source.ts'
 import { memoryStore, parseSmokeConfig, resolveArms, runSmoke, trialKey, type RunDeps } from '../src/relay-smoke-run.ts'
 import { config, T0 } from './relay-smoke-helpers.ts'
 
-const BOTH = [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }]
+const BOTH = [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true, url: 'http://127.0.0.1:4651' }]
+const SHARED = [{ kind: 'ledger_relay', id: 'ledger-relay' }, { kind: 'naive_compaction', id: 'naive-compaction', enabled: true }]
 function rig(options: ConstructorParameters<typeof FakeRelay>[1] = {}, source?: (fake: FakeRelay) => RelaySource) {
   const clock = new FakeClock(T0)
   const fake = new FakeRelay(clock, options)
@@ -45,7 +46,7 @@ test('a fake source can only produce a synthetic fixture, an HTTP source is labe
 
 test('start keys are idempotent, unique per trial, and the relay is capped at the horizon', async () => {
   const r = rig()
-  await runSmoke(config({ tasks: ['ll-money-text', 'll-rules-fx'], seeds: [0, 1], arms: BOTH, horizon: 7 }), r.deps())
+  await assert.doesNotReject(runSmoke(config({ tasks: ['ll-money-text', 'll-rules-fx'], seeds: [0, 1], arms: BOTH, horizon: 7 }), r.deps()))
   const keys = r.fake.started.map(s => s.input.key)
   assert.equal(new Set(keys).size, 8)
   for (const key of keys) assert.match(key, /^b3s-[a-f0-9]{16}$/)
@@ -89,6 +90,7 @@ test('an operator abort stops the active relay, leaves later trials missing and 
   const result = await runSmoke(config({ tasks: ['ll-money-text', 'll-rules-fx'], arms: BOTH }), deps)
   assert.equal(result.exitCode, 3)
   assert.equal(r.fake.started.length, 2, 'no trial starts after the abort')
+  assert.deepEqual(r.fake.stopped, [r.fake.started[1]!.input.key], 'the active relay is stopped on SIGINT, and only that one')
   const states = result.measurement!.trials.map(t => t.state === 'observed' ? t.outcome : t.state)
   assert.deepEqual(states, ['passed', 'cancelled', 'missing', 'missing'])
   assert.equal(result.summary.incomplete, 3)
@@ -102,18 +104,122 @@ test('the trial deadline stops the relay and records a cancelled outcome, never 
   const result = await runSmoke(config({ timing: { pollMs: 1000, trialDeadlineMs: 5000 } }), r.deps())
   assert.equal(result.exitCode, 3)
   assert.equal(result.summary.trials[0]!.endedBy, 'deadline')
+  assert.deepEqual(r.fake.stopped, [r.fake.started[0]!.input.key], 'the deadline stops the relay it gave up on')
   const trial = result.measurement!.trials[0]!
   assert.equal(trial.state === 'observed' ? trial.outcome : '', 'cancelled')
 })
 
-test('an endpoint that keeps failing ends the trial as aborted after the configured number of failures', async () => {
+test('an endpoint that keeps failing: the relay is stopped, the trial is stored as aborted, and nothing is left running', async () => {
   let calls = 0
   const r = rig({}, fake => ({ ...fakeBind(fake), status: async () => { calls++; throw new SmokeSourceError('endpoint_unreachable') } }))
   const result = await runSmoke(config({ timing: { pollMs: 1000, trialDeadlineMs: 3_600_000, statusFailuresBeforeAbort: 3 } }), r.deps())
   assert.equal(calls, 3)
   assert.equal(result.summary.trials[0]!.endedBy, 'aborted')
-  assert.equal(result.summary.trials[0]!.status, 'running')
+  assert.deepEqual(r.fake.stopped, [r.fake.started[0]!.input.key], 'a stop is attempted before the trial is given up')
+  assert.equal(result.summary.trials[0]!.status, 'canceled', 'the observation carries the stopped relay state, not the last poll')
+  assert.equal(result.summary.halted, null)
 })
+
+test('when the relay cannot be stopped either, the trial is not stored, nothing starts after it, and a rerun re-attaches to the same key', async () => {
+  let broken = true
+  const r = rig({ failStop: () => broken }, fake => ({ ...fakeBind(fake), status: async (arm: string, key: string) => { if (broken) throw new SmokeSourceError('endpoint_unreachable'); return fake.status(arm, key) } }))
+  const cfg = config({ tasks: ['ll-money-text', 'll-rules-fx'], timing: { pollMs: 1000, trialDeadlineMs: 3_600_000, statusFailuresBeforeAbort: 2 } })
+  const first = await runSmoke(cfg, r.deps())
+  assert.equal(first.exitCode, 3)
+  assert.equal(first.summary.halted, 'relay_state_unknown')
+  assert.equal(r.fake.started.length, 1, 'the next trial never starts while the first relay is unaccounted for')
+  assert.equal(r.store.all.size, 0, 'an unsettled trial is not final')
+  assert.deepEqual(first.measurement!.trials.map(t => t.state), ['missing', 'missing'])
+  broken = false
+  const second = await runSmoke(cfg, r.deps({ sleep: async () => {} }))
+  assert.equal(r.fake.started.length, 2, 'the first key is re-attached (idempotent start), only the second task starts anew')
+  assert.equal(second.exitCode, 0)
+})
+
+test('a start that outlives the client deadline is reconciled by key: the admitted relay is observed, never duplicated', async () => {
+  const r = rig({ hangStart: () => true })
+  const result = await runSmoke(config({ tasks: ['ll-money-text', 'll-rules-fx'] }), r.deps())
+  assert.equal(result.exitCode, 0)
+  assert.equal(r.fake.started.length, 2, 'one start per trial, none repeated')
+  assert.deepEqual(r.fake.stopped, [])
+  assert.deepEqual(result.measurement!.trials.map(t => t.state === 'observed' ? t.outcome : t.state), ['passed', 'passed'])
+})
+
+test('a start that timed out and cannot be reconciled is stopped by key; if that fails too, nothing else starts', async () => {
+  const lost = rig({ hangStart: () => true }, fake => ({ ...fakeBind(fake), status: async () => { throw new SmokeSourceError('endpoint_unreachable') } }))
+  const stopped = await runSmoke(config({ timing: { pollMs: 10, trialDeadlineMs: 3_600_000, statusFailuresBeforeAbort: 2 } }), lost.deps())
+  assert.deepEqual(lost.fake.stopped, [lost.fake.started[0]!.input.key])
+  assert.equal(stopped.summary.trials[0]!.status, 'canceled')
+  assert.equal(stopped.summary.halted, null)
+  const stuck = rig({ hangStart: () => true, failStop: () => true }, fake => ({ ...fakeBind(fake), status: async () => { throw new SmokeSourceError('timeout') } }))
+  const halted = await runSmoke(config({ tasks: ['ll-money-text', 'll-rules-fx'], timing: { pollMs: 10, trialDeadlineMs: 3_600_000, statusFailuresBeforeAbort: 2 } }), stuck.deps())
+  assert.equal(halted.summary.halted, 'relay_state_unknown')
+  assert.equal(stuck.fake.started.length, 1)
+  assert.equal(halted.exitCode, 3)
+})
+
+test('a start that timed out before the relay ever saw it is not running: the slot is missing and the next run retries', async () => {
+  let drop = true
+  const r = rig({ failStart: () => drop ? 'timeout' : null })
+  const first = await runSmoke(config(), r.deps())
+  assert.equal(first.exitCode, 3)
+  assert.equal(first.summary.halted, null)
+  assert.deepEqual(first.measurement!.trials.map(t => t.state), ['missing'])
+  drop = false
+  assert.equal((await runSmoke(config(), r.deps())).exitCode, 0)
+})
+
+test('a relay refusal is definitive: no reconciliation, no stop, the slot is missing', async () => {
+  const r = rig({ failStart: () => 'runtime_meter_unavailable' })
+  const result = await runSmoke(config(), r.deps())
+  assert.deepEqual(r.fake.stopped, [])
+  assert.equal(result.summary.trials[0]!.endedBy, 'start_failed')
+  assert.equal(result.summary.halted, null)
+})
+
+test('two arms behind one endpoint cannot run in one pass; one arm per pass merges into one document', async () => {
+  const r = rig()
+  const cfg = config({ arms: SHARED })
+  await assert.rejects(runSmoke(cfg, r.deps()), { message: 'smoke_config_arm_endpoint' })
+  await assert.rejects(runSmoke(cfg, r.deps({ only: ['nope'] })), { message: 'smoke_config_arms' })
+  assert.equal(r.fake.started.length, 0, 'refused before any relay starts')
+  const first = await runSmoke(cfg, r.deps({ only: ['ledger-relay'] }))
+  assert.equal(first.exitCode, 3, 'the other arm is still to do')
+  assert.deepEqual(first.measurement!.trials.map(t => [t.arm, t.state]), [['ledger-relay', 'observed'], ['naive-compaction', 'missing']])
+  const second = await runSmoke(cfg, r.deps({ only: ['naive-compaction'] }))
+  assert.equal(second.exitCode, 0)
+  assert.deepEqual(second.measurement!.trials.map(t => [t.arm, t.state]), [['ledger-relay', 'observed'], ['naive-compaction', 'observed']])
+  assert.deepEqual(r.fake.started.map(s => s.arm), ['ledger-relay', 'naive-compaction'], 'the ledger trial was read from the store, not run again')
+  assert.equal(second.report!.pairedRelayVsNaive.state, 'descriptive')
+  assert.equal(second.summary.armIdentity, 'operator_asserted')
+})
+
+test('a stored observation is reused only under the same configuration fingerprint', async () => {
+  const r = rig()
+  await runSmoke(config(), r.deps())
+  for (const patch of [{ start: { projectId: 'other', connectionId: 'connection-1', model: 'model-1' } }, { caps: { tokens: 5, moneyMicros: 0, wallMs: null } }, { horizon: 7 },
+    { stratum: { provider: 'fake', model: 'fake-model', revision: 'r2', quantization: { kind: 'not_applicable' }, runtime: 'rt', adapter: 'ad', resourceProfile: 'rp', windowTokens: 32768, tokenCountConvention: 'conv' } },
+    { endpoint: { url: 'http://127.0.0.1:4999' } }, { arms: [{ kind: 'ledger_relay', id: 'ledger-relay', harnessRevision: 'b'.repeat(40) }] }]) {
+    await assert.rejects(runSmoke(config(patch), r.deps()), { message: 'smoke_config_observation_mismatch' }, JSON.stringify(Object.keys(patch)))
+  }
+  assert.equal(r.fake.started.length, 1)
+  // timing and the task or seed selection are not part of what a trial measures
+  assert.equal((await runSmoke(config({ timing: { pollMs: 7 }, tasks: ['ll-money-text', 'll-rules-fx'] }), r.deps())).exitCode, 0)
+  assert.equal(r.fake.started.length, 2)
+})
+
+test('a transient read failure is not final: the next run reads the events and the database again, without starting anything', async () => {
+  let fail = true
+  const r = rig({}, fake => ({ ...fakeBind(fake), ledger: async (arm: string, runId: string) => { if (fail) throw new SmokeSourceError('home_database_unreadable'); return fake.ledger(arm, runId) } }))
+  const first = await runSmoke(config(), r.deps())
+  assert.equal(first.summary.trials[0]!.ledgerError, 'home_database_unreadable')
+  fail = false
+  const second = await runSmoke(config(), r.deps())
+  assert.equal(r.fake.started.length, 1)
+  assert.deepEqual([second.summary.trials[0]!.ledgerRead, second.summary.trials[0]!.ledgerError], [true, null])
+  assert.equal(second.report!.arms[0]!.totals.items.groupsUnknown, 0)
+})
+
 const fakeBind = (f: FakeRelay): RelaySource => ({ kind: 'fake', start: (a, i) => f.start(a, i), status: (a, k) => f.status(a, k), stop: (a, k) => f.stop(a, k), events: (a, s, n) => f.events(a, s, n), ledger: (a, r) => f.ledger(a, r) })
 
 test('a naive arm that the relay cannot run is declared unsupported and needs no trials', async () => {

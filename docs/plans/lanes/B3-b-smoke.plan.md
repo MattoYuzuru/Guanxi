@@ -147,7 +147,7 @@ document with `missing{not_collected}` for what did not run. A trial deadline st
 | --- | --- |
 | `plan` | print corpus, digests, expected trial count and the unsupported-arm list |
 | `preflight --config F [--repo PATH]` | config parse; fixture repo base/blobs; endpoint reachable; home database tables |
-| `run --config F --out DIR [--tasks a,b] [--arms x,y] [--seeds 0]` | execute, assemble, validate, reduce |
+| `run --config F --out DIR [--tasks a,b] [--arms x,y] [--seeds 0]` | execute, assemble, validate, reduce; `--arms` runs one arm per pass against the same `DIR` (review round) |
 | `report --measurement F` | validate and reduce a saved document |
 | `fixture --out DIR` | the same pipeline against the built-in fake relay (offline self-test) |
 

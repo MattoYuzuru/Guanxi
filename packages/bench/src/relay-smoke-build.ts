@@ -22,6 +22,8 @@ export interface SealObservation {
   bundleMatchesHandoff: boolean | null
   /** The stored artifact hash equals the re-hash of the stored handoff. */
   artifactMatchesHandoff: boolean | null
+  /** The stored ledger did not have the expected shape; every fact derived from this seal is unknown. */
+  unreadable?: true
 }
 export interface LedgerObservation {
   seals: SealObservation[]
@@ -36,6 +38,8 @@ export interface TrialObservation {
   arm: string
   seed: number
   key: string
+  /** Digest of everything that decides what this trial measures; a stored observation is reused only under the same fingerprint. */
+  fingerprint: string
   runId: string | null
   startedAtMs: number | null
   finishedAtMs: number | null
@@ -48,6 +52,8 @@ export interface TrialObservation {
   /** Fixed code when the home database could not be read; null otherwise. */
   ledgerError: string | null
   endedBy: 'terminal' | 'deadline' | 'aborted' | 'start_failed'
+  /** Memory only, never stored: the relay for this key could not be confirmed terminal or stopped, so nothing may start after it. */
+  unsettled?: true
 }
 export interface ArmProfile { id: string; kind: string; ledgerHandoff: boolean; deadEndGuard: boolean }
 export interface BuildContext { horizon: number; book: EvidenceBook; arm: ArmProfile }
@@ -84,7 +90,8 @@ function itemOpportunities(ledger: LedgerObservation, cycle: number): { ok: bool
   const bySeal = new Map(ledger.seals.map(s => [s.cycle, s]))
   const snapshot = (k: number) => bySeal.get(k) ?? (ledger.final && ledger.final.cycle === k ? ledger.final : null)
   const here = snapshot(cycle)
-  if (!here) return { ok: false, opportunities: [], unassessable: true }
+  // The evidence of a cycle is the tail past the previous cycle's: an unreadable seal makes it and the next cycle unassessable.
+  if (!here || ('unreadable' in here && here.unreadable) || (cycle > 1 && bySeal.get(cycle - 1)?.unreadable)) return { ok: false, opportunities: [], unassessable: true }
   // The evidence list is append-only, so the entries added in this cycle are the tail past the previous snapshot.
   let seenBefore = 0
   const touchedBefore = new Set<string>()
@@ -215,7 +222,7 @@ export function buildTrialSlot(ctx: BuildContext, obs: TrialObservation, plan: P
     const seal = ledger?.seals.find(s => s.cycle === k)
     if (!arm.ledgerHandoff) integrity = { state: 'unknown', reason: 'unsupported' }
     else if (!ledger) integrity = { state: 'unknown', reason: 'not_collected' }
-    else if (!seal || !seal.ledgerSha256 || !seal.handoffLedgerSha256 || !seal.bundleSha256 || ![seal.ledgerSha256, seal.handoffLedgerSha256, seal.bundleSha256].every(h => SHA.test(h))) integrity = { state: 'unknown', reason: 'unavailable' }
+    else if (!seal || seal.unreadable || !seal.ledgerSha256 || !seal.handoffLedgerSha256 || !seal.bundleSha256 || ![seal.ledgerSha256, seal.handoffLedgerSha256, seal.bundleSha256].every(h => SHA.test(h))) integrity = { state: 'unknown', reason: 'unavailable' }
     else {
       const agrees = seal.ledgerSha256 === seal.handoffLedgerSha256 && seal.bundleMatchesHandoff === true && seal.artifactMatchesHandoff === true
       integrity = { state: 'observed', ref: e('seal_reference'), value: { ledgerSha256: seal.ledgerSha256, handoffLedgerSha256: seal.handoffLedgerSha256, bundleSha256: seal.bundleSha256, reportedValidation: agrees ? 'passed' : 'failed' } }

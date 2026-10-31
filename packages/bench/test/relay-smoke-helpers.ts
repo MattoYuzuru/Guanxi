@@ -58,7 +58,7 @@ export function cycles(n: number, options: { probes?: (cycle: number) => boolean
 }
 export function observation(overrides: Partial<TrialObservation> = {}): TrialObservation {
   return {
-    version: 1, task: 'll-money-text', arm: 'ledger-relay', seed: 0, key: 'b3s-test', runId: 'run-1', startedAtMs: T0, finishedAtMs: T0 + 900_000, status: 'completed', statusError: null,
+    version: 1, task: 'll-money-text', arm: 'ledger-relay', seed: 0, key: 'b3s-test', fingerprint: 'fp-test', runId: 'run-1', startedAtMs: T0, finishedAtMs: T0 + 900_000, status: 'completed', statusError: null,
     windowTokens: 32768, facts: [], ledger: null, ledgerError: null, endedBy: 'terminal', ...overrides,
   }
 }
