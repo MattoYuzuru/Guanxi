@@ -279,6 +279,23 @@ test('a read is paged on character boundaries with a byte cursor, and refuses a 
   assert.equal(await code(makeView({ pageBytes: 1, maxPageBytes: 1 }).view.read(repo.dir, { path: 'docs/utf8.txt' })), 'page_too_small')
 })
 
+test('a read page that would exceed the result bound is shortened, ends on a boundary and the cursor continues from there', async t => {
+  const text = '"\n'.repeat(400)
+  const repo = await makeRepo(t, { 'docs/escaped.txt': text })
+  const { view } = makeView({ pageBytes: 800, maxPageBytes: 800, maxResultBytes: 1_000 })
+  let offset: number | null = 0, assembled = '', pages = 0
+  while (offset !== null) {
+    const result: { text: string } = await view.read(repo.dir, { path: 'docs/escaped.txt', offset })
+    assert.ok(Buffer.byteLength(result.text) <= 1_000, 'the serialized result stays inside the bound')
+    const page: Record<string, any> = JSON.parse(result.text)
+    assert.ok(page.text.length > 0 && page.text.length < 800, 'shortened below the asked page')
+    assert.equal(page.more, true === (page.nextOffset !== null))
+    assembled += page.text; offset = page.nextOffset; pages++
+    assert.ok(pages < 100)
+  }
+  assert.equal(assembled, text); assert.ok(pages > 1)
+})
+
 test('a search is literal, single-line, paged with a cursor and explicit about clipped lines', async t => {
   const lines = Array.from({ length: 12 }, (_, i) => `needle ${i} a.c`).join('\n') + '\nabc\n'
   const repo = await makeRepo(t, { 'src/hay.txt': lines, 'src/wide.txt': `needle ${'w'.repeat(500)}\n` })
@@ -305,6 +322,14 @@ test('a search is literal, single-line, paged with a cursor and explicit about c
   assert.match(wide.matches[0].text, /…\[line clipped, 467 more characters\]$/)
   assert.equal(wide.truncated, true); assert.equal(wide.more, false)
   assert.equal(await code(view.search(repo.dir, { text: 'x', path: 'nope' })), 'not_found')
+})
+
+test('a path is a literal name for every tool: glob and pathspec magic never widen a search', async t => {
+  const repo = await makeRepo(t, { 'glob/a*b.txt': 'needle2 star\n', 'glob/aXb.txt': 'needle2 x\n', 'glob/:(top)README.md': 'needle2 magic\n' })
+  const { view } = makeView()
+  assert.deepEqual((await json(view.search(repo.dir, { text: 'needle2', path: 'glob/a*b.txt' }))).matches.map((match: any) => match.path), ['glob/a*b.txt'])
+  assert.deepEqual((await json(view.search(repo.dir, { text: 'needle2', path: 'glob/:(top)README.md' }))).matches.map((match: any) => match.path), ['glob/:(top)README.md'])
+  assert.equal((await json(view.search(repo.dir, { text: 'needle2', path: 'glob' }))).matches.length, 3)
 })
 
 // ---- refs, roots, inputs ----------------------------------------------------------------------
@@ -428,10 +453,13 @@ test('a project call is served from the project of the stored lead session and a
   assert.deepEqual(denied, { kind: 'result', isError: true, text: 'path_denied' })
   const traversal = await turn.call(LEAD_PROJECT_READ_TOOL, { path: '../outside/private.txt' })
   assert.deepEqual(traversal, { kind: 'result', isError: true, text: 'path_invalid' })
-  assert.deepEqual(roots, ['p', 'p', 'p', 'p', 'p'], 'the project is the lead session\'s, never the input\'s')
+  // A project named in the input is not a field: it is refused, and the root still comes from the lead session.
+  const foreign = await turn.call(LEAD_PROJECT_TREE_TOOL, { project: 'other-project', projectId: 'other-project', root: repo.outside })
+  assert.ok(foreign.kind === 'result' && foreign.isError === true && foreign.text.startsWith('invalid_input: '))
+  assert.deepEqual(roots, ['p', 'p', 'p', 'p', 'p', 'p'], 'the project is the lead session\'s, never the input\'s')
   const notes = turn.notes()
   assert.deepEqual(notes.map(note => [note.tool, note.outcome]), [[LEAD_PROJECT_TREE_TOOL, 'ok'], [LEAD_PROJECT_READ_TOOL, 'ok'], [LEAD_PROJECT_SEARCH_TOOL, 'ok'],
-    [LEAD_PROJECT_READ_TOOL, 'path_denied'], [LEAD_PROJECT_READ_TOOL, 'path_invalid']])
+    [LEAD_PROJECT_READ_TOOL, 'path_denied'], [LEAD_PROJECT_READ_TOOL, 'path_invalid'], [LEAD_PROJECT_TREE_TOOL, 'invalid_input']])
   assert.equal(notes[1]!.path, 'src/money.ts'); assert.equal(notes[1]!.commit, repo.head); assert.ok(Number(notes[1]!.bytes) > 0)
   assert.equal(notes[2]!.queryChars, 'Math.round'.length)
   assert.equal(notes[3]!.path, null, 'a refused call records the code, not the path it was refused for')
