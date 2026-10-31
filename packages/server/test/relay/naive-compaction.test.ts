@@ -87,6 +87,20 @@ test('naive: the second cycle is shown the goal and the summary and nothing of t
   } finally { f.close() }
 })
 
+test('naive: a note the model writes is stored but never selected into the seal or shown to the next cycle; the default arm shows it', async () => {
+  const note = [{ action: 'note', kind: 'decision', text: 'NOTE-TEXT-X', items: ['a'], expiresAt: null }]
+  const run = async (limits: object) => {
+    const f = fixture({ plan: pair, actions: script(() => SUMMARY, note), limits })
+    try {
+      await f.executor.run(f.attempt)
+      assert.equal(f.relay.notes(f.run.id).length, 1, 'the note is in the ledger store either way')
+      return { sealed: f.relay.sealed(f.attempt)!.handoff.notes.length, nextCycle: work(secondCycle(f.prompts)).some(p => p.includes('NOTE-TEXT-X')) || secondCycle(f.prompts).some(p => p.startsWith('Answer these five') && p.includes('NOTE-TEXT-X')) }
+    } finally { f.close() }
+  }
+  assert.deepEqual(await run({ compaction: 'naive' }), { sealed: 0, nextCycle: false })
+  assert.deepEqual(await run({}), { sealed: 1, nextCycle: true })
+})
+
 test('naive: the executor refuses the ledger tools it no longer lists, and still serves them in the default arm', async () => {
   const query = [{ action: 'tool', name: 'work.query', args: {} }, { action: 'tool', name: 'notes.search', args: { query: 'x' } }]
   const results = async (limits: object) => {
