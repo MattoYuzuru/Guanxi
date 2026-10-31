@@ -175,15 +175,51 @@ currently scrubs it in memory before paging; bounded memory streaming is not cla
 conversion remains a named residual. Images are referenced by policy, not stored as base64 in
 events. Reasoning stays in K2's retention class, outside model/CLI output and console logs.
 
-Queued prompts still use the v1 `agent.queue` representation in this lane state: full queued
-text inline, even after consumption, with no new cap. Q0 has added the v3 contract, independent
-ledger 40 and session-log reader/privacy/export support, but the native producer, native
-routes/UI and CLI remain v1 until Q1/Q2; progress itself stays the legacy v1 body. If a v3
-snapshot is present, legacy progress refuses with the existing content-free `agent_unavailable`
-(HTTP 503) instead of silently retaining an older v1 queue; this is a compatibility boundary,
-not a v3 consumer and not the Q1 progress2 contract. This README does not claim queue
-artifactization or a native v3 rollback floor. Consuming a queued prompt may artifactize its
-own later `prompt` event, while the earlier queue event stays inline. A published input blob
+Queued prompts still use the v1 `agent.queue` representation: full queued text inline, even
+after consumption, with no new cap. The producer, `POST /queue` and `DELETE /queue/:item` are
+unchanged. Q0 added the v3 contract, independent ledger 40 and the session-log reader/privacy/
+export support; Q1 (this section) makes the native node a **restricted v3 reader**:
+
+- `queue-state.ts` normalizes the latest `agent.queue` snapshot (v1 or v3) into an internal
+  executable union `{id,kind:'inline',text} | {id,kind:'artifact',artifact}` and drops ids that
+  are already a `prompt.messageId`. Progress bodies are projections of it; it is never an
+  outward body, and an excerpt is never executed.
+- `GET /api/agent/:id` (or `?progressVersion=1`) keeps the legacy body. A pending
+  artifact-backed item has no honest v1 text, so it returns HTTP 406
+  `{code:'native_progress_version_unsupported',supported:1,required:2}`; inline-only queues,
+  including a v3 queue and a legacy oversized inline entry, keep the exact legacy shape.
+  `?progressVersion=2` returns the strict v2 body: `inline`, `artifact` (stored excerpt only)
+  and `legacy-preview` (an oversized legacy v1 inline entry: bounded excerpt of the complete
+  scrubbed text plus its exact byte size). Neither opens a blob. The query is strict; other
+  values or keys return 400. `GET /:id/result` and the CLI `agentExecResult.version = 1` do
+  not depend on the queue.
+- After a completed turn drains, the next item is chosen from fresh events. Its R1 run and
+  attempt are allocated first and own every later step; `active.queue` stays closed to
+  add/remove (`session_not_running`) until preparation ends. An artifact is read through
+  `SessionInputStore.read` (session, id, checksum, size, media type, exact digest), decoded as
+  strict UTF-8 and scrubbed with the current registry; an inline legacy item is scrubbed
+  afresh. Abort, session availability, active identity and the R1 fence are rechecked after
+  every await and synchronously before the prompt append and provider call. The durable
+  `prompt` keeps the queue id as `messageId` with `origin: queued`.
+- An unreadable input (missing, tampered, wrong size/checksum/session, invalid UTF-8) writes one
+  content-free `error` (`input_artifact_unavailable`) and the failed terminal on the new
+  attempt: no prompt marker, provider or tool call, the selected id stays pending and the next
+  item is never skipped to. Stop during preparation records its intervention on the
+  preparation attempt and cancels it; a deposed owner writes nothing.
+- **Restricted floor.** While the latest snapshot is v3 and still has a pending item, add and
+  remove (including the agent's `queue` tool, `POST /prompts` while running and duplicate
+  removal) refuse with HTTP 409 `{code:'native_queue_producer_unavailable'}`, decided inside
+  the queue FIFO before anything is written or read. Side-chat Send reports the existing
+  `agent_unavailable`. Once every v3 item is consumed the next mutation writes a v1 snapshot as
+  before. Q2 replaces this restriction with a v3-producing add/remove.
+
+This is the restricted reader rollback floor (Q0+Q1): progress2, verified consumption, result and
+stop work over v3 state; v3-state mutations wait for Q2. It is not an artifactization claim:
+normal native production still writes v1, so a pre-Q0 max-2 reader keeps reading Q1-written
+data, while a stored v3 event stops it at `requiredVersion: 3`. A client built for progress2
+against a pre-Q1 node is unsupported (the node ignores the query and answers the legacy body,
+which the strict v2 parse rejects). Consuming a queued prompt may artifactize its own later
+`prompt` event, while the earlier queue event stays inline. A published input blob
 left by a failed append is an orphan until the whole session is deleted; no per-blob GC runs in
 this slice. The full input is buffered for replay and re-scrubbing; a bounded-memory streaming
 reader is not claimed.

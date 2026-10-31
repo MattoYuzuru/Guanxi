@@ -1,7 +1,7 @@
 # Session log
 
 **Status:** implemented (K2), locally validated; queue v3 reader/migration foundation unreleased
-(Q0, not yet a native rollback floor) · **Updated:** 2026-10-22 · **Owner:** lanes K2/K4
+(Q0 plus the Q1 restricted native reader) · **Updated:** 2026-11-01 · **Owner:** lanes K2/K4
 
 One append-only event log per session is the trace
 ([ADR-0023](../../../../docs/decisions/0023-session-event-log-and-tracing.md)). It lives in the
@@ -46,7 +46,7 @@ a separate slice.
 
 Queue snapshots have a third, strictly discriminated envelope. v1 `agent.queue`
 `{items:[{id,text}]}` and every v1/v2 shape stay readable and unchanged; the producer in
-`native-agent` still writes v1 until Q1/Q2. A v3 snapshot is a standard `agent.queue` event
+`native-agent` still writes v1 until Q2 (Q1 reads v3). A v3 snapshot is a standard `agent.queue` event
 whose items are either `{id,kind:'inline',text}` (at most 16 KiB scrubbed UTF-8) or
 `{id,kind:'artifact',artifact}` (the existing exact excerpt/reference shape, media
 `text/plain; charset=utf-8`, byte size above 16 KiB). Empty snapshots are valid, item ids are
@@ -205,14 +205,13 @@ this client; no mutation or partial-success retry is performed.
   Chat, K5, assistant output, reasoning, tool results, images and model requests remain on their
   current paths.
 - Q0 adds the v3 queue contract, migration 40, atomic log append/read/privacy support, export 3
-  and an inspector renderer. The native producer still writes v1 `agent.queue`; native
-  progress remains the legacy v1 body and refuses a present v3 snapshot with the existing
-  content-free `agent_unavailable` instead of reusing an older v1 queue. The native
-  service/routes/UI/CLI v3 consumer and progress2 are Q1/Q2 work. Q0 is an unreleased
-  compatibility foundation, not a whole-node v3 rollback floor and not an
-  artifactization-complete claim. Legacy v1 queue events remain readable and are not rewritten
-  in place; an old immutable inline snapshot can still be larger than the published excerpt
-  bound, and the inspector shows a bounded preview rather than the full tail.
+  and an inspector renderer. The native producer still writes v1 `agent.queue`. Q1 adds the
+  native restricted reader: executable queue state, progress2, verified full-byte consumption
+  and a typed 409 for add/remove over a pending v3 snapshot (see the
+  [native README](../native-agent/README.md)); Q0+Q1 is the restricted reader rollback floor,
+  and the producer round Q2 is still open. Legacy v1 queue events remain readable and are not
+  rewritten in place; an old immutable inline snapshot can still be larger than the published
+  excerpt bound, and the inspector shows a bounded preview rather than the full tail.
 - Queue FTS remains `NULL`: queue text is not searchable, and no queue-tail hydration or
   artifact download endpoint exists. Prompt titles/search retain their existing v2 behavior.
 - Other large payloads are still stored inline; ADR-0023 §4 remains proposed, not accepted.

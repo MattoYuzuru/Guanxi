@@ -1,6 +1,6 @@
 # K4 queue v3, round Q1: native reader and progress vertical slice
 
-**Status:** plan for lane `K4-queue-v3-Q1` (author round; no independent review yet) ·
+**Status:** implemented by lane `K4-queue-v3-Q1` (author round; no independent review yet) ·
 **Date:** 2026-11-01 · **Branch:** `lane/k4-queue-q1`, from `lead/wave8` `2b8cf843` ·
 **Ports/data:** `GUANXI_WEB_PORT=5242 GUANXI_API_PORT=4442 GUANXI_DATA_DIR=$PWD/.lane-data`
 
@@ -109,7 +109,7 @@ which production line was reverted to confirm a failure ("mutation check") and t
 | --- | --- |
 | Q06 | seeded v3 pending artifact (>16 KiB with a tail sentinel): one queued prompt with the original id, one provider request containing the full bytes including the tail, never the excerpt; consumed once; one new run/attempt per consumed item |
 | Q07 | missing blob, tampered bytes, foreign session reference, wrong checksum/size/media type, invalid UTF-8: one `error`, one terminal, selected id still pending, zero prompt/provider/tool, next item not dispatched, old turn untouched |
-| Q08 | stop and session leave while the read is held, deposed fence: zero dispatch, cancelled truth, mutations rejected during preparation |
+| Q08 | stop and session leave while the read is held, deposed fence: zero dispatch, cancelled truth for stop and failed truth for leave, mutations rejected during preparation |
 | Q03 | existing v1 FIFO tests (add/add/remove) unchanged and green |
 | Q05 | stop returns without waiting; existing stop/intervention tests unchanged; preparation stop adds one intervention before one terminal |
 | Q09 | restart before/after prompt commit: reopen inference count 0, pending/consumed ids truthful |
@@ -136,8 +136,10 @@ which production line was reverted to confirm a failure ("mutation check") and t
 6. A failure to read the events at selection time is treated as a preparation failure (a new
    attempt records the failed terminal) instead of being swallowed after a completed turn.
 7. If the session is already unavailable before the next attempt is allocated, no attempt is
-   started and nothing is written; if it becomes unavailable during preparation, the
-   preparation attempt is cancelled.
+   started and nothing is written; if it becomes unavailable during preparation (a leave), the
+   preparation attempt ends with the existing generic failed terminal (`agent_failed`), not a
+   cancellation and not an `input_artifact_unavailable` claim. Only an explicit stop or a close
+   is recorded as cancelled.
 8. `progressVersion` is a strict query (unknown keys give 400 `validation_failed`).
 9. A client built for progress2 against a pre-Q1 node is unsupported: the node ignores the
    query and returns the legacy body, which fails the strict v2 parse, and the client fails

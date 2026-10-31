@@ -43,7 +43,7 @@ type Seed = { id: string; text: string } | { id: string; bytes: Uint8Array }
 
 /** Writes blobs then appends one v3 snapshot as the single writer; the native producer cannot do this yet. */
 async function seedV3(f: Fixture, sessionId: string, items: Seed[]): Promise<void> {
-  const data: { id: string; kind: 'inline'; text: string }[] | unknown[] = []
+  const data: unknown[] = []
   for (const item of items) {
     if ('text' in item && Buffer.byteLength(item.text, 'utf8') <= INPUT_INLINE_BYTES) {
       data.push({ id: item.id, kind: 'inline', text: item.text })
