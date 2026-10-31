@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** proposed structure (the owner asked for a dependency graph; stage contents follow
-their ADRs) · **Updated:** 2026-10-31 (B3 moved from MS1 to MS2, D-219)
+their ADRs) · **Updated:** 2026-11-01 (MS1 closed, B3 in MS2, desktop order D-221)
 **Supersedes:** the legacy Phase 0–9 roadmap in
 [`docs/legacy/alamo/plans/ROADMAP.md`](../legacy/alamo/plans/ROADMAP.md) (Phases 0–3 are
 implemented in the legacy code and are ported, not repeated).
@@ -425,6 +425,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 ### U2 — macOS desktop
 
 - **Depends on:** U1, K4.
+- **Priority (D-221):** the first desktop app; Linux (U6) follows, Windows last.
 - **Scope:** Electron thin shell, service handshake, sandboxed renderer, DMG with
   notarization, auto-update.
 - **Exit gate:** closing the window during a run does not stop the run; the renderer has no
@@ -470,7 +471,9 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 ### U6 — Linux and Windows packaging
 
 - **Depends on:** U2.
-- **Scope:** AppImage, rpm (Fedora), Flatpak, NSIS; CI matrix; headless node package.
+- **Order (D-221):** Linux first with Fedora as the reference (rpm, then AppImage, Flatpak and
+  the headless node package), Windows (NSIS) last; a Windows build never blocks a Linux release.
+- **Scope:** rpm (Fedora), AppImage, Flatpak, headless node package, then NSIS; CI matrix.
 - **Exit gate:** install, start, run a chat and uninstall on Fedora and Windows 11 in CI or a
   recorded manual check.
 - **Estimate:** 2–4 sessions.
@@ -681,7 +684,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 | Milestone | Requires | Exit gate |
 | --- | --- | --- |
-| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2 (B3 moved to MS2 by D-219) | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; instead of a ≥ 6-hour duration (superseded by D-214) the real run survives the injected edge cases — a dropped node link during a call, an executor restart, and (in a separate run) a home restart while the lead hibernates, which must end `interrupted` with one honest wake; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake. The B3 gate moved to MS2 (D-219). Lead billing per D-142 (Q-202). |
+| **MS1 Delegate to local** (north star, D-106) | K5, R3, F2 (B3 moved to MS2 by D-219) | A Claude Code or API lead delegates a plan to a local 30B-class model on another node and hibernates; instead of a ≥ 6-hour duration (superseded by D-214) the real run survives the injected edge cases — a dropped node link during a call, an executor restart, and (in a separate run) a home restart while the lead hibernates, which must end `interrupted` with one honest wake; the lead's token counter does not change between `delegate()` and the wake (cost ledger assertion); all plan items close with gates green in a clean checkout; exactly one wake. The B3 gate moved to MS2 (D-219). Lead billing per D-142 (Q-202). **Closed 2026-10-31** on the run A7 and fault-run evidence. |
 | **MS2 Daily driver** | U2, U3, P1, V1, X1, C1, C4, K5, WG1, WG2, NC1, DS2, B3 | The owner uses Guanxi daily on the Mac for two weeks without falling back to another harness for a task Guanxi supports; all listed stage gates hold, including the full B3 relay-benchmark cohort (D-219). |
 | **MS3 Fleet and media** | F4, F5, W3, C2, U4 | A batch, a remote test and a cloud burst run in one week within budget, controlled from the phone; all listed stage gates hold. |
 | **MS4 Self-evolving** | E4, E5, V2, X2 | Over a month, at least one change per risk class ships through its gate, none is rolled back by the owner, and friction per 100 sessions does not rise. |
