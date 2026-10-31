@@ -169,31 +169,44 @@ The second pass reads the first pass's stored observations (same fingerprint rul
 both arms. Two selected arms behind one endpoint and database in a **single** pass are refused (`smoke_config_arm_endpoint`):
 a node has one mode at a time.
 
-**The arm is confirmed from each run's own events, not from the pass order.** A naive run writes the note
-`compaction` (mode `naive`) before its first model call, `probe_not_applicable` for every cycle after the first and
-`compaction_summary` after each seal; a ledger run writes none of them. After a trial reaches a terminal state the runner
-reads the events and compares: a trial planned as naive must show the `naive` statement, a trial planned as ledger must
-show no naive marker. A disagreement (a pass run in the wrong node mode, events that cannot be read, naive markers without
-the statement) is **a failure, never a relabel**: the trial is not stored and not in the document, no further trial
-starts, `summary.json` says `halted: arm_mode_mismatch` or `arm_mode_unconfirmed`, and the run exits `1`. Fix the mode
-(or the events) and rerun: an unconfirmed trial re-attaches to the same key, but a mismatched run already exists on the
-node under that key, so change `keySalt` (and, if a ledger pass was done under the old salt, use a new `--out` or accept
-that its trials are re-run). `summary.json` also records `armIdentity: operator_asserted`, a short hash of each arm's
+**The arm is confirmed from each run's own record, not from the pass order.** A naive attempt writes the note
+`compaction` (`mode: naive`, the R1 `attempt` id and its `epoch`) before its first model call, once per executor attempt;
+it also writes `compaction_summary` after each seal and `probe_not_applicable` for every cycle after the first. A ledger
+attempt writes none of them, so the proof sits on the naive side. After a trial reaches a terminal state the runner reads
+the events and the sealing attempts (`relay_seals.attempt_id`, from the home database) and applies these rules:
+
+- **naive trial:** every attempt that sealed a cycle has its own marker, every `compaction_summary` names a marked attempt,
+  the marker epoch equals the seal epoch, and there is no `probe` note (a ledger attempt asks the probe, a naive attempt
+  never does; this also catches a ledger attempt that was stopped before it sealed anything);
+- **ledger trial:** no naive marker and none of the other naive notes;
+- **cannot be read** (no events, an unknown mode, a marker without an attempt id, the home database not readable): not confirmed.
+
+A disagreement is **a failure, never a relabel**: the trial is not stored and not in the document, no further trial starts,
+`summary.json` says `halted` with one of `arm_mode_mismatch` (the other arm's record), `arm_mode_mixed` (attempts of both
+modes in one run, as after a node restart in the other mode between attempts) or `arm_mode_unconfirmed`, and the run exits
+`1`. A naive arm therefore needs `homeDb` (preflight fails with `naive_arm_needs_home_database` without it). Fix the mode
+(or the database) and rerun: an unconfirmed trial re-attaches to the same key, but a mismatched or mixed run already exists
+on the node under that key, so change `keySalt` (and, if a ledger pass was done under the old salt, use a new `--out` or
+accept that its trials are re-run). The one case no record shows is a ledger attempt that was interrupted before it
+probed or sealed anything. `summary.json` also records `armIdentity: operator_asserted`, a short hash of each arm's
 endpoint and its harness revision (an arm entry may carry its own `harnessRevision`).
 
 What the naive arm contributes to the document: item facts are read from the sealed ledgers exactly as for the ledger arm
 (the harness gates are unchanged); the probe group of every cycle after the first is `unknown{unsupported}` from the
 `probe_not_applicable` notes, so it never counts as a pass or a fail and there is no probe accuracy for this arm; integrity
 is `unknown{unsupported}` (no handoff the model saw); a repeated dead end counts as unguarded (`deadEndGuard` false). Summary
-losses (`truncated`, `degraded`, `inputDropped`, `inputCut`) are listed as `notes` per trial in `summary.json`
-(`compaction_summary_truncated:N`, `compaction_summary_degraded:N`, `compaction_input_loss:…`); they are harness events and
-are **not** added to the runtime truncation count. Run the judge (`home.judge`) the same way, or not at all, in both passes.
+losses (`truncated`, `degraded`, `inputDropped`, `inputCut`) and the limits the relay reported are listed as `notes` per trial in
+`summary.json`: `compaction_summaries:N`, `compaction_summary_truncated:N`, `compaction_summary_degraded:N`,
+`compaction_summary_degraded_reasons:<code>=N,…` (the relay's fixed `degradedReason`, e.g. `model_failed`,
+`narrative_output_limited`, `handoff_fallback`), `compaction_summary_limit_bytes:min=…,max=…` (`summaryLimitBytes`, the room
+the 15% handoff bound leaves for the summary), `compaction_output_limit_tokens:min=…,max=…` (`outputLimitTokens`, the reply
+reserve) and `compaction_input_loss:dropped=…,cut=…`; they are harness events and are **not** added to the runtime truncation count. Run the judge (`home.judge`) the same way, or not at all, in both passes.
 The ledger arm defaults to `ledgerHandoff` and `deadEndGuard` true because only its sealed handoff carries the live
 dead-end notes (`selectNotes`); the naive arm defaults to false for both.
 
 ## Failure codes
 
-`arm_mode_mismatch` / `arm_mode_unconfirmed` (halts, exit 1), `endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
+`arm_mode_mismatch` / `arm_mode_mixed` / `arm_mode_unconfirmed` (halts, exit 1), `endpoint_invalid` (not loopback http), `endpoint_unreachable`, `timeout`, `home_node_not_running`, `relay_http_failed`, `response_invalid`,
 `runtime_meter_unavailable` / `relay_workspace_unavailable` / `relay_idempotency_conflict` /
 `relay_local_connection_required` (the relay's own refusals, see the relay README), `home_database_unreadable`,
 `smoke_config_invalid`, `smoke_config_tasks`, `smoke_config_arms`, `smoke_config_eta`, `file_unreadable`,
