@@ -238,7 +238,7 @@ export class Ms1LiveNode {
       ...(home.reservationMs ? { reservationMs: home.reservationMs } : {}), ...(home.pollMs ? { pollMs: home.pollMs } : {}) })
     const allocator = new OwnedCheckoutAllocator({ root: home.checkoutRoot ?? join(dataDir, 'relay-checkouts') })
     return { runtime: Object.freeze({ maximumAgeMs: home.maximumAgeMs, observer: remote }), reserves: Object.freeze({ ...home.reserves }), allocate: allocator.allocate,
-      limits: Object.freeze({ structuredOutput: home.structuredOutput }) }
+      limits: Object.freeze({ structuredOutput: home.structuredOutput, ...(home.relayCompaction === 'naive' ? { compaction: 'naive' as const } : {}) }) }
   }
 
   /** Home: the judge of each relay start, from `home.judge`; undefined (no judge) when the section is absent.

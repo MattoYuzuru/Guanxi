@@ -1,6 +1,6 @@
 import { PRODUCT_NAME } from '@guanxi/contract'
 import { createHash } from 'node:crypto'
-import type { Handoff, Ledger, Note } from './types.ts'
+import type { Handoff, Ledger, Note, Plan } from './types.ts'
 import { invariant } from './types.ts'
 import { bounded } from './budget.ts'
 
@@ -32,6 +32,19 @@ export function strip(l: Ledger): string {
     canonical({ current, currentStatus, query: 'work.query' }),
   ]) if (Buffer.byteLength(value) <= 300) return value
   return bounded(canonical({ current, currentStatus, query: 'work.query' }), 300)
+}
+/** Naive arm only: the plan as the task statement the first cycle starts from. It is derived from the immutable plan alone (every item open),
+ * so it carries no live status, no progress and no tool hint, and is the same on a resumed attempt. `strip` above is unchanged. */
+export function taskStatement(plan: Plan): string {
+  const first = plan.items.find(i => i.dependsOn.length === 0), current = first?.id ?? null
+  const core = { initial: true, current, queued: plan.items.find(i => i.id !== current)?.id ?? null, blocked: plan.items.filter(i => i.dependsOn.length > 0).map(i => i.id) }
+  for (const value of [
+    canonical({ ...core, ...(first ? { title: first.title, acceptance: first.acceptance } : {}) }),
+    canonical({ ...core, ...(first ? { title: first.title } : {}) }),
+    canonical(core),
+    canonical({ initial: true, current }),
+  ]) if (Buffer.byteLength(value) <= 300) return value
+  return bounded(canonical({ initial: true, current }), 300)
 }
 export function selectNotes(notes: Note[], ledger: Ledger, now: number, budget: number, lastK: number): Note[] {
   const decisions = new Set(notes.filter(n => n.kind === 'decision').slice(-lastK).map(n => n.id))
