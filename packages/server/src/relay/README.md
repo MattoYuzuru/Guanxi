@@ -406,6 +406,58 @@ refuses dispatch. Failed/crashed calls retain conservative reservations. Exhaust
 R1 `wrapping_up`; no new work/model calls run there. The retained ledger is the deterministic
 report; a later lead decides completion/cancellation.
 
+## Naive-compaction arm (B3-c, benchmark only)
+
+**Status:** implemented, default off, covered by fixture tests only; never run against a real model. It is a **benchmark arm
+for the B3 relay-benchmark comparison, not a product feature**: there is no wire field, contract change, route, CLI flag, UI or
+default, and the public start cannot select it.
+
+`RelayLimits.compaction` (`'ledger'` | `'naive'`, absent means `ledger`) is a trusted-host, node-wide setting. A home sets it
+through `home.relayCompaction` in the ms1-live configuration (see [MS1 live run](../../../../docs/operations/ms1-live-run.md));
+`ledger` and absence are byte-for-byte the relay described above (the tests compare prompts, events and the ledger of an explicit
+`ledger` run with the default). With `naive` the executor changes only what the model is shown at a cycle boundary:
+
+| Site | Ledger (default) | Naive |
+| --- | --- | --- |
+| first cycle | strip, goal | the strip as it stood at cycle start (the task statement), frozen, and the goal |
+| later cycles | live strip, goal, narrative (notes in the handoff) | the goal and the stored **summary** only |
+| boundary | `Write a fresh bounded handoff narrative…` from strip, notes and the last 3 turns | `Summarize the work so far…` over what the cycle was shown (its head, which for cycle 2 and later is the previous summary, and every turn) |
+| `work.query`, `notes.search` | offered and served | not offered; a call is refused with `tool_denied` |
+| critical probes | five probes, one retry, `probe_failed_twice` escalates | **not asked** (see below) |
+
+Unchanged on purpose, so the comparison differs only in what the model sees: the window, thresholds and reserves; `pack` (oldest
+turns fall off first, a drop or cut ends the cycle and is reported as `context_dropped`); the checkpoint-if-dirty, `validate`, final
+gates, `countProgress`, judge samples, ETA and caps; the cost ledger (the summary call is a `narrative` call, so its tokens land in
+the same rows); `store.seal`, the ledger snapshot, the bundle and `validateHandoff` (the durable seal still carries the ledger and
+strip for fencing and integrity checks, and notes are still stored, but the model never sees any of them).
+
+The summary is bounded by the handoff machinery itself: the whole handoff must fit 15% of W, and `make()` cuts the text with the
+visible `[use paging]` suffix. A summary that the output reserve cuts, or a failed call, seals `degraded` with a fixed text that
+does not mention the ledger tools. A damaged seal is not repaired from the ledger (the arm has none to show): the next cycle gets a
+fixed "summary unavailable" text. Nothing is capped silently: every cut and loss is a note.
+
+**Probes in this arm.** The five probes (ledger hash, head, revision, next item, its status) are facts of the ledger strip. The arm
+is never shown them, and carrying them in the summary would hand it the ledger by another route (and a hash means nothing to a
+summarizer). Asking would produce a probe that fails by construction, cost a model call per cycle and be mistaken for a measurement.
+So the cycle records `probe_not_applicable` (reason `ledger_facts_not_shown`) and **no `probe` note**; consumers must count it as
+neither a pass nor a fail. Each arm pays for its own mechanism (probes for the ledger arm, the summary call for this one); analysis
+must not subtract either.
+
+**What is recorded** (R1-fenced `agent.note` events, none of them in the default path):
+
+| Note | When |
+| --- | --- |
+| `{relay:'compaction', mode:'naive'}` | once per executor attempt, before the first model call |
+| `{relay:'compaction_summary', mode:'naive', cycle, summaryBytes, handoffLimitBytes, truncated, degraded, inputDropped, inputCut}` | after each seal |
+| `{relay:'probe_not_applicable', mode:'naive', cycle, reason:'ledger_facts_not_shown', damaged}` | each cycle after the first |
+
+A trial is a naive trial exactly when its session carries the first note; it is written by the same flag that changes behaviour,
+before any model call, so it needs no operator configuration to interpret. A runner should also check the note against the arm it
+planned and mark a mismatch invalid. A ledger trial has none of these notes.
+
+Not covered (the arm is a baseline, not a model of any product): observation masking and the single-large-window arm; a second
+summary model; per-field probe results. The `note` and `propose` actions stay available (their results are stored and never shown).
+
 ## Workspace boundary
 
 `GitRelayWorkspace` uses K4's tools and ExecutionOwner with Full access, a dedicated root,
