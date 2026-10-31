@@ -24,8 +24,9 @@ so a second home would need a second pairing. The procedure is written in sectio
 
 The owner has not defined it further; the default used (recorded as such) is the common rolling summary:
 
-1. Cycle 1 is unchanged except that its context head is frozen at cycle start (the strip as the task statement:
-   current item with title and acceptance, queued and blocked ids; there is no previous context to compact).
+1. Cycle 1 (and a resumed attempt with no seal) is shown a task statement derived from the plan alone (review fix H1):
+   `{initial:true, current, queued, blocked, title, acceptance}` with every item open, no live status, no tool hint; there
+   is no previous context to compact.
 2. At the cycle boundary the same model, with the same window and reserves, is asked once to summarise what it
    was shown (the head of that cycle, which for cycle 2 and later is the previous summary, plus the cycle's turns).
    Input packing is the existing `pack`: oldest turns fall off first and a drop or cut is reported as
@@ -47,8 +48,8 @@ checks the comparison relies on, for no benefit in what the model sees.)
 | Site | Ledger (unchanged) | Naive |
 | --- | --- | --- |
 | constructor | tools = `LOCAL_TOOLS` + workspace tools | `work.query` / `notes.search` not listed; `tool()` refuses them with `tool_denied` |
-| `run()` | — | one `{relay:'compaction', mode:'naive'}` note per attempt, before the first model call |
-| work context head | `[strip(l) live, goal, narrative]` | cycle 1: `[strip frozen at cycle start, goal, '']`; later: `[goal, summary]` |
+| `run()` | — | one `{relay:'compaction', mode:'naive', attempt, epoch}` note per attempt, before the first model call |
+| work context head | `[strip(l) live, goal, narrative]` | no seal: `[task statement, goal]`; later: `[goal, summary]` |
 | `orient()` | two probes, `probe_failed_twice` escalates | no model call; records `probe_not_applicable`; a damaged seal gives a fixed "summary unavailable" text, not a ledger recovery |
 | `handoff()` narrative | `Write a fresh bounded handoff narrative…` over strip, notes, last 3 turns | `Summarize…` over the cycle's head and all its turns; stored handoff has no notes selection |
 
@@ -76,7 +77,7 @@ The mode is read from `RelayLimits`, never from the wire. A naive run writes, th
 `store.emit`:
 
 - `{relay:'compaction', mode:'naive'}` at the start of each `executor.run` (each attempt);
-- `{relay:'compaction_summary', mode:'naive', cycle, summaryBytes, handoffLimitBytes, truncated, degraded, inputDropped, inputCut}` per sealed cycle;
+- `{relay:'compaction_summary', mode:'naive', cycle, attempt, summaryBytes, summaryLimitBytes, outputLimitTokens, truncated, degraded, degradedReason, inputDropped, inputCut}` per sealed cycle;
 - `{relay:'probe_not_applicable', mode:'naive', cycle, reason, damaged}` for each cycle after the first.
 
 The default path emits **none** of these and its events, prompts, seals and ledger hashes are unchanged
