@@ -410,7 +410,21 @@ report; a later lead decides completion/cancellation.
 
 `GitRelayWorkspace` uses K4's tools and ExecutionOwner with Full access, a dedicated root,
 planner protected paths and harness-owned `.git`. Its `shell` starts in that checkout, not in K4's empty scratch directory (the gate
-command also `cd`s into its clean checkout), so a plan-relative `node --test test/…` resolves the files the plan names. Checkpoints use
+command also `cd`s into its clean checkout), so a plan-relative `node --test test/…` resolves the files the plan names.
+
+Both compose their line as `cd <dir> 2>/dev/null || { echo cwd_unavailable >&2; exit 125; }; <command>` (`inDirectory` in
+`native-agent/tools.ts`), not `cd <dir> && <command>`: with `&&` a failed `cd` exited 1, the same status as a red test or a missing file.
+Now the command does not run, and the result is recognised by exit 125 **and** a `cwd_unavailable` first line of stderr (`cwdFailed`),
+so a command that merely exits 125 stays its own result. A gate whose checkout cannot be entered stops the run as `cwd_unavailable`
+(infrastructure, like `container_runtime_unavailable`), never as a red gate; a `shell` call answers the same fixed code. A 125 from the
+container guard's own `cd "$HOME"` has no marker and is not covered.
+
+A `shell` command that ran and exited non-zero, arbitrary or one of the fixed `pwd/ls/cat/head/tail/wc` reads, returns
+`{code, stdout, stderr, truncated}` scrubbed and bounded like any result (`cat missing.txt` is `code: 1` with the message, not an
+opaque `tool_failed`). Only a command with no exit code (killed by a signal) stays `tool_failed`, and the sandbox refusals
+(`container_runtime_unavailable`, `sandbox_failed`, `path_denied`) and `cleanup_unconfirmed` keep their fixed codes. Without a relay
+checkout (a plain native session) a non-zero exit of `shell` is still `tool_failed`; `file_write` and `fetch` (`curl --fail`) keep
+that code for a non-zero exit in both. Checkpoints use
 raw hash-object/update-index/commit-tree plumbing without filters,
 hooks or inherited credential environment. Dirty checks use one filter-neutral `git status --porcelain=v2`; object reads are
 streamed through one `git cat-file --batch`. Tests/specs/CI paths are additionally rejected at checkpoint and seal validation;

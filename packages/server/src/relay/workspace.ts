@@ -7,7 +7,7 @@ import { join, resolve, sep, dirname } from 'node:path'
 import { DEFAULT_RELAY_LIMITS, type Plan, type Evidence } from './types.ts'
 import { invariant, relativePath, RelayError } from './types.ts'
 import { sandboxCommand, quote, type SandboxPolicy } from '../native-agent/sandbox.ts'
-import { nativeTools, type NativeToolContext } from '../native-agent/tools.ts'
+import { nativeTools, inDirectory, cwdFailed, type NativeToolContext } from '../native-agent/tools.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { byteHash } from './handoff.ts'
 import { strictParameters } from './json-schema.ts'
@@ -259,7 +259,10 @@ export class GitRelayWorkspace implements RelayWorkspace {
       for (const path of paths) await rm(join(checkout, path), { recursive: true, force: true })
       await this.materialize(plan.base, checkout, true)
       const policy: SandboxPolicy = { ...this.context.policy, roots: [checkout], scratch, protectedPaths: paths.map(p => join(checkout, p)), attachments: [], mode: 'read-only' }
-      const output = await (this.context.executeCommand ?? sandboxCommand)(policy, `cd ${quote(checkout)} && ${item.acceptance.map(quote).join(' ')}`, signal, timeoutMs, false, this.scrubber)
+      const output = await (this.context.executeCommand ?? sandboxCommand)(policy, inDirectory(checkout, item.acceptance.map(quote).join(' ')), signal, timeoutMs, false, this.scrubber)
+      // The gate checkout could not be entered, so the argv never ran. That is the sandbox failing, not the item: stop like any other
+      // sandbox failure instead of reporting a red gate whose output the model would try to fix.
+      if (cwdFailed(output)) throw new RelayError('cwd_unavailable')
       const after = await this.observe(plan.base, plan.base)
       invariant(after.head === before.head, 'head_changed')
       return { item: itemId, head: before.head, ok: output.code === 0 && !output.truncated, output: this.scrubber.scrub(JSON.stringify(output)) }

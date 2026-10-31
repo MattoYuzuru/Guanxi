@@ -5,7 +5,7 @@ import type { SessionEventType } from '@guanxi/contract'
 import { querySessionLog } from '../session-log/query-tool.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import { resolveInWorkspace } from '../tools/jail.ts'
-import { sandboxCommand, quote, type SandboxPolicy } from './sandbox.ts'
+import { sandboxCommand, quote, type SandboxPolicy, type CommandResult } from './sandbox.ts'
 import type { ProjectIndexService } from '../indexing/plugin.ts'
 import { directSymbols } from '../indexing/lsp.ts'
 import { boundMap } from '../indexing/engine.ts'
@@ -38,6 +38,17 @@ export interface NativeToolContext {
   /** Abort the turn after a missing/rejected durable acknowledgment. */
   abortTurn?(): void
 }
+/** Exit code of a command line whose `cd` failed. 125 is the infrastructure code the container guard already uses for its own
+ * `cd "$HOME"`: it is neither the command's status (a failed `cd X && cmd` exits 1, which a red test or a missing file also does)
+ * nor the shell's 126/127. */
+export const CWD_FAILED_EXIT = 125
+/** The first line of stderr after a failed `cd` (the shell's own message is silenced so nothing precedes it). A command that
+ * merely exits 125 does not write it first. */
+const CWD_MARKER = 'cwd_unavailable'
+/** `command` run in `directory`. The command does not run when the directory cannot be entered, and the failure is `cwdFailed`. */
+export const inDirectory = (directory: string, command: string) => `cd ${quote(directory)} 2>/dev/null || { echo ${CWD_MARKER} >&2; exit ${CWD_FAILED_EXIT}; }; ${command}`
+/** Whether the result is that of an `inDirectory` line that never started its command: infrastructure, not the command's own exit. */
+export const cwdFailed = (result: Pick<CommandResult, 'code' | 'stderr'>) => result.code === CWD_FAILED_EXIT && result.stderr.startsWith(CWD_MARKER)
 export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const { policy, handle, scrubber } = ctx
   const outputs = new NativeOutputs(policy.runtimeBase ?? dirname(policy.scratch), handle.sessionId, scrubber)
@@ -77,9 +88,11 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
   const run = async (command: string, signal?: AbortSignal, accepted: readonly number[] | null = [0], fixed = true, cwd?: string) => {
     // The sandbox starts every command in HOME/TMPDIR=scratch. A caller with one unit of work (the relay
     // checkout) names it here, exactly as the gate command names its own clean checkout.
-    const line = cwd ? `cd ${quote(cwd)} && ${command}` : command
+    const line = cwd ? inDirectory(cwd, command) : command
     const result = await (ctx.executeCommand ?? sandboxCommand)(policy, line, signal, 120_000, fixed, scrubber)
     const clean = scrubber.scrub(result)
+    // The command never started: say so with a fixed code rather than hand the model a plausible exit.
+    if (cwd && cwdFailed(clean)) throw new Error(CWD_MARKER)
     if (clean.code === null || (accepted !== null && !accepted.includes(clean.code))) throw new Error('tool_failed')
     return JSON.stringify(clean)
   }
@@ -170,7 +183,7 @@ export function nativeTools(ctx: NativeToolContext): AgentTool[] {
       if (!/^(pwd|ls|cat|head|tail|wc)( [a-zA-Z0-9_./ -]+)?$/.test(a.command!)) return run(a.command!, s, ctx.cwd ? null : [0], false, ctx.cwd)
       const [program, ...args] = a.command!.split(/ +/)
       const binaries: Record<string, string> = { pwd: '/bin/pwd', ls: '/bin/ls', cat: '/bin/cat', head: '/usr/bin/head', tail: '/usr/bin/tail', wc: '/usr/bin/wc' }
-      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s, [0], true, ctx.cwd)
+      return run([quote(binaries[program!]!), ...args.map(quote)].join(' '), s, ctx.cwd ? null : [0], true, ctx.cwd)
     }),
     tool('search', 'Search literal text with FTS5 and Node grep fallback. Result includes checked-out commit, index age, coverage and explicit truncation. Ignored, .env and registered-secret files are excluded.', { path: Type.String(), text: Type.String() }, async (a, s) => indexed('search', a.path!, a.text, undefined, s)),
     tool('repo_map', 'repo.map: repository files and cached tree-sitter symbols. budget is a positive token upper bound measured as UTF-8 bytes for the complete JSON result, including provenance. Small budgets may be refused. Wire alias repo_map.', { path: Type.String(), budget: Type.String() }, async (a, s) => indexed('map', a.path!, undefined, Number(a.budget), s)),
