@@ -2,12 +2,12 @@ import { act, render, screen, fireEvent, waitFor, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { NativeAgentPage, NativeProgress } from '../../src/features/native-agent/NativeAgentPage.tsx'
 import { setActiveLocale } from '../../src/lib/locale.ts'
-import type { AgentProgress } from '@guanxi/contract'
+import type { AgentProgressV2 as AgentProgress } from '@guanxi/contract'
 import { nativeEnglish, nativeRussian } from '../../src/features/native-agent/messages.ts'
 import { RECENT_PROJECTS_KEY } from '../../src/features/new-session/recent.ts'
 import { useCurrentProject } from '../../src/lib/current-project.ts'
-const progress: AgentProgress = { sessionId: 'session', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only',
-  status: 'running', plan: [{ text: 'Inspect', status: 'verification_requested' }], queue: [{ id: 'q', text: 'Follow up' }],
+const progress: AgentProgress = { version: 2, sessionId: 'session', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only',
+  status: 'running', plan: [{ text: 'Inspect', status: 'verification_requested' }], queue: [{ id: 'q', kind: 'inline', text: 'Follow up' }],
   summary: 'Response', error: null, observedAt: '2026-10-21T00:00:00.000Z', source: 'session.log', confidence: 'high' }
 afterEach(() => { vi.unstubAllGlobals(); setActiveLocale('ru') })
 it.each(['en', 'ru'] as const)('progress renders exact plan/queue counts with provenance, button actions and localized status in %s', locale => {
@@ -80,7 +80,7 @@ it('with the browser offline a failed read says so at once, keeps the last state
   const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
   let fail = false, reads = 0
   vi.stubGlobal('fetch', vi.fn(async url => {
-    if (String(url) === '/api/agent/session') { reads++; if (fail) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
+    if (String(url) === '/api/agent/session?progressVersion=2') { reads++; if (fail) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
     throw new Error('Unexpected request')
   }))
   render(<NativeAgentPage sessionId="session" />)
@@ -108,7 +108,7 @@ it.each(['en', 'ru'] as const)('session errors are visible and localized in %s',
 it.each(['running', 'completed', 'failed', 'cancelled', 'interrupted'] as const)('prompt button describes the actual action for %s sessions', async status => {
   setActiveLocale('en')
   vi.stubGlobal('fetch', vi.fn(async url => {
-    if (String(url) === '/api/agent/session') return Response.json({ ...progress, status })
+    if (String(url) === '/api/agent/session?progressVersion=2') return Response.json({ ...progress, status })
     if (String(url) === '/api/agent/projects') return Response.json({ projects: [] })
     if (String(url) === '/api/connections') return Response.json({ connections: [] })
     if (String(url) === '/api/workspaces') return Response.json({ workspaces: [] })
@@ -129,7 +129,7 @@ it.each(['en', 'ru'] as const)('delete uses the contract once, describes discard
       deletes.push(String(url))
       return refuse ? Response.json({ code: 'session_busy' }, { status: 409 }) : Response.json({ sessionId: 'session', deleted: true })
     }
-    if (String(url) === '/api/agent/session') return Response.json({ ...progress, status: 'completed' })
+    if (String(url) === '/api/agent/session?progressVersion=2') return Response.json({ ...progress, status: 'completed' })
     if (String(url) === '/api/agent/projects') return Response.json({ projects: [] })
     if (String(url) === '/api/connections') return Response.json({ connections: [] })
     if (String(url) === '/api/workspaces') return Response.json({ workspaces: [] })
@@ -154,7 +154,7 @@ it.each(['en', 'ru'] as const)('delete uses the contract once, describes discard
 it.each(['running', 'quarantine'] as const)('delete is disabled for %s sessions', async state => {
   setActiveLocale('en')
   vi.stubGlobal('fetch', vi.fn(async url => {
-    if (String(url) === '/api/agent/session') return Response.json({ ...progress, status: state === 'running' ? 'running' : 'failed', error: state === 'quarantine' ? 'cleanup_unconfirmed' : null })
+    if (String(url) === '/api/agent/session?progressVersion=2') return Response.json({ ...progress, status: state === 'running' ? 'running' : 'failed', error: state === 'quarantine' ? 'cleanup_unconfirmed' : null })
     if (String(url) === '/api/agent/projects') return Response.json({ projects: [] })
     if (String(url) === '/api/connections') return Response.json({ connections: [] })
     if (String(url) === '/api/workspaces') return Response.json({ workspaces: [] })
@@ -171,7 +171,7 @@ it('a Send to main refreshes the session status so a stopped session shows its n
   let reads = 0, status: 'completed' | 'running' = 'completed'
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const path = String(url)
-    if (path === '/api/agent/session') { reads++; return Response.json({ ...progress, status, queue: [] }) }
+    if (path === '/api/agent/session?progressVersion=2') { reads++; return Response.json({ ...progress, status, queue: [] }) }
     if (path === '/api/agent/session/side-chat/respond') return Response.json({ requestId: crypto.randomUUID(), text: 'Side answer', truncated: false, context: { source: 'session.log', include: 'session', upToSeq: 3, observedAt: '2026-10-23T10:00:00.000Z', turns: 1, excerpted: 0, bytes: 5 } })
     if (path === '/api/agent/session/side-chat/send') { status = 'running'; return Response.json({ operationId: JSON.parse(String(init?.body)).operationId, messageId: crypto.randomUUID(), delivery: 'started', duplicate: false }, { status: 202 }) }
     throw new Error(`Unexpected request ${path}`)
@@ -198,7 +198,7 @@ it('one failed 500 ms poll shows nothing; the offline note appears after three c
     let failing = false
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const path = String(url)
-      if (path === '/api/agent/session') { if (failing) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
+      if (path === '/api/agent/session?progressVersion=2') { if (failing) throw new TypeError('Failed to fetch'); return Response.json({ ...progress, status: 'running' }) }
       throw new TypeError('Failed to fetch')
     }))
     render(<NativeAgentPage sessionId="session" />)
@@ -243,7 +243,7 @@ function stubTimeline(overrides: { status?: AgentProgress['status']; events?: un
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const path = String(url)
     requests.push(`${init?.method ?? 'GET'} ${path}`)
-    if (path === '/api/agent/session') return Response.json({ ...progress, status: overrides.status ?? 'completed' })
+    if (path === '/api/agent/session?progressVersion=2') return Response.json({ ...progress, status: overrides.status ?? 'completed' })
     if (path === '/api/agent/projects') return Response.json({ projects: [{ id: 'p', name: 'Alpha' }] })
     if (path.startsWith('/api/sessions/session/events')) {
       const after = Number(new URL(path, 'http://x').searchParams.get('after'))
@@ -394,7 +394,7 @@ it('before the first progress read the page says it is reading the session; with
   const held = new Promise<void>(resolve => { release = resolve })
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     const path = String(url)
-    if (path === '/api/agent/session') { await held; return Response.json({ ...progress, status: 'completed' }) }
+    if (path === '/api/agent/session?progressVersion=2') { await held; return Response.json({ ...progress, status: 'completed' }) }
     if (path.startsWith('/api/sessions/session/events')) return Response.json({ sessionId: 'session', events: [], nextAfter: 0, lastSeq: 0, hasMore: false })
     throw new TypeError('Failed to fetch')
   }))
@@ -405,4 +405,75 @@ it('before the first progress read the page says it is reading the session; with
   await waitFor(() => expect(within(timeline).getAllByTestId('native-message')).toHaveLength(1))
   expect(within(timeline).getByText('Response')).toBeTruthy()
   expect(screen.getByRole('heading', { level: 1, name: 'Untitled session' })).toBeTruthy()
+})
+
+const artifactItem = { id: 'artifact-item', kind: 'artifact', artifact: { artifactId: '00000000-0000-4000-8000-000000000001', checksum: `sha256:${'0'.repeat(64)}`,
+  byteSize: 40000, mediaType: 'text/plain; charset=utf-8', excerpt: 'Head of a long queued prompt', excerptBytes: 28 } } as const
+const legacyItem = { id: 'legacy-item', kind: 'legacy-preview', excerpt: 'Head of an earlier long item', excerptBytes: 28, byteSize: 30000 } as const
+const inlineItem = { id: 'inline-item', kind: 'inline', text: 'A short item' } as const
+
+it.each(['en', 'ru'] as const)('Q16: every queue item renders once in order, previews say so truthfully and removal asks for exactly that id in %s', locale => {
+  setActiveLocale(locale)
+  const remove = vi.fn()
+  render(<NativeProgress progress={{ ...progress, queue: [artifactItem, legacyItem, inlineItem] }} remove={remove} />)
+  const rows = screen.getAllByRole('listitem').filter(row => row.hasAttribute('data-queue-item-kind'))
+  expect(rows.map(row => row.getAttribute('data-queue-item-kind'))).toEqual(['artifact', 'legacy-preview', 'inline'])
+  expect(rows[0]!.textContent).toContain('Head of a long queued prompt')
+  expect(rows[0]!.textContent).toContain(locale === 'en' ? 'Preview: first 28' : 'Предпросмотр: первые 28')
+  expect(rows[0]!.textContent).toContain(locale === 'en' ? 'The full text is stored on this node and runs when this item is reached.' : 'Полный текст хранится на этом узле')
+  expect(rows[1]!.textContent).toContain(locale === 'en' ? 'This earlier item keeps its full text' : 'Этот прежний элемент сохраняет полный текст')
+  expect(rows[2]!.textContent).toBe('A short item')
+  expect(document.body.textContent).not.toContain('00000000-0000-4000-8000-000000000001')
+  const buttons = screen.getAllByRole('button', { name: locale === 'en' ? 'Remove queued prompt' : 'Убрать запрос из очереди' })
+  expect(buttons).toHaveLength(3)
+  fireEvent.click(buttons[1]!)
+  expect(remove).toHaveBeenCalledExactlyOnceWith('legacy-item')
+})
+
+it.each(['en', 'ru'] as const)('Q16: a refused queue mutation names the restricted state and sends exactly one DELETE in %s', async locale => {
+  setActiveLocale(locale)
+  const deletes: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+    const path = String(url)
+    if (path === '/api/agent/session?progressVersion=2') return Response.json({ ...progress, status: 'running', queue: [artifactItem, inlineItem] })
+    if (path === '/api/agent/session/queue/artifact-item' && init?.method === 'DELETE') { deletes.push(path); return Response.json({ code: 'native_queue_producer_unavailable' }, { status: 409 }) }
+    if (path === '/api/agent/projects') return Response.json({ projects: [] })
+    if (path === '/api/connections') return Response.json({ connections: [] })
+    if (path === '/api/workspaces') return Response.json({ workspaces: [] })
+    throw new Error(`Unexpected request ${path}`)
+  }))
+  render(<NativeAgentPage sessionId="session" />)
+  await screen.findByRole('region', { name: locale === 'en' ? 'Session progress' : 'Ход сессии' })
+  fireEvent.click(screen.getAllByRole('button', { name: locale === 'en' ? 'Remove queued prompt' : 'Убрать запрос из очереди' })[0]!)
+  expect((await screen.findByRole('alert')).textContent).toContain(locale === 'en' ? 'adding or removing items is unavailable here' : 'нельзя')
+  expect(deletes).toEqual(['/api/agent/session/queue/artifact-item'])
+  expect(screen.getAllByRole('listitem').filter(row => row.hasAttribute('data-queue-item-kind'))).toHaveLength(2)
+})
+
+it('Q16: the page requests progress2 and fails closed on a legacy body from an older node', async () => {
+  setActiveLocale('en')
+  const seen: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    const path = String(url)
+    if (path.startsWith('/api/agent/session?')) { seen.push(path); const { version: _version, ...legacy } = progress; return Response.json({ ...legacy, queue: [{ id: 'q', text: 'legacy' }] }) }
+    if (path === '/api/agent/projects') return Response.json({ projects: [] })
+    if (path === '/api/connections') return Response.json({ connections: [] })
+    if (path === '/api/workspaces') return Response.json({ workspaces: [] })
+    throw new Error(`Unexpected request ${path}`)
+  }))
+  render(<NativeAgentPage sessionId="session" />)
+  await waitFor(() => expect(seen.length).toBeGreaterThan(0))
+  expect(seen[0]).toBe('/api/agent/session?progressVersion=2')
+  expect(screen.queryByRole('region', { name: 'Session progress' })).toBeNull()
+})
+
+it.each(['en', 'ru'] as const)('M1: an unreadable queued input and an unreadable session log each get their own explanation, not the generic error, in %s', locale => {
+  setActiveLocale(locale)
+  const view = render(<NativeProgress progress={{ ...progress, status: 'failed', error: 'input_artifact_unavailable' }} remove={() => {}} />)
+  const stuck = screen.getByRole('alert').textContent ?? ''
+  expect(stuck).toContain(locale === 'en' ? 'its stored text is unavailable on this node' : 'его сохранённый текст недоступен на этом узле')
+  expect(stuck).toContain(locale === 'en' ? 'you can still stop the session' : 'сессию по-прежнему можно остановить')
+  expect(stuck).not.toContain(locale === 'en' ? 'This session failed' : 'Сессия завершилась с ошибкой')
+  view.rerender(<NativeProgress progress={{ ...progress, status: 'failed', error: 'stored_data_invalid' }} remove={() => {}} />)
+  expect(screen.getByRole('alert').textContent).toContain(locale === 'en' ? 'cannot be read safely' : 'нельзя безопасно прочитать')
 })

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { nativeAgentInputSchema, nativeAgentPromptSchema, nativeProjectRootsInputSchema, deleteNativeSessionResponseSchema, nativeRetentionInputSchema, nativeRetentionSchema } from '@guanxi/contract'
+import { agentProgressQuerySchema, nativeAgentInputSchema, nativeAgentPromptSchema, nativeProgressVersionUnsupportedSchema, nativeQueueProducerUnavailableSchema, nativeProjectRootsInputSchema, deleteNativeSessionResponseSchema, nativeRetentionInputSchema, nativeRetentionSchema } from '@guanxi/contract'
 import { isLoopbackPeer } from '../session-log/routes.ts'
 import { NativeAgentError } from './service.ts'
 import { SideChatError } from './side-chat.ts'
@@ -11,6 +11,13 @@ export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins:
   const status = { session_not_found: 404, session_unavailable: 409, session_busy: 409, operation_conflict: 409, context_too_large: 413, validation_failed: 400,
     budget_exhausted: 429, too_many_requests: 429, too_large: 413, quota_exhausted: 429, cancelled: 499, model_failed: 502, connection_unavailable: 503, egress_unavailable: 503, agent_unavailable: 503 } as const
   app.onError((error, c) => {
+    // Typed, content-free refusals of the queue v3 compatibility floor.
+    if (error instanceof NativeAgentError && error.code === 'native_progress_version_unsupported') {
+      return c.json(nativeProgressVersionUnsupportedSchema.parse({ code: error.code, supported: 1, required: 2 }), 406)
+    }
+    if (error instanceof NativeAgentError && error.code === 'native_queue_producer_unavailable') {
+      return c.json(nativeQueueProducerUnavailableSchema.parse({ code: error.code }), 409)
+    }
     if (error instanceof SideChatError) return c.json({ code: error.code, ...(error.details ? { details: error.details } : {}) }, status[error.code] as 400)
     return c.json({ code: error instanceof NativeAgentError ? error.code : error instanceof z.ZodError || error instanceof SyntaxError ? 'validation_failed' : 'agent_unavailable' },
       error instanceof NativeAgentError && error.code.endsWith('not_found') ? 404 : error instanceof NativeAgentError && ['session_busy','writer_busy','cleanup_unconfirmed'].includes(error.code) ? 409 : error instanceof z.ZodError || error instanceof SyntaxError ? 400 : 503)
@@ -31,7 +38,13 @@ export function nativeAgentRoutes(service: () => NativeAgentService, devOrigins:
   app.post('/:id/leave', c => c.json(nativeRetentionSchema.parse(service().leaveSession(c.req.param('id')))))
   app.patch('/:id/retention', async c => c.json(nativeRetentionSchema.parse(service().setRetention(c.req.param('id'), nativeRetentionInputSchema.parse(await c.req.json()).mode))))
   app.delete('/:id', async c => c.json(deleteNativeSessionResponseSchema.parse(await service().deleteSession(c.req.param('id')))))
-  app.get('/:id', c => c.json(service().progress(c.req.param('id'))))
+  // Unversioned and `progressVersion=1` keep the legacy body (or a typed 406 when a pending item is artifact-backed).
+  app.get('/:id', c => {
+    // `queries()` keeps repeated keys as arrays, which the exact-string schema rejects.
+    const query = Object.fromEntries(Object.entries(c.req.queries()).map(([key, values]) => [key, values.length === 1 ? values[0] : values]))
+    const { progressVersion } = agentProgressQuerySchema.parse(query)
+    return c.json(progressVersion === 2 ? service().progressV2(c.req.param('id')) : service().progress(c.req.param('id')))
+  })
   app.get('/:id/result', c => c.json(service().result(c.req.param('id'))))
   app.post('/:id/prompts', async c => { await service().prompt(c.req.param('id'), text.parse(await c.req.json()).text); return c.json({ ok: true }, 202) })
   app.post('/:id/stop', c => { service().stop(c.req.param('id')); return c.json({ ok: true }) })

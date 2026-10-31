@@ -495,3 +495,9 @@ repairs from production fixes, then exact handoff new/envelope and unrun evidenc
 the outside controls' bytes and accepted v1/v2 meanings. No status/snapshot/signature/dependency/
 policy expansion. All prior reviewer checks are terminal; source ownership returns to author
 until a clean final handoff, then the same independent reviewer reruns original controls.
+
+## Q1 round (2026-11-01)
+
+Q1 was authored as a separate round: [`K4-queue-v3-Q1.plan.md`](K4-queue-v3-Q1.plan.md) (scope,
+defaults used) and [`K4-queue-v3-Q1.handoff.md`](K4-queue-v3-Q1.handoff.md) (changes, evidence,
+residuals, what Q2 needs). Q2 is not started and still requires its own clean author/reviewer round.

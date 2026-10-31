@@ -5,7 +5,7 @@ test('native session keyboard creation and progress replay have exact counts on 
   await page.addInitScript(() => {
     const original = window.fetch.bind(window)
     const id = '11111111-1111-4111-8111-111111111111'
-    const progress = { sessionId: id, projectId: 'p', connectionId: id, model: 'fixture', mode: 'read-only', status: 'completed',
+    const progress = { version: 2, sessionId: id, projectId: 'p', connectionId: id, model: 'fixture', mode: 'read-only', status: 'completed',
       plan: [{ text: 'Fixture item', status: 'verification_requested' }], queue: [], summary: 'Fixture response', error: null,
       source: 'session.log', confidence: 'high', observedAt: '2026-10-21T00:00:00.000Z' }
     window.fetch = async (input, init) => {
@@ -19,7 +19,7 @@ test('native session keyboard creation and progress replay have exact counts on 
         if (values.mode !== 'read-only' || values.projectId !== 'p') return Response.json({ code: 'invalid' }, { status: 400 })
         return Response.json({ sessionId: id }, { status: 202 })
       }
-      if (path === `/api/agent/${id}`) return Response.json(progress)
+      if (path === `/api/agent/${id}?progressVersion=2`) return Response.json(progress)
       return original(input, init)
     }
   })
@@ -57,9 +57,9 @@ test('native delete is keyboard accessible at mobile width and submits exactly o
       const path = String(input)
       if (path === '/api/agent/projects') return Response.json({ projects: [] })
       if (path === '/api/connections') return Response.json({ connections: [] })
-      if (path === '/api/agent/delete-fixture') {
+      if (path === '/api/agent/delete-fixture' || path === '/api/agent/delete-fixture?progressVersion=2') {
         if (init?.method === 'DELETE') { state.deletes++; return Response.json({ sessionId: 'delete-fixture', deleted: true }) }
-        return Response.json({ sessionId: 'delete-fixture', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only', status: 'completed',
+        return Response.json({ version: 2, sessionId: 'delete-fixture', projectId: 'p', connectionId: 'c', model: 'fixture', mode: 'read-only', status: 'completed',
           plan: [], queue: [], summary: 'Fixture response', error: null, source: 'session.log', confidence: 'high', observedAt: '2026-10-21T00:00:00.000Z' })
       }
       return original(input, init)

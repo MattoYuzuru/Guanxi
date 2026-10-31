@@ -175,15 +175,77 @@ currently scrubs it in memory before paging; bounded memory streaming is not cla
 conversion remains a named residual. Images are referenced by policy, not stored as base64 in
 events. Reasoning stays in K2's retention class, outside model/CLI output and console logs.
 
-Queued prompts still use the v1 `agent.queue` representation in this lane state: full queued
-text inline, even after consumption, with no new cap. Q0 has added the v3 contract, independent
-ledger 40 and session-log reader/privacy/export support, but the native producer, native
-routes/UI and CLI remain v1 until Q1/Q2; progress itself stays the legacy v1 body. If a v3
-snapshot is present, legacy progress refuses with the existing content-free `agent_unavailable`
-(HTTP 503) instead of silently retaining an older v1 queue; this is a compatibility boundary,
-not a v3 consumer and not the Q1 progress2 contract. This README does not claim queue
-artifactization or a native v3 rollback floor. Consuming a queued prompt may artifactize its
-own later `prompt` event, while the earlier queue event stays inline. A published input blob
+Queued prompts still use the v1 `agent.queue` representation: full queued text inline, even
+after consumption, with no new cap. The producer, `POST /queue` and `DELETE /queue/:item` are
+unchanged. Q0 added the v3 contract, independent ledger 40 and the session-log reader/privacy/
+export support; Q1 (this section) makes the native node a **restricted v3 reader**:
+
+- `queue-state.ts` normalizes the latest `agent.queue` snapshot (v1 or v3) into an internal
+  executable union `{id,kind:'inline',text} | {id,kind:'artifact',artifact}` and drops ids that
+  are already a `prompt.messageId`. Progress bodies are projections of it; it is never an
+  outward body, and an excerpt is never executed.
+- `GET /api/agent/:id` (or `?progressVersion=1`) keeps the legacy body. A pending
+  artifact-backed item has no honest v1 text, so it returns HTTP 406
+  `{code:'native_progress_version_unsupported',supported:1,required:2}`; inline-only queues,
+  including a v3 queue and a legacy oversized inline entry, keep the exact legacy shape.
+  `?progressVersion=2` returns the strict v2 body: `inline`, `artifact` (stored excerpt only)
+  and `legacy-preview` (an oversized legacy v1 inline entry: bounded excerpt of the complete
+  scrubbed text plus its exact byte size). Neither opens a blob. The query is strict: only the
+  exact strings `1` and `2` are accepted, with no repeated key (anything else returns 400). `GET /:id/result` and the CLI `agentExecResult.version = 1` do
+  not depend on the queue.
+- After a completed turn drains, the next item is chosen from fresh events. Its R1 run and
+  attempt are allocated first and own every later step; `active.queue` stays closed to
+  add/remove (`session_not_running`) until preparation ends. An artifact is read through
+  `SessionInputStore.read` (session, id, checksum, size, media type, exact digest), decoded as
+  strict UTF-8 and scrubbed with the current registry; an inline legacy item is scrubbed
+  afresh. Abort, session availability, active identity and the R1 fence are checked
+  synchronously at the top of preparation (image staging has already awaited), again after the
+  artifact read (so a lost owner never starts the history replay, whose store reads also carry
+  the abort signal) and synchronously on return from preparation. Nothing awaits between that
+  last check, the prompt append and the provider call; images are staged before preparation
+  for exactly that reason. The `closed` and active-identity clauses of the check are defense in
+  depth: close aborts every turn first and no reachable state replaces the owner. The text
+  keeps a leading byte order mark, so it equals the verified bytes. The durable `prompt` keeps the queue id as `messageId` with
+  `origin: queued`.
+- An unreadable input (missing, tampered, wrong size/checksum/session, invalid UTF-8) writes one
+  content-free `error` (`input_artifact_unavailable`; an unreadable log or an unready scrubber
+  records `stored_data_invalid` or `egress_unavailable` instead) and the failed terminal on the
+  new attempt: no prompt marker, provider or tool call, the selected id stays pending and the next
+  item is never skipped to. If the owner was lost while the input was failing (stop, close, leave,
+  a deposed fence), that is the recorded truth instead: the ordinary cancelled or failed terminal
+  with no `input_artifact_unavailable` claim. Stop during preparation records its intervention on
+  the preparation attempt and cancels it; a deposed owner writes nothing.
+- **Restricted floor.** While the latest snapshot is v3 and still has a pending item, add and
+  remove (`POST /queue`, `DELETE /queue/:item` including duplicate removal, `POST /prompts`
+  while a turn runs, and side-chat Send) refuse with HTTP 409
+  `{code:'native_queue_producer_unavailable'}`, decided inside the queue FIFO before anything
+  is written or read, before the duplicate-id check and before retention is touched. The agent's
+  own `queue` tool is not an HTTP route: the refusal is a tool error result carrying the same
+  code, and the turn continues. Once every v3 item is consumed the next mutation writes a v1
+  snapshot as before. Add/remove during the preparation of a queued turn return `session_not_running`
+  (HTTP 503), because mutation admission is closed until preparation ends. Q2 replaces this
+  restriction with a v3-producing add/remove.
+- **Availability residuals (named, not closed).** (1) *Stuck head:* a v3 artifact head that is
+  broken (deleted, tampered or otherwise unreadable) fails every later turn that reaches it, and
+  it cannot be removed until Q2 because removal is refused. The session keeps its truthful
+  failed state and the web client explains it; the stored input is untouched and is never skipped.
+  (2) *Late secret expansion:* a v3 inline item that a later secret registration expands past
+  16 KiB makes every log read refuse (design section 6: content-free fail closed, no truncation).
+  progress, progress2, result, prompt and a stop of an idle session then return the typed
+  `stored_data_invalid` (HTTP 503, no content); stop of an *active* turn still works. A turn in
+  flight completes, the transition records a failed preparation attempt with the same code,
+  `wait()` rejects with it, and nothing is dispatched. The stored events are preserved.
+  Deleting such a session still works: removal reads only the policy event. (3) If R1 cannot allocate the next attempt between turns, no owner exists to write a record, so
+  the failure is not visible in the log; the session shows its last completed run with the item
+  still pending.
+
+This is the restricted reader rollback floor (Q0+Q1): progress2, verified consumption, result and
+stop work over v3 state, subject to the availability residuals named above; v3-state mutations wait for Q2. It is not an artifactization claim:
+normal native production still writes v1, so a pre-Q0 max-2 reader keeps reading Q1-written
+data, while a stored v3 event stops it at `requiredVersion: 3`. A client built for progress2
+against a pre-Q1 node is unsupported (the node ignores the query and answers the legacy body,
+which the strict v2 parse rejects). Consuming a queued prompt may artifactize its own later
+`prompt` event, while the earlier queue event stays inline. A published input blob
 left by a failed append is an orphan until the whole session is deleted; no per-blob GC runs in
 this slice. The full input is buffered for replay and re-scrubbing; a bounded-memory streaming
 reader is not claimed.
@@ -312,7 +374,8 @@ routes below and `packages/contract/src/side-chat.ts`. Tests: `test/native-agent
   `operation_conflict` (a long text, stored as an artifact, is compared by its stored checksum, not by the excerpt).
   The answer (`queued`, `started`, `already_sent`) is what `prompt()` actually did, not what an earlier check saw.
   Concurrent sends to an idle session start one turn; the loser gets `already_sent` or a
-  retryable `session_busy`, and a request that lands between turns gets `session_busy`. The pre-checks inside the
+  retryable `session_busy`, and a request that lands between turns, or while a queued turn is still
+  preparing its input, gets `session_busy` (HTTP 409, not 503). The pre-checks inside the
   FIFO return their errors instead of throwing, so they cannot abort the main turn. Origin is recorded as `queued`.
 - **Not covered.** Legacy Chat Jobs have no side-chat route (the web panel is mounted on native sessions only);
   the answer is not streamed; the opened-in-browser transcript is not durable by design.

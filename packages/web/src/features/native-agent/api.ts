@@ -1,5 +1,5 @@
 import {
-  nativeRetentionSchema, deleteNativeSessionResponseSchema, agentProgressSchema, SESSION_EVENT_MAX_VERSION, SESSION_ROUTES,
+  nativeRetentionSchema, deleteNativeSessionResponseSchema, agentProgressV2Schema, SESSION_EVENT_MAX_VERSION, SESSION_ROUTES,
   sessionEventsResponse, sessionSummarySchema, type NativeAgentInput,
 } from '@guanxi/contract'
 /** Carries the node's content-free error code so screens can explain the failure. */
@@ -23,7 +23,8 @@ export const nativeApi = {
   setRetention: async (id: string, mode: 'keep' | 'ttl' | 'session') => nativeRetentionSchema.parse(await agentRequest(`/${encodeURIComponent(id)}/retention`, 'PATCH', { mode })),
   deleteSession: async (id: string) => deleteNativeSessionResponseSchema.parse(await agentRequest(`/${encodeURIComponent(id)}`, 'DELETE')),
   create: (input: NativeAgentInput) => agentRequest('', 'POST', input) as Promise<{ sessionId: string }>,
-  progress: async (id: string, signal?: AbortSignal) => agentProgressSchema.parse(await agentRequest(`/${encodeURIComponent(id)}`, 'GET', undefined, signal)),
+  /** Asks for the negotiated body: a pending artifact queue item has no legacy form. */
+  progress: async (id: string, signal?: AbortSignal) => agentProgressV2Schema.parse(await agentRequest(`/${encodeURIComponent(id)}?progressVersion=2`, 'GET', undefined, signal)),
   prompt: (id: string, text: string) => agentRequest(`/${encodeURIComponent(id)}/prompts`, 'POST', { text }),
   stop: (id: string) => agentRequest(`/${encodeURIComponent(id)}/stop`, 'POST', {}),
   remove: (id: string, item: string) => agentRequest(`/${encodeURIComponent(id)}/queue/${encodeURIComponent(item)}`, 'DELETE'),
