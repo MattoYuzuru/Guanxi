@@ -55,7 +55,7 @@ cannot be told apart. See the plan, Decision 3.
    service runs on the pinned Node staged under `Contents/Resources/service/node`, the fuse is off and pinned
    by a test); keep it: with the fuse on, anything able to exec the app binary runs JavaScript under the app's
    signed identity and can reach Keychain items whose ACL trusts it.
-2. **Owner answers to [Q-246 and Q-247](../../docs/plans/OPEN_QUESTIONS.md)** (review M6): Electron's
+2. **Owner answers to [Q-247 and Q-248](../../docs/plans/OPEN_QUESTIONS.md)** (review M6): Electron's
    dynamically linked LGPL `libffmpeg.dylib` and the bundled Node.js licenses in the app, and the build-time-only
    WTFPL `truncate-utf8-bytes`. ADR-0016 is not amended; **a distributed DMG waits on that answer**.
    Unsigned local builds do not.
@@ -122,11 +122,11 @@ per-OS packaging only in `electron-builder.config.mjs` (`mac`; U6 adds `linux` b
 
 | Package | Version | License | Use |
 | --- | --- | --- | --- |
-| `electron` | 44.9.0 (released 2026-10-17) | MIT; Chromium and its components (incl. LGPL `libffmpeg.dylib`) under `LICENSES.chromium.html`, shipped in the app; pending Q-246 | runtime, devDependency |
-| Node.js | 26.9.0 (released 2026-09-16), official tarball, digest pinned | MIT plus bundled components listed in its `LICENSE` | the service's runtime, staged into the app (not an npm dependency); pending Q-246 |
+| `electron` | 44.9.0 (released 2026-10-17) | MIT; Chromium and its components (incl. LGPL `libffmpeg.dylib`) under `LICENSES.chromium.html`, shipped in the app; pending Q-247 | runtime, devDependency |
+| Node.js | 26.9.0 (released 2026-09-16), official tarball, digest pinned | MIT plus bundled components listed in its `LICENSE` | the service's runtime, staged into the app (not an npm dependency); pending Q-247 |
 | `electron-builder` | 26.17.0 (2026-09-26) | MIT | packaging, devDependency |
 | `@playwright/test` | 1.62.1 (same as `@guanxi/web`) | Apache-2.0 | `_electron` test driver, devDependency |
-| `truncate-utf8-bytes` | 1.0.2, transitive of electron-builder | WTFPL, not on ADR-0016's list | build-time only, never shipped; reviewed exception in `scripts/check-licenses.mjs`; pending Q-247 |
+| `truncate-utf8-bytes` | 1.0.2, transitive of electron-builder | WTFPL, not on ADR-0016's list | build-time only, never shipped; reviewed exception in `scripts/check-licenses.mjs`; pending Q-248 |
 
 No source is copied, but the shipped binaries (Electron, Chromium, Node.js) are listed in `THIRD_PARTY_NOTICES.md`. `@guanxi/contract` is bundled at build
 time only for the brand module (`@guanxi/contract/brand`).
