@@ -18,57 +18,10 @@ import {
 import { NativeAgentError, NativeProgressVersionError } from '../../src/native-agent/service.ts'
 import { SessionInputStore, utf8Excerpt, type SessionInputStoreHooks } from '../../src/session-log/input-artifacts.ts'
 import { RunStore } from '../../src/runs/store.ts'
-import { fixture } from './fixture.ts'
-
-type Fixture = Awaited<ReturnType<typeof fixture>>
-type Respond = NonNullable<Parameters<typeof fixture>[1]>
-const peer = { incoming: { socket: { remoteAddress: '127.0.0.1' } } }
-
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve!: () => void
-  const promise = new Promise<void>((ok) => { resolve = ok })
-  return { promise, resolve }
-}
-const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
-const big = (tag: string) => `${'a'.repeat(INPUT_INLINE_BYTES)}${tag}`
-const sha = (text: string) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`
-
-async function build(t: Parameters<typeof fixture>[0], respond?: Respond, hooks?: SessionInputStoreHooks): Promise<Fixture> {
-  return fixture(t, respond, undefined, undefined, undefined, {
-    inputArtifacts: (db, dataDir) => new SessionInputStore({ dataDir, db, hooks }),
-  })
-}
-
-type Seed = { id: string; text: string } | { id: string; bytes: Uint8Array }
-
-/** Writes blobs then appends one v3 snapshot as the single writer; the native producer cannot do this yet. */
-async function seedV3(f: Fixture, sessionId: string, items: Seed[]): Promise<void> {
-  const data: unknown[] = []
-  for (const item of items) {
-    if ('text' in item && Buffer.byteLength(item.text, 'utf8') <= INPUT_INLINE_BYTES) {
-      data.push({ id: item.id, kind: 'inline', text: item.text })
-      continue
-    }
-    const content = 'text' in item ? item.text : item.bytes
-    const written = await f.agents().inputArtifacts.write(sessionId, content, SESSION_INPUT_TEXT_MEDIA_TYPE)
-    const excerpt = 'text' in item ? utf8Excerpt(item.text) : ''
-    data.push({ id: item.id, kind: 'artifact', input: { ...written, mediaType: SESSION_INPUT_TEXT_MEDIA_TYPE, excerpt } })
-  }
-  const handle = f.log.open(sessionId, { kind: 'agent' })
-  try { handle.append({ type: 'agent.queue', data: { items: data } } as never, { eventVersion: SESSION_EVENT_VERSION_3 }) } finally { handle.close() }
-}
-
-/** A completed first turn, ready for a v3 snapshot to be seeded. */
-async function started(f: Fixture, options: Record<string, unknown> = {}): Promise<string> {
-  const { sessionId } = await f.agents().create({ ...f.input, prompt: 'seed turn', ...options })
-  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
-  return sessionId
-}
-
-const events = (f: Fixture, sessionId: string) => f.log.readAll(sessionId, 'person')
-const prompts = (all: readonly SessionEvent[]) => all.filter((e): e is Extract<SessionEvent, { type: 'prompt' }> => e.type === 'prompt')
-const runIds = (all: readonly SessionEvent[]) => new Set(all.flatMap((e) => e.type === 'run.lifecycle' ? [e.data.runId] : []))
-const blobPath = (f: Fixture, sessionId: string, text: string) => join(f.agents().inputArtifacts.directoryFor(sessionId), sha(text).slice(7))
+import {
+  big, blobPath, build, deferred, events, peer, prompts, runIds, seedV3, sha, started, tick,
+  type Fixture, type Seed,
+} from './queue-v3-support.ts'
 
 test('Q06: a seeded v3 artifact is consumed once with its full verified bytes, in order, one fresh attempt per item', { timeout: 60_000 }, async (t) => {
   const tail = `Q06-TAIL-${randomBytes(8).toString('hex')}`
@@ -428,7 +381,8 @@ test('rollback floor: Q1 production stays v1 and a max-2 reader reads it; seeded
   assert.equal(f.agents().result(sessionId).status, 'completed')
 })
 
-test('side-chat Send onto a pending v3 queue reports the existing unavailable error and writes nothing', { timeout: 60_000 }, async (t) => {
+// Review fix L2: this was the existing `agent_unavailable` (HTTP 503); the shared typed 409 is the accurate refusal.
+test('side-chat Send onto a pending v3 queue is refused with the typed floor error and writes nothing', { timeout: 60_000 }, async (t) => {
   const hold = deferred()
   const f = await build(t, async (call) => { if (call === 2) await hold.promise; return [{ type: 'text', text: `answer ${call}` }] })
   const sessionId = await started(f)
@@ -436,7 +390,7 @@ test('side-chat Send onto a pending v3 queue reports the existing unavailable er
   await f.agents().prompt(sessionId, 'continue')
   while (f.requests.length < 2) await tick()
   const head = f.log.session(sessionId)!.lastSeq
-  await assert.rejects(f.agents().sideChatSend(sessionId, { operationId: randomUUID(), text: 'send me' }), (e: unknown) => e instanceof Error && 'code' in e && e.code === 'agent_unavailable')
+  await assert.rejects(f.agents().sideChatSend(sessionId, { operationId: randomUUID(), text: 'send me' }), (e: unknown) => e instanceof NativeAgentError && e.code === 'native_queue_producer_unavailable')
   assert.equal(f.log.session(sessionId)!.lastSeq, head)
   f.agents().stop(sessionId)
   hold.resolve()

@@ -466,3 +466,14 @@ it('Q16: the page requests progress2 and fails closed on a legacy body from an o
   expect(seen[0]).toBe('/api/agent/session?progressVersion=2')
   expect(screen.queryByRole('region', { name: 'Session progress' })).toBeNull()
 })
+
+it.each(['en', 'ru'] as const)('M1: an unreadable queued input and an unreadable session log each get their own explanation, not the generic error, in %s', locale => {
+  setActiveLocale(locale)
+  const view = render(<NativeProgress progress={{ ...progress, status: 'failed', error: 'input_artifact_unavailable' }} remove={() => {}} />)
+  const stuck = screen.getByRole('alert').textContent ?? ''
+  expect(stuck).toContain(locale === 'en' ? 'its stored text is unavailable on this node' : 'его сохранённый текст недоступен на этом узле')
+  expect(stuck).toContain(locale === 'en' ? 'you can still stop the session' : 'сессию по-прежнему можно остановить')
+  expect(stuck).not.toContain(locale === 'en' ? 'This session failed' : 'Сессия завершилась с ошибкой')
+  view.rerender(<NativeProgress progress={{ ...progress, status: 'failed', error: 'stored_data_invalid' }} remove={() => {}} />)
+  expect(screen.getByRole('alert').textContent).toContain(locale === 'en' ? 'cannot be read safely' : 'нельзя безопасно прочитать')
+})
