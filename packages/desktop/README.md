@@ -19,8 +19,10 @@ Linux with Fedora as reference, Windows last).
    user's, and for a service the shell started the very manifest pid); other owners get a failure screen.
 3. **Does not own the service.** Closing the window, quitting the app or crashing it never signals the
    service, so a run continues. The only ways the shell ends a service are the explicit menu action "Stop
-   background service…" (confirmation dialog; only a service the shell started, only while its pid is alive
-   and its port still answers as Guanxi, and its command line still names the manifest's entry) and removing a
+   background service…" (confirmation dialog; only a service the shell started: its pid is alive, its command
+   line carries the manifest's entry and `--port` as whole arguments, its start time fits the manifest, the port
+   answers as Guanxi and the `lsof` listener on that port is the manifest pid; if `ps` or `lsof` fails nothing is
+   signalled and the manifest is kept) and removing a
    child it started itself that never became healthy (SIGTERM, then SIGKILL on its process group, confirmed
    gone before the screen says so).
 4. **Failure screens** (`src/status-page.ts`): `service_missing`, `port_busy`, `health_timeout`,
@@ -95,9 +97,19 @@ repository.
 | or `APPLE_KEYCHAIN`, `APPLE_KEYCHAIN_PROFILE` | a notarytool keychain profile |
 
 The owner steps are in the [hand-off](../../docs/plans/lanes/U2-macos.handoff.md). The service is staged by
-`scripts/stage-service.mjs` (CLI bundle, web UI, production dependencies installed with
-`--ignore-scripts`, plus the official Node.js 26.9.0 verified against a SHA-256 pinned in the script) into
-`.stage/service`, shipped as `Contents/Resources/service`.
+`scripts/stage-service.mjs` into `.stage/service`, shipped as `Contents/Resources/service`:
+the CLI bundle and web UI; its production dependencies **from the repository lockfile** (the script derives the
+CLI workspace's subtree from the root `package-lock.json`, `scripts/lib/service-lock.mjs`, and runs `npm ci
+--ignore-scripts` on it, so the shipped tree is the tested, integrity-checked tree and nothing floats); and the
+official Node.js 26.9.0, verified against a SHA-256 pinned in `scripts/lib/node-runtime.mjs` and extracted from the
+verified bytes (fresh private file, download timeout, scratch directory removed on failure). Staging refuses to
+run on any host but darwin-arm64 (`packaging/targets.mjs`, the one place that names the CPU). Two hooks guard the
+package: `afterPack` checks that the service arrived intact and its Node reports the pinned version; `afterSign`
+(signed builds only) requires every nested binary (the bundled Node and each `.node` addon) to carry the app's
+Team ID and exactly the app's entitlements (`codesign -d --xml --entitlements -`). **The first signed build is the
+first time `afterSign` meets real signatures.** An unsigned local build keeps the official Node's own, more
+permissive entitlements (allow-dyld-environment-variables, allow-jit, allow-unsigned-executable-memory,
+disable-executable-page-protection, disable-library-validation, get-task-allow) and is not checked.
 Auto-update is **disabled** (`src/updater.ts`, a stub); its design note is in the plan.
 
 ## Layout and platform isolation

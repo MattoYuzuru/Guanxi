@@ -98,8 +98,11 @@ handshake and in the recovery path: `lsof -nP -iTCP:<port> -sTCP:LISTEN -Fpu` mu
 belong to this user (`port_owned_by_other_user` otherwise, which also covers a listener this user cannot see;
 `port_unverified` when the lookup fails); a service the shell started must be the very pid of the manifest
 (`port_busy` otherwise), and a service started in this handshake must be the child that was spawned. Manifests
-that name a dead pid, or a pid whose command line (`ps -p <pid> -o command=`) no longer contains the manifest's
-entry, are stale and removed (review M3), and the stop action signals nothing it cannot match the same way.
+that name a dead pid, or a pid that `ps -o lstart=,command=` shows with another entry, another `--port` (both
+matched as whole arguments) or a start time far from `startedAt`, are stale and removed (review M3); when `ps`
+itself fails or times out the manifest is **kept** and the answer is "unverified" (no attach, no signal, round 2
+M-1). The stop action additionally requires the `lsof` listener on the manifest's port to be the manifest pid.
+`lsof` and `ps` run by absolute path (`/usr/sbin/lsof -b`, `/bin/ps`) with a hard kill on timeout.
 **A same-user process that imitates the node is still indistinguishable** until local authentication exists.
 ADR-0026 asks for an "authenticated handshake"; the node has no local authentication today
 (`packages/server/src/app.ts`: loopback "let everything through"), so a hostile local process that squats
@@ -165,7 +168,8 @@ packaging config keeps `mac` options in one function; U6 adds `linux` beside it.
   default is a placeholder that the config refuses for a signed build. `productName` and file names come from
   the central brand module (`@guanxi/contract` brand), not literals.
 - `npm run package:mac --workspace @guanxi/desktop` builds the bundles, stages the service
-  (`scripts/stage-service.mjs`: CLI dist with web assets plus production `node_modules`), and runs
+  (`scripts/stage-service.mjs`: CLI dist with web assets, the CLI's production `node_modules` installed by `npm ci`
+  from a lock derived from the repository lockfile, and the pinned Node.js; see the README), and runs
   electron-builder for `dmg` + `zip`, arm64. Unsigned by default (`CSC_IDENTITY_AUTO_DISCOVERY=false`
   semantics through `GUANXI_DESKTOP_SIGN`), so a local DMG can be produced without credentials.
 - Signing and notarization read only environment variables, never files in the repo: `CSC_LINK` /

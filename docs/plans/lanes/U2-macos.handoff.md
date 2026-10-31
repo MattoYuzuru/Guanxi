@@ -109,6 +109,41 @@ Two things found while fixing, outside the review list: a hung `permissions.test
 fullscreen of a hidden window never settles; the Electron fullscreen test was removed, see above), and the shared
 scratchpad `mutate.py` of another agent overwriting mine (mutation scripts now live in a private subdirectory).
 
+## Review round 2
+
+Focused re-review of the round-1 fixes: no Critical or High. Fixed in `070c1f5e` (code and tests) and the
+documentation commit after it. (The coordinator's `f70f7bf0` renumbered the licensing questions to Q-247/Q-248
+because Q-246 is U3's; this file and the README follow that numbering.)
+
+| Finding | Fix | Evidence |
+| --- | --- | --- |
+| **M-1** identity checks were substring matches and stop never looked at the listener; a failed `ps` deleted the manifest | `matchesManifest`: the manifest's entry and `--port <port>` must each be a whole argument of the command line (`ps -o lstart=,command=`), and the process start time must be within two minutes of `startedAt`. `stopService` also requires the `lsof` listener on the manifest's port to be the manifest pid. `ps` failing or timing out is `unknown`, never `gone`: `liveManifestPid` returns `'unverified'` (no attach: `port_unverified`) and `stopService` returns `unverified` (new localized message), both **keep** the manifest | `owner.test.ts` (substring, longer path, other port, `--port 44410`, hours-later start, gone, unknown; the real `ps` on this process), `launcher.test.ts` (reuse removes the manifest and signals nothing; unknown keeps it; wrong, extra, missing or failed listener signals nothing), `handshake.test.ts`; mutations `substring-identity`, `stop-no-listener-check`, `ps-failure-deletes` all fail a unit test |
+| **M-2** shipped `node_modules` installed with `--no-package-lock` (transitives float) | `scripts/lib/service-lock.mjs` derives the CLI workspace's production subtree from the root `package-lock.json` (each package at the path the root lock gave it, the workspace's nested modules lifted, dev flags dropped; two packages wanting one path, a workspace link or a missing required dependency are errors) and `stage-service.mjs` runs `npm ci --omit=dev --ignore-scripts` on it. Integrity is verified by npm; a real staging run installed the 21 packages for darwin-arm64 | `stage-scripts.test.ts`: synthetic cases plus the **real repository lock** (every CLI dependency staged at the locked version and integrity, no dev tooling); mutation `lock-floats` fails |
+| **M-3** nested Node signing unchecked | `afterSign` hook (signed builds only): the app must have a Team ID; the bundled Node and every `.node` addon must pass `codesign --verify --strict`, carry the same Team ID and exactly the entitlements of `packaging/entitlements.mac.plist` (`codesign -d --xml --entitlements -`). `afterPack` checks the service arrived and its Node reports the pinned version. An unsigned local build is not checked and keeps the official Node's permissive entitlements (allow-dyld-environment-variables, allow-jit, allow-unsigned-executable-memory, disable-executable-page-protection, disable-library-validation, get-task-allow; read from the packaged binary), documented in the README. **The first signed build is the first time `afterSign` runs against real signatures**; an unexpected entitlement set on the `.node` prebuilds is the likely first finding | `stage-scripts.test.ts` (fake codesign: pass, wrong Team ID, extra/missing entitlements, invalid signature, unsigned app, Node missing; the hook skips an unsigned build and fails a signed one with no app). The unsigned DMG build ran `afterPack` and printed the `afterSign` skip |
+| **L1** CSP | `script-src` is asserted exactly (`'self' 'unsafe-inline'`) and the policy must contain no `unsafe-eval` or `wasm-unsafe-eval` | `security.test.ts`; mutation `unsafe-eval` fails it. The node's static server emitting a hash-based policy for its own `index.html` is **not done** (it touches `packages/server` and the web build's inline bootstrap); listed as residual |
+| **L2** `owner.ts` | `killSignal: 'SIGKILL'`, `lsof -b`, `/usr/sbin/lsof` and `/bin/ps`; the `port_unverified` text no longer blames a missing tool and covers timeouts | `owner.test.ts`, `messages.test.ts` |
+| **L3** recovery | One recovery attempt at a time (a slow probe never overlaps the next tick); the delay doubles (3 s to 60 s) with repeated `render-process-gone`, forgotten after five quiet minutes (`src/recovery.ts`); `load_failed` text mentions Reconnect (Cmd-R). **Residual, stated explicitly: if the service dies under a page that is already loaded, nothing notices** (only a reload or the web UI's own offline state shows it) | `recovery.test.ts`, `messages.test.ts`, `interface-loss.test.ts` still passes |
+| **L4** `signalGroup` | Once the child is reaped nothing is signalled (neither the group nor the pid); the fall back from the group to the pid happens only while the child is still ours | `launcher.test.ts` (a reaped child gets no signal; fall back only while ours); mutation `signal-reaped-pid` fails |
+| **L5** staging | Verify-and-extract is `scripts/lib/node-runtime.mjs`: the archive for `tar` is a fresh 0600 file written from the verified bytes in a private scratch directory removed on success and failure, stale `unpack-*` are removed at start, the download has a 120 s timeout and a wrong digest is rejected before anything is cached. `packaging/targets.mjs` names the one CPU (arm64): the config targets it and staging refuses another host. The pre-pack check (`verifyStagedService`) runs at the end of staging and again in `afterPack` | `stage-scripts.test.ts` (cache reuse, tampered cache, wrong digest, HTTP error, extraction from verified bytes, cleanup on failure, a real `tar.gz`); mutation `accept-any-digest` fails |
+| **L6** | stale "Electron's own Node" comment in `real-service.test.ts` fixed | |
+| **L7** (outside the diff) `packages/server/src/indexing/lsp.ts:55` | **Not changed.** On darwin it runs the language-server client inside the native-agent container, where `/usr/local/bin/node` is the image's Node (`native-agent/execution-owner.ts` uses the same path for the container entrypoint); `process.execPath` would be the host path and wrong there. The server test rewrites the string to the host Node on purpose. Residual: it is correct only while the image keeps Node there | |
+
+### Results after round 2 (code commit `070c1f5e`, plus the documentation commit)
+
+| Command | Result |
+| --- | --- |
+| `npm test --workspace @guanxi/desktop` | `tests 163 / suites 35 / pass 163 / fail 0 / skipped 0` (127 before round 2: +36) |
+| `agent-dev run --resource heavy -- npm run test:electron --workspace @guanxi/desktop` | exit 0; `tests 43 / pass 43 / fail 0 / skipped 0`. Receipt `/Users/yuzuru/.local/state/agent-dev/check-1r6g_jeb/result.json` |
+| `npm run typecheck --workspace @guanxi/desktop` | clean |
+| `npx eslint packages/desktop scripts/ci` | clean |
+| `npm run check:licenses` | `checked 875 packages, 0 not allowed` |
+| `node --test scripts/ci/ci.test.mjs` | `tests 10 / pass 10 / fail 0` |
+| `npm run lint:md` | `Summary: 0 error(s)` over 328 files; links `checked 327 files, 867 links, 0 problems` |
+| unsigned DMG from the lock-derived tree | `afterPack` passed, `afterSign` skipped (unsigned); packaged-app smoke: service from the bundled Node, UI served, alive after the app was terminated |
+
+New in round 2: 36 unit tests (stage scripts 21, recovery 3, owner/stop/launcher/handshake/security/messages the
+rest); no Electron test added (43, unchanged).
+
 ## Findings outside the lane (not fixed)
 
 1. **CLI single-instance probe is stale.** `packages/cli/src/existing.ts` identifies a running UI by
