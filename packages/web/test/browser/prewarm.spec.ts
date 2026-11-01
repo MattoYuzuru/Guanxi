@@ -294,7 +294,10 @@ async function flushPassiveEffects(page: Page): Promise<void> {
 test('stable exact selection prewarms once, then cleanup precedes one Chat dispatch', async ({
   page,
 }) => {
-  await page.clock.install()
+  // Installing alone leaves time advancing during selector actionability waits.
+  // Pause before app timers exist so only the steps below count toward debounce.
+  await page.clock.install({ time: new Date('2026-08-03T00:00:00.000Z') })
+  await page.clock.pauseAt(new Date('2026-08-03T00:00:01.000Z'))
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.setViewportSize({ width: 390, height: 844 })
   await installFixture(page)
@@ -302,11 +305,13 @@ test('stable exact selection prewarms once, then cleanup precedes one Chat dispa
   const selector = page.getByRole('combobox', { name: 'Модель для нового диалога' })
   await expectValue(selector, 'model-a:latest')
 
-  await pickValue(page, selector, 'model-b:latest')
+  await pickValue(page, selector, 'model-b:latest', { clockStepMs: 20 })
   await flushPassiveEffects(page)
   await page.clock.fastForward(400)
-  await pickValue(page, selector, 'model-c:latest')
+  expect((await snapshot(page)).prewarmCalls).toBe(0)
+  await pickValue(page, selector, 'model-c:latest', { clockStepMs: 20 })
   await flushPassiveEffects(page)
+  expect((await snapshot(page)).prewarmCalls).toBe(0)
   await page.clock.fastForward(600)
   await expect(page.getByText(/Прогреваем точную модель/u)).toBeVisible()
   const afterDebounce = await snapshot(page)
