@@ -85,7 +85,19 @@ async function smokeApp(app, temporary) {
     const body = await response.json()
     return body.ok === true && body.application.source === 'application_http'
   }
+  let failure
   try {
+    // Instrument the initial status document before data→HTTP navigation. A URL alone does
+    // not establish renderer readiness; late attachment can stall the inspector in that transition.
+    await until('loopback renderer debugging endpoint', async () => (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(1000) })).ok)
+    const target = await until('packaged renderer', async () => {
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(1000) })
+      return (await response.json()).find(target => target.type === 'page')
+    })
+    const debuggerUrl = new URL(target.webSocketDebuggerUrl)
+    assert.equal(debuggerUrl.origin, `ws://127.0.0.1:${debugPort}`)
+    renderer = await connectRenderer(debuggerUrl.href)
+    await Promise.all(['Runtime.enable', 'Page.enable', 'Debugger.enable', 'Runtime.runIfWaitingForDebugger', 'Network.enable', 'Log.enable'].map(method => renderer.send(method)))
     const manifest = await until('packaged service manifest', async () => {
       if (spawnError) throw spawnError
       if (shellExited) throw new Error('Packaged shell exited before readiness')
@@ -97,21 +109,13 @@ async function smokeApp(app, temporary) {
     assert.equal(manifest.port, port)
     assert.equal(serviceState(), 'owned', 'temporary service must run mounted bundled Node and entry with the test data directory')
     await until('packaged service health', health)
-    await until('loopback renderer debugging endpoint', async () => (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(1000) })).ok)
-    const target = await until('packaged renderer', async () => {
-      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(1000) })
-      return (await response.json()).find(target => target.type === 'page' && target.url.startsWith(`http://127.0.0.1:${port}/`))
-    })
-    const debuggerUrl = new URL(target.webSocketDebuggerUrl)
-    assert.equal(debuggerUrl.origin, `ws://127.0.0.1:${debugPort}`)
-    renderer = await connectRenderer(debuggerUrl.href)
-    for (const method of ['Runtime.enable', 'Runtime.runIfWaitingForDebugger', 'Page.enable', 'Network.enable', 'Log.enable']) await renderer.send(method)
-    await renderer.reload()
     const evaluate = async expression => {
       const result = await renderer.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
       assert.ok(!result.exceptionDetails, 'packaged renderer evaluation must succeed')
       return result.result.value
     }
+    await until('initial packaged UI mount', async () => evaluate(`location.origin === ${JSON.stringify(`http://127.0.0.1:${port}`)} && document.querySelectorAll("#root > *").length > 0`), 60_000)
+    await renderer.reload()
     await until('packaged UI mount', async () => evaluate('document.querySelectorAll("#root > *").length > 0'), 60_000)
     assert.deepEqual(await evaluate('[typeof process, typeof require]'), ['undefined', 'undefined'])
     const csp = await evaluate('fetch("/").then(r => r.headers.get("content-security-policy"))')
@@ -122,7 +126,11 @@ async function smokeApp(app, temporary) {
     await until('packaged shell exit', async () => shellExited, 10_000)
     assert.equal(serviceState(), 'owned', 'node service must survive shell termination')
     assert.equal(await health(), true)
+  } catch (error) {
+    failure = error
+    throw error
   } finally {
+    try {
     if (!shellExited) child.kill('SIGTERM')
     renderer?.close()
     // Read the owned temporary manifest even if readiness/assertions failed before it was captured.
@@ -136,6 +144,9 @@ async function smokeApp(app, temporary) {
       if (serviceState() === 'owned') process.kill(servicePid, 'SIGKILL')
     })
     if (servicePid) await until('confirmed process exit after escalation', async () => shellExited && serviceState() === 'gone', 5000)
+    } catch (error) {
+      throw new AggregateError([failure, error].filter(Boolean), 'Packaged smoke/owned process cleanup failed')
+    }
   }
 }
 
