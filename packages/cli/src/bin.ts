@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   DEFAULT_PORT,
+  apiPortFromEnv,
   REMOTE_BIND_EXIT_CODE,
   RemoteBindError,
   remoteBindRefusalMessage,
@@ -99,12 +100,7 @@ function openBrowser(url: string): void {
 }
 
 function requestedUrl(options: CliOptions): { url: string; port: number } {
-  const environmentPort = Number(process.env['PORT'])
-  const port =
-    options.port ??
-    (Number.isInteger(environmentPort) && environmentPort > 0 && environmentPort <= 65_535
-      ? environmentPort
-      : DEFAULT_PORT)
+  const port = options.port ?? apiPortFromEnv(process.env, DEFAULT_PORT)
   const host = options.host ?? process.env['HOST'] ?? '127.0.0.1'
   const browserHost = host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
   return { url: `http://${browserHost}:${port}`, port }
@@ -140,15 +136,16 @@ if (args.includes('--version') || args.includes('-v')) {
 }
 
 let options: CliOptions
+let requested: { url: string; port: number }
 try {
   options = parseArgs(args)
+  requested = requestedUrl(options)
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   console.error('\n' + usage())
   process.exit(1)
 }
 
-const requested = requestedUrl(options)
 const existing = requested.port === 0 ? null : await probeExistingGuanxi(requested.url)
 
 if (options.safeMode && existing) {

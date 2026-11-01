@@ -57,6 +57,13 @@ top-level effects cannot be rolled back by the kernel. Node retains ESM module r
 process lifetime, even after files are removed; restart is the update boundary. MCP and skills
 remain disconnected/off; no model-visible tool or prompt changes are introduced here.
 
+The kernel bounds `apply`/cleanup steps, but dynamic module import itself is not bounded or
+cancellable here. A pending top-level await can leave startup unresolved; terminate that node
+and restart with `--safe-mode`. The guarded entry sanitizes errors from `apply` and its
+returned cleanup only. Errors from callbacks registered through `ctx.effect` or `ctx.on`
+still reach the normal kernel logger with their original text. This is a full-trust plugin
+runtime, not a general plugin diagnostic scrubber.
+
 ## API
 
 ```ts

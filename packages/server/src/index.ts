@@ -73,6 +73,7 @@ import { loadTrustedPlugins, type TrustedPluginOptions, type TrustedPluginRuntim
 
 export { TrustedPluginStartupError, loadTrustedPlugins } from './plugins/startup.ts'
 export type { TrustedPluginOptions, TrustedPluginOutcome, TrustedPluginReport, TrustedPluginRuntime } from './plugins/startup.ts'
+export { apiPortFromEnv } from './config/listen-env.ts'
 
 export { RemoteBindError, assertBindAllowed } from './auth/remote-guard.ts'
 export type { RemoteBindConfig, RemoteBindRequirement } from './auth/remote-guard.ts'

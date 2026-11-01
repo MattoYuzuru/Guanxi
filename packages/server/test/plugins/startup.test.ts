@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { createConnection, createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { test, type TestContext } from 'node:test'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createKernel, definePlugin, parseManifest, type GuanxiManifest } from '@guanxi/kernel'
 import { start } from '../../src/index.ts'
 import { PluginManager } from '../../src/plugins/manager.ts'
@@ -113,6 +113,20 @@ test('required services order providers before consumers despite installed ID or
   const runtime = await f.load()
   assert.equal(f.kernel.service('test.answer'), 42)
   assert.deepEqual(runtime.report.outcomes.map(o => o.id), ['test.z-provider', 'test.a-consumer'])
+})
+
+test('declared slot owners load before consumers through explicit host-helper imports', async t => {
+  const f = await fixture(t), helpers = pathToFileURL(join(project, 'packages/kernel/src/index.ts')).href
+  await f.install('test.z-owner', { manifest: { contributes: { slotDeclarations: ['test.slot'] } },
+    top: `import { declareSlot } from ${JSON.stringify(helpers)};`, body: "declareSlot(ctx, 'test.slot');" })
+  await f.install('test.a-consumer', { manifest: { contributes: { slots: ['test.slot'] } },
+    top: `import { contribute } from ${JSON.stringify(helpers)};`, body: "contribute(ctx, 'test.slot', { id: 'entry', value: 'ready' });" })
+  const runtime = await f.load()
+  assert.deepEqual(runtime.report.outcomes.map(o => o.id), ['test.z-owner', 'test.a-consumer'])
+  assert.deepEqual(f.kernel.slots.list('test.slot').map(entry => ({ id: entry.id, value: entry.value })), [{ id: 'entry', value: 'ready' }])
+  await runtime.dispose()
+  assert.equal(f.kernel.slots.isDeclared('test.slot'), false)
+  assert.equal(f.kernel.slots.list('test.slot').length, 0)
 })
 
 for (const scenario of ['missing dependency', 'dependency cycle', 'core id', 'core service', 'core slot', 'undeclared slot'] as const) {
@@ -343,5 +357,29 @@ test('CLI --safe-mode never pretends an existing node was restarted safely', { t
     assert.equal(output, '')
     assert.ok(errors.includes('Safe mode requires a stopped node'))
     assert.equal((await fetch(`${node.url}/api/health`)).status, 200, 'the existing listener was not stopped')
+  } finally { await node.close() }
+})
+
+test('CLI --safe-mode discovers GUANXI_API_PORT before any startup data effects', { timeout: 30_000 }, async t => {
+  const f = await fixture(t)
+  const node = await start({ port: 0, dataDir: join(f.base, 'data'), webDir: f.base })
+  try {
+    await mkdir(f.directory, { recursive: true })
+    const statePath = join(f.directory, 'plugins.lock.json')
+    await writeFile(statePath, 'retained-malformed-state')
+    const freshData = join(f.base, 'must-not-be-created')
+    const child = spawn(process.execPath, [cli, '--data-dir', freshData, '--no-open', '--safe-mode'], {
+      cwd: project, env: { ...process.env, GUANXI_API_PORT: String(node.port), PORT: '', HOST: '127.0.0.1',
+        LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' }, stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    t.after(() => child.kill('SIGKILL'))
+    let output = '', errors = ''
+    child.stdout.on('data', data => { output += String(data) }); child.stderr.on('data', data => { errors += String(data) })
+    assert.deepEqual(await once(child, 'exit'), [1, null])
+    assert.equal(output, '')
+    assert.ok(errors.includes('Safe mode requires a stopped node'), errors)
+    await assert.rejects(stat(freshData), { code: 'ENOENT' }, 'no second node opened a data directory before refusing')
+    assert.equal(await readFile(statePath, 'utf8'), 'retained-malformed-state')
+    assert.equal((await fetch(`${node.url}/api/health`)).status, 200)
   } finally { await node.close() }
 })
