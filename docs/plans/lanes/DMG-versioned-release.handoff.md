@@ -2,7 +2,8 @@
 
 **Status:** author implementation and focused local checks complete; independent review and
 final hosted integration remain root duties. **Date:** 2026-11-01. **Base:** `6d596ec7`.
-**Branch:** `codex/dmg-release`. Plan `eedf48bc`; implementation `1bf949ec`.
+**Branch:** `codex/dmg-release`. Plan `eedf48bc`; implementation `1bf949ec`; attempt-history
+hardening `91b8908a`; independent-review fix `e70873b7`.
 
 ## Implemented scope
 
@@ -36,9 +37,9 @@ cadence choice does not choose the first version or authorize today's alpha publ
 
 ## Evidence — new / regression envelope
 
-**New: 50 tests** (49 in `scripts/release.test.mjs`, one in `scripts/ci/ci.test.mjs`).
-**Regression: 11 inherited CI tests.** The affected union passed **61/61, zero skipped** at
-clean `1bf949ec`, under the shared `agent-dev` heavy resource; receipt `check-de7gwzzc`.
+**New: 54 tests** (53 in `scripts/release.test.mjs`, one in `scripts/ci/ci.test.mjs`).
+**Regression: 11 inherited CI tests.** The affected union passed **65/65, zero skipped** at
+clean `e70873b7`, under the shared `agent-dev` heavy resource; receipt `check-q9y6fl4x`.
 The source fingerprint was unchanged. Receipt reuse remains unsupported because of the
 tracked `.claude/skills/guanxi-ui` directory symlink; this is actual local execution evidence,
 not reusable source attestation or hosted publication evidence.
@@ -52,11 +53,11 @@ exist only in synthetic test repositories removed by their fixtures.
 
 | Check | Result |
 | --- | --- |
-| `node --test scripts/release.test.mjs scripts/ci/ci.test.mjs` | 61 pass, 0 failed/skipped; final shared-lock receipt above |
+| `node --test scripts/release.test.mjs scripts/ci/ci.test.mjs` | 65 pass, 0 failed/skipped; final shared-lock receipt above |
 | ESLint over release scripts and changed CI scripts/tests | exit 0 |
 | `actionlint .github/workflows/full-gate.yml` | exit 0 |
 | Targeted Markdown lint on plan/release operations | 0 errors |
-| `node scripts/check-doc-links.mjs` | 343 files, 956 links, 0 problems before this handoff |
+| `node scripts/check-doc-links.mjs` | 344 files, 957 links, 0 problems |
 | `git diff --check` | exit 0 |
 
 `npm ci --no-audit --no-fund` installed this worktree's dependencies; contract resolution was
@@ -67,9 +68,18 @@ tag. No third-party source or new dependency was copied into the repository.
 
 ## Independent review and residuals
 
-Root assigns `local_inventory` as independent reviewer; findings must be fixed in a separate
-commit. Root owns integration and the final full hosted candidate gate. No current candidate
-is claimed release-ready solely from this fake-service check.
+Independent reviewer `local_inventory` found that a fresh release read or publication response
+with a different positive ID could pass metadata checks. `e70873b7` pins both responses to the
+selected release ID and adds two direct fake-response regressions: a mismatched fresh read
+cannot publish, and a mismatched publish response cannot report success or automatically retry.
+Final read-only recheck is requested. Root owns integration and the final full hosted candidate
+gate; this fake-service check alone is not a release-ready verdict.
+
+Author hardening `91b8908a` makes partial-rerun semantics explicit: read all job attempts and
+select the highest actual attempt of every required name. Same-attempt duplicates, future or
+foreign attempts and a newer failed/incomplete execution are refused; older green checks
+cannot override them. Two direct history tests supplement the original artifact-reuse case.
+The PR completion command remains unchanged and still requires its actual PR candidate.
 
 Actual tag workflow execution, GitHub upload/publication permissions and immutable release
 enforcement remain untested until an authorized version tag is created after integration.
