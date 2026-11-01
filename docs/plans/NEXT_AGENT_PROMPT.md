@@ -1,6 +1,6 @@
-# Next agent prompt — finish wave 10 package delivery verification
+# Next agent prompt — verify wave 10 delivery, then P1 shared SDK
 
-**Status:** active slice, mounted GUI smoke/hosted integration pending · **Updated:** 2026-11-01
+**Status:** local slice complete; exact hosted gate must pass before the next implementation · **Updated:** 2026-11-01
 
 Read [AGENTS](../../AGENTS.md), [NAVIGATION](../NAVIGATION.md), [WORKFLOW](WORKFLOW.md),
 [CI protocol](../operations/ci.md), [PHASE_STATUS](PHASE_STATUS.md) and the
@@ -27,21 +27,22 @@ P1 startup is implemented and independently reviewed: [handoff](lanes/P1-trusted
 MCP/skills and full-trust limitations explicit; do not reimplement completed boot work.
 
 Finish [U2 package plan](lanes/U2-package-ci.plan.md) and
-[operations](../operations/desktop-packages.md). The build succeeds; the mounted GUI verifier
-needs its final pass. Direct Electron launches omitted Playwright's mock-Keychain flags,
-causing macOS prompts during cookie initialization. The owner reported the prompts; all
-diagnostic fixtures were stopped, with no Keychain reset/deletion. A test-process-only fix
-adds `--use-mock-keychain` and `--password-store=basic`; production encryption stays enabled.
-Earlier CDP-readiness theories were not established as root causes. Independently review
-isolation before one bounded local recheck; preserve mount, CSP, resource, Node-isolation and
-service-lifetime assertions. Do not attest stale outputs: build-time source/digests must match.
+[operations](../operations/desktop-packages.md). The isolated mounted DMG/ZIP smoke passed at `a57a42ac`
+(`check-ixv3t383`, 11.9 seconds), after fresh build `check-hp7o65g5`. The missing test-only
+mock-Keychain flags were fixed and independently reviewed; production encryption stays on.
+All known diagnostic fixtures were stopped; no Keychain reset/deletion occurred. No further
+local GUI repro is needed for unchanged source. Earlier CDP-readiness theories were not
+established causes. Preserve the exact build-time source/digest and mocked-Keychain boundary.
 Clean only proven-owned temporary processes and detach only the task volume.
 
 The accepted per-version pipeline is implemented and independently reviewed: see the
 [release handoff](lanes/DMG-versioned-release.handoff.md). Do not execute a public release. Use
 full current-candidate checks, same-run verified package bytes, draft→attach→publish ordering,
-least-privilege tokens and conflict-safe retries. Independent author/reviewer and final full
-hosted `ci:finish` remain required. Keep this prompt on the current slice until they pass.
+least-privilege tokens and conflict-safe retries. Separate author/reviewer checks have passed.
+Inspect PR #6's latest clean HEAD and complete
+its full hosted `ci:finish`; if pending, failed or stale, stay on delivery and fix that exact
+condition. Once it passes, continue the bounded P1 shared SDK slice below. Do not re-run
+unchanged local envelopes merely to add test counts.
 
 ## Subsequent local priorities
 

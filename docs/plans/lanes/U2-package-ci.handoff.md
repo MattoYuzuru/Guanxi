@@ -1,6 +1,6 @@
 # U2 package CI handoff
 
-**Status:** implementation/review complete; final isolated mounted smoke and hosted gate
+**Status:** implementation/review and local mounted smoke complete; final hosted gate
 pending at this document's commit. **Date:** 2026-11-01. **Base:** `574bb3bf`.
 
 ## Implemented and independently reviewed
@@ -40,15 +40,20 @@ exact argv and unchanged production cookie-encryption assertions. Independent re
 review passed. Empty K3 vault registration was traced separately: no secret rows means the
 OS keychain provider is never invoked; provider-key import is explicitly disabled. No new
 plaintext key or production bypass is added. Real OS Keychain security/onboarding is outside
-the test's evidence. Recheck the full mounted flow once with isolation, then use hosted CI.
+the test's evidence. The full isolated mounted flow passed at `a57a42ac` (`check-ixv3t383`, 11.9 seconds), after
+fresh build `check-hp7o65g5`. DMG/ZIP contents, notices, runtime/signature/identity, renderer,
+CSP/isolation, service survival and owned cleanup all passed. No additional local GUI repro
+is needed for unchanged source; complete the hosted candidate gate.
 
 ## Checks and residuals
 
 Combined packaging/release scope: **62 new / 173 inherited**, 235 passed, zero skips on the
 Mac (`check-ujt7xptp`). The release author's 54 new / 11 inherited are included, not additive.
 Desktop types passed (`check-swfzhfby`); lint passed with four existing noInlineConfig warnings;
-Markdown/links and 875-package license gate passed. Real package builds succeeded at multiple
-intermediate revisions; they do not prove a later committed artifact's identity or GUI pass.
+Markdown/links and 875-package license gate passed. The successful mounted
+artifact's receipt names exact source `a57a42ac71de07e97092e8e5a3a42c2108676155` and tree
+`b2f601e1b9dd8722fe43262a21b455d2fc0a56c0`. Later documentation does not change those bytes;
+final hosted CI builds its own exact candidate again.
 
 Local agent-dev receipts cannot be reused as source attestations because of the tracked
 `.claude/skills/guanxi-ui` directory symlink. Final exact source/run identity comes from the

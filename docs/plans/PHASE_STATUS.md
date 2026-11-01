@@ -30,8 +30,10 @@ desktop platform order macOS → Linux/Fedora → Windows (D-221).
   process cleanup, stale-artifact rejection, CSP presence, new-loader synchronization and
   HTTP UI-resource errors. **Combined delivery evidence — new: 62 (7 desktop, 2 CI, 53 release); regression: 173**,
   all 235 passed with zero skips (`check-ujt7xptp`); desktop types, lint, docs and license
-  gate passed. Builds succeeded; the final isolated mounted smoke and exact ready-candidate
-  hosted CI remain required. Earlier GUI probes lacked Chromium's mock-Keychain flags and
+  gate passed. Build and isolated mounted DMG/ZIP smoke passed at `a57a42ac`
+  (`check-hp7o65g5`, `check-ixv3t383`, 11.9 seconds). The packaged UI, CSP/Node isolation,
+  service survival and confirmed cleanup all passed with Chromium's mock Keychain.
+  Exact ready-candidate hosted CI remains required. Earlier GUI probes lacked Chromium's mock-Keychain flags and
   prompted the owner during cookie initialization. All known diagnostic processes were
   stopped. The separately reviewed fix `a51adfe6` adds the same test-only flags as Playwright;
   production cookie encryption stays on. No Keychain reset/deletion was performed; real OS
@@ -60,7 +62,10 @@ desktop platform order macOS → Linux/Fedora → Windows (D-221).
 
 PR #5 remains open at `af254dae`, with full hosted run
 [41324115509](https://github.com/MattoYuzuru/Guanxi/actions/runs/41324115509) and successful
-`ci:finish`: tested `e7ef300a`, base `1be1b6de`. Wave 10 is stacked above it; neither is merged.
+`ci:finish`: tested `e7ef300a`, base `1be1b6de`. [PR #6](https://github.com/MattoYuzuru/Guanxi/pull/6) is stacked above it; neither is merged.
+The final hosted run/head/base/tested identity is recorded in PR #6 and `ci:finish` output;
+verify that current candidate evidence before declaring the slice complete. No tracked source
+change may follow its green final gate without revalidation.
 This Mac-only session does not newly validate real B3, owner audio, other hosts, cloud billing,
 Touch ID/signatures, downloaded-app Gatekeeper onboarding or Developer ID/notarization.
 
