@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { readFile, readdir, rename } from 'node:fs/promises'
 import { test } from 'node:test'
-import { INPUT_EXCERPT_BYTES, INPUT_INLINE_BYTES, SESSION_EVENT_VERSION_3, type SessionEvent } from '@guanxi/contract'
+import { INPUT_EXCERPT_BYTES, INPUT_INLINE_BYTES, SESSION_EVENT_VERSION_3, agentProgressV2Schema, nativeProgressVersionUnsupportedSchema, type SessionEvent } from '@guanxi/contract'
 import { RunStore } from '../../src/runs/store.ts'
 import { SessionInputError, type SessionInputStoreHooks } from '../../src/session-log/input-artifacts.ts'
-import { big, blobPath, build, deferred, events, prompts, sha, started, tick, type Fixture } from './queue-v3-support.ts'
+import { big, blobPath, build, deferred, events, peer, prompts, sha, started, tick, type Fixture } from './queue-v3-support.ts'
 
 const queues = (f: Fixture, id: string) => events(f, id).filter((e): e is Extract<SessionEvent, { type: 'agent.queue'; version: 3 }> => e.type === 'agent.queue' && e.version === SESSION_EVENT_VERSION_3)
 const rows = (f: Fixture) => Number(f.db.prepare('SELECT COUNT(*) AS n FROM session_input_artifacts').get()!.n)
@@ -268,4 +268,43 @@ test('Q10: producer scrubs known secrets before storage and late secrets before 
   assert.equal(f.requests[1]!.includes(tail), true)
   assert.equal(f.requests[1]!.includes(known), false)
   assert.equal(f.requests[1]!.includes(late), false)
+})
+
+test('Q22: an unchanged large HTTP POST is accepted; legacy progress refuses while progress2 and stop/result work', { timeout: 60_000 }, async (t) => {
+  const { nativeAgentRoutes } = await import('../../src/native-agent/routes.ts')
+  let reads = 0
+  const { f, sessionId, release } = await held(t, { beforeRead: () => { reads += 1 } })
+  const app = nativeAgentRoutes(() => f.agents() as unknown as import('../../src/native-agent/plugin.ts').NativeAgentService)
+  const text = big('HTTP-QUEUE-TAIL')
+  const response = await app.request(`/${sessionId}/queue`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }),
+  }, peer)
+  assert.equal(response.status, 202)
+  assert.deepEqual(await response.json(), { ok: true })
+  for (const query of ['', '?progressVersion=1']) {
+    const legacy = await app.request(`/${sessionId}${query}`, undefined, peer)
+    assert.equal(legacy.status, 406)
+    assert.deepEqual(nativeProgressVersionUnsupportedSchema.parse(await legacy.json()), { code: 'native_progress_version_unsupported', supported: 1, required: 2 })
+  }
+  const progress = await app.request(`/${sessionId}?progressVersion=2`, undefined, peer)
+  assert.equal(progress.status, 200)
+  const body = agentProgressV2Schema.parse(await progress.json())
+  assert.equal(body.queue.length, 1)
+  const item = body.queue[0]!
+  if (item.kind !== 'artifact') throw new Error('expected artifact')
+  assert.equal(item.artifact.checksum, sha(text))
+  assert.equal(item.artifact.byteSize, Buffer.byteLength(text))
+  assert.equal(JSON.stringify(body).includes('HTTP-QUEUE-TAIL'), false)
+  assert.equal(reads, 0, 'progress never opens the accepted input')
+  const stop = await app.request(`/${sessionId}/stop`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }, peer)
+  assert.equal(stop.status, 200)
+  release()
+  await f.agents().wait(sessionId)
+  const result = await app.request(`/${sessionId}/result`, undefined, peer)
+  assert.equal(result.status, 200)
+  const record = await result.json() as { version: number; status: string }
+  assert.equal(record.version, 1)
+  assert.equal(record.status, 'cancelled')
+  assert.equal(f.requests.length, 1)
+  assert.equal(queues(f, sessionId).length, 1, 'no mutation replay')
 })

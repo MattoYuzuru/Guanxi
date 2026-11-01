@@ -175,10 +175,10 @@ currently scrubs it in memory before paging; bounded memory streaming is not cla
 conversion remains a named residual. Images are referenced by policy, not stored as base64 in
 events. Reasoning stays in K2's retention class, outside model/CLI output and console logs.
 
-Queued prompts still use the v1 `agent.queue` representation: full queued text inline, even
-after consumption, with no new cap. The producer, `POST /queue` and `DELETE /queue/:item` are
-unchanged. Q0 added the v3 contract, independent ledger 40 and the session-log reader/privacy/
-export support; Q1 (this section) makes the native node a **restricted v3 reader**:
+Q0 added the v3 contract, independent ledger 40 and session-log reader/privacy/export support;
+Q1 added the restricted native reader. Q2 now activates the v3 producer with the same
+`POST /queue` and `DELETE /queue/:item` request shapes. Historical v1 snapshots keep their
+original inline text; new large queue inputs use artifacts without an input acceptance cap:
 
 - `queue-state.ts` normalizes the latest `agent.queue` snapshot (v1 or v3) into an internal
   executable union `{id,kind:'inline',text} | {id,kind:'artifact',artifact}` and drops ids that
