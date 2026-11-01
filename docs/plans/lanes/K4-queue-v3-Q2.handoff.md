@@ -83,6 +83,29 @@ directory; these are observed local results, not source-reuse attestations. Full
 checks the exact ready PR candidate. Final docs lint/link results and hosted run/revisions must
 be recorded in the PR/finish output without a post-success tracked edit (CI protocol).
 
+## Hosted browser failure and correction
+
+The first full run [41322759711](https://github.com/MattoYuzuru/Guanxi/actions/runs/41322759711)
+on candidate `303384cc` passed 13 of 14 tasks but failed `web-browser-1`,
+`primitive-readiness.spec.ts`: after a second ArrowDown open, Space closed the popup with the
+action count still 1 instead of 2. This test and the production menu were unchanged by Q2.
+The saved trace showed the popup still starting; Base UI's initial focus is frame-scheduled.
+The test had not asserted that keyboard focus reached the command before its next key.
+
+Root reproduced the same failure on the Mac (1 failed / 11 passed in 12 repetitions,
+`check-gm4kd_su`). The correction asserts one menu and exact Rename focus after ArrowDown,
+then sends the original Enter/Space. It adds no forced item focus, sleep, retry, timeout or
+weaker assertion; counts 0/1/2/3, disabled nonactivation, dismissal and focus return stay intact.
+A separate read-only reviewer checked trace/source and accepted the exact diff without findings.
+No production UI, fixture, component approval or catalog snapshot changed.
+
+Post-fix evidence: 12/12 repetitions (`check-_s0vhhuf`), all 25 cases in the affected browser
+file (`check-4_un20t9`), affected ESLint and fast `npm run ui:check` pass. Browser checks used
+ports 5261/4461 and the shared heavy lock. These 25 cases are additional regression evidence,
+not new tests; the repetitions measure this diagnosed race, not broader device coverage.
+The PR returned to draft for diagnosis and requires a fresh full run of the corrected candidate;
+the first run is retained as failure evidence, never counted as completion.
+
 ## Compatibility, limits and next slice
 
 Q0+Q1 is the restricted-reader rollback floor: it can consume v3 but refuses mutations over

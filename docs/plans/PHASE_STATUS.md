@@ -26,6 +26,12 @@ desktop platform order macOS → Linux/Fedora → Windows (D-221).
   must be verified from the exact candidate's [PR #5](https://github.com/MattoYuzuru/Guanxi/pull/5)
   and `ci:finish` output. Local runner
   receipts are not reusable source attestations because of the tracked directory symlink.
+- **Hosted browser failure diagnosed:** first candidate `303384cc` passed 13 of 14 tasks but
+  failed the menu keyboard spec. The test sent Space before frame-scheduled item focus. Local
+  reproduction failed 1/12; awaiting the actual ArrowDown-driven focus preserves every exact
+  action count and passes 12/12, then all 25 cases in that browser file. Independent review
+  accepted the test-only repair; no production UI or approval status changed. Final full CI
+  must cover the corrected candidate. See the handoff for receipts.
 
 This session has only the Mac. The real B3 cohort, Fedora checks, Touch ID/owner signatures,
 voice recordings and signed desktop distribution are not newly validated. These do not block
