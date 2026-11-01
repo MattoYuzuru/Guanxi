@@ -222,6 +222,8 @@ export interface InstallOptions {
 
 export interface BootSetOptions {
   readonly safeMode?: boolean
+  /** Startup can inspect pinned state without sweeping or rewriting installations. Default true. */
+  readonly recover?: boolean
   /** Reports an enabled entry whose directory is missing or fails its integrity check. */
   readonly onSkip?: (skip: BootSkip) => void
 }
@@ -835,10 +837,15 @@ export class PluginManager {
    * the locked integrity is skipped and reported through `onSkip`.
    */
   bootSet(options: BootSetOptions = {}): string[] {
+    return this.bootEntries(options).map(entry => entry.path)
+  }
+
+  /** Capture enabled identity and integrity together; startup verifies its own copied bytes. */
+  bootEntries(options: BootSetOptions = {}): InstalledPlugin[] {
     if (options.safeMode === true) return []
-    this.ensureRecovered()
+    if (options.recover !== false) this.ensureRecovered()
     const state = this.readStateSync()
-    const paths: string[] = []
+    const entries: InstalledPlugin[] = []
     for (const entry of [...state.plugins.values()]
       .filter(candidate => state.enabled.has(candidate.id))
       .sort((left, right) => compareIds(left.id, right.id))) {
@@ -875,9 +882,9 @@ export class PluginManager {
         })
         continue
       }
-      paths.push(path)
+      entries.push({ ...this.publicEntry(entry, true), integrity: actual })
     }
-    return paths
+    return entries
   }
 
   private publicEntry(entry: LockedPlugin, enabled: boolean): InstalledPlugin {

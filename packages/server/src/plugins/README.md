@@ -1,16 +1,61 @@
 # Plugins: T1 manager core
 
-**Status:** implemented (P1-b, library only) · **Updated:** 2026-10-22
+**Status:** local T1 manager and node startup implemented; wider P1 remains partial · **Updated:** 2026-11-01
 
 `manager.ts` installs **T1** plugins from a local directory into
 `<pluginsDir>/<id>@<version>/`. Registry and tarball downloads, approved build-script
-execution, kernel boot wiring, the agent-facing `plugin_manager` tool and T2 out-of-process
+execution, the agent-facing `plugin_manager` tool and T2 out-of-process
 plugins are later slices. Nothing here uses the network or runs an npm command.
 
 Trust is checked, not granted: T0 is core-only and T2 needs the later OS sandbox, so both are
 refused. The trust check runs before build-script approval, so a T0 source with scripts is a
 trust refusal rather than an approval prompt. Build scripts are never executed; an explicit
 approval is only recorded in the lock.
+
+## Trusted node startup
+
+The real node and CLI now read enabled installations under `<dataDir>/plugins` after all core
+services load and before opening the HTTP listener. Absent/empty state loads no addon.
+`start({ trustedPlugins: { directory } })` is a trusted host override, never an HTTP option.
+`start()` returns `trustedPlugins`, a typed report of loaded/skipped ids and stable codes.
+Missing/tampered directories are skipped; malformed state, invalid packages, dependency
+failures, imports or apply errors abort startup with a content-free `TrustedPluginStartupError`.
+Successful earlier addon activations are disposed on failure. No source text, module error or
+filesystem path is copied into the loader error/report.
+
+Use `guanxi --safe-mode --no-open` to recover: it skips **all** addon state and imports and
+keeps the core session/run/connection/agent services. A running node must first be stopped;
+the CLI refuses to describe attaching an existing process as safe-mode recovery. The host
+equivalent is `trustedPlugins.safeMode: true`. Installed enable/lock files are not changed by
+recovery mode or startup inspection; startup uses `bootEntries({ recover: false })`, so it
+does not sweep retained/unreferenced directories. Explicit manager recovery keeps its existing
+semantics below. Installation/enabling is still through the trusted library, with no CLI
+install command, registry, HTTP mutation or plugin UI. Changes take effect on node restart.
+
+Startup packages must declare `type: "module"`, a relative `main` pointing to a regular `.mjs`
+or `.js` file inside the installed directory, and a T1 `guanxi` manifest. The entry's default
+export is a kernel plugin whose validated manifest exactly matches the package. Other export
+maps and CommonJS are not supported in this slice. Core ids/services and duplicate addon
+providers are refused; required services/declared slots are ordered and checked before import.
+
+Every enabled directory is copied into a fresh private runtime snapshot and its copied bytes
+are checked against the captured lock integrity before import. Mutation/removal of installed
+files cannot silently substitute the imported source. Snapshot paths give each start a fresh
+ESM entry and relative module graph. Snapshots remain until addon disposal, then are removed;
+registered effects are cleaned by the kernel. A process kill can leave a private temporary
+snapshot; this slice does not sweep old runtime snapshots.
+
+Packages must be bundled/self-contained or carry their own installed dependencies: the fresh
+snapshot does not inherit the application's `node_modules` or resolve its `@guanxi/kernel`.
+Context-based service/effect plugins work; a portable shared plugin SDK and the slot-helper
+bridge are future work (a bundled second kernel copy has a separate context registry). Do not
+infer general UI extension support from this startup slice.
+
+**T1 is full trust.** Pinning and snapshots are not an OS sandbox: absolute/transitive imports,
+top-level effects, arbitrary logging and host access by trusted code remain possible. Import
+top-level effects cannot be rolled back by the kernel. Node retains ESM module records for the
+process lifetime, even after files are removed; restart is the update boundary. MCP and skills
+remain disconnected/off; no model-visible tool or prompt changes are introduced here.
 
 ## API
 
@@ -31,6 +76,7 @@ await manager.uninstall(id)
 await manager.setEnabled(id, enabled)
 manager.list()
 manager.bootSet({ safeMode, onSkip(skip) { /* missing/tampered entry */ } })
+manager.bootEntries({ recover: false }) // same validated set with captured identity + canonical integrity
 manager.recover()
 ```
 

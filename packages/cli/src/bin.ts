@@ -13,6 +13,7 @@ import {
 import { probeExistingGuanxi } from './existing.ts'
 import { agentExec, agentExecExitCode } from './agent-exec.ts'
 import { relayExec, relayExecExitCode } from './relay-exec.ts'
+import { pluginMessages } from './plugin-messages.ts'
 
 const VERSION = '0.1.0'
 const here = dirname(fileURLToPath(import.meta.url))
@@ -22,6 +23,7 @@ type CliOptions = {
   host?: string
   dataDir?: string
   open: boolean
+  safeMode?: boolean
 }
 
 function usage(): string {
@@ -29,13 +31,14 @@ function usage(): string {
 
 Использование:
   guanxi connections import --file PATH [--data-dir PATH] [--json]
-  guanxi [--port 4310] [--host 127.0.0.1] [--data-dir PATH] [--no-open]
+  guanxi [--port 4310] [--host 127.0.0.1] [--data-dir PATH] [--no-open] [--safe-mode]
 
 Опции:
   --port       HTTP-порт (по умолчанию 4310)
   --host       Адрес прослушивания (по умолчанию 127.0.0.1)
   --data-dir   Директория SQLite и локальных данных
   --no-open    Не открывать браузер
+  --safe-mode  ${pluginMessages.safeModeHelp}
   -h, --help   Показать справку
   -v, --version Показать версию`
 }
@@ -45,6 +48,10 @@ function parseArgs(args: string[]): CliOptions {
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]
+    if (arg === '--safe-mode') {
+      options.safeMode = true
+      continue
+    }
     if (arg === '--no-open') {
       options.open = false
       continue
@@ -144,7 +151,10 @@ try {
 const requested = requestedUrl(options)
 const existing = requested.port === 0 ? null : await probeExistingGuanxi(requested.url)
 
-if (existing?.kind === 'ui') {
+if (options.safeMode && existing) {
+  console.error(pluginMessages.safeModeAlreadyRunning)
+  process.exitCode = 1
+} else if (existing?.kind === 'ui') {
   console.log(`Guanxi ${VERSION} уже запущен: ${existing.url}`)
   if (options.open) openBrowser(existing.url)
 } else if (existing?.kind === 'api-only') {
@@ -165,6 +175,7 @@ if (existing?.kind === 'ui') {
       host: options.host,
       dataDir: options.dataDir,
       webDir,
+      trustedPlugins: { safeMode: options.safeMode },
     })
 
     console.log(`Guanxi ${VERSION} запущен: ${server.url}`)
