@@ -47,6 +47,7 @@ export const indirectScripts = {
   },
   guanxi: { test: "node --test 'test/**/*.test.ts'" },
   '@guanxi/server': { test: "node --import ./test/setup/no-ambient-key-file.mjs --test 'test/**/*.test.ts'" },
+  '@guanxi/desktop': { 'package:mac': 'node scripts/package-mac.mjs', 'test:package': 'node scripts/verify-package.mjs' },
   '@guanxi/kernel': { test: "node --test 'test/**/*.test.ts'" },
   '@guanxi/ui': {
     'tokens:build': 'node tokens/build.mjs',

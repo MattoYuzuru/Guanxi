@@ -3,7 +3,10 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { appInventory, artifactEvidence, compareApps, noticePaths, verifyNotices } from '../../scripts/lib/package-evidence.mjs'
+import { spawnSync } from 'node:child_process'
+import { appInventory, artifactEvidence, compareApps, noticePaths, verifyBuildEvidence, verifyNotices } from '../../scripts/lib/package-evidence.mjs'
+import { inspectService } from '../../scripts/lib/package-process.mjs'
+import { ZIP_PREFLIGHT } from '../../scripts/verify-package.mjs'
 
 test('app comparison detects missing/extra/changed files and executable or symlink changes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'package-evidence-'))
@@ -27,6 +30,9 @@ test('app comparison detects missing/extra/changed files and executable or symli
     await rm(join(right, 'extra'))
     await rm(join(right, 'link'))
     await assert.rejects(compareApps(left, right), /identical app/)
+    await symlink('.', join(right, 'link'))
+    await assert.rejects(compareApps(left, right), /identical app/)
+    await rm(join(right, 'link'))
     await symlink('../outside', join(right, 'link'))
     await assert.rejects(appInventory(right), /symlink must stay/)
   } finally { await rm(dir, { recursive: true, force: true }) }
@@ -60,8 +66,42 @@ test('artifact receipt binds regular file bytes to exact source identity and ad-
     const receipt = await artifactEvidence({ files: [file], ...identity })
     assert.deepEqual(receipt, { schema: 1, ...identity, signing: 'ad-hoc', notarized: false,
       assets: [{ name: 'test.dmg', size: 3, sha256: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' }] })
+    await verifyBuildEvidence(receipt, identity, [file])
+    for (const mismatch of [{ commit: 'c'.repeat(40) }, { tree: 'c'.repeat(40) }, { version: '0.2.0' }, { appId: 'wrong.app' }]) {
+      await assert.rejects(verifyBuildEvidence(receipt, { ...identity, ...mismatch }, [file]), /build-time source receipt/)
+    }
+    await writeFile(file, 'changed')
+    await assert.rejects(verifyBuildEvidence(receipt, identity, [file]), /build-time source receipt/)
     await symlink('test.dmg', join(dir, 'link'))
     await assert.rejects(artifactEvidence({ files: [join(dir, 'link')], ...identity }), /regular file/)
     await assert.rejects(artifactEvidence({ files: [file], ...identity, commit: 'bad' }), /match/)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('process cleanup distinguishes owned, gone, foreign and unobservable identities', () => {
+  const deps = { probe: () => {}, command: () => '501 /app/node /app/bin.js --data-dir /tmp/test --no-open', uid: 501,
+    executable: '/app/node', entry: '/app/bin.js', dataDir: '/tmp/test' }
+  assert.equal(inspectService(10, deps), 'owned')
+  assert.equal(inspectService(10, { ...deps, command: () => { throw new Error('ps unavailable') } }), 'unknown')
+  assert.equal(inspectService(10, { ...deps, probe: () => { throw Object.assign(new Error(), { code: 'EPERM' }) } }), 'unknown')
+  assert.equal(inspectService(10, { ...deps, probe: () => { throw Object.assign(new Error(), { code: 'ESRCH' }) } }), 'gone')
+  assert.equal(inspectService(10, { ...deps, uid: 502 }), 'other')
+  assert.equal(inspectService(10, { ...deps, executable: '/other/node' }), 'other')
+  assert.equal(inspectService(1, deps), 'unknown')
+})
+
+test('ZIP preflight rejects traversal, extra roots, duplicate entries and escaping symlinks before extraction', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'package-zip-'))
+  try {
+    const zip = join(dir, 'test.zip')
+    const create = `import zipfile,sys,json,stat\nwith zipfile.ZipFile(sys.argv[1],'w') as z:\n for name,target in json.loads(sys.argv[2]):\n  i=zipfile.ZipInfo(name)\n  if target is not None:i.create_system=3;i.external_attr=(stat.S_IFLNK | 0o777)<<16\n  z.writestr(i,target or 'file')`
+    for (const entries of [
+      [['App.app/Contents/file', null]], [['../outside', null]], [['Other.app/file', null]],
+      [['App.app/../outside', null]], [['App.app/file', null], ['App.app/file', null]], [['App.app/link', '../../outside']],
+    ]) {
+      assert.equal(spawnSync('python3', ['-c', create, zip, JSON.stringify(entries)]).status, 0)
+      const result = spawnSync('python3', ['-c', ZIP_PREFLIGHT, zip, 'App.app'])
+      assert.equal(result.status === 0, entries.length === 1 && entries[0]![0] === 'App.app/Contents/file')
+    }
   } finally { await rm(dir, { recursive: true, force: true }) }
 })

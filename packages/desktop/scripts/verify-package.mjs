@@ -5,11 +5,12 @@ import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { chromium } from '@playwright/test'
 import { PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
 import { DESKTOP_APP_ID, MAC_ARCH } from '../packaging/targets.mjs'
 import { NODE_VERSION } from './lib/node-runtime.mjs'
-import { artifactEvidence, compareApps, verifyNotices } from './lib/package-evidence.mjs'
+import { compareApps, verifyBuildEvidence, verifyNotices } from './lib/package-evidence.mjs'
+import { inspectService } from './lib/package-process.mjs'
+import { connectRenderer } from './lib/renderer-cdp.mjs'
 import { verifyStagedService } from './lib/verify-stage.mjs'
 
 const desktop = resolve(import.meta.dirname, '..')
@@ -32,7 +33,7 @@ async function freePort() {
   await new Promise(done => socket.close(done))
   return port
 }
-const ZIP_PREFLIGHT = `
+export const ZIP_PREFLIGHT = `
 import zipfile,sys,posixpath,stat
 app=sys.argv[2]
 seen=set()
@@ -73,14 +74,11 @@ async function smokeApp(app, temporary) {
   let spawnError
   child.once('error', error => { spawnError = error; shellExited = true })
   let servicePid
-  let browser
-  const ownsService = () => {
-    if (!servicePid) return false
-    try {
-      const identity = run('/bin/ps', ['-p', String(servicePid), '-o', 'uid=', '-o', 'command=']).trim()
-      return identity.startsWith(`${process.getuid()} `) && identity.includes(node) && identity.includes(entry) && identity.includes(data)
-    } catch { return false }
-  }
+  let renderer
+  const serviceState = () => inspectService(servicePid, {
+    probe: pid => process.kill(pid, 0), command: pid => run('/bin/ps', ['-p', String(pid), '-o', 'uid=', '-o', 'command=']),
+    uid: process.getuid(), executable: node, entry, dataDir: data,
+  })
   const health = async () => {
     const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) })
     assert.equal(response.status, 200)
@@ -97,37 +95,47 @@ async function smokeApp(app, temporary) {
     servicePid = manifest.pid
     assert.equal(manifest.entry, entry)
     assert.equal(manifest.port, port)
-    assert.ok(ownsService(), 'temporary service must run mounted bundled Node and entry with the test data directory')
+    assert.equal(serviceState(), 'owned', 'temporary service must run mounted bundled Node and entry with the test data directory')
     await until('packaged service health', health)
     await until('loopback renderer debugging endpoint', async () => (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(1000) })).ok)
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`, { timeout: 10_000 })
-    const page = await until('packaged renderer', async () => browser.contexts().flatMap(context => context.pages()).find(page => page.url().startsWith(`http://127.0.0.1:${port}/`)))
-    const violations = []
-    page.on('console', message => { if (/Content Security Policy|Refused to|violates the following/i.test(message.text())) violations.push('CSP violation') })
-    page.on('requestfailed', () => violations.push('resource request failed'))
-    await page.reload()
-    await page.waitForSelector('#root > *', { timeout: 60_000 })
-    assert.deepEqual(await page.evaluate(() => [typeof process, typeof require]), ['undefined', 'undefined'])
+    const target = await until('packaged renderer', async () => {
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, { signal: AbortSignal.timeout(1000) })
+      return (await response.json()).find(target => target.type === 'page' && target.url.startsWith(`http://127.0.0.1:${port}/`))
+    })
+    const debuggerUrl = new URL(target.webSocketDebuggerUrl)
+    assert.equal(debuggerUrl.origin, `ws://127.0.0.1:${debugPort}`)
+    renderer = await connectRenderer(debuggerUrl.href)
+    for (const method of ['Page.enable', 'Network.enable', 'Log.enable']) await renderer.send(method)
+    await renderer.send('Page.reload')
+    const evaluate = async expression => {
+      const result = await renderer.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
+      assert.ok(!result.exceptionDetails, 'packaged renderer evaluation must succeed')
+      return result.result.value
+    }
+    await until('packaged UI mount', async () => evaluate('document.querySelectorAll("#root > *").length > 0'), 60_000)
+    assert.deepEqual(await evaluate('[typeof process, typeof require]'), ['undefined', 'undefined'])
+    const csp = await evaluate('fetch("/").then(r => r.headers.get("content-security-policy"))')
+    assert.ok(typeof csp === 'string' && csp.includes("script-src 'self'") && !csp.includes("'unsafe-eval'"), 'packaged shell must install its script CSP')
     await sleep(1000)
-    assert.deepEqual(violations, [], 'packaged UI resources must load under the shell policy')
+    assert.deepEqual(renderer.violations, [], 'packaged UI resources must load under the shell policy')
     child.kill('SIGTERM')
     await until('packaged shell exit', async () => shellExited, 10_000)
-    assert.ok(ownsService(), 'node service must survive shell termination')
+    assert.equal(serviceState(), 'owned', 'node service must survive shell termination')
     assert.equal(await health(), true)
   } finally {
-    await browser?.close().catch(() => {})
     if (!shellExited) child.kill('SIGTERM')
+    renderer?.close()
     // Read the owned temporary manifest even if readiness/assertions failed before it was captured.
     if (!servicePid) {
       const manifest = await readFile(join(data, 'desktop', 'service.json'), 'utf8').then(JSON.parse).catch(() => null)
       if (Number.isSafeInteger(manifest?.pid) && manifest.pid > 1) servicePid = manifest.pid
     }
-    if (ownsService()) process.kill(servicePid, 'SIGTERM')
-    await until('owned processes to exit', async () => shellExited && !ownsService(), 10_000).catch(() => {
+    if (serviceState() === 'owned') process.kill(servicePid, 'SIGTERM')
+    await until('owned processes to exit', async () => shellExited && serviceState() === 'gone', 10_000).catch(() => {
       if (!shellExited) child.kill('SIGKILL')
-      if (ownsService()) process.kill(servicePid, 'SIGKILL')
+      if (serviceState() === 'owned') process.kill(servicePid, 'SIGKILL')
     })
-    await until('owned processes after escalation', async () => shellExited && !ownsService(), 5000)
+    if (servicePid) await until('confirmed process exit after escalation', async () => shellExited && serviceState() === 'gone', 5000)
   }
 }
 
@@ -140,6 +148,9 @@ export async function verifyPackage() {
   const output = join(desktop, 'release')
   const dmg = join(output, `${stem}.dmg`)
   const zip = join(output, `${stem}.zip`)
+  const identity = { commit: run('git', ['-C', root, 'rev-parse', 'HEAD']).trim(), tree: run('git', ['-C', root, 'rev-parse', 'HEAD^{tree}']).trim(),
+    version: pkg.version, appId: DESKTOP_APP_ID, architecture: MAC_ARCH }
+  const evidence = await verifyBuildEvidence(JSON.parse(await readFile(join(output, 'build-evidence.json'), 'utf8')), identity, [dmg, zip])
   // macOS aliases /var to /private/var; Electron canonicalizes Resources before launching Node.
   const temporary = await realpath(await mkdtemp(join(tmpdir(), `${PRODUCT_FILE_PREFIX}-package-`)))
   const mount = join(temporary, 'mount')
@@ -158,6 +169,7 @@ export async function verifyPackage() {
     await compareApps(app, join(extracted, `${PRODUCT_NAME}.app`))
     const appId = run('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(app, 'Contents', 'Info.plist')]).trim()
     assert.equal(appId, DESKTOP_APP_ID)
+    assert.equal(run('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', join(app, 'Contents', 'Info.plist')]).trim(), pkg.version)
     await verifyNotices(join(app, 'Contents', 'Resources'))
     await verifyStagedService(join(app, 'Contents', 'Resources', 'service'), { nodeVersion: NODE_VERSION, run })
     // codesign writes its description to stderr. Require the declared ad-hoc identity.
@@ -168,8 +180,8 @@ export async function verifyPackage() {
     assert.match(description, /Signature=adhoc/)
     run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app])
     await smokeApp(app, temporary)
-    const evidence = await artifactEvidence({ files: [dmg, zip], commit: run('git', ['-C', root, 'rev-parse', 'HEAD']).trim(),
-      tree: run('git', ['-C', root, 'rev-parse', 'HEAD^{tree}']).trim(), version: pkg.version, appId, architecture: MAC_ARCH })
+    assert.equal(run('git', ['-C', root, 'status', '--porcelain']).trim(), '')
+    assert.equal(run('git', ['-C', root, 'rev-parse', 'HEAD']).trim(), identity.commit, 'source changed during package verification')
     await writeFile(join(output, 'package-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
     await writeFile(join(output, 'SHA256SUMS'), evidence.assets.map(asset => `${asset.sha256}  ${asset.name}\n`).join(''))
     console.log(JSON.stringify({ verified: true, ...evidence }))

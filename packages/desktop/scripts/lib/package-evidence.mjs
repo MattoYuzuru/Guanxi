@@ -67,3 +67,9 @@ export async function artifactEvidence({ files, commit, tree, version, appId, ar
   }
   return { schema: 1, commit, tree, version, appId, architecture, signing: 'ad-hoc', notarized: false, assets }
 }
+
+export async function verifyBuildEvidence(receipt, identity, files) {
+  const actual = await artifactEvidence({ files, ...identity })
+  assert.deepEqual(receipt, actual, 'package bytes must match the clean build-time source receipt')
+  return actual
+}
