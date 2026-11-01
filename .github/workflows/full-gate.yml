@@ -12,13 +12,14 @@ on:
   # Main receives quick checks; the ready PR already tested its integration candidate.
   push:
     branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: read
 
 concurrency:
   group: guanxi-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   CI: 'true'
@@ -164,7 +165,7 @@ jobs:
   gate:
     name: Full gate
     needs: [plan, checks]
-    if: ${{ always() && github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'workflow_dispatch' || !github.event.inputs.task || github.event.inputs.task == 'all') }}
+    if: ${{ always() && (github.event_name != 'push' || startsWith(github.ref, 'refs/tags/v')) && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'workflow_dispatch' || !github.event.inputs.task || github.event.inputs.task == 'all') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Require the entire planned matrix
@@ -176,3 +177,40 @@ jobs:
           test "$PLAN_RESULT" = success
           test "$CHECKS_RESULT" = success
           test "$FULL" = true
+
+  release:
+    name: Publish versioned macOS release
+    needs: [plan, checks, gate]
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.plan.outputs.full == 'true' && needs.gate.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.9.0'
+          package-manager-cache: false
+      - name: Select verified package bytes from this full run
+        id: package
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release.mjs select
+      - name: Download the selected immutable workflow artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          artifact-ids: ${{ steps.package.outputs.artifact-id }}
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: .ci-results/release
+      - name: Verify assets, prepare a draft and publish the complete release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release.mjs publish .ci-results/release
