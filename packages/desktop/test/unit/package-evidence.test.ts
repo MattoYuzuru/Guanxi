@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 import { appInventory, artifactEvidence, compareApps, noticePaths, verifyBuildEvidence, verifyNotices } from '../../scripts/lib/package-evidence.mjs'
@@ -9,6 +9,7 @@ import { inspectService } from '../../scripts/lib/package-process.mjs'
 import { ZIP_PREFLIGHT } from '../../scripts/verify-package.mjs'
 import { isFailedUiResponse, reloadDocument } from '../../scripts/lib/renderer-cdp.mjs'
 import { packageLaunchArguments } from '../../scripts/lib/package-launch.mjs'
+import { collectLegalNotices, REQUIRED_NOTICES } from '../../scripts/lib/legal-notices.mjs'
 
 test('app comparison detects missing/extra/changed files and executable or symlink changes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'package-evidence-'))
@@ -47,12 +48,13 @@ test('packaged smoke isolates Chromium Keychain access and debugging to its temp
   ])
 })
 
-test('every required bundled notice must exist and be nonempty; build-only exception cannot ship', async () => {
+test('original runtime notices must exist and be nonempty; build-only exception code cannot ship', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'package-notices-'))
   try {
     await mkdir(join(dir, 'service/node'), { recursive: true })
     await mkdir(join(dir, 'service/node_modules'), { recursive: true })
     for (const name of noticePaths) await writeFile(join(dir, name), 'notice')
+    await collectLegalNotices({ repository: resolve(import.meta.dirname, '../../../..'), destination: join(dir, 'service/licenses'), lock: { packages: {} } })
     await verifyNotices(dir)
     for (const name of noticePaths) {
       await writeFile(join(dir, name), '')
@@ -60,6 +62,13 @@ test('every required bundled notice must exist and be nonempty; build-only excep
       await rm(join(dir, name))
       await assert.rejects(verifyNotices(dir), /ENOENT/)
       await writeFile(join(dir, name), 'notice')
+    }
+    for (const [, name] of REQUIRED_NOTICES) {
+      const path = join(dir, 'service/licenses', name)
+      const bytes = await readFile(path)
+      await rm(path)
+      await assert.rejects(verifyNotices(dir), /ENOENT/, `package smoke must require ${name}`)
+      await writeFile(path, bytes)
     }
     await mkdir(join(dir, 'service/node_modules/truncate-utf8-bytes'))
     await assert.rejects(verifyNotices(dir), /build-only dependency/)

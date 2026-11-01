@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, readFile, readdir, readlink } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve } from 'node:path'
+import { verifyLegalNotices } from './legal-notices.mjs'
 
 export async function fileDigest(path) {
   const hash = createHash('sha256')
@@ -38,12 +39,13 @@ export async function compareApps(left, right) {
 }
 
 export const noticePaths = ['LICENSE.electron.txt', 'LICENSES.chromium.html', 'service/node/LICENSE']
-export async function verifyNotices(resources) {
+export async function verifyNotices(resources, repository = resolve(import.meta.dirname, '../../../..')) {
   for (const name of noticePaths) {
     const path = join(resources, name)
     assert.ok((await lstat(path)).isFile(), `notice must be a regular file: ${name}`)
     assert.ok((await readFile(path)).length > 0, `notice must not be empty: ${name}`)
   }
+  await verifyLegalNotices(join(resources, 'service', 'licenses'), repository)
   // D-223 is build-only, including in the separately staged production dependency tree.
   const modules = join(resources, 'service', 'node_modules')
   async function inspect(path) {
