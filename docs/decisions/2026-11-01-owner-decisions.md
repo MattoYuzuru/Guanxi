@@ -18,8 +18,8 @@ dependency. It must not ship in the application. WTFPL is not added to the gener
 
 ## D-224 — Desktop identity and unsigned preparation
 
-Use `io.github.mattoyuzuru.guanxi` as the permanent bundle ID. The owner has no Apple account,
-Developer membership or Developer ID certificate. Prepare an ad-hoc signed Apple Silicon
+Use `io.github.mattoyuzuru.guanxi` as the permanent bundle ID. The owner has no Apple Developer account,
+membership or supplied Developer ID credentials. Prepare an ad-hoc signed Apple Silicon
 DMG/ZIP with honest Gatekeeper instructions; Developer ID signing/notarization is deferred.
 The owner expects opening with a warning, not a requirement to enroll before any local build.
 PR merge/publication authority, cadence and the first version were explicitly left difficult

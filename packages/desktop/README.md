@@ -142,3 +142,11 @@ per-OS packaging only in `electron-builder.config.mjs` (`mac`; U6 adds `linux` b
 
 No source is copied, but the shipped binaries (Electron, Chromium, Node.js) are listed in `THIRD_PARTY_NOTICES.md`. `@guanxi/contract` is bundled at build
 time only for the brand module (`@guanxi/contract/brand`).
+
+## Package verification and delivery preparation (wave 10)
+
+[Package operations](../../docs/operations/desktop-packages.md) describes the clean-source
+build receipt, mounted DMG/ZIP comparison, real packaged shell smoke and retained CI artifacts.
+The permanent bundle ID is accepted; Q-247/Q-248 licensing exceptions are closed by D-222/D-223.
+Developer ID/notarization is deferred. Merge/publication and release cadence remain Q-249/Q-250;
+no public release or updater is implemented by the artifact task.
