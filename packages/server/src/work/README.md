@@ -1,8 +1,13 @@
-# Project work ledger (WG1-a)
+# Project work ledger (WG1)
 
-**Status:** implemented library core; plugin, REST routes and contract landed in MS2 (see the
-last section); no web UI. Project mode is **not** a default (D-173). This package is the project-mode core next to the
-relay run-mode ledger; the relay is unchanged.
+**Status:** core, kernel plugin, REST routes and contract wired; board UI and `work.query`
+agent tool unfinished · **Context updated:** 2026-11-01
+
+The application loads `guanxi.work` and mounts `/api/work` in [`index.ts`](../index.ts).
+The backend serves plan revisions, evidence-derived items, mode and on-demand Markdown export.
+Its `query` function is not yet exposed as an agent tool, and the workspace Plan pane is not
+connected to a board. Project mode is **not** a default (D-173); the WL-series A/B is pending.
+This is the project-mode core next to the relay run-mode ledger; the relay is unchanged.
 
 Sources: [ADR-0032](../../../../docs/decisions/0032-work-ledger-board-and-tracker-sync.md),
 ROADMAP `WG1`, owner decisions D-171–D-176. The intended eventual home is `packages/work`;
@@ -187,9 +192,11 @@ cancellation and reopen, proposals, warnings, store validation and migrations, d
 activation, WIP derivation, a 500-case seeded strip property with Unicode and both counters,
 query paging stability and export content.
 
-Residual work is WG1, not this slice: extract to `packages/work`, share the run-mode relay
-ledger, wire the plugin and `work.query` tool, add routes/contract/board UI, run the WL-series
-A/B, and build WG2 tracker sync. `project` mode stays off until that evidence exists.
+Residual WG1 work: extract to `packages/work`, share the run-mode relay ledger, expose the
+`work.query` tool, add the board UI and run the WL-series A/B. Plugin, REST and contract wiring
+landed in MS2 below. [WG2 tracker sync](sync/README.md) exists as a separate unwired library;
+its runtime integration remains unfinished. `project` mode remains off by default until WL
+evidence supports changing that default; the implemented mode route permits manual activation.
 
 ## MS2: plugin, REST routes and wire contract
 
@@ -230,20 +237,22 @@ Rules pinned by tests:
   characters, safe relative protected paths); responses are not, so a row a kernel caller wrote
   can never turn a read route into a 500.
 - **Account isolation is a residual.** The WG1-a store is keyed by project id and has no account
-  column. The fixed local account only attributes evidence; per-project authorization is a U3
-  concern (`project.read` and `project.write`), one call per handler.
+  column. The fixed local account attributes evidence; the global U3 route policy now applies
+  `project.read`/`project.write`. Resource lookup grants and per-account storage remain U3 work.
 
 Evidence: `ms2-work-routes.test.ts` (16 tests), the work parts of `ms2-plugins.test.ts` and
 `ms2-contract.test.ts`.
 
 Still later: the board UI, the `work.query` tool, sharing the run-mode relay ledger, WL-series
-A/B and WG2 tracker sync.
+A/B and runtime integration of the WG2 tracker library.
 
 ## Residual: unauthenticated human decisions over loopback
 
 `POST /api/work/projects/:id/events` accepts `human_decision` and records it as `user:local`. Any
 process on the host that can reach the loopback listener without an `Origin` header (including a
 local agent's shell) can therefore mark an item `done` as a human override. Harness evidence
-cannot be forged over HTTP (strict schema, server-fixed `source` and `at`), but the human
-attribution is unauthenticated until a per-session UI token or U3 `can()` guards `events` and
-`revisions`. Treat `human_done` as an override, not as harness evidence.
+cannot be forged over HTTP (strict schema, server-fixed `source` and `at`). The global
+[U3 route policy](../auth/route-policy.ts) now checks `project.read`/`project.write`, including
+`events` and `revisions`, but local mode still derives the owner from a direct loopback peer;
+it does not distinguish the UI from another same-host process. A UI token or local-owner
+proof remains separate work. Treat `human_done` as an override, not as harness evidence.

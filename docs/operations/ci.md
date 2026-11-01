@@ -74,9 +74,10 @@ The source is [the workflow](../../.github/workflows/full-gate.yml) and
 [task inventory](../../scripts/ci/tasks.mjs). PRs check their integration merge ref with full
 history, not only the feature head. The matrix covers root `npm test` leaves, static/type/doc
 checks, root builds (web before CLI), Storybook, both browser gates, three bounded core shards,
-the Electron shell (units on Linux, the Electron-launching suites on macOS) and macOS signer tests. Browser
+the Electron shell (units on Linux, the Electron-launching suites on macOS), actual arm64
+DMG/ZIP packaging and macOS signer tests. Browser
 tests keep one worker per isolated shard; broad Node core tests use two file workers per shard to reduce
-timing-fixture starvation. The current fourteen
+timing-fixture starvation. The current fifteen
 tasks may start concurrently on isolated runners; account runner capacity still applies. Matrix fail-fast is
 off so one run reports independent failures together. Newer runs supersede older runs for
 the same PR only. Main pushes run quick checks; manual dispatch runs the full matrix but
@@ -144,6 +145,10 @@ Colima setup, Secure Enclave identity or Touch ID. macOS container/sandbox behav
 hardware and Fedora/live/paid integration need their explicit integration envelope. MS1 closed
 on the dated D-214 fault runs (D-219); the former six-hour duration gate was superseded, and
 the full B3 cohort remains an MS2 gate. Do not relabel the hosted offline gate as production validation.
+
+The `desktop-package` task builds and verifies both macOS package formats and retains the
+verified artifacts for seven days. It uses no signing credentials or publication permission.
+See [desktop package operations](desktop-packages.md) for provenance, smoke and recovery scope.
 
 ## Updating existing lanes
 

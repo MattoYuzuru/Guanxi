@@ -18,6 +18,10 @@ December 2025 agentic-security design is the strongest published model.
 ## Decision
 
 1. **Scope:** the agents' browser plus product preview, not a daily browser (D-139).
+   D-229 clarifies that this is a general agent browser for ordinary sites and localhost
+   under the run policy; pilot sites are coverage choices, not a product whitelist. Explore
+   explicit Chrome/Firefox session handoff while preserving the consent/secret boundaries
+   below. No covert cookie, password or passkey-store extraction is approved.
 2. **Engine in the node service:** a `browser-host` component runs Chromium through
    `playwright-core` (Apache-2.0). Clients (desktop, web, phone) show it as a streamed pane that
    can be docked, floated and popped out; the user can watch, take over and hand back. A "pop out

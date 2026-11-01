@@ -6,9 +6,9 @@
 // UNSIGNED local DMG. Linux (U6) adds its section next to `mac`; Windows is not built (D-221).
 import { PRODUCT_ENV_PREFIX, PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
 import { resolve } from 'node:path'
-import { MAC_ARCH } from './packaging/targets.mjs'
+import { DESKTOP_APP_ID, MAC_ARCH } from './packaging/targets.mjs'
 
-/** A reverse-DNS bundle id the owner has not chosen yet. A signed build refuses it (see below). */
+/** Retained rejection sentinel for old local build overrides; D-224 supplies the default. */
 export const PLACEHOLDER_APP_ID = 'invalid.placeholder.guanxi.desktop'
 
 const V = (suffix) => `${PRODUCT_ENV_PREFIX}_DESKTOP_${suffix}`
@@ -26,7 +26,7 @@ export function notarizationCredentials(env) {
 export function createConfig(env = process.env) {
   const sign = truthy(env[V('SIGN')])
   const notarize = truthy(env[V('NOTARIZE')])
-  const appId = present(env[V('APP_ID')]) ? env[V('APP_ID')] : PLACEHOLDER_APP_ID
+  const appId = present(env[V('APP_ID')]) ? env[V('APP_ID')] : DESKTOP_APP_ID
 
   if (notarize && !sign) throw new Error(`${V('NOTARIZE')}=1 needs ${V('SIGN')}=1: only a signed build can be notarized`)
   if (sign) {

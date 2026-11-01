@@ -35,6 +35,7 @@ interactive view exists as a private page for the owner; it is a convenience, no
 Current implementation and evidence live in [PHASE_STATUS](PHASE_STATUS.md); the next bounded
 slice lives in [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md). A merged slice does not close its
 whole stage. Wave 8 (U2 first macOS shell, U3 route authorization and K4 queue-v3 Q1) is merged;
+wave 9/10 remain separate reviewed/verification candidates, not merged releases;
 MS2 and its remaining stage gates are open. Dated lane handoffs preserve the scope tested at
 their revision and are not a live inventory of unfinished work.
 
@@ -437,8 +438,10 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 - **Depends on:** U1, K4.
 - **Priority (D-221):** the first desktop app; Linux (U6) follows, Windows last.
-- **Scope:** Electron thin shell, service handshake, sandboxed renderer, DMG with
-  notarization, auto-update.
+- **Scope:** Electron thin shell, service handshake, sandboxed renderer, DMG for every
+  versioned release (D-233), then Developer ID/notarization and auto-update. D-224 accepts
+  the permanent bundle ID and defers signing credentials; licensing exceptions are accepted
+  by D-222/D-223. Publication/first version remain Q-249/Q-250.
 - **Exit gate:** closing the window during a run does not stop the run; the renderer has no
   Node access (test).
 - **Estimate:** 2–4 sessions.
@@ -451,7 +454,8 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   accounts, TLS and allowed roots.
 - **Exit gate:** authorization matrix test over all roles × actions; remote bind refuses to
   start without TLS, accounts and allowed roots.
-- **Owner answers:** D-154 (Q-214), D-155 (Q-215).
+- **Owner answers:** D-154 (Q-214), D-155 (Q-215), D-225 (project/participant/expiry/budget
+  payment grants), D-226 (authenticated convenient local-client binding).
 - **Estimate:** 3–5 sessions.
 
 ### U4 — PWA remote client

@@ -1,6 +1,6 @@
 {
   "name": "@guanxi/desktop",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "description": "Electron thin shell over the local Guanxi node service (macOS first, D-221)",
@@ -16,7 +16,8 @@
     "test:electron": "node scripts/build.mjs && node scripts/ensure-electron.mjs && node --test --test-concurrency=1 'test/electron/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "stage:service": "node scripts/stage-service.mjs",
-    "package:mac": "node scripts/build.mjs && node scripts/stage-service.mjs && electron-builder --config electron-builder.config.mjs --mac"
+    "package:mac": "node scripts/package-mac.mjs",
+    "test:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
     "@guanxi/contract": "*",

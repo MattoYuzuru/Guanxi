@@ -22,6 +22,7 @@ import { MAC_ARCH } from '../packaging/targets.mjs'
 import { NODE_SHA256, NODE_VERSION, archiveName, archiveUrl, extractNodeRuntime, removeStaleUnpacks, verifiedArchive } from './lib/node-runtime.mjs'
 import { serviceLock } from './lib/service-lock.mjs'
 import { verifyStagedService } from './lib/verify-stage.mjs'
+import { collectLegalNotices } from './lib/legal-notices.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 const stage = resolve(import.meta.dirname, '../.stage')
@@ -58,6 +59,10 @@ const lock = serviceLock(rootLock, { workspace: 'packages/cli', name, version: c
 await writeFile(join(out, 'package.json'), `${JSON.stringify({ name, version: cli.version, private: true, type: 'module', dependencies: cli.dependencies }, null, 2)}\n`)
 await writeFile(join(out, 'package-lock.json'), `${JSON.stringify(lock, null, 2)}\n`)
 run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'], out)
+
+// Legal texts include bundled assets and an explicitly labelled npm build/runtime superset.
+// Only lock-derived root node_modules paths and allowlisted top-level notice files are read.
+await collectLegalNotices({ repository: root, destination: join(out, 'licenses'), lock: rootLock })
 
 // The pinned Node.js, verified against its digest (cached beside the stage, re-verified on every use).
 const cache = join(stage, 'cache')

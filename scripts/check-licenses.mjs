@@ -12,7 +12,7 @@ const ALLOWED = new Set([
 // Packages whose metadata is missing or non-SPDX but whose license was checked by hand.
 const REVIEWED = new Map([
   // WTFPL (permissive, no conditions). Build-time only: electron-builder -> builder-util -> sanitize-filename.
-  // It is never bundled into the shipped app. Owner decision pending: docs/plans/OPEN_QUESTIONS.md Q-248; ADR-0016 is not amended here.
+  // It is never bundled into the shipped app. Approved by D-223 (2026-11-01); ADR-0016 allows this exact build-only exception.
   ['truncate-utf8-bytes@1.0.2', 'WTFPL, dev tooling only'],
 ])
 const DENIED_PACKAGES = new Set(['dockview-enterprise'])

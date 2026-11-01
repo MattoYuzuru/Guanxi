@@ -28,6 +28,9 @@ TLS, allowed roots).
    stop. Editor turns run on the session owner's connections only if the owner allowed it,
    otherwise on the editor's own connections; the origin of every prompt is logged. No public
    link without login by default.
+   *Accepted policy update (D-225, 2026-11-01; implementation pending):* paid editor access
+   needs a project and named participant, explicit expiry and budget. Subscription agents
+   remain owner-bound. Migrate the older connection-wide indefinite grants conservatively.
 5. **Access modes** (per session, default per project):
    - *Read-only*: file reads within the project roots and attachments; no writes except the
      session scratch directory; shell limited to an allowlist of read-only commands; network
@@ -60,6 +63,12 @@ TLS, allowed roots).
 7. **Remote security profile**: loopback stays the default; remote binding requires accounts,
    TLS on one canonical hostname (own domain or `*.ts.net`), node credentials, allowed roots
    per node, and audit of remote execution.
+   *Accepted local-authentication direction (D-226, 2026-11-01; implementation pending):*
+   prove the client/node binding per installation with convenient web/CLI/desktop bootstrap,
+   rotation and revocation. A loopback socket alone is not sufficient owner proof. Keep
+   bootstrap secrets out of URLs, public HTML and logs; the detailed protocol still needs
+   design and verification. The current route-wiring implementation below retains its
+   documented loopback limitation until that slice lands.
    *Implementation (U3 route wiring, 2026-11-01, implemented and locally validated):* one hook
    authorizes every `/api/*` request from a route policy map and refuses an undeclared route
    (also at boot), and `start()` refuses a non-loopback bind unless TLS, accounts, allowed roots

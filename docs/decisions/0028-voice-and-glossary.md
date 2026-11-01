@@ -21,6 +21,11 @@ dictionary checked handles Cyrillic transliterations of English terms ("хоно
    diarization, max duration, where audio goes. Backends: on-device (WhisperKit / Apple
    SpeechAnalyzer on Apple platforms, whisper.cpp elsewhere), whisper.cpp or faster-whisper on
    a node, cloud APIs as connections.
+   *Accepted first vertical slice (D-227, 2026-11-01; integration pending):* start with local
+   whisper.cpp, plugin-owned discovery/reuse of existing runtimes/models and explicit path
+   presets. Offer named cloud-provider presets in plugin settings without changing D-157's
+   per-connection glossary consent. Prompt-derived vocabulary candidates (D-228) are private
+   preparation material, not recorded audio or corrected STT ground truth.
 2. **Glossary** per project (and per account): canonical term, spoken variants, transliteration
    keys, language, case rules, inflection notes. Each backend adapter maps it to its own
    biasing mechanism within that backend's limits.

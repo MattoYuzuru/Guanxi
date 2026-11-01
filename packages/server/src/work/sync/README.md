@@ -1,12 +1,27 @@
 # Tracker sync core (WG2-a)
 
 **Status:** implemented internal library core, not wired into plugins, routes, contract, UI or
-agent tools. WG2 remains in progress. **Date:** 2026-10-22.
+agent tools. WG2 remains in progress. **Date:** 2026-10-22 · **Context updated:** 2026-11-01
 
 Sources: [ADR-0032](../../../../../docs/decisions/0032-work-ledger-board-and-tracker-sync.md)
 §7 and its invariants, ROADMAP `WG2`, owner decisions D-115, D-121, D-171 and D-175, and the
 WG1-a work ledger in [`../`](../README.md). The eventual home is a sync plugin; this slice
 keeps the core under `packages/server/src/work/sync` and adds no wiring.
+
+## Application integration boundary
+
+The WG1 work plugin and REST API are loaded by the application, but neither calls this sync
+library. No production service imports the adapters or engine. There is no configured
+tracker link, persistent link store, credential setup UI or ten-minute polling scheduler.
+The presence of `GitHubAdapter` therefore does not mean that the application synchronizes a
+project with GitHub.
+
+This adapter covers GitHub Issues reads and coarse comments/status labels. It does not
+implement Git fetch/commit/push, pull-request creation/review/merge or Actions execution and
+status collection. Those are separate capabilities from the WG2 tracker contract. Jira
+supports the issue reads, comments and mapped transitions described below. Existing evidence
+uses authored API fixtures; no real account, live read/write or production synchronization
+is established by it.
 
 ## Boundary
 

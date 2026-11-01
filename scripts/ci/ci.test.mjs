@@ -39,6 +39,39 @@ test('manual single-task diagnosis cannot narrow ready PR validation or claim a 
   assert.throws(() => plan('workflow_dispatch', { inputs: { task: 'unknown' } }), /Unknown diagnostic task/)
   assert.deepEqual(plan('push').matrix, matrix(false))
 })
+test('full candidates package and smoke DMG/ZIP on macOS before retaining artifacts', () => {
+  const task = tasks.find(task => task.id === 'desktop-package')
+  assert.equal(task.os, 'macos-15')
+  assert.deepEqual(task.commands, [
+    ['npm', 'run', 'package:mac', '--workspace', '@guanxi/desktop', '--', '--publish', 'never'],
+    ['npm', 'run', 'test:package', '--workspace', '@guanxi/desktop'],
+  ])
+  assert.ok(matrix(true).include.some(task => task.id === 'desktop-package'))
+  assert.ok(!matrix(false).include.some(task => task.id === 'desktop-package'))
+  const workflow = readFileSync(new URL('../../.github/workflows/full-gate.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /if: success\(\) && matrix.id == 'desktop-package'/)
+  assert.match(workflow, /release\/package-evidence\.json/)
+  assert.match(workflow, /contents: read/)
+  assert.doesNotMatch(workflow.slice(0, workflow.indexOf('\n  release:')), /contents: write/)
+  assert.doesNotMatch(workflow, /secrets\.(CSC_|APPLE_)/)
+})
+test('version tag pushes run the complete matrix and only their publisher receives write permission', () => {
+  assert.deepEqual(plan('push', { ref: 'refs/tags/v0.1.0-alpha.1' }), { full: true, matrix: matrix(true) })
+  for (const ref of ['refs/heads/main', 'refs/heads/v-feature', 'refs/tags/other']) assert.deepEqual(plan('push', { ref }).matrix, matrix(false))
+  const workflow = readFileSync(new URL('../../.github/workflows/full-gate.yml', import.meta.url), 'utf8')
+  const publisher = workflow.slice(workflow.indexOf('\n  release:'))
+  assert.match(workflow, /tags: \['v\*'\]/)
+  assert.match(publisher, /needs: \[plan, checks, gate\]/)
+  assert.match(publisher, /github.event_name == 'push' && startsWith\(github.ref, 'refs\/tags\/v'\)/)
+  assert.match(publisher, /needs.gate.result == 'success'/)
+  assert.equal([...workflow.matchAll(/contents: write/g)].length, 1)
+  assert.match(publisher, /contents: write\n      actions: read/)
+  assert.match(publisher, /ref: \$\{\{ github.sha \}\}/)
+  assert.match(publisher, /artifact-ids: \$\{\{ steps.package.outputs.artifact-id \}\}/)
+  assert.match(publisher, /run-id: \$\{\{ github.run_id \}\}/)
+  assert.match(publisher, /download-artifact@[a-f0-9]{40}/)
+  assert.doesNotMatch(publisher, /npm ci|package:mac|secrets\./)
+})
 test('adding steps to an indirectly covered existing entrypoint cannot silently omit them', () => {
   for (const [workspace, scripts] of Object.entries(indirectScripts)) for (const script of Object.keys(scripts)) {
     const packages = structuredClone(inventory())

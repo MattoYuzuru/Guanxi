@@ -16,7 +16,7 @@ import { realpath } from 'node:fs/promises'
  * через переменную окружения, а не значение по умолчанию.
  */
 import { federationRoutes } from './federation/routes.ts'
-import { createFederationPlugin, FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
+import { createFederationPlugin, FEDERATION_PLUGIN_ID, FEDERATION_SERVICE, type FederationHostOptions } from './federation/plugin.ts'
 import type { Federation } from './federation/service.ts'
 import { FederationError } from './federation/crypto.ts'
 import { accessSync, constants, existsSync } from 'node:fs'
@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import { createServer as createHttpsServer } from 'node:https'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { PRODUCT_NAME } from '@guanxi/contract'
+import { PRODUCT_NAME, PRODUCT_VERSION as APP_VERSION } from '@guanxi/contract'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_PORT_ENV, DEFAULT_WEB_PORT } from './config/listen-env.ts'
@@ -47,7 +47,7 @@ import { projectIndexPlugin } from './indexing/plugin.ts'
 import { nativeAgentPlugin, NATIVE_AGENT_SERVICE, type NativeAgentService } from './native-agent/plugin.ts'
 import { nativeAgentRoutes } from './native-agent/routes.ts'
 import { externalAgentPlugin } from './external-agents/plugin.ts'
-import { createLeadPlugin, type LeadPluginConfig } from './leads/plugin.ts'
+import { createLeadPlugin, LEAD_PLUGIN_ID, type LeadPluginConfig } from './leads/plugin.ts'
 import { relayStartsChildReporter, relayStartsChildStarter } from './leads/children.ts'
 import type { ChildStarter } from './leads/types.ts'
 import { DURABLE_RUNS_SERVICE, type DurableRunsService } from './runs/plugin.ts'
@@ -69,6 +69,11 @@ import { Ms1LiveError, type Ms1LiveSettings } from './ms1-live/config.ts'
 import { runBoundedStop } from './ms1-live/stop.ts'
 import { admitBind, type RemoteProfileOptions } from './auth/remote-profile.ts'
 import { assertRoutesMapped, sealRoutePolicies, type RoutePolicy } from './auth/route-policy.ts'
+import { loadTrustedPlugins, type TrustedPluginOptions, type TrustedPluginRuntime } from './plugins/startup.ts'
+
+export { TrustedPluginStartupError, loadTrustedPlugins } from './plugins/startup.ts'
+export type { TrustedPluginOptions, TrustedPluginOutcome, TrustedPluginReport, TrustedPluginRuntime } from './plugins/startup.ts'
+export { apiPortFromEnv } from './config/listen-env.ts'
 
 export { RemoteBindError, assertBindAllowed } from './auth/remote-guard.ts'
 export type { RemoteBindConfig, RemoteBindRequirement } from './auth/remote-guard.ts'
@@ -157,8 +162,6 @@ export type {
   TransitionJobResult,
 } from './store/jobs.ts'
 
-const APP_VERSION = '0.1.0'
-
 export const DEFAULT_PORT = 4310
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -187,6 +190,8 @@ export interface StartOptions {
   connectionsKeychain?: () => Promise<import('./vault/keychain.ts').VaultKeychain>
   connectionsPolicy?: VaultPolicy
   indexSettings?: Partial<IndexSettings>
+  /** Enabled local T1 addons under dataDir/plugins; safe mode reads/imports none of them. */
+  trustedPlugins?: TrustedPluginOptions
   federation?: Omit<FederationHostOptions, 'db'>
   /**
    * The remote security profile (ADR-0027 decision 7). A bind to anything but loopback is refused
@@ -331,6 +336,7 @@ export async function start(options: StartOptions = {}) {
     await live?.close()
     throw error
   }
+  let trustedPlugins: TrustedPluginRuntime | undefined
   let context: Awaited<ReturnType<typeof createAppContext>>
   try {
     context = await createAppContext({
@@ -478,10 +484,17 @@ export async function start(options: StartOptions = {}) {
         child: child ?? relayStartsChildStarter(relayService!.publicStarts, { ...relayPolicy!, runs: runs!.store }),
         ...(lead.reporter || !relayPolicy ? {} : { reporter: relayStartsChildReporter(relayService!.publicStarts, relayService!, kernel.sessionLog ?? undefined) }) }))
     }
+    trustedPlugins = await loadTrustedPlugins(kernel.node, {
+      directory: options.trustedPlugins?.directory ?? join(dirname(dbPath), 'plugins'),
+      safeMode: options.trustedPlugins?.safeMode,
+    }, [...kernel.node.entries().map(entry => entry.plugin), LEAD_PLUGIN_ID, FEDERATION_PLUGIN_ID,
+      ...[connectionsPlugin, projectIndexPlugin, nativeAgentPlugin, relayPlugin, notificationsPlugin,
+        voicePlugin, workPlugin, externalAgentPlugin].map(plugin => plugin.manifest.id)])
   } catch (error) {
     await context.maintenance?.close().catch(() => undefined)
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
+    await trustedPlugins?.dispose().catch(() => undefined)
     await kernel.node.dispose().catch(() => undefined)
     await operationalRelay?.close().catch(() => undefined)
     await live?.close().catch(() => undefined)
@@ -550,6 +563,7 @@ export async function start(options: StartOptions = {}) {
     await context.chatExecution.shutdown().catch(() => undefined)
     context.jobService.closeSubscriptions()
     context.sessionLog?.closeSubscriptions()
+    await trustedPlugins?.dispose().catch(() => undefined)
     await kernel.node.dispose().catch(() => undefined)
     await operationalRelay?.close().catch(() => undefined)
     await live?.close().catch(() => undefined)
@@ -636,6 +650,11 @@ export async function start(options: StartOptions = {}) {
         // Unload plugins before the database they may use is closed. Each
         // plugin cleanup is bounded by the kernel's step timeout.
         try {
+          await trustedPlugins?.dispose()
+        } catch (error) {
+          shutdownError ??= error
+        }
+        try {
           await kernel.node.dispose()
         } catch (error) {
           shutdownError ??= error
@@ -666,7 +685,8 @@ export async function start(options: StartOptions = {}) {
   process.once('SIGINT', shutdown)
   process.once('SIGTERM', shutdown)
 
-  return { url, port: actualPort, host, context, kernel, close, app: server, ms1Live: live?.view() ?? null }
+  return { url, port: actualPort, host, context, kernel, close, app: server, ms1Live: live?.view() ?? null,
+    trustedPlugins: trustedPlugins!.report }
 }
 
 /**

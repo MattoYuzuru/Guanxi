@@ -51,16 +51,17 @@ The identity check of the node is a health document of the right shape plus the 
 authenticated** (the node has no local authentication yet; U3), so a same-user process that imitates the node
 cannot be told apart. See the plan, Decision 3.
 
-## Blocking before any signed or distributed release
+## Delivery prerequisites
 
 1. **A dedicated Node.js for the service with `runAsNode: false`** (review M1). Done in this slice (the
    service runs on the pinned Node staged under `Contents/Resources/service/node`, the fuse is off and pinned
    by a test); keep it: with the fuse on, anything able to exec the app binary runs JavaScript under the app's
    signed identity and can reach Keychain items whose ACL trusts it.
-2. **Owner answers to [Q-247 and Q-248](../../docs/plans/OPEN_QUESTIONS.md)** (review M6): Electron's
+2. **Accepted [Q-247 and Q-248](../../docs/plans/OPEN_QUESTIONS.md)** (review M6): Electron's
    dynamically linked LGPL `libffmpeg.dylib` and the bundled Node.js licenses in the app, and the build-time-only
-   WTFPL `truncate-utf8-bytes`. ADR-0016 is not amended; **a distributed DMG waits on that answer**.
-   Unsigned local builds do not.
+   WTFPL `truncate-utf8-bytes` are approved by D-222/D-223. ADR-0016 carries those exact scoped
+   exceptions. D-234 authorizes PR #5/#6 integration and v0.1.0-alpha.1 publication;
+   Developer ID signing/notarization needs credentials that are deferred.
 
 ## Commands
 
@@ -73,6 +74,7 @@ npm run test:electron --workspace @guanxi/desktop  # launches Electron (needs th
 npm run typecheck --workspace @guanxi/desktop
 npm start --workspace @guanxi/desktop              # build and run the shell against the checkout's CLI
 npm run package:mac --workspace @guanxi/desktop    # unsigned arm64 DMG + zip in packages/desktop/release
+npm run test:package --workspace @guanxi/desktop   # verifies that exact clean-source package
 ```
 
 `npm ci` does not download the Electron binary (npm 11 gates install scripts);
@@ -90,7 +92,7 @@ repository.
 | --- | --- |
 | `GUANXI_DESKTOP_SIGN=1` | sign with the Developer ID Application certificate (hardened runtime, entitlements in `packaging/`) |
 | `CSC_LINK`, `CSC_KEY_PASSWORD` (or `CSC_NAME`) | the certificate (base64 or path) and its password |
-| `GUANXI_DESKTOP_APP_ID` | the reverse-DNS bundle id; required for a signed build, cannot change after the first release without losing Keychain and privacy grants |
+| `GUANXI_DESKTOP_APP_ID` | optional local override; accepted default `io.github.mattoyuzuru.guanxi`; changing identity after release loses Keychain and privacy grants |
 | `GUANXI_DESKTOP_NOTARIZE=1` | notarize (needs signing) |
 | `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` | App Store Connect API key (recommended) |
 | or `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Apple ID credentials |
@@ -134,11 +136,20 @@ per-OS packaging only in `electron-builder.config.mjs` (`mac`; U6 adds `linux` b
 
 | Package | Version | License | Use |
 | --- | --- | --- | --- |
-| `electron` | 44.9.0 (released 2026-10-17) | MIT; Chromium and its components (incl. LGPL `libffmpeg.dylib`) under `LICENSES.chromium.html`, shipped in the app; pending Q-247 | runtime, devDependency |
-| Node.js | 26.9.0 (released 2026-09-16), official tarball, digest pinned | MIT plus bundled components listed in its `LICENSE` | the service's runtime, staged into the app (not an npm dependency); pending Q-247 |
+| `electron` | 44.9.0 (released 2026-10-17) | MIT; Chromium and its components (incl. LGPL `libffmpeg.dylib`) under `LICENSES.chromium.html`, shipped in the app; D-222 approved | runtime, devDependency |
+| Node.js | 26.9.0 (released 2026-09-16), official tarball, digest pinned | MIT plus bundled components listed in its `LICENSE` | the service's runtime, staged into the app (not an npm dependency); D-222 approved |
 | `electron-builder` | 26.17.0 (2026-09-26) | MIT | packaging, devDependency |
 | `@playwright/test` | 1.62.1 (same as `@guanxi/web`) | Apache-2.0 | `_electron` test driver, devDependency |
-| `truncate-utf8-bytes` | 1.0.2, transitive of electron-builder | WTFPL, not on ADR-0016's list | build-time only, never shipped; reviewed exception in `scripts/check-licenses.mjs`; pending Q-248 |
+| `truncate-utf8-bytes` | 1.0.2, transitive of electron-builder | WTFPL, exact build-only exception in ADR-0016 | never shipped; reviewed exception in `scripts/check-licenses.mjs`; D-223 approved |
 
 No source is copied, but the shipped binaries (Electron, Chromium, Node.js) are listed in `THIRD_PARTY_NOTICES.md`. `@guanxi/contract` is bundled at build
 time only for the brand module (`@guanxi/contract/brand`).
+
+## Package verification and delivery preparation (wave 10)
+
+[Package operations](../../docs/operations/desktop-packages.md) describes the clean-source
+build receipt, mounted DMG/ZIP comparison, real packaged shell smoke and retained CI artifacts.
+The permanent bundle ID is accepted; Q-247/Q-248 licensing exceptions are closed by D-222/D-223.
+Developer ID/notarization is deferred. D-233 accepts DMG for every versioned release;
+D-234 authorizes the first v0.1.0-alpha.1 release and its integration.
+No public release or updater is implemented by the artifact task.

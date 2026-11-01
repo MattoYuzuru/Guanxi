@@ -9,7 +9,8 @@ export function plan(eventName, event = {}) {
     if (include.length !== 1) throw new Error(`Unknown diagnostic task ${event.inputs.task}`)
     return { full: false, matrix: { include } }
   }
-  const full = eventName !== 'push' && (eventName !== 'pull_request' || !event.pull_request?.draft)
+  const full = eventName === 'push' ? event.ref?.startsWith('refs/tags/v') === true
+    : eventName !== 'pull_request' || !event.pull_request?.draft
   return { full, matrix: matrix(full) }
 }
 

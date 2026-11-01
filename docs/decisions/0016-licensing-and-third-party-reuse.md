@@ -1,6 +1,6 @@
 # ADR-0016: Apache-2.0 licensing and third-party reuse policy
 
-**Status:** accepted (owner decision D-102); implemented locally (`npm run check:licenses`); CI wiring waits for a CI pipeline · **Date:** 2026-10-19
+**Status:** accepted (owner decision D-102); implemented in the local and hosted license gate; scoped desktop exceptions D-222/D-223 added 2026-11-01 · **Date:** 2026-10-19
 
 ## Context
 
@@ -25,6 +25,12 @@ GPL/AGPL by the FSF.
 - **Process-only** (installed by the user, talked to over a protocol, never copied or
   bundled): GPL, AGPL, LGPL binaries, SSPL, BSL/BUSL, FSL, ELv2, custom "community"
   licenses, proprietary tools (Claude Code, LM Studio).
+- **Scoped desktop exceptions (D-222/D-223, 2026-11-01):** Electron/Chromium's
+  dynamically linked, replaceable `libffmpeg.dylib` and the official Node binary may ship
+  with their original bundled notices. Preserve LGPL replacement/relinking rights; do not
+  apply this exception to other LGPL/GPL binaries. Exactly `truncate-utf8-bytes@1.0.2`
+  (WTFPL) is allowed as electron-builder build tooling only, never in the shipped service.
+  See the [owner record](2026-11-01-owner-decisions.md) and `THIRD_PARTY_NOTICES.md`.
 - **Never copied:** code without a license (all rights reserved by default), and anything
   whose license cannot be verified from the source repository.
 - Model weights and datasets keep their own licenses; non-commercial (CC-BY-NC) assets are
@@ -32,7 +38,7 @@ GPL/AGPL by the FSF.
 
 ## Invariants
 
-- A license gate (`npm run check:licenses`, later also in CI) checks dependency SPDX
+- A license gate (`npm run check:licenses`, also in CI) checks dependency SPDX
   identifiers against the allowlist below and fails on anything else.
 - The mobile clients' dependency tree contains no GPL/AGPL code (the same gate runs on the
   mobile workspace once it exists).
