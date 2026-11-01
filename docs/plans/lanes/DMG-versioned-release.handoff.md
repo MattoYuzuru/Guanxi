@@ -1,7 +1,7 @@
 # Versioned DMG release delivery handoff
 
-**Status:** author implementation and focused local checks complete; independent review and
-final hosted integration remain root duties. **Date:** 2026-11-01. **Base:** `6d596ec7`.
+**Status:** implementation, focused local checks and independent review complete; final hosted
+integration remains root's duty. **Date:** 2026-11-01. **Base:** `6d596ec7`.
 **Branch:** `codex/dmg-release`. Plan `eedf48bc`; implementation `1bf949ec`; attempt-history
 hardening `91b8908a`; independent-review fix `e70873b7`.
 
@@ -72,8 +72,10 @@ Independent reviewer `local_inventory` found that a fresh release read or public
 with a different positive ID could pass metadata checks. `e70873b7` pins both responses to the
 selected release ID and adds two direct fake-response regressions: a mismatched fresh read
 cannot publish, and a mismatched publish response cannot report success or automatically retry.
-Final read-only recheck is requested. Root owns integration and the final full hosted candidate
-gate; this fake-service check alone is not a release-ready verdict.
+The same independent reviewer rechecked code `e70873b7` and handoff `d99e58cc`, confirmed both
+identity fixes and the attempt-history behavior, and returned no further concrete finding.
+The reviewer reran no tests. Root owns integration and the final full hosted candidate gate;
+this fake-service check alone is not a release-ready verdict.
 
 Author hardening `91b8908a` makes partial-rerun semantics explicit: read all job attempts and
 select the highest actual attempt of every required name. Same-attempt duplicates, future or
