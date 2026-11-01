@@ -1,6 +1,7 @@
 # Speech-to-text adapters (V1-d)
 
-**Status:** implemented (V1-d), locally validated against an in-process fake server. **Scope:**
+**Status:** implemented adapter library (V1-d), validated against an in-process fake server;
+not wired into the application · **Context updated:** 2026-11-01 · **Scope:**
 the STT adapter contract, a loopback whisper.cpp `whisper-server` adapter, glossary biasing with
 D-157 consent, deterministic post-ASR replacement and a voice-origin marker. No real model was
 loaded and no network beyond loopback was used.
@@ -8,6 +9,12 @@ loaded and no network beyond loopback was used.
 The contract is in `types.ts`, the planner in `biasing.ts`, and the adapter in
 `whisper-server.ts`. This slice does not add a route, plugin wiring or UI, and it does not create
 the owner's evaluation recordings; the V1 exit gate is still not measurable here.
+
+The [voice plugin](../plugin.ts) currently provides only the glossary store/service, and the
+application mounts only [glossary routes](../routes.ts). No production caller constructs
+`WhisperServerAdapter`; the composer has no recording/transcription flow. The glossary editor
+is implemented separately at `/settings/voice/glossary` and does not transcribe audio. Desktop
+microphone permission and agent-facing delivery of the voice-origin marker also remain work.
 
 ## Contract
 
@@ -221,7 +228,8 @@ model's tokenization, or the V1 gate.
 
 - No on-device WhisperKit/SpeechAnalyzer adapter and no cloud STT adapter as a K3 connection.
 - No faster-whisper `hotwords` adapter, no vendor keyterm adapter and no real tokenizer.
-- No REST route, plugin service, contract type, composer control or glossary editor UI.
+- No STT REST route, registered adapter service, transcription wire contract or composer
+  control. The separate glossary plugin, REST contract and editor are implemented.
 - The model label is caller-supplied because `whisper-server` exposes no model id; the default
   is `unknown`, and the voice block can only repeat that.
 - Returned `language` uses a small fixed vocabulary (`english` -> `en`, `russian` -> `ru`); a

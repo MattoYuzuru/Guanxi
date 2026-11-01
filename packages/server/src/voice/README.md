@@ -1,9 +1,31 @@
-# Voice glossary replacement
+# Voice and glossary (V1)
 
-**Status:** implemented (V1-a) · **Scope:** pure, in-memory post-ASR replacement.
+**Status:** partial implementation; glossary plugin, REST and editor wired; STT adapter library
+only; V1 quality gate unevaluated · **Updated:** 2026-11-01
 
-This directory implements ADR-0028 decision 3: deterministic glossary replacement with
-transliteration-aware matching. It has no STT adapter, audio, LLM, database, UI or network I/O.
+The application loads `guanxi.voice` and mounts `/api/voice/glossary` in
+[`index.ts`](../index.ts). The plugin provides the persistent glossary store and compiled
+replacement service. Settings links to the editor at `/settings/voice/glossary`, including
+account/project terms, revision history, revert and text preview.
+
+The loopback whisper.cpp [STT adapter](stt/README.md) exists as a separately tested library.
+It is not registered by this plugin or called by a production route. Audio capture, the
+transcription API, composer integration and sending a voice-origin marker to an agent remain
+unfinished. The desktop shell currently denies microphone requests. A voice value in the
+session-event origin enum does not establish that end-to-end path.
+
+`eval.ts` implements scoring and the V1/V2 comparison rules. No evaluation on the owner's
+recordings or real transcription-quality measurement is recorded in this subsystem's evidence;
+fixture tests do not evaluate the V1 gate.
+The V2 candidate sources, queue, review and automatic apply/revert loop are not implemented.
+See the [capability audit](../../../../docs/plans/evidence/capability-audit-2026-11-01.md)
+for the observed integration boundaries and next slices.
+
+## Post-ASR matching core (V1-a)
+
+`translit.ts` and `glossary.ts` implement ADR-0028 decision 3: deterministic glossary
+replacement with transliteration-aware matching. These matching functions are pure and have
+no audio, database or network I/O.
 
 - `translit.ts` exports `foldKey(s)`: a matching key that folds Cyrillic and Latin spellings to
   one form (`хоно` and `Hono` both become `hono`; `Guanxi` becomes `guanksi`).
@@ -54,10 +76,11 @@ Stems shorter than three letters are rejected, so a two-letter variant such as `
 Text inside backtick code spans and `https?://\S+` URLs is protected. All other characters,
 including spacing and newlines, are preserved byte-for-byte.
 
-## Limits
+## Matcher limits
 
-Per-project storage, biasing for STT backends, voice-origin markers, `voice.flag_term` and the
-learning loop are later V1/V2 slices. An unclosed backtick does not create a protected span.
+Storage, voice-origin helpers and the glossary UI are described below; adapter biasing is
+in [stt/](stt/README.md). `voice.flag_term` and the learning loop remain later V1/V2 work.
+An unclosed backtick does not create a protected span.
 Canonicals and variants must be word-token sequences: edge punctuation such as `C++` or `Hono!`
 is not absorbed into the matched span and is outside this module's contract. Cyrillic-mapped
 Latin is not re-fed through the Latin digraph rules, so mixed-script digraphs split across a
@@ -67,9 +90,9 @@ match against stored spoken forms, not a full feminine `-а` paradigm: `на Ф�
 
 ## Store, service and voice marker (V1-b)
 
-**Status:** implemented (V1-b), locally validated. This appended section supersedes the
-V1-a-only statement under "Limits" that per-project storage and voice-origin markers are later
-slices.
+**Status:** implemented (V1-b), locally validated. V1-b added per-project storage and
+voice-origin helpers to the V1-a matching core; the helpers are not yet connected to prompt
+delivery.
 
 `store.ts` exports `GlossaryStore` over a separate `<dataDir>/voice.sqlite` sidecar with WAL,
 `foreign_keys=ON`, its own `v1_migrations` table and version 1. Entry ids are per account:
@@ -112,10 +135,10 @@ and is not stored on the origin, so a spread or `structuredClone` of the origin 
 block. `glossaryRevisionHash` is SHA-256 over sorted `{id, revision}` JSON and is independent of
 input order.
 
-Limits: this slice does not add a web glossary editor (it landed later, see MS2 below), an STT adapter, backend biasing mapping,
-the `voice.flag_term` tool or V2 candidate learning. (The plugin, REST routes and contract type
-landed in MS2, below.) The V1 exit gate still needs the owner's evaluation recordings and is not
-measurable here.
+Limits of V1-b: the editor, plugin, REST and contract landed later (MS2 below), and the
+standalone STT adapter and biasing landed in V1-d. `voice.flag_term` and V2 candidate learning
+remain unfinished. The V1 exit gate needs the owner's evaluation recordings and real
+transcription results.
 
 ## MS2: plugin, REST routes and wire contract
 
@@ -155,8 +178,9 @@ Evidence: `ms2-glossary-routes.test.ts` (14 tests), the voice parts of `ms2-plug
 `ms2-contract.test.ts`.
 
 The glossary editor UI is built in `packages/web/src/features/voice` (route `/settings/voice/glossary`,
-V1 UI lane; see [LAYOUT_AND_SCREENS](../../../../docs/design/LAYOUT_AND_SCREENS.md) §7). Still later: STT
-adapters and backend biasing, `voice.flag_term` and V2 candidate learning.
+V1 UI lane; see [LAYOUT_AND_SCREENS](../../../../docs/design/LAYOUT_AND_SCREENS.md) §7).
+The [whisper.cpp adapter and biasing](stt/README.md) are implemented as a library; STT runtime
+wiring, capture/composer controls, `voice.flag_term` and V2 candidate learning remain later work.
 
 ## Evaluation metrics and gates (V1-c)
 
@@ -264,8 +288,9 @@ both reports are non-empty owner recordings over the same item references and sc
 
 ### Limits
 
-This slice does not contain the owner's 100–150-recording eval set, STT adapters, audio, backend
-biasing, a candidate queue or store, auto-apply/revert, a review UI or `voice.flag_term`. It
+The V1-c scoring slice does not contain the owner's 100–150-recording eval set or execute an
+STT adapter. V1-d adds the isolated adapter and biasing; audio capture, a candidate queue or
+store, auto-apply/revert, a review UI and `voice.flag_term` remain unfinished. The scorer
 reports point estimates only: no paired bootstrap confidence interval or significance test.
 Corpus-level term matching can offset one item's miss with another item's extra term. The V1 exit
 gate is not measurable until the owner's recordings exist; V1 remains in progress.

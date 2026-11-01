@@ -1,13 +1,30 @@
 # Agent browser policy core
 
-**Status:** implemented and locally validated by unit tests. This directory is a pure core
-slice: it contains no `playwright-core`, no Chromium, no HTTP route, no socket, no timer and no
-storage outside the site-grant SQLite file. The browser host, lease, streamed pane, Bridge
+**Status:** implemented C1/C4 library core, unit-tested; no production wiring
+· **Context updated:** 2026-11-01
+
+This directory contains a pure origin policy and a site-grant metadata store. It contains no
+`playwright-core`, Chromium, HTTP route, socket, timer or storage outside the site-grant SQLite
+file. The browser host, lease, streamed pane, Bridge
 extension, encrypted session bundles, route wiring and MCP tool surface are later work
 ([ADR-0035](../../../../docs/decisions/0035-agent-browser-and-site-sessions.md)).
 
 `types.ts` holds the shared types. `origin-policy.ts` is pure and deterministic.
 `site-grants.ts` owns `<dataDir>/browser.sqlite` and its append-only `c1_migrations` table.
+
+## Application integration boundary
+
+The running node does not instantiate `SiteGrantStore` or expose browser routes/tools. The
+[workspace Browser pane](../../../web/src/features/workspace/Workspace.tsx) holds a
+non-navigating address draft, explicitly labelled as having no browser host. No Bridge
+extension or Connections → Browser grant page is implemented. Grant source names such as
+`bridge_live` are metadata vocabulary, not working transports.
+
+Unit tests exercise policy decisions and SQLite metadata. They do not prove live form
+non-submission, cookie secrecy, injection containment or context closure on revocation.
+`revoke` and `contextsToClose` return IDs; a future browser host must close the actual contexts
+within the lease TTL. The core's readable-origin `click` decision can include a submit button;
+the host must distinguish or block form-submitting clicks before offering Read-only browsing.
 
 ## Origin policy
 
@@ -170,5 +187,7 @@ account/project/role guard, secret-field rejection and `touch`.
   planted-cookie/injection-page validation from ADR-0035.
 - Routes, contract types and the MCP-shaped agent tool surface.
 - `via` and `fromOrigin` remain host assertions; route/tool validation must enforce them.
+- Read-only click enforcement belongs to the future host; the pure policy does not inspect
+  the page or prevent a click from submitting a form.
 - Subdomain grouping for site grants is deliberately absent for now; it would need the real
   Public Suffix List (later). A grant matches only its exact normalized host.
