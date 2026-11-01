@@ -215,19 +215,19 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   a deposed fence), that is the recorded truth instead: the ordinary cancelled or failed terminal
   with no `input_artifact_unavailable` claim. Stop during preparation records its intervention on
   the preparation attempt and cancels it; a deposed owner writes nothing.
-- **Restricted floor.** While the latest snapshot is v3 and still has a pending item, add and
-  remove (`POST /queue`, `DELETE /queue/:item` including duplicate removal, `POST /prompts`
-  while a turn runs, and side-chat Send) refuse with HTTP 409
-  `{code:'native_queue_producer_unavailable'}`, decided inside the queue FIFO before anything
-  is written or read, before the duplicate-id check and before retention is touched. The agent's
-  own `queue` tool is not an HTTP route: the refusal is a tool error result carrying the same
-  code, and the turn continues. Once every v3 item is consumed the next mutation writes a v1
-  snapshot as before. Add/remove during the preparation of a queued turn return `session_not_running`
-  (HTTP 503), because mutation admission is closed until preparation ends. Q2 replaces this
-  restriction with a v3-producing add/remove.
+- **Native producer (Q2).** Add/remove, running-turn prompts, side-chat Send and the agent's
+  `queue` tool now preserve pending v3 work. Every new snapshot is v3, even inline-only or
+  empty. At most 16 KiB of scrubbed UTF-8 stays inline; larger input and retained legacy-large
+  entries are written as session artifacts. Retained descriptors are resolved atomically with
+  the event, without opening or rewriting their blobs. Normalization stays inside the captured
+  attempt's FIFO, with abort/session/home/fence checks around storage and immediately before
+  commit. Stop returns without waiting for storage; a lost owner cannot commit acceptance.
+  Removal never deletes historical metadata or blobs. Add/remove during queued preparation
+  still return `session_not_running` (HTTP 503); idle sessions have no mutation owner either.
 - **Availability residuals (named, not closed).** (1) *Stuck head:* a v3 artifact head that is
   broken (deleted, tampered or otherwise unreadable) fails every later turn that reaches it, and
-  it cannot be removed until Q2 because removal is refused. The session keeps its truthful
+  removal requires an open mutation FIFO on an active turn. Q2 permits removal there without
+  reading the blob; idle/preparing removal remains unavailable. The session keeps its truthful
   failed state and the web client explains it; the stored input is untouched and is never skipped.
   (2) *Late secret expansion:* a v3 inline item that a later secret registration expands past
   16 KiB makes every log read refuse (design section 6: content-free fail closed, no truncation).
@@ -239,13 +239,13 @@ export support; Q1 (this section) makes the native node a **restricted v3 reader
   the failure is not visible in the log; the session shows its last completed run with the item
   still pending.
 
-This is the restricted reader rollback floor (Q0+Q1): progress2, verified consumption, result and
-stop work over v3 state, subject to the availability residuals named above; v3-state mutations wait for Q2. It is not an artifactization claim:
-normal native production still writes v1, so a pre-Q0 max-2 reader keeps reading Q1-written
-data, while a stored v3 event stops it at `requiredVersion: 3`. A client built for progress2
+Q0+Q1 remains the restricted reader rollback floor: progress2, verified consumption, result and
+stop work over v3 state, but that older release refuses mutations over pending v3 work. Q2 writes
+v3 in normal production; a pre-Q0 max-2 reader stops at `requiredVersion: 3`. An old POST may
+return 202 and its next progress1 poll return typed 406 while an artifact is pending; callers must
+upgrade to progress2. No mutation retry or partial progress response is used. A client built for progress2
 against a pre-Q1 node is unsupported (the node ignores the query and answers the legacy body,
-which the strict v2 parse rejects). Consuming a queued prompt may artifactize its own later
-`prompt` event, while the earlier queue event stays inline. A published input blob
+which the strict v2 parse rejects). Historical v1 queue snapshots remain unchanged. A published input blob
 left by a failed append is an orphan until the whole session is deleted; no per-blob GC runs in
 this slice. The full input is buffered for replay and re-scrubbing; a bounded-memory streaming
 reader is not claimed.

@@ -1,5 +1,5 @@
 /**
- * The native agent's executable queue state (K4 queue v3, round Q1).
+ * The native agent's executable queue state (K4 queue v3).
  *
  * `stateOf` normalizes the latest `agent.queue` snapshot, whatever its version,
  * into one internal union and removes every id already consumed as a
@@ -47,15 +47,6 @@ export function queueStateOf(events: readonly SessionEvent[]): QueueState {
     snapshotVersion: latest.version,
     pending: items.filter((item) => !consumed.has(item.id)),
   }
-}
-
-/**
- * Whether this node must refuse queue add/remove: the latest snapshot is v3
- * and still holds work. Q1 produces only v1, so replacing that snapshot would
- * either drop or rewrite artifact-backed work it cannot represent.
- */
-export function blocksV1Producer(state: QueueState): boolean {
-  return state.snapshotVersion === SESSION_EVENT_VERSION_3 && state.pending.length > 0
 }
 
 /** Thrown by {@link legacyQueueOf} when a pending item has no v1 text form. */
