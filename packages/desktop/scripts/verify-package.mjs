@@ -1,0 +1,177 @@
+// Bounded macOS packaging gate: exercises files shipped in DMG/ZIP, never checkout service code.
+import assert from 'node:assert/strict'
+import { execFileSync, spawn } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { chromium } from '@playwright/test'
+import { PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
+import { DESKTOP_APP_ID, MAC_ARCH } from '../packaging/targets.mjs'
+import { NODE_VERSION } from './lib/node-runtime.mjs'
+import { artifactEvidence, compareApps, verifyNotices } from './lib/package-evidence.mjs'
+import { verifyStagedService } from './lib/verify-stage.mjs'
+
+const desktop = resolve(import.meta.dirname, '..')
+const root = resolve(desktop, '../..')
+const run = (file, args) => execFileSync(file, args, { encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024 })
+const sleep = ms => new Promise(done => setTimeout(done, ms))
+async function until(label, action, timeout = 90_000) {
+  const end = Date.now() + timeout
+  while (Date.now() < end) {
+    const result = await action().catch(() => null)
+    if (result) return result
+    await sleep(100)
+  }
+  throw new Error(`Timed out waiting for ${label}`)
+}
+async function freePort() {
+  const socket = createServer()
+  await new Promise((done, reject) => { socket.once('error', reject); socket.listen(0, '127.0.0.1', done) })
+  const port = socket.address().port
+  await new Promise(done => socket.close(done))
+  return port
+}
+const ZIP_PREFLIGHT = `
+import zipfile,sys,posixpath,stat
+app=sys.argv[2]
+seen=set()
+with zipfile.ZipFile(sys.argv[1]) as archive:
+ for entry in archive.infolist():
+  name=entry.filename
+  parts=name.rstrip('/').split('/')
+  assert name not in seen and parts[0]==app and all(p not in ('','..','.') for p in parts) and '\\\\' not in name, 'Unexpected ZIP path'
+  seen.add(name)
+  if stat.S_ISLNK(entry.external_attr >> 16):
+   target=archive.read(entry).decode('utf-8')
+   resolved=posixpath.normpath(posixpath.join(posixpath.dirname(name),target))
+   assert not target.startswith('/') and resolved.startswith(app+'/'), 'ZIP symlink escapes app'
+ assert archive.testzip() is None, 'ZIP CRC failure'
+`
+
+async function smokeApp(app, temporary) {
+  const resources = join(app, 'Contents', 'Resources')
+  const entry = join(resources, 'service', 'bin.js')
+  const node = join(resources, 'service', 'node', 'bin', 'node')
+  const data = join(temporary, 'data')
+  const port = await freePort()
+  const debugPort = await freePort()
+  assert.notEqual(port, debugPort)
+  const home = join(temporary, 'home')
+  await mkdir(home)
+  const child = spawn(join(app, 'Contents', 'MacOS', PRODUCT_NAME), [
+    `--user-data-dir=${join(temporary, 'chromium')}`, '--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${debugPort}`,
+  ], {
+    cwd: temporary,
+    env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: temporary, LANG: 'en_US.UTF-8',
+      GUANXI_API_PORT: String(port), GUANXI_DATA_DIR: data, GUANXI_PROVIDER_KEYS_FILE: '',
+      GUANXI_DESKTOP_HEALTH_TIMEOUT_MS: '90000' },
+    stdio: 'ignore',
+  })
+  let shellExited = false
+  child.once('exit', () => { shellExited = true })
+  let spawnError
+  child.once('error', error => { spawnError = error })
+  let servicePid
+  let browser
+  const ownsService = () => {
+    if (!servicePid) return false
+    try {
+      const identity = run('/bin/ps', ['-p', String(servicePid), '-o', 'uid=', '-o', 'command=']).trim()
+      return identity.startsWith(`${process.getuid()} `) && identity.includes(node) && identity.includes(entry) && identity.includes(data)
+    } catch { return false }
+  }
+  const health = async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) })
+    assert.equal(response.status, 200)
+    const body = await response.json()
+    return body.ok === true && body.application.source === 'application_http'
+  }
+  try {
+    const manifest = await until('packaged service manifest', async () => {
+      if (spawnError) throw spawnError
+      if (shellExited) throw new Error('Packaged shell exited before readiness')
+      return JSON.parse(await readFile(join(data, 'desktop', 'service.json'), 'utf8'))
+    })
+    assert.equal(manifest.entry, entry)
+    assert.equal(manifest.port, port)
+    assert.ok(Number.isSafeInteger(manifest.pid) && manifest.pid > 1)
+    servicePid = manifest.pid
+    assert.ok(ownsService(), 'temporary service must run mounted bundled Node and entry with the test data directory')
+    await until('packaged service health', health)
+    await until('loopback renderer debugging endpoint', async () => (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(1000) })).ok)
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`, { timeout: 10_000 })
+    const page = await until('packaged renderer', async () => browser.contexts().flatMap(context => context.pages()).find(page => page.url().startsWith(`http://127.0.0.1:${port}/`)))
+    const violations = []
+    page.on('console', message => { if (/Content Security Policy|Refused to|violates the following/i.test(message.text())) violations.push('CSP violation') })
+    page.on('requestfailed', () => violations.push('resource request failed'))
+    await page.reload()
+    await page.waitForSelector('#root > *', { timeout: 60_000 })
+    assert.deepEqual(await page.evaluate(() => [typeof process, typeof require]), ['undefined', 'undefined'])
+    await sleep(1000)
+    assert.deepEqual(violations, [], 'packaged UI resources must load under the shell policy')
+    child.kill('SIGTERM')
+    await until('packaged shell exit', async () => shellExited, 10_000)
+    assert.ok(ownsService(), 'node service must survive shell termination')
+    assert.equal(await health(), true)
+  } finally {
+    await browser?.close().catch(() => {})
+    if (!shellExited) child.kill('SIGTERM')
+    if (ownsService()) process.kill(servicePid, 'SIGTERM')
+    await until('owned processes to exit', async () => shellExited && !ownsService(), 10_000).catch(() => {
+      if (!shellExited) child.kill('SIGKILL')
+      if (ownsService()) process.kill(servicePid, 'SIGKILL')
+    })
+  }
+}
+
+export async function verifyPackage() {
+  assert.equal(process.platform, 'darwin', 'package smoke requires macOS')
+  assert.equal(process.arch, MAC_ARCH)
+  assert.equal(run('git', ['-C', root, 'status', '--porcelain']).trim(), '', 'package evidence requires a clean committed source tree')
+  const pkg = JSON.parse(await readFile(join(desktop, 'package.json'), 'utf8'))
+  const stem = `${PRODUCT_FILE_PREFIX}-desktop-${pkg.version}-${MAC_ARCH}`
+  const output = join(desktop, 'release')
+  const dmg = join(output, `${stem}.dmg`)
+  const zip = join(output, `${stem}.zip`)
+  const temporary = await mkdtemp(join(tmpdir(), `${PRODUCT_FILE_PREFIX}-package-`))
+  const mount = join(temporary, 'mount')
+  const extracted = join(temporary, 'zip')
+  let mounted = false
+  try {
+    await mkdir(mount)
+    run('/usr/bin/hdiutil', ['attach', '-readonly', '-nobrowse', '-noautoopen', '-mountpoint', mount, dmg])
+    mounted = true
+    assert.deepEqual((await readdir(mount)).filter(name => name.endsWith('.app')), [`${PRODUCT_NAME}.app`])
+    const app = join(mount, `${PRODUCT_NAME}.app`)
+    run('/usr/bin/python3', ['-c', ZIP_PREFLIGHT, zip, `${PRODUCT_NAME}.app`])
+    await mkdir(extracted)
+    run('/usr/bin/ditto', ['-x', '-k', zip, extracted])
+    await compareApps(app, join(extracted, `${PRODUCT_NAME}.app`))
+    const appId = run('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(app, 'Contents', 'Info.plist')]).trim()
+    assert.equal(appId, DESKTOP_APP_ID)
+    await verifyNotices(join(app, 'Contents', 'Resources'))
+    await verifyStagedService(join(app, 'Contents', 'Resources', 'service'), { nodeVersion: NODE_VERSION, run })
+    // codesign writes its description to stderr. Require the declared ad-hoc identity.
+    const details = spawn('/usr/bin/codesign', ['-dvv', app], { stdio: ['ignore', 'ignore', 'pipe'] })
+    let description = ''
+    details.stderr.on('data', bytes => { description += bytes })
+    assert.equal(await new Promise(done => details.on('close', done)), 0)
+    assert.match(description, /Signature=adhoc/)
+    run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app])
+    await smokeApp(app, temporary)
+    const evidence = await artifactEvidence({ files: [dmg, zip], commit: run('git', ['-C', root, 'rev-parse', 'HEAD']).trim(),
+      tree: run('git', ['-C', root, 'rev-parse', 'HEAD^{tree}']).trim(), version: pkg.version, appId, architecture: MAC_ARCH })
+    await writeFile(join(output, 'package-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
+    await writeFile(join(output, 'SHA256SUMS'), evidence.assets.map(asset => `${asset.sha256}  ${asset.name}\n`).join(''))
+    console.log(JSON.stringify({ verified: true, ...evidence }))
+  } finally {
+    // Do not delete a mount point if detach fails; retain its task directory for recovery.
+    if (mounted) run('/usr/bin/hdiutil', ['detach', mount])
+    await rm(temporary, { recursive: true, force: true })
+  }
+}
+
+if (process.argv[1] === import.meta.filename) {
+  try { await verifyPackage() } catch (error) { console.error(error); process.exitCode = 1 }
+}

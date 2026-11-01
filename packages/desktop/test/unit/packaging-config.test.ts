@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { PRODUCT_FILE_PREFIX, PRODUCT_NAME } from '@guanxi/contract/brand'
 import { PLACEHOLDER_APP_ID, createConfig, notarizationCredentials } from '../../electron-builder.config.mjs'
+import { DESKTOP_APP_ID } from '../../packaging/targets.mjs'
 
 const REAL = { GUANXI_DESKTOP_APP_ID: 'org.example.guanxi', CSC_LINK: 'file-is-supplied-by-the-owner-in-ci', CSC_KEY_PASSWORD: 'x' }
 
@@ -13,7 +14,8 @@ describe('electron-builder configuration', () => {
     assert.equal(config.mac.identity, null)
     assert.equal(config.mac.notarize, false)
     assert.equal(config.electronFuses.resetAdHocDarwinSignature, true)
-    assert.equal(config.appId, PLACEHOLDER_APP_ID)
+    assert.equal(config.appId, DESKTOP_APP_ID)
+    assert.equal(config.appId, 'io.github.mattoyuzuru.guanxi', 'owner-approved permanent identity')
     assert.equal(config.publish, null, 'no update feed in this slice')
   })
 
@@ -49,7 +51,8 @@ describe('electron-builder configuration', () => {
 
   it('signing is opt-in and refuses to proceed without a certificate or without the real bundle id', () => {
     assert.throws(() => createConfig({ GUANXI_DESKTOP_SIGN: '1', GUANXI_DESKTOP_APP_ID: 'org.example.guanxi' }), /certificate/)
-    assert.throws(() => createConfig({ GUANXI_DESKTOP_SIGN: '1', CSC_LINK: 'x' }), /bundle id/)
+    assert.throws(() => createConfig({ GUANXI_DESKTOP_SIGN: '1', CSC_LINK: 'x', GUANXI_DESKTOP_APP_ID: PLACEHOLDER_APP_ID }), /bundle id/)
+    assert.equal(createConfig({ GUANXI_DESKTOP_SIGN: '1', CSC_LINK: 'x' }).appId, DESKTOP_APP_ID)
     const signed = createConfig({ GUANXI_DESKTOP_SIGN: '1', ...REAL })
     assert.ok(!('identity' in signed.mac), 'electron-builder resolves the identity from CSC_LINK / CSC_NAME')
     assert.equal(signed.electronFuses.resetAdHocDarwinSignature, false)

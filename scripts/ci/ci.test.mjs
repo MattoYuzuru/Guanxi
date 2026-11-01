@@ -39,6 +39,21 @@ test('manual single-task diagnosis cannot narrow ready PR validation or claim a 
   assert.throws(() => plan('workflow_dispatch', { inputs: { task: 'unknown' } }), /Unknown diagnostic task/)
   assert.deepEqual(plan('push').matrix, matrix(false))
 })
+test('full candidates package and smoke DMG/ZIP on macOS before retaining artifacts', () => {
+  const task = tasks.find(task => task.id === 'desktop-package')
+  assert.equal(task.os, 'macos-15')
+  assert.deepEqual(task.commands, [
+    ['npm', 'run', 'package:mac', '--workspace', '@guanxi/desktop', '--', '--publish', 'never'],
+    ['npm', 'run', 'test:package', '--workspace', '@guanxi/desktop'],
+  ])
+  assert.ok(matrix(true).include.some(task => task.id === 'desktop-package'))
+  assert.ok(!matrix(false).include.some(task => task.id === 'desktop-package'))
+  const workflow = readFileSync(new URL('../../.github/workflows/full-gate.yml', import.meta.url), 'utf8')
+  assert.match(workflow, /if: success\(\) && matrix.id == 'desktop-package'/)
+  assert.match(workflow, /release\/package-evidence\.json/)
+  assert.match(workflow, /contents: read/)
+  assert.doesNotMatch(workflow, /contents: write|secrets\.(CSC_|APPLE_)/)
+})
 test('adding steps to an indirectly covered existing entrypoint cannot silently omit them', () => {
   for (const [workspace, scripts] of Object.entries(indirectScripts)) for (const script of Object.keys(scripts)) {
     const packages = structuredClone(inventory())

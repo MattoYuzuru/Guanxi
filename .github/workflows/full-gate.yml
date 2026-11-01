@@ -131,7 +131,23 @@ jobs:
           PLAYWRIGHT_IMAGE: ${{ steps.images.outputs.playwright }}
         run: docker pull "$PLAYWRIGHT_IMAGE"
       - name: Execute task
+        env:
+          GUANXI_DESKTOP_SIGN: '0'
+          GUANXI_DESKTOP_NOTARIZE: '0'
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: node scripts/ci/run.mjs run "$TASK"
+      - name: Retain verified macOS package artifacts
+        if: success() && matrix.id == 'desktop-package'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: macos-arm64-package-${{ github.run_attempt }}
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.zip
+            packages/desktop/release/SHA256SUMS
+            packages/desktop/release/package-evidence.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Retain failure diagnostics and task receipts
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
