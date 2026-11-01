@@ -12,6 +12,14 @@ The owner explicitly authorized merging PR #5/#6 and publishing `v0.1.0-alpha.1`
 PR #5 merged as `a23730cb`, after exact-head `ci:finish` confirmed af254dae / full run41324115509.
 PR #6 is now based on main; product/desktop/CLI/server versions are aligned for the alpha.
 Verify its fresh current-head full gate and merge before pushing the authorized version tag.
+Run 41338610542 at `71087caf` passed the alpha package and 13 other tasks but failed the
+prewarm browser fixture. A paused-clock repair passed separate source/trace review and 2/2
+focused cases; required font/project notices are now staged by a separately reviewed
+collector (10 new / 28 regression tests). Both are integrated; see
+[prewarm evidence](lanes/prewarm-gate.handoff.md) and
+[notice evidence](lanes/release-licenses.handoff.md). The failed run cannot certify these
+changes. Require one fresh full gate on their combined candidate; no unchanged-job retry or
+local native GUI/Keychain repro is needed.
 The tag pipeline must pass all 15 checks and verify its same-run package before publication.
 Do not mistake a PR build for a published release. Record the actual release URL/assets,
 commit/tree/digests and final CI identities in its evidence. Q-249/Q-250 are closed; do not

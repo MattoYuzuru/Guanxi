@@ -35,3 +35,18 @@ Add a cross-boundary version-coherence assertion; run the affected CLI/server ve
 and release/CI policy tests. Existing P1/package/release reviews and tests remain evidence for
 unchanged behavior, while exact full hosted checks bind the new candidate. Record merge SHAs,
 head/base/tested revision, release run and verified download URLs in the handoff/PR evidence.
+
+## Candidate repair evidence
+
+The first refreshed candidate `71087caf` passed 14 tasks in run 41338610542, including the
+alpha package, and failed one prewarm fixture. Its running fake clock allowed real selector
+time to expire the debounce. The independently reviewed test-only repair pauses that clock,
+adds zero-call checkpoints and retains exact dispatch/cancellation counts. No production
+timing or timeout changes were made; 2/2 focused cases passed once.
+
+Prepublication package inspection found missing font/project legal texts. The independently
+reviewed collection fix stages six mandatory byte-preserved texts and a verified, labelled
+root-node_modules legal-text superset. Ten new / 28 regression tests passed; its isolated
+trusted-install and inventory limits are explicit. These fixes require a fresh combined
+hosted gate before merge/tag, including real package notice verification. No local native
+GUI/Keychain repro is planned or necessary for these unchanged launch settings.

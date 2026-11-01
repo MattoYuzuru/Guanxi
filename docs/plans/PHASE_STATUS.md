@@ -14,8 +14,23 @@ its exact-head full-gate recheck passed before merge. PR #6 is refreshed onto th
 Desktop/CLI/server package and lock versions now match one application-version constant;
 kernel API and wire versions stay independent. **New: 2 version checks; regression: 65
 release/CI checks**, all 67 passed (`check-8a58fkhc`), CLI consumer types passed
-(`check-yko6jcqo`). Version/docs review and the refreshed full hosted gate are required
-before merging #6. The authorized version tag then runs all checks again and publishes only
+(`check-yko6jcqo`). Independent version review passed; separate fix `71087caf` asserts the
+actual bundled server reports the package version. Refreshed run
+[41338610542](https://github.com/MattoYuzuru/Guanxi/actions/runs/41338610542) passed 14 of 15
+tasks, including the alpha package, but failed one prewarm browser assertion. Its trace
+showed real selector time advancing an unpaused fake clock past the 600 ms debounce. The
+[test-only repair](lanes/prewarm-gate.handoff.md) pauses before app timers and adds two
+zero-call checkpoints while retaining exact request/count/cleanup ordering. Independent
+source/trace review passed at `4e63c408`; **new tests: 0; strengthened: 1; regression: 2/2**
+focused browser cases passed on the first local execution, plus web types.
+
+Prepublication inspection also found missing font/project license texts. The separately
+[reviewed fix](lanes/release-licenses.handoff.md) stages six required byte-preserved texts,
+an explicitly root-node_modules-only legal-text superset and its verified manifest. **New:
+10; regression: 28**, all 38 passed; an own-install collection verified 887 legal files.
+This is not an assertion of legal completeness or hostile concurrent-writer confinement.
+No native GUI/OS Keychain checks were repeated. One fresh full hosted gate must cover both
+integrated fixes before merging #6. The authorized version tag then runs all checks again and publishes only
 its own verified assets. This entry does not claim a public release already exists.
 
 ## Wave 10 (2026-11-01)

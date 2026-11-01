@@ -19,6 +19,13 @@ The wrapper records source commit/tree before building, refuses source changes a
 DMG/ZIP bytes to `release/build-evidence.json`. Verification refuses stale/different files,
 mounts DMG read-only, preflights/extracts ZIP and compares complete app files, symlink targets
 and executable bits. It checks bundle ID/version, notices, pinned Node and ad-hoc signatures.
+Staging preserves the project LICENSE/NOTICE/THIRD_PARTY_NOTICES, both bundled font OFL texts
+and the models.dev metadata license in `service/licenses`. Its manifest also inventories
+available legal texts from installed root node_modules only; workspace-local and every staged
+runtime version are outside that inventory. Runtime modules retain their own notices.
+Collection requires an isolated unchanged trusted install; it does not confine a malicious
+concurrent directory writer. Verification checks the six mandatory texts against source and
+all collected file digests; the manifest is not a claim of legal completeness.
 The mounted packaged executable uses temporary node/Chromium data, no checkout overrides
 or provider credentials. Its Chromium process uses `--use-mock-keychain` and
 `--password-store=basic`, matching Playwright's Electron launcher. Without that test isolation,
