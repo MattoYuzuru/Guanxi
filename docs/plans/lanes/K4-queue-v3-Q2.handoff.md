@@ -80,8 +80,8 @@ Heavy commands use `python3 -B /Users/yuzuru/.agents/skills/workstation-dev/scri
 The final run log and receipt live under `~/.local/state/agent-dev/check-2jjanoy9/`. The
 runner explicitly marks receipts non-reusable because `.claude/skills/guanxi-ui` targets a
 directory; these are observed local results, not source-reuse attestations. Full hosted CI
-checks the exact ready PR candidate. Final docs lint/link results and hosted run/revisions are
-recorded in the PR/finish output without a post-success tracked edit (CI protocol).
+checks the exact ready PR candidate. Final docs lint/link results and hosted run/revisions must
+be recorded in the PR/finish output without a post-success tracked edit (CI protocol).
 
 ## Compatibility, limits and next slice
 

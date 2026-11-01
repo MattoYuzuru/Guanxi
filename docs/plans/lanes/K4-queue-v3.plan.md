@@ -408,6 +408,10 @@ into the expected output. Register every new test separately from the inherited 
 
 ## 10. Future check commands and exit boundary
 
+The commands below preserve the 2026-10-22 plan. The later
+[CI protocol](../../operations/ci.md) supersedes its full-local-gate cadence: use affected
+local checks, then the full hosted PR gate and `ci:finish` for the reviewed candidate.
+
 These commands are a plan only and were **not run**. Root prepares an isolated clone with
 its own dependencies, assigns free ports/data, and confirms local @guanxi resolution. DSH
 runs pure schema/projection/append-queue tests and `tsc --noEmit -p packages/server/tsconfig.json`

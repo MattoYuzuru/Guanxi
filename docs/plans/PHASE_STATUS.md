@@ -22,8 +22,9 @@ desktop platform order macOS → Linux/Fedora → Windows (D-221).
   model policy or UI change. See the [Q2 handoff](lanes/K4-queue-v3-Q2.handoff.md).
 - **Evidence — new:** 21 producer tests (18 initial, HTTP pairing, two late-registration cases).
   **Regression envelope:** 142 inherited native/CLI tests and 63 log/artifact/version/privacy
-  tests. Run identities and the final independent review are in the handoff. Hosted completion
-  is recorded for the exact final candidate in its PR and `ci:finish` output. Local runner
+  tests. Run identities and the final independent review are in the handoff. Final hosted completion
+  must be verified from the exact candidate's [PR #5](https://github.com/MattoYuzuru/Guanxi/pull/5)
+  and `ci:finish` output. Local runner
   receipts are not reusable source attestations because of the tracked directory symlink.
 
 This session has only the Mac. The real B3 cohort, Fedora checks, Touch ID/owner signatures,
@@ -354,7 +355,7 @@ decision was made.
 | U1 Shell and layout | merged: workspace states, mounted shell, glossary, new-session screen, finished-unseen, side chat; wave 6 single interface and panels menu per D-217 | [integration](lanes/U1-integration.handoff.md), [session features](lanes/U1-session-features.handoff.md); CSS suppression debt and unsigned `review` components remain; historical counts are not a current audit |
 | U2 macOS desktop | first shell/service slice merged in wave 8; hosted desktop tasks green in PR #4 | [U2 handoff](lanes/U2-macos.handoff.md); launchd/login/tray, update delivery, signing/notarization and distributed DMG remain; Q-247/Q-248 and Apple account only gate the relevant release work |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
-| R3 Judge + ETA | ETA/signals and opt-in cascade integrated; replay (R3-b) and ETA calibration (R3-c) scorers integrated 2026-10-23 | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md); gates evaluate only on recorded corpora; a privacy-reviewed observation journal is needed to record real runs; night J3 wake rate remains |
+| R3 Judge + ETA | ETA/signals, opt-in cascade, replay/calibration scorers and D-199 observation journal merged | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md), [journal](lanes/R3-journal.handoff.md); real corpora, owner labels/calibration and night J3 wake evidence remain; implementation of a recorder does not prove those gates |
 | F2 Remote attempts | offers, dispatch and remote cost ledger merged; actual two-node MS1 evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md). The MS1 run does not establish every F2 exit: transport/profile, residency and wider remote tool/judge gates need their own evidence. |
 | B3 Relay benchmark | offline validator, smoke runner, naive arm and integration merged in wave 7; full cohort is an MS2 gate (D-219) | [B3-a](lanes/B3-a.handoff.md), [smoke](lanes/B3-b-smoke.handoff.md), [integration](lanes/B3-integration.handoff.md). No real smoke/cohort measurement recorded; gates stay `unevaluated`. Not runnable with this session's Mac-only scope. |
 | V1 Dictation | backend core and glossary editor UI integrated (matcher, store, eval metrics, whisper.cpp adapter with D-157 consent, REST, `/settings/voice/glossary`) | owner eval recordings, more STT adapters, `voice.flag_term` remain; exit gate needs owner recordings |
