@@ -1,6 +1,9 @@
 # K4 queue input artifacts: concrete v3 implementation plan
 
-**Status: root-accepted engineering contract; Q0 only authorized now.** Date:2026-10-22.
+**Status: root-accepted engineering contract; historical Q0 authorization below.** Date:2026-10-22.
+Q0 and Q1 are now merged; the owner's 2026-11-01 autonomous continuation covers the separate
+[Q2 plan](K4-queue-v3-Q2.plan.md) and [handoff](K4-queue-v3-Q2.handoff.md). This document
+preserves the original sequencing and acceptance contract; use PHASE_STATUS for current progress.
 Standalone checkout `/Users/yuzuru/Projects/Guanxi-lanes/k4-queue-v3-foundation`, branch
 `codex/k4-queue-v3-foundation`, base main `f8c65df460c1df9e37cdc5661cf6e730b4032ec5`
 (executable1b6f495). Root read the original outside plan and independent review, corrected
