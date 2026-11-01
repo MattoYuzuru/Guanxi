@@ -1,7 +1,7 @@
 // Bounded macOS packaging gate: exercises files shipped in DMG/ZIP, never checkout service code.
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -71,7 +71,7 @@ async function smokeApp(app, temporary) {
   let shellExited = false
   child.once('exit', () => { shellExited = true })
   let spawnError
-  child.once('error', error => { spawnError = error })
+  child.once('error', error => { spawnError = error; shellExited = true })
   let servicePid
   let browser
   const ownsService = () => {
@@ -93,10 +93,10 @@ async function smokeApp(app, temporary) {
       if (shellExited) throw new Error('Packaged shell exited before readiness')
       return JSON.parse(await readFile(join(data, 'desktop', 'service.json'), 'utf8'))
     })
-    assert.equal(manifest.entry, entry)
-    assert.equal(manifest.port, port)
     assert.ok(Number.isSafeInteger(manifest.pid) && manifest.pid > 1)
     servicePid = manifest.pid
+    assert.equal(manifest.entry, entry)
+    assert.equal(manifest.port, port)
     assert.ok(ownsService(), 'temporary service must run mounted bundled Node and entry with the test data directory')
     await until('packaged service health', health)
     await until('loopback renderer debugging endpoint', async () => (await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(1000) })).ok)
@@ -117,11 +117,17 @@ async function smokeApp(app, temporary) {
   } finally {
     await browser?.close().catch(() => {})
     if (!shellExited) child.kill('SIGTERM')
+    // Read the owned temporary manifest even if readiness/assertions failed before it was captured.
+    if (!servicePid) {
+      const manifest = await readFile(join(data, 'desktop', 'service.json'), 'utf8').then(JSON.parse).catch(() => null)
+      if (Number.isSafeInteger(manifest?.pid) && manifest.pid > 1) servicePid = manifest.pid
+    }
     if (ownsService()) process.kill(servicePid, 'SIGTERM')
     await until('owned processes to exit', async () => shellExited && !ownsService(), 10_000).catch(() => {
       if (!shellExited) child.kill('SIGKILL')
       if (ownsService()) process.kill(servicePid, 'SIGKILL')
     })
+    await until('owned processes after escalation', async () => shellExited && !ownsService(), 5000)
   }
 }
 
@@ -134,10 +140,12 @@ export async function verifyPackage() {
   const output = join(desktop, 'release')
   const dmg = join(output, `${stem}.dmg`)
   const zip = join(output, `${stem}.zip`)
-  const temporary = await mkdtemp(join(tmpdir(), `${PRODUCT_FILE_PREFIX}-package-`))
+  // macOS aliases /var to /private/var; Electron canonicalizes Resources before launching Node.
+  const temporary = await realpath(await mkdtemp(join(tmpdir(), `${PRODUCT_FILE_PREFIX}-package-`)))
   const mount = join(temporary, 'mount')
   const extracted = join(temporary, 'zip')
   let mounted = false
+  let failure
   try {
     await mkdir(mount)
     run('/usr/bin/hdiutil', ['attach', '-readonly', '-nobrowse', '-noautoopen', '-mountpoint', mount, dmg])
@@ -165,9 +173,16 @@ export async function verifyPackage() {
     await writeFile(join(output, 'package-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
     await writeFile(join(output, 'SHA256SUMS'), evidence.assets.map(asset => `${asset.sha256}  ${asset.name}\n`).join(''))
     console.log(JSON.stringify({ verified: true, ...evidence }))
+  } catch (error) {
+    failure = error
+    throw error
   } finally {
     // Do not delete a mount point if detach fails; retain its task directory for recovery.
-    if (mounted) run('/usr/bin/hdiutil', ['detach', mount])
+    if (mounted) {
+      try { run('/usr/bin/hdiutil', ['detach', mount]) } catch (error) {
+        throw new AggregateError([failure, error].filter(Boolean), 'Package verification/volume cleanup failed; temporary mount retained')
+      }
+    }
     await rm(temporary, { recursive: true, force: true })
   }
 }
