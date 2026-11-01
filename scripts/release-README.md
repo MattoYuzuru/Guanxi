@@ -6,8 +6,8 @@ No tag, release, publication or release-settings change was performed while buil
 The owner selected a DMG for each versioned release. This workflow implements the future effect:
 an authorized `v<semver>` tag push runs all 15 CI tasks and publishes the verified macOS package
 as a GitHub **prerelease** after the aggregate gate succeeds. PRs, branch pushes and manual
-diagnostic runs cannot publish. The first actual version and current alpha publication remain
-owner choices; adding this workflow does not create a release or choose that version.
+diagnostic runs cannot publish. D-234 authorizes the first version `v0.1.0-alpha.1` and PR #5/#6 integration.
+The authorization does not bypass review, fresh candidate/tag gates or artifact verification.
 
 The tag must already exist, resolve to the exact checked-out commit, match
 `packages/desktop/package.json`, and belong to the ancestry of `main`. Both local clean-source

@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { serve } from '@hono/node-server'
 import { createServer as createHttpsServer } from 'node:https'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { PRODUCT_NAME } from '@guanxi/contract'
+import { PRODUCT_NAME, PRODUCT_VERSION as APP_VERSION } from '@guanxi/contract'
 import { createApp } from './app.ts'
 import { createAppContext } from './context.ts'
 import { apiPortFromEnv, dataDirFromEnv, devOriginsFromEnv, portFromEnv, WEB_PORT_ENV, DEFAULT_WEB_PORT } from './config/listen-env.ts'
@@ -161,8 +161,6 @@ export type {
   TransitionJobInput,
   TransitionJobResult,
 } from './store/jobs.ts'
-
-const APP_VERSION = '0.1.0'
 
 export const DEFAULT_PORT = 4310
 

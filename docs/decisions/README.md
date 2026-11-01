@@ -10,7 +10,7 @@ lists the evidence it rests on.
 
 | Record | Status |
 | --- | --- |
-| [2026-11-01](2026-11-01-owner-decisions.md) (D-222–D-233: licensing, desktop identity and release cadence, scoped payment grants, local client authentication, dictation, browser and evaluation corpus) | accepted intent; implementation tracked separately |
+| [2026-11-01](2026-11-01-owner-decisions.md) (D-222–D-234: first alpha authorization, licensing, desktop identity and release cadence, scoped payment grants, local client authentication, dictation, browser and evaluation corpus) | accepted intent; implementation tracked separately |
 | [2026-10-31](2026-10-31-owner-decisions.md) (D-219–D-221: B3 gate moves from MS1 to MS2 with a smoke cohort now, Sonnet-only workers for the wave 7 lead, desktop platform order macOS → Linux/Fedora → Windows) | accepted |
 | [2026-10-24](2026-10-24-owner-decisions.md) (D-214–D-218: MS1 exit by fault scenarios instead of six hours, user API key for the lead, worker models, Developer/Visual split withdrawn, in-app connections centre with a provider catalog) | accepted |
 | [2026-10-23 addendum](2026-10-23-owner-decisions-addendum.md) (D-200–D-212: UI redesign, palette, icons over text, no retry buttons, composer layout, models in chat, fleet map, Sonnet MS1 lead, API-key and subscription-token routes for it) | accepted |

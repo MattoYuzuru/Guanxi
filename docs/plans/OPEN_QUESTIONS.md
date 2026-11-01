@@ -1,6 +1,6 @@
 # Open questions
 
-**Status:** accepted tracker; unresolved benchmark evidence and publication choices below · **Updated:** 2026-11-01
+**Status:** accepted tracker; unresolved benchmark evidence; owner publication choices answered · **Updated:** 2026-11-01
 
 New questions go under **Open** with the stage they block and a recommended default. A stage
 may start with the default when the owner has not answered, and must record that it did.
@@ -18,9 +18,6 @@ and future remote rollout inputs are evidence/access tasks, not unanswered conse
 | --- | --- | --- | --- |
 | Q-K3-chat | Which Chat default should replace the current shared orientation plus fixed English language instruction? | K3-chat, B1 | Use the byte-stable orientation first and "Reply in the language the user writes in." (350 UTF-8-byte total budget). This owner-requested default awaits an ADR-0025/B1 bench result; request tests prove bytes, not quality or non-inferiority. |
 
-| Q-249 | May PR #5 and subsequent independently reviewed, fully green candidates be merged, and prepared alpha releases published? | integration/publication | Owner left this unanswered on 2026-11-01. Continue reviewable local/PR work; no merge or public release yet. |
-| Q-250 | What is the first version to publish? | first release | Recommended v0.1.0-alpha.1; version not yet accepted. Cadence is answered by D-233: DMG for every versioned release, PR builds as CI artifacts. |
-
 ## Answered
 
 Latest: [2026-11-01 decisions](../decisions/2026-11-01-owner-decisions.md).
@@ -31,6 +28,8 @@ Latest: [2026-11-01 decisions](../decisions/2026-11-01-owner-decisions.md).
 | Q-246 | D-226: authenticated per-install local binding with convenient bootstrap. | accepted; implementation pending |
 | Q-247 | D-222: scoped Electron/Chromium/libffmpeg/official Node distribution with notices. | accepted |
 | Q-248 | D-223: exact build-only truncate-utf8-bytes@1.0.2 exception. | accepted |
+| Q-249 | D-234: merge PR #5/#6 and publish the first alpha, with review and fresh hosted gates. | authorized; execution tracked in PHASE_STATUS |
+| Q-250 | D-234: v0.1.0-alpha.1. D-233: DMG for every versioned release. | accepted |
 
 Answers: D-121 and D-122 in the
 [2026-10-19 addendum](../decisions/2026-10-19-owner-decisions-addendum.md); D-141–D-182 in the

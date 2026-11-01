@@ -1,6 +1,6 @@
 {
   "name": "guanxi",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "Локальный веб-интерфейс и агент для Ollama",
   "type": "module",
   "bin": {
@@ -20,6 +20,7 @@
     "start": "node src/bin.ts"
   },
   "devDependencies": {
+    "@guanxi/contract": "*",
     "@guanxi/server": "*"
   },
   "license": "Apache-2.0",

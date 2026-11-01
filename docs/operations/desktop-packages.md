@@ -48,9 +48,9 @@ per-app exception. Follow [Apple's current instructions](https://support.apple.c
 Do not disable Gatekeeper globally. A locally built unquarantined smoke is not proof of the
 downloaded/quarantined onboarding flow; that needs a separate observation.
 
-DMG for each versioned release is accepted (D-233). PR merge/publication authority and the
-first version remain Q-249/Q-250.
-Do not create a release/tag from this runbook. Once accepted, use a versioned tag → full
+DMG for each versioned release is accepted (D-233). D-234 authorizes PR #5/#6 integration and the first
+version v0.1.0-alpha.1.
+After the authorized candidate passes review and fresh CI, use a versioned tag → full
 gate/package → draft release → verified assets → publish sequence, compatible with
 [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 Publisher-only retries must reuse the same verified package bytes, compare every existing

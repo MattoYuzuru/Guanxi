@@ -60,7 +60,7 @@ cannot be told apart. See the plan, Decision 3.
 2. **Accepted [Q-247 and Q-248](../../docs/plans/OPEN_QUESTIONS.md)** (review M6): Electron's
    dynamically linked LGPL `libffmpeg.dylib` and the bundled Node.js licenses in the app, and the build-time-only
    WTFPL `truncate-utf8-bytes` are approved by D-222/D-223. ADR-0016 carries those exact scoped
-   exceptions. Public publication authority and the first version remain Q-249/Q-250;
+   exceptions. D-234 authorizes PR #5/#6 integration and v0.1.0-alpha.1 publication;
    Developer ID signing/notarization needs credentials that are deferred.
 
 ## Commands
@@ -151,5 +151,5 @@ time only for the brand module (`@guanxi/contract/brand`).
 build receipt, mounted DMG/ZIP comparison, real packaged shell smoke and retained CI artifacts.
 The permanent bundle ID is accepted; Q-247/Q-248 licensing exceptions are closed by D-222/D-223.
 Developer ID/notarization is deferred. D-233 accepts DMG for every versioned release;
-merge/publication and the first version remain Q-249/Q-250.
+D-234 authorizes the first v0.1.0-alpha.1 release and its integration.
 No public release or updater is implemented by the artifact task.

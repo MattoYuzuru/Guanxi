@@ -7,12 +7,23 @@ hosted full gate [41250663100](https://github.com/MattoYuzuru/Guanxi/actions/run
 tested merge `090df79f`, base `a1ba986b`). MS1 closed 2026-10-31 (D-214, D-219);
 desktop platform order macOS → Linux/Fedora → Windows (D-221).
 
+## First alpha release preparation (2026-11-01)
+
+D-234 authorizes PR #5/#6 integration and `v0.1.0-alpha.1`. PR #5 is merged at `a23730cb`;
+its exact-head full-gate recheck passed before merge. PR #6 is refreshed onto that main base.
+Desktop/CLI/server package and lock versions now match one application-version constant;
+kernel API and wire versions stay independent. **New: 2 version checks; regression: 65
+release/CI checks**, all 67 passed (`check-8a58fkhc`), CLI consumer types passed
+(`check-yko6jcqo`). Version/docs review and the refreshed full hosted gate are required
+before merging #6. The authorized version tag then runs all checks again and publishes only
+its own verified assets. This entry does not claim a public release already exists.
+
 ## Wave 10 (2026-11-01)
 
 - **Owner decisions:** [D-222–D-233](../decisions/2026-11-01-owner-decisions.md) close
   Q-245–Q-248, pin the bundle ID, accept scoped editor payment grants and local client binding,
   configurable dictation, general browser direction and public corpus selection. DMG cadence
-  is every versioned release. Q-249 (merge/publication) and Q-250 (first version) remain open.
+  is every versioned release. D-234 authorizes PR #5/#6 merge and publication of v0.1.0-alpha.1; Q-249/Q-250 are closed.
   Accepted policy is not implementation evidence; Apple Developer signing is deferred.
 - **P1 trusted startup:** normal node/CLI boot now loads enabled integrity-pinned T1 addons
   after core services. Read-only state capture and fresh hashed snapshots preserve retained
@@ -60,9 +71,9 @@ desktop platform order macOS → Linux/Fedora → Windows (D-221).
   loaded. Script-only local chat length metadata can guide private vocabulary candidates;
   raw prompt text was not printed/exported and text is not corrected audio ground truth.
 
-PR #5 remains open at `af254dae`, with full hosted run
+PR #5 merged as `a23730cb` on 2026-11-01 after rechecking head `af254dae` and full hosted run
 [41324115509](https://github.com/MattoYuzuru/Guanxi/actions/runs/41324115509) and successful
-`ci:finish`: tested `e7ef300a`, base `1be1b6de`. [PR #6](https://github.com/MattoYuzuru/Guanxi/pull/6) is stacked above it; neither is merged.
+`ci:finish`: tested `e7ef300a`, base `1be1b6de`. [PR #6](https://github.com/MattoYuzuru/Guanxi/pull/6) is refreshed onto main for the first alpha; its new version/base requires fresh final CI before merge.
 The final hosted run/head/base/tested identity is recorded in PR #6 and `ci:finish` output;
 verify that current candidate evidence before declaring the slice complete. No tracked source
 change may follow its green final gate without revalidation.
@@ -421,7 +432,7 @@ decision was made.
 | X1 Repo map and FTS | independently reviewed and integrated locally (`1b6f495`); actual Fedora62/62 passes | [X1 handoff](lanes/X1.handoff.md). Exact c777 source passes62 local Colima Linux cases, zero skips, with documented nested-bwrap permission limits. Candidate d861 passes all eight commands. [Current Fedora](evidence/Fedora-2026-10-22.md) main3e4840bb five-file X1/kernel envelope passes62/62, zero skips, as dedicateduid1001. The separate native/core startup failure is repaired in45491863; actual214 has208 pass/6 Darwin-only skips. Production/rootless untrusted execution and wider platform/runtime proof remain unearned. |
 | R2 Relay executor | operational llama-server adapter merged; actual Fedora relay and fault-run evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [R2-op](lanes/R2-op.handoff.md). MS1 closed per D-214/D-219; resident model memory remains outside the governor, broader quality and B3 gates remain. No new live run in wave 9. |
 | U1 Shell and layout | merged: workspace states, mounted shell, glossary, new-session screen, finished-unseen, side chat; wave 6 single interface and panels menu per D-217 | [integration](lanes/U1-integration.handoff.md), [session features](lanes/U1-session-features.handoff.md); CSS suppression debt and unsigned `review` components remain; historical counts are not a current audit |
-| U2 macOS desktop | wave 8 shell merged; wave 10 artifact/release pipeline implemented and reviewed, final package/hosted verification pending | [U2 handoff](lanes/U2-macos.handoff.md); launchd/login/tray, update delivery, signing/notarization and distributed DMG remain; Q-247/Q-248 are answered by D-222/D-223; Developer ID/notarization is deferred, Q-249/Q-250 gate first publication |
+| U2 macOS desktop | wave 8 shell merged; wave 10 artifact/release pipeline implemented and reviewed, final package/hosted verification pending | [U2 handoff](lanes/U2-macos.handoff.md); launchd/login/tray, update delivery, signing/notarization and distributed DMG remain; Q-247/Q-248 are answered by D-222/D-223; Developer ID/notarization is deferred; D-234 authorizes the first alpha after fresh gates |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
 | R3 Judge + ETA | ETA/signals, opt-in cascade, replay/calibration scorers and D-199 observation journal merged | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md), [journal](lanes/R3-journal.handoff.md); real corpora, owner labels/calibration and night J3 wake evidence remain; implementation of a recorder does not prove those gates |
 | F2 Remote attempts | offers, dispatch and remote cost ledger merged; actual two-node MS1 evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md). The MS1 run does not establish every F2 exit: transport/profile, residency and wider remote tool/judge gates need their own evidence. |

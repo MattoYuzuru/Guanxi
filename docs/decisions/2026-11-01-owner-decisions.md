@@ -94,3 +94,18 @@ In a later reply, the owner explicitly chose a DMG for every versioned release. 
 verification builds for PRs as CI artifacts. This answers cadence, superseding the unresolved
 cadence portion of D-224. The first version and authority to merge/publish the current
 candidate remain unanswered; preparing release automation does not execute a release.
+
+## D-234 — Authorized first alpha and continued implementation
+
+The owner explicitly authorizes merging PR #5 and PR #6 and publishing
+`v0.1.0-alpha.1` in MattoYuzuru/Guanxi. This closes Q-249/Q-250 and supersedes the earlier
+unanswered-publication/version portions of D-224/D-233. Keep independent review and fresh
+full hosted checks on each actual integration candidate; a refreshed base is revalidated.
+The authorized release uses the accepted ad-hoc Apple Silicon build and honest alpha /
+not-notarized instructions. It does not require an Apple Developer account.
+
+Continue autonomously with plugin platform, accounts and GitHub sync as the main priorities.
+Routine in-scope branch/PR preparation, fixes, review, CI and integration remain part of
+this work. This does not authorize unrelated deployments, new hosts, spending, deletion of
+retained data or bypassing protection. Future feature lanes stay out of the first alpha's
+pinned candidate until their own checks pass.

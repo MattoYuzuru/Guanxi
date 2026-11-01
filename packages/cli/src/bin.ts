@@ -15,8 +15,8 @@ import { probeExistingGuanxi } from './existing.ts'
 import { agentExec, agentExecExitCode } from './agent-exec.ts'
 import { relayExec, relayExecExitCode } from './relay-exec.ts'
 import { pluginMessages } from './plugin-messages.ts'
+import { PRODUCT_VERSION as VERSION } from '@guanxi/contract/brand'
 
-const VERSION = '0.1.0'
 const here = dirname(fileURLToPath(import.meta.url))
 
 type CliOptions = {

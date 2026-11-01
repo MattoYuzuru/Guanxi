@@ -8,12 +8,14 @@ Read [AGENTS](../../AGENTS.md), [NAVIGATION](../NAVIGATION.md), [WORKFLOW](WORKF
 
 ## Resolve actual state
 
-`main` remains `1be1b6de` (wave 8). PR #5 / `lead/wave9` is open at `af254dae`; full run
-41324115509 passed and `ci:finish` returned success (tested `e7ef300a`, base `1be1b6de`).
-Wave 10 / `lead/wave10` is stacked above it. Inspect live PR/head/base/CI state; never infer
-merge from a published PR. Q-249 still requires merge/publication authority; Q-250 is the
-first version. D-233 has answered cadence: DMG on each versioned release, CI artifacts for PRs.
-No tag/release has been created. Developer ID/notarization is deferred; Q-247/Q-248 are closed.
+The owner explicitly authorized merging PR #5/#6 and publishing `v0.1.0-alpha.1` (D-234).
+PR #5 merged as `a23730cb`, after exact-head `ci:finish` confirmed af254dae / full run41324115509.
+PR #6 is now based on main; product/desktop/CLI/server versions are aligned for the alpha.
+Verify its fresh current-head full gate and merge before pushing the authorized version tag.
+The tag pipeline must pass all 15 checks and verify its same-run package before publication.
+Do not mistake a PR build for a published release. Record the actual release URL/assets,
+commit/tree/digests and final CI identities in its evidence. Q-249/Q-250 are closed; do not
+ask for the same merge/publication permission again. Developer ID/notarization is deferred.
 
 The owner authorizes native multiagents and only this Mac for local tests. Use isolated
 worktrees and the common agent-dev heavy lock; no other hosts, live models, cloud billing or
@@ -36,7 +38,7 @@ established causes. Preserve the exact build-time source/digest and mocked-Keych
 Clean only proven-owned temporary processes and detach only the task volume.
 
 The accepted per-version pipeline is implemented and independently reviewed: see the
-[release handoff](lanes/DMG-versioned-release.handoff.md). Do not execute a public release. Use
+[release handoff](lanes/DMG-versioned-release.handoff.md). D-234 authorizes this first alpha. Use
 full current-candidate checks, same-run verified package bytes, draft→attach→publish ordering,
 least-privilege tokens and conflict-safe retries. Separate author/reviewer checks have passed.
 Inspect PR #6's latest clean HEAD and complete
