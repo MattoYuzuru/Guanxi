@@ -51,7 +51,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
  assert archive.testzip() is None, 'ZIP CRC failure'
 `
 
-async function smokeApp(app, temporary) {
+async function smokeApp(app, temporary, version) {
   const resources = join(app, 'Contents', 'Resources')
   const entry = join(resources, 'service', 'bin.js')
   const node = join(resources, 'service', 'node', 'bin', 'node')
@@ -82,7 +82,7 @@ async function smokeApp(app, temporary) {
     const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) })
     assert.equal(response.status, 200)
     const body = await response.json()
-    return body.ok === true && body.application.source === 'application_http'
+    return body.ok === true && body.application.source === 'application_http' ? body : null
   }
   let failure
   try {
@@ -107,7 +107,8 @@ async function smokeApp(app, temporary) {
     assert.equal(manifest.entry, entry)
     assert.equal(manifest.port, port)
     assert.equal(serviceState(), 'owned', 'temporary service must run mounted bundled Node and entry with the test data directory')
-    await until('packaged service health', health)
+    const readyHealth = await until('packaged service health', health)
+    assert.equal(readyHealth.appVersion, version, 'bundled node health must report the package release version')
     const evaluate = async expression => {
       const result = await renderer.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
       assert.ok(!result.exceptionDetails, 'packaged renderer evaluation must succeed')
@@ -133,7 +134,9 @@ async function smokeApp(app, temporary) {
     child.kill('SIGTERM')
     await until('packaged shell exit', async () => shellExited, 10_000)
     assert.equal(serviceState(), 'owned', 'node service must survive shell termination')
-    assert.equal(await health(), true)
+    const survivingHealth = await health()
+    assert.ok(survivingHealth, 'the surviving bundled node must remain healthy')
+    assert.equal(survivingHealth.appVersion, version)
   } catch (error) {
     failure = error
     throw error
@@ -198,7 +201,7 @@ export async function verifyPackage() {
     assert.equal(await new Promise(done => details.on('close', done)), 0)
     assert.match(description, /Signature=adhoc/)
     run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app])
-    await smokeApp(app, temporary)
+    await smokeApp(app, temporary, pkg.version)
     assert.equal(run('git', ['-C', root, 'status', '--porcelain']).trim(), '')
     assert.equal(run('git', ['-C', root, 'rev-parse', 'HEAD']).trim(), identity.commit, 'source changed during package verification')
     await writeFile(join(output, 'package-evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
