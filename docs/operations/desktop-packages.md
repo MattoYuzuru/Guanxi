@@ -20,7 +20,13 @@ DMG/ZIP bytes to `release/build-evidence.json`. Verification refuses stale/diffe
 mounts DMG read-only, preflights/extracts ZIP and compares complete app files, symlink targets
 and executable bits. It checks bundle ID/version, notices, pinned Node and ad-hoc signatures.
 The mounted packaged executable uses temporary node/Chromium data, no checkout overrides
-or provider credentials. The renderer test checks mount, Node isolation, installed CSP and
+or provider credentials. Its Chromium process uses `--use-mock-keychain` and
+`--password-store=basic`, matching Playwright's Electron launcher. Without that test isolation,
+an unsigned app can block cookie initialization on a macOS Keychain prompt (see
+[Electron's upstream test fix](https://releases.electronjs.org/pr/53790)). This is a test-process
+setting; production cookie encryption remains enabled. An empty synthetic node vault also
+keeps its independent K3 keychain provider lazy. This gate does not validate the owner's OS
+Keychain, login or downloaded-app onboarding. The renderer test checks mount, Node isolation, installed CSP and
 resource errors; service lifetime and confirmed cleanup are asserted. No model run is tested.
 
 Successful verification writes `release/package-evidence.json` and `SHA256SUMS`. The full
@@ -49,7 +55,9 @@ gate/package → draft release → verified assets → publish sequence, compati
 [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
 Publisher-only retries must reuse the same verified package bytes, compare every existing
 asset before writing and refuse conflicts; DMG/ZIP byte reproducibility is not assumed.
-Keep upload permissions out of build/PR jobs. This publication workflow is still unimplemented.
+Keep upload permissions out of build/PR jobs. The future tag workflow is implemented and
+fake-service tested in [release operations](../../scripts/release-README.md); actual authorized
+publication, permissions and immutable-release integration remain unvalidated.
 
 ## Failure recovery
 

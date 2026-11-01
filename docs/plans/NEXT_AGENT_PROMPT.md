@@ -28,13 +28,17 @@ MCP/skills and full-trust limitations explicit; do not reimplement completed boo
 
 Finish [U2 package plan](lanes/U2-package-ci.plan.md) and
 [operations](../operations/desktop-packages.md). The build succeeds; the mounted GUI verifier
-needs its final pass. Late CDP attachment can advertise a loopback URL before the renderer
-context is ready (~15 seconds observed), exceeding the initial 10-second RPC budget. Diagnose
-that measured readiness boundary; preserve mount, CSP, resource, isolation and service-lifetime
-assertions. Do not attest stale outputs: build-time commit/tree/version/digests must match.
+needs its final pass. Direct Electron launches omitted Playwright's mock-Keychain flags,
+causing macOS prompts during cookie initialization. The owner reported the prompts; all
+diagnostic fixtures were stopped, with no Keychain reset/deletion. A test-process-only fix
+adds `--use-mock-keychain` and `--password-store=basic`; production encryption stays enabled.
+Earlier CDP-readiness theories were not established as root causes. Independently review
+isolation before one bounded local recheck; preserve mount, CSP, resource, Node-isolation and
+service-lifetime assertions. Do not attest stale outputs: build-time source/digests must match.
 Clean only proven-owned temporary processes and detach only the task volume.
 
-Prepare the accepted per-version release pipeline without executing a public release. Use
+The accepted per-version pipeline is implemented and independently reviewed: see the
+[release handoff](lanes/DMG-versioned-release.handoff.md). Do not execute a public release. Use
 full current-candidate checks, same-run verified package bytes, draft→attach→publish ordering,
 least-privilege tokens and conflict-safe retries. Independent author/reviewer and final full
 hosted `ci:finish` remain required. Keep this prompt on the current slice until they pass.

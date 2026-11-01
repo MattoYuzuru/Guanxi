@@ -28,11 +28,25 @@ desktop platform order macOS → Linux/Fedora → Windows (D-221).
   build-time commit/tree receipts, compares both app trees, validates licenses/runtime and
   exercises the mounted shell with temporary data. Separate review fixes add conservative
   process cleanup, stale-artifact rejection, CSP presence, new-loader synchronization and
-  HTTP UI-resource errors. **New: 7 (6 units + 1 CI); regression: 173**, all 180 passed,
-  zero skips; desktop types, lint, Markdown/links and license gate passed. Builds succeeded;
-  the mounted GUI smoke still needs its final pass after a measured late-attach renderer
-  readiness issue. Stay on this slice until smoke and exact ready-candidate hosted CI pass.
+  HTTP UI-resource errors. **Combined delivery evidence — new: 62 (7 desktop, 2 CI, 53 release); regression: 173**,
+  all 235 passed with zero skips (`check-ujt7xptp`); desktop types, lint, docs and license
+  gate passed. Builds succeeded; the final isolated mounted smoke and exact ready-candidate
+  hosted CI remain required. Earlier GUI probes lacked Chromium's mock-Keychain flags and
+  prompted the owner during cookie initialization. All known diagnostic processes were
+  stopped. The separately reviewed fix `a51adfe6` adds the same test-only flags as Playwright;
+  production cookie encryption stays on. No Keychain reset/deletion was performed; real OS
+  Keychain behavior is not validated by a mocked test. Earlier CDP-readiness hypotheses did
+  not establish the root cause.
   See [plan](lanes/U2-package-ci.plan.md) and [operations](../operations/desktop-packages.md).
+- **Versioned release preparation:** [handoff](lanes/DMG-versioned-release.handoff.md),
+  author code `e70873b7`, independently reviewed and integrated through `29d5ecfb`. Future
+  `v<semver>` tags on main ancestry run all 15 checks, reuse the same run's verified package,
+  then create draft → verify uploads → publish an explicitly unsigned/ad-hoc alpha prerelease.
+  Writer permissions exist only in the publisher; provenance, all-attempt gates, response IDs,
+  pagination and no-clobber recovery are covered by fake-service tests. Author envelope:
+  54 new / 11 inherited, 65 passed; included in the unique combined 235 above, not extra credit.
+  No real tag, release, permission/settings change or publication was performed. Actual
+  authorized release/immutability integration remains pending, separately from offline CI.
 - **Runtime docs/corpus:** corrected glossary-only voice wiring, standalone STT adapter,
   policy-only browser, mounted WG1 routes and unwired WG2 library descriptions. Independent
   document review clarified that project mode is off by default but manually selectable.
@@ -402,7 +416,7 @@ decision was made.
 | X1 Repo map and FTS | independently reviewed and integrated locally (`1b6f495`); actual Fedora62/62 passes | [X1 handoff](lanes/X1.handoff.md). Exact c777 source passes62 local Colima Linux cases, zero skips, with documented nested-bwrap permission limits. Candidate d861 passes all eight commands. [Current Fedora](evidence/Fedora-2026-10-22.md) main3e4840bb five-file X1/kernel envelope passes62/62, zero skips, as dedicateduid1001. The separate native/core startup failure is repaired in45491863; actual214 has208 pass/6 Darwin-only skips. Production/rootless untrusted execution and wider platform/runtime proof remain unearned. |
 | R2 Relay executor | operational llama-server adapter merged; actual Fedora relay and fault-run evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [R2-op](lanes/R2-op.handoff.md). MS1 closed per D-214/D-219; resident model memory remains outside the governor, broader quality and B3 gates remain. No new live run in wave 9. |
 | U1 Shell and layout | merged: workspace states, mounted shell, glossary, new-session screen, finished-unseen, side chat; wave 6 single interface and panels menu per D-217 | [integration](lanes/U1-integration.handoff.md), [session features](lanes/U1-session-features.handoff.md); CSS suppression debt and unsigned `review` components remain; historical counts are not a current audit |
-| U2 macOS desktop | first shell/service slice merged in wave 8; hosted desktop tasks green in PR #4 | [U2 handoff](lanes/U2-macos.handoff.md); launchd/login/tray, update delivery, signing/notarization and distributed DMG remain; Q-247/Q-248 are answered by D-222/D-223; Developer ID/notarization is deferred, Q-249/Q-250 gate first publication |
+| U2 macOS desktop | wave 8 shell merged; wave 10 artifact/release pipeline implemented and reviewed, final package/hosted verification pending | [U2 handoff](lanes/U2-macos.handoff.md); launchd/login/tray, update delivery, signing/notarization and distributed DMG remain; Q-247/Q-248 are answered by D-222/D-223; Developer ID/notarization is deferred, Q-249/Q-250 gate first publication |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
 | R3 Judge + ETA | ETA/signals, opt-in cascade, replay/calibration scorers and D-199 observation journal merged | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md), [journal](lanes/R3-journal.handoff.md); real corpora, owner labels/calibration and night J3 wake evidence remain; implementation of a recorder does not prove those gates |
 | F2 Remote attempts | offers, dispatch and remote cost ledger merged; actual two-node MS1 evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md). The MS1 run does not establish every F2 exit: transport/profile, residency and wider remote tool/judge gates need their own evidence. |
