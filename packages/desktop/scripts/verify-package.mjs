@@ -114,7 +114,16 @@ async function smokeApp(app, temporary) {
       assert.ok(!result.exceptionDetails, 'packaged renderer evaluation must succeed')
       return result.result.value
     }
-    await until('initial packaged UI mount', async () => evaluate(`location.origin === ${JSON.stringify(`http://127.0.0.1:${port}`)} && document.querySelectorAll("#root > *").length > 0`), 60_000)
+    let lastDocument
+    try {
+      await until('initial packaged UI mount', async () => {
+        lastDocument = await evaluate('({origin: location.origin, ready: document.readyState, title: document.title, heading: document.querySelector("h1")?.textContent?.slice(0, 120), rootChildren: document.querySelectorAll("#root > *").length})')
+        return lastDocument.origin === `http://127.0.0.1:${port}` && lastDocument.rootChildren > 0
+      }, 60_000)
+    } catch (error) {
+      // Only synthetic test-document status metadata; never dump HTML, application data or logs.
+      throw new Error(`Packaged UI readiness failed: ${JSON.stringify(lastDocument ?? { state: 'unobservable' })}`, { cause: error })
+    }
     await renderer.reload()
     await until('packaged UI mount', async () => evaluate('document.querySelectorAll("#root > *").length > 0'), 60_000)
     assert.deepEqual(await evaluate('[typeof process, typeof require]'), ['undefined', 'undefined'])
@@ -131,19 +140,19 @@ async function smokeApp(app, temporary) {
     throw error
   } finally {
     try {
-    if (!shellExited) child.kill('SIGTERM')
-    renderer?.close()
-    // Read the owned temporary manifest even if readiness/assertions failed before it was captured.
-    if (!servicePid) {
-      const manifest = await readFile(join(data, 'desktop', 'service.json'), 'utf8').then(JSON.parse).catch(() => null)
-      if (Number.isSafeInteger(manifest?.pid) && manifest.pid > 1) servicePid = manifest.pid
-    }
-    if (serviceState() === 'owned') process.kill(servicePid, 'SIGTERM')
-    await until('owned processes to exit', async () => shellExited && serviceState() === 'gone', 10_000).catch(() => {
-      if (!shellExited) child.kill('SIGKILL')
-      if (serviceState() === 'owned') process.kill(servicePid, 'SIGKILL')
-    })
-    if (servicePid) await until('confirmed process exit after escalation', async () => shellExited && serviceState() === 'gone', 5000)
+      if (!shellExited) child.kill('SIGTERM')
+      renderer?.close()
+      // Read the owned temporary manifest even if readiness/assertions failed before it was captured.
+      if (!servicePid) {
+        const manifest = await readFile(join(data, 'desktop', 'service.json'), 'utf8').then(JSON.parse).catch(() => null)
+        if (Number.isSafeInteger(manifest?.pid) && manifest.pid > 1) servicePid = manifest.pid
+      }
+      if (serviceState() === 'owned') process.kill(servicePid, 'SIGTERM')
+      await until('owned processes to exit', async () => shellExited && serviceState() === 'gone', 10_000).catch(() => {
+        if (!shellExited) child.kill('SIGKILL')
+        if (serviceState() === 'owned') process.kill(servicePid, 'SIGKILL')
+      })
+      if (servicePid) await until('confirmed process exit after escalation', async () => shellExited && serviceState() === 'gone', 5000)
     } catch (error) {
       throw new AggregateError([failure, error].filter(Boolean), 'Packaged smoke/owned process cleanup failed')
     }
