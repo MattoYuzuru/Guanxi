@@ -1,8 +1,8 @@
 # P1 trusted plugin startup handoff
 
-**Status:** author implementation and focused checks complete; independent review and hosted
-integration remain root duties. **Date:** 2026-11-01. **Base:** `af254dae`.
-**Branch:** `lane/p1-trusted-boot`. Plan `2639e162`; implementation `f297769e`.
+**Status:** author implementation and focused checks complete; independent review fixes applied,
+final review recheck and hosted integration remain root duties. **Date:** 2026-11-01. **Base:** `af254dae`.
+**Branch:** `lane/p1-trusted-boot`. Plan `2639e162`; implementation `f297769e`; review fix `61604d32`.
 
 ## Implemented scope
 
@@ -31,12 +31,15 @@ registry, build-script execution and install UI/CLI remain future slices.
 
 ## Evidence — new / regression
 
-**New: 31 tests**, all in `packages/server/test/plugins/startup.test.ts`:
+**New: 33 tests**, all in `packages/server/test/plugins/startup.test.ts` (31 author + 2 review additions):
 
 - real node and ordinary CLI default loading; exactly-once close; safe-mode malformed-state
   recovery with all core services present; existing-node safe-mode refusal;
 - absent/disabled/missing/tampered state; retained unreferenced data; SRI base64 compatibility;
   malformed skipped ids cannot echo source-like data;
+- env-only `GUANXI_API_PORT` existing-node discovery refuses before opening a fresh data
+  directory and preserves installed state; reverse-order slot ownership/contribution through
+  explicit absolute host-helper imports (not portable SDK resolution);
 - reverse service dependency order; missing/cyclic dependencies; core id/service/slot and
   duplicate addon provider collisions; undeclared slot; four invalid entry variants; symlink
   refusal; export/package manifest mismatch; pinned T0 and T2 state refusal before import;
@@ -45,8 +48,24 @@ registry, build-script execution and install UI/CLI remain future slices.
   snapshot capture cannot substitute executed bytes; absent host SDK resolution is explicit.
 
 **Regression: 41 inherited tests**, `plugins/manager.test.ts` and `kernel-plugins.test.ts`.
-Assertions were not weakened. The focused union passed **72/72, zero skipped** at the final
-source bytes of `f297769e` (the test run preceded its commit).
+Assertions were not weakened. The final focused union passed **74/74, zero skipped** at the
+source bytes of `61604d32` (the test run preceded its commit).
+
+## Independent review fixes
+
+A separate read-only reviewer inspected `af254dae..3d95ca61` and identified the CLI discovery
+port mismatch: discovery read legacy `PORT`, while node startup uses `GUANXI_API_PORT` first.
+With only the latter configured, safe-mode recovery attempted to open another data directory
+before failing to bind. The new subprocess regression failed before the fix
+(`check-cs8f5mlh`, expected safe-mode refusal, observed the legacy port-busy path).
+
+`61604d32` uses the same `apiPortFromEnv` resolver for discovery and startup; an explicit CLI
+`--port` still wins, and invalid strict environment values go through CLI argument refusal.
+The environment-only case now asserts refusal, zero fresh data directory, unchanged retained
+lock bytes and the existing node still answering. The same commit adds a positive declared-slot
+ordering assertion and explicitly documents import lifetime/callback diagnostic limits. It
+does not turn T1 into an isolation or general diagnostic-scrubbing boundary. Final read-only
+recheck is requested from the reviewer; root records its verdict before declaring completion.
 
 ## Commands and results
 
@@ -60,8 +79,8 @@ Heavy checks used `python3 -B /Users/yuzuru/.agents/skills/workstation-dev/scrip
 
 | Command | Observed result |
 | --- | --- |
-| `node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test packages/server/test/plugins/startup.test.ts packages/server/test/plugins/manager.test.ts packages/server/test/kernel-plugins.test.ts` | 72 pass, 0 fail, 0 skipped; `check-y11itkvw`, no source drift |
-| `npm run typecheck --workspace @guanxi/server --workspace guanxi` | exit 0 at clean `f297769e`; `check-1d_33lpm`, no source drift |
+| `node --import ./packages/server/test/setup/no-ambient-key-file.mjs --test packages/server/test/plugins/startup.test.ts packages/server/test/plugins/manager.test.ts packages/server/test/kernel-plugins.test.ts` | 74 pass, 0 fail, 0 skipped; `check-jzmtbq6q`, no source drift |
+| `npm run typecheck --workspace @guanxi/server --workspace guanxi` | exit 0 at clean `61604d32`; `check-_p0m19hp`, no source drift |
 | ESLint over changed production and test TS files | exit 0 |
 | Targeted markdownlint on plugin README, plan and handoff | 3 files, 0 errors |
 | `node scripts/check-doc-links.mjs` | 336 files, 918 links, 0 problems |
@@ -69,7 +88,7 @@ Heavy checks used `python3 -B /Users/yuzuru/.agents/skills/workstation-dev/scrip
 
 The first test attempt returned `resource_busy` without executing; a queued run then passed.
 An initial typecheck exposed the test logger option (`log` instead of `onLog`); corrected,
-then the final server/CLI typechecks passed. Earlier 21/69/71 test runs are iteration evidence,
+then the final server/CLI typechecks passed. Earlier 21/69/71/72 test runs are iteration evidence,
 not additional coverage. Receipts under `~/.local/state/agent-dev` remain non-reusable because
 the tracked `.claude/skills/guanxi-ui` directory symlink is unsupported for source attestation.
 Report the actual check results; root's exact hosted candidate provides final CI identity.
@@ -89,6 +108,11 @@ snapshots get fresh paths at each start, and updates require restart. Process ki
 private temporary snapshots; there is no automatic sweep. Concurrent installed-state changes
 may make startup fail closed or observe the earlier committed version; it does not hot-reload.
 Existing manager recovery/power-loss and lock-timeout residuals remain documented.
+
+Module import is unbounded: pending top-level await can prevent startup from settling, outside
+the kernel's apply timeout. Recovery is terminating that process and restarting in safe mode.
+The loader guards only apply and returned-cleanup exception text; exceptions from registered
+`ctx.effect`/`ctx.on` callbacks still reach normal kernel diagnostics with original text.
 
 P1 remains partial: MCP needs its K4 duplex sandbox transport, skills/native loop wiring needs
 its benchmark gate, and plugin management/SDK/UI surfaces remain. No live/Fedora, packaged-DMG,
