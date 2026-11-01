@@ -8,7 +8,7 @@
 | Task | Read |
 | --- | --- |
 | Understand the product | [VISION](vision/VISION.md) → [REQUIREMENTS](vision/REQUIREMENTS.md) |
-| See what the owner decided | [Latest decisions: 2026-10-31 with 2026-11-01 addendum](decisions/2026-10-31-owner-decisions.md) → [2026-10-24](decisions/2026-10-24-owner-decisions.md) → [CI protocol D-213](decisions/2026-10-24-ci-protocol.md) → [all owner records and ADRs](decisions/README.md) (newest applicable decision wins) |
+| See what the owner decided | [Latest decisions: 2026-11-01](decisions/2026-11-01-owner-decisions.md) → [2026-10-31](decisions/2026-10-31-owner-decisions.md) → [2026-10-24](decisions/2026-10-24-owner-decisions.md) → [CI protocol D-213](decisions/2026-10-24-ci-protocol.md) → [all owner records and ADRs](decisions/README.md) (newest applicable decision wins) |
 | Understand the target design | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) → relevant ADR |
 | Build or review UI | [design system](design/README.md) → [`guanxi-ui` skill](../.agents/skills/guanxi-ui/SKILL.md) |
 | Know why a library was chosen | [research synthesis](research/README.md) → raw lane report |

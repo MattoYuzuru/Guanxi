@@ -1,6 +1,6 @@
 # Open questions
 
-**Status:** accepted tracker; unresolved defaults and desktop distribution choices below · **Updated:** 2026-11-01
+**Status:** accepted tracker; unresolved benchmark evidence and publication choices below · **Updated:** 2026-11-01
 
 New questions go under **Open** with the stage they block and a recommended default. A stage
 may start with the default when the owner has not answered, and must record that it did.
@@ -9,22 +9,28 @@ Answers move into a new owner decision record. Legacy questions `Q-1`–`Q-37` a
 
 ## Open
 
-The owner answered the earlier questions below on 2026-10-20. The questions in this table
-remain open; a recommended default is not an owner answer. Chat prompt quality needs bench
-evidence, K5/U3 retain unresolved policy choices, and desktop distribution has licensing and
-signing prerequisites. These do not block unrelated local implementation. In particular,
-Q-247 gates distribution rather than an unsigned local build; Apple account access is a
-separate prerequisite for a signed/notarized release.
+Q-245–Q-248 are answered by D-222–D-226. Their implementation is still incomplete.
+The owner has no Apple Developer credentials; signing is deferred, not a blocker to local
+ad-hoc package preparation. Real audio, benchmark labels, a disposable tracker write target
+and future remote rollout inputs are evidence/access tasks, not unanswered consent.
 
 | ID | Question | Blocked | Answer |
 | --- | --- | --- | --- |
 | Q-K3-chat | Which Chat default should replace the current shared orientation plus fixed English language instruction? | K3-chat, B1 | Use the byte-stable orientation first and "Reply in the language the user writes in." (350 UTF-8-byte total budget). This owner-requested default awaits an ADR-0025/B1 bench result; request tests prove bytes, not quality or non-inferiority. |
-| Q-245 | The editor payment grant is connection-wide and has no expiry (K5 default, 2026-10-21). Should it be scoped per share or project, with an expiry? | K5, U3 | K5 default: connection-wide, no expiry; owner answer pending. |
-| Q-246 | Local mode cannot tell a header-less same-host reverse proxy from the owner's own client (a proxy that rewrites `Host` and adds no forwarding header). Should the local owner be proved by a per-install secret that the shell, CLI and web read from the node's data directory (mode 0600), so a proxy cannot forward it? `proposed`, not implemented. | U3 | Recommended default: yes, a per-install local-owner secret; until then local mode trusts direct loopback clients only and the README says not to put a proxy in front. |
-| Q-247 | May the macOS (and later Linux) desktop bundle ship Electron's dynamically linked, replaceable `libffmpeg.dylib` (LGPL-2.1+ components of FFmpeg), the Chromium component licenses and the official Node.js binary with its bundled third-party licenses? [ADR-0016](../decisions/0016-licensing-and-third-party-reuse.md) puts LGPL binaries in "process-only, never bundled". | U2, U6 | Recommended default: approve. Dynamic linking with a replaceable library satisfies the LGPL, the license texts ship in the app (`LICENSE.electron.txt`, `LICENSES.chromium.html`, `service/node/LICENSE`) and `THIRD_PARTY_NOTICES.md` lists them. Without Electron there is no desktop shell. **A distributed DMG waits on this answer**; local unsigned builds do not. ADR-0016 is not amended until the owner decides. |
-| Q-248 | May the build-time-only transitive dependency `truncate-utf8-bytes@1.0.2` (WTFPL) of electron-builder stay installed? It is not in ADR-0016's allowed list and is never shipped; `scripts/check-licenses.mjs` carries a reviewed exception for it. | U2 | Recommended default: approve (permissive, build tooling only). Alternative: replace electron-builder by the `@electron/packager` chain. The exception stays only until answered; the hosted license gate passes with it. |
+
+| Q-249 | May PR #5 and subsequent independently reviewed, fully green candidates be merged, and prepared alpha releases published? | integration/publication | Owner left this unanswered on 2026-11-01. Continue reviewable local/PR work; no merge or public release yet. |
+| Q-250 | Versioned DMG releases or a public build after every main change; what is the first version? | release automation | Recommended versioned alpha tags, PR artifacts for verification, initial v0.1.0-alpha.1; cadence/version not yet accepted. |
 
 ## Answered
+
+Latest: [2026-11-01 decisions](../decisions/2026-11-01-owner-decisions.md).
+
+| ID | Answer | State |
+| --- | --- | --- |
+| Q-245 | D-225: project + participant + explicit expiry/budget. | accepted; implementation pending |
+| Q-246 | D-226: authenticated per-install local binding with convenient bootstrap. | accepted; implementation pending |
+| Q-247 | D-222: scoped Electron/Chromium/libffmpeg/official Node distribution with notices. | accepted |
+| Q-248 | D-223: exact build-only truncate-utf8-bytes@1.0.2 exception. | accepted |
 
 Answers: D-121 and D-122 in the
 [2026-10-19 addendum](../decisions/2026-10-19-owner-decisions-addendum.md); D-141–D-182 in the

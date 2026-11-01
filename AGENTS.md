@@ -34,7 +34,8 @@ strings go through locale keys (English source, curated Russian).
    one slice: orientation, plan, vertical implementation, independent verification, docs and
    commits. A slice without it is incomplete.
 7. Owner answers: the newest record wins
-   ([2026-10-31 decisions](docs/decisions/2026-10-31-owner-decisions.md) over
+   ([2026-11-01 decisions](docs/decisions/2026-11-01-owner-decisions.md) over
+   [2026-10-31 decisions](docs/decisions/2026-10-31-owner-decisions.md) over
    [2026-10-24 decisions](docs/decisions/2026-10-24-owner-decisions.md) over
    [2026-10-24 CI protocol](docs/decisions/2026-10-24-ci-protocol.md) over
    [2026-10-23 addendum](docs/decisions/2026-10-23-owner-decisions-addendum.md) over
