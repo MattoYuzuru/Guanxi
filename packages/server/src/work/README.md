@@ -195,7 +195,8 @@ query paging stability and export content.
 Residual WG1 work: extract to `packages/work`, share the run-mode relay ledger, expose the
 `work.query` tool, add the board UI and run the WL-series A/B. Plugin, REST and contract wiring
 landed in MS2 below. [WG2 tracker sync](sync/README.md) exists as a separate unwired library;
-its runtime integration remains unfinished. `project` mode stays off until the WL evidence exists.
+its runtime integration remains unfinished. `project` mode remains off by default until WL
+evidence supports changing that default; the implemented mode route permits manual activation.
 
 ## MS2: plugin, REST routes and wire contract
 
