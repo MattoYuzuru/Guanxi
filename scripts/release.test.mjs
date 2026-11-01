@@ -283,6 +283,19 @@ for (const invalid of ['create status', 'create tag', 'create draft', 'publish s
   })
 }
 
+for (const boundary of ['fresh read', 'publish response']) {
+  test(`a different positive release ID at ${boundary} cannot report successful promotion`, async t => {
+    const b = await bundle(t), f = github(), artifact = await releaseRun(f.api, context())
+    f.state.after = (request, response) => {
+      if ((boundary === 'fresh read' && request.path.endsWith('/releases/501') && !request.method) ||
+        (boundary === 'publish response' && request.method === 'PATCH')) response.data.id = 502
+      return response
+    }
+    await assert.rejects(publishRelease(f.api, context(), b, artifact), code('release_conflict'))
+    assert.equal(f.mutations().filter(request => request.method === 'PATCH').length, boundary === 'fresh read' ? 0 : 1)
+  })
+}
+
 test('artifact pagination finds the correct same-run package beyond the first page', async () => {
   const f = github(), selected = f.state.artifacts[0]
   f.state.artifacts = [...Array.from({ length: 100 }, (_, n) => ({ id: n + 1000, name: `unrelated-${n}` })), selected]

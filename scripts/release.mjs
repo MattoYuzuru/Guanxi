@@ -193,8 +193,9 @@ function releaseBody(context, artifact) {
     `Source: ${context.commit}\nVerified full gate: https://github.com/${context.repository}/actions/runs/${context.runId}\n\n` +
     `<!-- ${PRODUCT_FILE_PREFIX}-release:v1;source=${context.commit};tree=${context.tree};run=${context.runId};artifact=${artifact.id} -->`
 }
-function checkRelease(release, context, body) {
-  requireThat(release && positive(release.id) && release.tag_name === context.tag && release.target_commitish === context.commit && release.name === `${PRODUCT_NAME} ${context.tag}` &&
+function checkRelease(release, context, body, expectedId) {
+  requireThat(release && positive(release.id) && (expectedId === undefined || release.id === expectedId) &&
+    release.tag_name === context.tag && release.target_commitish === context.commit && release.name === `${PRODUCT_NAME} ${context.tag}` &&
     release.body === body && typeof release.draft === 'boolean' && release.prerelease === true, 'release_conflict')
 }
 function checkAssets(existing, assets, complete = false) {
@@ -240,14 +241,14 @@ export async function publishRelease(api, context, bundle, artifact) {
     checkAssets([response.data], [asset], true)
   }
   const fresh = await get(api, `${repo}/releases/${release.id}`)
-  checkRelease(fresh, context, body)
+  checkRelease(fresh, context, body, release.id)
   requireThat(fresh.draft === true, 'release_conflict')
   checkAssets(await pages(api, `${repo}/releases/${release.id}/assets`), bundle.assets, true)
   // Fetch gate and tag again: moving refs, new attempts or stale artifacts cannot be published.
   requireThat((await releaseRun(api, context)).id === artifact.id, 'release_artifact_refused')
   const response = await api({ method: 'PATCH', path: `${repo}/releases/${release.id}`, body: { draft: false, make_latest: 'false' } })
   requireThat(response?.status === 200 && response.data?.draft === false, 'release_publish_failed')
-  checkRelease(response.data, context, body)
+  checkRelease(response.data, context, body, release.id)
   checkAssets(await pages(api, `${repo}/releases/${release.id}/assets`), bundle.assets, true)
   return { status: 'published', tag: context.tag, releaseId: release.id }
 }
