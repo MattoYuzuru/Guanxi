@@ -8,8 +8,10 @@ The current desktop staging omits the repository's OFL texts while shipping IBM 
 binaries. ADR-0016/D-129 require those texts. Add `service/licenses` to the existing staged
 service: preserve repository LICENSE, NOTICE, THIRD_PARTY_NOTICES, both font OFL texts and
 the models.dev metadata license byte-for-byte. Add a clearly labelled collection of available
-top-level LICENSE/NOTICE/COPYING texts from installed lock-derived npm build/runtime inputs.
-This collection is an attribution superset, not a claim that every inventoried package ships.
+top-level LICENSE/NOTICE/COPYING texts from installed lock-derived inputs under root
+node_modules only. This collection is an attribution superset, not a claim that every
+inventoried package ships. It does not inventory workspace-local or every staged runtime
+version; staged runtime dependencies retain their original notices in service/node_modules.
 
 The collector reads package metadata only for name/version/license and copies only allowed
 legal-text filenames; it does not read credentials, config, source files or follow symlinks.
@@ -18,6 +20,10 @@ links and unavailable optional packages, recording availability explicitly. Reje
 paths, symlink components, invalid metadata and nonregular notice sources. A deterministic
 manifest records source identity, output paths, sizes and SHA-256 digests without timestamps
 or absolute paths. No new dependencies or downloaded/copied source code are needed.
+
+Staging assumes an isolated, unchanged trusted installation. Existing symlinks are rejected
+with component checks/O_NOFOLLOW and file pre/post checks; these are not descriptor-relative
+directory traversal and do not guarantee confinement against hostile concurrent writers.
 
 ## Implementation and failure boundary
 

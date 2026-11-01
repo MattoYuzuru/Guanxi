@@ -9,10 +9,12 @@ Desktop packages also retain these repository notices, both IBM Plex `OFL.txt` f
 models.dev metadata MIT text under `Contents/Resources/service/licenses`. The build collects
 available top-level LICENSE/LICENCE, NOTICE and COPYING texts from installed, lock-derived
 root `node_modules` inputs there, with name/version/license metadata and a SHA-256 manifest.
-This is a legal-text superset of npm build/runtime inputs, **not** a statement that every
+This is a legal-text superset of inputs under root `node_modules` only, **not** a statement that every
 inventoried package's code ships. Missing platform packages and installed packages without
 such a top-level text are explicit in the manifest; workspace links and paths outside root
-`node_modules` are excluded. Only legal texts are copied, without modification. Original
+`node_modules` are excluded; this does not inventory workspace-local or every staged runtime
+version. Staged runtime dependencies retain their original notices under `service/node_modules`.
+Only legal texts are copied, without modification. Original
 Electron/Chromium/Node notices remain at the bundle paths listed below.
 
 | Local path | Origin (repository @ commit) | License | What was taken / how it was changed |

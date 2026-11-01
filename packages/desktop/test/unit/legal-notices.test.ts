@@ -31,9 +31,13 @@ test('required project/font/data texts preserve their exact bytes and collection
   try {
     const manifest = await f.collect()
     assert.equal(manifest.scope, COLLECTION_SCOPE)
+    assert.match(manifest.scope, /under root node_modules only/)
     assert.equal(manifest.files.length, REQUIRED_NOTICES.length + 1)
     for (const [source, output] of REQUIRED_NOTICES) assert.deepEqual(await readFile(join(f.root, 'licenses', output)), await readFile(join(f.repository, source)))
-    assert.match(await readFile(join(f.root, 'licenses/README.md'), 'utf8'), /not evidence that every package ships/)
+    const readme = await readFile(join(f.root, 'licenses/README.md'), 'utf8')
+    assert.match(readme, /not evidence that every package ships/)
+    assert.match(readme, /does not inventory workspace-local modules or every staged runtime version/)
+    assert.match(readme, /do not guarantee confinement against a hostile concurrent directory writer/)
     await verifyLegalNotices(join(f.root, 'licenses'), f.repository)
   } finally { await f.close() }
 })
