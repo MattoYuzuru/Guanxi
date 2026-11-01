@@ -1,14 +1,20 @@
 # Parallel lanes
 
-**Status:** accepted (owner, 2026-10-20) · **Updated:** 2026-10-24
+**Status:** accepted lane rules; historical registry · **Updated:** 2026-11-01
 
-Several agents, possibly from different model families and harnesses, work on independent
-roadmap stages at the same time on the owner's Mac (Apple M5 Pro, 15 cores, 24 GB). This file
-holds the rules every lane follows. Each lane has its own prompt file in this folder. The integrator merges lanes into `main`. The initial coordinating session was Claude Opus;
-the 2026-10-21 continuation is coordinated by Codex. Check the latest handoff and live
-processes before assuming a worker is still running.
+Parallel work uses independent checkouts on the owner's Mac. This file holds the lane rules
+and preserves earlier lane allocations. The integrator owns publication and integration;
+workers own their assigned paths and handoffs. Current implementation and continuation are
+in [PHASE_STATUS](../PHASE_STATUS.md) and [NEXT_AGENT_PROMPT](../NEXT_AGENT_PROMPT.md).
 
-## Lanes
+The table below is a historical snapshot of the 2026-10-20–24 coordination, not current
+ownership, live processes or a list of checkouts that must exist. Wave 6–8 integration has
+superseded several statuses. Inspect actual Git worktrees/clones, ancestry and current
+handoffs before resuming work; preserve retained files. Model allocations in dated owner
+decisions apply to their stated session (including D-220's wave 7 allocation); a new session
+uses its current authorization and available native tools.
+
+## Historical lane registry (2026-10-20–24)
 
 | Lane | Stage part | Runs in | Branch | `GUANXI_WEB_PORT` / `GUANXI_API_PORT` | Status |
 | --- | --- | --- | --- | --- | --- |
@@ -33,9 +39,9 @@ processes before assuming a worker is still running.
 | U1 workspace states | loading/error/empty vocabulary and three-component readiness | GPT6.1Sol/high author; separate review follows | `codex/u1-workspace-states` | 5205 / 4405 | root plan8a001b66 from unionc0145958; ownCI z2yiultz; exact12-image root baseline allowance; author active |
 | [Review](REVIEW.md) | cross-family review of a finished lane | a model of another family | none (read-only) | 5190–5192 / 4390–4392 | when a lane hands off |
 
-Port 5185/4385 belongs to the localization-flake investigation. Merge order within DS1:
-DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open after DS1; see the
-[roadmap graph](../roadmap.mmd).
+The snapshot reserved port 5185/4385 for the localization-flake investigation and used merge
+order DS1-a → DS1-b → DS1-c. These historical reservations do not establish today's port
+ownership. The stage dependency graph is [roadmap.mmd](../roadmap.mmd).
 
 ## Rules for every lane
 
@@ -106,7 +112,10 @@ DS1-a → DS1-b → DS1-c. DS2 (approval signing helper, D-184) and U1 open afte
 11. **Blocked:** write the blocker and the recovery steps into your hand-off file, commit it on
     your branch, and stop.
 
-## DeepSeek lanes (owner, 2026-10-21)
+## Historical DeepSeek lane recipe (owner, 2026-10-21)
+
+This section preserves the tooling and allocation used by that session. It does not require
+launching an external harness or assigning those models in a new native-agent session.
 
 Up to four DeepSeek runs may work at the same time (owner, 2026-10-21 continuation),
 next to at most three GPT 6.1 Sol / high reviewer or implementation agents. Each DeepSeek run

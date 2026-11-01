@@ -1,6 +1,6 @@
 # Open questions
 
-**Status:** accepted (K5 and Chat defaults open) · **Updated:** 2026-10-21
+**Status:** accepted tracker; unresolved defaults and desktop distribution choices below · **Updated:** 2026-11-01
 
 New questions go under **Open** with the stage they block and a recommended default. A stage
 may start with the default when the owner has not answered, and must record that it did.
@@ -9,7 +9,12 @@ Answers move into a new owner decision record. Legacy questions `Q-1`–`Q-37` a
 
 ## Open
 
-The owner answered the earlier questions below on 2026-10-20. K5 and Chat prompt defaults await an answer or benchmark evidence.
+The owner answered the earlier questions below on 2026-10-20. The questions in this table
+remain open; a recommended default is not an owner answer. Chat prompt quality needs bench
+evidence, K5/U3 retain unresolved policy choices, and desktop distribution has licensing and
+signing prerequisites. These do not block unrelated local implementation. In particular,
+Q-247 gates distribution rather than an unsigned local build; Apple account access is a
+separate prerequisite for a signed/notarized release.
 
 | ID | Question | Blocked | Answer |
 | --- | --- | --- | --- |

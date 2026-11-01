@@ -11,19 +11,24 @@ Read the [vision](docs/vision/VISION.md) and the [requirements](docs/vision/REQU
 
 ## Status
 
-- **What runs today** is the Alamo-era code (the project's previous name): a local web UI and
-  server over Ollama with durable chat jobs (replay, cancel, restart recovery), a resource
-  governor, sourced capability and fit evidence, a Hugging Face/Ollama catalog, logical
-  projects, retention, attachments and English/Russian UI. Its documentation is in
-  [`docs/legacy/`](docs/legacy/README.md).
-- **The re-foundation is progressing:** the own plugin kernel, session log, connection registry,
-  durable runs, bounded federation base and all three design-foundation parts are merged.
-  Native agents, external-agent adapters and the relay executor have merged partial/internal
-  implementations with named integration gaps. Approval signing, repository indexing, the new
-  shell and the benchmark foundation remain in separate review or partial lanes. Live fleet
-  execution, phone control and the self-evolution loop remain planned. See the
-  [target architecture](docs/architecture/TARGET_ARCHITECTURE.md),
-  [roadmap](docs/plans/ROADMAP.md) and [stage status](docs/plans/PHASE_STATUS.md).
+- **The running application combines the legacy workbench and merged re-foundation slices.**
+  The own plugin kernel, session log, connections and encrypted vault, durable runs, federation
+  base, design foundations and new web shell are in the repository. Native and external agents,
+  the relay executor, repository indexing, approval signing and the benchmark foundation have
+  merged implementations with explicitly tracked residuals. The connections centre supports
+  API, local-runtime and agent connections; inference is no longer Ollama-only.
+- **MS1 is closed on recorded two-node fault runs** (D-214, D-219), including one run completing
+  all ten target items with zero lead tokens while asleep and exactly one wake. These are
+  [dated hardware observations](docs/plans/evidence/ms1-fault-runs-2026-10-24.md), not a fresh
+  test of every runtime. The full B3 benchmark remains an MS2 gate.
+- **Wave 8 added a first macOS desktop shell, route authorization and a restricted queue-v3
+  reader** (merged in [PR #4](https://github.com/MattoYuzuru/Guanxi/pull/4)). Desktop signing/distribution,
+  accounts, the full plugin platform, phone control and self-evolution remain unfinished.
+  Use [stage status](docs/plans/PHASE_STATUS.md) for implemented scope and evidence,
+  [the next slice](docs/plans/NEXT_AGENT_PROMPT.md) for continuation and
+  [the roadmap](docs/plans/ROADMAP.md) for target gates. The
+  [legacy docs](docs/legacy/README.md) describe the retained Ollama workbench;
+  [the target architecture](docs/architecture/TARGET_ARCHITECTURE.md) includes planned work.
 
 ## Current layout
 
@@ -34,6 +39,8 @@ packages/server    Hono API, SQLite, Ollama adapter, agent/tools
 packages/ui        design tokens, fonts and UI foundations
 packages/web       React SPA
 packages/cli       foreground launcher (guanxi)
+packages/desktop   Electron macOS shell and detached node service packaging
+packages/bench     offline benchmark foundation and B3 cohort runner
 ```
 
 Ollama runs as a separate process. Guanxi listens on loopback by default and stores data in
@@ -41,9 +48,12 @@ Ollama runs as a separate process. Guanxi listens on loopback by default and sto
 
 ## Requirements
 
-- Node.js 22.5 or newer (the server uses `node:sqlite`);
+- Node.js 26.9.0 for the current development/CI setup (the server uses `node:sqlite`);
 - npm;
-- a running Ollama for inference.
+- a configured model connection for inference (for example a running Ollama).
+
+The package manifests still declare Node.js 22.5 as their minimum; the current hosted gate
+uses 26.9.0 and does not establish compatibility across that whole range.
 
 ## Development
 
@@ -71,8 +81,10 @@ npm run lint:md
 npm run check:licenses
 ```
 
-`npm test` runs core, CLI and web component tests. The mocked Chromium gate needs Chromium
-installed first: `npx playwright install chromium` from `packages/web`.
+`npm test` runs the offline UI, codemod, core/CLI, kernel, web component and bench suites.
+The mocked Chromium gate needs Chromium installed first: `npx playwright install chromium`
+from `packages/web`. During development, run affected checks; final ready candidates require
+the [hosted CI protocol](docs/operations/ci.md), including `npm run ci:finish -- PR --wait`.
 
 ## CLI
 
@@ -86,7 +98,7 @@ The current CLI starts the server in the foreground and opens the browser.
 ## Documentation
 
 Start at the [documentation map](docs/NAVIGATION.md). Key entry points:
-[owner decisions](docs/decisions/2026-10-19-owner-decisions.md),
+[latest owner decisions](docs/decisions/2026-10-31-owner-decisions.md),
 [ADR index](docs/decisions/README.md), [research](docs/research/README.md),
 [roadmap](docs/plans/ROADMAP.md), [stage status](docs/plans/PHASE_STATUS.md).
 
