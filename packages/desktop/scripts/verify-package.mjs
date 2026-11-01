@@ -11,6 +11,7 @@ import { NODE_VERSION } from './lib/node-runtime.mjs'
 import { compareApps, verifyBuildEvidence, verifyNotices } from './lib/package-evidence.mjs'
 import { inspectService } from './lib/package-process.mjs'
 import { connectRenderer } from './lib/renderer-cdp.mjs'
+import { packageLaunchArguments } from './lib/package-launch.mjs'
 import { verifyStagedService } from './lib/verify-stage.mjs'
 
 const desktop = resolve(import.meta.dirname, '..')
@@ -60,9 +61,7 @@ async function smokeApp(app, temporary) {
   assert.notEqual(port, debugPort)
   const home = join(temporary, 'home')
   await mkdir(home)
-  const child = spawn(join(app, 'Contents', 'MacOS', PRODUCT_NAME), [
-    `--user-data-dir=${join(temporary, 'chromium')}`, '--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${debugPort}`,
-  ], {
+  const child = spawn(join(app, 'Contents', 'MacOS', PRODUCT_NAME), packageLaunchArguments(join(temporary, 'chromium'), debugPort), {
     cwd: temporary,
     env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: temporary, LANG: 'en_US.UTF-8',
       GUANXI_API_PORT: String(port), GUANXI_DATA_DIR: data, GUANXI_PROVIDER_KEYS_FILE: '',

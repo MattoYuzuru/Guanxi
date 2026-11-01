@@ -37,6 +37,7 @@ describe('electron-builder configuration', () => {
   it('fuses: every one closed, RunAsNode included (the service runs on its own staged Node.js)', () => {
     const fuses = createConfig({}).electronFuses
     assert.equal(fuses.runAsNode, false)
+    assert.equal(fuses.enableCookieEncryption, true, 'the real application keeps cookie encryption enabled')
     assert.equal(fuses.enableNodeOptionsEnvironmentVariable, false)
     assert.equal(fuses.enableNodeCliInspectArguments, false)
     assert.equal(fuses.onlyLoadAppFromAsar, true)

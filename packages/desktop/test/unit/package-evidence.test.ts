@@ -8,6 +8,7 @@ import { appInventory, artifactEvidence, compareApps, noticePaths, verifyBuildEv
 import { inspectService } from '../../scripts/lib/package-process.mjs'
 import { ZIP_PREFLIGHT } from '../../scripts/verify-package.mjs'
 import { isFailedUiResponse, reloadDocument } from '../../scripts/lib/renderer-cdp.mjs'
+import { packageLaunchArguments } from '../../scripts/lib/package-launch.mjs'
 
 test('app comparison detects missing/extra/changed files and executable or symlink changes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'package-evidence-'))
@@ -37,6 +38,13 @@ test('app comparison detects missing/extra/changed files and executable or symli
     await symlink('../outside', join(right, 'link'))
     await assert.rejects(appInventory(right), /symlink must stay/)
   } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('packaged smoke isolates Chromium Keychain access and debugging to its temporary process', () => {
+  assert.deepEqual(packageLaunchArguments('/temporary/profile', 12345), [
+    '--user-data-dir=/temporary/profile', '--use-mock-keychain', '--password-store=basic',
+    '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=12345',
+  ])
 })
 
 test('every required bundled notice must exist and be nonempty; build-only exception cannot ship', async () => {
