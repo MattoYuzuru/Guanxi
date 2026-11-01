@@ -1,12 +1,12 @@
 /**
  * Shared support for the queue v3 native reader tests: fixtures with a store
- * hook, a seeder for v3 snapshots with real blobs, and small oracles.
+ * hook, seeders for historical v1 and v3 snapshots with real blobs, and small oracles.
  */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {
-  INPUT_INLINE_BYTES, SESSION_EVENT_VERSION_3, SESSION_INPUT_TEXT_MEDIA_TYPE, type SessionEvent,
+  INPUT_INLINE_BYTES, SESSION_EVENT_VERSION, SESSION_EVENT_VERSION_3, SESSION_INPUT_TEXT_MEDIA_TYPE, type SessionEvent,
 } from '@guanxi/contract'
 import { SessionInputStore, utf8Excerpt, type SessionInputStoreHooks } from '../../src/session-log/input-artifacts.ts'
 import { fixture } from './fixture.ts'
@@ -32,7 +32,13 @@ export async function build(t: Parameters<typeof fixture>[0], respond?: Respond,
 
 export type Seed = { id: string; text: string } | { id: string; bytes: Uint8Array }
 
-/** Writes blobs then appends one v3 snapshot as the single writer; the native producer cannot do this yet. */
+/** Seeds historical v1 data between turns, while no native attempt owns the writer. */
+export async function seedV1(f: Fixture, sessionId: string, items: { id: string; text: string }[]): Promise<void> {
+  const handle = f.log.open(sessionId, { kind: 'agent' })
+  try { handle.append({ type: 'agent.queue', data: { items } }, { eventVersion: SESSION_EVENT_VERSION }) } finally { handle.close() }
+}
+
+/** Writes blobs then appends one v3 snapshot between turns as the single writer. */
 export async function seedV3(f: Fixture, sessionId: string, items: Seed[]): Promise<void> {
   const data: unknown[] = []
   for (const item of items) {
