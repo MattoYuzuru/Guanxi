@@ -19,7 +19,7 @@ and future remote rollout inputs are evidence/access tasks, not unanswered conse
 | Q-K3-chat | Which Chat default should replace the current shared orientation plus fixed English language instruction? | K3-chat, B1 | Use the byte-stable orientation first and "Reply in the language the user writes in." (350 UTF-8-byte total budget). This owner-requested default awaits an ADR-0025/B1 bench result; request tests prove bytes, not quality or non-inferiority. |
 
 | Q-249 | May PR #5 and subsequent independently reviewed, fully green candidates be merged, and prepared alpha releases published? | integration/publication | Owner left this unanswered on 2026-11-01. Continue reviewable local/PR work; no merge or public release yet. |
-| Q-250 | Versioned DMG releases or a public build after every main change; what is the first version? | release automation | Recommended versioned alpha tags, PR artifacts for verification, initial v0.1.0-alpha.1; cadence/version not yet accepted. |
+| Q-250 | What is the first version to publish? | first release | Recommended v0.1.0-alpha.1; version not yet accepted. Cadence is answered by D-233: DMG for every versioned release, PR builds as CI artifacts. |
 
 ## Answered
 

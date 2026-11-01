@@ -87,3 +87,10 @@ durable links, account/rate scope and secure configuration remain implementation
 
 HTTPS node name, TLS and allowed project roots will be supplied later. Proceed with local
 account implementation; do not probe or deploy to other hosts under this Mac-only task.
+
+## D-233 — DMG for each versioned release
+
+In a later reply, the owner explicitly chose a DMG for every versioned release. Keep
+verification builds for PRs as CI artifacts. This answers cadence, superseding the unresolved
+cadence portion of D-224. The first version and authority to merge/publish the current
+candidate remain unanswered; preparing release automation does not execute a release.
