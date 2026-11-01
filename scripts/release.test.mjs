@@ -121,7 +121,35 @@ test('same-run selection reuses the successful package job artifact on publisher
   f.state.jobs.find(job => job.name === 'check / desktop-package').run_attempt = 1
   f.state.artifacts = [{ id: 77, name: 'macos-arm64-package-1', expired: false, workflow_run: { id: ctx.runId, head_sha: ctx.commit } }]
   assert.deepEqual(await releaseRun(f.api, ctx), { id: 77, name: 'macos-arm64-package-1', runId: 42 })
+  assert.ok(f.state.requests.some(request => request.path.includes('/jobs?filter=all')))
   assert.equal(f.mutations().length, 0)
+})
+
+test('all-attempt history accepts a repaired newest check while preserving earlier successful package bytes', async () => {
+  const ctx = releaseContext({ ...input(), runAttempt: 2 }), f = github(ctx)
+  const packageJob = f.state.jobs.find(job => job.name === 'check / desktop-package')
+  packageJob.run_attempt = 1
+  f.state.jobs.push({ ...f.state.jobs.find(job => job.name === 'check / core-1'), id: 901, run_attempt: 1, conclusion: 'failure' })
+  f.state.artifacts = [{ id: 77, name: 'macos-arm64-package-1', expired: false, workflow_run: { id: ctx.runId, head_sha: ctx.commit } }]
+  assert.equal((await releaseRun(f.api, ctx)).id, 77)
+})
+
+test('newer failed, unfinished, duplicated or foreign attempts cannot fall back to older successful checks', async () => {
+  const ctx = releaseContext({ ...input(), runAttempt: 2 })
+  for (const mutation of ['failed', 'unfinished', 'duplicate', 'future', 'foreign']) {
+    const f = github(ctx)
+    for (const job of f.state.jobs) job.run_attempt = 1
+    const latest = { ...f.state.jobs.find(job => job.name === 'check / core-1'), id: 901, run_attempt: 2 }
+    f.state.jobs.push(latest)
+    if (mutation === 'failed') latest.conclusion = 'failure'
+    if (mutation === 'unfinished') latest.status = 'in_progress'
+    if (mutation === 'duplicate') f.state.jobs.push({ ...latest, id: 902 })
+    if (mutation === 'future') latest.run_attempt = 3
+    if (mutation === 'foreign') latest.head_sha = 'd'.repeat(40)
+    f.state.artifacts[0].name = 'macos-arm64-package-1'
+    await assert.rejects(releaseRun(f.api, ctx), code('release_gate_incomplete'))
+    assert.equal(f.mutations().length, 0)
+  }
 })
 
 test('remote tag peeling and complete matrix identity fail closed without mutation', async () => {

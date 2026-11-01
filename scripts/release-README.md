@@ -21,6 +21,9 @@ four files. The publisher alone has `contents: write` and `actions: read`. It us
 download-action SHA and the selected artifact ID from this same run. A publisher-only rerun
 selects the artifact associated with the successful package job's original attempt, even when
 the current run attempt is newer. It never downloads the latest successful artifact by branch.
+Job verification reads all attempts and selects each required job's highest attempt; a newer
+failure or incomplete execution cannot fall back to an older green result. Duplicate names
+within one attempt are refused.
 
 Only these regular files are accepted, with no extras or symlinks/hardlinks:
 

@@ -114,11 +114,21 @@ export async function releaseRun(api, context) {
   requireThat(run.id === context.runId && run.run_attempt === context.runAttempt && run.event === 'push' && run.head_sha === context.commit &&
     run.status === 'in_progress' && run.conclusion === null && run.repository?.full_name === context.repository &&
     run.path?.split('@')[0] === '.github/workflows/full-gate.yml', 'release_run_refused')
-  const jobs = await pages(api, `${repo}/actions/runs/${context.runId}/jobs?filter=latest`, 'jobs')
+  // A publisher-only rerun need not re-execute successful matrix jobs. Read all attempts and
+  // select the newest actual execution of each required name, never an older green fallback.
+  const history = await pages(api, `${repo}/actions/runs/${context.runId}/jobs?filter=all`, 'jobs')
+  const jobs = []
   for (const name of ['plan', 'Full gate', ...tasks.map(task => `check / ${task.id}`)]) {
-    const matches = jobs.filter(job => job.name === name)
-    requireThat(matches.length === 1 && matches[0].status === 'completed' && matches[0].conclusion === 'success' && matches[0].head_sha === context.commit,
-      'release_gate_incomplete')
+    const candidates = history.filter(job => job.name === name), attempts = new Set()
+    requireThat(candidates.length > 0, 'release_gate_incomplete')
+    for (const candidate of candidates) {
+      requireThat(positive(candidate.run_attempt) && candidate.run_attempt <= context.runAttempt && !attempts.has(candidate.run_attempt) &&
+        candidate.head_sha === context.commit, 'release_gate_incomplete')
+      attempts.add(candidate.run_attempt)
+    }
+    const latest = candidates.reduce((left, right) => left.run_attempt > right.run_attempt ? left : right)
+    requireThat(latest.status === 'completed' && latest.conclusion === 'success', 'release_gate_incomplete')
+    jobs.push(latest)
   }
   const packageJob = jobs.find(job => job.name === 'check / desktop-package')
   requireThat(positive(packageJob.run_attempt) && packageJob.run_attempt <= context.runAttempt, 'release_artifact_refused')
