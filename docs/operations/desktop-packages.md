@@ -42,7 +42,8 @@ per-app exception. Follow [Apple's current instructions](https://support.apple.c
 Do not disable Gatekeeper globally. A locally built unquarantined smoke is not proof of the
 downloaded/quarantined onboarding flow; that needs a separate observation.
 
-PR merge/publication authority, release cadence and the first version remain Q-249/Q-250.
+DMG for each versioned release is accepted (D-233). PR merge/publication authority and the
+first version remain Q-249/Q-250.
 Do not create a release/tag from this runbook. Once accepted, use a versioned tag → full
 gate/package → draft release → verified assets → publish sequence, compatible with
 [immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases).
@@ -54,6 +55,7 @@ Keep upload permissions out of build/PR jobs. This publication workflow is still
 
 The verifier signals only its child shell and a temporary service whose UID, executable,
 entry and data-directory arguments match. An unobservable process is not called stopped.
-If cleanup or detach fails, the error retains the task mount path and both failure causes;
-inspect that exact temporary sandbox and its process ownership before recovery. Never kill
+If volume detach fails, the error retains the task mount path and verification/detach causes;
+inspect that exact retained sandbox and its process ownership before recovery. A failed smoke
+whose volume detaches successfully removes its temporary files. Never kill
 a port occupant by number alone, force-unmount another volume, or delete retained user data.
