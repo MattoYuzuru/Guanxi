@@ -33,6 +33,13 @@ No native GUI/OS Keychain checks were repeated. One fresh full hosted gate must 
 integrated fixes before merging #6. The authorized version tag then runs all checks again and publishes only
 its own verified assets. This entry does not claim a public release already exists.
 
+Integrated non-GUI evidence at `7099b109`: **12 new (2 version + 10 notice) / 235 inherited
+desktop/release/CI cases**, 247 passed, zero skipped (`check-_2h4og3a`); desktop types passed
+(`check-to1h155a`), changed Markdown/link checks passed (350 files / 969 links). The separate
+2/2 prewarm check above is not included in that union. Local receipts are observations,
+not reusable source attestations, because the runner does not support the tracked directory
+symlink. Hosted checks on the final candidate remain the completion gate.
+
 ## Wave 10 (2026-11-01)
 
 - **Owner decisions:** [D-222–D-233](../decisions/2026-11-01-owner-decisions.md) close
