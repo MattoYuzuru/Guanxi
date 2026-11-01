@@ -308,3 +308,38 @@ test('Q22: an unchanged large HTTP POST is accepted; legacy progress refuses whi
   assert.equal(f.requests.length, 1)
   assert.equal(queues(f, sessionId).length, 1, 'no mutation replay')
 })
+
+for (const retained of [false, true]) {
+  test(`Q10: late registration during storage safely re-bounds ${retained ? 'retained' : 'incoming'} artifact excerpts`, { timeout: 60_000 }, async (t) => {
+    const writing = deferred(), gate = deferred()
+    t.after(() => gate.resolve())
+    let armed = !retained
+    const { f, sessionId, release } = await held(t, { beforeWrite: async () => { if (armed) { writing.resolve(); await gate.promise } } })
+    const secret = `S${randomUUID().replaceAll('-', '')}`
+    const text = retained
+      ? `${'a'.repeat(INPUT_EXCERPT_BYTES - 4)}${secret}${'b'.repeat(INPUT_INLINE_BYTES)}`
+      : `${secret}${'x'.repeat(INPUT_INLINE_BYTES)}INCOMING-TAIL`
+    if (retained) { await f.agents().queue(sessionId, text, true, 'private'); armed = true }
+    const addition = f.agents().queue(sessionId, retained ? big('SIBLING-TAIL') : text, true, retained ? 'sibling' : 'private')
+    // Attach the observer before releasing storage, including in the pre-fix red run.
+    const outcome = addition.then(value => ({ value }), error => ({ error }))
+    await writing.promise
+    await f.scrubber.register('secret://fixture/during-write', secret)
+    gate.resolve()
+    assert.deepEqual(await outcome, { value: 'queued' })
+    const item = queues(f, sessionId).at(-1)!.data.items[0]!
+    if (item.kind !== 'artifact') throw new Error('expected artifact')
+    assert.ok(item.artifact.excerptBytes <= INPUT_EXCERPT_BYTES)
+    assert.equal(item.artifact.excerptBytes, Buffer.byteLength(item.artifact.excerpt))
+    assert.equal(item.artifact.excerpt.includes(secret), false)
+    assert.equal(item.artifact.excerpt.includes(secret.slice(0, 4)), false, 'no late-secret prefix at the excerpt boundary')
+    assert.equal(item.artifact.checksum, sha(text), 'immutable stored bytes keep their original checksum')
+    const stored = f.db.prepare("SELECT payload FROM session_events WHERE session_id = ? AND type = 'agent.queue' ORDER BY seq DESC LIMIT 1").get(sessionId)!.payload as string
+    assert.equal(stored.includes(secret), false)
+    assert.equal(stored.includes(secret.slice(0, 4)), false, 'new durable snapshots cannot retain a now-registered secret prefix')
+    assert.equal(events(f, sessionId).filter(e => e.type === 'error').length, 0, 'late excerpt expansion does not fail the running turn')
+    f.agents().stop(sessionId)
+    release()
+    assert.equal((await f.agents().wait(sessionId)).status, 'cancelled')
+  })
+}

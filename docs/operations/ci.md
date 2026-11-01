@@ -141,8 +141,9 @@ The hosted image's older default Xcode 16.4 corrupts the synthetic probe's captu
 an isolated same-OS comparison passes on 26.3. Do not silently fall back to that default.
 Platform-specific skips remain visible in logs. Hosted macOS does not provide this owner's
 Colima setup, Secure Enclave identity or Touch ID. macOS container/sandbox behavior, owner
-hardware, Fedora/live/paid integration and the six-hour MS1 exit still need their explicit
-integration envelope. Do not relabel the hosted offline gate as production validation.
+hardware and Fedora/live/paid integration need their explicit integration envelope. MS1 closed
+on the dated D-214 fault runs (D-219); the former six-hour duration gate was superseded, and
+the full B3 cohort remains an MS2 gate. Do not relabel the hosted offline gate as production validation.
 
 ## Updating existing lanes
 

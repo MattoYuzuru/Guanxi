@@ -4,7 +4,8 @@
 
 Until 2026-10-19 the project was called **Alamo UI**: a local-first web interface and
 runtime-control layer over Ollama. Its documentation, written in Russian, lives in
-[`alamo/`](alamo/NAVIGATION.md) unchanged except for the product name.
+[`alamo/`](alamo/NAVIGATION.md). The retained documentation is maintained when relevant
+legacy behavior changes; its historical plans and evidence keep their original scope.
 
 These documents describe the retained workbench — durable Chat jobs, Resource Governor,
 runtime reconciliation, capability evidence, catalog, Projects, retention, attachments,

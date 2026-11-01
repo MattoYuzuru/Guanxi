@@ -14,7 +14,7 @@ all five milestones are done. Requirement IDs are written `REQ-A1`; bare IDs suc
 
 ```mermaid
 flowchart LR
-  S0([S0 Re-foundation]) --> K1[K1 Kernel spike] & DS1[DS1 Design foundations]
+  S0([S0 Re-foundation]) --> K1[K1 Own kernel] & DS1[DS1 Design foundations]
   K1 --> K2[K2 Session log] & K3[K3 Model access]
   K1 & DS1 --> U1[U1 Shell and layout]
   K2 & K3 --> K4[K4 Native agent]

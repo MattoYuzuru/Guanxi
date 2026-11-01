@@ -28,6 +28,7 @@ import { NativeSessions } from './sessions.ts'
 import type { AppContext } from '../context.ts'
 import { SessionLogError, type AppendOptions, type AppendResult, type SessionEventInput, type SessionHandle, type SessionLog } from '../session-log/log.ts'
 import { SessionInputError, SessionInputStore, inputMediaTypeFor, isInlineInput, utf8Excerpt } from '../session-log/input-artifacts.ts'
+import { projectInputExcerpt } from '../session-log/excerpt.ts'
 import { NativeAppendQueue } from './append-queue.ts'
 import { ArtifactQueueError, legacyQueueOf, queueStateOf, queueV2Of, type ExecutableQueueItem, type QueueState } from './queue-state.ts'
 import type { EgressScrubber } from '../egress/types.ts'
@@ -375,6 +376,17 @@ export class NativeAgents {
       if (active.queue !== pending) throw new NativeAgentError('writer_fenced')
     }
   }
+  /** Re-project every descriptor synchronously at commit: another item's write may have awaited a registry change. */
+  private appendQueueSnapshot(pending: NativeAppendQueue, data: QueueAppendDataV3) {
+    const items = data.items.map(item => {
+      if (item.kind === 'inline') return item
+      // Preserve completeness inputs until projection has protected any secret prefix at the cut.
+      // Only the excerpt is replaced; identity/checksum/size must still pass the log's own checks.
+      const projected = projectInputExcerpt({ artifact: item.input }, this.scrubber) as { artifact: { excerpt: string } }
+      return { ...item, input: { ...item.input, excerpt: projected.artifact.excerpt } }
+    })
+    return pending.appendNow({ type: 'agent.queue', data: { items } }, { eventVersion: SESSION_EVENT_VERSION_3 })
+  }
   async queue(id: string, text: string, userActivity = true, itemId?: string): Promise<'queued' | 'duplicate'> {
     this.ready()
     if (!text.trim()) throw new NativeAgentError('validation_failed')
@@ -403,7 +415,7 @@ export class NativeAgents {
       if (duplicate) return { status: 'duplicate' as const }
       const data = await this.queueItems(id, [...current.pending, { id: acceptedId, kind: 'inline', text }], active.abort.signal, verify)
       verify()
-      pending.appendNow({ type: 'agent.queue', data }, { eventVersion: SESSION_EVENT_VERSION_3 })
+      this.appendQueueSnapshot(pending, data)
       return { status: 'queued' as const }
     })
     if ('error' in outcome) throw outcome.error
@@ -423,7 +435,7 @@ export class NativeAgents {
       try { verify(); current = queueStateOf(this.events(id)) } catch (error) { return { error } }
       const data = await this.queueItems(id, current.pending.filter(i => i.id !== item), active.abort.signal, verify)
       verify()
-      pending.appendNow({ type: 'agent.queue', data }, { eventVersion: SESSION_EVENT_VERSION_3 })
+      this.appendQueueSnapshot(pending, data)
       return {}
     })
     if ('error' in outcome) throw outcome.error
