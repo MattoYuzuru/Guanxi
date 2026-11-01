@@ -1,6 +1,6 @@
 # Prewarm browser gate: deterministic selection debounce
 
-**Status:** diagnosis / bounded test fix · **Date:** 2026-11-01
+**Status:** test fix locally validated; independent review/final CI pending · **Date:** 2026-11-01
 **Base:** `71087caf` · **Branch:** `codex/prewarm-gate`
 
 CI run `41338610542`, job `124943696443`, failed the exact-selection browser assertion:
