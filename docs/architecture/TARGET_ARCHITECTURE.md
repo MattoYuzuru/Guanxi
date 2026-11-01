@@ -1,13 +1,16 @@
 # Target architecture
 
 **Status:** proposed (direction accepted by owner decisions D-101–D-113; each part becomes
-`accepted` with its ADR) · **Updated:** 2026-10-21
+`accepted` with its ADR) · **Updated:** 2026-11-01 (current-state context)
 
-This document describes where Guanxi is going. The running application is still the Alamo-era
-implementation described in [`docs/legacy/alamo/`](../legacy/alamo/NAVIGATION.md). The own
-kernel and DS1-a design foundations are already merged; the remaining application is ported
-step by step (see [stage status](../plans/PHASE_STATUS.md) and
-[Migration](#11-migration-from-the-legacy-code)).
+This document describes where Guanxi is going. The running application combines the retained
+[legacy workbench](../legacy/README.md) with merged re-foundation slices, including the own
+kernel, session log, connections, durable runs, federation, design foundations and new web
+shell. Later agent, relay and desktop slices have bounded implementations with named
+residuals. The [repository overview](../../README.md) and
+[stage status](../plans/PHASE_STATUS.md) describe current scope and evidence; this target
+design does not imply that every component below is implemented. Porting continues step by
+step ([Migration](#11-migration-from-the-legacy-code)).
 
 ## 1. System at a glance
 

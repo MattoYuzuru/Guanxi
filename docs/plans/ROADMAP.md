@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** proposed structure (the owner asked for a dependency graph; stage contents follow
-their ADRs) · **Updated:** 2026-11-01 (MS1 closed, B3 in MS2, desktop order D-221)
+their ADRs) · **Updated:** 2026-11-01 (audit: own kernel, one interface, MS1 closed)
 **Supersedes:** the legacy Phase 0–9 roadmap in
 [`docs/legacy/alamo/plans/ROADMAP.md`](../legacy/alamo/plans/ROADMAP.md) (Phases 0–3 are
 implemented in the legacy code and are ported, not repeated).
@@ -14,7 +14,7 @@ all five milestones are done. Requirement IDs are written `REQ-A1`; bare IDs suc
 
 ```mermaid
 flowchart LR
-  S0([S0 Re-foundation]) --> K1[K1 Kernel spike] & DS1[DS1 Design foundations]
+  S0([S0 Re-foundation]) --> K1[K1 Own kernel] & DS1[DS1 Design foundations]
   K1 --> K2[K2 Session log] & K3[K3 Model access]
   K1 & DS1 --> U1[U1 Shell and layout]
   K2 & K3 --> K4[K4 Native agent]
@@ -31,6 +31,12 @@ flowchart LR
 
 The full graph with every track is [`roadmap.mmd`](roadmap.mmd), the canonical render. An
 interactive view exists as a private page for the owner; it is a convenience, not a source.
+
+Current implementation and evidence live in [PHASE_STATUS](PHASE_STATUS.md); the next bounded
+slice lives in [NEXT_AGENT_PROMPT](NEXT_AGENT_PROMPT.md). A merged slice does not close its
+whole stage. Wave 8 (U2 first macOS shell, U3 route authorization and K4 queue-v3 Q1) is merged;
+MS2 and its remaining stage gates are open. Dated lane handoffs preserve the scope tested at
+their revision and are not a live inventory of unfinished work.
 
 ## How to read a stage
 
@@ -54,7 +60,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 ---
 
-## S0 — Re-foundation (in review)
+## S0 — Re-foundation
 
 - **Goal:** rename to Guanxi, relicense, research, rewrite canonical docs in English.
 - **Scope:** clean rename (D-101), Apache-2.0 + NOTICE + THIRD_PARTY_NOTICES (D-102), seven
@@ -69,22 +75,26 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
 
 ## Kernel and agent core
 
-### K1 — Kernel spike
+### K1 — Own kernel
 
-- **Goal:** prove Cordis 4 can carry Guanxi ([ADR-0015](../decisions/0015-refoundation-on-own-cordis-kernel.md)).
-- **Outcome so far:** the spike met every budget, but upstream lifecycle races stay unfixed;
-  the owner rejected Cordis (D-183). K1 continues with the own-kernel fallback behind the same
-  exit gate.
+- **Goal:** carry Guanxi on the own plugin kernel
+  ([ADR-0037](../decisions/0037-own-plugin-kernel.md), D-183).
+- **Historical decision:** the Cordis spike met the performance budgets, but upstream lifecycle
+  races triggered rejection. The owner selected the own-kernel fallback behind the same exit
+  gate, superseding the Cordis part of
+  [ADR-0015](../decisions/0015-refoundation-on-own-cordis-kernel.md). The implementation and
+  independent verification are recorded in [K1 evidence](evidence/K1.md).
 - **Depends on:** S0.
 - **Scope:** `packages/kernel` facade (context, services, inject, effects, loader, HMR,
   profiles); port the legacy Resource Governor and Ollama adapter into plugins; one web UI
-  slot; leak counters; pin upstream Cordis (DSH's hardened copy only as vendored source).
-- **Reuse:** Cordis 4 (MIT); DSH profile/patch loader and slot code (copy, MIT).
+  slot; leak counters; serialized lifecycle and rollback owned by Guanxi.
+- **Reuse:** Cordis lifecycle concepts; actual source reuse follows ADR-0037 and
+  [THIRD_PARTY_NOTICES](../../THIRD_PARTY_NOTICES.md). Cordis is not a runtime dependency.
 - **Exit gate:** legacy governor and Ollama tests pass through the facade; 100 unload/reload
   cycles leave 0 leaked listeners, timers, handles and slot entries, and heap growth after GC
   ≤ 5%; a slot contribution appears, hot-updates and disappears on unload; an empty node boots
-  in ≤ 2 s and idles at ≤ 200 MB RSS on Apple Silicon; Cordis is rejected if ADR-0015's
-  rejection criteria hit.
+  in ≤ 2 s and idles at ≤ 200 MB RSS on Apple Silicon. The Cordis rejection criteria were
+  exercised during the historical spike; the own kernel keeps these budgets.
 - **Estimate:** 2–3 sessions.
 
 ### K2 — Session log and inspector
@@ -372,8 +382,8 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   verdigris, IBM Plex, glass levels, motion, density, high-contrast themes); Style Dictionary
   build and generated outputs; self-hosted Plex fonts with `unicode-range` slices and `OFL.txt`;
   `@guanxi/ui` with primitives copied in from shadcn/ui on Base UI and the first patterns;
-  portable stories, docs and review records; Storybook and the in-app catalog behind Developer
-  mode; app-signed owner approvals; gates G1–G17 with seeded violations; ESLint bulk
+  portable stories, docs and review records; Storybook and the in-app catalog reachable from
+  Settings (D-217); app-signed owner approvals; gates G1–G17 with seeded violations; ESLint bulk
   suppressions as a ratchet; codemod for `bg-[var(--x)]`; fix the undefined `--warning` and
   `--focus`; logo assets wired; `guanxi-ui` skill scripts (`find-component`, `ui-check`,
   `new-component`) and `packages/ui/AGENTS.md`.
@@ -403,7 +413,7 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   signatures; tests run against a throwaway keychain.
 - **Estimate:** 1–2 sessions.
 
-### U1 — Shell, workspace layout and experience modes
+### U1 — Shell and workspace layout
 
 - **Goal:** the Guanxi shell and a layout the user owns (REQ-F3, REQ-F6, REQ-F7, REQ-D2,
   REQ-D7; [ADR-0036](../decisions/0036-workspace-layout-and-experience-modes.md),
@@ -413,11 +423,12 @@ U1); **(g)** X1. After K3, K4 and U1: C1, then C4. After K2, K4 and U1: E1.
   command palette, new-session screen, session workspace with dock lanes and composer;
   Dockview behind the `WorkspaceLayout` adapter; the `workspace.block` slot and built-in blocks
   (Context, Changes, Plan, Processes, Environment, Files, Terminal, Artifacts, Browser
-  placeholder, Sub-agents); Developer and Visual modes; layout documents; side chats; English
-  glossary; migration of interim UI onto `@guanxi/ui`.
+  placeholder, Sub-agents); one visual interface with layout and panels behind one icon menu
+  (D-217 supersedes the Developer/Visual split); layout documents; side chats; English glossary;
+  migration of interim UI onto `@guanxi/ui`.
 - **Exit gate:** ADR-0036 spike criteria 1–5 hold; colour lint rules have zero suppressions
   across the web package; a block moves by keyboard without dragging and the move is announced;
-  layouts resolve in the documented order and survive a mode switch; an unsaved side chat
+  layouts resolve in the documented order for the single interface (D-217); an unsaved side chat
   leaves no event in the session log (count assertion); keyboard and screen-reader checks on
   the new-session flow pass with 0 critical findings.
 - **Estimate:** 4–6 sessions.

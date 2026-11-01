@@ -1,19 +1,19 @@
 /**
  * K4 queue v3, round Q1, independent-review fixes: pinned owner/fence rechecks,
- * restart during preparation, the agent queue tool and duplicate-id order under
- * the restriction, late-secret expansion of a stored inline item, preview
- * scrubbing, retention touch, BOM fidelity, strict query parsing and the
+ * restart during preparation, the agent queue tool and duplicate-id order,
+ * late-secret expansion of a stored inline item, preview scrubbing, retention
+ * touch, BOM fidelity, strict query parsing and the
  * side-chat paths. Same conventions as `queue-v3-reader.test.ts`.
  */
 import assert from 'node:assert/strict'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { test } from 'node:test'
-import { INPUT_INLINE_BYTES, nativeQueueProducerUnavailableSchema, agentProgressV2Schema } from '@guanxi/contract'
+import { INPUT_INLINE_BYTES, SESSION_EVENT_VERSION_3, agentProgressV2Schema, sideChatSendResponseSchema } from '@guanxi/contract'
 import { NativeAgentError } from '../../src/native-agent/service.ts'
 import { queueV2Of } from '../../src/native-agent/queue-state.ts'
 import { RunStore } from '../../src/runs/store.ts'
 import {
-  big, build, deferred, events, peer, prompts, seedV3, started, tick, type Fixture,
+  big, build, deferred, events, peer, prompts, seedV1, seedV3, started, tick, type Fixture,
 } from './queue-v3-support.ts'
 
 const routes = async (f: Fixture) => {
@@ -108,22 +108,32 @@ test('M4: a restart during a held read changes nothing afterwards, keeps the ite
 
 /* ── M5: the agent tool, duplicate order, preview scrubbing ─────────────────────────────────── */
 
-test('M5: the agent queue tool under the restriction is a tool error with the typed code and writes nothing', { timeout: 60_000 }, async (t) => {
+test('M5: the agent queue tool appends v3 behind pending work and each item is consumed once', { timeout: 60_000 }, async (t) => {
   const f = await build(t, async (call) => call === 2
     ? [{ type: 'toolCall', id: 'queue-tool', name: 'queue', arguments: { text: 'agent adds work' } }]
     : [{ type: 'text', text: `answer ${call}` }])
   const sessionId = await started(f)
   await seedV3(f, sessionId, [{ id: 'queue-a', text: 'pending inline' }])
   await f.agents().prompt(sessionId, 'continue')
-  assert.equal((await f.agents().wait(sessionId)).status, 'completed', 'a refused tool call does not fail the turn')
+  assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   const all = events(f, sessionId)
   const result = all.find((e) => e.type === 'tool.result' && e.data.toolCallId === 'queue-tool')
-  assert.equal(result?.type === 'tool.result' ? result.data.status : null, 'error')
-  assert.equal(result?.type === 'tool.result' ? result.data.error : null, 'native_queue_producer_unavailable')
-  assert.equal(all.filter((e) => e.type === 'agent.queue').length, 1, 'only the seeded snapshot exists')
+  assert.equal(result?.type === 'tool.result' ? result.data.status : null, 'ok')
+  assert.equal(result?.type === 'tool.result' ? result.data.error : 'missing', null)
+  const snapshots = all.filter((e) => e.type === 'agent.queue')
+  assert.equal(snapshots.length, 2, 'one seeded snapshot and one tool mutation')
+  const produced = snapshots[1]!
+  assert.equal(produced.version, SESSION_EVENT_VERSION_3)
+  if (produced.version !== SESSION_EVENT_VERSION_3) throw new Error('unreachable')
+  assert.deepEqual(produced.data.items.map((item) => item.kind === 'inline' ? item.text : null), ['pending inline', 'agent adds work'])
+  const ids = produced.data.items.map((item) => item.id)
+  assert.equal(new Set(ids).size, 2)
+  const consumed = prompts(all).filter((e) => ids.includes(e.data.messageId))
+  assert.deepEqual(consumed.map((e) => e.data.messageId), ids, 'each pending item is consumed once in order')
+  assert.deepEqual(f.agents().progressV2(sessionId).queue, [])
 })
 
-test('M5: the restriction is decided before the duplicate-id check, so a reused operation id is refused, never reported duplicate', { timeout: 60_000 }, async (t) => {
+test('M5: a repeated operation id on pending v3 work reports duplicate and writes no snapshot', { timeout: 60_000 }, async (t) => {
   const hold = deferred()
   const f = await build(t, async (call) => { if (call === 2) await hold.promise; return [{ type: 'text', text: `answer ${call}` }] })
   const sessionId = await started(f)
@@ -131,7 +141,11 @@ test('M5: the restriction is decided before the duplicate-id check, so a reused 
   await seedV3(f, sessionId, [{ id: operation, text: 'already pending under this id' }])
   await f.agents().prompt(sessionId, 'continue')
   while (f.requests.length < 2) await tick()
-  await assert.rejects(f.agents().queue(sessionId, 'same operation again', true, operation), typed('native_queue_producer_unavailable'))
+  const head = f.log.session(sessionId)!.lastSeq
+  assert.equal(await f.agents().queue(sessionId, 'same operation again', true, operation), 'duplicate')
+  assert.equal(f.log.session(sessionId)!.lastSeq, head)
+  assert.equal(events(f, sessionId).filter((e) => e.type === 'agent.queue').length, 1)
+  assert.deepEqual(f.agents().progressV2(sessionId).queue, [{ id: operation, kind: 'inline', text: 'already pending under this id' }])
   f.agents().stop(sessionId)
   hold.resolve()
   await f.agents().wait(sessionId)
@@ -139,12 +153,10 @@ test('M5: the restriction is decided before the duplicate-id check, so a reused 
 
 test('M5: a legacy preview is cut from the complete current-registry-scrubbed text, so a late secret straddling the cut leaves no prefix', { timeout: 60_000 }, async (t) => {
   const secret = `late-${randomBytes(12).toString('hex')}`
-  const hold = deferred()
-  const f = await build(t, async (call) => { if (call === 1) await hold.promise; return [{ type: 'text', text: `answer ${call}` }] })
-  const { sessionId } = await f.agents().create(f.input)
-  while (f.requests.length === 0) await tick()
+  const f = await build(t)
+  const sessionId = await started(f)
   // The secret begins 10 bytes before the 8 KiB excerpt cut.
-  await f.agents().queue(sessionId, `${'a'.repeat(8192 - 10)}${secret}${'b'.repeat(INPUT_INLINE_BYTES)}`)
+  await seedV1(f, sessionId, [{ id: 'legacy-preview', text: `${'a'.repeat(8192 - 10)}${secret}${'b'.repeat(INPUT_INLINE_BYTES)}` }])
   await f.scrubber.register('secret://fixture/straddle', secret)
   const item = f.agents().progressV2(sessionId).queue[0]!
   assert.equal(item.kind, 'legacy-preview')
@@ -152,8 +164,6 @@ test('M5: a legacy preview is cut from the complete current-registry-scrubbed te
   assert.equal(item.excerpt, 'a'.repeat(8192 - 10), 'the whole marker is dropped at the cut, and no secret prefix remains')
   assert.equal(item.excerpt.includes(secret.slice(0, 5)), false)
   assert.equal(item.excerptBytes, Buffer.byteLength(item.excerpt))
-  hold.resolve()
-  await f.agents().wait(sessionId)
 })
 
 test('M5: queueV2Of cuts the preview from the complete scrubbed text, never from the raw text', () => {
@@ -213,28 +223,26 @@ test('M2: a late secret that expands a stored v3 inline item fails closed with a
 
 test('L1: a refused add does not extend retention while an accepted add does', { timeout: 60_000 }, async (t) => {
   const gate = deferred()
-  const f = await build(t, async (call) => { if (call === 1 || call === 3) await gate.promise; return [{ type: 'text', text: `answer ${call}` }] })
+  const f = await build(t, async (call) => { if (call === 1) await gate.promise; return [{ type: 'text', text: `answer ${call}` }] })
   const activity = (id: string) => (f.db.prepare('SELECT t.last_user_activity_at AS at FROM threads t JOIN native_sessions n ON n.thread_id = t.id WHERE n.session_id = ?').get(id) as { at: string | null }).at
-  const open = (await f.agents().create(f.input)).sessionId // call 1, held
+  const sessionId = (await f.agents().create(f.input)).sessionId
   while (f.requests.length < 1) await tick()
-  const beforeAccepted = activity(open)
+  const beforeAccepted = activity(sessionId)
   await new Promise((resolve) => setTimeout(resolve, 15))
-  await f.agents().queue(open, 'accepted')
-  assert.notEqual(activity(open), beforeAccepted, 'control: an accepted add records user activity')
+  await f.agents().queue(sessionId, 'accepted')
+  assert.notEqual(activity(sessionId), beforeAccepted, 'an accepted add records user activity')
 
-  const restricted = await started(f) // call 2
-  await seedV3(f, restricted, [{ id: 'queue-a', text: 'pending' }])
-  await f.agents().prompt(restricted, 'continue') // call 3, held
-  while (f.requests.length < 3) await tick()
-  const before = activity(restricted)
+  const beforeRefused = activity(sessionId)
+  const head = f.log.session(sessionId)!.lastSeq
   await new Promise((resolve) => setTimeout(resolve, 15))
-  await assert.rejects(f.agents().queue(restricted, 'refused'), typed('native_queue_producer_unavailable'))
-  assert.equal(activity(restricted), before, 'a refused add leaves retention alone')
+  await assert.rejects(f.agents().queue(sessionId, '   '), typed('validation_failed'))
+  assert.equal(activity(sessionId), beforeRefused, 'a refused add leaves retention alone')
+  assert.equal(f.log.session(sessionId)!.lastSeq, head, 'a refused add writes nothing')
   gate.resolve()
-  await f.agents().wait(open); await f.agents().wait(restricted)
+  await f.agents().wait(sessionId)
 })
 
-test('L2/L8: side-chat Send onto a restricted queue is the typed 409; Save during preparation goes through its FIFO', { timeout: 60_000 }, async (t) => {
+test('L2/L8: side-chat Send accepts pending v3 work; Save during preparation goes through its FIFO', { timeout: 60_000 }, async (t) => {
   const reading = deferred(), gate = deferred()
   let armed = false
   const f = await build(t, undefined, { beforeRead: async () => { if (!armed) return; armed = false; reading.resolve(); await gate.promise } })
@@ -262,7 +270,7 @@ test('L2/L8: side-chat Send onto a restricted queue is the typed 409; Save durin
   assert.equal(notes.length, 1, 'exactly one note, once')
   assert.equal(prompts(events(f, sessionId)).filter((e) => e.data.messageId === 'queue-a').length, 1, 'the preparing turn still consumed its item')
 
-  // Restricted again: a pending v3 item under a held turn.
+  // A pending v3 item under a held turn also accepts Send through the route.
   const hold = deferred()
   const g = await build(t, async (call) => { if (call === 2) await hold.promise; return [{ type: 'text', text: `answer ${call}` }] })
   const other = await started(g)
@@ -270,12 +278,15 @@ test('L2/L8: side-chat Send onto a restricted queue is the typed 409; Save durin
   await g.agents().prompt(other, 'continue')
   while (g.requests.length < 2) await tick()
   const groute = await routes(g)
-  const send = await groute.request(`/${other}/side-chat/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ operationId: randomUUID(), text: 'send me' }) }, peer)
-  assert.equal(send.status, 409)
-  assert.deepEqual(nativeQueueProducerUnavailableSchema.parse(await send.json()), { code: 'native_queue_producer_unavailable' })
-  g.agents().stop(other)
+  const request = { operationId: randomUUID(), text: 'send me' }
+  const send = await groute.request(`/${other}/side-chat/send`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) }, peer)
+  assert.equal(send.status, 202)
+  const sent = sideChatSendResponseSchema.parse(await send.json())
+  assert.deepEqual({ delivery: sent.delivery, duplicate: sent.duplicate }, { delivery: 'queued', duplicate: false })
+  assert.deepEqual(g.agents().progressV2(other).queue.map((item) => item.id), ['queue-b', sent.messageId])
   hold.resolve()
-  await g.agents().wait(other)
+  assert.equal((await g.agents().wait(other)).status, 'completed')
+  assert.equal(prompts(events(g, other)).filter((e) => e.data.messageId === sent.messageId).length, 1)
 })
 
 /* ── L3 / L4 / L5 ────────────────────────────────────────────────────────────────────────── */

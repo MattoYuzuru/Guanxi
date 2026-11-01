@@ -1,7 +1,8 @@
 # Session log
 
-**Status:** implemented (K2), locally validated; queue v3 reader/migration foundation unreleased
-(Q0 plus the Q1 restricted native reader) · **Updated:** 2026-11-01 · **Owner:** lanes K2/K4
+**Status:** implemented (K2); queue v3 log, native reader and producer implemented (Q0–Q2),
+validation tracked in the [Q2 handoff](../../../../docs/plans/lanes/K4-queue-v3-Q2.handoff.md)
+· **Updated:** 2026-11-01 · **Owner:** lanes K2/K4
 
 One append-only event log per session is the trace
 ([ADR-0023](../../../../docs/decisions/0023-session-event-log-and-tracing.md)). It lives in the
@@ -46,7 +47,7 @@ a separate slice.
 
 Queue snapshots have a third, strictly discriminated envelope. v1 `agent.queue`
 `{items:[{id,text}]}` and every v1/v2 shape stay readable and unchanged; the producer in
-`native-agent` still writes v1 until Q2 (Q1 reads v3). A v3 snapshot is a standard `agent.queue` event
+`native-agent` now writes v3 for every new queue mutation (Q2). A v3 snapshot is a standard `agent.queue` event
 whose items are either `{id,kind:'inline',text}` (at most 16 KiB scrubbed UTF-8) or
 `{id,kind:'artifact',artifact}` (the existing exact excerpt/reference shape, media
 `text/plain; charset=utf-8`, byte size above 16 KiB). Empty snapshots are valid, item ids are
@@ -205,11 +206,10 @@ this client; no mutation or partial-success retry is performed.
   Chat, K5, assistant output, reasoning, tool results, images and model requests remain on their
   current paths.
 - Q0 adds the v3 queue contract, migration 40, atomic log append/read/privacy support, export 3
-  and an inspector renderer. The native producer still writes v1 `agent.queue`. Q1 adds the
-  native restricted reader: executable queue state, progress2, verified full-byte consumption
-  and a typed 409 for add/remove over a pending v3 snapshot (see the
-  [native README](../native-agent/README.md)); Q0+Q1 is the restricted reader rollback floor,
-  and the producer round Q2 is still open. Legacy v1 queue events remain readable and are not
+  and an inspector renderer. Q1 adds executable queue state, progress2 and verified full-byte
+  consumption; Q2 activates the native v3 producer and preserves v3 work on add/remove (see the
+  [native README](../native-agent/README.md)). Q0+Q1 remains the restricted reader rollback floor.
+  Legacy v1 queue events remain readable and are not
   rewritten in place; an old immutable inline snapshot can still be larger than the published
   excerpt bound, and the inspector shows a bounded preview rather than the full tail.
 - Queue FTS remains `NULL`: queue text is not searchable, and no queue-tail hydration or

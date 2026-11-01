@@ -1,9 +1,41 @@
 # Stage status
 
-**Status:** implemented tracker · **Updated:** 2026-10-31
-**Current stage:** wave 8 (branch `lead/wave8`, 2026-11-01) — MS2 track. Wave 7 merged into `main` as `a1ba986b` (PR
-MattoYuzuru/Guanxi#3, hosted gate green: run 41209344464). MS1 closed 2026-10-31 (D-214, D-219); desktop platform order macOS →
-Linux/Fedora → Windows (D-221).
+**Status:** implemented tracker · **Updated:** 2026-11-01
+**Current stage:** wave 9, branch `lead/wave9` — local audit and K4 queue-v3 Q2 on the MS2 track.
+Wave 8 is merged into `main` as `1be1b6de` ([PR #4](https://github.com/MattoYuzuru/Guanxi/pull/4),
+hosted full gate [41250663100](https://github.com/MattoYuzuru/Guanxi/actions/runs/41250663100), head `6763953f`,
+tested merge `090df79f`, base `a1ba986b`). MS1 closed 2026-10-31 (D-214, D-219);
+desktop platform order macOS → Linux/Fedora → Windows (D-221).
+
+## Wave 9 (2026-11-01)
+
+- **Local repository and documentation audit:** current checkout matched freshly fetched `origin/main`
+  at `1be1b6de`; no dirty or missing author work was found in retained Guanxi clones. Corrected
+  current-state summaries, roadmap Cordis/mode requirements, navigation, open-question status and
+  the historical lane registry. Preserved archives, decisions and benchmark references. See the
+  [audit and blockers](evidence/audit-2026-11-01.md).
+- **K4 queue-v3 Q2:** native add/remove now emit v3 snapshots, artifactize large input and retained
+  legacy-large text, preserve retained descriptors, and check the captured owner around awaited
+  storage and the final append. Side-chat Send and the agent queue tool work over v3 state.
+  Historical v1 stays readable; progress1 explicitly refuses pending artifacts. Review found and
+  fixed late-registry excerpt expansion during storage. No migration, request shape, tool set,
+  model policy or UI change. See the [Q2 handoff](lanes/K4-queue-v3-Q2.handoff.md).
+- **Evidence — new:** 21 producer tests (18 initial, HTTP pairing, two late-registration cases).
+  **Regression envelope:** 142 inherited native/CLI tests and 63 log/artifact/version/privacy
+  tests. Run identities and the final independent review are in the handoff. Final hosted completion
+  must be verified from the exact candidate's [PR #5](https://github.com/MattoYuzuru/Guanxi/pull/5)
+  and `ci:finish` output. Local runner
+  receipts are not reusable source attestations because of the tracked directory symlink.
+- **Hosted browser failure diagnosed:** first candidate `303384cc` passed 13 of 14 tasks but
+  failed the menu keyboard spec. The test sent Space before frame-scheduled item focus. Local
+  reproduction failed 1/12; awaiting the actual ArrowDown-driven focus preserves every exact
+  action count and passes 12/12, then all 25 cases in that browser file. Independent review
+  accepted the test-only repair; no production UI or approval status changed. Final full CI
+  must cover the corrected candidate. See the handoff for receipts.
+
+This session has only the Mac. The real B3 cohort, Fedora checks, Touch ID/owner signatures,
+voice recordings and signed desktop distribution are not newly validated. These do not block
+the next local desktop lifecycle slice; account/licensing choices remain in OPEN_QUESTIONS.
 
 ## Wave 8 (2026-11-01)
 
@@ -24,10 +56,11 @@ Three lanes, each by a Sonnet 5.5 author with separate Sonnet 5.5 reviews (two r
   full-byte consumption with owner/fence checks up to dispatch, typed content-free failures, the restricted-reader rollback
   floor (v3 mutations refused with 409 until Q2).
 
-Evidence — **new:** desktop 163 unit + 43 Electron tests; auth 56+ new tests (auth suite 89, route-reasoning 9); Q1 63 new
-server tests plus CLI/web cases. **Regression envelope (local, focused):** affected server set 895; native-agent 92 + Q0 14;
-web unit + localization 136; browser specs for native agent 20. Not run: signing/notarization, a mounted DMG, hosted desktop
-tasks (first run on the wave PR), a real agent run through the window.
+Evidence — **new:** desktop 163 unit + 43 Electron tests; auth 56+ new tests (auth suite 89, route-reasoning 9);
+Q1 43 new server tests (20 reader + 17 review + 6 round 2), CLI 3 and web component 7 cases.
+**Regression envelope (local, focused):** affected server set 895; native-agent 92 + Q0 14;
+web unit + localization 136; browser specs for native agent 20. Hosted desktop tasks passed with
+the full PR #4 gate above. Not run: signing/notarization, a mounted DMG, a real agent run through the window.
 
 ## Wave 7 (2026-10-31)
 
@@ -98,7 +131,7 @@ Short mutable tracker. Scope and exit gates live in [ROADMAP](ROADMAP.md); decis
 
 The legacy Alamo tracker (Phases 0–3, slices P0-A–P3-Q, all evidence) is preserved in
 [`docs/legacy/alamo/plans/PHASE_STATUS.md`](../legacy/alamo/plans/PHASE_STATUS.md). That code
-is still what runs today; it is ported into the new stages rather than discarded.
+is retained alongside the merged re-foundation slices; it is ported rather than discarded.
 
 ## S0 — Re-foundation
 
@@ -319,21 +352,22 @@ decision was made.
 | NC1 Notification center | backend core and notification center UI integrated (rules, inbox, actions, delivery planning, producers, OS adapters, opt-in OS delivery, REST, status-strip entry and page) | slices NC1-a…f and [NC1-ui](lanes/NC1-ui.handoff.md); real action ports (`wake_leads` needs a run-to-connection index), push, settings UI, an unread-count endpoint remain |
 | K2 Session log | implemented, merged | see the K2 section above |
 | K3 Model access | implemented, merged | see the K3 section above |
-| K4 Native agent | partial; queue-v3 Q0 integrated and independently accepted (2026-10-23) | [Q0 hand-off](lanes/K4-queue-v3.handoff.md); Q1 restricted reader, Q2 producer, whole-buffer paths and wider UI/platform exits remain. Earlier privacy/encoding/Linux-proxy evidence: [input](evidence/K4-input-artifacts.md), [Linux repair](lanes/K4-linux-proxy-path.handoff.md). |
+| K4 Native agent | partial stage; queue-v3 Q0/Q1 merged in main, Q2 implemented in wave 9 | [Q2 handoff](lanes/K4-queue-v3-Q2.handoff.md); v3 reader/progress and producer implemented. Whole-buffer paths, named availability residuals and wider UI/platform exits remain. Earlier: [input](evidence/K4-input-artifacts.md), [Linux repair](lanes/K4-linux-proxy-path.handoff.md). |
 | R1 Durable runs | implemented, merged; follow-up residuals 1–3 merged; external lead hibernation/wake (LW) and atomic `complete(…, cost)` integrated 2026-10-23 | see the R1 section above and [evidence/r1-followup](evidence/r1-followup.md) |
 | K5 External agents | partial; boot reconciliation of stale admission holders by proof (LW, 2026-10-23); reviewed durable same-node admission and atomic learning integrated locally (`1b6f495`) | [K5 evidence](evidence/K5.md), [admission handoff](lanes/K5-durable-admission.handoff.md). Repository 37 new / 66 inherited; independent 105 includes two outside checks. Cleanup uncertainty retains occupancy. Real vendor captures, effective implicit bare, Claude quota producer and distributed admission remain. |
 | B1 Bench base | bounded foundation, process/K2 retention and separate fixture repairs integrated locally (`1b6f495`) | [B1 evidence](evidence/B1.md), [process handoff](lanes/B1-trial-binding.handoff.md), [integration handoff](lanes/F2-integration.handoff.md). Independent OS/retention repairs closed; bench 137 passes in the candidate. Two newly added cleanup/finalization regressions have separate red/fix/review evidence. Stock paid execution, real corpus/images, billing and five seeds remain open. |
 | X1 Repo map and FTS | independently reviewed and integrated locally (`1b6f495`); actual Fedora62/62 passes | [X1 handoff](lanes/X1.handoff.md). Exact c777 source passes62 local Colima Linux cases, zero skips, with documented nested-bwrap permission limits. Candidate d861 passes all eight commands. [Current Fedora](evidence/Fedora-2026-10-22.md) main3e4840bb five-file X1/kernel envelope passes62/62, zero skips, as dedicateduid1001. The separate native/core startup failure is repaired in45491863; actual214 has208 pass/6 Darwin-only skips. Production/rootless untrusted execution and wider platform/runtime proof remain unearned. |
-| R2 Relay executor | operational local runtime integrated (R2-op, 2026-10-23): opt-in llama-server with exact `/apply-template`+`/tokenize` counter, loaded-window observation and owned checkouts | [R2-op hand-off](lanes/R2-op.handoff.md); not yet exercised against a real llama-server; resident model memory is invisible to the governor (residual); quality/long-run gates remain. Earlier: [R2 evidence](evidence/R2.md). |
-| U1 Shell, layout, modes | integrated 2026-10-23: workspace states, mounted shell, status closure, primitive readiness, glossary, new-session screen, finished-unseen, ephemeral side chat | [integration](lanes/U1-integration.handoff.md), [session features](lanes/U1-session-features.handoff.md); 112 CSS suppressions and owner signatures for six `review` components remain |
+| R2 Relay executor | operational llama-server adapter merged; actual Fedora relay and fault-run evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [R2-op](lanes/R2-op.handoff.md). MS1 closed per D-214/D-219; resident model memory remains outside the governor, broader quality and B3 gates remain. No new live run in wave 9. |
+| U1 Shell and layout | merged: workspace states, mounted shell, glossary, new-session screen, finished-unseen, side chat; wave 6 single interface and panels menu per D-217 | [integration](lanes/U1-integration.handoff.md), [session features](lanes/U1-session-features.handoff.md); CSS suppression debt and unsigned `review` components remain; historical counts are not a current audit |
+| U2 macOS desktop | first shell/service slice merged in wave 8; hosted desktop tasks green in PR #4 | [U2 handoff](lanes/U2-macos.handoff.md); launchd/login/tray, update delivery, signing/notarization and distributed DMG remain; Q-247/Q-248 and Apple account only gate the relevant release work |
 | F1 Federation base | implemented, independently verified, merged (`e2fdd66`) | see [evidence/F1](evidence/F1.md) |
-| R3 Judge + ETA | ETA/signals and opt-in cascade integrated; replay (R3-b) and ETA calibration (R3-c) scorers integrated 2026-10-23 | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md); gates evaluate only on recorded corpora; a privacy-reviewed observation journal is needed to record real runs; night J3 wake rate remains |
-| F2 Remote attempts | offers, renewable dispatch, remote cost ledger (F2-c) and relay inference on another node (F2-d) integrated 2026-10-23 | [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md); fixture-validated only; real two-host run, TLS between hosts, residency lease, toolful remote steps and a remote-relay judge remain |
-| B3 Relay benchmark | offline evidence validator integrated (B3-a); no measurement; now an MS2 gate with a smoke cohort first (D-219) | [B3-a hand-off](lanes/B3-a.handoff.md); every gate stays `unevaluated` until a real cohort runs on a non-Mac node (D-194) |
+| R3 Judge + ETA | ETA/signals, opt-in cascade, replay/calibration scorers and D-199 observation journal merged | [R3-b](lanes/R3-b.handoff.md), [R3-c](lanes/R3-c.handoff.md), [journal](lanes/R3-journal.handoff.md); real corpora, owner labels/calibration and night J3 wake evidence remain; implementation of a recorder does not prove those gates |
+| F2 Remote attempts | offers, dispatch and remote cost ledger merged; actual two-node MS1 evidence recorded in wave 6 | [MS1 runs](evidence/ms1-fault-runs-2026-10-24.md), [F2-c](lanes/F2-c.handoff.md), [F2-d](lanes/F2-d.handoff.md). The MS1 run does not establish every F2 exit: transport/profile, residency and wider remote tool/judge gates need their own evidence. |
+| B3 Relay benchmark | offline validator, smoke runner, naive arm and integration merged in wave 7; full cohort is an MS2 gate (D-219) | [B3-a](lanes/B3-a.handoff.md), [smoke](lanes/B3-b-smoke.handoff.md), [integration](lanes/B3-integration.handoff.md). No real smoke/cohort measurement recorded; gates stay `unevaluated`. Not runnable with this session's Mac-only scope. |
 | V1 Dictation | backend core and glossary editor UI integrated (matcher, store, eval metrics, whisper.cpp adapter with D-157 consent, REST, `/settings/voice/glossary`) | owner eval recordings, more STT adapters, `voice.flag_term` remain; exit gate needs owner recordings |
 | WG1 Work ledger | core integrated (evidence-derived status, strip, query, export); REST via MS2 | `project` mode stays off until the WL A/B; board UI, `work.query` agent tool remain |
 | WG2 Tracker sync | core integrated (GitHub/Jira adapters on fixtures, business-field protection, rate limits) | plugin packaging per P1, credentials UI, polling scheduler, live fixtures remain |
-| U3 Accounts | authorization core integrated (`can()`, grants, remote-bind guard; D-155, D-190); route wiring and boot bind gate integrated (wave 8) | Better Auth, wiring `can()` into routes, remote bind at boot remain |
+| U3 Accounts | authorization core, route wiring and boot bind gate merged in wave 8 (`can()`, grants; D-155, D-190) | [route handoff](lanes/U3-route-authz.handoff.md); Better Auth adapter, resource lookup grants, per-account stores, local-owner proof (Q-246) and stream revocation remain; remote profile is not operationally validated |
 | P1 Plugin platform | cores integrated (skills/AGENTS.md loading, T1 plugin manager with crash recovery, MCP client) | K4 sandbox wrapper for MCP, kernel boot wiring, agent tools, UI remain |
 | C1 Agent browser | policy core integrated (origin policy, site grants) | playwright-core browser host, streamed pane, cookie scrubber, injection tests remain |
 | all others | not started | see [ROADMAP](ROADMAP.md) dependencies |

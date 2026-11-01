@@ -7,6 +7,8 @@ import {
   nativeAgentInputSchema,
   agentExecResultSchema,
   SESSION_EVENT_VERSION,
+  SESSION_EVENT_VERSION_3,
+  type QueueAppendDataV3,
   type NativeAgentInput,
   type AgentProgress,
   type AgentProgressV2,
@@ -26,8 +28,9 @@ import { NativeSessions } from './sessions.ts'
 import type { AppContext } from '../context.ts'
 import { SessionLogError, type AppendOptions, type AppendResult, type SessionEventInput, type SessionHandle, type SessionLog } from '../session-log/log.ts'
 import { SessionInputError, SessionInputStore, inputMediaTypeFor, isInlineInput, utf8Excerpt } from '../session-log/input-artifacts.ts'
+import { projectInputExcerpt } from '../session-log/excerpt.ts'
 import { NativeAppendQueue } from './append-queue.ts'
-import { ArtifactQueueError, blocksV1Producer, legacyQueueOf, queueStateOf, queueV2Of, type ExecutableQueueItem, type QueueState } from './queue-state.ts'
+import { ArtifactQueueError, legacyQueueOf, queueStateOf, queueV2Of, type ExecutableQueueItem, type QueueState } from './queue-state.ts'
 import type { EgressScrubber } from '../egress/types.ts'
 import type { Connections } from '../connections/service.ts'
 import { assertRootsClean } from './cleanup.ts'
@@ -340,12 +343,49 @@ export class NativeAgents {
     }
     active.abort.abort()
   }
-  /** v1 snapshot items for the pending state. Only reachable when the producer is not blocked, so every item is inline. */
-  private v1Items(state: QueueState): { id: string; text: string }[] {
-    return state.pending.map(item => {
-      if (item.kind !== 'inline') throw new NativeAgentError('native_queue_producer_unavailable')
-      return { id: item.id, text: this.scrubber.scrub(item.text) }
+  /** Normalize inside the admitted FIFO; filesystem awaits never hold a SQLite transaction. */
+  private async queueItems(id: string, items: ExecutableQueueItem[], signal: AbortSignal, verify: () => void): Promise<QueueAppendDataV3> {
+    const normalized: QueueAppendDataV3['items'] = []
+    for (const item of items) {
+      verify()
+      if (item.kind === 'artifact') {
+        // The log resolves the same-session metadata atomically. Retained work needs neither
+        // hydration nor a rewrite of the blob, and removal never deletes historical inputs.
+        const { checksum, byteSize, mediaType, excerpt } = item.artifact
+        normalized.push({ id: item.id, kind: 'artifact', input: { checksum, byteSize, mediaType, excerpt } })
+      } else {
+        const text = this.scrubber.scrub(item.text)
+        if (isInlineInput(Buffer.byteLength(text, 'utf8'))) {
+          normalized.push({ id: item.id, kind: 'inline', text })
+        } else {
+          const written = await this.writeInput(id, text, 'prompt', signal)
+          verify()
+          normalized.push({ id: item.id, kind: 'artifact', input: { ...written, mediaType: inputMediaTypeFor('prompt'), excerpt: utf8Excerpt(text) } })
+        }
+      }
+    }
+    verify()
+    return { items: normalized }
+  }
+  /** Pin this admission to its original attempt/FIFO through every asynchronous write. */
+  private queueOwner(id: string, active: Active, pending: NativeAppendQueue): () => void {
+    const check = this.ownerCheck(id, active, active.attempt)
+    return () => {
+      this.ready()
+      check()
+      if (active.queue !== pending) throw new NativeAgentError('writer_fenced')
+    }
+  }
+  /** Re-project every descriptor synchronously at commit: another item's write may have awaited a registry change. */
+  private appendQueueSnapshot(pending: NativeAppendQueue, data: QueueAppendDataV3) {
+    const items = data.items.map(item => {
+      if (item.kind === 'inline') return item
+      // Preserve completeness inputs until projection has protected any secret prefix at the cut.
+      // Only the excerpt is replaced; identity/checksum/size must still pass the log's own checks.
+      const projected = projectInputExcerpt({ artifact: item.input }, this.scrubber) as { artifact: { excerpt: string } }
+      return { ...item, input: { ...item.input, excerpt: projected.artifact.excerpt } }
     })
+    return pending.appendNow({ type: 'agent.queue', data: { items } }, { eventVersion: SESSION_EVENT_VERSION_3 })
   }
   async queue(id: string, text: string, userActivity = true, itemId?: string): Promise<'queued' | 'duplicate'> {
     this.ready()
@@ -353,27 +393,29 @@ export class NativeAgents {
     const active = this.active.get(id)
     if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
     const pending = active.queue
+    const verify = this.queueOwner(id, active, pending)
+    const acceptedId = itemId ?? randomUUID()
     // Read and append the projection inside the same FIFO operation: a snapshot
     // taken before enqueue is stale as soon as a concurrent queue() or
     // removeQueued() commits, and would silently overwrite its accepted items.
     // A caller-chosen item id (side-chat Send) makes the operation idempotent: an id that is
     // already pending or already consumed as a prompt is never queued a second time.
-    const outcome = await pending.enqueue(() => {
+    const outcome = await pending.enqueue(async () => {
       // Reads that can fail for reasons unrelated to the turn (scrubber readiness, an unreadable
       // snapshot) are returned, never thrown: a throw inside the FIFO would abort the main turn.
       // The append itself stays unprotected on purpose, because a failed trace write must fail the turn.
       let current: QueueState, duplicate = false
       try {
+        verify()
         current = queueStateOf(this.events(id))
-        // Q1 restricted-reader floor: this node still writes v1 snapshots, which cannot carry a pending
-        // v3 item. Refuse before anything is written, read or replaced.
-        if (blocksV1Producer(current)) return { error: new NativeAgentError('native_queue_producer_unavailable') }
         // Retention counts only an accepted-for-evaluation user call, never a refused one.
         if (userActivity) this.sessions.touch(id)
         duplicate = itemId !== undefined && (current.pending.some(item => item.id === itemId) || this.hasPrompt(id, itemId))
       } catch (error) { return { error } }
       if (duplicate) return { status: 'duplicate' as const }
-      pending.appendNow({ type: 'agent.queue', data: { items: [...this.v1Items(current), { id: itemId ?? randomUUID(), text }] } })
+      const data = await this.queueItems(id, [...current.pending, { id: acceptedId, kind: 'inline', text }], active.abort.signal, verify)
+      verify()
+      this.appendQueueSnapshot(pending, data)
       return { status: 'queued' as const }
     })
     if ('error' in outcome) throw outcome.error
@@ -386,13 +428,14 @@ export class NativeAgents {
     const active = this.active.get(id)
     if (!active || active.queue === null) throw new NativeAgentError('session_not_running')
     const pending = active.queue
-    const outcome = await pending.enqueue(() => {
+    const verify = this.queueOwner(id, active, pending)
+    const outcome = await pending.enqueue(async () => {
       // Like queue(): a failed read is returned, never thrown, because a throw inside the FIFO aborts the main turn.
       let current: QueueState
-      try { current = queueStateOf(this.events(id)) } catch (error) { return { error } }
-      // Refused even for an id that is not pending: the node cannot write a snapshot over v3 work.
-      if (blocksV1Producer(current)) return { error: new NativeAgentError('native_queue_producer_unavailable') }
-      pending.appendNow({ type: 'agent.queue', data: { items: this.v1Items({ ...current, pending: current.pending.filter(i => i.id !== item) }) } })
+      try { verify(); current = queueStateOf(this.events(id)) } catch (error) { return { error } }
+      const data = await this.queueItems(id, current.pending.filter(i => i.id !== item), active.abort.signal, verify)
+      verify()
+      this.appendQueueSnapshot(pending, data)
       return {}
     })
     if ('error' in outcome) throw outcome.error
@@ -413,8 +456,6 @@ export class NativeAgents {
   }
   private sideChatFailure(error: unknown): SideChatError | NativeAgentError {
     if (error instanceof SideChatError) return error
-    // The Q1 floor keeps its own typed 409 body on every route that reaches the queue.
-    if (error instanceof NativeAgentError && error.code === 'native_queue_producer_unavailable') return error
     const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : error instanceof Error ? error.message : ''
     if (code === 'session_not_found') return new SideChatError('session_not_found')
     if (code === 'session_expired') return new SideChatError('session_unavailable')

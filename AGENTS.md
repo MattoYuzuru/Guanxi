@@ -1,10 +1,12 @@
 # Instructions for agents
 
-**Status:** implemented · **Updated:** 2026-10-31 · **Scope:** the whole repository
+**Status:** implemented · **Updated:** 2026-11-01 · **Scope:** the whole repository
 
-Guanxi is an early-alpha, local-first agent harness. The code in `packages/` today is the
-Alamo-era Ollama workbench; the target architecture is being re-founded on an own plugin
-kernel. Never treat documents marked `proposed` as implemented.
+Guanxi is an early-alpha, local-first agent harness. The code in `packages/` combines the
+retained Alamo-era Ollama workbench with merged re-foundation slices on the own plugin
+kernel. [`PHASE_STATUS`](docs/plans/PHASE_STATUS.md) records their current scope and residuals;
+the target architecture includes unfinished work. Never treat documents marked `proposed`
+as implemented.
 
 The owner may write to you in Russian. Repository documentation, code comments and commit
 messages are in English (D-103). Raw research evidence keeps its original language (the
@@ -21,9 +23,10 @@ strings go through locale keys (English source, curated Russian).
    the ADR named for your area in the [ADR index](docs/decisions/README.md). For any UI work,
    load the [`guanxi-ui` skill](.agents/skills/guanxi-ui/SKILL.md) and follow
    [`docs/design/`](docs/design/README.md).
-4. For changes to the code that exists today: the legacy docs in
+4. For changes to the retained legacy workbench: the legacy docs in
    [`docs/legacy/alamo/`](docs/legacy/README.md) (Russian) — `DEVELOPMENT.md`, `TESTING.md`,
    `architecture/HLD.md`, `architecture/LLD.md`, `architecture/RUNTIME_LIFECYCLE.md`.
+   For newer subsystems, read their source README and the evidence linked from `PHASE_STATUS`.
 5. For planned work: [`PHASE_STATUS`](docs/plans/PHASE_STATUS.md), then
    [`ROADMAP`](docs/plans/ROADMAP.md). Do not silently close open decisions; check
    [`OPEN_QUESTIONS`](docs/plans/OPEN_QUESTIONS.md) and record when you used a default.

@@ -1,6 +1,6 @@
 # Documentation map
 
-**Status:** implemented · **Updated:** 2026-10-24
+**Status:** implemented · **Updated:** 2026-11-01
 **Purpose:** canonical index; content lives in the linked documents.
 
 ## Quick routes
@@ -8,18 +8,18 @@
 | Task | Read |
 | --- | --- |
 | Understand the product | [VISION](vision/VISION.md) → [REQUIREMENTS](vision/REQUIREMENTS.md) |
-| See what the owner decided | [Owner decisions 2026-10-19](decisions/2026-10-19-owner-decisions.md) → [addendum](decisions/2026-10-19-owner-decisions-addendum.md) → [2026-10-20](decisions/2026-10-20-owner-decisions.md) → [2026-10-20 addendum](decisions/2026-10-20-owner-decisions-addendum.md) → [2026-10-21](decisions/2026-10-21-owner-decisions.md) → [2026-10-22](decisions/2026-10-22-owner-decisions.md) → [ADR index](decisions/README.md) |
+| See what the owner decided | [Latest decisions: 2026-10-31 with 2026-11-01 addendum](decisions/2026-10-31-owner-decisions.md) → [2026-10-24](decisions/2026-10-24-owner-decisions.md) → [CI protocol D-213](decisions/2026-10-24-ci-protocol.md) → [all owner records and ADRs](decisions/README.md) (newest applicable decision wins) |
 | Understand the target design | [TARGET_ARCHITECTURE](architecture/TARGET_ARCHITECTURE.md) → relevant ADR |
 | Build or review UI | [design system](design/README.md) → [`guanxi-ui` skill](../.agents/skills/guanxi-ui/SKILL.md) |
 | Know why a library was chosen | [research synthesis](research/README.md) → raw lane report |
 | Validate a change / finish CI | [CI protocol](operations/ci.md) → [CI research/evidence](research/2026-10-24-ci.md) |
-| Restart the paused agent team | [lead restart prompt](plans/CLAUDE_LEAD_RESTART.md) |
+| Resume development | [current next-agent prompt](plans/NEXT_AGENT_PROMPT.md); [older lead restart snapshot](plans/CLAUDE_LEAD_RESTART.md) is historical |
 | Continue implementation | [PHASE_STATUS](plans/PHASE_STATUS.md) → [WORKFLOW](plans/WORKFLOW.md) → [ROADMAP](plans/ROADMAP.md) |
 | Hand off to the next agent | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) |
 | Run or join a parallel lane | [lanes](plans/lanes/README.md) |
 | Run the two-node MS1 pairing (Mac home, Fedora executor) | [MS1 live run](operations/ms1-live-run.md) |
 | Check owner choices still open | [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) |
-| Change the code that exists today | [legacy docs](legacy/README.md) (Russian): DEVELOPMENT, TESTING, HLD, LLD, RUNTIME_LIFECYCLE |
+| Change implemented code | [stage status and evidence](plans/PHASE_STATUS.md) → affected source README; for the retained workbench, [legacy docs](legacy/README.md) (Russian): DEVELOPMENT, TESTING, HLD, LLD, RUNTIME_LIFECYCLE |
 | Reuse third-party code | [ADR-0016](decisions/0016-licensing-and-third-party-reuse.md) → [THIRD_PARTY_NOTICES](../THIRD_PARTY_NOTICES.md) |
 
 ## Canonical documents
@@ -38,9 +38,9 @@
 | [PHASE_STATUS](plans/PHASE_STATUS.md) | implemented | mutable tracker with evidence |
 | [WORKFLOW](plans/WORKFLOW.md) | accepted | protocol for one slice |
 | [NEXT_AGENT_PROMPT](plans/NEXT_AGENT_PROMPT.md) | ready | bounded prompt for the next slice |
-| [lanes/](plans/lanes/README.md) | accepted | rules, current ownership and prompts for parallel lanes |
-| [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) | accepted | open questions with recommended defaults (none open) and answered ones with their decisions |
-| [legacy/](legacy/README.md) | implemented (legacy) | Alamo-era docs describing the code in `packages/` today |
+| [lanes/](plans/lanes/README.md) | accepted rules, historical registry | lane isolation and handoff rules; dated ownership snapshots, not a live process inventory |
+| [OPEN_QUESTIONS](plans/OPEN_QUESTIONS.md) | accepted tracker | unresolved choices and recommended defaults, plus answered questions with their decisions |
+| [legacy/](legacy/README.md) | implemented (legacy) | Alamo-era docs for the retained Ollama workbench, not newer subsystems |
 
 ## Diagrams
 

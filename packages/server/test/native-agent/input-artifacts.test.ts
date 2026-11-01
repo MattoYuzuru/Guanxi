@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { INPUT_EXCERPT_BYTES, INPUT_INLINE_BYTES, SESSION_EVENT_VERSION, type SessionEvent } from '@guanxi/contract'
+import { INPUT_EXCERPT_BYTES, INPUT_INLINE_BYTES, SESSION_EVENT_VERSION_3, type SessionEvent } from '@guanxi/contract'
 import { SecretScrubber } from '../../src/egress/scrubber.ts'
 import { nativeTools } from '../../src/native-agent/tools.ts'
 import { NativeTraceError } from '../../src/native-agent/append-queue.ts'
@@ -309,19 +309,19 @@ test('concurrent queue mutations preserve every accepted item exactly once and i
   assert.deepEqual(remaining.map((item) => item.id), [accepted[1]!.id, remaining[1]!.id])
   assert.equal(new Set(remaining.map((item) => item.id)).size, 2)
   const queueEvents = f.log.readAll(sessionId, 'person').filter((event) => event.type === 'agent.queue')
-  assert.deepEqual(queueEvents.map((event) => event.type === 'agent.queue' && event.version === SESSION_EVENT_VERSION ? event.data.items.map((item) => item.text) : null), [
+  assert.deepEqual(queueEvents.map((event) => event.version === SESSION_EVENT_VERSION_3 ? event.data.items.map((item) => item.kind === 'inline' ? item.text : null) : null), [
     ['first accepted'],
     ['first accepted', 'second accepted'],
     ['first accepted', 'second accepted', 'third accepted'],
     ['second accepted', 'third accepted'],
   ])
   const last = queueEvents.at(-1)
-  assert.equal(last?.type === 'agent.queue' ? JSON.stringify(last.data.items) : null, JSON.stringify(remaining))
+  assert.deepEqual(last?.data.items, remaining.map((item) => ({ ...item, kind: 'inline' })))
   release()
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
 })
 
-test('keeps queued prompts inline in agent.queue and declares the v2 prompt residual honestly', { timeout: 30_000 }, async (t) => {
+test('artifactizes oversized queued prompts in v3 snapshots and consumes their full bytes through v2 prompts', { timeout: 30_000 }, async (t) => {
   let release!: () => void
   const held = new Promise<void>((resolve) => { release = resolve })
   const queuedTail = `QUEUED-TAIL-${randomBytes(8).toString('hex')}`
@@ -332,18 +332,32 @@ test('keeps queued prompts inline in agent.queue and declares the v2 prompt resi
   })
   const { sessionId } = await f.agents().create({ ...f.input, prompt: 'first prompt' })
   await f.agents().queue(sessionId, queued)
+  const pending = f.agents().progressV2(sessionId).queue
+  assert.equal(pending.length, 1)
+  assert.equal(pending[0]!.kind, 'artifact')
+  assert.equal(JSON.stringify(pending).includes(queuedTail), false)
   release()
   assert.equal((await f.agents().wait(sessionId)).status, 'completed')
   const events = f.log.readAll(sessionId, 'person')
   const queue = events.find((event) => event.type === 'agent.queue')
-  assert.equal(queue?.type === 'agent.queue' && queue.version === SESSION_EVENT_VERSION ? queue.data.items[0]?.text : null, queued)
+  assert.equal(queue?.version, SESSION_EVENT_VERSION_3)
+  if (queue?.version !== SESSION_EVENT_VERSION_3) throw new Error('expected v3 queue')
+  const item = queue.data.items[0]!
+  assert.equal(item.kind, 'artifact')
+  if (item.kind !== 'artifact') throw new Error('expected artifact queue item')
+  assert.equal(item.artifact.byteSize, Buffer.byteLength(queued))
+  assert.equal(item.artifact.checksum, `sha256:${createHash('sha256').update(queued).digest('hex')}`)
+  assert.equal('text' in item, false)
   const prompts = events.filter((event): event is Extract<SessionEvent, { type: 'prompt' }> => event.type === 'prompt')
   assert.equal(prompts.length, 2)
   assert.equal(prompts[0]!.version, 1)
   const consumed = prompts.find((event) => event.data.messageId !== promptEvent(events).data.messageId)
   assert.ok(consumed)
-  assert.equal(consumed!.version, 2, 'the consumed prompt event takes v2, but the queue event stays inline')
-  assert.equal(JSON.stringify(events).includes(queuedTail), true, 'the queue residual is explicit')
+  assert.equal(consumed!.version, 2)
+  assert.equal(consumed!.data.messageId, item.id)
+  assert.equal(f.requests.length, 2)
+  assert.equal(f.requests[1]!.includes(queued), true, 'the queued request includes all verified bytes')
+  assert.equal(JSON.stringify(events).includes(queuedTail), false, 'the full queued text is absent from durable event snapshots')
 })
 
 test('fails closed on missing, foreign and late-secret input artifacts without partial replay', { timeout: 30_000 }, async (t) => {

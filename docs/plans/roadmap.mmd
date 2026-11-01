@@ -28,7 +28,7 @@ flowchart LR
   subgraph UX["UX and clients"]
     DS1[DS1 Design foundations<br/>tokens, catalog, gates]
     DS2[DS2 Approval signing helper<br/>Touch ID per signature]
-    U1[U1 Shell, layout<br/>and modes]
+    U1[U1 Shell and layout]
     U2[U2 macOS desktop]
     U3[U3 Accounts<br/>+ remote profile]
     U4[U4 PWA remote]
@@ -71,7 +71,7 @@ flowchart LR
     X2[X2 Embeddings after A/B]
   end
 
-  MS1{{MS1 Delegate to local<br/>north star}}:::ms
+  MS1{{MS1 Delegate to local<br/>closed D-214 + D-219}}:::ms
   MS2{{MS2 Daily driver}}:::ms
   MS3{{MS3 Fleet and media}}:::ms
   MS4{{MS4 Self-evolving}}:::ms
@@ -132,5 +132,5 @@ flowchart LR
   classDef final fill:#fff,stroke:#111,stroke-width:3px
 
   classDef done fill:#d1fae5,stroke:#047857
-  class S0,K1,K2,K3,R1,F1,DS1 done
+  class S0,K1,K2,K3,R1,F1,DS1,MS1 done
   class K4,K5,R2,B1,DS2,U1,X1 review

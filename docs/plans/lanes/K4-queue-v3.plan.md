@@ -1,6 +1,9 @@
 # K4 queue input artifacts: concrete v3 implementation plan
 
-**Status: root-accepted engineering contract; Q0 only authorized now.** Date:2026-10-22.
+**Status: root-accepted engineering contract; historical Q0 authorization below.** Date:2026-10-22.
+Q0 and Q1 are now merged; the owner's 2026-11-01 autonomous continuation covers the separate
+[Q2 plan](K4-queue-v3-Q2.plan.md) and [handoff](K4-queue-v3-Q2.handoff.md). This document
+preserves the original sequencing and acceptance contract; use PHASE_STATUS for current progress.
 Standalone checkout `/Users/yuzuru/Projects/Guanxi-lanes/k4-queue-v3-foundation`, branch
 `codex/k4-queue-v3-foundation`, base main `f8c65df460c1df9e37cdc5661cf6e730b4032ec5`
 (executable1b6f495). Root read the original outside plan and independent review, corrected
@@ -404,6 +407,10 @@ fake provider. Do not count visibility as no-duplication proof or copy the produ
 into the expected output. Register every new test separately from the inherited envelope.
 
 ## 10. Future check commands and exit boundary
+
+The commands below preserve the 2026-10-22 plan. The later
+[CI protocol](../../operations/ci.md) supersedes its full-local-gate cadence: use affected
+local checks, then the full hosted PR gate and `ci:finish` for the reviewed candidate.
 
 These commands are a plan only and were **not run**. Root prepares an isolated clone with
 its own dependencies, assigns free ports/data, and confirms local @guanxi resolution. DSH

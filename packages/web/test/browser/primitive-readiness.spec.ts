@@ -112,6 +112,9 @@ test('Menu enabled keyboard and pointer actions execute exactly once; disabled p
   for (const key of ['Enter', 'Space']) {
     await trigger.focus()
     await page.keyboard.press('ArrowDown')
+    // Opening schedules item focus on a frame; activate only after keyboard navigation reaches it.
+    await expect(page.getByRole('menu')).toHaveCount(1)
+    await expect(page.getByRole('menuitem', { name: 'Rename', exact: true })).toBeFocused()
     await page.keyboard.press(key)
     await expect(page.getByRole('menu')).toHaveCount(0)
     await expect(page.getByTestId('menu-actions')).toHaveText(key === 'Enter' ? '1' : '2')
