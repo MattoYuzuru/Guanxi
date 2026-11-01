@@ -105,8 +105,8 @@ async function smokeApp(app, temporary) {
     const debuggerUrl = new URL(target.webSocketDebuggerUrl)
     assert.equal(debuggerUrl.origin, `ws://127.0.0.1:${debugPort}`)
     renderer = await connectRenderer(debuggerUrl.href)
-    for (const method of ['Page.enable', 'Network.enable', 'Log.enable']) await renderer.send(method)
-    await renderer.send('Page.reload')
+    for (const method of ['Runtime.enable', 'Runtime.runIfWaitingForDebugger', 'Page.enable', 'Network.enable', 'Log.enable']) await renderer.send(method)
+    await renderer.reload()
     const evaluate = async expression => {
       const result = await renderer.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
       assert.ok(!result.exceptionDetails, 'packaged renderer evaluation must succeed')

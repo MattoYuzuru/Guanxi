@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { appInventory, artifactEvidence, compareApps, noticePaths, verifyBuildEvidence, verifyNotices } from '../../scripts/lib/package-evidence.mjs'
 import { inspectService } from '../../scripts/lib/package-process.mjs'
 import { ZIP_PREFLIGHT } from '../../scripts/verify-package.mjs'
+import { isFailedUiResponse, reloadDocument } from '../../scripts/lib/renderer-cdp.mjs'
 
 test('app comparison detects missing/extra/changed files and executable or symlink changes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'package-evidence-'))
@@ -104,4 +105,31 @@ test('ZIP preflight rejects traversal, extra roots, duplicate entries and escapi
       assert.equal(result.status === 0, entries.length === 1 && entries[0]![0] === 'App.app/Contents/file')
     }
   } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('packaged reload waits for a new main-frame loader, and UI HTTP errors fail resource checks', async () => {
+  let listener: ((event: object) => void) | undefined
+  let removed = false
+  const send = async (method: string) => {
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main', loaderId: 'old' } } }
+    if (method === 'Page.reload') {
+      assert.ok(listener, 'observer must be registered before reload')
+      listener({ method: 'Page.lifecycleEvent', params: { name: 'load', frameId: 'main', loaderId: 'old' } })
+      listener({ method: 'Page.lifecycleEvent', params: { name: 'load', frameId: 'child', loaderId: 'new' } })
+    }
+    return {}
+  }
+  let completed = false
+  const loading = reloadDocument(send, (callback: (event: object) => void) => { listener = callback; return () => { removed = true } }).then(() => { completed = true })
+  await new Promise(done => setTimeout(done, 0))
+  assert.equal(completed, false, 'old-document and subframe loads must not complete main-frame reload')
+  assert.ok(listener)
+  listener({ method: 'Page.lifecycleEvent', params: { name: 'load', frameId: 'main', loaderId: 'new' } })
+  await loading
+  assert.equal(removed, true)
+  for (const type of ['Document', 'Script', 'Stylesheet', 'Font', 'Image']) {
+    assert.equal(isFailedUiResponse({ method: 'Network.responseReceived', params: { type, response: { status: 404 } } }), true)
+    assert.equal(isFailedUiResponse({ method: 'Network.responseReceived', params: { type, response: { status: 200 } } }), false)
+  }
+  assert.equal(isFailedUiResponse({ method: 'Network.responseReceived', params: { type: 'Fetch', response: { status: 503 } } }), false)
 })
